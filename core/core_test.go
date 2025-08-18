@@ -2,28 +2,22 @@ package core
 
 import (
 	"context"
+
+	"github.com/hupe1980/agentmesh/logging"
 )
 
-type testLogger struct{}
-
-func (l testLogger) Debug(string, ...interface{}) {}
-func (l testLogger) Info(string, ...interface{})  {}
-func (l testLogger) Warn(string, ...interface{})  {}
-func (l testLogger) Error(string, ...interface{}) {}
-func (l testLogger) Fatal(string, ...interface{}) {}
-
 type icMockSessionService struct {
-	applied map[string]map[string]interface{}
+	applied map[string]map[string]any
 }
 
 func (s *icMockSessionService) Get(id string) (*Session, error)       { return NewSession(id), nil }
 func (s *icMockSessionService) Create(id string) (*Session, error)    { return NewSession(id), nil }
 func (s *icMockSessionService) AppendEvent(id string, ev Event) error { return nil }
-func (s *icMockSessionService) ApplyDelta(id string, delta map[string]interface{}) error {
+func (s *icMockSessionService) ApplyDelta(id string, delta map[string]any) error {
 	if s.applied == nil {
-		s.applied = map[string]map[string]interface{}{}
+		s.applied = map[string]map[string]any{}
 	}
-	cp := map[string]interface{}{}
+	cp := map[string]any{}
 	for k, v := range delta {
 		cp[k] = v
 	}
@@ -70,13 +64,17 @@ type icMockMemoryService struct{}
 func (m *icMockMemoryService) Get(sessionID string) (map[string]any, error) {
 	return map[string]any{}, nil
 }
+
 func (m *icMockMemoryService) Put(sessionID string, delta map[string]any) error { return nil }
+
 func (m *icMockMemoryService) Search(sid, q string, limit int) ([]SearchResult, error) {
 	return []SearchResult{}, nil
 }
-func (m *icMockMemoryService) Store(sid, content string, metadata map[string]interface{}) error {
+
+func (m *icMockMemoryService) Store(sid, content string, metadata map[string]any) error {
 	return nil
 }
+
 func (m *icMockMemoryService) Delete(sid, memoryID string) error { return nil }
 
 func newInvocationContextForTest() (*InvocationContext, chan Event) {
@@ -86,5 +84,6 @@ func newInvocationContextForTest() (*InvocationContext, chan Event) {
 	sSvc := &icMockSessionService{}
 	aSvc := &icMockArtifactService{}
 	mSvc := &icMockMemoryService{}
-	return NewInvocationContext(context.Background(), "sess-x", "inv-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, emit, resume, sess, sSvc, aSvc, mSvc, testLogger{}), emit
+
+	return NewInvocationContext(context.Background(), "sess-x", "inv-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, emit, resume, sess, sSvc, aSvc, mSvc, logging.NoOpLogger{}), emit
 }

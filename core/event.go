@@ -30,7 +30,7 @@ type Event struct {
 	LongRunningToolIDs []string          `json:"long_running_tool_ids,omitempty"`
 	Branch             *string           `json:"branch,omitempty"`
 	ID                 string            `json:"id"`
-	Timestamp          float64           `json:"timestamp"`
+	Timestamp          time.Time         `json:"timestamp"`
 	Content            *Content          `json:"content,omitempty"`
 	Partial            *bool             `json:"partial,omitempty"`
 	TurnComplete       *bool             `json:"turn_complete,omitempty"`
@@ -46,9 +46,9 @@ type Event struct {
 func NewEvent(author, invocationID string) Event {
 	return Event{
 		ID:           NewID(),
-		Author:       author,
 		InvocationID: invocationID,
-		Timestamp:    float64(time.Now().UnixNano()) / 1e9,
+		Author:       author,
+		Timestamp:    time.Now().UTC(),
 		Actions:      EventActions{},
 	}
 }

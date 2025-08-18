@@ -3,6 +3,7 @@ package tool
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hupe1980/agentmesh/core"
 )
@@ -325,7 +326,7 @@ func (t *StateManagerTool) handleGetSessionHistory(args map[string]interface{}, 
 		events[i] = map[string]interface{}{
 			"id":          ev.ID,
 			"author":      ev.Author,
-			"timestamp":   ev.Timestamp,
+			"timestamp":   ev.Timestamp.UTC().Format(time.RFC3339Nano),
 			"partial":     ev.Partial,
 			"has_content": ev.Content != nil,
 		}

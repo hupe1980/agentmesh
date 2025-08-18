@@ -8,7 +8,7 @@ import (
 // Event constructor & helper method tests
 func TestEvent_ConstructorsAndMethods(t *testing.T) {
 	e := NewEvent("authorA", "inv-123")
-	if e.Author != "authorA" || e.InvocationID != "inv-123" || e.ID == "" || e.Timestamp <= 0 {
+	if e.Author != "authorA" || e.InvocationID != "inv-123" || e.ID == "" || e.Timestamp.IsZero() {
 		t.Fatalf("NewEvent did not initialize fields correctly: %+v", e)
 	}
 

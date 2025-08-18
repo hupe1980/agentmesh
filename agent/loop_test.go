@@ -244,7 +244,7 @@ func TestCreateEscalationEvent(t *testing.T) {
 		t.Error("Expected event to have generated ID")
 	}
 
-	if event.Timestamp == 0 {
+	if event.Timestamp.IsZero() {
 		t.Error("Expected event to have generated timestamp")
 	}
 }
