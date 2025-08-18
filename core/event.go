@@ -82,7 +82,17 @@ func NewUserContentEvent(invocationID string, content *Content) Event {
 // NewFunctionCallEvent represents an agent requesting execution of a named function/tool.
 func NewFunctionCallEvent(author, functionName, args string) Event {
 	e := NewEvent(author, "")
-	e.Content = &Content{Role: "assistant", Parts: []Part{FunctionCallPart{FunctionCall: FunctionCall{Name: functionName, Arguments: args}}}}
+	e.Content = &Content{
+		Role: "assistant",
+		Parts: []Part{
+			FunctionCallPart{
+				FunctionCall: FunctionCall{
+					Name:      functionName,
+					Arguments: args,
+				},
+			},
+		},
+	}
 	return e
 }
 
