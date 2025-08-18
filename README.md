@@ -18,24 +18,6 @@ AgentMesh gives you a lightweight, opinionated toolkit for building **LLM + tool
 
 All defaults are in‑memory & dependency‑free → drop into a prototype in minutes. Swap stores & loggers for production.
 
-## 🏗️ Architecture at a Glance
-```
-┌──────────┐     Invoke()      ┌──────────┐        emits        ┌───────────────┐
-│  Client  │ ─────────────────▶│  Engine  │────────────────────▶│  Event Stream │
-└──────────┘                   └────┬─────┘                     └─────┬─────────┘
-                                    │                                │
-                                    │ orchestrates                   │ persistence
-                                    ▼                                ▼
-                               ┌──────────┐   uses    ┌──────────┐  append  ┌──────────┐
-                               │  Agent   │◀────────▶│ Context  │─────────▶│ Session  │
-                               └──────────┘           └──────────┘          └──────────┘
-                                    │  tool calls                            ▲
-                                    ▼                                        │
-                               ┌──────────┐       ┌──────────┐      ┌────────────┐
-                               │  Tools   │       │ Artifacts│      │   Memory    │
-                               └──────────┘       └──────────┘      └────────────┘
-```
-
 ## 🔌 Core Concepts
 | Concept | Description |
 |---------|-------------|
@@ -125,6 +107,7 @@ sumTool := tool.NewFunctionTool(
     return a + b, nil
   },
 )
+
 assistant.RegisterTool(sumTool)
 ```
 The LLM can now trigger function calls (depending on backend capabilities) and the engine will execute them with a `ToolContext`.
