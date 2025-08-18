@@ -20,12 +20,17 @@ import (
 type LogLevel int
 
 const (
+	// LogLevelDebug is the debug logging level.
 	LogLevelDebug LogLevel = iota
+	// LogLevelInfo is the informational logging level.
 	LogLevelInfo
+	// LogLevelWarn is the warning logging level.
 	LogLevelWarn
+	// LogLevelError is the error logging level.
 	LogLevelError
 )
 
+// String returns the string representation of the log level.
 func (l LogLevel) String() string {
 	switch l {
 	case LogLevelDebug:
@@ -55,9 +60,16 @@ type SlogAdapter struct {
 	*slog.Logger
 }
 
+// Debug logs a debug message.
 func (s *SlogAdapter) Debug(msg string, args ...any) { s.Logger.Debug(msg, args...) }
-func (s *SlogAdapter) Info(msg string, args ...any)  { s.Logger.Info(msg, args...) }
-func (s *SlogAdapter) Warn(msg string, args ...any)  { s.Logger.Warn(msg, args...) }
+
+// Info logs an informational message.
+func (s *SlogAdapter) Info(msg string, args ...any) { s.Logger.Info(msg, args...) }
+
+// Warn logs a warning message.
+func (s *SlogAdapter) Warn(msg string, args ...any) { s.Logger.Warn(msg, args...) }
+
+// Error logs an error message.
 func (s *SlogAdapter) Error(msg string, args ...any) { s.Logger.Error(msg, args...) }
 
 // NewSlogAdapter creates a Logger from *slog.Logger.
@@ -208,16 +220,6 @@ func (l *AgentMeshLogger) Error(msg string, args ...interface{}) {
 	l.log(slog.LevelError, l.level <= LogLevelError, msg, args...)
 }
 
-// Fatal logs at a fatal severity then exits the process.
-func (l *AgentMeshLogger) Fatal(msg string, args ...interface{}) {
-	attrs := l.buildAttrs()
-	if len(args) > 0 {
-		msg = fmt.Sprintf(msg, args...)
-	}
-	l.logger.LogAttrs(context.Background(), slog.LevelError+4, msg, attrs...)
-	os.Exit(1)
-}
-
 // ErrorWithStack logs an error plus a runtime stack snapshot.
 func (l *AgentMeshLogger) ErrorWithStack(err error, msg string, args ...interface{}) {
 	if l.level > LogLevelError {
@@ -234,7 +236,6 @@ func (l *AgentMeshLogger) ErrorWithStack(err error, msg string, args ...interfac
 	l.logger.LogAttrs(context.Background(), slog.LevelError, msg, attrs...)
 }
 
-// Domain helpers
 // LogToolCall records execution details for a tool invocation.
 func (l *AgentMeshLogger) LogToolCall(tool string, dur time.Duration, success bool, err error) {
 	attrs := l.buildAttrs()
@@ -254,16 +255,22 @@ func (l *AgentMeshLogger) LogToolCall(tool string, dur time.Duration, success bo
 // LogLLMCall records model call latency, token usage and success.
 func (l *AgentMeshLogger) LogLLMCall(model string, tokens int, dur time.Duration, success bool, err error) {
 	attrs := l.buildAttrs()
+
 	attrs = append(attrs, slog.String("model", model), slog.Int("token_count", tokens), slog.Duration("duration", dur), slog.Bool("success", success))
+
 	if err != nil {
 		attrs = append(attrs, slog.String("error", err.Error()))
 	}
+
 	level := slog.LevelInfo
+
 	msg := "LLM call completed"
+
 	if !success {
 		level = slog.LevelError
 		msg = "LLM call failed"
 	}
+
 	l.logger.LogAttrs(context.Background(), level, msg, attrs...)
 }
 
@@ -302,12 +309,19 @@ func (l *AgentMeshLogger) LogPerformance(op string, dur time.Duration, metrics m
 // NoOpLogger discards all log messages. Useful for testing or when logging is disabled.
 type NoOpLogger struct{}
 
+// Debug logs a debug message.
 func (NoOpLogger) Debug(string, ...any) {}
-func (NoOpLogger) Info(string, ...any)  {}
-func (NoOpLogger) Warn(string, ...any)  {}
+
+// Info logs an informational message.
+func (NoOpLogger) Info(string, ...any) {}
+
+// Warn logs a warning message.
+func (NoOpLogger) Warn(string, ...any) {}
+
+// Error logs an error message.
 func (NoOpLogger) Error(string, ...any) {}
 
-// Convenience factory
+// NewSlogLogger creates a new AgentMeshLogger with the specified configuration.
 func NewSlogLogger(level LogLevel, format string, addSource bool) *AgentMeshLogger {
 	cfg := DefaultLoggerConfig()
 	cfg.Level = level
