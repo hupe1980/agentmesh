@@ -131,17 +131,6 @@ Events carry `Actions` to request orchestration side‑effects:
 - `Escalate` - signal escalation to a higher‑order agent/human
 - `SkipSummarization` - bypass post‑processing summarizers
 
-## 🧪 Testing Philosophy
-- Deterministic: Supply mock models & stores
-- Isolated: Use in‑memory implementations
-- Observable: Inspect streamed `Event`s
-
-Example (pseudo):
-```go
-events := runAndCollect(t, engine, sessionID, agentName, content)
-assert.Contains(t, last(events).Content.Text(), "expected")
-```
-
 ## 🔧 Extending
 - Implement `core.Agent` to add new coordination behavior
 - Implement `model.Model` to support a new LLM backend
@@ -173,6 +162,3 @@ Contributions welcome! Please see `CONTRIBUTING.md`.
 
 ## 📜 License
 Licensed under the MIT License – see [LICENSE.md](./LICENSE.md) for full text.
-
----
-Made with Go 🦫 - Build something awesome.
