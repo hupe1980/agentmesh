@@ -32,7 +32,7 @@ type InvocationContext struct {
 	ArtifactService         ArtifactStore
 	MemoryService           MemoryStore
 	Session                 *Session
-	StateDelta              map[string]interface{}
+	StateDelta              map[string]any
 	Artifacts               []string
 	Branch                  string
 	Logger                  logging.Logger
@@ -65,7 +65,7 @@ func NewInvocationContext(
 		SessionService:  sessionService,
 		ArtifactService: artifactService,
 		MemoryService:   memoryService,
-		StateDelta:      map[string]interface{}{},
+		StateDelta:      map[string]any{},
 		Artifacts:       []string{},
 		Logger:          logger,
 	}
@@ -80,7 +80,7 @@ func (ic *InvocationContext) Err() error { return ic.Context.Err() }
 
 // GetState returns a staged (delta) value if present, else the persisted
 // session value. The boolean reports whether a value was found.
-func (ic *InvocationContext) GetState(k string) (interface{}, bool) {
+func (ic *InvocationContext) GetState(k string) (any, bool) {
 	if v, ok := ic.StateDelta[k]; ok {
 		return v, true
 	}
@@ -92,10 +92,10 @@ func (ic *InvocationContext) GetState(k string) (interface{}, bool) {
 
 // SetState stages a state mutation in the in-memory delta buffer. The change
 // is persisted when CommitStateDelta is called or an emitted event merges it.
-func (ic *InvocationContext) SetState(k string, v interface{}) { ic.StateDelta[k] = v }
+func (ic *InvocationContext) SetState(k string, v any) { ic.StateDelta[k] = v }
 
 // ApplyStateDelta merges all pairs from d into the staged StateDelta.
-func (ic *InvocationContext) ApplyStateDelta(d map[string]interface{}) {
+func (ic *InvocationContext) ApplyStateDelta(d map[string]any) {
 	for k, v := range d {
 		ic.StateDelta[k] = v
 	}
@@ -142,7 +142,7 @@ func (ic *InvocationContext) SearchMemory(q string, limit int) ([]SearchResult, 
 }
 
 // StoreMemory appends content plus metadata to the MemoryStore.
-func (ic *InvocationContext) StoreMemory(content string, md map[string]interface{}) error {
+func (ic *InvocationContext) StoreMemory(content string, md map[string]any) error {
 	if ic.MemoryService == nil {
 		return fmt.Errorf("memory service not configured")
 	}
@@ -175,7 +175,7 @@ func (ic *InvocationContext) CommitStateDelta() error {
 	if err := ic.SessionService.ApplyDelta(ic.SessionID, ic.StateDelta); err != nil {
 		return err
 	}
-	ic.StateDelta = map[string]interface{}{}
+	ic.StateDelta = map[string]any{}
 	return nil
 }
 
@@ -196,7 +196,7 @@ func (ic *InvocationContext) GetAgentType() string { return ic.Agent.Type }
 // Clone returns a shallow copy with deep-copied delta & artifact slices. It
 // shares service pointers and is safe for speculative processing.
 func (ic *InvocationContext) Clone() *InvocationContext {
-	c := &InvocationContext{Context: ic.Context, SessionID: ic.SessionID, InvocationID: ic.InvocationID, Agent: ic.Agent, UserContent: ic.UserContent, Emit: ic.Emit, Resume: ic.Resume, SessionService: ic.SessionService, ArtifactService: ic.ArtifactService, MemoryService: ic.MemoryService, Session: ic.Session, StateDelta: map[string]interface{}{}, Artifacts: []string{}, Branch: ic.Branch, Logger: ic.Logger}
+	c := &InvocationContext{Context: ic.Context, SessionID: ic.SessionID, InvocationID: ic.InvocationID, Agent: ic.Agent, UserContent: ic.UserContent, Emit: ic.Emit, Resume: ic.Resume, SessionService: ic.SessionService, ArtifactService: ic.ArtifactService, MemoryService: ic.MemoryService, Session: ic.Session, StateDelta: map[string]any{}, Artifacts: []string{}, Branch: ic.Branch, Logger: ic.Logger}
 	for k, v := range ic.StateDelta {
 		c.StateDelta[k] = v
 	}
@@ -235,7 +235,7 @@ func (ic *InvocationContext) NewChildInvocationContext(emit chan<- Event, resume
 		ArtifactService: ic.ArtifactService,
 		MemoryService:   ic.MemoryService,
 		Session:         ic.Session,
-		StateDelta:      map[string]interface{}{}, // fresh buffers
+		StateDelta:      map[string]any{}, // fresh buffers
 		Artifacts:       []string{},
 		Branch:          finalBranch,
 		Logger:          ic.Logger,
@@ -267,7 +267,7 @@ func (ic *InvocationContext) EmitEvent(ev Event) error {
 		return ic.Context.Err()
 	case ic.Emit <- ev:
 	}
-	ic.StateDelta = map[string]interface{}{}
+	ic.StateDelta = map[string]any{}
 	ic.Artifacts = []string{}
 	return nil
 }
