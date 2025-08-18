@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -9,220 +8,153 @@ import (
 	"github.com/hupe1980/agentmesh/internal/util"
 )
 
-// FunctionTool provides a convenient implementation of the Tool interface
-// for wrapping Go functions as agent tools.
+// FunctionTool is a generic adapter that exposes a plain Go function as an AgentMesh tool.
 //
-// This implementation handles JSON parameter parsing, validation, and provides
-// a clean interface for creating tools from existing Go functions with automatic
-// schema generation and comprehensive error handling.
+// Responsibilities:
+//   - Holds a lightweight JSON-Schema–like parameter specification (parameters)
+//   - Validates user / model supplied arguments against that schema before execution
+//   - Invokes the wrapped function with a *core.ToolContext giving access to session state,
+//     logging, function call IDs, artifact helpers, etc.
+//   - Normalizes error handling so callers receive *ToolError with consistent codes:
+//     VALIDATION_ERROR  -> schema / argument mismatch
+//     EXECUTION_ERROR   -> underlying function returned an error (non-ToolError)
+//     (custom codes preserved if the function returns *ToolError directly)
+//
+// Concurrency:
+//
+//	A FunctionTool has no internal mutable state after construction and is safe for
+//	concurrent use by multiple goroutines.
+//
+// Parameter Schema Expectations:
+//
+//	The parameters map should follow a minimal JSON Schema shape used elsewhere in the
+//	project. Only the subset actually validated by util.ValidateParameters needs to be
+//	supplied (type, properties, required, enum, etc.).
+//
+// Returned result:
+//
+//	The returned value can be any Go type that is JSON‑serializable by the higher layer.
+//	If more structure or streaming is required, create a custom Tool implementation instead.
 type FunctionTool struct {
-	name        string                                                                      // Tool identifier
-	description string                                                                      // Human-readable description
-	parameters  map[string]interface{}                                                      // JSON schema for parameters
-	fn          func(ctx context.Context, args map[string]interface{}) (interface{}, error) // Implementation function
-	metadata    *functionToolMetadata                                                       // Additional metadata
+	name        string                                                            // Tool identifier (snake_case recommended)
+	description string                                                            // Human-readable description shown to models
+	parameters  map[string]any                                                    // JSON schema describing accepted arguments
+	fn          func(toolCtx *core.ToolContext, args map[string]any) (any, error) // User supplied implementation
 }
 
-// functionToolMetadata implements ToolMetadata for FunctionTool.
-type functionToolMetadata struct {
-	version  string
-	category string
-	tags     []string
-	examples []ToolExample
-}
-
-func (m *functionToolMetadata) Version() string         { return m.version }
-func (m *functionToolMetadata) Category() string        { return m.category }
-func (m *functionToolMetadata) Tags() []string          { return m.tags }
-func (m *functionToolMetadata) Examples() []ToolExample { return m.examples }
-
-// FunctionToolOption allows customization of FunctionTool behavior.
-type FunctionToolOption func(*FunctionTool)
-
-// WithVersion sets the tool version.
-func WithVersion(version string) FunctionToolOption {
-	return func(t *FunctionTool) {
-		if t.metadata == nil {
-			t.metadata = &functionToolMetadata{}
-		}
-		t.metadata.version = version
-	}
-}
-
-// WithCategory sets the tool category.
-func WithCategory(category string) FunctionToolOption {
-	return func(t *FunctionTool) {
-		if t.metadata == nil {
-			t.metadata = &functionToolMetadata{}
-		}
-		t.metadata.category = category
-	}
-}
-
-// WithTags sets descriptive tags for the tool.
-func WithTags(tags ...string) FunctionToolOption {
-	return func(t *FunctionTool) {
-		if t.metadata == nil {
-			t.metadata = &functionToolMetadata{}
-		}
-		t.metadata.tags = tags
-	}
-}
-
-// WithExamples adds usage examples to the tool.
-func WithExamples(examples ...ToolExample) FunctionToolOption {
-	return func(t *FunctionTool) {
-		if t.metadata == nil {
-			t.metadata = &functionToolMetadata{}
-		}
-		t.metadata.examples = examples
-	}
-}
-
-// WithValidation enables parameter validation using the provided schema.
-func WithValidation(validate bool) FunctionToolOption {
-	// This could be expanded to add custom validation logic
-	return func(t *FunctionTool) {
-		// Validation is enabled by default
-	}
-}
-
-// NewFunctionTool creates a new FunctionTool with the specified configuration.
+// NewFunctionTool constructs a FunctionTool from explicit schema and function.
 //
-// Parameters:
-//   - name: Unique identifier for the tool (should follow snake_case convention)
-//   - description: Human-readable description for the LLM
-//   - parameters: JSON schema defining expected input structure
-//   - fn: Implementation function that processes the tool call
-//   - opts: Optional configuration functions
+// Arguments:
 //
-// The implementation function receives parsed JSON arguments as a map and
-// should return the result or an error. The result will be converted to a
-// string representation for the agent.
+//	name        - unique tool name (avoid collisions; snake_case suggested)
+//	description - concise, imperative description ("Calculate the …")
+//	parameters  - minimal JSON-Schema–like map describing the accepted arguments
+//	fn          - implementation receiving a ToolContext plus already‑validated args
 //
 // Example:
 //
-//	tool := NewFunctionTool(
+//	sumTool := NewFunctionTool(
 //	  "calculate_sum",
-//	  "Calculates the sum of two numbers",
-//	  map[string]interface{}{
+//	  "Calculate the sum of two numbers",
+//	  map[string]any{
 //	    "type": "object",
-//	    "properties": map[string]interface{}{
-//	      "a": map[string]interface{}{"type": "number"},
-//	      "b": map[string]interface{}{"type": "number"},
+//	    "properties": map[string]any{
+//	      "a": map[string]any{"type": "number"},
+//	      "b": map[string]any{"type": "number"},
 //	    },
 //	    "required": []string{"a", "b"},
 //	  },
-//	  func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-//	    a, _ := args["a"].(float64)
-//	    b, _ := args["b"].(float64)
+//	  func(tc *core.ToolContext, args map[string]any) (any, error) {
+//	    a := args["a"].(float64)
+//	    b := args["b"].(float64)
 //	    return a + b, nil
 //	  },
-//	  WithCategory("math"),
-//	  WithTags("arithmetic", "calculator"),
 //	)
 func NewFunctionTool(
 	name, description string,
-	parameters map[string]interface{},
-	fn func(ctx context.Context, args map[string]interface{}) (interface{}, error),
-	opts ...FunctionToolOption,
+	parameters map[string]any,
+	fn func(toolCtx *core.ToolContext, args map[string]any) (any, error),
 ) *FunctionTool {
-	tool := &FunctionTool{
+	return &FunctionTool{
 		name:        name,
 		description: description,
 		parameters:  parameters,
 		fn:          fn,
 	}
-
-	for _, opt := range opts {
-		opt(tool)
-	}
-
-	return tool
 }
 
-// NewFunctionToolFromStruct creates a FunctionTool with automatic schema generation from a struct.
-//
-// This is a convenience function that uses reflection to generate the JSON schema
-// from a Go struct type. The struct should have appropriate json tags and descriptions.
+// NewFunctionToolFromStruct derives the parameter schema from a struct using reflection.
+// It is a convenience for simple argument containers and produces a schema equivalent
+// to util.CreateSchema(structType).
 //
 // Example:
 //
-//	type CalculateArgs struct {
-//	  A float64 `json:"a" description:"First number"`
-//	  B float64 `json:"b" description:"Second number"`
+//	type SumArgs struct {
+//	  A float64 `json:"a" description:"First addend"`
+//	  B float64 `json:"b" description:"Second addend"`
 //	}
 //
-//	tool := NewFunctionToolFromStruct(
+//	sumTool := NewFunctionToolFromStruct(
 //	  "calculate_sum",
-//	  "Calculates the sum of two numbers",
-//	  CalculateArgs{},
-//	  func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-//	    // Implementation
+//	  "Calculate the sum of two numbers",
+//	  SumArgs{},
+//	  func(tc *core.ToolContext, args map[string]any) (any, error) {
+//	    return args["a"].(float64) + args["b"].(float64), nil
 //	  },
 //	)
 func NewFunctionToolFromStruct(
 	name, description string,
-	structType interface{},
-	fn func(ctx context.Context, args map[string]interface{}) (interface{}, error),
-	opts ...FunctionToolOption,
+	structType any,
+	fn func(toolCtx *core.ToolContext, args map[string]any) (any, error),
 ) *FunctionTool {
 	schema := util.CreateSchema(structType)
-	return NewFunctionTool(name, description, schema, fn, opts...)
+	return NewFunctionTool(name, description, schema, fn)
 }
 
-// Name returns the tool's unique identifier.
-func (t *FunctionTool) Name() string {
-	return t.name
-}
+// Name returns the unique tool name used in function call declarations and routing.
+func (t *FunctionTool) Name() string { return t.name }
 
-// Description returns the tool's human-readable description.
-func (t *FunctionTool) Description() string {
-	return t.description
-}
+// Description returns the short natural language description exposed to models.
+func (t *FunctionTool) Description() string { return t.description }
 
-// Parameters returns the JSON schema for the tool's expected input.
-func (t *FunctionTool) Parameters() map[string]interface{} {
-	return t.parameters
-}
+// Parameters returns the (minimal) JSON schema describing expected arguments.
+func (t *FunctionTool) Parameters() map[string]any { return t.parameters }
 
-// Call executes the tool with parsed arguments and ToolContext.
-// This method bypasses JSON parsing and provides direct access to ToolContext capabilities.
-func (t *FunctionTool) Call(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
+// Call validates the provided args against the declared schema then invokes the
+// underlying function. Validation or execution failures are wrapped (or passed
+// through) as *ToolError for uniform downstream handling.
+//
+// Error Semantics:
+//
+//	*ToolError (returned directly)  -> forwarded unchanged
+//	validation failure              -> *ToolError{Code: "VALIDATION_ERROR"}
+//	other error                     -> *ToolError{Code: "EXECUTION_ERROR"}
+//
+// Logging Fields:
+//
+//	tool: tool name
+//	fc_id: function call identifier (correlates model request & tool execution)
+//	duration_ms: execution time in milliseconds
+func (t *FunctionTool) Call(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	logger := toolCtx.Logger()
 	start := time.Now()
 	logger.Debug("tool.call.start", "tool", t.name, "fc_id", toolCtx.FunctionCallID())
-	// Validate parameters against schema
+
 	if err := util.ValidateParameters(args, t.parameters); err != nil {
 		logger.Warn("tool.call.validation_failed", "tool", t.name, "error", err.Error())
-		return nil, &ToolError{
-			Tool:    t.name,
-			Message: fmt.Sprintf("parameter validation failed: %v", err),
-			Code:    "VALIDATION_ERROR",
-			Details: err,
-		}
+		return nil, &ToolError{Tool: t.name, Message: fmt.Sprintf("parameter validation failed: %v", err), Code: "VALIDATION_ERROR", Details: err}
 	}
 
-	// Execute the tool function with context from ToolContext
-	result, err := t.fn(toolCtx.Context(), args)
+	result, err := t.fn(toolCtx, args)
 	if err != nil {
-		// Check if it's already a ToolError
-		if toolErr, ok := err.(*ToolError); ok {
+		if toolErr, ok := err.(*ToolError); ok { // Already a ToolError -> just log and forward
 			logger.Error("tool.call.error", "tool", t.name, "error", toolErr.Message)
 			return nil, toolErr
 		}
 		logger.Error("tool.call.error", "tool", t.name, "error", err.Error())
-		return nil, &ToolError{
-			Tool:    t.name,
-			Message: err.Error(),
-			Code:    "EXECUTION_ERROR",
-		}
+		return nil, &ToolError{Tool: t.name, Message: err.Error(), Code: "EXECUTION_ERROR"}
 	}
+
 	logger.Info("tool.call.success", "tool", t.name, "duration_ms", time.Since(start).Milliseconds())
 	return result, nil
-}
-
-// GetMetadata returns the tool's metadata if available.
-func (t *FunctionTool) GetMetadata() ToolMetadata {
-	return t.metadata
 }

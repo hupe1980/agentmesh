@@ -55,7 +55,9 @@ func main() {
   }
 
   mesh := agentmesh.New()
+
   model := openai.NewModel()
+  
   agent := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
     o.Instruction = agent.NewInstructionFromText("You are a concise, helpful assistant.")
   })
@@ -101,7 +103,7 @@ sumTool := tool.NewFunctionTool(
     },
     "required": []string{"a","b"},
   },
-  func(ctx context.Context, args map[string]any) (any, error) {
+  func(toolCtx *core.ToolContext, args map[string]any) (any, error) {
     a := args["a"].(float64)
     b := args["b"].(float64)
     return a + b, nil

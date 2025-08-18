@@ -85,23 +85,17 @@ func TestFunctionTool_Success(t *testing.T) {
 		"required": []string{"a", "b"},
 	}
 
-	sumTool := NewFunctionTool("sum", "Add numbers", params, func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	sumTool := NewFunctionTool("sum", "Add numbers", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
 		a := args["a"].(float64)
 		b := args["b"].(float64)
 		return a + b, nil
-	}, WithCategory("math"), WithTags("arithmetic"), WithVersion("1.2.3"))
+	})
 
 	inv := dummyInvocationContext()
 	tc := core.NewToolContext(inv, "fc1")
 	result, err := sumTool.Call(tc, map[string]interface{}{"a": 2.0, "b": 3.0})
 	assert.NoError(t, err)
 	assert.Equal(t, 5.0, result)
-
-	md := sumTool.GetMetadata()
-	assert.NotNil(t, md)
-	assert.Equal(t, "math", md.Category())
-	assert.Equal(t, "1.2.3", md.Version())
-	assert.Contains(t, md.Tags(), "arithmetic")
 }
 
 func TestFunctionTool_ValidationError(t *testing.T) {
@@ -113,7 +107,7 @@ func TestFunctionTool_ValidationError(t *testing.T) {
 		// Use interface slice to match ValidateParameters implementation expectation
 		"required": []interface{}{"a"},
 	}
-	tTool := NewFunctionTool("test", "Test", params, func(ctx context.Context, args map[string]interface{}) (interface{}, error) { return 0, nil })
+	tTool := NewFunctionTool("test", "Test", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) { return 0, nil })
 	tc := core.NewToolContext(dummyInvocationContext(), "fc2")
 	_, err := tTool.Call(tc, map[string]interface{}{})
 	assert.Error(t, err)
@@ -124,7 +118,7 @@ func TestFunctionTool_ValidationError(t *testing.T) {
 
 func TestFunctionTool_ExecutionError(t *testing.T) {
 	params := map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
-	execTool := NewFunctionTool("fail", "Fails", params, func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	execTool := NewFunctionTool("fail", "Fails", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
 		return nil, errors.New("boom")
 	})
 	tc := core.NewToolContext(dummyInvocationContext(), "fc3")
@@ -223,6 +217,7 @@ func (a *memArtifactService) List(sid string) ([]string, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	m := a.data[sid]
+
 	var res []string
 	for k := range m {
 		res = append(res, k)
