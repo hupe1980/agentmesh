@@ -36,10 +36,14 @@ import (
 //	The returned value can be any Go type that is JSON‑serializable by the higher layer.
 //	If more structure or streaming is required, create a custom Tool implementation instead.
 type FunctionTool struct {
-	name        string                                                            // Tool identifier (snake_case recommended)
-	description string                                                            // Human-readable description shown to models
-	parameters  map[string]any                                                    // JSON schema describing accepted arguments
-	fn          func(toolCtx *core.ToolContext, args map[string]any) (any, error) // User supplied implementation
+	// Tool identifier (snake_case recommended)
+	name string
+	// Human-readable description shown to models
+	description string
+	// JSON schema describing accepted arguments
+	parameters map[string]any
+	// User supplied implementation
+	fn func(toolCtx *core.ToolContext, args map[string]any) (any, error)
 }
 
 // NewFunctionTool constructs a FunctionTool from explicit schema and function.
@@ -138,23 +142,38 @@ func (t *FunctionTool) Parameters() map[string]any { return t.parameters }
 func (t *FunctionTool) Call(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	logger := toolCtx.Logger()
 	start := time.Now()
+
 	logger.Debug("tool.call.start", "tool", t.name, "fc_id", toolCtx.FunctionCallID())
 
 	if err := util.ValidateParameters(args, t.parameters); err != nil {
 		logger.Warn("tool.call.validation_failed", "tool", t.name, "error", err.Error())
-		return nil, &ToolError{Tool: t.name, Message: fmt.Sprintf("parameter validation failed: %v", err), Code: "VALIDATION_ERROR", Details: err}
+
+		return nil, &ToolError{
+			Tool:    t.name,
+			Message: fmt.Sprintf("parameter validation failed: %v", err),
+			Code:    "VALIDATION_ERROR",
+			Details: err,
+		}
 	}
 
 	result, err := t.fn(toolCtx, args)
 	if err != nil {
 		if toolErr, ok := err.(*ToolError); ok { // Already a ToolError -> just log and forward
 			logger.Error("tool.call.error", "tool", t.name, "error", toolErr.Message)
+
 			return nil, toolErr
 		}
+
 		logger.Error("tool.call.error", "tool", t.name, "error", err.Error())
-		return nil, &ToolError{Tool: t.name, Message: err.Error(), Code: "EXECUTION_ERROR"}
+
+		return nil, &ToolError{
+			Tool:    t.name,
+			Message: err.Error(),
+			Code:    "EXECUTION_ERROR",
+		}
 	}
 
 	logger.Info("tool.call.success", "tool", t.name, "duration_ms", time.Since(start).Milliseconds())
+
 	return result, nil
 }

@@ -241,6 +241,7 @@ type memMemoryService struct {
 func newMemMemoryService() *memMemoryService {
 	return &memMemoryService{store: map[string][]core.SearchResult{}}
 }
+
 func (m *memMemoryService) Search(sid, q string, limit int) ([]core.SearchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -257,6 +258,7 @@ func (m *memMemoryService) Store(sid, content string, metadata map[string]interf
 	m.store[sid] = append(m.store[sid], mr)
 	return nil
 }
+
 func (m *memMemoryService) Delete(sid, memoryID string) error { return nil }
 
 // Added methods to satisfy memory.MemoryService interface
