@@ -104,5 +104,37 @@ func (m *AgentMesh) InvokeSync(
 	agentName string,
 	userContent core.Content,
 ) (string, []core.Event, error) {
-	return m.engine.InvokeSync(ctx, sessionID, agentName, userContent)
+	invocationID, eventsCh, errorsCh, err := m.engine.Invoke(ctx, sessionID, agentName, userContent)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// Collect all events until completion
+	var events []core.Event
+	for {
+		select {
+		case <-ctx.Done():
+			// Context cancelled - return events collected so far
+			return invocationID, events, ctx.Err()
+
+		case event, ok := <-eventsCh:
+			if !ok {
+				// Events channel closed - check for terminal error
+				select {
+				case err := <-errorsCh:
+					return invocationID, events, err
+				default:
+					return invocationID, events, nil // Successful completion
+				}
+			}
+			// Collect event
+			events = append(events, event)
+
+		case err := <-errorsCh:
+			// Terminal error occurred
+			if err != nil {
+				return invocationID, events, err
+			}
+		}
+	}
 }

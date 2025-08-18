@@ -28,14 +28,9 @@ type Engine interface {
 	//   - eventsCh: streamed events
 	//   - errorsCh: terminal error channel (buffered size 1)
 	//   - err: immediate error starting invocation
-	Invoke(
-		ctx context.Context,
-		sessionID, agentName string,
+	Invoke(ctx context.Context,
+		sessionID string,
+		agentName string,
 		userContent Content,
 	) (string, <-chan Event, <-chan error, error)
-
-	// InvokeSync executes an agent to completion, collecting all emitted
-	// events into a slice. Convenience wrapper that drains Invoke.
-	// InvokeSync returns collected events and the invocationID that produced them.
-	InvokeSync(ctx context.Context, sessionID, agentName string, userContent Content) (string, []Event, error)
 }
