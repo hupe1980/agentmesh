@@ -70,7 +70,7 @@ func (f *BaseFlow) Execute(invocationCtx *core.InvocationContext) (<-chan core.E
 
 // emitError converts an internal error to a system Event.
 func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
-	ev := core.NewEvent("system", "")
+	ev := core.NewEvent("", "system")
 	msg := err.Error()
 	ev.ErrorMessage = &msg
 	eventChan <- ev
@@ -85,11 +85,13 @@ func (f *BaseFlow) runOnce(invocationCtx *core.InvocationContext, eventChan chan
 			invocationCtx.Session = latest
 		}
 	}
-	chatReq := new(model.Request)
+
+	// Create a new model request
+	req := new(model.Request)
 
 	// Run request processors
 	for _, processor := range f.requestProcessors {
-		if err := processor.ProcessRequest(invocationCtx, chatReq, f.agent); err != nil {
+		if err := processor.ProcessRequest(invocationCtx, req, f.agent); err != nil {
 			f.emitError(eventChan, fmt.Errorf("request processor %s failed: %w", processor.Name(), err))
 			return nil
 		}
@@ -110,13 +112,14 @@ func (f *BaseFlow) runOnce(invocationCtx *core.InvocationContext, eventChan chan
 			})
 		}
 
-		// Add tools to chat request
-		chatReq.Tools = toolDefinitions
+		// Add tools to request
+		req.Tools = toolDefinitions
 	}
 
 	// Execute LLM request
 	llm := f.agent.GetLLM()
-	respCh, errCh := llm.Generate(invocationCtx.Context, *chatReq)
+
+	respCh, errCh := llm.Generate(invocationCtx.Context, *req)
 
 	var lastEvent *core.Event
 
@@ -137,17 +140,20 @@ loop:
 			}
 
 			// Emit processed event
-			ev := core.NewEvent(f.agent.GetName(), "")
+			ev := core.NewEvent(invocationCtx.InvocationID, f.agent.GetName())
 			ev.Content = &resp.Content
 			ev.Partial = &resp.Partial
+
 			// Mark turn complete if this is a final assistant response with no pending tool calls
 			if !resp.Partial && len(ev.GetFunctionCalls()) == 0 {
 				complete := true
 				ev.TurnComplete = &complete
 			}
+
 			lastEvent = &ev
 
 			eventChan <- ev
+
 			// Wait for session persistence (runner sends resume after append)
 			if !ev.IsPartial() && invocationCtx.Resume != nil {
 				select {
@@ -173,6 +179,7 @@ loop:
 					lastEvent = &respEv
 
 					eventChan <- respEv
+
 					// Wait for session persistence of tool response
 					if invocationCtx.Resume != nil {
 						select {

@@ -43,7 +43,7 @@ type Event struct {
 
 // NewEvent creates a bare event authored by 'author' bound to an invocation.
 // Prefer helper constructors for common semantic categories (message, function call/response).
-func NewEvent(author, invocationID string) Event {
+func NewEvent(invocationID, author string) Event {
 	return Event{
 		ID:           NewID(),
 		InvocationID: invocationID,
@@ -57,7 +57,7 @@ func NewEvent(author, invocationID string) Event {
 // Author can be an agent name or system identifier.
 // NewMessageEvent creates a non-user assistant message event with a single text part.
 func NewMessageEvent(author, message string) Event {
-	e := NewEvent(author, "")
+	e := NewEvent("", author)
 	e.Content = &Content{Role: "assistant", Parts: []Part{TextPart{Text: message}}}
 	return e
 }
@@ -65,7 +65,7 @@ func NewMessageEvent(author, message string) Event {
 // NewUserMessageEvent convenience wrapper for a user-authored text message.
 // NewUserMessageEvent creates a user-authored text message event.
 func NewUserMessageEvent(message string) Event {
-	e := NewEvent("user", "")
+	e := NewEvent("", "user")
 	e.Content = &Content{Role: "user", Parts: []Part{TextPart{Text: message}}}
 	return e
 }
@@ -73,7 +73,7 @@ func NewUserMessageEvent(message string) Event {
 // NewUserContentEvent creates a user-authored event with arbitrary Content.
 // Useful for cases where the Content is not just a simple text message.
 func NewUserContentEvent(invocationID string, content *Content) Event {
-	e := NewEvent("user", invocationID)
+	e := NewEvent(invocationID, "user")
 	e.Content = content
 	return e
 }
@@ -81,7 +81,7 @@ func NewUserContentEvent(invocationID string, content *Content) Event {
 // NewFunctionCallEvent represents a tool / function invocation request emitted by an agent.
 // NewFunctionCallEvent represents an agent requesting execution of a named function/tool.
 func NewFunctionCallEvent(author, functionName, args string) Event {
-	e := NewEvent(author, "")
+	e := NewEvent("", author)
 	e.Content = &Content{
 		Role: "assistant",
 		Parts: []Part{
@@ -100,7 +100,7 @@ func NewFunctionCallEvent(author, functionName, args string) Event {
 // If err is non-nil its message is copied into the response.Error field.
 // NewFunctionResponseEvent records the completion result (or error) of a tool/function invocation.
 func NewFunctionResponseEvent(author, id, functionName string, result interface{}, err error) Event {
-	e := NewEvent(author, "")
+	e := NewEvent("", author)
 	fr := FunctionResponse{ID: id, Name: functionName, Response: result}
 	if err != nil {
 		fr.Error = err.Error()

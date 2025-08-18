@@ -7,7 +7,7 @@ import (
 
 // Event constructor & helper method tests
 func TestEvent_ConstructorsAndMethods(t *testing.T) {
-	e := NewEvent("authorA", "inv-123")
+	e := NewEvent("inv-123", "authorA")
 	if e.Author != "authorA" || e.InvocationID != "inv-123" || e.ID == "" || e.Timestamp.IsZero() {
 		t.Fatalf("NewEvent did not initialize fields correctly: %+v", e)
 	}
@@ -43,13 +43,13 @@ func TestEvent_ConstructorsAndMethods(t *testing.T) {
 }
 
 func TestEvent_IsFinalResponseLogic(t *testing.T) {
-	e := NewEvent("agent", "inv")
+	e := NewEvent("inv", "authorA")
 	if !e.IsFinalResponse() {
 		t.Error("Expected basic event to be final")
 	}
 
 	partial := true
-	e2 := NewEvent("agent", "inv")
+	e2 := NewEvent("inv", "agent")
 	e2.Partial = &partial
 	if e2.IsFinalResponse() {
 		t.Error("Partial event should not be final")
@@ -66,14 +66,14 @@ func TestEvent_IsFinalResponseLogic(t *testing.T) {
 	}
 
 	skip := true
-	e5 := NewEvent("agent", "inv")
+	e5 := NewEvent("inv", "agent")
 	e5.Partial = &partial
 	e5.Actions.SkipSummarization = &skip
 	if !e5.IsFinalResponse() {
 		t.Error("SkipSummarization should force final")
 	}
 
-	e6 := NewEvent("agent", "inv")
+	e6 := NewEvent("inv", "agent")
 	e6.LongRunningToolIDs = []string{"tool1"}
 	if !e6.IsFinalResponse() {
 		t.Error("Long running tool should mark final")

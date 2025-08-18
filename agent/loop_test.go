@@ -77,7 +77,7 @@ func (t *TestRegularAgent) Run(invocationCtx *core.InvocationContext) error {
 	t.runCount++
 
 	// Create a regular event
-	ev := core.NewEvent(t.Name(), invocationCtx.InvocationID)
+	ev := core.NewEvent(invocationCtx.InvocationID, t.Name())
 	ev.Content = &core.Content{
 		Role: "assistant",
 		Parts: []core.Part{core.TextPart{
@@ -220,7 +220,7 @@ func TestCreateEscalationEvent(t *testing.T) {
 		}},
 	}
 
-	event := CreateEscalationEvent(author, invocationID, content)
+	event := CreateEscalationEvent(invocationID, author, content)
 
 	// Verify event properties
 	if event.Author != author {

@@ -289,9 +289,9 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 //	return ctx.EmitEvent(event)
 //
 // CreateEscalationEvent helper for constructing an escalation signal event.
-func CreateEscalationEvent(author, invocationID string, content *core.Content) core.Event {
+func CreateEscalationEvent(invocationID, author string, content *core.Content) core.Event {
 	escalate := true
-	ev := core.NewEvent(author, invocationID)
+	ev := core.NewEvent(invocationID, author)
 	ev.Actions.Escalate = &escalate
 	ev.Content = content
 	return ev
