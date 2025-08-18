@@ -3,89 +3,79 @@ package core
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Event constructor & helper method tests
 func TestEvent_ConstructorsAndMethods(t *testing.T) {
 	e := NewEvent("inv-123", "authorA")
-	if e.Author != "authorA" || e.InvocationID != "inv-123" || e.ID == "" || e.Timestamp.IsZero() {
-		t.Fatalf("NewEvent did not initialize fields correctly: %+v", e)
-	}
+	require.NotEmpty(t, e.ID, "event ID should be set")
+	require.False(t, e.Timestamp.IsZero(), "timestamp should be initialized")
+	assert.Equal(t, "authorA", e.Author)
+	assert.Equal(t, "inv-123", e.InvocationID)
 
 	msg := NewMessageEvent("agent1", "hello world")
-	if msg.Content == nil || msg.Content.Role != "assistant" || len(msg.Content.Parts) != 1 {
-		t.Fatalf("NewMessageEvent malformed: %+v", msg)
-	}
+	require.NotNil(t, msg.Content)
+	assert.Equal(t, "assistant", msg.Content.Role)
+	assert.Len(t, msg.Content.Parts, 1)
 
 	user := NewUserMessageEvent("inv-123", "hi")
-	if e.InvocationID != "inv-123" || user.Content == nil || user.Content.Role != "user" {
-		t.Fatalf("NewUserMessageEvent malformed: %+v", user)
-	}
+	require.NotNil(t, user.Content)
+	assert.Equal(t, "user", user.Content.Role)
+	assert.Equal(t, "inv-123", user.InvocationID)
 
 	callArgs := "test"
 	fCall := NewFunctionCallEvent("agent2", "do_stuff", callArgs)
 	calls := fCall.GetFunctionCalls()
-	if len(calls) != 1 || calls[0].Name != "do_stuff" || calls[0].Arguments != callArgs {
-		t.Fatalf("GetFunctionCalls extraction failed: %+v", calls)
-	}
+	require.Len(t, calls, 1)
+	assert.Equal(t, "do_stuff", calls[0].Name)
+	assert.Equal(t, callArgs, calls[0].Arguments)
 
 	fRespOK := NewFunctionResponseEvent("agent2", "call-1", "do_stuff", 42, nil)
 	resps := fRespOK.GetFunctionResponses()
-	if len(resps) != 1 || resps[0].Response.(int) != 42 || resps[0].Error != "" {
-		t.Fatalf("Function response success extraction failed: %+v", resps)
-	}
+	require.Len(t, resps, 1)
+	require.IsType(t, 42, resps[0].Response)
+	assert.Equal(t, 42, resps[0].Response.(int))
+	assert.Empty(t, resps[0].Error)
 
 	fRespErr := NewFunctionResponseEvent("agent2", "call-2", "do_stuff", nil, errors.New("boom"))
 	resps = fRespErr.GetFunctionResponses()
-	if resps[0].Error == "" {
-		t.Fatalf("Expected error message in function response: %+v", resps[0])
-	}
+	require.Len(t, resps, 1)
+	assert.NotEmpty(t, resps[0].Error)
 }
 
 func TestEvent_IsFinalResponseLogic(t *testing.T) {
 	e := NewEvent("inv", "authorA")
-	if !e.IsFinalResponse() {
-		t.Error("Expected basic event to be final")
-	}
+	assert.True(t, e.IsFinalResponse(), "basic event should be final")
 
 	partial := true
 	e2 := NewEvent("inv", "agent")
 	e2.Partial = &partial
-	if e2.IsFinalResponse() {
-		t.Error("Partial event should not be final")
-	}
+	assert.False(t, e2.IsFinalResponse(), "partial event should not be final")
 
 	e3 := NewFunctionCallEvent("agent", "f", "")
-	if e3.IsFinalResponse() {
-		t.Error("Event with function call should not be final")
-	}
+	assert.False(t, e3.IsFinalResponse(), "event with function call should not be final")
 
 	e4 := NewFunctionResponseEvent("agent", "call-3", "f", "ok", nil)
-	if e4.IsFinalResponse() {
-		t.Error("Event with function response should not be final")
-	}
+	assert.False(t, e4.IsFinalResponse(), "event with function response should not be final")
 
 	skip := true
 	e5 := NewEvent("inv", "agent")
 	e5.Partial = &partial
 	e5.Actions.SkipSummarization = &skip
-	if !e5.IsFinalResponse() {
-		t.Error("SkipSummarization should force final")
-	}
+	assert.True(t, e5.IsFinalResponse(), "SkipSummarization should force final")
 
 	e6 := NewEvent("inv", "agent")
 	e6.LongRunningToolIDs = []string{"tool1"}
-	if !e6.IsFinalResponse() {
-		t.Error("Long running tool should mark final")
-	}
+	assert.True(t, e6.IsFinalResponse(), "long running tool should mark final")
 }
 
 func TestEvent_IDUniqueness(t *testing.T) {
 	a := NewID()
 	b := NewID()
-	if a == b {
-		t.Error("Expected unique IDs")
-	}
+	assert.NotEqual(t, a, b, "expected unique IDs")
 }
 
 // IO Parts discrimination tests
@@ -100,8 +90,9 @@ func TestParts_DiscriminatedUnion(t *testing.T) {
 	for _, p := range parts {
 		switch pt := p.(type) {
 		case TextPart, DataPart, FilePart, FunctionCallPart, FunctionResponsePart:
+			// expected
 		default:
-			t.Fatalf("Unexpected part type: %T (%v)", pt, pt)
+			require.Failf(t, "unexpected part type", "%T (%v)", pt, pt)
 		}
 	}
 }

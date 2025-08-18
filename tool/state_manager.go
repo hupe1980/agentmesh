@@ -47,11 +47,11 @@ func (t *StateManagerTool) Description() string {
 }
 
 // Parameters returns the JSON schema for tool parameters.
-func (t *StateManagerTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *StateManagerTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"operation": map[string]interface{}{
+		"properties": map[string]any{
+			"operation": map[string]any{
 				"type": "string",
 				"enum": []string{
 					"get_state", "set_state", "transfer_agent", "escalate",
@@ -60,38 +60,38 @@ func (t *StateManagerTool) Parameters() map[string]interface{} {
 				},
 				"description": "The state management operation to perform",
 			},
-			"key": map[string]interface{}{
+			"key": map[string]any{
 				"type":        "string",
 				"description": "State key for get_state/set_state operations",
 			},
-			"value": map[string]interface{}{
+			"value": map[string]any{
 				"description": "Value for set_state operations (any type)",
 			},
-			"agent_name": map[string]interface{}{
+			"agent_name": map[string]any{
 				"type":        "string",
 				"description": "Agent name for transfer_agent operation",
 			},
-			"artifact_id": map[string]interface{}{
+			"artifact_id": map[string]any{
 				"type":        "string",
 				"description": "Artifact identifier for artifact operations",
 			},
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"type":        "string",
 				"description": "Base64 encoded data for save_artifact operation",
 			},
-			"query": map[string]interface{}{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "Search query for memory operations",
 			},
-			"content": map[string]interface{}{
+			"content": map[string]any{
 				"type":        "string",
 				"description": "Content to store in memory",
 			},
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"type":        "object",
 				"description": "Metadata for memory storage",
 			},
-			"limit": map[string]interface{}{
+			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Limit for search operations (default: 10)",
 				"default":     10,
@@ -102,7 +102,7 @@ func (t *StateManagerTool) Parameters() map[string]interface{} {
 }
 
 // Call implements the Tool interface with structured arguments.
-func (t *StateManagerTool) Call(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
+func (t *StateManagerTool) Call(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	operation, ok := args["operation"].(string)
 	if !ok {
 		return nil, fmt.Errorf("operation parameter is required")
@@ -110,34 +110,34 @@ func (t *StateManagerTool) Call(toolCtx *core.ToolContext, args map[string]inter
 
 	switch operation {
 	case "get_state":
-		return t.handleGetState(args, toolCtx)
+		return t.handleGetState(toolCtx, args)
 	case "set_state":
-		return t.handleSetState(args, toolCtx)
+		return t.handleSetState(toolCtx, args)
 	case "transfer_agent":
-		return t.handleTransferAgent(args, toolCtx)
+		return t.handleTransferAgent(toolCtx, args)
 	case "escalate":
-		return t.handleEscalate(args, toolCtx)
+		return t.handleEscalate(toolCtx, args)
 	case "save_artifact":
-		return t.handleSaveArtifact(args, toolCtx)
+		return t.handleSaveArtifact(toolCtx, args)
 	case "load_artifact":
-		return t.handleLoadArtifact(args, toolCtx)
+		return t.handleLoadArtifact(toolCtx, args)
 	case "search_memory":
-		return t.handleSearchMemory(args, toolCtx)
+		return t.handleSearchMemory(toolCtx, args)
 	case "store_memory":
-		return t.handleStoreMemory(args, toolCtx)
+		return t.handleStoreMemory(toolCtx, args)
 	case "list_artifacts":
-		return t.handleListArtifacts(args, toolCtx)
+		return t.handleListArtifacts(toolCtx, args)
 	case "get_session_history":
-		return t.handleGetSessionHistory(args, toolCtx)
+		return t.handleGetSessionHistory(toolCtx, args)
 	case "skip_summarization":
-		return t.handleSkipSummarization(args, toolCtx)
+		return t.handleSkipSummarization(toolCtx, args)
 	default:
 		return nil, fmt.Errorf("unknown operation: %s", operation)
 	}
 }
 
 // handleGetState retrieves a value from session state.
-func (t *StateManagerTool) handleGetState(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleGetState(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	key, ok := args["key"].(string)
 	if !ok {
 		return nil, fmt.Errorf("key parameter is required for get_state operation")
@@ -145,14 +145,14 @@ func (t *StateManagerTool) handleGetState(args map[string]interface{}, toolCtx *
 
 	value, exists := toolCtx.GetState(key)
 	if !exists {
-		return map[string]interface{}{
+		return map[string]any{
 			"key":    key,
 			"exists": false,
 			"value":  nil,
 		}, nil
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"key":    key,
 		"exists": true,
 		"value":  value,
@@ -160,7 +160,7 @@ func (t *StateManagerTool) handleGetState(args map[string]interface{}, toolCtx *
 }
 
 // handleSetState sets a value in session state.
-func (t *StateManagerTool) handleSetState(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleSetState(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	key, ok := args["key"].(string)
 	if !ok {
 		return nil, fmt.Errorf("key parameter is required for set_state operation")
@@ -170,7 +170,7 @@ func (t *StateManagerTool) handleSetState(args map[string]interface{}, toolCtx *
 
 	toolCtx.SetState(key, value)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"key":     key,
 		"value":   value,
 		"success": true,
@@ -179,7 +179,7 @@ func (t *StateManagerTool) handleSetState(args map[string]interface{}, toolCtx *
 }
 
 // handleTransferAgent initiates agent transfer.
-func (t *StateManagerTool) handleTransferAgent(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleTransferAgent(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	agentName, ok := args["agent_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("agent_name parameter is required for transfer_agent operation")
@@ -187,7 +187,7 @@ func (t *StateManagerTool) handleTransferAgent(args map[string]interface{}, tool
 
 	toolCtx.TransferToAgent(agentName)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"agent_name": agentName,
 		"success":    true,
 		"message":    fmt.Sprintf("Transfer to agent '%s' initiated", agentName),
@@ -195,17 +195,17 @@ func (t *StateManagerTool) handleTransferAgent(args map[string]interface{}, tool
 }
 
 // handleEscalate initiates escalation.
-func (t *StateManagerTool) handleEscalate(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleEscalate(toolCtx *core.ToolContext, _ map[string]any) (any, error) {
 	toolCtx.Escalate()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"success": true,
 		"message": "Escalation initiated",
 	}, nil
 }
 
 // handleSaveArtifact saves data as an artifact.
-func (t *StateManagerTool) handleSaveArtifact(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleSaveArtifact(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	artifactID, ok := args["artifact_id"].(string)
 	if !ok {
 		return nil, fmt.Errorf("artifact_id parameter is required for save_artifact operation")
@@ -224,7 +224,7 @@ func (t *StateManagerTool) handleSaveArtifact(args map[string]interface{}, toolC
 		return nil, fmt.Errorf("failed to save artifact: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"artifact_id": artifactID,
 		"size":        len(data),
 		"success":     true,
@@ -233,7 +233,7 @@ func (t *StateManagerTool) handleSaveArtifact(args map[string]interface{}, toolC
 }
 
 // handleLoadArtifact loads data from an artifact.
-func (t *StateManagerTool) handleLoadArtifact(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleLoadArtifact(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	artifactID, ok := args["artifact_id"].(string)
 	if !ok {
 		return nil, fmt.Errorf("artifact_id parameter is required for load_artifact operation")
@@ -244,7 +244,7 @@ func (t *StateManagerTool) handleLoadArtifact(args map[string]interface{}, toolC
 		return nil, fmt.Errorf("failed to load artifact: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"artifact_id": artifactID,
 		"data":        string(data),
 		"size":        len(data),
@@ -253,7 +253,7 @@ func (t *StateManagerTool) handleLoadArtifact(args map[string]interface{}, toolC
 }
 
 // handleSearchMemory searches for relevant memories.
-func (t *StateManagerTool) handleSearchMemory(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleSearchMemory(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	query, ok := args["query"].(string)
 	if !ok {
 		return nil, fmt.Errorf("query parameter is required for search_memory operation")
@@ -269,7 +269,7 @@ func (t *StateManagerTool) handleSearchMemory(args map[string]interface{}, toolC
 		return nil, fmt.Errorf("failed to search memory: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"query":   query,
 		"limit":   limit,
 		"count":   len(results),
@@ -279,14 +279,14 @@ func (t *StateManagerTool) handleSearchMemory(args map[string]interface{}, toolC
 }
 
 // handleStoreMemory stores content in memory.
-func (t *StateManagerTool) handleStoreMemory(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleStoreMemory(toolCtx *core.ToolContext, args map[string]any) (any, error) {
 	content, ok := args["content"].(string)
 	if !ok {
 		return nil, fmt.Errorf("content parameter is required for store_memory operation")
 	}
 
-	metadata := make(map[string]interface{})
-	if m, ok := args["metadata"].(map[string]interface{}); ok {
+	metadata := make(map[string]any)
+	if m, ok := args["metadata"].(map[string]any); ok {
 		metadata = m
 	}
 
@@ -294,7 +294,7 @@ func (t *StateManagerTool) handleStoreMemory(args map[string]interface{}, toolCt
 		return nil, fmt.Errorf("failed to store memory: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"content":  content,
 		"metadata": metadata,
 		"success":  true,
@@ -303,13 +303,13 @@ func (t *StateManagerTool) handleStoreMemory(args map[string]interface{}, toolCt
 }
 
 // handleListArtifacts lists all artifacts in the session.
-func (t *StateManagerTool) handleListArtifacts(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleListArtifacts(toolCtx *core.ToolContext, _ map[string]any) (any, error) {
 	artifacts, err := toolCtx.ListArtifacts()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list artifacts: %w", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"artifacts": artifacts,
 		"count":     len(artifacts),
 		"success":   true,
@@ -317,13 +317,13 @@ func (t *StateManagerTool) handleListArtifacts(args map[string]interface{}, tool
 }
 
 // handleGetSessionHistory retrieves session history.
-func (t *StateManagerTool) handleGetSessionHistory(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleGetSessionHistory(toolCtx *core.ToolContext, _ map[string]any) (any, error) {
 	history := toolCtx.GetSessionHistory()
 
 	// Convert events to a more readable format
-	events := make([]map[string]interface{}, len(history))
+	events := make([]map[string]any, len(history))
 	for i, ev := range history {
-		events[i] = map[string]interface{}{
+		events[i] = map[string]any{
 			"id":          ev.ID,
 			"author":      ev.Author,
 			"timestamp":   ev.Timestamp.UTC().Format(time.RFC3339Nano),
@@ -353,7 +353,7 @@ func (t *StateManagerTool) handleGetSessionHistory(args map[string]interface{}, 
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"events":  events,
 		"count":   len(events),
 		"success": true,
@@ -361,10 +361,10 @@ func (t *StateManagerTool) handleGetSessionHistory(args map[string]interface{}, 
 }
 
 // handleSkipSummarization sets the skip summarization flag.
-func (t *StateManagerTool) handleSkipSummarization(args map[string]interface{}, toolCtx *core.ToolContext) (interface{}, error) {
+func (t *StateManagerTool) handleSkipSummarization(toolCtx *core.ToolContext, _ map[string]any) (any, error) {
 	toolCtx.SkipSummarization()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"success": true,
 		"message": "Summarization will be skipped for this interaction",
 	}, nil

@@ -113,7 +113,7 @@ func (b *EventBuilder) LongRunning(ids ...string) *EventBuilder {
 
 // Build constructs the core.Event value.
 func (b *EventBuilder) Build() core.Event {
-	ev := core.NewEvent(b.author, b.invocationID)
+	ev := core.NewEvent(b.invocationID, b.author)
 	if b.id != "" {
 		ev.ID = b.id
 	}

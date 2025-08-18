@@ -9,8 +9,10 @@ type SingleAgentFlow struct{ *BaseFlow }
 // NewSingleAgentFlow creates a new basic single-agent flow.
 func NewSingleAgentFlow(agent FlowAgent) *SingleAgentFlow {
 	baseFlow := NewBaseFlow(agent)
+
 	// Add default processors for advanced functionality
 	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
 	baseFlow.AddRequestProcessor(NewContentsProcessor())
+
 	return &SingleAgentFlow{BaseFlow: baseFlow}
 }

@@ -11,7 +11,7 @@ import (
 // FunctionTool is a generic adapter that exposes a plain Go function as an AgentMesh tool.
 //
 // Responsibilities:
-//   - Holds a lightweight JSON-Schema–like parameter specification (parameters)
+//   - Holds a lightweight JSON-Schema-like parameter specification (parameters)
 //   - Validates user / model supplied arguments against that schema before execution
 //   - Invokes the wrapped function with a *core.ToolContext giving access to session state,
 //     logging, function call IDs, artifact helpers, etc.

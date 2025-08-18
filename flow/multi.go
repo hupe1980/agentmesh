@@ -9,8 +9,10 @@ type MultiAgentFlow struct{ *BaseFlow }
 // NewMultiAgentFlow creates a new auto flow with default processors.
 func NewMultiAgentFlow(agent FlowAgent) *MultiAgentFlow {
 	baseFlow := NewBaseFlow(agent)
+
 	// Add default processors for advanced functionality
 	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
 	baseFlow.AddRequestProcessor(NewContentsProcessor())
+
 	return &MultiAgentFlow{BaseFlow: baseFlow}
 }

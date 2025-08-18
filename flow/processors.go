@@ -44,6 +44,7 @@ func (p *InstructionsProcessor) ProcessRequest(invocationCtx *core.InvocationCon
 	return nil
 }
 
+// ContentsProcessor handles user content processing.
 type ContentsProcessor struct{}
 
 // NewContentsProcessor creates a new contents processor.
@@ -74,5 +75,6 @@ func (p *ContentsProcessor) ProcessRequest(invocationCtx *core.InvocationContext
 	}
 
 	req.Contents = contents
+
 	return nil
 }

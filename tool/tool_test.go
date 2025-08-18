@@ -23,7 +23,7 @@ type sampleSchema struct {
 
 func TestCreateSchema(t *testing.T) {
 	schema := util.CreateSchema(sampleSchema{})
-	props, ok := schema["properties"].(map[string]interface{})
+	props, ok := schema["properties"].(map[string]any)
 	assert.True(t, ok)
 	// Properties present
 	assert.Contains(t, props, "a")
@@ -31,8 +31,8 @@ func TestCreateSchema(t *testing.T) {
 	assert.Contains(t, props, "c")
 	// Required only includes non-pointer, non-omitempty exported fields
 	req, _ := schema["required"].([]string)
-	if req == nil { // reflection may produce []interface{}
-		ifaceReq, _ := schema["required"].([]interface{})
+	if req == nil { // reflection may produce []any
+		ifaceReq, _ := schema["required"].([]any)
 		for _, v := range ifaceReq {
 			req = append(req, v.(string))
 		}
@@ -41,21 +41,21 @@ func TestCreateSchema(t *testing.T) {
 }
 
 func TestValidateParameters(t *testing.T) {
-	schema := map[string]interface{}{
+	schema := map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"x": map[string]interface{}{"type": "integer"},
+		"properties": map[string]any{
+			"x": map[string]any{"type": "integer"},
 		},
-		// Use []interface{} to mirror possible JSON decoded schema shape
-		"required": []interface{}{"x"},
+		// Use []any to mirror possible JSON decoded schema shape
+		"required": []any{"x"},
 	}
 
 	// Success
-	err := util.ValidateParameters(map[string]interface{}{"x": 5}, schema)
+	err := util.ValidateParameters(map[string]any{"x": 5}, schema)
 	assert.NoError(t, err)
 
 	// Missing required
-	err = util.ValidateParameters(map[string]interface{}{}, schema)
+	err = util.ValidateParameters(map[string]any{}, schema)
 	assert.Error(t, err)
 	if vErr, ok := err.(*ValidationError); ok {
 		assert.Equal(t, "x", vErr.Field)
@@ -64,7 +64,7 @@ func TestValidateParameters(t *testing.T) {
 	}
 
 	// Wrong type
-	err = util.ValidateParameters(map[string]interface{}{"x": "not-int"}, schema)
+	err = util.ValidateParameters(map[string]any{"x": "not-int"}, schema)
 	assert.Error(t, err)
 	if vErr, ok := err.(*ValidationError); ok {
 		assert.Contains(t, vErr.Message, "expected type integer")
@@ -76,16 +76,16 @@ func TestValidateParameters(t *testing.T) {
 // -------------------- FunctionTool Tests --------------------
 
 func TestFunctionTool_Success(t *testing.T) {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"a": map[string]interface{}{"type": "number"},
-			"b": map[string]interface{}{"type": "number"},
+		"properties": map[string]any{
+			"a": map[string]any{"type": "number"},
+			"b": map[string]any{"type": "number"},
 		},
 		"required": []string{"a", "b"},
 	}
 
-	sumTool := NewFunctionTool("sum", "Add numbers", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
+	sumTool := NewFunctionTool("sum", "Add numbers", params, func(_ *core.ToolContext, args map[string]any) (any, error) {
 		a := args["a"].(float64)
 		b := args["b"].(float64)
 		return a + b, nil
@@ -93,23 +93,25 @@ func TestFunctionTool_Success(t *testing.T) {
 
 	inv := dummyInvocationContext()
 	tc := core.NewToolContext(inv, "fc1")
-	result, err := sumTool.Call(tc, map[string]interface{}{"a": 2.0, "b": 3.0})
+	result, err := sumTool.Call(tc, map[string]any{"a": 2.0, "b": 3.0})
 	assert.NoError(t, err)
 	assert.Equal(t, 5.0, result)
 }
 
 func TestFunctionTool_ValidationError(t *testing.T) {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"a": map[string]interface{}{"type": "number"},
+		"properties": map[string]any{
+			"a": map[string]any{"type": "number"},
 		},
 		// Use interface slice to match ValidateParameters implementation expectation
-		"required": []interface{}{"a"},
+		"required": []any{"a"},
 	}
-	tTool := NewFunctionTool("test", "Test", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) { return 0, nil })
+	tTool := NewFunctionTool("test", "Test", params, func(_ *core.ToolContext, _ map[string]any) (any, error) {
+		return 0, nil
+	})
 	tc := core.NewToolContext(dummyInvocationContext(), "fc2")
-	_, err := tTool.Call(tc, map[string]interface{}{})
+	_, err := tTool.Call(tc, map[string]any{})
 	assert.Error(t, err)
 	toolErr, ok := err.(*ToolError)
 	assert.True(t, ok)
@@ -117,21 +119,17 @@ func TestFunctionTool_ValidationError(t *testing.T) {
 }
 
 func TestFunctionTool_ExecutionError(t *testing.T) {
-	params := map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
-	execTool := NewFunctionTool("fail", "Fails", params, func(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error) {
+	params := map[string]any{"type": "object", "properties": map[string]any{}}
+	execTool := NewFunctionTool("fail", "Fails", params, func(_ *core.ToolContext, _ map[string]any) (any, error) {
 		return nil, errors.New("boom")
 	})
 	tc := core.NewToolContext(dummyInvocationContext(), "fc3")
-	_, err := execTool.Call(tc, map[string]interface{}{})
+	_, err := execTool.Call(tc, map[string]any{})
 	assert.Error(t, err)
 	toolErr, ok := err.(*ToolError)
 	assert.True(t, ok)
 	assert.Equal(t, "EXECUTION_ERROR", toolErr.Code)
 }
-
-// -------------------- StateManagerTool Tests --------------------
-
-// ---- Local minimal in-memory service mocks (avoid import cycle with runner) ----
 
 type memSessionService struct {
 	mu       sync.RWMutex
@@ -172,7 +170,7 @@ func (s *memSessionService) AppendEvent(id string, ev core.Event) error {
 	s.mu.Unlock()
 	return nil
 }
-func (s *memSessionService) ApplyDelta(id string, delta map[string]interface{}) error {
+func (s *memSessionService) ApplyDelta(id string, delta map[string]any) error {
 	s.mu.Lock()
 	if _, ok := s.sessions[id]; !ok {
 		s.sessions[id] = core.NewSession(id)
@@ -216,12 +214,14 @@ func (a *memArtifactService) Get(sid, aid string) ([]byte, error) {
 func (a *memArtifactService) List(sid string) ([]string, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+
 	m := a.data[sid]
 
-	var res []string
+	res := make([]string, 0, len(m))
 	for k := range m {
 		res = append(res, k)
 	}
+
 	return res, nil
 }
 func (a *memArtifactService) Delete(sid, aid string) error {
@@ -242,7 +242,7 @@ func newMemMemoryService() *memMemoryService {
 	return &memMemoryService{store: map[string][]core.SearchResult{}}
 }
 
-func (m *memMemoryService) Search(sid, q string, limit int) ([]core.SearchResult, error) {
+func (m *memMemoryService) Search(sid, _ string, limit int) ([]core.SearchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	results := m.store[sid]
@@ -251,7 +251,7 @@ func (m *memMemoryService) Search(sid, q string, limit int) ([]core.SearchResult
 	}
 	return results, nil
 }
-func (m *memMemoryService) Store(sid, content string, metadata map[string]interface{}) error {
+func (m *memMemoryService) Store(sid, content string, metadata map[string]any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	mr := core.SearchResult{ID: content, Content: content, Score: 1.0, Metadata: metadata}
@@ -259,22 +259,25 @@ func (m *memMemoryService) Store(sid, content string, metadata map[string]interf
 	return nil
 }
 
-func (m *memMemoryService) Delete(sid, memoryID string) error { return nil }
+func (m *memMemoryService) Delete(_, _ string) error { return nil }
 
 // Added methods to satisfy memory.MemoryService interface
-func (m *memMemoryService) Get(sid string) (map[string]any, error)     { return map[string]any{}, nil }
-func (m *memMemoryService) Put(sid string, delta map[string]any) error { return nil }
+func (m *memMemoryService) Get(_ string) (map[string]any, error) { return map[string]any{}, nil }
+func (m *memMemoryService) Put(_ string, _ map[string]any) error { return nil }
 
 func dummyInvocationContext() *core.InvocationContext {
 	sessSvc := newMemSessionService()
 	artSvc := newMemArtifactService()
 	memSvc := newMemMemoryService()
+
 	sessionID := "sess-1"
 	if _, err := sessSvc.Create(sessionID); err != nil {
 		panic(err)
 	}
+
 	emit := make(chan core.Event, 10)
 	resume := make(chan struct{}, 1)
+
 	return core.NewInvocationContext(context.Background(), sessionID, "inv-1", core.AgentInfo{Name: "Agent", Type: "test"}, core.Content{}, emit, resume, core.NewSession(sessionID), sessSvc, artSvc, memSvc, logging.NoOpLogger{})
 }
 
@@ -284,24 +287,25 @@ func TestStateManagerTool_SetAndGetState(t *testing.T) {
 	tc := core.NewToolContext(inv, "fc-set")
 
 	// set_state
-	res, err := sm.Call(tc, map[string]interface{}{"operation": "set_state", "key": "foo", "value": "bar"})
+	res, err := sm.Call(tc, map[string]any{"operation": "set_state", "key": "foo", "value": "bar"})
 	assert.NoError(t, err)
-	m := res.(map[string]interface{})
+
+	m := res.(map[string]any)
 	assert.Equal(t, "foo", m["key"])
 	assert.Equal(t, "bar", m["value"])
 	assert.Equal(t, "bar", tc.Actions().StateDelta["foo"])
 
 	// Apply actions to invocation context via event simulation
-	ev := core.Event{Actions: core.EventActions{StateDelta: map[string]interface{}{}}}
+	ev := core.Event{Actions: core.EventActions{StateDelta: map[string]any{}}}
 	tc.InternalApplyActions(&ev)
 	// Simulate commit to session
 	inv.Session.ApplyStateDelta(ev.Actions.StateDelta)
 
 	// get_state
 	tcGet := core.NewToolContext(inv, "fc-get")
-	res, err = sm.Call(tcGet, map[string]interface{}{"operation": "get_state", "key": "foo"})
+	res, err = sm.Call(tcGet, map[string]any{"operation": "get_state", "key": "foo"})
 	assert.NoError(t, err)
-	gm := res.(map[string]interface{})
+	gm := res.(map[string]any)
 	assert.True(t, gm["exists"].(bool))
 	assert.Equal(t, "bar", gm["value"])
 }
@@ -312,7 +316,7 @@ func TestStateManagerTool_FlowControlActions(t *testing.T) {
 	tc := core.NewToolContext(inv, "fc-flow")
 
 	// escalate
-	res, err := sm.Call(tc, map[string]interface{}{"operation": "escalate"})
+	res, err := sm.Call(tc, map[string]any{"operation": "escalate"})
 	assert.NoError(t, err)
 	_ = res
 	assert.NotNil(t, tc.Actions().Escalate)
@@ -320,14 +324,14 @@ func TestStateManagerTool_FlowControlActions(t *testing.T) {
 
 	// transfer_agent
 	tc2 := core.NewToolContext(inv, "fc-transfer")
-	_, err = sm.Call(tc2, map[string]interface{}{"operation": "transfer_agent", "agent_name": "NextAgent"})
+	_, err = sm.Call(tc2, map[string]any{"operation": "transfer_agent", "agent_name": "NextAgent"})
 	assert.NoError(t, err)
 	assert.NotNil(t, tc2.Actions().TransferToAgent)
 	assert.Equal(t, "NextAgent", *tc2.Actions().TransferToAgent)
 
 	// skip_summarization
 	tc3 := core.NewToolContext(inv, "fc-skip")
-	_, err = sm.Call(tc3, map[string]interface{}{"operation": "skip_summarization"})
+	_, err = sm.Call(tc3, map[string]any{"operation": "skip_summarization"})
 	assert.NoError(t, err)
 	assert.NotNil(t, tc3.Actions().SkipSummarization)
 	assert.True(t, *tc3.Actions().SkipSummarization)

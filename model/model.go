@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
 )
@@ -75,78 +74,3 @@ type Model interface {
 	// Info returns information about the model implementation.
 	Info() Info
 }
-
-// MockModel is a lightweight in‑memory Model useful for tests & examples.
-type MockModel struct {
-	info      Info
-	responses map[string]string
-}
-
-// NewMockModel constructs a MockModel with basic tool support enabled.
-func NewMockModel(name, provider string) *MockModel {
-	return &MockModel{
-		info: Info{
-			Name:          name,
-			Provider:      provider,
-			SupportsTools: true,
-		},
-		responses: make(map[string]string),
-	}
-}
-
-// AddResponse registers a deterministic canned completion for an input prompt.
-func (m *MockModel) AddResponse(prompt, response string) { m.responses[prompt] = response }
-
-// Generate implements Model; emits optional streaming char chunks then final response.
-func (m *MockModel) Generate(ctx context.Context, req Request) (<-chan Response, <-chan error) {
-	respCh := make(chan Response, 16)
-	errCh := make(chan error, 1)
-
-	go func() {
-		defer close(respCh)
-		defer close(errCh)
-		if len(req.Contents) == 0 {
-			errCh <- fmt.Errorf("no contents provided")
-			return
-		}
-		last := req.Contents[len(req.Contents)-1]
-		var inputText string
-		for _, p := range last.Parts {
-			if tp, ok := p.(core.TextPart); ok {
-				inputText += tp.Text
-			}
-		}
-		full := m.responses[inputText]
-		if full == "" {
-			full = fmt.Sprintf("Mock response to: %s", inputText)
-		}
-		if req.Stream {
-			for _, r := range full {
-				select {
-				case <-ctx.Done():
-					errCh <- ctx.Err()
-					return
-				case respCh <- Response{
-					Partial: true,
-					Content: core.Content{
-						Role:  "assistant",
-						Parts: []core.Part{core.TextPart{Text: string(r)}},
-					},
-				}:
-				}
-			}
-		}
-		respCh <- Response{
-			Partial: false,
-			Content: core.Content{
-				Role:  "assistant",
-				Parts: []core.Part{core.TextPart{Text: full}},
-			},
-			FinishReason: "stop",
-		}
-	}()
-	return respCh, errCh
-}
-
-// Info implements Model interface.
-func (m *MockModel) Info() Info { return m.info }

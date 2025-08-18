@@ -18,7 +18,7 @@ func TestNewSequentialAgent(t *testing.T) {
 	agent := NewSequentialAgent("Sequential Agent", child1, child2)
 
 	assert.NotNil(t, agent)
-	assert.Equal(t, "Sequential Agent", agent.BaseAgent.Name())
+	assert.Equal(t, "Sequential Agent", agent.Name())
 	assert.Len(t, agent.children, 2)
 	assert.Equal(t, child1, agent.children[0])
 	assert.Equal(t, child2, agent.children[1])

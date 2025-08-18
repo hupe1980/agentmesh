@@ -51,6 +51,7 @@ func makeInvocationCtx(t *testing.T, agentID, agentName, agentType string) *core
 	resume := make(chan struct{}, 1)
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "hello"}}}
 	info := core.AgentInfo{Name: agentName, Type: agentType}
+
 	return core.NewInvocationContext(context.Background(), "session-1", "inv-1", info, userContent, emit, resume, core.NewSession("session-1"), nil, nil, nil, logging.NoOpLogger{})
 }
 

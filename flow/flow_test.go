@@ -91,17 +91,21 @@ func (m *MockModel) Info() model.Info { return m.info }
 
 type MockMemoryService struct{}
 
-func (m *MockMemoryService) Get(sessionID string) (map[string]any, error) {
+func (m *MockMemoryService) Get(_ string) (map[string]any, error) {
 	return map[string]any{}, nil
 }
-func (m *MockMemoryService) Put(sessionID string, delta map[string]any) error { return nil }
-func (m *MockMemoryService) Search(sessionID, query string, limit int) ([]core.SearchResult, error) {
+
+func (m *MockMemoryService) Put(_ string, _ map[string]any) error { return nil }
+
+func (m *MockMemoryService) Search(_ string, _ string, _ int) ([]core.SearchResult, error) {
 	return []core.SearchResult{}, nil
 }
-func (m *MockMemoryService) Store(sessionID, content string, metadata map[string]interface{}) error {
+
+func (m *MockMemoryService) Store(_ string, _ string, _ map[string]any) error {
 	return nil
 }
-func (m *MockMemoryService) Delete(sessionID, memoryID string) error { return nil }
+
+func (m *MockMemoryService) Delete(_ string, _ string) error { return nil }
 
 func newTestInvocationContext() *core.InvocationContext {
 	ctx := context.Background()
@@ -117,22 +121,33 @@ type mockFlowAgent struct {
 	llm  model.Model
 }
 
-func (m *mockFlowAgent) GetName() string     { return m.name }
+func (m *mockFlowAgent) GetName() string { return m.name }
+
 func (m *mockFlowAgent) GetLLM() model.Model { return m.llm }
-func (m *mockFlowAgent) ResolveInstructions(invocationCtx *core.InvocationContext) (string, error) {
+
+func (m *mockFlowAgent) ResolveInstructions(_ *core.InvocationContext) (string, error) {
 	return "You are a test assistant.", nil
 }
+
 func (m *mockFlowAgent) GetTools() map[string]tool.Tool { return map[string]tool.Tool{} }
-func (m *mockFlowAgent) GetSubAgents() []FlowAgent      { return []FlowAgent{} }
+
+func (m *mockFlowAgent) GetSubAgents() []FlowAgent { return []FlowAgent{} }
+
 func (m *mockFlowAgent) IsFunctionCallingEnabled() bool { return false }
-func (m *mockFlowAgent) IsStreamingEnabled() bool       { return false }
-func (m *mockFlowAgent) IsTransferEnabled() bool        { return false }
-func (m *mockFlowAgent) GetOutputKey() string           { return "" }
-func (m *mockFlowAgent) MaxHistoryMessages() int        { return 10 }
-func (m *mockFlowAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error) {
+
+func (m *mockFlowAgent) IsStreamingEnabled() bool { return false }
+
+func (m *mockFlowAgent) IsTransferEnabled() bool { return false }
+
+func (m *mockFlowAgent) GetOutputKey() string { return "" }
+
+func (m *mockFlowAgent) MaxHistoryMessages() int { return 10 }
+
+func (m *mockFlowAgent) ExecuteTool(_ *core.ToolContext, _ string, _ string) (any, error) {
 	return nil, nil
 }
-func (m *mockFlowAgent) TransferToAgent(invocationCtx *core.InvocationContext, agentName string) error {
+
+func (m *mockFlowAgent) TransferToAgent(_ *core.InvocationContext, _ string) error {
 	return nil
 }
 

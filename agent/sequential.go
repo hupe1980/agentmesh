@@ -1,8 +1,3 @@
-// Package agent provides sequential execution coordination for multiple agents.
-//
-// SequentialAgent executes child agents in a defined order, allowing complex
-// workflows to be broken down into discrete, manageable steps.
-
 package agent
 
 import (

@@ -1,4 +1,5 @@
-// Package main contains runnable examples demonstrating AgentMesh capabilities.
+// Package examples contains aggregated documentation for runnable subdirectory
+// examples demonstrating AgentMesh capabilities.
 //
 // These examples showcase different usage patterns and integration approaches:
 //
@@ -21,4 +22,4 @@
 // These examples serve as both documentation and integration tests,
 // demonstrating real-world usage patterns for different agent types
 // and orchestration scenarios.
-package main
+package examples

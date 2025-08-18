@@ -8,31 +8,32 @@ import (
 
 // ValidationError represents parameter validation errors with detailed information.
 type ValidationError struct {
-	Field   string      `json:"field"`   // Field that failed validation
-	Value   interface{} `json:"value"`   // Value that was provided
-	Message string      `json:"message"` // Human-readable error message
+	Field   string `json:"field"`   // Field that failed validation
+	Value   any    `json:"value"`   // Value that was provided
+	Message string `json:"message"` // Human-readable error message
 }
 
+// Error implements the error interface for ValidationError.
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("validation error for field '%s': %s", e.Field, e.Message)
 }
 
 // CreateSchema creates a JSON schema from a Go struct using reflection.
 // This is a convenience function for creating parameter schemas from Go types.
-func CreateSchema(structType interface{}) map[string]interface{} {
+func CreateSchema(structType any) map[string]any {
 	t := reflect.TypeOf(structType)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
 	if t.Kind() != reflect.Struct {
-		return map[string]interface{}{
+		return map[string]any{
 			"type":       "object",
-			"properties": map[string]interface{}{},
+			"properties": map[string]any{},
 		}
 	}
 
-	properties := make(map[string]interface{})
+	properties := make(map[string]any)
 	required := make([]string, 0)
 
 	for i := 0; i < t.NumField(); i++ {
@@ -54,7 +55,7 @@ func CreateSchema(structType interface{}) map[string]interface{} {
 			}
 		}
 
-		fieldSchema := map[string]interface{}{
+		fieldSchema := map[string]any{
 			"type": getJSONType(field.Type),
 		}
 
@@ -69,7 +70,7 @@ func CreateSchema(structType interface{}) map[string]interface{} {
 		}
 	}
 
-	schema := map[string]interface{}{
+	schema := map[string]any{
 		"type":       "object",
 		"properties": properties,
 	}
@@ -82,9 +83,9 @@ func CreateSchema(structType interface{}) map[string]interface{} {
 }
 
 // ValidateParameters validates parameters against a JSON schema.
-func ValidateParameters(params map[string]interface{}, schema map[string]interface{}) error {
+func ValidateParameters(params map[string]any, schema map[string]any) error {
 	// Extract required fields
-	required, _ := schema["required"].([]interface{})
+	required, _ := schema["required"].([]any)
 	for _, req := range required {
 		fieldName, ok := req.(string)
 		if !ok {
@@ -99,14 +100,14 @@ func ValidateParameters(params map[string]interface{}, schema map[string]interfa
 	}
 
 	// Validate field types
-	properties, _ := schema["properties"].(map[string]interface{})
+	properties, _ := schema["properties"].(map[string]any)
 	for fieldName, value := range params {
 		propSchema, exists := properties[fieldName]
 		if !exists {
 			continue // Allow extra fields
 		}
 
-		propMap, ok := propSchema.(map[string]interface{})
+		propMap, ok := propSchema.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -124,8 +125,7 @@ func ValidateParameters(params map[string]interface{}, schema map[string]interfa
 	return nil
 }
 
-// Helper functions for schema creation and validation.
-
+// getJSONType returns the JSON schema type for a given Go type.
 func getJSONType(t reflect.Type) string {
 	switch t.Kind() {
 	case reflect.String:
@@ -148,6 +148,7 @@ func getJSONType(t reflect.Type) string {
 	}
 }
 
+// hasOmitEmpty checks if a JSON tag has the "omitempty" option.
 func hasOmitEmpty(tag string) bool {
 	parts := strings.Split(tag, ",")
 	for _, part := range parts[1:] {
@@ -158,11 +159,13 @@ func hasOmitEmpty(tag string) bool {
 	return false
 }
 
+// isPointer checks if a type is a pointer.
 func isPointer(t reflect.Type) bool {
 	return t.Kind() == reflect.Ptr
 }
 
-func isValidType(value interface{}, expectedType string) bool {
+// isValidType checks if a value is valid according to the expected JSON schema type.
+func isValidType(value any, expectedType string) bool {
 	if value == nil {
 		return true // nil is valid for any type
 	}
@@ -190,10 +193,10 @@ func isValidType(value interface{}, expectedType string) bool {
 		_, ok := value.(bool)
 		return ok
 	case "array":
-		_, ok := value.([]interface{})
+		_, ok := value.([]any)
 		return ok
 	case "object":
-		_, ok := value.(map[string]interface{})
+		_, ok := value.(map[string]any)
 		return ok
 	default:
 		return true // Unknown types are assumed valid

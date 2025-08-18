@@ -1,5 +1,3 @@
-// ModelAgent integrates with language models to provide natural language
-// processing, function calling, streaming, and hierarchical transfer.
 package agent
 
 import (
@@ -312,7 +310,7 @@ func (a *ModelAgent) Run(invocationCtx *core.InvocationContext) error {
 	ctx := invocationCtx.Context // engine manages Start/Stop lifecycle now
 
 	// Select appropriate flow based on agent capabilities
-	selector := flow.NewFlowSelector()
+	selector := flow.NewSelector()
 	fl := selector.SelectFlow(a)
 	logger.Debug(
 		"agent.flow.selected",

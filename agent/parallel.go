@@ -1,8 +1,3 @@
-// Package agent provides parallel execution coordination for multiple agents.
-//
-// ParallelAgent executes child agents concurrently with branch isolation,
-// enabling efficient processing of independent tasks.
-
 package agent
 
 import (

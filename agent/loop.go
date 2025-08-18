@@ -1,8 +1,3 @@
-// Package agent provides loop-based execution coordination for repetitive tasks.
-//
-// LoopAgent executes a single child agent repeatedly with configurable termination
-// controls (max iterations, predicate, interval, escalation monitoring).
-
 package agent
 
 import (

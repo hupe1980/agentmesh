@@ -37,10 +37,6 @@ func (b *BaseAgent) Name() string { return b.name }
 // Description returns a detailed description of this agent's purpose.
 func (b *BaseAgent) Description() string { return b.description }
 
-// SetDescription updates the agent's description.
-// This is useful for providing more detailed information about the agent's capabilities.
-func (b *BaseAgent) SetDescription(desc string) { b.description = desc }
-
 // Start initializes the agent and prepares it for execution.
 //
 // This method sets up the agent's cancellation context and marks it as running.

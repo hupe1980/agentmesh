@@ -46,28 +46,6 @@ type Tool interface {
 	Call(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error)
 }
 
-// ToolMetadata provides additional information about a tool for enhanced functionality.
-type ToolMetadata interface {
-	// Version returns the tool version for compatibility tracking
-	Version() string
-
-	// Category returns the tool category for organization
-	Category() string
-
-	// Tags returns descriptive tags for tool discovery
-	Tags() []string
-
-	// Examples returns usage examples for documentation
-	Examples() []ToolExample
-}
-
-// ToolExample represents a usage example for documentation and testing.
-type ToolExample struct {
-	Description string                 `json:"description"` // What this example demonstrates
-	Input       map[string]interface{} `json:"input"`       // Example input parameters
-	Output      string                 `json:"output"`      // Expected output
-}
-
 // ValidationError represents parameter validation errors with detailed information.
 type ValidationError = util.ValidationError
 
