@@ -18,18 +18,26 @@ type EventActions struct {
 	RequestedAuthConfigs map[string]any `json:"requested_auth_configs,omitempty"`
 }
 
-// Event is the primary unit of communication between agents, engine and clients.
-// It is an immutable (after emission) record capturing authored content, timing
-// information and orchestration directives (Actions). Content may be nil for
-// purely control / error events. All timestamps use seconds (float) for easy
-// JSON interoperability.
+// Event is the primary unit of communication between agents, the engine and
+// external clients. After emission it should be treated as immutable. It
+// captures:
+//   - Correlation (InvocationID, ID, Author)
+//   - Conversational content (optional role-based Parts)
+//   - Orchestration directives (Actions)
+//   - Tool / long‑running operation hints (LongRunningToolIDs)
+//   - Error / interruption metadata
+//   - High precision UTC timestamp
+//
+// Content may be nil for control or error-only events. Timestamp uses a native
+// time.Time (UTC). Use helper methods (e.g. UnixSeconds) if numeric forms are
+// needed for metrics or legacy clients.
 type Event struct {
+	ID                 string            `json:"id"`
 	InvocationID       string            `json:"invocation_id"`
 	Author             string            `json:"author"`
 	Actions            EventActions      `json:"actions"`
 	LongRunningToolIDs []string          `json:"long_running_tool_ids,omitempty"`
 	Branch             *string           `json:"branch,omitempty"`
-	ID                 string            `json:"id"`
 	Timestamp          time.Time         `json:"timestamp"`
 	Content            *Content          `json:"content,omitempty"`
 	Partial            *bool             `json:"partial,omitempty"`
@@ -64,8 +72,8 @@ func NewMessageEvent(author, message string) Event {
 
 // NewUserMessageEvent convenience wrapper for a user-authored text message.
 // NewUserMessageEvent creates a user-authored text message event.
-func NewUserMessageEvent(message string) Event {
-	e := NewEvent("", "user")
+func NewUserMessageEvent(invocationID, message string) Event {
+	e := NewEvent(invocationID, "user")
 	e.Content = &Content{Role: "user", Parts: []Part{TextPart{Text: message}}}
 	return e
 }
@@ -117,11 +125,13 @@ func NewFunctionResponseEvent(author, id, functionName string, result interface{
 // Returns a string representation of a new UUID.
 func NewID() string { return uuid.NewString() }
 
-// IsPartial reports whether the event represents a streaming / incomplete chunk.
+// IsPartial reports whether this event represents a streaming / incomplete
+// fragment that will be followed by additional events composing the final
+// assistant turn.
 func (e Event) IsPartial() bool { return e.Partial != nil && *e.Partial }
 
-// GetFunctionCalls extracts all function call parts from Content (best‑effort order preserved).
-// GetFunctionCalls returns any FunctionCall parts contained in the event content.
+// GetFunctionCalls returns any FunctionCall parts contained within the event
+// content preserving their original order.
 func (e Event) GetFunctionCalls() []FunctionCall {
 	if e.Content == nil {
 		return nil
@@ -135,8 +145,8 @@ func (e Event) GetFunctionCalls() []FunctionCall {
 	return calls
 }
 
-// GetFunctionResponses extracts all function response parts from Content.
-// GetFunctionResponses returns any FunctionResponse parts contained in the event content.
+// GetFunctionResponses returns any FunctionResponse parts contained within the
+// event content preserving their original order.
 func (e Event) GetFunctionResponses() []FunctionResponse {
 	if e.Content == nil {
 		return nil
@@ -150,7 +160,7 @@ func (e Event) GetFunctionResponses() []FunctionResponse {
 	return responses
 }
 
-// HasTrailingCodeExecutionResult placeholder for future execution result semantics.
+// HasTrailingCodeExecutionResult always false (future code exec placeholder).
 func (e Event) HasTrailingCodeExecutionResult() bool { return false }
 
 // IsFinalResponse implements heuristic used by higher layers to decide when an
@@ -160,5 +170,12 @@ func (e Event) IsFinalResponse() bool {
 		return true
 	}
 
-	return len(e.GetFunctionCalls()) == 0 && len(e.GetFunctionResponses()) == 0 && !e.IsPartial() && !e.HasTrailingCodeExecutionResult()
+	return len(e.GetFunctionCalls()) == 0 &&
+		len(e.GetFunctionResponses()) == 0 &&
+		!e.IsPartial() &&
+		!e.HasTrailingCodeExecutionResult()
 }
+
+// UnixSeconds returns the timestamp as fractional seconds since Unix epoch.
+// Useful for metrics & numeric serialization paths.
+func (e Event) UnixSeconds() float64 { return float64(e.Timestamp.UnixNano()) / 1e9 }

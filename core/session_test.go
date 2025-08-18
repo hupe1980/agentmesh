@@ -4,15 +4,19 @@ import "testing"
 
 func TestSession_ApplyStateDeltaAndClone(t *testing.T) {
 	s := NewSession("s1")
-	delta := map[string]interface{}{"a": 1, "b": "x"}
+
+	delta := map[string]any{"a": 1, "b": "x"}
+
 	s.ApplyStateDelta(delta)
 	if v, ok := s.GetState("a"); !ok || v.(int) != 1 {
 		t.Fatalf("State not applied: %+v", s.State)
 	}
+
 	clone := s.Clone()
 	if clone == s {
 		t.Error("Clone should be a different pointer")
 	}
+
 	clone.SetState("c", 2)
 	if _, exists := s.GetState("c"); exists {
 		t.Error("Original should not have clone's new key")
@@ -20,7 +24,7 @@ func TestSession_ApplyStateDeltaAndClone(t *testing.T) {
 }
 
 func TestSession_AddEventAndHistory(t *testing.T) {
-	userEv := NewUserMessageEvent("hi")
+	userEv := NewUserMessageEvent("inv-123", "hi")
 	assistantEv := NewMessageEvent("assistant", "hello")
 	assistantEv.Author = "assistant"
 	s := NewSession("s2")

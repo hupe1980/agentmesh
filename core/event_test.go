@@ -17,8 +17,8 @@ func TestEvent_ConstructorsAndMethods(t *testing.T) {
 		t.Fatalf("NewMessageEvent malformed: %+v", msg)
 	}
 
-	user := NewUserMessageEvent("hi")
-	if user.Content == nil || user.Content.Role != "user" {
+	user := NewUserMessageEvent("inv-123", "hi")
+	if e.InvocationID != "inv-123" || user.Content == nil || user.Content.Role != "user" {
 		t.Fatalf("NewUserMessageEvent malformed: %+v", user)
 	}
 

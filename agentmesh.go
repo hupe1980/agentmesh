@@ -127,6 +127,7 @@ func (m *AgentMesh) InvokeSync(
 					return invocationID, events, nil // Successful completion
 				}
 			}
+
 			// Collect event
 			events = append(events, event)
 

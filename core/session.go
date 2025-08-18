@@ -15,53 +15,65 @@ import (
 //     excludes partial streaming fragments
 //   - Clone performs deep copies of maps/slices for safe divergence.
 type Session struct {
-	ID       string                 `json:"id"`
-	State    map[string]interface{} `json:"state"`
-	Events   []Event                `json:"events"`
-	Created  time.Time              `json:"created"`
-	Updated  time.Time              `json:"updated"`
-	Metadata map[string]string      `json:"metadata"`
+	ID       string            `json:"id"`
+	State    map[string]any    `json:"state"`
+	Events   []Event           `json:"events"`
+	Created  time.Time         `json:"created"`
+	Updated  time.Time         `json:"updated"`
+	Metadata map[string]string `json:"metadata"`
 	mu       sync.RWMutex
 }
 
 // NewSession creates a new session with the given ID.
 func NewSession(id string) *Session {
-	now := time.Now()
-	return &Session{ID: id, State: map[string]interface{}{}, Events: []Event{}, Created: now, Updated: now, Metadata: map[string]string{}}
+	now := time.Now().UTC()
+
+	return &Session{
+		ID:       id,
+		State:    map[string]any{},
+		Events:   []Event{},
+		Created:  now,
+		Updated:  now,
+		Metadata: map[string]string{},
+	}
 }
 
-func (s *Session) GetState(key string) (interface{}, bool) {
-	// GetState returns the value and existence flag for a state key.
+// GetState returns the value and existence flag for a state key.
+func (s *Session) GetState(key string) (any, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	v, ok := s.State[key]
 	return v, ok
 }
 
 // SetState sets a key/value pair in session state updating the Updated timestamp.
-func (s *Session) SetState(key string, value interface{}) {
+func (s *Session) SetState(key string, value any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.State[key] = value
-	s.Updated = time.Now()
+	s.Updated = time.Now().UTC()
 }
 
 // ApplyStateDelta merges the provided key/value pairs into State.
-func (s *Session) ApplyStateDelta(delta map[string]interface{}) {
+func (s *Session) ApplyStateDelta(delta map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for k, v := range delta {
 		s.State[k] = v
 	}
-	s.Updated = time.Now()
+	s.Updated = time.Now().UTC()
 }
 
 // AddEvent appends an event to the history updating Updated timestamp.
 func (s *Session) AddEvent(ev Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.Events = append(s.Events, ev)
-	s.Updated = time.Now()
+	s.Updated = time.Now().UTC()
 }
 
 // GetEvents returns a copy of the full event slice to prevent callers from
@@ -70,6 +82,7 @@ func (s *Session) AddEvent(ev Event) {
 func (s *Session) GetEvents() []Event {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	events := make([]Event, len(s.Events))
 	copy(events, s.Events)
 	return events
@@ -80,6 +93,7 @@ func (s *Session) GetEvents() []Event {
 func (s *Session) GetConversationHistory() []Event {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	allowed := map[string]bool{"user": true, "assistant": true, "tool": true}
 	res := make([]Event, 0, len(s.Events))
 	for _, ev := range s.Events {
@@ -91,6 +105,7 @@ func (s *Session) GetConversationHistory() []Event {
 		}
 		res = append(res, ev)
 	}
+
 	return res
 }
 
@@ -99,14 +114,26 @@ func (s *Session) GetConversationHistory() []Event {
 func (s *Session) Clone() *Session {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	clone := &Session{ID: s.ID, State: make(map[string]interface{}, len(s.State)), Events: make([]Event, len(s.Events)), Created: s.Created, Updated: s.Updated, Metadata: make(map[string]string, len(s.Metadata))}
+
+	clone := &Session{
+		ID:       s.ID,
+		State:    make(map[string]any, len(s.State)),
+		Events:   make([]Event, len(s.Events)),
+		Created:  s.Created,
+		Updated:  s.Updated,
+		Metadata: make(map[string]string, len(s.Metadata)),
+	}
+
 	for k, v := range s.State {
 		clone.State[k] = v
 	}
+
 	copy(clone.Events, s.Events)
+
 	for k, v := range s.Metadata {
 		clone.Metadata[k] = v
 	}
+
 	return clone
 }
 
@@ -115,5 +142,5 @@ type SessionStore interface {
 	Create(id string) (*Session, error)
 	Get(id string) (*Session, error)
 	AppendEvent(sessionID string, event Event) error
-	ApplyDelta(sessionID string, delta map[string]interface{}) error
+	ApplyDelta(sessionID string, delta map[string]any) error
 }

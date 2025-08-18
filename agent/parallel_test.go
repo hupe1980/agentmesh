@@ -24,6 +24,7 @@ func newTestChildAgent(name string, runFn func(*core.InvocationContext) error) *
 	if runFn == nil {
 		runFn = func(*core.InvocationContext) error { return nil }
 	}
+
 	return &testChildAgent{BaseAgent: NewBaseAgent(name), runFn: runFn}
 }
 

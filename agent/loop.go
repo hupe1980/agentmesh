@@ -17,6 +17,18 @@ import (
 // ErrEscalated is returned when a child agent signals escalation.
 var ErrEscalated = errors.New("child agent escalated")
 
+// LoopAgentOptions defines configuration options for LoopAgent behavior.
+type LoopAgentOptions struct {
+	// MaxIters specifies the maximum number of iterations to perform.
+	MaxIters int
+	// Interval specifies the time to wait between iterations.
+	Interval time.Duration
+	// StopOnError determines whether to stop the loop on errors.
+	StopOnError bool
+	// Predicate is a custom termination condition based on output.
+	Predicate func(string) bool
+}
+
 // LoopAgent coordinates the repeated execution of a child agent.
 //
 // This agent type enables iterative workflows by executing a child agent
@@ -49,69 +61,25 @@ type LoopAgent struct {
 
 // NewLoopAgent constructs a looping coordinator around a child agent.
 // Defaults: 100 iterations, no interval, stop on first error.
-//
-// Default configuration:
-//   - Maximum 100 iterations
-//   - No interval between iterations
-//   - Stop execution on errors
-//   - No custom termination predicate
-//
-// Parameters:
-//   - name: Human-readable name for the coordinator
-//   - child: Agent to execute iteratively
-//   - opts: Configuration options for loop behavior
-//
-// Returns a configured LoopAgent ready for iterative execution.
-func NewLoopAgent(name string, child core.Agent, opts ...LoopOption) *LoopAgent {
-	la := &LoopAgent{
+func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOptions)) *LoopAgent {
+	opts := &LoopAgentOptions{
+		MaxIters:    100,
+		Interval:    0,
+		StopOnError: true,
+	}
+
+	for _, fn := range optFns {
+		fn(opts)
+	}
+
+	return &LoopAgent{
 		BaseAgent:   NewBaseAgent(name),
 		child:       child,
-		maxIters:    100,
-		interval:    0,
-		stopOnError: true,
+		maxIters:    opts.MaxIters,
+		interval:    opts.Interval,
+		stopOnError: opts.StopOnError,
+		predicate:   opts.Predicate,
 	}
-
-	for _, o := range opts {
-		o(la)
-	}
-
-	return la
-}
-
-// LoopOption defines a configuration function for customizing LoopAgent behavior.
-type LoopOption func(*LoopAgent)
-
-// WithMaxIters sets the maximum number of iterations for the loop.
-//
-// The loop will terminate after this many iterations even if other
-// termination conditions are not met. Set to a reasonable value to
-// prevent infinite loops.
-func WithMaxIters(n int) LoopOption {
-	return func(l *LoopAgent) { l.maxIters = n }
-}
-
-// WithInterval sets the time delay between loop iterations.
-//
-// This is useful for rate limiting, polling scenarios, or giving
-// external systems time to process between iterations. Set to 0
-// for no delay between iterations.
-func WithInterval(d time.Duration) LoopOption {
-	return func(l *LoopAgent) { l.interval = d }
-}
-
-// WithPredicate sets a custom termination condition based on output.
-//
-// The predicate function receives the string output from the child agent
-// and should return true to terminate the loop early. This enables
-// sophisticated termination logic based on agent responses.
-//
-// Example:
-//
-//	WithPredicate(func(output string) bool {
-//	    return strings.Contains(output, "COMPLETE")
-//	})
-func WithPredicate(pred func(string) bool) LoopOption {
-	return func(l *LoopAgent) { l.predicate = pred }
 }
 
 // Run executes the child agent repeatedly according to configuration.
@@ -203,6 +171,7 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 	// Create intercepting channels and derive a child context using helper
 	interceptChan := make(chan core.Event, 10)
 	resumeChan := make(chan struct{}, 10)
+
 	childInvocationCtx := invocationCtx.NewChildInvocationContext(interceptChan, resumeChan, invocationCtx.Branch)
 
 	// Channel to communicate child execution completion
@@ -279,8 +248,8 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 // Example usage:
 //
 //	event := CreateEscalationEvent(
-//	    "TaskAgent",
 //	    ctx.InvocationID,
+//	    "TaskAgent",
 //	    &event.Content{
 //	        Role: "assistant",
 //	        Parts: []event.Part{event.TextPart{Text: "Task complexity exceeds my capabilities"}},

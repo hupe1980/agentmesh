@@ -12,9 +12,8 @@ import (
 // TestEscalatingAgent is a mock agent that escalates after a certain number of runs
 type TestEscalatingAgent struct {
 	BaseAgent
-	runCount    int
-	escalateOn  int
-	shouldError bool
+	runCount   int
+	escalateOn int
 }
 
 func NewTestEscalatingAgent(name string, escalateOn int) *TestEscalatingAgent {
@@ -128,7 +127,9 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create loop agent
-			loopAgent := NewLoopAgent("TestLoop", tt.childAgent, WithMaxIters(tt.maxIters))
+			loopAgent := NewLoopAgent("TestLoop", tt.childAgent, func(o *LoopAgentOptions) {
+				o.MaxIters = tt.maxIters
+			})
 
 			// Create test context
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
