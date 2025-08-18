@@ -1,0 +1,142 @@
+# golangci-lint configuration for AgentMesh
+# See https://golangci-lint.run/usage/configuration/ for documentation
+
+version: 2
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  
+  govet:
+    check-shadowing: true
+    enable-all: true
+  
+  revive:
+    min-confidence: 0.8
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+        arguments:
+          - "checkPrivateReceivers"
+          - "sayRepetitiveInsteadOfStutters"
+      - name: package-comments
+        severity: warning
+        disabled: false
+      - name: var-naming
+        severity: warning
+        disabled: false
+  
+  gofumpt:
+    lang-version: "1.21"
+    extra-rules: true
+  
+  gocyclo:
+    min-complexity: 15
+  
+  dupl:
+    threshold: 100
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  
+  misspell:
+    locale: US
+  
+  lll:
+    line-length: 120
+  
+  unparam:
+    check-exported: false
+  
+  nakedret:
+    max-func-lines: 30
+
+linters:
+  enable:
+    # Basic Go checks
+    - errcheck      # Check for unchecked errors
+    - govet         # Standard Go vet
+    - ineffassign   # Detect ineffectual assignments
+    
+    # Code quality
+    - revive        # Golint replacement with more rules
+    - gocyclo       # Cyclomatic complexity
+    - dupl          # Code clone detection
+    - goconst       # Repeated strings that could be constants
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    - nakedret      # Naked returns in long functions
+    
+    # Formatting & style
+    - misspell      # Spelling mistakes
+    - lll           # Line length check (relaxed)
+    
+    # Performance
+    - prealloc      # Slice preallocation hints
+    
+    # Security
+    - gosec         # Security audit
+    
+  disable:
+    # Too noisy for current codebase
+    - godot         # Comment formatting too strict
+    - nlreturn      # Newline rules too restrictive
+    - wsl           # Whitespace linting too opinionated
+    - funlen        # Function length - handled by review
+    - gocognit      # Cognitive complexity - gocyclo is sufficient
+    - nestif        # Deep nesting - case by case basis
+    - mnd           # Magic numbers - context dependent
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gosec       # Security less critical in tests
+        - dupl        # Test code duplication is acceptable
+        - goconst     # Test constants can be inline
+    
+    # Exclude doc.go files from certain rules
+    - path: doc\.go
+      linters:
+        - lll         # Documentation can be longer
+    
+    # Examples can have relaxed rules
+    - path: examples/
+      linters:
+        - errcheck    # Example code can ignore some errors
+        - gosec       # Examples may use simplified patterns
+        - goconst     # Examples can repeat strings for clarity
+    
+    # Internal test utilities
+    - path: internal/testutil/
+      linters:
+        - revive      # Test builders can have different patterns
+        - unparam     # Test utilities may have unused params by design
+  
+  # Show only new issues for existing codebase
+  new: false
+  
+  # Maximum issues count per one linter
+  max-issues-per-linter: 0
+  
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+
+severity:
+  default-severity: warning
+  case-sensitive: false
