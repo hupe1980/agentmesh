@@ -175,7 +175,7 @@ func (s *memSessionService) ApplyDelta(id string, delta map[string]any) error {
 	if _, ok := s.sessions[id]; !ok {
 		s.sessions[id] = core.NewSession(id)
 	}
-	s.sessions[id].ApplyStateDelta(delta)
+	s.sessions[id].MergeState(delta)
 	s.mu.Unlock()
 	return nil
 }
@@ -299,7 +299,7 @@ func TestStateManagerTool_SetAndGetState(t *testing.T) {
 	ev := core.Event{Actions: core.EventActions{StateDelta: map[string]any{}}}
 	tc.InternalApplyActions(&ev)
 	// Simulate commit to session
-	inv.Session.ApplyStateDelta(ev.Actions.StateDelta)
+	inv.Session.MergeState(ev.Actions.StateDelta)
 
 	// get_state
 	tcGet := core.NewToolContext(inv, "fc-get")

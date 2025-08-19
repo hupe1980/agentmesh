@@ -56,14 +56,15 @@ func (s *Session) SetState(key string, value any) {
 	s.Updated = time.Now().UTC()
 }
 
-// ApplyStateDelta merges the provided key/value pairs into State.
-func (s *Session) ApplyStateDelta(delta map[string]any) {
+// MergeState merges the provided key/value pairs into State and updates the timestamp.
+func (s *Session) MergeState(delta map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for k, v := range delta {
 		s.State[k] = v
 	}
+
 	s.Updated = time.Now().UTC()
 }
 
@@ -142,5 +143,5 @@ type SessionStore interface {
 	Create(id string) (*Session, error)
 	Get(id string) (*Session, error)
 	AppendEvent(sessionID string, event Event) error
-	ApplyDelta(sessionID string, delta map[string]any) error
+	ApplyDelta(sessionID string, delta map[string]any) error // merges into state
 }

@@ -2,12 +2,12 @@ package core
 
 import "testing"
 
-func TestSession_ApplyStateDeltaAndClone(t *testing.T) {
+func TestSession_MergeStateAndClone(t *testing.T) {
 	s := NewSession("s1")
 
 	delta := map[string]any{"a": 1, "b": "x"}
 
-	s.ApplyStateDelta(delta)
+	s.MergeState(delta)
 	if v, ok := s.GetState("a"); !ok || v.(int) != 1 {
 		t.Fatalf("State not applied: %+v", s.State)
 	}

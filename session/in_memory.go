@@ -66,7 +66,7 @@ func (s *InMemoryStore) ApplyDelta(sessionID string, delta map[string]interface{
 	if !ok {
 		sess = s.createSessionLocked(sessionID)
 	}
-	sess.ApplyStateDelta(delta)
+	sess.MergeState(delta)
 	return nil
 }
 
