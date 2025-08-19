@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -82,7 +83,7 @@ func (m *MockAgent) FindAgent(name string) core.Agent {
 
 // Common test utilities
 func TestNewEventID(t *testing.T) {
-	eventID := core.NewID()
+	eventID := util.NewID()
 	assert.NotEmpty(t, eventID)
 	assert.Len(t, eventID, 36) // UUID length
 }

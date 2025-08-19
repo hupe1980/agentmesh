@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,8 +74,8 @@ func TestEvent_IsFinalResponseLogic(t *testing.T) {
 }
 
 func TestEvent_IDUniqueness(t *testing.T) {
-	a := NewID()
-	b := NewID()
+	a := util.NewID()
+	b := util.NewID()
 	assert.NotEqual(t, a, b, "expected unique IDs")
 }
 

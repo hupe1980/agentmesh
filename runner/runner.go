@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
 	"github.com/hupe1980/agentmesh/session"
@@ -88,7 +88,8 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 		return "", nil, nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	invocationID := uuid.NewString()
+	invocationID := util.NewID()
+
 	eventsCh := make(chan core.Event, r.config.EventBufferSize)
 	errorsCh := make(chan error, 1)
 	agentEmit := make(chan core.Event, r.config.EventBufferSize)
@@ -150,10 +151,13 @@ func (r *Runner) Cancel(invocationID string) error {
 	r.invocationsMu.Lock()
 	cancel, exists := r.activeInvocations[invocationID]
 	r.invocationsMu.Unlock()
+
 	if !exists {
 		return fmt.Errorf("invocation %s not found", invocationID)
 	}
+
 	cancel()
+
 	return nil
 }
 

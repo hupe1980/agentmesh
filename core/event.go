@@ -3,7 +3,7 @@ package core
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/util"
 )
 
 // EventActions encodes side‑effects or orchestration signals attached to an Event.
@@ -53,7 +53,7 @@ type Event struct {
 // Prefer helper constructors for common semantic categories (message, function call/response).
 func NewEvent(invocationID, author string) Event {
 	return Event{
-		ID:           NewID(),
+		ID:           util.NewID(),
 		InvocationID: invocationID,
 		Author:       author,
 		Timestamp:    time.Now().UTC(),
@@ -117,14 +117,6 @@ func NewFunctionResponseEvent(author, id, functionName string, result interface{
 	return e
 }
 
-// NewID generates a new unique identifier for events.
-//
-// This function creates a UUID-based unique identifier that can be used
-// for event tracking and correlation throughout the framework.
-//
-// Returns a string representation of a new UUID.
-func NewID() string { return uuid.NewString() }
-
 // IsPartial reports whether this event represents a streaming / incomplete
 // fragment that will be followed by additional events composing the final
 // assistant turn.
@@ -175,7 +167,3 @@ func (e Event) IsFinalResponse() bool {
 		!e.IsPartial() &&
 		!e.HasTrailingCodeExecutionResult()
 }
-
-// UnixSeconds returns the timestamp as fractional seconds since Unix epoch.
-// Useful for metrics & numeric serialization paths.
-func (e Event) UnixSeconds() float64 { return float64(e.Timestamp.UnixNano()) / 1e9 }

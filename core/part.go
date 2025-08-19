@@ -81,9 +81,9 @@ type FileWithBytes struct {
 	Name     *string
 }
 
-// FileWithUri represents a file available at an external URI with optional
+// FileWithURI represents a file available at an external URI with optional
 // MIME type / original name metadata.
-type FileWithUri struct {
+type FileWithURI struct {
 	MimeType *string
 	Name     *string
 	URI      string
