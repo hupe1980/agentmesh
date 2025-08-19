@@ -24,9 +24,11 @@ func NewInMemoryStore() *InMemoryStore {
 func (s *InMemoryStore) Get(sessionID string) (*core.Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	if session, ok := s.sessions[sessionID]; ok {
 		return session.Clone(), nil
 	}
+
 	return s.createSessionLocked(sessionID), nil
 }
 
@@ -35,7 +37,9 @@ func (s *InMemoryStore) Get(sessionID string) (*core.Session, error) {
 func (s *InMemoryStore) SaveSession(session *core.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.sessions[session.ID] = session.Clone()
+
 	return nil
 }
 
@@ -43,6 +47,7 @@ func (s *InMemoryStore) SaveSession(session *core.Session) error {
 func (s *InMemoryStore) Create(sessionID string) (*core.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	return s.createSessionLocked(sessionID).Clone(), nil
 }
 
@@ -50,11 +55,14 @@ func (s *InMemoryStore) Create(sessionID string) (*core.Session, error) {
 func (s *InMemoryStore) AppendEvent(sessionID string, ev core.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sess, ok := s.sessions[sessionID]
 	if !ok {
 		sess = s.createSessionLocked(sessionID)
 	}
+
 	sess.AddEvent(ev)
+
 	return nil
 }
 
@@ -62,11 +70,14 @@ func (s *InMemoryStore) AppendEvent(sessionID string, ev core.Event) error {
 func (s *InMemoryStore) ApplyDelta(sessionID string, delta map[string]interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sess, ok := s.sessions[sessionID]
 	if !ok {
 		sess = s.createSessionLocked(sessionID)
 	}
+
 	sess.MergeState(delta)
+
 	return nil
 }
 
