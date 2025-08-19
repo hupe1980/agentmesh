@@ -238,8 +238,3 @@ func (r *Runner) applyEventActions(sessionID string, ev core.Event) error {
 	}
 	return nil
 }
-
-// GetSession returns a snapshot of a session.
-func (r *Runner) GetSession(sessionID string) (*core.Session, error) {
-	return r.sessionStore.Get(sessionID)
-}
