@@ -24,7 +24,7 @@ func TestRunContext_EmitEventStateAndArtifacts(t *testing.T) {
 
 func TestRunContext_CommitStateDelta(t *testing.T) {
 	ic, _ := newRunContextForTest()
-	sSvc := ic.SessionService.(*icMockSessionService)
+	sSvc := ic.SessionStore.(*icMockSessionService)
 	ic.SetState("k1", 123)
 	if err := ic.CommitStateDelta(); err != nil {
 		t.Fatalf("CommitStateDelta error: %v", err)

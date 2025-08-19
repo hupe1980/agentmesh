@@ -30,9 +30,9 @@ type RunContext struct {
 	UserContent      Content
 	Emit             chan<- Event
 	Resume           <-chan struct{}
-	SessionService   SessionStore
-	ArtifactService  ArtifactStore
-	MemoryService    MemoryStore
+	SessionStore     SessionStore
+	ArtifactStore    ArtifactStore
+	MemoryStore      MemoryStore
 	Session          *Session
 	StateDelta       map[string]any
 	Artifacts        []string
@@ -51,26 +51,26 @@ func NewRunContext(
 	emit chan<- Event,
 	resume <-chan struct{},
 	sess *Session,
-	sessionService SessionStore,
-	artifactService ArtifactStore,
-	memoryService MemoryStore,
+	sessionStore SessionStore,
+	artifactStore ArtifactStore,
+	memoryStore MemoryStore,
 	logger logging.Logger,
 ) *RunContext {
 	return &RunContext{
-		Context:         ctx,
-		SessionID:       sessionID,
-		RunID:           runID,
-		Agent:           agent,
-		UserContent:     userContent,
-		Emit:            emit,
-		Resume:          resume,
-		Session:         sess,
-		SessionService:  sessionService,
-		ArtifactService: artifactService,
-		MemoryService:   memoryService,
-		StateDelta:      map[string]any{},
-		Artifacts:       []string{},
-		loggerAdapter:   newLoggerAdapter(logger),
+		Context:       ctx,
+		SessionID:     sessionID,
+		RunID:         runID,
+		Agent:         agent,
+		UserContent:   userContent,
+		Emit:          emit,
+		Resume:        resume,
+		Session:       sess,
+		SessionStore:  sessionStore,
+		ArtifactStore: artifactStore,
+		MemoryStore:   memoryStore,
+		StateDelta:    map[string]any{},
+		Artifacts:     []string{},
+		loggerAdapter: newLoggerAdapter(logger),
 	}
 }
 
@@ -96,9 +96,7 @@ func (ic *RunContext) SetState(k string, v any) { ic.StateDelta[k] = v }
 
 // ApplyStateDelta merges all pairs from d into the staged StateDelta.
 func (ic *RunContext) ApplyStateDelta(d map[string]any) {
-	for k, v := range d {
-		ic.StateDelta[k] = v
-	}
+	maps.Copy(ic.StateDelta, d)
 }
 
 // AddArtifact stages an artifact id to be attached to the next emitted event.
@@ -106,10 +104,10 @@ func (ic *RunContext) AddArtifact(id string) { ic.Artifacts = append(ic.Artifact
 
 // SaveArtifact stores bytes in the ArtifactStore and stages the id for the next emitted event.
 func (ic *RunContext) SaveArtifact(id string, data []byte) error {
-	if ic.ArtifactService == nil {
+	if ic.ArtifactStore == nil {
 		return fmt.Errorf("artifact service not configured")
 	}
-	if err := ic.ArtifactService.Save(ic.SessionID, id, data); err != nil {
+	if err := ic.ArtifactStore.Save(ic.SessionID, id, data); err != nil {
 		return err
 	}
 	ic.AddArtifact(id)
@@ -118,42 +116,42 @@ func (ic *RunContext) SaveArtifact(id string, data []byte) error {
 
 // GetArtifact retrieves previously saved artifact bytes.
 func (ic *RunContext) GetArtifact(id string) ([]byte, error) {
-	if ic.ArtifactService == nil {
+	if ic.ArtifactStore == nil {
 		return nil, fmt.Errorf("artifact service not configured")
 	}
-	return ic.ArtifactService.Get(ic.SessionID, id)
+	return ic.ArtifactStore.Get(ic.SessionID, id)
 }
 
 // ListArtifacts returns artifact IDs stored for the session.
 func (ic *RunContext) ListArtifacts() ([]string, error) {
-	if ic.ArtifactService == nil {
+	if ic.ArtifactStore == nil {
 		return []string{}, nil
 	}
-	return ic.ArtifactService.List(ic.SessionID)
+	return ic.ArtifactStore.List(ic.SessionID)
 }
 
 // SearchMemory queries the MemoryStore for relevant content.
 func (ic *RunContext) SearchMemory(q string, limit int) ([]SearchResult, error) {
-	if ic.MemoryService == nil {
+	if ic.MemoryStore == nil {
 		return []SearchResult{}, nil
 	}
-	return ic.MemoryService.Search(ic.SessionID, q, limit)
+	return ic.MemoryStore.Search(ic.SessionID, q, limit)
 }
 
 // StoreMemory appends content plus metadata to the MemoryStore.
 func (ic *RunContext) StoreMemory(content string, md map[string]any) error {
-	if ic.MemoryService == nil {
+	if ic.MemoryStore == nil {
 		return fmt.Errorf("memory service not configured")
 	}
-	return ic.MemoryService.Store(ic.SessionID, content, md)
+	return ic.MemoryStore.Store(ic.SessionID, content, md)
 }
 
 // RefreshSession reloads the session snapshot from the SessionStore.
 func (ic *RunContext) RefreshSession() error {
-	if ic.SessionService == nil {
+	if ic.SessionStore == nil {
 		return fmt.Errorf("session service not configured")
 	}
-	s, err := ic.SessionService.Get(ic.SessionID)
+	s, err := ic.SessionStore.Get(ic.SessionID)
 	if err != nil {
 		return err
 	}
@@ -166,10 +164,10 @@ func (ic *RunContext) CommitStateDelta() error {
 	if len(ic.StateDelta) == 0 {
 		return nil
 	}
-	if ic.SessionService == nil {
+	if ic.SessionStore == nil {
 		return fmt.Errorf("session service not configured")
 	}
-	if err := ic.SessionService.ApplyDelta(ic.SessionID, ic.StateDelta); err != nil {
+	if err := ic.SessionStore.ApplyDelta(ic.SessionID, ic.StateDelta); err != nil {
 		return err
 	}
 	ic.StateDelta = map[string]any{}
@@ -193,21 +191,21 @@ func (ic *RunContext) GetAgentType() string { return ic.Agent.Type }
 // Clone returns a shallow copy with deep-copied delta & artifact slices.
 func (ic *RunContext) Clone() *RunContext {
 	c := &RunContext{
-		Context:         ic.Context,
-		SessionID:       ic.SessionID,
-		RunID:           ic.RunID,
-		Agent:           ic.Agent,
-		UserContent:     ic.UserContent,
-		Emit:            ic.Emit,
-		Resume:          ic.Resume,
-		SessionService:  ic.SessionService,
-		ArtifactService: ic.ArtifactService,
-		MemoryService:   ic.MemoryService,
-		Session:         ic.Session,
-		StateDelta:      map[string]any{},
-		Artifacts:       []string{},
-		Branch:          ic.Branch,
-		loggerAdapter:   ic.loggerAdapter,
+		Context:       ic.Context,
+		SessionID:     ic.SessionID,
+		RunID:         ic.RunID,
+		Agent:         ic.Agent,
+		UserContent:   ic.UserContent,
+		Emit:          ic.Emit,
+		Resume:        ic.Resume,
+		SessionStore:  ic.SessionStore,
+		ArtifactStore: ic.ArtifactStore,
+		MemoryStore:   ic.MemoryStore,
+		Session:       ic.Session,
+		StateDelta:    map[string]any{},
+		Artifacts:     []string{},
+		Branch:        ic.Branch,
+		loggerAdapter: ic.loggerAdapter,
 	}
 
 	maps.Copy(c.StateDelta, ic.StateDelta)
@@ -232,21 +230,21 @@ func (ic *RunContext) NewChildContext(emit chan<- Event, resume <-chan struct{},
 	}
 
 	return &RunContext{
-		Context:         ic.Context,
-		SessionID:       ic.SessionID,
-		RunID:           ic.RunID,
-		Agent:           ic.Agent,
-		UserContent:     ic.UserContent,
-		Emit:            emit,
-		Resume:          resume,
-		SessionService:  ic.SessionService,
-		ArtifactService: ic.ArtifactService,
-		MemoryService:   ic.MemoryService,
-		Session:         ic.Session,
-		StateDelta:      map[string]any{}, // fresh buffers
-		Artifacts:       []string{},
-		Branch:          finalBranch,
-		loggerAdapter:   ic.loggerAdapter,
+		Context:       ic.Context,
+		SessionID:     ic.SessionID,
+		RunID:         ic.RunID,
+		Agent:         ic.Agent,
+		UserContent:   ic.UserContent,
+		Emit:          emit,
+		Resume:        resume,
+		SessionStore:  ic.SessionStore,
+		ArtifactStore: ic.ArtifactStore,
+		MemoryStore:   ic.MemoryStore,
+		Session:       ic.Session,
+		StateDelta:    map[string]any{}, // fresh buffers
+		Artifacts:     []string{},
+		Branch:        finalBranch,
+		loggerAdapter: ic.loggerAdapter,
 	}
 }
 

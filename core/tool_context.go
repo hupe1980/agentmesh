@@ -102,11 +102,11 @@ func (tc *ToolContext) Escalate() {
 
 // SaveArtifact persists artifact bytes and records the delta size for emission.
 func (tc *ToolContext) SaveArtifact(id string, data []byte) error {
-	if tc.runCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactStore == nil {
 		return fmt.Errorf("artifact service not configured")
 	}
 
-	if err := tc.runCtx.ArtifactService.Save(tc.SessionID(), id, data); err != nil {
+	if err := tc.runCtx.ArtifactStore.Save(tc.SessionID(), id, data); err != nil {
 		return err
 	}
 
@@ -121,38 +121,38 @@ func (tc *ToolContext) SaveArtifact(id string, data []byte) error {
 
 // LoadArtifact retrieves a persisted artifact by id.
 func (tc *ToolContext) LoadArtifact(id string) ([]byte, error) {
-	if tc.runCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactStore == nil {
 		return nil, fmt.Errorf("artifact service not configured")
 	}
 
-	return tc.runCtx.ArtifactService.Get(tc.SessionID(), id)
+	return tc.runCtx.ArtifactStore.Get(tc.SessionID(), id)
 }
 
 // ListArtifacts returns artifact IDs stored for the session.
 func (tc *ToolContext) ListArtifacts() ([]string, error) {
-	if tc.runCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactStore == nil {
 		return nil, fmt.Errorf("artifact service not configured")
 	}
 
-	return tc.runCtx.ArtifactService.List(tc.SessionID())
+	return tc.runCtx.ArtifactStore.List(tc.SessionID())
 }
 
 // SearchMemory performs a recall query against the configured MemoryStore.
 func (tc *ToolContext) SearchMemory(q string, limit int) ([]SearchResult, error) {
-	if tc.runCtx.MemoryService == nil {
+	if tc.runCtx.MemoryStore == nil {
 		return nil, fmt.Errorf("memory service not configured")
 	}
 
-	return tc.runCtx.MemoryService.Search(tc.SessionID(), q, limit)
+	return tc.runCtx.MemoryStore.Search(tc.SessionID(), q, limit)
 }
 
 // StoreMemory appends new content to the session's memory store with metadata.
 func (tc *ToolContext) StoreMemory(content string, md map[string]interface{}) error {
-	if tc.runCtx.MemoryService == nil {
+	if tc.runCtx.MemoryStore == nil {
 		return fmt.Errorf("memory service not configured")
 	}
 
-	return tc.runCtx.MemoryService.Store(tc.SessionID(), content, md)
+	return tc.runCtx.MemoryStore.Store(tc.SessionID(), content, md)
 }
 
 // GetSessionHistory returns conversation history (filtered) for context.
@@ -166,11 +166,11 @@ func (tc *ToolContext) GetSessionHistory() []Event {
 
 // RefreshSession reloads the underlying session from the SessionStore.
 func (tc *ToolContext) RefreshSession() error {
-	if tc.runCtx.SessionService == nil {
+	if tc.runCtx.SessionStore == nil {
 		return fmt.Errorf("session service not configured")
 	}
 
-	s, err := tc.runCtx.SessionService.Get(tc.SessionID())
+	s, err := tc.runCtx.SessionStore.Get(tc.SessionID())
 	if err != nil {
 		return err
 	}

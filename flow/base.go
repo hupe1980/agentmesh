@@ -80,8 +80,8 @@ func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
 // the last emitted Event (final or intermediate). A nil return signals termination.
 func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event) *core.Event {
 	// Refresh session snapshot so request processors see latest conversation (including tool responses)
-	if runCtx.SessionService != nil {
-		if latest, err := runCtx.SessionService.Get(runCtx.SessionID); err == nil && latest != nil {
+	if runCtx.SessionStore != nil {
+		if latest, err := runCtx.SessionStore.Get(runCtx.SessionID); err == nil && latest != nil {
 			runCtx.Session = latest
 		}
 	}
