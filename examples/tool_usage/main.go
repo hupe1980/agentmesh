@@ -8,11 +8,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
+	"github.com/hupe1980/agentmesh/runner"
 )
 
 // CalculatorTool demonstrates a custom tool with parameter schema.
@@ -87,9 +87,10 @@ func main() {
 	calcAgent := agent.NewModelAgent("CalculatorAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instruction = agent.NewInstructionFromText("Use the calculator tool to perform intermediate steps, then summarize the final answer.")
 	})
+
 	calcAgent.RegisterTool(&CalculatorTool{})
 
-	mesh := agentmesh.New(calcAgent, func(o *agentmesh.Options) {
+	runner := runner.New(calcAgent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
 	})
 
@@ -98,7 +99,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
+	_, eventsCh, errorsCh, err := runner.Run(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

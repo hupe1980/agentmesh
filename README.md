@@ -21,7 +21,7 @@ All defaults are in‑memory & dependency‑free → drop into a prototype in mi
 ## 🔌 Core Concepts
 | Concept | Description |
 |---------|-------------|
-| Engine | Orchestrates invocations, streaming, persistence & lifecycle. |
+| Runner | Orchestrates invocations, streaming, persistence & lifecycle. |
 | Agent | Implements `core.Agent` - anything that can `Run`. Includes model + flow coordinators. |
 | ModelAgent | LLM + tools + flow selection (streaming, function calling, transfer). |
 | SequentialAgent | Runs children in order, stops on first error. |
@@ -32,7 +32,7 @@ All defaults are in‑memory & dependency‑free → drop into a prototype in mi
 | InvocationContext | Per‑run execution scope for an agent. |
 
 ## 🚀 Quick Start
-Minimal single-agent run (mirrors `examples/basic_agent`):
+Minimal single-agent run (mirrors `examples/basic_agent`) using the low-level `runner` package directly:
 ```go
 package main
 
@@ -41,12 +41,13 @@ import (
   "fmt"
   "log"
   "os"
+  "time"
 
-  "github.com/hupe1980/agentmesh"
   "github.com/hupe1980/agentmesh/agent"
   "github.com/hupe1980/agentmesh/core"
   "github.com/hupe1980/agentmesh/logging"
   "github.com/hupe1980/agentmesh/model/openai"
+  "github.com/hupe1980/agentmesh/runner"
 )
 
 func main() {
@@ -54,37 +55,36 @@ func main() {
     log.Fatal("OPENAI_API_KEY required")
   }
 
-  mesh := agentmesh.New()
-
   model := openai.NewModel()
-  
-  agent := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
+
+  basic := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
     o.Instruction = agent.NewInstructionFromText("You are a concise, helpful assistant.")
   })
 
-  mesh.RegisterAgent(agent)
+  r := runner.New(basic, func(o *runner.Options) {
+    o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
+  })
 
-  userContent := core.Content{
-    Role: "user", 
-    Parts: []core.Part{core.TextPart{Text: "Hello! What can you do?"}},
-  }
+  content := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "Hello! What can you do?"}}}
 
-  _, eventsCh, errsCh, err := mesh.Invoke(context.Background(), "session-1", agent.Name(), userContent)
-  if err != nil { 
-    log.Fatalf("invoke failed: %v", err)
-  }
+  ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+  defer cancel()
 
-  for {
+  _, eventsCh, errsCh, err := r.Run(ctx, "session-1", content)
+  if err != nil { log.Fatalf("run failed: %v", err) }
+
+  for eventsCh != nil || errsCh != nil {
     select {
     case ev, ok := <-eventsCh:
-      if !ok { return }
-      if ev.Author == agent.Name() && ev.Content != nil {
+      if !ok { eventsCh = nil; continue }
+      if ev.Author == basic.Name() && ev.Content != nil {
         for _, part := range ev.Content.Parts {
           if tp, ok := part.(core.TextPart); ok { fmt.Println("Agent:", tp.Text) }
         }
       }
     case err, ok := <-errsCh:
-      if ok && err != nil { log.Fatalf("agent error: %v", err) }
+      if !ok { errsCh = nil; continue }
+      if err != nil { log.Printf("error: %v", err) }
     }
   }
 }
@@ -112,7 +112,7 @@ sumTool := tool.NewFunctionTool(
 
 assistant.RegisterTool(sumTool)
 ```
-The LLM can now trigger function calls (depending on backend capabilities) and the engine will execute them with a `ToolContext`.
+The LLM can now trigger function calls (depending on backend capabilities) and the runner will execute them with a `ToolContext`.
 
 ## 🔄 Control Flow Patterns
 | Pattern | Use Case |
@@ -161,4 +161,4 @@ Contributions welcome! Please see `CONTRIBUTING.md`.
 4. Open PR with context & screenshots/logs where helpful
 
 ## 📜 License
-Licensed under the MIT License – see [LICENSE.md](./LICENSE.md) for full text.
+Licensed under the MIT License - see [LICENSE.md](./LICENSE.md) for full text.

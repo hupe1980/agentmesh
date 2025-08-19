@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
+	"github.com/hupe1980/agentmesh/runner"
 	"github.com/hupe1980/agentmesh/tool"
 )
 
@@ -32,16 +32,18 @@ func main() {
 		o.Instruction = agent.NewInstructionFromText("You are an analysis specialist. Take research data and perform deep analysis. Use the research_data from session state. Store analysis in 'analysis_results'.")
 		o.OutputKey = "analysis_results"
 	})
+
 	analysisAgent.RegisterTool(tool.NewStateManagerTool())
 
 	reportAgent := agent.NewModelAgent("ReportAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instruction = agent.NewInstructionFromText("You are a report writer. Use analysis_results from session state to craft a concise report.")
 	})
+
 	reportAgent.RegisterTool(tool.NewStateManagerTool())
 
 	workflow := agent.NewSequentialAgent("MultiAgent", researchAgent, analysisAgent, reportAgent)
 
-	mesh := agentmesh.New(workflow, func(o *agentmesh.Options) {
+	runner := runner.New(workflow, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
 	})
 
@@ -50,7 +52,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
+	_, eventsCh, errorsCh, err := runner.Run(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

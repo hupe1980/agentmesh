@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
+	"github.com/hupe1980/agentmesh/runner"
 )
 
 // GetWeatherTool returns mock weather data (replace with real API integration).
@@ -62,9 +62,10 @@ func main() {
 	agent := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instruction = agent.NewInstructionFromText("You are a weather assistant.")
 	})
+
 	agent.RegisterTool(&GetWeatherTool{})
 
-	mesh := agentmesh.New(agent, func(o *agentmesh.Options) {
+	runner := runner.New(agent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
 	})
 
@@ -73,7 +74,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
+	_, eventsCh, errorsCh, err := runner.Run(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

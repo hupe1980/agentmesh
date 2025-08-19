@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
+	"github.com/hupe1980/agentmesh/runner"
 )
 
 // basic_agent demonstrates the smallest useful LLM agent: a single model-backed agent
@@ -29,8 +29,8 @@ func main() {
 		o.Instruction = agent.NewInstructionFromText("You are a helpful assistant. Keep responses concise and friendly.")
 	})
 
-	// 2. Create the mesh with a standard logger
-	mesh := agentmesh.New(llmAgent, func(o *agentmesh.Options) {
+	// 2. Create the runner with a standard logger
+	runner := runner.New(llmAgent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
 	})
 
@@ -41,7 +41,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
+	_, eventsCh, errorsCh, err := runner.Run(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}
