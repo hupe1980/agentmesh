@@ -1,155 +1,144 @@
 # Contributing to agentmesh
 
-Thanks for your interest in contributing! This guide explains how to set up a development environment, the project conventions, and the checklist to follow before submitting a pull request.
+Thanks for your interest in improving agentmesh. This guide reflects the current (Runner‑based) architecture and active conventions.
 
 ---
 ## 1. Quick Start
-1. Fork & clone the repo
-2. Install Go (>= 1.22 recommended)
-3. Enable modules: `export GO111MODULE=on`
-4. Run tests: `go test ./...`
-5. (Optional) Race detection: `go test -race ./...`
+1. Fork & clone
+2. Go >= 1.24
+3. Run tests: `go test ./...`
+4. (Optional) Race: `go test -race ./...`
+5. Examples: `go run examples/basic_agent/main.go`
 
-> Tip: A Makefile with common targets is listed as a quick win in `AUDIT.md`; once added prefer `make test` / `make test-race`.
-
----
-## 2. Project Philosophy
-- Small, composable core interfaces (`core/`) - keep them minimal & stable.
-- Deterministic, observable agent execution - events are the backbone.
-- Clear separation between orchestration (agents/flow/engine) and integration layers (tool/, model/, artifact/, memory/, session/).
-- Prefer explicit helpers over ad‑hoc reconstruction (e.g., `NewChildInvocationContext`).
-
-See `AUDIT.md` for the recurring quality checklist & roadmap.
+We use a `justfile` (add `just` locally) for future shortcuts. If a target exists prefer `just test` etc.
 
 ---
-## 3. Repository Structure (Essentials)
+## 2. Current Philosophy
+| Principle | Summary |
+|-----------|---------|
+| Minimal core | Keep `core/` types stable & small (Event, Content, Session, Runner interface). |
+| Explicit orchestration | Agents & flows emit Events; side‑effects only through defined actions. |
+| Determinism goal | Avoid nondeterministic ordering (tool calls, map iteration) for testability. |
+| Streaming first | Partial events prioritized; low overhead per event. |
+| Safe tools | Tool execution must be bounded (timeouts/panic recovery in progress). |
+
+---
+## 3. Repository Structure (Condensed)
 | Dir | Purpose |
 |-----|---------|
-| core/ | Fundamental types: InvocationContext, Session, Events, Stores |
-| agent/ | Agent implementations (sequential, parallel, loop, LLM) |
-| flow/ | Flow orchestration primitives |
-| tool/ | Tool interfaces & registry |
-| model/ | Model client abstractions (OpenAI, Anthropic placeholder) |
-| memory/, artifact/, session/ | Pluggable store implementations |
-| engine/ | Execution engine / callbacks |
-| examples/ | Runnable usage examples |
-
-(Planned: `STRUCTURE.md` for deeper detail - tracked in `AUDIT.md`).
+| core/ | Core contracts & types (Runner interface, Events, Stores) |
+| runner/ | Runner implementation |
+| agent/ | Agents (model, sequential, parallel, loop, etc.) |
+| flow/ | Flow orchestration helpers / selectors |
+| tool/ | Tool interfaces & helpers (function tools, state manager) |
+| model/ | Model adapters (openai/, anthropic/ WIP) |
+| memory/, artifact/, session/ | Pluggable in-memory stores (durable planned) |
+| examples/ | Runnable examples |
+| engine/ | Temporary deprecated alias (scheduled for removal) |
+| internal/ | Test utilities & internal helpers |
 
 ---
-## 4. Development Workflow
-Branch naming (suggested):
-- `feat/<area>-<short-desc>`
-- `fix/<area>-<issue>`
-- `refactor/<area>`
-- `docs/<topic>`
-
-Open a Draft PR early for larger changes; link related audit quick win or roadmap item.
+## 4. Branch & PR Workflow
+Suggested branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/`, `test/`. Open Draft PRs early for non‑trivial changes. Reference internal tracking IDs when applicable.
 
 ---
 ## 5. Coding & Style
-- Run `go fmt ./...` (or rely on your editor's goimports).
-- Keep exported identifiers documented (package doc + exported symbols). Avoid redundant commentary that restates code.
-- Group related imports (std | third‑party | internal) if adding new ones.
-- Avoid premature micro‑optimizations; justify performance changes with a brief note / benchmark.
+* `go fmt` + `go vet` clean before PR.
+* Document exported identifiers meaningfully (avoid restating signature).
+* Group imports: std | third‑party | internal.
+* Use `context.Context` as first parameter where added.
+* Prefer small focused files; avoid giant god objects.
 
 ### Errors
-- Prefer sentinel errors where callers benefit (e.g., unavailable store). Pattern:
-  ```go
-  var ErrArtifactStoreUnavailable = errors.New("artifact: store unavailable")
-  ```
-- Prefix error messages with domain (`artifact:`, `memory:`, `session:`, `agent:`) for log filtering.
-- Wrap underlying errors with `%w` when additional context matters.
+* Domain‑prefixed messages (`memory:`, `artifact:` ...).
+* Wrap with `%w` for propagation.
+* Sentinel errors (e.g. `ErrNotFound`) are being standardized; add in central location when introduced.
 
 ### Concurrency
-- Always respect context cancellation (`select { case <-ctx.Done(): ... }`).
-- When spawning goroutines in agents, intercept & forward events carefully; use `NewChildInvocationContext` to avoid manual field drift.
-- Document channel buffer sizes; prefer small, bounded buffers unless justified.
+* Always honor cancellation; short selects over blocking operations.
+* Avoid unbounded goroutines for tools (semaphore coming; mimic pattern if adding interim code).
+* Document channel buffer sizes.
 
 ---
-## 6. InvocationContext Guidelines
-- Use `Clone()` for speculative / branch modifications where pending deltas should copy forward.
-- Use `NewChildInvocationContext(emit, resume, branch)` when you need fresh state/artifact buffers and custom channels.
-- After mutating state via `SetState`, ensure it is propagated by calling `EmitEvent` (which automatically merges & clears deltas) or `CommitStateDelta`.
+## 6. Events & Invocation Context
+* Use `EmitEvent` to flush state & artifact deltas.
+* `Partial` = streaming fragment. Do not mutate Events after emission.
+* For tool calls, create function call parts rather than piggybacking on text.
+* Avoid adding random metadata; prefer structured fields or `CustomMetadata` with a short, namespaced key.
+
 
 ---
-## 7. Adding a New Agent
+## 7. Adding Agents
 Checklist:
-1. Define struct embedding `BaseAgent`.
-2. Implement `Run(*core.InvocationContext) error` with start/stop lifecycle (`Start` / `Stop`).
-3. For composite behavior requiring interception, derive contexts with `NewChildInvocationContext`.
-4. Emit escalation events via `agent.CreateEscalationEvent` if escalation semantics apply.
-5. Add focused tests (happy path + cancellation + error propagation + escalation if relevant).
-6. Update examples if it introduces a new execution pattern.
+1. Embed / reuse base behavior (`BaseAgent`).
+2. Implement `Run(*core.InvocationContext) error` only; no other side‑channel logic.
+3. Emit escalation with `Actions.Escalate` when handing off upward.
+4. Add tests: success, cancellation, error propagation.
+5. Update an example only if it clarifies usage (avoid churn in all examples).
 
 ---
-## 8. Adding a Tool
-1. Implement the `tool.Tool` interface.
-2. Register it in `tool/registry.go` (or via dynamic registration path).
-3. Provide argument validation (JSON schema or manual) - fail fast.
-4. Add interface compliance assertion test.
-5. Add example usage or expand an existing one.
+## 8. Tools
+1. Implement `tool.Tool` or use function helper.
+2. Validate args strictly (schema or manual) – fail fast with readable error.
+3. Anticipate forthcoming timeout wrapper; do not spawn goroutines that outlive context.
+4. Provide a minimal test (success + validation failure).
 
 ---
-## 9. Adding a Model Client
-1. Create a subfolder under `model/`.
-2. Implement the model interface minimally (streaming if applicable later).
-3. Keep external dependencies lean; prefer standard HTTP.
-4. No secret keys hardcoded - use env vars.
-5. Document configuration & limits in a short README inside the subfolder.
+## 9. Model Adapters
+* Keep dependencies minimal (std http + json).
+* Stream tokens/events incrementally; aggregate only when required.
+* Protect against API changes; centralize request/response structs.
+* Do not embed API keys in code; rely on env vars.
 
 ---
-## 10. Tests & Coverage
-- Run: `go test ./... -count=1` (default), add `-race` for concurrency validation.
-- Coverage (target evolving; see `AUDIT.md`). To generate: `go test ./... -coverprofile=coverage.out`.
-- Add behavior tests for new edge cases; avoid brittle snapshot tests.
-- Use interface assertions sparingly to guard stability.
+## 10. Tests
+* Use `testify/require` for critical preconditions, `assert` for value checks (migrating legacy tests gradually).
+* Run `go test ./... -race` for concurrency changes.
+* Prefer table tests for permutations.
+* Golden tests limited to wire format (planned for Events) – avoid overuse.
+
+Benchmark additions should include a brief comment about scenario & target metric.
 
 ---
-## 11. Events & Escalation
-- Use `EmitEvent` to flush pending state & artifact deltas.
-- Escalation: child agent sets `Actions.Escalate = true`; parent composite agent may treat it as early success/termination.
-- Keep escalation payload minimal but informative (why escalation happened).
+## 11. Documentation Expectations
+Public API changes require at least one of: updated package comment, added example, or README/TODO entry. New architectural decisions: add an ADR‑style markdown (`EVENT.md` pattern) if non‑obvious.
 
 ---
-## 12. Documentation Expectations
-Every PR adding public API surface must include one of:
-- New or updated package / type comments
-- Example in `examples/` if feature-driven
-- Update to `README.md` if user-facing capability
+## 12. Deprecations & Compatibility
+* `engine/` is a temporary alias for `runner/` – do not add new code there.
+* Use `Runner.Run` & `Runner.Cancel`; avoid adding new usages of deprecated `Invoke` / `CancelInvocation` shims.
+* Deprecation comments must start with `// Deprecated:` and reference removal milestone.
 
 ---
 ## 13. Commit Messages
-Prefer Conventional Commit style (not enforced yet):
-- `feat(agent): add retry backoff to LoopAgent`
-- `fix(tool): correct nil resume channel panic`
-- `docs(core): elaborate InvocationContext cloning rules`
+Conventional style preferred:
+* `feat(runner): add deterministic tool ordering`
+* `fix(memory): prevent nil map panic in Put`
+* `docs(event): add CloudEvents rationale`
 
 ---
-## 14. Pull Request Checklist
-Before marking Ready for Review:
-- [ ] Tests pass locally (`go test ./...`)
-- [ ] No `go vet` / (future) `golangci-lint` basic issues
-- [ ] Added / updated docs for exported symbols
-- [ ] Event / state handling follows InvocationContext rules
-- [ ] Race-safe (run with `-race` if concurrency added)
-- [ ] No unrelated reformat noise
-- [ ] Updated `AUDIT.md` if resolving a quick win
+## 14. PR Checklist
+* [ ] `go test ./...` passes
+* [ ] (If concurrency) `go test -race ./...`
+* [ ] Exported symbols documented
+* [ ] No stray debug prints / unused code
+* [ ] Events emitted via context helpers (no manual partial mutation post‑emit)
+* [ ] Examples updated or consciously untouched (state decision in PR)
+* [ ] Internal tracking item updated if applicable
 
 ---
-## 15. Release Hygiene (Lightweight for now)
-- Confirm no breaking API changes without version bump rationale
-- Run full test suite with `-race`
-- Generate & review coverage diff (trend acceptable)
-- Update CHANGELOG (to be introduced) summarizing user-visible changes
+## 15. Release Prep (Lightweight)
+* Ensure no unannounced breaking changes
+* Run full test suite with race
+* Update CHANGELOG (to be added) & tag
 
 ---
 ## 16. Code of Conduct
-Not yet formalized; please act professionally & respectfully. A standard Contributor Covenant can be added if community grows.
+Not formalized yet. Be respectful; harassment-free collaboration expected.
 
 ---
-## 17. Questions / Help
-Open a Discussion or Draft PR for architectural questions before deep implementation. Early alignment reduces churn.
+## 17. Getting Help
+Open a Discussion or Draft PR for design exploration. Early feedback reduces rework.
 
 ---
-Happy building!
+Happy hacking!
