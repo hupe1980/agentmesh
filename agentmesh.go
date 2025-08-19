@@ -4,9 +4,9 @@
 // with this package by:
 //  1. Creating an AgentMesh via New() (optionally overriding default in‑memory services)
 //  2. Registering one or more agents (model, sequential, parallel, loop, custom)
-//  3. Invoking agents asynchronously (Invoke) or synchronously (InvokeSync)
+//  3. Invoking agents asynchronously (Run) or synchronously (RunSync)
 //
-// The façade delegates orchestration to engine.Engine while keeping setup and
+// The façade delegates orchestration to an internal runner.Runner while keeping setup and
 // usage ergonomics concise. All defaults are safe for local development and
 // testing; production deployments typically supply durable store implementations
 // and a structured logger.
@@ -17,16 +17,16 @@ import (
 
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/engine"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
+	"github.com/hupe1980/agentmesh/runner"
 	"github.com/hupe1980/agentmesh/session"
 )
 
 // Options configures the AgentMesh instance.
 type Options struct {
-	// Engine configuration (concurrency, streaming, buffers)
-	EngineConfig engine.Config
+	// Runner configuration (concurrency, streaming, buffers)
+	EngineConfig runner.Config
 	// MaxConcurrentInvocations limits the number of agent invocations that
 	// can execute simultaneously. This prevents resource exhaustion and
 	// provides backpressure. Set to 0 for unlimited (not recommended).
@@ -54,14 +54,14 @@ type Options struct {
 // AgentMesh is the high-level façade aggregating the underlying engine and services.
 type AgentMesh struct {
 	opts   Options
-	engine core.Engine
+	engine core.Runner
 }
 
 // New creates a new AgentMesh instance with optional overrides. Any unset service is
 // initialized with an in-memory implementation.
-func New(optFns ...func(o *Options)) *AgentMesh {
+func New(agent core.Agent, optFns ...func(o *Options)) *AgentMesh {
 	opts := Options{
-		EngineConfig:    engine.DefaultConfig,
+		EngineConfig:    runner.DefaultConfig,
 		SessionStore:    session.NewInMemoryStore(),
 		ArtifactService: artifact.NewInMemoryStore(),
 		MemoryStore:     memory.NewInMemoryStore(),
@@ -72,7 +72,7 @@ func New(optFns ...func(o *Options)) *AgentMesh {
 		fn(&opts)
 	}
 
-	r := engine.New(func(o *engine.Options) {
+	r := runner.New(agent, func(o *runner.Options) {
 		o.Config = opts.EngineConfig
 		o.SessionStore = opts.SessionStore
 		o.ArtifactStore = opts.ArtifactService
@@ -83,17 +83,15 @@ func New(optFns ...func(o *Options)) *AgentMesh {
 	return &AgentMesh{opts: opts, engine: r}
 }
 
-// RegisterAgent adds an agent to the underlying runner.
-func (m *AgentMesh) RegisterAgent(a core.Agent) { m.engine.Register(a) }
+// Run starts an asynchronous invocation returning event & error channels.
+func (m *AgentMesh) Run(ctx context.Context, sessionID string, userContent core.Content) (string, <-chan core.Event, <-chan error, error) {
+	return m.engine.Run(ctx, sessionID, userContent)
+}
 
-// Invoke starts an asynchronous invocation returning event & error channels.
-func (m *AgentMesh) Invoke(
-	ctx context.Context,
-	sessionID string,
-	agentName string,
-	userContent core.Content,
-) (string, <-chan core.Event, <-chan error, error) {
-	return m.engine.Invoke(ctx, sessionID, agentName, userContent)
+// Invoke is deprecated. Use Run.
+// Deprecated: use Run
+func (m *AgentMesh) Invoke(ctx context.Context, sessionID string, userContent core.Content) (string, <-chan core.Event, <-chan error, error) {
+	return m.Run(ctx, sessionID, userContent)
 }
 
 // InvokeSync is a synchronous helper that drains the async channels, accumulates
@@ -101,10 +99,9 @@ func (m *AgentMesh) Invoke(
 func (m *AgentMesh) InvokeSync(
 	ctx context.Context,
 	sessionID string,
-	agentName string,
 	userContent core.Content,
 ) (string, []core.Event, error) {
-	invocationID, eventsCh, errorsCh, err := m.engine.Invoke(ctx, sessionID, agentName, userContent)
+	invocationID, eventsCh, errorsCh, err := m.engine.Run(ctx, sessionID, userContent)
 	if err != nil {
 		return "", nil, err
 	}

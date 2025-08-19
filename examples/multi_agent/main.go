@@ -21,9 +21,6 @@ func main() {
 		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
 
-	mesh := agentmesh.New(func(o *agentmesh.Options) {
-		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
-	})
 	model := openai.NewModel()
 
 	researchAgent := agent.NewModelAgent("ResearchAgent", model, func(o *agent.ModelAgentOptions) {
@@ -43,14 +40,17 @@ func main() {
 	reportAgent.RegisterTool(tool.NewStateManagerTool())
 
 	workflow := agent.NewSequentialAgent("MultiAgent", researchAgent, analysisAgent, reportAgent)
-	mesh.RegisterAgent(workflow)
+
+	mesh := agentmesh.New(workflow, func(o *agentmesh.Options) {
+		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
+	})
 
 	userContent := newUserText("Research and analyze the impact of artificial intelligence on modern education systems.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "session-multi", workflow.Name(), userContent)
+	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

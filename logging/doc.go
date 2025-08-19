@@ -10,7 +10,7 @@
 // Usage:
 //
 //	logger := logging.NewSlogLogger(logging.LogLevelInfo, "json", false)
-//	engine := engine.New(sessionStore, artifactStore, memoryStore, engine.WithLogger(logger))
+//	r := runner.New(sessionStore, artifactStore, memoryStore, func(o *runner.Options){ o.Logger = logger })
 //
 // The design intentionally keeps the interface minimal to avoid vendor lock-in
 // while supporting structured logging where available.

@@ -57,30 +57,29 @@ func main() {
 		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
 
-	mesh := agentmesh.New(func(o *agentmesh.Options) {
-		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
-	})
 	model := openai.NewModel()
 
-	ag := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
+	agent := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instruction = agent.NewInstructionFromText("You are a weather assistant.")
 	})
-	ag.RegisterTool(&GetWeatherTool{})
+	agent.RegisterTool(&GetWeatherTool{})
 
-	mesh.RegisterAgent(ag)
+	mesh := agentmesh.New(agent, func(o *agentmesh.Options) {
+		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
+	})
 
 	userContent := newUserText("What's the weather like in Berlin?")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "session-weather", ag.Name(), userContent)
+	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}
 
 	fmt.Println("=== Weather Agent ===")
-	accumulate(eventsCh, errorsCh, ag.Name())
+	accumulate(eventsCh, errorsCh, agent.Name())
 }
 
 func accumulate(eventsCh <-chan core.Event, errorsCh <-chan error, focus string) {

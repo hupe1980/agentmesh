@@ -82,9 +82,6 @@ func main() {
 		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
 
-	mesh := agentmesh.New(func(o *agentmesh.Options) {
-		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
-	})
 	model := openai.NewModel()
 
 	calcAgent := agent.NewModelAgent("CalculatorAgent", model, func(o *agent.ModelAgentOptions) {
@@ -92,14 +89,16 @@ func main() {
 	})
 	calcAgent.RegisterTool(&CalculatorTool{})
 
-	mesh.RegisterAgent(calcAgent)
+	mesh := agentmesh.New(calcAgent, func(o *agentmesh.Options) {
+		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
+	})
 
 	userContent := newUserText("Calculate the area of a circle with radius 5.5, then what percent of a square of side 12 it is.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "session-tool", calcAgent.Name(), userContent)
+	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

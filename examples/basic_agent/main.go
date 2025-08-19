@@ -22,17 +22,17 @@ func main() {
 		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
 
-	// 1. Create the mesh with a standard logger
-	mesh := agentmesh.New(func(o *agentmesh.Options) {
-		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
-	})
-
-	// 2. Create model + agent with an instruction prompt
+	// 1. Create model + agent with an instruction prompt
 	model := openai.NewModel()
+
 	llmAgent := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instruction = agent.NewInstructionFromText("You are a helpful assistant. Keep responses concise and friendly.")
 	})
-	mesh.RegisterAgent(llmAgent)
+
+	// 2. Create the mesh with a standard logger
+	mesh := agentmesh.New(llmAgent, func(o *agentmesh.Options) {
+		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
+	})
 
 	// 3. Build user content (helper function style across examples)
 	userContent := newUserText("Hello! What can you help me with?")
@@ -41,7 +41,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "session-basic", llmAgent.Name(), userContent)
+	_, eventsCh, errorsCh, err := mesh.Invoke(ctx, "sess1", userContent)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}
