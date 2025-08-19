@@ -91,7 +91,7 @@ func TestFunctionTool_Success(t *testing.T) {
 		return a + b, nil
 	})
 
-	inv := dummyInvocationContext()
+	inv := dummyRunContext()
 	tc := core.NewToolContext(inv, "fc1")
 	result, err := sumTool.Call(tc, map[string]any{"a": 2.0, "b": 3.0})
 	assert.NoError(t, err)
@@ -110,7 +110,7 @@ func TestFunctionTool_ValidationError(t *testing.T) {
 	tTool := NewFunctionTool("test", "Test", params, func(_ *core.ToolContext, _ map[string]any) (any, error) {
 		return 0, nil
 	})
-	tc := core.NewToolContext(dummyInvocationContext(), "fc2")
+	tc := core.NewToolContext(dummyRunContext(), "fc2")
 	_, err := tTool.Call(tc, map[string]any{})
 	assert.Error(t, err)
 	toolErr, ok := err.(*ToolError)
@@ -123,7 +123,7 @@ func TestFunctionTool_ExecutionError(t *testing.T) {
 	execTool := NewFunctionTool("fail", "Fails", params, func(_ *core.ToolContext, _ map[string]any) (any, error) {
 		return nil, errors.New("boom")
 	})
-	tc := core.NewToolContext(dummyInvocationContext(), "fc3")
+	tc := core.NewToolContext(dummyRunContext(), "fc3")
 	_, err := execTool.Call(tc, map[string]any{})
 	assert.Error(t, err)
 	toolErr, ok := err.(*ToolError)
@@ -265,7 +265,7 @@ func (m *memMemoryService) Delete(_, _ string) error { return nil }
 func (m *memMemoryService) Get(_ string) (map[string]any, error) { return map[string]any{}, nil }
 func (m *memMemoryService) Put(_ string, _ map[string]any) error { return nil }
 
-func dummyInvocationContext() *core.InvocationContext {
+func dummyRunContext() *core.RunContext {
 	sessSvc := newMemSessionService()
 	artSvc := newMemArtifactService()
 	memSvc := newMemMemoryService()
@@ -278,12 +278,12 @@ func dummyInvocationContext() *core.InvocationContext {
 	emit := make(chan core.Event, 10)
 	resume := make(chan struct{}, 1)
 
-	return core.NewInvocationContext(context.Background(), sessionID, "inv-1", core.AgentInfo{Name: "Agent", Type: "test"}, core.Content{}, emit, resume, core.NewSession(sessionID), sessSvc, artSvc, memSvc, logging.NoOpLogger{})
+	return core.NewRunContext(context.Background(), sessionID, "inv-1", core.AgentInfo{Name: "Agent", Type: "test"}, core.Content{}, emit, resume, core.NewSession(sessionID), sessSvc, artSvc, memSvc, logging.NoOpLogger{})
 }
 
 func TestStateManagerTool_SetAndGetState(t *testing.T) {
 	sm := NewStateManagerTool()
-	inv := dummyInvocationContext()
+	inv := dummyRunContext()
 	tc := core.NewToolContext(inv, "fc-set")
 
 	// set_state
@@ -312,7 +312,7 @@ func TestStateManagerTool_SetAndGetState(t *testing.T) {
 
 func TestStateManagerTool_FlowControlActions(t *testing.T) {
 	sm := NewStateManagerTool()
-	inv := dummyInvocationContext()
+	inv := dummyRunContext()
 	tc := core.NewToolContext(inv, "fc-flow")
 
 	// escalate

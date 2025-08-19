@@ -250,7 +250,7 @@ func (a *ModelAgent) MaxHistoryMessages() int {
 
 // ResolveInstructions produces the final instruction string (system prompt)
 // by resolving static or dynamic instruction sources.
-func (a *ModelAgent) ResolveInstructions(invocationCtx *core.InvocationContext) (string, error) {
+func (a *ModelAgent) ResolveInstructions(invocationCtx *core.RunContext) (string, error) {
 	return a.instruction.Resolve(invocationCtx)
 }
 
@@ -274,7 +274,7 @@ func (a *ModelAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, arg
 // TransferToAgent transfers execution to a named sub-agent.
 // TransferToAgent delegates execution to a named descendant agent using the
 // same invocation context (shared session state, emit channel).
-func (a *ModelAgent) TransferToAgent(invocationCtx *core.InvocationContext, agentName string) error {
+func (a *ModelAgent) TransferToAgent(invocationCtx *core.RunContext, agentName string) error {
 	// Find the target agent
 	targetAgent := a.FindAgent(agentName)
 	if targetAgent == nil {
@@ -296,7 +296,7 @@ func (a *ModelAgent) TransferToAgent(invocationCtx *core.InvocationContext, agen
 // based on the agent's capabilities.
 // Run implements core.Agent using the flow selector to choose execution
 // strategy then streams flow events to the parent invocation context.
-func (a *ModelAgent) Run(invocationCtx *core.InvocationContext) error {
+func (a *ModelAgent) Run(invocationCtx *core.RunContext) error {
 	logger := invocationCtx.Logger
 	if logger == nil {
 		logger = logging.NoOpLogger{}
@@ -304,7 +304,7 @@ func (a *ModelAgent) Run(invocationCtx *core.InvocationContext) error {
 	logger.Debug(
 		"agent.run.start",
 		"agent", a.Name(),
-		"invocation", invocationCtx.InvocationID,
+		"run", invocationCtx.RunID,
 	)
 
 	ctx := invocationCtx.Context // engine manages Start/Stop lifecycle now

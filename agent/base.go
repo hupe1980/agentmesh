@@ -47,7 +47,7 @@ func (b *BaseAgent) Description() string { return b.description }
 // that is cancelled when Stop is invoked. It is safe for concurrent calls but
 // only the first successful invocation changes state; subsequent calls while
 // running return an error.
-func (b *BaseAgent) Start(invocationCtx *core.InvocationContext) error {
+func (b *BaseAgent) Start(invocationCtx *core.RunContext) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -73,7 +73,7 @@ func (b *BaseAgent) Start(invocationCtx *core.InvocationContext) error {
 // It returns an error if the agent was not running. Stop is idempotent with
 // respect to multiple cancellations (subsequent calls after a successful stop
 // will yield an error due to state check).
-func (b *BaseAgent) Stop(_ *core.InvocationContext) error {
+func (b *BaseAgent) Stop(_ *core.RunContext) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -184,6 +184,6 @@ func (b *BaseAgent) FindAgent(name string) core.Agent {
 type agentWrapper struct{ *BaseAgent }
 
 // Run executes the agent's behavior within the given context.
-func (w *agentWrapper) Run(_ *core.InvocationContext) error {
+func (w *agentWrapper) Run(_ *core.RunContext) error {
 	return fmt.Errorf("cannot execute BaseAgent directly - embed it in a concrete agent with Run implementation")
 }

@@ -29,7 +29,7 @@ All defaults are in‑memory & dependency‑free → drop into a prototype in mi
 | LoopAgent | Repeats a child with iteration, predicate, escalation support. |
 | Event | Immutable message + action container flowing through the system. |
 | ToolContext | Sandboxed surface for tool execution (state, artifacts, memory). |
-| InvocationContext | Per‑run execution scope for an agent. |
+| RunContext | Per‑run execution scope for an agent. |
 
 ## 🚀 Quick Start
 Minimal single-agent run (mirrors `examples/basic_agent`) using the low-level `runner` package directly:

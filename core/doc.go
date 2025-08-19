@@ -4,7 +4,7 @@
 //   - Agents (units of autonomous / orchestrated work)
 //   - Sessions (stateful conversational containers with event history)
 //   - Events (immutable communication + orchestration records)
-//   - InvocationContext / ToolContext (scoped execution & tool sandboxing)
+//   - RunContext / ToolContext (scoped execution & tool sandboxing)
 //   - Pluggable stores for session state, artifacts and memory recall/search
 //
 // The package intentionally keeps implementation concerns (persistence, engine

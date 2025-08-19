@@ -89,7 +89,7 @@ func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOpti
 //  7. Respects context cancellation throughout execution
 //  8. Manages cleanup and lifecycle
 //
-// The same InvocationContext is passed to all iterations, allowing
+// The same RunContext is passed to all iterations, allowing
 // the child agent to accumulate state across loop executions.
 //
 // If a child agent emits an event with Escalate=true, the loop immediately
@@ -101,7 +101,7 @@ func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOpti
 // Returns an error if execution fails or if configured to stop on child errors.
 // Run implements core.Agent performing iterative execution with escalation
 // detection. It returns early (nil error) on escalation events.
-func (l *LoopAgent) Run(invocationCtx *core.InvocationContext) error {
+func (l *LoopAgent) Run(invocationCtx *core.RunContext) error {
 	// Execute the loop with configured termination conditions and escalation monitoring
 	for i := 0; i < l.maxIters; i++ {
 		// Check for context cancellation
@@ -162,12 +162,12 @@ func (l *LoopAgent) Run(invocationCtx *core.InvocationContext) error {
 // runChildWithEscalationMonitoring wraps child execution routing its emitted
 // events through an intercept channel to inspect for escalation flags before
 // forwarding to the parent context.
-func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.InvocationContext) error {
+func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.RunContext) error {
 	// Create intercepting channels and derive a child context using helper
 	interceptChan := make(chan core.Event, 10)
 	resumeChan := make(chan struct{}, 10)
 
-	childInvocationCtx := invocationCtx.NewChildInvocationContext(interceptChan, resumeChan, invocationCtx.Branch)
+	childInvocationCtx := invocationCtx.NewChildRunContext(interceptChan, resumeChan, invocationCtx.Branch)
 
 	// Channel to communicate child execution completion
 	done := make(chan error, 1)
@@ -235,7 +235,7 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 //
 // Parameters:
 //   - author: Name of the agent creating the escalation event
-//   - invocationID: Current invocation context identifier
+//   - runID: Current run context identifier
 //   - content: Optional content describing the reason for escalation
 //
 // Returns a fully configured Event with Escalate=true.
@@ -243,7 +243,7 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 // Example usage:
 //
 //	event := CreateEscalationEvent(
-//	    ctx.InvocationID,
+//	    ctx.RunID,
 //	    "TaskAgent",
 //	    &event.Content{
 //	        Role: "assistant",
@@ -253,9 +253,9 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.Invocat
 //	return ctx.EmitEvent(event)
 //
 // CreateEscalationEvent helper for constructing an escalation signal event.
-func CreateEscalationEvent(invocationID, author string, content *core.Content) core.Event {
+func CreateEscalationEvent(runID, author string, content *core.Content) core.Event {
 	escalate := true
-	ev := core.NewEvent(invocationID, author)
+	ev := core.NewEvent(runID, author)
 	ev.Actions.Escalate = &escalate
 	ev.Content = content
 	return ev

@@ -24,11 +24,11 @@ func NewTestEscalatingAgent(name string, escalateOn int) *TestEscalatingAgent {
 	}
 }
 
-func (t *TestEscalatingAgent) Run(invocationCtx *core.InvocationContext) error {
+func (t *TestEscalatingAgent) Run(invocationCtx *core.RunContext) error {
 	t.runCount++
 
 	// Create a basic event
-	ev := core.NewEvent(t.Name(), invocationCtx.InvocationID)
+	ev := core.NewEvent(t.Name(), invocationCtx.RunID)
 
 	if t.runCount >= t.escalateOn {
 		// Create escalation event
@@ -72,11 +72,11 @@ func NewTestRegularAgent(name string) *TestRegularAgent {
 	}
 }
 
-func (t *TestRegularAgent) Run(invocationCtx *core.InvocationContext) error {
+func (t *TestRegularAgent) Run(invocationCtx *core.RunContext) error {
 	t.runCount++
 
 	// Create a regular event
-	ev := core.NewEvent(invocationCtx.InvocationID, t.Name())
+	ev := core.NewEvent(invocationCtx.RunID, t.Name())
 	ev.Content = &core.Content{
 		Role: "assistant",
 		Parts: []core.Part{core.TextPart{
@@ -139,11 +139,11 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 			emitChan := make(chan core.Event, 10)
 			resumeChan := make(chan struct{}, 10)
 
-			invocationCtx := &core.InvocationContext{
-				Context:      ctx,
-				InvocationID: "test-invocation",
-				Emit:         emitChan,
-				Resume:       resumeChan,
+			invocationCtx := &core.RunContext{
+				Context: ctx,
+				RunID:   "test-invocation",
+				Emit:    emitChan,
+				Resume:  resumeChan,
 			}
 
 			// Track events in a separate goroutine
@@ -213,7 +213,7 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 func TestCreateEscalationEvent(t *testing.T) {
 	// Test the escalation event helper function
 	author := "TestAgent"
-	invocationID := "test-invocation-123"
+	runID := "test-invocation-123"
 	content := &core.Content{
 		Role: "assistant",
 		Parts: []core.Part{core.TextPart{
@@ -221,15 +221,15 @@ func TestCreateEscalationEvent(t *testing.T) {
 		}},
 	}
 
-	event := CreateEscalationEvent(invocationID, author, content)
+	event := CreateEscalationEvent(runID, author, content)
 
 	// Verify event properties
 	if event.Author != author {
 		t.Errorf("Expected author %s, got %s", author, event.Author)
 	}
 
-	if event.InvocationID != invocationID {
-		t.Errorf("Expected invocationID %s, got %s", invocationID, event.InvocationID)
+	if event.RunID != runID {
+		t.Errorf("Expected runID %s, got %s", runID, event.RunID)
 	}
 
 	if event.Actions.Escalate == nil || !*event.Actions.Escalate {

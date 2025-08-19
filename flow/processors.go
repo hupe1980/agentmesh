@@ -18,7 +18,7 @@ func NewInstructionsProcessor() *InstructionsProcessor { return &InstructionsPro
 func (p *InstructionsProcessor) Name() string { return "instructions" }
 
 // ProcessRequest adds system instructions to the chat request.
-func (p *InstructionsProcessor) ProcessRequest(invocationCtx *core.InvocationContext, req *model.Request, agent FlowAgent) error {
+func (p *InstructionsProcessor) ProcessRequest(invocationCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
 	instructions, err := agent.ResolveInstructions(invocationCtx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve instruction: %w", err)
@@ -54,7 +54,7 @@ func NewContentsProcessor() *ContentsProcessor { return &ContentsProcessor{} }
 func (p *ContentsProcessor) Name() string { return "contents" }
 
 // ProcessRequest adds user content to the chat request.
-func (p *ContentsProcessor) ProcessRequest(invocationCtx *core.InvocationContext, req *model.Request, agent FlowAgent) error {
+func (p *ContentsProcessor) ProcessRequest(invocationCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
 	contents := []core.Content{{
 		Role:  "system",
 		Parts: []core.Part{core.TextPart{Text: req.Instructions}},

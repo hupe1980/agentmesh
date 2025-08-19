@@ -71,7 +71,7 @@ Suggested branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/`, `test/`. Open 
 ## 7. Adding Agents
 Checklist:
 1. Embed / reuse base behavior (`BaseAgent`).
-2. Implement `Run(*core.InvocationContext) error` only; no other side‑channel logic.
+2. Implement `Run(*core.RunContext) error` only; no other side‑channel logic.
 3. Emit escalation with `Actions.Escalate` when handing off upward.
 4. Add tests: success, cancellation, error propagation.
 5. Update an example only if it clarifies usage (avoid churn in all examples).

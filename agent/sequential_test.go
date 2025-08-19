@@ -33,7 +33,7 @@ func TestSequentialAgent_Run_Success(t *testing.T) {
 
 	ctx := context.Background()
 	sessionID := "test-session"
-	invocationID := "test-invocation"
+	runID := "test-invocation"
 
 	sess := core.NewSession(sessionID)
 	agentInfo := core.AgentInfo{
@@ -51,8 +51,8 @@ func TestSequentialAgent_Run_Success(t *testing.T) {
 	emit := make(chan core.Event, 10)
 	resume := make(chan struct{}, 1)
 
-	invocationCtx := core.NewInvocationContext(
-		ctx, sessionID, invocationID, agentInfo, userContent,
+	invocationCtx := core.NewRunContext(
+		ctx, sessionID, runID, agentInfo, userContent,
 		emit, resume, sess, nil, nil, nil, logging.NoOpLogger{},
 	)
 
@@ -76,7 +76,7 @@ func TestSequentialAgent_Run_FirstChildError(t *testing.T) {
 
 	ctx := context.Background()
 	sess := core.NewSession("test-session")
-	invocationCtx := core.NewInvocationContext(
+	invocationCtx := core.NewRunContext(
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
@@ -100,7 +100,7 @@ func TestSequentialAgent_Run_NoChildren(t *testing.T) {
 
 	ctx := context.Background()
 	sess := core.NewSession("test-session")
-	invocationCtx := core.NewInvocationContext(
+	invocationCtx := core.NewRunContext(
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
@@ -120,7 +120,7 @@ func TestSequentialAgent_ContextPropagation(t *testing.T) {
 
 	ctx := context.Background()
 	sess := core.NewSession("test-session")
-	invocationCtx := core.NewInvocationContext(
+	invocationCtx := core.NewRunContext(
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
@@ -128,11 +128,11 @@ func TestSequentialAgent_ContextPropagation(t *testing.T) {
 		nil, nil, nil, logging.NoOpLogger{},
 	)
 
-	child1.On("Run", mock.MatchedBy(func(ctx *core.InvocationContext) bool {
+	child1.On("Run", mock.MatchedBy(func(ctx *core.RunContext) bool {
 		return ctx == invocationCtx
 	})).Return(nil)
 
-	child2.On("Run", mock.MatchedBy(func(ctx *core.InvocationContext) bool {
+	child2.On("Run", mock.MatchedBy(func(ctx *core.RunContext) bool {
 		return ctx == invocationCtx
 	})).Return(nil)
 

@@ -55,7 +55,7 @@ func NewSequentialAgent(name string, children ...core.Agent) *SequentialAgent {
 //  4. Stops execution on the first error encountered
 //  5. Manages cleanup and lifecycle for all agents
 //
-// The same InvocationContext is passed to all child agents, allowing
+// The same RunContext is passed to all child agents, allowing
 // them to share session state and build upon each other's results.
 //
 // Parameters:
@@ -64,7 +64,7 @@ func NewSequentialAgent(name string, children ...core.Agent) *SequentialAgent {
 // Returns an error if any child agent fails or if lifecycle management fails.
 // Run implements core.Agent. It executes each child agent in the supplied
 // context order; errors stop further processing immediately.
-func (s *SequentialAgent) Run(invocationCtx *core.InvocationContext) error {
+func (s *SequentialAgent) Run(invocationCtx *core.RunContext) error {
 	// Execute child agents in sequence, propagating state between them
 	for _, child := range s.children {
 		// Pass the same invocation context to maintain shared state

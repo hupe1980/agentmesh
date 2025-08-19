@@ -107,12 +107,12 @@ func (m *MockMemoryService) Store(_ string, _ string, _ map[string]any) error {
 
 func (m *MockMemoryService) Delete(_ string, _ string) error { return nil }
 
-func newTestInvocationContext() *core.InvocationContext {
+func newTestInvocationContext() *core.RunContext {
 	ctx := context.Background()
 	eventChan := make(chan core.Event, 10)
 	sessSvc := session.NewInMemoryStore()
 	sess, _ := sessSvc.Create("test-session")
-	invocationCtx := core.NewInvocationContext(ctx, "test-session", "test-invocation", core.AgentInfo{Name: "TestAgent", Type: "flow-test"}, core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}, eventChan, nil, sess, sessSvc, nil, &MockMemoryService{}, nil)
+	invocationCtx := core.NewRunContext(ctx, "test-session", "test-invocation", core.AgentInfo{Name: "TestAgent", Type: "flow-test"}, core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}, eventChan, nil, sess, sessSvc, nil, &MockMemoryService{}, nil)
 	return invocationCtx
 }
 
@@ -125,7 +125,7 @@ func (m *mockFlowAgent) GetName() string { return m.name }
 
 func (m *mockFlowAgent) GetLLM() model.Model { return m.llm }
 
-func (m *mockFlowAgent) ResolveInstructions(_ *core.InvocationContext) (string, error) {
+func (m *mockFlowAgent) ResolveInstructions(_ *core.RunContext) (string, error) {
 	return "You are a test assistant.", nil
 }
 
@@ -147,7 +147,7 @@ func (m *mockFlowAgent) ExecuteTool(_ *core.ToolContext, _ string, _ string) (an
 	return nil, nil
 }
 
-func (m *mockFlowAgent) TransferToAgent(_ *core.InvocationContext, _ string) error {
+func (m *mockFlowAgent) TransferToAgent(_ *core.RunContext, _ string) error {
 	return nil
 }
 

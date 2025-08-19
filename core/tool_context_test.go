@@ -82,14 +82,14 @@ func (m *tcMockMemoryService) Store(sid, content string, metadata map[string]int
 }
 func (m *tcMockMemoryService) Delete(sid, memoryID string) error { return nil }
 
-func createTestInvocationContext() *InvocationContext {
+func createTestInvocationContext() *RunContext {
 	sessSvc := &tcMockSessionService{sessions: map[string]*Session{}}
 	artSvc := &tcMockArtifactService{data: map[string]map[string][]byte{}}
 	memSvc := &tcMockMemoryService{}
 	sess, _ := sessSvc.Create("test-session")
 	emit := make(chan Event, 10)
 	resume := make(chan struct{}, 10)
-	return NewInvocationContext(
+	return NewRunContext(
 		context.Background(), "test-session", "test-invocation", AgentInfo{Name: "Test Agent", Type: "test"},
 		Content{Role: "user", Parts: []Part{TextPart{Text: "Test input"}}},
 		emit, resume, sess, sessSvc, artSvc, memSvc, logging.NoOpLogger{},
@@ -105,8 +105,8 @@ func TestToolContext_BasicFunctionality(t *testing.T) {
 	if tc.SessionID() != "test-session" {
 		t.Errorf("session id mismatch")
 	}
-	if tc.InvocationID() != "test-invocation" {
-		t.Errorf("invocation id mismatch")
+	if tc.RunID() != "test-invocation" {
+		t.Errorf("run id mismatch")
 	}
 	if tc.FunctionCallID() != "test-call-id" {
 		t.Errorf("function call id mismatch")
@@ -120,7 +120,7 @@ func TestToolContext_BasicFunctionality(t *testing.T) {
 }
 
 func TestToolContext_StateManagement(t *testing.T) {
-	tc := NewToolContext(NewInvocationContext(
+	tc := NewToolContext(NewRunContext(
 		context.Background(), "test-session", "test-invocation", AgentInfo{Name: "Test Agent", Type: "test"},
 		Content{}, nil, nil, nil, nil, nil, nil, nil,
 	), "test-call-id")

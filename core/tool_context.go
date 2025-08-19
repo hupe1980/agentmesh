@@ -12,16 +12,16 @@ import (
 // deltas, transfers, escalation signals, artifact diffs) without directly
 // mutating the underlying session until applied.
 type ToolContext struct {
-	invocationCtx  *InvocationContext
+	invocationCtx  *RunContext
 	functionCallID string
 	agentInfo      AgentInfo
 	eventActions   EventActions
 	valid          bool
 }
 
-// NewToolContext constructs a tool context bound to a parent InvocationContext
+// NewToolContext constructs a tool context bound to a parent RunContext
 // and unique functionCallID.
-func NewToolContext(invocationCtx *InvocationContext, functionCallID string) *ToolContext {
+func NewToolContext(invocationCtx *RunContext, functionCallID string) *ToolContext {
 	return &ToolContext{invocationCtx: invocationCtx, functionCallID: functionCallID, agentInfo: invocationCtx.Agent, valid: true}
 }
 
@@ -31,8 +31,8 @@ func (tc *ToolContext) Context() context.Context { return tc.invocationCtx.Conte
 // SessionID returns the session ID associated with the tool invocation.
 func (tc *ToolContext) SessionID() string { return tc.invocationCtx.SessionID }
 
-// InvocationID returns the invocation ID associated with the tool invocation.
-func (tc *ToolContext) InvocationID() string { return tc.invocationCtx.InvocationID }
+// RunID returns the run ID associated with the tool invocation.
+func (tc *ToolContext) RunID() string { return tc.invocationCtx.RunID }
 
 // Logger returns the logger associated with the tool invocation.
 func (tc *ToolContext) Logger() logging.Logger { return tc.invocationCtx.Logger }
@@ -204,8 +204,8 @@ func (tc *ToolContext) IsValid() bool {
 	return tc.valid && tc.invocationCtx != nil && tc.invocationCtx.SessionID != "" && tc.functionCallID != ""
 }
 
-// InternalInvocationContext returns the internal invocation context.
-func (tc *ToolContext) InternalInvocationContext() *InvocationContext { return tc.invocationCtx }
+// InternalRunContext returns the internal run context.
+func (tc *ToolContext) InternalRunContext() *RunContext { return tc.invocationCtx }
 
 // InternalApplyActions merges accumulated EventActions into the provided event.
 // (Used internally by engine when finalizing tool invocation events.)

@@ -21,7 +21,7 @@ type EventActions struct {
 // Event is the primary unit of communication between agents, the engine and
 // external clients. After emission it should be treated as immutable. It
 // captures:
-//   - Correlation (InvocationID, ID, Author)
+//   - Correlation (RunID, ID, Author)
 //   - Conversational content (optional role-based Parts)
 //   - Orchestration directives (Actions)
 //   - Tool / long‑running operation hints (LongRunningToolIDs)
@@ -33,7 +33,7 @@ type EventActions struct {
 // needed for metrics or legacy clients.
 type Event struct {
 	ID                 string            `json:"id"`
-	InvocationID       string            `json:"invocation_id"`
+	RunID              string            `json:"run_id"`
 	Author             string            `json:"author"`
 	Actions            EventActions      `json:"actions"`
 	LongRunningToolIDs []string          `json:"long_running_tool_ids,omitempty"`
@@ -51,13 +51,13 @@ type Event struct {
 
 // NewEvent creates a bare event authored by 'author' bound to an invocation.
 // Prefer helper constructors for common semantic categories (message, function call/response).
-func NewEvent(invocationID, author string) Event {
+func NewEvent(runID, author string) Event {
 	return Event{
-		ID:           util.NewID(),
-		InvocationID: invocationID,
-		Author:       author,
-		Timestamp:    time.Now().UTC(),
-		Actions:      EventActions{},
+		ID:        util.NewID(),
+		RunID:     runID,
+		Author:    author,
+		Timestamp: time.Now().UTC(),
+		Actions:   EventActions{},
 	}
 }
 
@@ -72,16 +72,16 @@ func NewMessageEvent(author, message string) Event {
 
 // NewUserMessageEvent convenience wrapper for a user-authored text message.
 // NewUserMessageEvent creates a user-authored text message event.
-func NewUserMessageEvent(invocationID, message string) Event {
-	e := NewEvent(invocationID, "user")
+func NewUserMessageEvent(runID, message string) Event {
+	e := NewEvent(runID, "user")
 	e.Content = &Content{Role: "user", Parts: []Part{TextPart{Text: message}}}
 	return e
 }
 
 // NewUserContentEvent creates a user-authored event with arbitrary Content.
 // Useful for cases where the Content is not just a simple text message.
-func NewUserContentEvent(invocationID string, content *Content) Event {
-	e := NewEvent(invocationID, "user")
+func NewUserContentEvent(runID string, content *Content) Event {
+	e := NewEvent(runID, "user")
 	e.Content = content
 	return e
 }

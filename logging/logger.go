@@ -85,24 +85,24 @@ func NewDefaultSlogLogger() Logger {
 // AgentMeshLogger wraps slog.Logger adding contextual cloning helpers and
 // domain convenience methods. It should be cheap to copy via With* methods.
 type AgentMeshLogger struct {
-	logger       *slog.Logger
-	level        LogLevel
-	context      map[string]interface{}
-	component    string
-	sessionID    string
-	invocationID string
+	logger    *slog.Logger
+	level     LogLevel
+	context   map[string]interface{}
+	component string
+	sessionID string
+	runID     string
 }
 
 // LoggerConfig configures construction of an AgentMeshLogger.
 type LoggerConfig struct {
-	Level        LogLevel
-	Format       string // json or text
-	Output       io.Writer
-	AddSource    bool
-	Component    string
-	SessionID    string
-	InvocationID string
-	CustomAttrs  map[string]interface{}
+	Level       LogLevel
+	Format      string // json or text
+	Output      io.Writer
+	AddSource   bool
+	Component   string
+	SessionID   string
+	RunID       string
+	CustomAttrs map[string]interface{}
 }
 
 // DefaultLoggerConfig returns a baseline JSON info level configuration.
@@ -122,7 +122,7 @@ func NewLogger(cfg *LoggerConfig) *AgentMeshLogger {
 	} else {
 		handler = slog.NewJSONHandler(cfg.Output, opts)
 	}
-	return &AgentMeshLogger{logger: slog.New(handler), level: cfg.Level, context: map[string]interface{}{}, component: cfg.Component, sessionID: cfg.SessionID, invocationID: cfg.InvocationID}
+	return &AgentMeshLogger{logger: slog.New(handler), level: cfg.Level, context: map[string]interface{}{}, component: cfg.Component, sessionID: cfg.SessionID, runID: cfg.RunID}
 }
 
 func slogLevel(l LogLevel) slog.Level {
@@ -164,10 +164,10 @@ func (l *AgentMeshLogger) WithComponent(c string) *AgentMeshLogger {
 }
 
 // WithSession attaches session and invocation identifiers.
-func (l *AgentMeshLogger) WithSession(sid, iid string) *AgentMeshLogger {
+func (l *AgentMeshLogger) WithSession(sid, rid string) *AgentMeshLogger {
 	nl := l.clone()
 	nl.sessionID = sid
-	nl.invocationID = iid
+	nl.runID = rid
 	return nl
 }
 
@@ -179,8 +179,8 @@ func (l *AgentMeshLogger) buildAttrs() []slog.Attr {
 	if l.sessionID != "" {
 		attrs = append(attrs, slog.String("session_id", l.sessionID))
 	}
-	if l.invocationID != "" {
-		attrs = append(attrs, slog.String("invocation_id", l.invocationID))
+	if l.runID != "" {
+		attrs = append(attrs, slog.String("run_id", l.runID))
 	}
 	attrs = append(attrs, slog.Time("timestamp", time.Now()))
 	for k, v := range l.context {

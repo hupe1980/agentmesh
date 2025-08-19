@@ -3,7 +3,7 @@ package core
 // Agent defines the core interface that all agents in AgentMesh must implement.
 //
 // Agents are the primary processing units in the AgentMesh framework. They receive
-// inputs through an InvocationContext, process them asynchronously, and emit events
+// inputs through a RunContext, process them asynchronously, and emit events
 // to communicate results and state changes back to the Runner.
 //
 // The Agent interface supports both simple single-agent scenarios and complex
@@ -11,14 +11,14 @@ package core
 //
 // Implementations must:
 //   - Respect context cancellation for graceful shutdown
-//   - Emit events through the provided InvocationContext
+//   - Emit events through the provided RunContext
 //   - Handle the async resume mechanism properly
 //   - Manage their lifecycle through Start/Stop methods
 type Agent interface {
 	Name() string
-	Start(invocationCtx *InvocationContext) error
-	Stop(invocationCtx *InvocationContext) error
-	Run(invocationCtx *InvocationContext) error
+	Start(invocationCtx *RunContext) error
+	Stop(invocationCtx *RunContext) error
+	Run(invocationCtx *RunContext) error
 	SetSubAgents(children ...Agent) error
 	SubAgents() []Agent
 	Parent() Agent

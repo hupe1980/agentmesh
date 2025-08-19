@@ -21,17 +21,17 @@ func NewMockAgent(name string) *MockAgent {
 
 func (m *MockAgent) Name() string { return m.name }
 
-func (m *MockAgent) Run(invocationCtx *core.InvocationContext) error {
+func (m *MockAgent) Run(invocationCtx *core.RunContext) error {
 	args := m.Called(invocationCtx)
 	return args.Error(0)
 }
 
-func (m *MockAgent) Start(invocationCtx *core.InvocationContext) error {
+func (m *MockAgent) Start(invocationCtx *core.RunContext) error {
 	args := m.Called(invocationCtx)
 	return args.Error(0)
 }
 
-func (m *MockAgent) Stop(invocationCtx *core.InvocationContext) error {
+func (m *MockAgent) Stop(invocationCtx *core.RunContext) error {
 	args := m.Called(invocationCtx)
 	return args.Error(0)
 }

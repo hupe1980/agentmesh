@@ -40,7 +40,7 @@ func (f *BaseFlow) AddResponseProcessor(processor ResponseProcessor) {
 // Execute launches the flow asynchronously and returns a channel of Events.
 // The channel is closed when a final response is emitted or an unrecoverable
 // error occurs. Callers should range over the returned channel.
-func (f *BaseFlow) Execute(invocationCtx *core.InvocationContext) (<-chan core.Event, error) {
+func (f *BaseFlow) Execute(invocationCtx *core.RunContext) (<-chan core.Event, error) {
 	eventChan := make(chan core.Event, 100)
 
 	go func() {
@@ -78,7 +78,7 @@ func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
 
 // runOnce performs one model turn (including any tool executions) and returns
 // the last emitted Event (final or intermediate). A nil return signals termination.
-func (f *BaseFlow) runOnce(invocationCtx *core.InvocationContext, eventChan chan<- core.Event) *core.Event {
+func (f *BaseFlow) runOnce(invocationCtx *core.RunContext, eventChan chan<- core.Event) *core.Event {
 	// Refresh session snapshot so request processors see latest conversation (including tool responses)
 	if invocationCtx.SessionService != nil {
 		if latest, err := invocationCtx.SessionService.Get(invocationCtx.SessionID); err == nil && latest != nil {
@@ -140,7 +140,7 @@ loop:
 			}
 
 			// Emit processed event
-			ev := core.NewEvent(invocationCtx.InvocationID, f.agent.GetName())
+			ev := core.NewEvent(invocationCtx.RunID, f.agent.GetName())
 			ev.Content = &resp.Content
 			ev.Partial = &resp.Partial
 

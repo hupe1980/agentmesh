@@ -7,13 +7,13 @@
 //  3. Model-centric conversational / tool-calling agent (ModelAgent)
 //
 // Design principles:
-//   - Minimal hidden global state – explicit wiring via Engine/InvocationContext
+//   - Minimal hidden global state – explicit wiring via Runner/RunContext
 //   - Composability – agents can nest arbitrarily using SetSubAgents / FindAgent
 //   - Observability – clear logging hooks at start/stop and flow selection
 //   - Extensibility – embed BaseAgent; only implement Run plus any custom API
 //
 // Execution Model:
-//   - An agent's Run receives a *core.InvocationContext (shared or cloned)
+//   - An agent's Run receives a *core.RunContext (shared or cloned)
 //   - Composite agents (parallel / sequential / loop) coordinate child Runs
 //   - ModelAgent integrates with model, tool and flow packages to stream events
 //

@@ -70,7 +70,7 @@ func NewParallelAgent(name string, timeout time.Duration, children ...core.Agent
 // Returns a cloned context with isolated branch path for the child agent.
 // createBranchCtxForSubAgent clones the parent context and assigns a branch
 // path for the child agent ensuring isolation of pending deltas / artifacts.
-func (p *ParallelAgent) createBranchCtxForSubAgent(invocationCtx *core.InvocationContext, subAgent core.Agent) *core.InvocationContext {
+func (p *ParallelAgent) createBranchCtxForSubAgent(invocationCtx *core.RunContext, subAgent core.Agent) *core.RunContext {
 	// Clone the invocation context for branch isolation
 	clonedCtx := invocationCtx.Clone()
 
@@ -101,7 +101,7 @@ func (p *ParallelAgent) createBranchCtxForSubAgent(invocationCtx *core.Invocatio
 // Run implements core.Agent launching all children concurrently. The first
 // error encountered (after all complete) is returned; successful children
 // continue even if siblings fail.
-func (p *ParallelAgent) Run(invocationCtx *core.InvocationContext) error {
+func (p *ParallelAgent) Run(invocationCtx *core.RunContext) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(p.children))
 

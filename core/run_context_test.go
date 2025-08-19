@@ -2,11 +2,11 @@ package core
 
 import "testing"
 
-func TestInvocationContext_EmitEventStateAndArtifacts(t *testing.T) {
-	ic, emitCh := newInvocationContextForTest()
+func TestRunContext_EmitEventStateAndArtifacts(t *testing.T) {
+	ic, emitCh := newRunContextForTest()
 	ic.SetState("foo", "bar")
 	ic.AddArtifact("file1")
-	ev := NewEvent("agent1", ic.InvocationID)
+	ev := NewEvent("agent1", ic.RunID)
 	if err := ic.EmitEvent(ev); err != nil {
 		t.Fatalf("EmitEvent error: %v", err)
 	}
@@ -22,8 +22,8 @@ func TestInvocationContext_EmitEventStateAndArtifacts(t *testing.T) {
 	}
 }
 
-func TestInvocationContext_CommitStateDelta(t *testing.T) {
-	ic, _ := newInvocationContextForTest()
+func TestRunContext_CommitStateDelta(t *testing.T) {
+	ic, _ := newRunContextForTest()
 	sSvc := ic.SessionService.(*icMockSessionService)
 	ic.SetState("k1", 123)
 	if err := ic.CommitStateDelta(); err != nil {
@@ -37,8 +37,8 @@ func TestInvocationContext_CommitStateDelta(t *testing.T) {
 	}
 }
 
-func TestInvocationContext_CloneIsolation(t *testing.T) {
-	ic, _ := newInvocationContextForTest()
+func TestRunContext_CloneIsolation(t *testing.T) {
+	ic, _ := newRunContextForTest()
 	ic.SetState("a", 1)
 	ic.AddArtifact("f1")
 	clone := ic.Clone()
@@ -54,8 +54,8 @@ func TestInvocationContext_CloneIsolation(t *testing.T) {
 	}
 }
 
-func TestInvocationContext_WithBranch(t *testing.T) {
-	ic, _ := newInvocationContextForTest()
+func TestRunContext_WithBranch(t *testing.T) {
+	ic, _ := newRunContextForTest()
 	branched := ic.WithBranch("Root.Child")
 	if branched.Branch != "Root.Child" {
 		t.Errorf("Expected branch Root.Child, got %s", branched.Branch)

@@ -20,7 +20,7 @@ import (
 type Flow interface {
 	// Execute runs the flow with the given context and request.
 	// It returns a channel of events that represent the execution progress.
-	Execute(invocationCtx *core.InvocationContext) (<-chan core.Event, error)
+	Execute(invocationCtx *core.RunContext) (<-chan core.Event, error)
 }
 
 // FlowAgent defines the interface that agents must implement to work with flows.
@@ -34,7 +34,7 @@ type FlowAgent interface {
 	// GetLLM returns the language model instance.
 	GetLLM() model.Model
 
-	ResolveInstructions(invocationCtx *core.InvocationContext) (string, error)
+	ResolveInstructions(invocationCtx *core.RunContext) (string, error)
 
 	// GetTools returns the registered tools for function calling.
 	GetTools() map[string]tool.Tool
@@ -61,7 +61,7 @@ type FlowAgent interface {
 	ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error)
 
 	// TransferToAgent transfers execution to a named sub-agent.
-	TransferToAgent(invocationCtx *core.InvocationContext, agentName string) error
+	TransferToAgent(invocationCtx *core.RunContext, agentName string) error
 }
 
 // RequestProcessor processes the request before sending it to the LLM.
@@ -69,7 +69,7 @@ type RequestProcessor interface {
 	// Name returns the processor's identifier.
 	Name() string
 	// ProcessRequest modifies the chat request before LLM execution.
-	ProcessRequest(invocationCtx *core.InvocationContext, req *model.Request, agent FlowAgent) error
+	ProcessRequest(invocationCtx *core.RunContext, req *model.Request, agent FlowAgent) error
 }
 
 // ResponseProcessor processes the response after receiving it from the LLM.
@@ -77,5 +77,5 @@ type ResponseProcessor interface {
 	// Name returns the processor's identifier.
 	Name() string
 	// ProcessResponse handles the LLM response and may generate additional events.
-	ProcessResponse(invocationCtx *core.InvocationContext, resp *model.Response, agent FlowAgent) error
+	ProcessResponse(invocationCtx *core.RunContext, resp *model.Response, agent FlowAgent) error
 }

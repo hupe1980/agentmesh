@@ -16,19 +16,19 @@ import (
 // It captures the invocation context passed to Run and optionally returns an error.
 type testChildAgent struct {
 	BaseAgent
-	runFn       func(*core.InvocationContext) error
-	receivedCtx *core.InvocationContext
+	runFn       func(*core.RunContext) error
+	receivedCtx *core.RunContext
 }
 
-func newTestChildAgent(name string, runFn func(*core.InvocationContext) error) *testChildAgent {
+func newTestChildAgent(name string, runFn func(*core.RunContext) error) *testChildAgent {
 	if runFn == nil {
-		runFn = func(*core.InvocationContext) error { return nil }
+		runFn = func(*core.RunContext) error { return nil }
 	}
 
 	return &testChildAgent{BaseAgent: NewBaseAgent(name), runFn: runFn}
 }
 
-func (t *testChildAgent) Run(invocationCtx *core.InvocationContext) error {
+func (t *testChildAgent) Run(invocationCtx *core.RunContext) error {
 	t.receivedCtx = invocationCtx
 	return t.runFn(invocationCtx)
 }
@@ -45,14 +45,14 @@ func TestNewParallelAgent(t *testing.T) {
 	assert.Same(t, c2, p.children[1])
 }
 
-func makeInvocationCtx(t *testing.T, agentID, agentName, agentType string) *core.InvocationContext {
+func makeInvocationCtx(t *testing.T, agentID, agentName, agentType string) *core.RunContext {
 	t.Helper()
 	emit := make(chan core.Event, 10)
 	resume := make(chan struct{}, 1)
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "hello"}}}
 	info := core.AgentInfo{Name: agentName, Type: agentType}
 
-	return core.NewInvocationContext(context.Background(), "session-1", "inv-1", info, userContent, emit, resume, core.NewSession("session-1"), nil, nil, nil, logging.NoOpLogger{})
+	return core.NewRunContext(context.Background(), "session-1", "inv-1", info, userContent, emit, resume, core.NewSession("session-1"), nil, nil, nil, logging.NoOpLogger{})
 }
 
 func TestParallelAgent_Run_Success(t *testing.T) {
@@ -61,7 +61,7 @@ func TestParallelAgent_Run_Success(t *testing.T) {
 	branches := map[string]string{}
 
 	mkChild := func(name string) *testChildAgent {
-		return newTestChildAgent(name, func(ctx *core.InvocationContext) error {
+		return newTestChildAgent(name, func(ctx *core.RunContext) error {
 			mu.Lock()
 			branches[name] = ctx.Branch
 			mu.Unlock()
@@ -96,9 +96,9 @@ func TestParallelAgent_Run_Success(t *testing.T) {
 func TestParallelAgent_Run_ErrorAggregation(t *testing.T) {
 	sentinel := errors.New("boom")
 
-	c1 := newTestChildAgent("Child1", func(_ *core.InvocationContext) error { return nil })
-	c2 := newTestChildAgent("Child2", func(_ *core.InvocationContext) error { return sentinel })
-	c3 := newTestChildAgent("Child3", func(_ *core.InvocationContext) error { return nil })
+	c1 := newTestChildAgent("Child1", func(_ *core.RunContext) error { return nil })
+	c2 := newTestChildAgent("Child2", func(_ *core.RunContext) error { return sentinel })
+	c3 := newTestChildAgent("Child3", func(_ *core.RunContext) error { return nil })
 
 	p := NewParallelAgent("ParallelAgent", 0, c1, c2, c3)
 	invCtx := makeInvocationCtx(t, "p1", "ParallelAgent", "parallel")

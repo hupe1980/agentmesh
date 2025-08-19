@@ -14,7 +14,7 @@ import (
 // Chain only the parts you need; sensible defaults are applied.
 type EventBuilder struct {
 	author        string
-	invocationID  string
+	runID         string
 	id            string
 	role          string
 	textParts     []string
@@ -35,7 +35,7 @@ func NewEventBuilder() *EventBuilder { return &EventBuilder{author: "agent"} }
 func (b *EventBuilder) Author(a string) *EventBuilder { b.author = a; return b }
 
 // Invocation sets the invocation ID associated with the event (chainable).
-func (b *EventBuilder) Invocation(id string) *EventBuilder { b.invocationID = id; return b }
+func (b *EventBuilder) Invocation(id string) *EventBuilder { b.runID = id; return b }
 
 // ID overrides the auto-generated event ID (chainable). Use mainly in tests where determinism matters.
 func (b *EventBuilder) ID(id string) *EventBuilder { b.id = id; return b }
@@ -113,7 +113,7 @@ func (b *EventBuilder) LongRunning(ids ...string) *EventBuilder {
 
 // Build constructs the core.Event value.
 func (b *EventBuilder) Build() core.Event {
-	ev := core.NewEvent(b.invocationID, b.author)
+	ev := core.NewEvent(b.runID, b.author)
 	if b.id != "" {
 		ev.ID = b.id
 	}

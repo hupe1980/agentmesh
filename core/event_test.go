@@ -15,7 +15,7 @@ func TestEvent_ConstructorsAndMethods(t *testing.T) {
 	require.NotEmpty(t, e.ID, "event ID should be set")
 	require.False(t, e.Timestamp.IsZero(), "timestamp should be initialized")
 	assert.Equal(t, "authorA", e.Author)
-	assert.Equal(t, "inv-123", e.InvocationID)
+	assert.Equal(t, "inv-123", e.RunID)
 
 	msg := NewMessageEvent("agent1", "hello world")
 	require.NotNil(t, msg.Content)
@@ -25,7 +25,7 @@ func TestEvent_ConstructorsAndMethods(t *testing.T) {
 	user := NewUserMessageEvent("inv-123", "hi")
 	require.NotNil(t, user.Content)
 	assert.Equal(t, "user", user.Content.Role)
-	assert.Equal(t, "inv-123", user.InvocationID)
+	assert.Equal(t, "inv-123", user.RunID)
 
 	callArgs := "test"
 	fCall := NewFunctionCallEvent("agent2", "do_stuff", callArgs)

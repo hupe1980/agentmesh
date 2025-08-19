@@ -14,12 +14,12 @@ type mockProvider struct {
 	err  error
 }
 
-func (m mockProvider) Instruction(*core.InvocationContext) (string, error) { return m.text, m.err }
+func (m mockProvider) Instruction(*core.RunContext) (string, error) { return m.text, m.err }
 
-func newTestInvocationContext() *core.InvocationContext {
+func newTestRunContext() *core.RunContext {
 	sess := core.NewSession("test-session")
 	baseContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "hello"}}}
-	return core.NewInvocationContext(
+	return core.NewRunContext(
 		context.Background(),
 		sess.ID,
 		"invocation-id",
@@ -40,7 +40,7 @@ func TestInstruction_Static(t *testing.T) {
 	if !inst.IsStatic() {
 		t.Fatalf("expected static instruction")
 	}
-	got, err := inst.Resolve(newTestInvocationContext())
+	got, err := inst.Resolve(newTestRunContext())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,11 +50,11 @@ func TestInstruction_Static(t *testing.T) {
 }
 
 func TestInstruction_NewInstructionFromFunc(t *testing.T) {
-	inst := NewInstructionFromFunc(func(_ *core.InvocationContext) (string, error) { return "dynamic via func", nil })
+	inst := NewInstructionFromFunc(func(_ *core.RunContext) (string, error) { return "dynamic via func", nil })
 	if inst.IsStatic() {
 		t.Fatalf("expected dynamic instruction")
 	}
-	got, err := inst.Resolve(newTestInvocationContext())
+	got, err := inst.Resolve(newTestRunContext())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestInstruction_NewInstructionFromProvider(t *testing.T) {
 	if inst.IsStatic() {
 		t.Fatalf("expected dynamic instruction")
 	}
-	got, err := inst.Resolve(newTestInvocationContext())
+	got, err := inst.Resolve(newTestRunContext())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestInstruction_NewInstructionFromProvider(t *testing.T) {
 func TestInstruction_ErrorPropagation(t *testing.T) {
 	expectedErr := errors.New("boom")
 	inst := NewInstructionFromProvider(mockProvider{err: expectedErr})
-	_, err := inst.Resolve(newTestInvocationContext())
+	_, err := inst.Resolve(newTestRunContext())
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}

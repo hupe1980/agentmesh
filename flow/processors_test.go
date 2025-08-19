@@ -25,13 +25,13 @@ func (m *MockFlowAgent) IsStreamingEnabled() bool         { return false }
 func (m *MockFlowAgent) IsTransferEnabled() bool          { return false }
 func (m *MockFlowAgent) GetOutputKey() string             { return "" }
 func (m *MockFlowAgent) MaxHistoryMessages() int          { return 10 }
-func (m *MockFlowAgent) ResolveInstructions(invocationCtx *core.InvocationContext) (string, error) {
+func (m *MockFlowAgent) ResolveInstructions(invocationCtx *core.RunContext) (string, error) {
 	return "You are a test assistant.", nil
 }
 func (m *MockFlowAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error) {
 	return "mock tool result", nil
 }
-func (m *MockFlowAgent) TransferToAgent(invocationCtx *core.InvocationContext, agentName string) error {
+func (m *MockFlowAgent) TransferToAgent(invocationCtx *core.RunContext, agentName string) error {
 	return nil
 }
 

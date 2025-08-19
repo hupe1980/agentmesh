@@ -77,7 +77,7 @@ func (m *icMockMemoryService) Store(sid, content string, metadata map[string]any
 
 func (m *icMockMemoryService) Delete(sid, memoryID string) error { return nil }
 
-func newInvocationContextForTest() (*InvocationContext, chan Event) {
+func newRunContextForTest() (*RunContext, chan Event) {
 	emit := make(chan Event, 5)
 	resume := make(chan struct{}, 5)
 	sess := NewSession("sess-x")
@@ -85,5 +85,5 @@ func newInvocationContextForTest() (*InvocationContext, chan Event) {
 	aSvc := &icMockArtifactService{}
 	mSvc := &icMockMemoryService{}
 
-	return NewInvocationContext(context.Background(), "sess-x", "inv-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, emit, resume, sess, sSvc, aSvc, mSvc, logging.NoOpLogger{}), emit
+	return NewRunContext(context.Background(), "sess-x", "run-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, emit, resume, sess, sSvc, aSvc, mSvc, logging.NoOpLogger{}), emit
 }

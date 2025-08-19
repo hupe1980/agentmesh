@@ -88,7 +88,7 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 		return "", nil, nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	invocationID := util.NewID()
+	runID := util.NewID()
 
 	eventsCh := make(chan core.Event, r.config.EventBufferSize)
 	errorsCh := make(chan error, 1)
@@ -97,15 +97,15 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 
 	invocationCtx, cancel := context.WithCancel(ctx)
 	r.invocationsMu.Lock()
-	r.activeInvocations[invocationID] = cancel
+	r.activeInvocations[runID] = cancel
 	r.invocationsMu.Unlock()
 
 	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
 
-	invCtx := core.NewInvocationContext(
+	invCtx := core.NewRunContext(
 		invocationCtx,
 		sessionID,
-		invocationID,
+		runID,
 		agentInfo,
 		userContent,
 		agentEmit,
@@ -117,7 +117,7 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 		r.logger,
 	)
 
-	userEvent := core.NewUserContentEvent(invocationID, &userContent)
+	userEvent := core.NewUserContentEvent(runID, &userContent)
 	if err := r.sessionStore.AppendEvent(sessionID, userEvent); err != nil {
 		return "", nil, nil, fmt.Errorf("failed to append user event: %w", err)
 	}
@@ -126,7 +126,7 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 		defer func() {
 			close(agentEmit)
 			r.invocationsMu.Lock()
-			delete(r.activeInvocations, invocationID)
+			delete(r.activeInvocations, runID)
 			r.invocationsMu.Unlock()
 		}()
 		if err := r.runAgent(invCtx); err != nil {
@@ -143,17 +143,17 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 		r.processEvents(invocationCtx, sessionID, agentEmit, resumeCh, eventsCh, errorsCh)
 	}()
 
-	return invocationID, eventsCh, errorsCh, nil
+	return runID, eventsCh, errorsCh, nil
 }
 
-// Cancel cancels a running invocation by ID.
-func (r *Runner) Cancel(invocationID string) error {
+// Cancel cancels a running run by ID.
+func (r *Runner) Cancel(runID string) error {
 	r.invocationsMu.Lock()
-	cancel, exists := r.activeInvocations[invocationID]
+	cancel, exists := r.activeInvocations[runID]
 	r.invocationsMu.Unlock()
 
 	if !exists {
-		return fmt.Errorf("invocation %s not found", invocationID)
+		return fmt.Errorf("run %s not found", runID)
 	}
 
 	cancel()
@@ -161,7 +161,7 @@ func (r *Runner) Cancel(invocationID string) error {
 	return nil
 }
 
-func (r *Runner) runAgent(invocationCtx *core.InvocationContext) error {
+func (r *Runner) runAgent(invocationCtx *core.RunContext) error {
 	if err := r.agent.Start(invocationCtx); err != nil {
 		return err
 	}
