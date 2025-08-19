@@ -13,24 +13,10 @@ import (
 	"github.com/hupe1980/agentmesh/session"
 )
 
-// Config defines tuning parameters for the Engine's operational behavior.
-//
-// This configuration focuses on core performance and behavioral aspects:
-//   - Concurrency: How many invocations can run simultaneously
-//   - Streaming: Whether to enable real-time event streaming
-//   - Buffering: Channel buffer sizes for event processing
-//
-// Additional concerns such as timeouts, metrics collection, and distributed
-// tracing should be configured via functional options rather than expanding
-// this struct to maintain simplicity and focused responsibility.
-//
-// Example:
-//
-//	cfg := Config{
-//	    MaxConcurrentInvocations: 50,
-//	    EnableStreaming: true,
-//	    EventBufferSize: 256,
-//	}
+// Config captures core runtime tuning knobs for the Engine.
+// Only fundamental dimensions (concurrency + buffering) are exposed here;
+// cross‑cutting concerns (timeouts, metrics, tracing) belong in higher‑level
+// wrappers or decorators to keep the core minimal.
 type Config struct {
 	// MaxConcurrentInvocations limits the number of agent invocations that
 	// can execute simultaneously. This prevents resource exhaustion and
@@ -48,49 +34,17 @@ type Config struct {
 	EventBufferSize int
 }
 
-// DefaultConfig provides production-ready default configuration values.
-//
-// These defaults are chosen for:
-//   - Safety: Conservative concurrency limits prevent resource exhaustion
-//   - Performance: Reasonable buffer sizes for typical workloads
-//   - Compatibility: Streaming enabled for maximum flexibility
-//
-// Production deployments should tune these values based on:
-//   - Available system resources (CPU, memory)
-//   - Expected concurrent load
-//   - Network latency characteristics
-//   - Agent complexity and execution time
-//
-// Configuration values:
-//   - MaxConcurrentInvocations: 10 (safe for most environments)
-//   - EnableStreaming: true (enables real-time interactions)
-//   - EventBufferSize: 100 (balances memory usage and performance)
+// DefaultConfig provides conservative, generally safe defaults suitable for
+// development and small/medium production loads. Tune based on throughput and
+// event volume characteristics of your deployment.
 var DefaultConfig = Config{
 	MaxConcurrentInvocations: 10,
 	EnableStreaming:          true,
 	EventBufferSize:          100,
 }
 
-// Options configures an Engine instance using the functional options pattern.
-//
-// This struct provides a clean way to configure all aspects of the Engine
-// including services, configuration, and logging. Default implementations
-// are provided for all services to enable quick setup for development
-// and testing scenarios.
-//
-// The Options struct follows the functional options pattern, allowing for:
-//   - Clear, readable configuration
-//   - Optional parameters with sensible defaults
-//   - Future extensibility without breaking changes
-//   - Testable configuration logic
-//
-// Example:
-//
-//	engine := New(
-//	    WithConfig(customConfig),
-//	    WithSessionStore(mySessionStore),
-//	    WithLogger(myLogger),
-//	)
+// Options holds dependency + configuration overrides passed to New(). Missing
+// services fall back to in‑memory implementations; Logger defaults to no‑op.
 type Options struct {
 	// Config contains operational parameters for the engine behavior.
 	// Defaults to DefaultConfig if not specified.
@@ -115,65 +69,10 @@ type Options struct {
 	Logger logging.Logger
 }
 
-// Engine orchestrates agent execution and manages the complete lifecycle
-// of multi-agent conversations within the AgentMesh framework.
-//
-// The Engine serves as the central coordination point that bridges high-level
-// AgentMesh operations with low-level agent implementations. It provides:
-//
-// Core Responsibilities:
-//   - Agent Registry: Thread-safe registration and lookup of named agents
-//   - Invocation Management: Async/sync execution with proper lifecycle management
-//   - Event Processing: Real-time event streaming and persistence coordination
-//   - Resource Management: Concurrency limits and graceful resource cleanup
-//   - Service Integration: Coordination with session, artifact, and memory stores
-//
-// Concurrency Model:
-//   - Thread-safe agent registration and lookup via RWMutex
-//   - Bounded concurrent invocations to prevent resource exhaustion
-//   - Per-invocation goroutines with proper cancellation propagation
-//   - Non-blocking event emission with configurable buffering
-//
-// Event Flow:
-//  1. User content is converted to events and persisted
-//  2. Agent execution produces a stream of events
-//  3. Event actions (state changes, artifacts) are applied to services
-//  4. Events are streamed to clients and persisted to session history
-//
-// Error Handling:
-//   - Agent execution errors are propagated via dedicated error channels
-//   - Service integration errors terminate the invocation gracefully
-//   - Context cancellation provides timeout and cleanup mechanisms
-//
-// The design intentionally separates orchestration concerns from business logic,
-// keeping agent implementations focused on their core responsibilities while
-// the Engine handles cross-cutting concerns like persistence and event routing.
-//
-// Example Usage:
-//
-//	// Create engine with services
-//	engine := New(sessionStore, artifactStore, memoryStore,
-//	    WithConfig(DefaultConfig()),
-//	    WithLogger(logger))
-//
-//	// Register agents
-//	engine.Register(myModelAgent)
-//	engine.Register(mySequentialAgent)
-
-// // Execute agent asynchronously
-// invocationID, events, errors, err := engine.Invoke(ctx, "session-1", "MyAgent", userContent)
-//
-//	if err != nil {
-//	    return err
-//	}
-//
-// _ = invocationID
-//
-// // Process streaming events
-//
-//	for event := range events {
-//	    // Handle real-time events
-//	}
+// Engine coordinates agent execution: it resolves agents, creates invocation
+// contexts, streams events, applies side‑effects, and persists history. Public
+// methods are safe for concurrent use. The design keeps orchestration separate
+// from agent logic. Future layers (metrics, policies) can wrap the core.
 type Engine struct {
 	// Core stores - immutable after construction
 	sessionStore  core.SessionStore  // Session persistence and state management
@@ -193,65 +92,9 @@ type Engine struct {
 	invocationsMu     sync.RWMutex                  // Protects activeInvocations map
 }
 
-// New creates a new Engine instance with sensible defaults and optional configuration.
-//
-// The constructor uses the functional options pattern to provide flexible configuration
-// while maintaining backward compatibility and ease of use. All services have
-// reasonable in-memory defaults suitable for development, testing, and simple
-// production scenarios.
-//
-// Default Services:
-//   - SessionStore: In-memory session storage with thread-safe operations
-//   - ArtifactStore: In-memory artifact storage with basic lifecycle management
-//   - MemoryStore: In-memory searchable storage with simple text matching
-//   - Logger: No-op logger that discards all messages
-//
-// The defaults enable immediate use without external dependencies, making the
-// engine suitable for rapid prototyping, testing, and development scenarios.
-// Production deployments should typically provide custom service implementations.
-//
-// Configuration is applied through functional options, allowing for:
-//   - Optional configuration with sensible defaults
-//   - Clear, readable configuration at construction time
-//   - Future extensibility without breaking existing code
-//   - Partial configuration (only override what you need)
-//
-// Thread Safety:
-// The returned Engine is immediately ready for use and is safe for concurrent
-// access. All public methods are thread-safe, and the Engine manages its own
-// internal synchronization.
-//
-// Examples:
-//
-//	// Minimal setup with all defaults
-//	engine := New()
-//
-//	// Custom configuration only
-//	engine := New(
-//	    WithMaxConcurrent(50),
-//	    WithEventBuffer(256),
-//	)
-//
-//	// Production setup with custom services
-//	engine := New(
-//	    WithConfig(productionConfig),
-//	    WithSessionStore(postgresStore),
-//	    WithArtifactStore(s3Store),
-//	    WithMemoryStore(vectorStore),
-//	    WithLogger(structuredLogger),
-//	)
-//
-//	// Mixed approach - some defaults, some custom
-//	engine := New(
-//	    WithSessionStore(customSessionStore),
-//	    WithLogger(myLogger),
-//	    // Uses default in-memory stores for artifacts and memory
-//	)
-//
-// Resource Management:
-// The Engine does not take ownership of provided services and will not manage
-// their lifecycle. Callers remain responsible for properly initializing services
-// before use and cleaning them up when no longer needed.
+// New constructs an Engine. All dependencies optional (defaults are in‑memory
+// implementations + no‑op logger). Use functional options to override.
+// Returned instance is ready and thread‑safe.
 func New(
 	optFns ...func(o *Options),
 ) *Engine {
@@ -286,60 +129,15 @@ func New(
 	}
 }
 
-// Register adds an agent to the engine's registry, making it available for invocation.
-//
-// The agent is registered by its name (agent.Name()) and can be invoked using
-// that name in Invoke() calls. If an agent with the same name already exists,
-// it will be replaced without warning.
-//
-// Registration is thread-safe and can be called concurrently with other
-// operations. However, it's recommended to complete all agent registration
-// during initialization before starting invocations to avoid confusion.
-//
-// The engine does not take ownership of the agent - the caller remains
-// responsible for the agent's lifecycle. Agents should remain valid for
-// the lifetime of the engine or until they are replaced.
-//
-// Example:
-//
-//	modelAgent := agent.NewModelAgent("Assistant", model)
-//	engine.Register(modelAgent)
-//
-//	// Agent can now be invoked by name
-//	invocationID, events, errors, err := engine.Invoke(ctx, "session-1", "Assistant", userContent)
-//	_ = invocationID
-//
-// Note: Registration during active invocations is safe but not recommended
-// as it may lead to inconsistent behavior if agents are replaced while
-// invocations are in progress.
+// Register makes / replaces an agent under its Name(). Safe for concurrent
+// use; prefer registering all agents during startup to avoid mid‑flight swaps.
 func (e *Engine) Register(a core.Agent) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.agents[a.Name()] = a
 }
 
-// GetAgent retrieves a registered agent by name.
-//
-// This method provides thread-safe access to the agent registry. The boolean
-// return value indicates whether an agent with the given name exists.
-//
-// This method is primarily used internally by the engine during invocation,
-// but is exposed for debugging, introspection, and advanced use cases.
-//
-// Returns:
-//   - The agent instance if found
-//   - A boolean indicating whether the agent exists
-//
-// Example:
-//
-//	agent, exists := engine.GetAgent("Assistant")
-//	if !exists {
-//	    return fmt.Errorf("agent not found")
-//	}
-//	fmt.Printf("Found agent: %s", agent.Name())
-//
-// The returned agent reference is safe to use concurrently as long as the
-// agent implementation itself is thread-safe.
+// GetAgent returns the registered agent and a bool indicating presence.
 func (e *Engine) GetAgent(name string) (core.Agent, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -347,75 +145,9 @@ func (e *Engine) GetAgent(name string) (core.Agent, bool) {
 	return a, ok
 }
 
-// Invoke executes an agent asynchronously and returns channels for real-time event streaming.
-//
-// This is the primary method for executing agents in the AgentMesh framework.
-// It provides non-blocking, streaming execution with proper resource management
-// and error handling.
-//
-// Parameters:
-//   - ctx: Context for cancellation and timeout control
-//   - sessionID: Unique identifier for the conversation session
-//   - agentName: Name of the registered agent to execute
-//   - userContent: User input content to process
-//
-// Returns:
-//   - eventsCh: Channel that streams events as they are generated
-//   - errorsCh: Channel that receives any terminal errors
-//   - error: Immediate error if invocation cannot be started
-//
-// Event Streaming:
-// Events are streamed in real-time as the agent generates them. The events
-// channel will be closed when the agent completes or encounters an error.
-// Clients should range over the events channel to process streaming responses.
-//
-// Error Handling:
-// Three types of errors are possible:
-//  1. Immediate errors (returned directly): Agent not found, session issues
-//  2. Terminal errors (via errorsCh): Agent execution failures, service errors
-//  3. Context cancellation: Operation cancelled or timed out
-//
-// Resource Management:
-// The engine automatically manages goroutines, channels, and invocation tracking.
-// Resources are cleaned up when the context is cancelled or execution completes.
-// The invocation can be explicitly stopped using StopInvocation().
-//
-// Concurrency:
-// Multiple invocations can run concurrently up to MaxConcurrentInvocations.
-// Each invocation runs in its own goroutine with isolated state and channels.
-//
-// Example:
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-//	defer cancel()
-//
-//	invocationID, events, errors, err := engine.Invoke(ctx, "session-1", "Assistant", userContent)
-//	if err != nil {
-//	    return fmt.Errorf("failed to start invocation: %w", err)
-//	}
-//	_ = invocationID
-//
-//	// Process streaming events
-//	for {
-//	    select {
-//	    case event, ok := <-events:
-//	        if !ok {
-//	            // Events channel closed, check for terminal error
-//	            select {
-//	            case err := <-errors:
-//	                return err
-//	            default:
-//	                return nil // Successful completion
-//	            }
-//	        }
-//	        // Process event in real-time
-//	        handleEvent(event)
-//	    case err := <-errors:
-//	        return fmt.Errorf("agent execution failed: %w", err)
-//	    case <-ctx.Done():
-//	        return ctx.Err()
-//	    }
-//	}
+// Invoke starts an asynchronous invocation and returns streaming channels.
+// eventsCh is closed on completion; errorsCh yields a single terminal error
+// (if any). Returned invocationID can be used with StopInvocation().
 func (e *Engine) Invoke(
 	ctx context.Context,
 	sessionID string,
@@ -510,49 +242,8 @@ func (e *Engine) Invoke(
 	return invocationID, eventsCh, errorsCh, nil
 }
 
-// StopInvocation forcibly terminates a specific invocation by its ID.
-//
-// This method provides a way to explicitly cancel a running invocation
-// without cancelling the entire context. It's useful for implementing
-// user-initiated cancellation or cleanup operations.
-//
-// The method looks up the invocation by ID and calls its cancellation
-// function. Once cancelled, the invocation's goroutines will terminate
-// and its resources will be cleaned up.
-//
-// Parameters:
-//   - invocationID: The unique identifier of the invocation to stop
-//
-// Returns:
-//   - error: Non-nil if the invocation ID is not found
-//
-// Behavior:
-//   - The invocation's context will be cancelled
-//   - Agent execution will be interrupted
-//   - Event and error channels will be closed
-//   - The invocation will be removed from the active invocations map
-//
-// Thread Safety:
-// This method is thread-safe and can be called concurrently with other
-// operations. The cancellation will take effect immediately.
-//
-// Example:
-//
-//	// Start an invocation
-//	invocationID, events, errors, err := engine.Invoke(ctx, "session-1", "Agent", content)
-//	_ = invocationID
-//	if err != nil {
-//	    return err
-//	}
-//
-//	// Later, cancel it if needed
-//	if err := engine.StopInvocation(invocationID); err != nil {
-//	    log.Printf("Failed to stop invocation: %v", err)
-//	}
-//
-// Note: The invocation ID is generated internally by the engine and is not
-// directly exposed to callers. In practice, this method is primarily used
-// by management interfaces or in testing scenarios.
+// StopInvocation cancels a running invocation by ID. Safe to call multiple
+// times; calling after completion is a no‑op with an error return.
 func (e *Engine) StopInvocation(invocationID string) error {
 	e.invocationsMu.Lock()
 	cancel, exists := e.activeInvocations[invocationID]
@@ -579,49 +270,9 @@ func (e *Engine) runAgent(invocationCtx *core.InvocationContext, agent core.Agen
 	return agent.Run(invocationCtx)
 }
 
-// processEvents orchestrates the core event processing pipeline for an invocation.
-//
-// This method runs in a dedicated goroutine and handles the complete lifecycle
-// of event processing from agent generation to client delivery. It coordinates
-// multiple concerns:
-//
-// Event Flow Pipeline:
-//  1. Receive events from agent execution goroutine
-//  2. Apply event actions (state changes, artifacts) to services
-//  3. Persist non-partial events to session history
-//  4. Forward events to client via events channel
-//  5. Signal resumption for non-partial events
-//
-// Error Handling:
-// Service errors during event processing are treated as terminal errors
-// that terminate the entire invocation. This ensures data consistency
-// and prevents partial state corruption.
-//
-// Context Cancellation:
-// The method respects context cancellation at every stage, ensuring
-// graceful shutdown when invocations are cancelled or time out.
-//
-// Resumption Signaling:
-// Non-partial events trigger resumption signals that can be used by
-// agents to coordinate multi-turn conversations or complex workflows.
-//
-// Threading Model:
-// This method runs in its own goroutine and communicates via channels.
-// It's designed to be non-blocking and handle backpressure gracefully
-// through buffered channels.
-//
-// Parameters:
-//   - ctx: Cancellation context for the invocation
-//   - sessionID: Session identifier for persistence operations
-//   - agentEmit: Channel receiving events from agent execution
-//   - resumeCh: Channel for signaling agent resumption
-//   - eventsCh: Channel for forwarding events to client
-//   - errorsCh: Channel for reporting terminal errors
-//
-// The method terminates when:
-//   - Agent closes the emit channel (normal completion)
-//   - Context is cancelled (timeout or explicit cancellation)
-//   - A terminal error occurs during processing
+// processEvents pulls agent events, applies side‑effects, persists, forwards
+// them, and emits resume signals for non‑partial events. Exits on channel close
+// or context cancellation.
 func (e *Engine) processEvents(
 	ctx context.Context,
 	sessionID string,
@@ -687,7 +338,8 @@ func (e *Engine) processEvents(
 	}
 }
 
-// applyEventActions processes and applies the side-effects encoded in an event's Actions field.
+// applyEventActions applies state / artifact / routing side‑effects embedded in
+// an event. Currently transfer + escalate are logged only (future orchestration).
 func (e *Engine) applyEventActions(sessionID string, ev core.Event) error {
 	// Apply session state changes
 	if len(ev.Actions.StateDelta) > 0 {
@@ -722,33 +374,8 @@ func (e *Engine) applyEventActions(sessionID string, ev core.Event) error {
 	return nil
 }
 
-// GetSession retrieves the current session by ID.
-//
-// This method provides access to session data for debugging, introspection,
-// or advanced use cases where direct session access is needed. It delegates
-// to the underlying session service.
-//
-// Parameters:
-//   - sessionID: The unique identifier of the session to retrieve
-//
-// Returns:
-//   - *core.Session: The session data if found
-//   - error: Non-nil if the session cannot be retrieved
-//
-// The returned session represents a point-in-time snapshot. Changes made
-// to the session during invocation may not be reflected in this snapshot.
-//
-// Example:
-//
-//	session, err := engine.GetSession("session-1")
-//	if err != nil {
-//	    return fmt.Errorf("failed to get session: %w", err)
-//	}
-//	fmt.Printf("Session has %d events", len(session.Events))
-//
-// This method is primarily used for debugging and monitoring. Normal
-// application flow should rely on the session data provided through
-// invocation contexts rather than direct session access.
+// GetSession returns a point‑in‑time snapshot of a session (for debugging /
+// inspection). Writes still go through invocation flows.
 func (e *Engine) GetSession(sessionID string) (*core.Session, error) {
 	return e.sessionStore.Get(sessionID)
 }
