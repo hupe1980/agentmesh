@@ -7,7 +7,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow"
-	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model"
 	"github.com/hupe1980/agentmesh/tool"
 )
@@ -250,8 +249,8 @@ func (a *ModelAgent) MaxHistoryMessages() int {
 
 // ResolveInstructions produces the final instruction string (system prompt)
 // by resolving static or dynamic instruction sources.
-func (a *ModelAgent) ResolveInstructions(invocationCtx *core.RunContext) (string, error) {
-	return a.instruction.Resolve(invocationCtx)
+func (a *ModelAgent) ResolveInstructions(runCtx *core.RunContext) (string, error) {
+	return a.instruction.Resolve(runCtx)
 }
 
 // ExecuteTool executes a named tool with the given arguments.
@@ -274,7 +273,7 @@ func (a *ModelAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, arg
 // TransferToAgent transfers execution to a named sub-agent.
 // TransferToAgent delegates execution to a named descendant agent using the
 // same invocation context (shared session state, emit channel).
-func (a *ModelAgent) TransferToAgent(invocationCtx *core.RunContext, agentName string) error {
+func (a *ModelAgent) TransferToAgent(runCtx *core.RunContext, agentName string) error {
 	// Find the target agent
 	targetAgent := a.FindAgent(agentName)
 	if targetAgent == nil {
@@ -282,7 +281,7 @@ func (a *ModelAgent) TransferToAgent(invocationCtx *core.RunContext, agentName s
 	}
 
 	// Execute the target agent with the current context
-	return targetAgent.Run(invocationCtx)
+	return targetAgent.Run(runCtx)
 }
 
 // Flow-Based Execution Methods
@@ -296,39 +295,38 @@ func (a *ModelAgent) TransferToAgent(invocationCtx *core.RunContext, agentName s
 // based on the agent's capabilities.
 // Run implements core.Agent using the flow selector to choose execution
 // strategy then streams flow events to the parent invocation context.
-func (a *ModelAgent) Run(invocationCtx *core.RunContext) error {
-	logger := invocationCtx.Logger
-	if logger == nil {
-		logger = logging.NoOpLogger{}
-	}
-	logger.Debug(
+func (a *ModelAgent) Run(runCtx *core.RunContext) error {
+	runCtx.LogDebug(
 		"agent.run.start",
 		"agent", a.Name(),
-		"run", invocationCtx.RunID,
+		"run", runCtx.RunID,
 	)
 
-	ctx := invocationCtx.Context // engine manages Start/Stop lifecycle now
+	ctx := runCtx.Context // engine manages Start/Stop lifecycle now
 
 	// Select appropriate flow based on agent capabilities
 	selector := flow.NewSelector()
 	fl := selector.SelectFlow(a)
-	logger.Debug(
+
+	runCtx.LogDebug(
 		"agent.flow.selected",
 		"agent", a.Name(),
 		"flow", fmt.Sprintf("%T", fl),
 	)
 
 	// Execute the flow
-	eventChan, err := fl.Execute(invocationCtx)
+	eventChan, err := fl.Execute(runCtx)
 	if err != nil {
-		logger.Error(
+		runCtx.LogError(
 			"agent.flow.execute.error",
 			"agent", a.Name(),
 			"error", err.Error(),
 		)
+
 		return fmt.Errorf("flow execution failed: %w", err)
 	}
-	logger.Debug(
+
+	runCtx.LogDebug(
 		"agent.flow.execute.start",
 		"agent", a.Name(),
 	)
@@ -336,12 +334,13 @@ func (a *ModelAgent) Run(invocationCtx *core.RunContext) error {
 	// Process events emitted by the flow
 	for event := range eventChan {
 		select {
-		case invocationCtx.Emit <- event:
+		case runCtx.Emit <- event:
 			role := ""
 			if event.Content != nil {
 				role = event.Content.Role
 			}
-			logger.Debug(
+
+			runCtx.LogDebug(
 				"agent.event.forward",
 				"agent", a.Name(),
 				"event_id", event.ID,
@@ -349,18 +348,13 @@ func (a *ModelAgent) Run(invocationCtx *core.RunContext) error {
 				"fn_calls", len(event.GetFunctionCalls()),
 			)
 		case <-ctx.Done():
-			logger.Warn(
-				"agent.run.context_done",
-				"agent", a.Name(),
-				"error", ctx.Err(),
-			)
+			runCtx.LogWarn("agent.run.context_done", "agent", a.Name(), "error", ctx.Err())
+
 			return ctx.Err()
 		}
 	}
 
-	logger.Debug(
-		"agent.flow.execute.complete",
-		"agent", a.Name(),
-	)
+	runCtx.LogDebug("agent.flow.execute.complete", "agent", a.Name())
+
 	return nil
 }

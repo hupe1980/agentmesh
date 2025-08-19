@@ -12,30 +12,38 @@ import (
 // deltas, transfers, escalation signals, artifact diffs) without directly
 // mutating the underlying session until applied.
 type ToolContext struct {
-	invocationCtx  *RunContext
+	runCtx         *RunContext
 	functionCallID string
 	agentInfo      AgentInfo
 	eventActions   EventActions
 	valid          bool
+
+	*loggerAdapter
 }
 
 // NewToolContext constructs a tool context bound to a parent RunContext
 // and unique functionCallID.
-func NewToolContext(invocationCtx *RunContext, functionCallID string) *ToolContext {
-	return &ToolContext{invocationCtx: invocationCtx, functionCallID: functionCallID, agentInfo: invocationCtx.Agent, valid: true}
+func NewToolContext(runCtx *RunContext, functionCallID string) *ToolContext {
+	return &ToolContext{
+		runCtx:         runCtx,
+		functionCallID: functionCallID,
+		agentInfo:      runCtx.Agent,
+		valid:          true,
+		loggerAdapter:  newLoggerAdapter(runCtx.Logger()),
+	}
 }
 
 // Context returns the context associated with the tool invocation.
-func (tc *ToolContext) Context() context.Context { return tc.invocationCtx.Context }
+func (tc *ToolContext) Context() context.Context { return tc.runCtx.Context }
 
 // SessionID returns the session ID associated with the tool invocation.
-func (tc *ToolContext) SessionID() string { return tc.invocationCtx.SessionID }
+func (tc *ToolContext) SessionID() string { return tc.runCtx.SessionID }
 
 // RunID returns the run ID associated with the tool invocation.
-func (tc *ToolContext) RunID() string { return tc.invocationCtx.RunID }
+func (tc *ToolContext) RunID() string { return tc.runCtx.RunID }
 
 // Logger returns the logger associated with the tool invocation.
-func (tc *ToolContext) Logger() logging.Logger { return tc.invocationCtx.Logger }
+func (tc *ToolContext) Logger() logging.Logger { return tc.loggerAdapter.Logger() }
 
 // FunctionCallID returns the function call ID associated with the tool invocation.
 func (tc *ToolContext) FunctionCallID() string { return tc.functionCallID }
@@ -48,13 +56,13 @@ func (tc *ToolContext) AgentType() string { return tc.agentInfo.Type }
 
 // GetState retrieves the state associated with the given key.
 func (tc *ToolContext) GetState(k string) (interface{}, bool) {
-	return tc.invocationCtx.GetState(k)
+	return tc.runCtx.GetState(k)
 }
 
 // SetState records a state mutation both on the underlying invocation context
 // (for immediate visibility) and in the local EventActions delta for emission.
 func (tc *ToolContext) SetState(k string, v interface{}) {
-	tc.invocationCtx.SetState(k, v)
+	tc.runCtx.SetState(k, v)
 	if tc.eventActions.StateDelta == nil {
 		tc.eventActions.StateDelta = map[string]any{}
 	}
@@ -79,9 +87,7 @@ func (tc *ToolContext) TransferToAgent(name string) {
 		tc.eventActions.TransferToAgent = &name
 	}
 
-	if tc.invocationCtx.Logger != nil {
-		tc.invocationCtx.Logger.Info("tool.transfer.request", "from_agent", tc.AgentName(), "to_agent", name, "function_call_id", tc.functionCallID)
-	}
+	tc.LogInfo("tool.transfer.request", "from_agent", tc.AgentName(), "to_agent", name, "function_call_id", tc.functionCallID)
 }
 
 // Escalate requests escalation (e.g., to a higher-skill agent or human).
@@ -91,18 +97,16 @@ func (tc *ToolContext) Escalate() {
 		tc.eventActions.Escalate = &b
 	}
 
-	if tc.invocationCtx.Logger != nil {
-		tc.invocationCtx.Logger.Info("tool.escalate.request", "agent", tc.AgentName(), "function_call_id", tc.functionCallID)
-	}
+	tc.LogInfo("tool.escalate.request", "agent", tc.AgentName(), "function_call_id", tc.functionCallID)
 }
 
 // SaveArtifact persists artifact bytes and records the delta size for emission.
 func (tc *ToolContext) SaveArtifact(id string, data []byte) error {
-	if tc.invocationCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactService == nil {
 		return fmt.Errorf("artifact service not configured")
 	}
 
-	if err := tc.invocationCtx.ArtifactService.Save(tc.SessionID(), id, data); err != nil {
+	if err := tc.runCtx.ArtifactService.Save(tc.SessionID(), id, data); err != nil {
 		return err
 	}
 
@@ -117,74 +121,75 @@ func (tc *ToolContext) SaveArtifact(id string, data []byte) error {
 
 // LoadArtifact retrieves a persisted artifact by id.
 func (tc *ToolContext) LoadArtifact(id string) ([]byte, error) {
-	if tc.invocationCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactService == nil {
 		return nil, fmt.Errorf("artifact service not configured")
 	}
 
-	return tc.invocationCtx.ArtifactService.Get(tc.SessionID(), id)
+	return tc.runCtx.ArtifactService.Get(tc.SessionID(), id)
 }
 
 // ListArtifacts returns artifact IDs stored for the session.
 func (tc *ToolContext) ListArtifacts() ([]string, error) {
-	if tc.invocationCtx.ArtifactService == nil {
+	if tc.runCtx.ArtifactService == nil {
 		return nil, fmt.Errorf("artifact service not configured")
 	}
 
-	return tc.invocationCtx.ArtifactService.List(tc.SessionID())
+	return tc.runCtx.ArtifactService.List(tc.SessionID())
 }
 
 // SearchMemory performs a recall query against the configured MemoryStore.
 func (tc *ToolContext) SearchMemory(q string, limit int) ([]SearchResult, error) {
-	if tc.invocationCtx.MemoryService == nil {
+	if tc.runCtx.MemoryService == nil {
 		return nil, fmt.Errorf("memory service not configured")
 	}
-	return tc.invocationCtx.MemoryService.Search(tc.SessionID(), q, limit)
+
+	return tc.runCtx.MemoryService.Search(tc.SessionID(), q, limit)
 }
 
 // StoreMemory appends new content to the session's memory store with metadata.
 func (tc *ToolContext) StoreMemory(content string, md map[string]interface{}) error {
-	if tc.invocationCtx.MemoryService == nil {
+	if tc.runCtx.MemoryService == nil {
 		return fmt.Errorf("memory service not configured")
 	}
 
-	return tc.invocationCtx.MemoryService.Store(tc.SessionID(), content, md)
+	return tc.runCtx.MemoryService.Store(tc.SessionID(), content, md)
 }
 
 // GetSessionHistory returns conversation history (filtered) for context.
 func (tc *ToolContext) GetSessionHistory() []Event {
-	if tc.invocationCtx.Session == nil {
+	if tc.runCtx.Session == nil {
 		return nil
 	}
 
-	return tc.invocationCtx.Session.GetConversationHistory()
+	return tc.runCtx.Session.GetConversationHistory()
 }
 
 // RefreshSession reloads the underlying session from the SessionStore.
 func (tc *ToolContext) RefreshSession() error {
-	if tc.invocationCtx.SessionService == nil {
+	if tc.runCtx.SessionService == nil {
 		return fmt.Errorf("session service not configured")
 	}
 
-	s, err := tc.invocationCtx.SessionService.Get(tc.SessionID())
+	s, err := tc.runCtx.SessionService.Get(tc.SessionID())
 	if err != nil {
 		return err
 	}
 
-	tc.invocationCtx.Session = s
+	tc.runCtx.Session = s
 
 	return nil
 }
 
 // EmitEvent sends an event directly without merging accumulated actions.
 func (tc *ToolContext) EmitEvent(ev Event) error {
-	if tc.invocationCtx.Emit == nil {
+	if tc.runCtx.Emit == nil {
 		return fmt.Errorf("emit channel not configured")
 	}
 
 	select {
-	case <-tc.invocationCtx.Context.Done():
-		return tc.invocationCtx.Context.Err()
-	case tc.invocationCtx.Emit <- ev:
+	case <-tc.runCtx.Context.Done():
+		return tc.runCtx.Context.Err()
+	case tc.runCtx.Emit <- ev:
 	}
 
 	return nil
@@ -192,7 +197,7 @@ func (tc *ToolContext) EmitEvent(ev Event) error {
 
 // Validate performs a structural sanity check of the context.
 func (tc *ToolContext) Validate() error {
-	if !tc.valid || tc.invocationCtx == nil || tc.invocationCtx.SessionID == "" || tc.functionCallID == "" {
+	if !tc.valid || tc.runCtx == nil || tc.runCtx.SessionID == "" || tc.functionCallID == "" {
 		return fmt.Errorf("invalid ToolContext")
 	}
 
@@ -201,11 +206,11 @@ func (tc *ToolContext) Validate() error {
 
 // IsValid reports whether Validate would succeed (fast path).
 func (tc *ToolContext) IsValid() bool {
-	return tc.valid && tc.invocationCtx != nil && tc.invocationCtx.SessionID != "" && tc.functionCallID != ""
+	return tc.valid && tc.runCtx != nil && tc.runCtx.SessionID != "" && tc.functionCallID != ""
 }
 
 // InternalRunContext returns the internal run context.
-func (tc *ToolContext) InternalRunContext() *RunContext { return tc.invocationCtx }
+func (tc *ToolContext) InternalRunContext() *RunContext { return tc.runCtx }
 
 // InternalApplyActions merges accumulated EventActions into the provided event.
 // (Used internally by engine when finalizing tool invocation events.)
@@ -221,15 +226,13 @@ func (tc *ToolContext) InternalApplyActions(ev *Event) {
 
 	if tc.eventActions.TransferToAgent != nil {
 		ev.Actions.TransferToAgent = tc.eventActions.TransferToAgent
-		if tc.invocationCtx.Logger != nil {
-			tc.invocationCtx.Logger.Info("tool.transfer.applied", "from_agent", tc.AgentName(), "to_agent", *tc.eventActions.TransferToAgent, "function_call_id", tc.functionCallID)
-		}
+
+		tc.LogInfo("tool.transfer.applied", "from_agent", tc.AgentName(), "to_agent", *tc.eventActions.TransferToAgent, "function_call_id", tc.functionCallID)
 	}
 
 	if tc.eventActions.Escalate != nil {
 		ev.Actions.Escalate = tc.eventActions.Escalate
-		if tc.invocationCtx.Logger != nil {
-			tc.invocationCtx.Logger.Info("tool.escalate.applied", "agent", tc.AgentName(), "function_call_id", tc.functionCallID)
-		}
+
+		tc.LogInfo("tool.escalate.applied", "agent", tc.AgentName(), "function_call_id", tc.functionCallID)
 	}
 }

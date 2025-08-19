@@ -37,7 +37,8 @@ type RunContext struct {
 	StateDelta       map[string]any
 	Artifacts        []string
 	Branch           string
-	Logger           logging.Logger
+
+	*loggerAdapter
 }
 
 // NewRunContext constructs a RunContext with empty state and
@@ -69,7 +70,7 @@ func NewRunContext(
 		MemoryService:   memoryService,
 		StateDelta:      map[string]any{},
 		Artifacts:       []string{},
-		Logger:          logger,
+		loggerAdapter:   newLoggerAdapter(logger),
 	}
 }
 
@@ -206,7 +207,7 @@ func (ic *RunContext) Clone() *RunContext {
 		StateDelta:      map[string]any{},
 		Artifacts:       []string{},
 		Branch:          ic.Branch,
-		Logger:          ic.Logger,
+		loggerAdapter:   ic.loggerAdapter,
 	}
 
 	maps.Copy(c.StateDelta, ic.StateDelta)
@@ -229,6 +230,7 @@ func (ic *RunContext) NewChildContext(emit chan<- Event, resume <-chan struct{},
 	if branch != "" {
 		finalBranch = branch
 	}
+
 	return &RunContext{
 		Context:         ic.Context,
 		SessionID:       ic.SessionID,
@@ -244,7 +246,7 @@ func (ic *RunContext) NewChildContext(emit chan<- Event, resume <-chan struct{},
 		StateDelta:      map[string]any{}, // fresh buffers
 		Artifacts:       []string{},
 		Branch:          finalBranch,
-		Logger:          ic.Logger,
+		loggerAdapter:   ic.loggerAdapter,
 	}
 }
 

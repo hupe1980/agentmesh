@@ -172,9 +172,7 @@ loop:
 					result, err := f.agent.ExecuteTool(toolCtx, fnCall.Name, fnCall.Arguments)
 					dur := time.Since(start)
 
-					if runCtx.Logger != nil {
-						runCtx.Logger.Info("agent.tool.executed", "agent", f.agent.GetName(), "tool", fnCall.Name, "duration_ms", dur.Milliseconds(), "error", err != nil)
-					}
+					runCtx.LogInfo("agent.tool.executed", "agent", f.agent.GetName(), "tool", fnCall.Name, "duration_ms", dur.Milliseconds(), "error", err != nil)
 
 					respEv := core.NewFunctionResponseEvent(f.agent.GetName(), fnCall.ID, fnCall.Name, result, err)
 

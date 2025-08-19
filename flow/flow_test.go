@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model"
 	"github.com/hupe1980/agentmesh/session"
 	"github.com/hupe1980/agentmesh/tool"
@@ -107,13 +108,15 @@ func (m *MockMemoryService) Store(_ string, _ string, _ map[string]any) error {
 
 func (m *MockMemoryService) Delete(_ string, _ string) error { return nil }
 
-func newTestInvocationContext() *core.RunContext {
+func newTestRunContext() *core.RunContext {
 	ctx := context.Background()
 	eventChan := make(chan core.Event, 10)
 	sessSvc := session.NewInMemoryStore()
 	sess, _ := sessSvc.Create("test-session")
-	invocationCtx := core.NewRunContext(ctx, "test-session", "test-invocation", core.AgentInfo{Name: "TestAgent", Type: "flow-test"}, core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}, eventChan, nil, sess, sessSvc, nil, &MockMemoryService{}, nil)
-	return invocationCtx
+
+	runCtx := core.NewRunContext(ctx, "test-session", "test-invocation", core.AgentInfo{Name: "TestAgent", Type: "flow-test"}, core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}, eventChan, nil, sess, sessSvc, nil, &MockMemoryService{}, logging.NoOpLogger{})
+
+	return runCtx
 }
 
 type mockFlowAgent struct {
@@ -155,9 +158,9 @@ func TestSingleAgentFlow(t *testing.T) {
 	mockModel := NewMockModel("test-model", "mock")
 	mockModel.AddResponse("test message", "Hello! This is a test response.")
 	agent := &mockFlowAgent{name: "test-agent", llm: mockModel}
-	invocationCtx := newTestInvocationContext()
+	runCtx := newTestRunContext()
 	f := NewSingleAgentFlow(agent)
-	eventChan, err := f.Execute(invocationCtx)
+	eventChan, err := f.Execute(runCtx)
 	if err != nil {
 		t.Fatalf("Flow execution failed: %v", err)
 	}

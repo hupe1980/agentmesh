@@ -24,10 +24,8 @@ func (p *InstructionsProcessor) ProcessRequest(runCtx *core.RunContext, req *mod
 		return fmt.Errorf("failed to resolve instruction: %w", err)
 	}
 
-	if runCtx.Logger != nil {
-		if la, ok := agent.(interface{ GetName() string }); ok {
-			runCtx.Logger.Debug("agent.instruction.resolved", "agent", la.GetName(), "length", len(instructions))
-		}
+	if la, ok := agent.(interface{ GetName() string }); ok {
+		runCtx.LogDebug("agent.instruction.resolved", "agent", la.GetName(), "length", len(instructions))
 	}
 
 	if runCtx.Session != nil && runCtx.Session.State != nil {
