@@ -13,30 +13,22 @@ import (
 	"github.com/hupe1980/agentmesh/session"
 )
 
-// Config captures core runtime tuning knobs for the Runner.
-type Config struct {
+// Options holds dependency + configuration overrides passed to New().
+type Options struct {
 	// MaxConcurrentInvocations limits concurrent agent invocations.
 	MaxConcurrentInvocations int
 	// EnableStreaming toggles real-time event streaming vs buffered.
 	EnableStreaming bool
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
-}
-
-// DefaultConfig provides conservative defaults.
-var DefaultConfig = Config{
-	MaxConcurrentInvocations: 10,
-	EnableStreaming:          true,
-	EventBufferSize:          100,
-}
-
-// Options holds dependency + configuration overrides passed to New().
-type Options struct {
-	Config        Config
-	SessionStore  core.SessionStore
+	// Session management services.
+	SessionStore core.SessionStore
+	// Artifact management services.
 	ArtifactStore core.ArtifactStore
-	MemoryStore   core.MemoryStore
-	Logger        logging.Logger
+	// Memory management services.
+	MemoryStore core.MemoryStore
+	// Logging services.
+	Logger logging.Logger
 }
 
 // Runner coordinates agent execution: resolves the root agent, creates
@@ -45,44 +37,54 @@ type Options struct {
 type Runner struct {
 	agent core.Agent
 
+	maxConcurrentInvocations int
+	enableStreaming          bool
+	eventBufferSize          int
+
 	sessionStore  core.SessionStore
 	artifactStore core.ArtifactStore
 	memoryStore   core.MemoryStore
 	logger        logging.Logger
 
-	config Config
-
-	mu sync.RWMutex
-
-	activeInvocations map[string]context.CancelFunc
-	invocationsMu     sync.RWMutex
+	activeRuns map[string]context.CancelFunc
+	mu         sync.RWMutex
 }
 
 // New constructs a Runner with optional overrides.
 func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 	opts := Options{
-		Config:        DefaultConfig,
-		SessionStore:  session.NewInMemoryStore(),
-		ArtifactStore: artifact.NewInMemoryStore(),
-		MemoryStore:   memory.NewInMemoryStore(),
-		Logger:        logging.NoOpLogger{},
+		MaxConcurrentInvocations: 10,
+		EnableStreaming:          true,
+		EventBufferSize:          100,
+		SessionStore:             session.NewInMemoryStore(),
+		ArtifactStore:            artifact.NewInMemoryStore(),
+		MemoryStore:              memory.NewInMemoryStore(),
+		Logger:                   logging.NoOpLogger{},
 	}
+
 	for _, fn := range optFns {
 		fn(&opts)
 	}
+
 	return &Runner{
-		agent:             agent,
-		sessionStore:      opts.SessionStore,
-		artifactStore:     opts.ArtifactStore,
-		memoryStore:       opts.MemoryStore,
-		logger:            opts.Logger,
-		config:            opts.Config,
-		activeInvocations: make(map[string]context.CancelFunc),
+		agent:                    agent,
+		maxConcurrentInvocations: opts.MaxConcurrentInvocations,
+		enableStreaming:          opts.EnableStreaming,
+		eventBufferSize:          opts.EventBufferSize,
+		sessionStore:             opts.SessionStore,
+		artifactStore:            opts.ArtifactStore,
+		memoryStore:              opts.MemoryStore,
+		logger:                   opts.Logger,
+		activeRuns:               make(map[string]context.CancelFunc),
 	}
 }
 
 // Run starts an asynchronous invocation.
-func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Content) (string, <-chan core.Event, <-chan error, error) {
+func (r *Runner) Run(
+	ctx context.Context,
+	sessionID string,
+	userContent core.Content,
+) (string, <-chan core.Event, <-chan error, error) {
 	session, err := r.sessionStore.Get(sessionID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to get session: %w", err)
@@ -90,15 +92,15 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 
 	runID := util.NewID()
 
-	eventsCh := make(chan core.Event, r.config.EventBufferSize)
+	eventsCh := make(chan core.Event, r.eventBufferSize)
 	errorsCh := make(chan error, 1)
-	agentEmit := make(chan core.Event, r.config.EventBufferSize)
+	agentEmit := make(chan core.Event, r.eventBufferSize)
 	resumeCh := make(chan struct{}, 1)
 
 	invocationCtx, cancel := context.WithCancel(ctx)
-	r.invocationsMu.Lock()
-	r.activeInvocations[runID] = cancel
-	r.invocationsMu.Unlock()
+	r.mu.Lock()
+	r.activeRuns[runID] = cancel
+	r.mu.Unlock()
 
 	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
 
@@ -125,9 +127,9 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 	go func() {
 		defer func() {
 			close(agentEmit)
-			r.invocationsMu.Lock()
-			delete(r.activeInvocations, runID)
-			r.invocationsMu.Unlock()
+			r.mu.Lock()
+			delete(r.activeRuns, runID)
+			r.mu.Unlock()
 		}()
 		if err := r.runAgent(invCtx); err != nil {
 			select {
@@ -148,9 +150,9 @@ func (r *Runner) Run(ctx context.Context, sessionID string, userContent core.Con
 
 // Cancel cancels a running run by ID.
 func (r *Runner) Cancel(runID string) error {
-	r.invocationsMu.Lock()
-	cancel, exists := r.activeInvocations[runID]
-	r.invocationsMu.Unlock()
+	r.mu.Lock()
+	cancel, exists := r.activeRuns[runID]
+	r.mu.Unlock()
 
 	if !exists {
 		return fmt.Errorf("run %s not found", runID)
@@ -161,16 +163,17 @@ func (r *Runner) Cancel(runID string) error {
 	return nil
 }
 
-func (r *Runner) runAgent(invocationCtx *core.RunContext) error {
-	if err := r.agent.Start(invocationCtx); err != nil {
+func (r *Runner) runAgent(runCtx *core.RunContext) error {
+	if err := r.agent.Start(runCtx); err != nil {
 		return err
 	}
 	defer func() {
-		if err := r.agent.Stop(invocationCtx); err != nil {
+		if err := r.agent.Stop(runCtx); err != nil {
 			r.logger.Warn("error stopping agent %s: %v", r.agent.Name(), err)
 		}
 	}()
-	return r.agent.Run(invocationCtx)
+
+	return r.agent.Run(runCtx)
 }
 
 func (r *Runner) processEvents(

@@ -167,7 +167,7 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.RunCont
 	interceptChan := make(chan core.Event, 10)
 	resumeChan := make(chan struct{}, 10)
 
-	childInvocationCtx := invocationCtx.NewChildRunContext(interceptChan, resumeChan, invocationCtx.Branch)
+	childInvocationCtx := invocationCtx.NewChildContext(interceptChan, resumeChan, invocationCtx.Branch)
 
 	// Channel to communicate child execution completion
 	done := make(chan error, 1)

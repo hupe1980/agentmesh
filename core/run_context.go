@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"maps"
+
 	"github.com/hupe1980/agentmesh/logging"
 )
 
@@ -189,11 +191,28 @@ func (ic *RunContext) GetAgentType() string { return ic.Agent.Type }
 
 // Clone returns a shallow copy with deep-copied delta & artifact slices.
 func (ic *RunContext) Clone() *RunContext {
-	c := &RunContext{Context: ic.Context, SessionID: ic.SessionID, RunID: ic.RunID, Agent: ic.Agent, UserContent: ic.UserContent, Emit: ic.Emit, Resume: ic.Resume, SessionService: ic.SessionService, ArtifactService: ic.ArtifactService, MemoryService: ic.MemoryService, Session: ic.Session, StateDelta: map[string]any{}, Artifacts: []string{}, Branch: ic.Branch, Logger: ic.Logger}
-	for k, v := range ic.StateDelta {
-		c.StateDelta[k] = v
+	c := &RunContext{
+		Context:         ic.Context,
+		SessionID:       ic.SessionID,
+		RunID:           ic.RunID,
+		Agent:           ic.Agent,
+		UserContent:     ic.UserContent,
+		Emit:            ic.Emit,
+		Resume:          ic.Resume,
+		SessionService:  ic.SessionService,
+		ArtifactService: ic.ArtifactService,
+		MemoryService:   ic.MemoryService,
+		Session:         ic.Session,
+		StateDelta:      map[string]any{},
+		Artifacts:       []string{},
+		Branch:          ic.Branch,
+		Logger:          ic.Logger,
 	}
+
+	maps.Copy(c.StateDelta, ic.StateDelta)
+
 	c.Artifacts = append(c.Artifacts, ic.Artifacts...)
+
 	return c
 }
 
@@ -204,8 +223,8 @@ func (ic *RunContext) WithBranch(b string) *RunContext {
 	return c
 }
 
-// NewChildRunContext derives a context for a nested / child execution path.
-func (ic *RunContext) NewChildRunContext(emit chan<- Event, resume <-chan struct{}, branch string) *RunContext {
+// NewChildContext derives a context for a nested / child execution path.
+func (ic *RunContext) NewChildContext(emit chan<- Event, resume <-chan struct{}, branch string) *RunContext {
 	finalBranch := ic.Branch
 	if branch != "" {
 		finalBranch = branch
