@@ -40,14 +40,14 @@ func (f *BaseFlow) AddResponseProcessor(processor ResponseProcessor) {
 // Execute launches the flow asynchronously and returns a channel of Events.
 // The channel is closed when a final response is emitted or an unrecoverable
 // error occurs. Callers should range over the returned channel.
-func (f *BaseFlow) Execute(invocationCtx *core.RunContext) (<-chan core.Event, error) {
+func (f *BaseFlow) Execute(runCtx *core.RunContext) (<-chan core.Event, error) {
 	eventChan := make(chan core.Event, 100)
 
 	go func() {
 		defer close(eventChan)
 
 		for {
-			last := f.runOnce(invocationCtx, eventChan)
+			last := f.runOnce(runCtx, eventChan)
 			if last == nil {
 				break
 			}
@@ -78,11 +78,11 @@ func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
 
 // runOnce performs one model turn (including any tool executions) and returns
 // the last emitted Event (final or intermediate). A nil return signals termination.
-func (f *BaseFlow) runOnce(invocationCtx *core.RunContext, eventChan chan<- core.Event) *core.Event {
+func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event) *core.Event {
 	// Refresh session snapshot so request processors see latest conversation (including tool responses)
-	if invocationCtx.SessionService != nil {
-		if latest, err := invocationCtx.SessionService.Get(invocationCtx.SessionID); err == nil && latest != nil {
-			invocationCtx.Session = latest
+	if runCtx.SessionService != nil {
+		if latest, err := runCtx.SessionService.Get(runCtx.SessionID); err == nil && latest != nil {
+			runCtx.Session = latest
 		}
 	}
 
@@ -91,7 +91,7 @@ func (f *BaseFlow) runOnce(invocationCtx *core.RunContext, eventChan chan<- core
 
 	// Run request processors
 	for _, processor := range f.requestProcessors {
-		if err := processor.ProcessRequest(invocationCtx, req, f.agent); err != nil {
+		if err := processor.ProcessRequest(runCtx, req, f.agent); err != nil {
 			f.emitError(eventChan, fmt.Errorf("request processor %s failed: %w", processor.Name(), err))
 			return nil
 		}
@@ -119,7 +119,7 @@ func (f *BaseFlow) runOnce(invocationCtx *core.RunContext, eventChan chan<- core
 	// Execute LLM request
 	llm := f.agent.GetLLM()
 
-	respCh, errCh := llm.Generate(invocationCtx.Context, *req)
+	respCh, errCh := llm.Generate(runCtx.Context, *req)
 
 	var lastEvent *core.Event
 
@@ -133,14 +133,14 @@ loop:
 
 			// Apply response processors
 			for _, processor := range f.responseProcessors {
-				if err := processor.ProcessResponse(invocationCtx, &resp, f.agent); err != nil {
+				if err := processor.ProcessResponse(runCtx, &resp, f.agent); err != nil {
 					f.emitError(eventChan, fmt.Errorf("response processor %s failed: %w", processor.Name(), err))
 					return nil
 				}
 			}
 
 			// Emit processed event
-			ev := core.NewEvent(invocationCtx.RunID, f.agent.GetName())
+			ev := core.NewEvent(runCtx.RunID, f.agent.GetName())
 			ev.Content = &resp.Content
 			ev.Partial = &resp.Partial
 
@@ -155,23 +155,25 @@ loop:
 			eventChan <- ev
 
 			// Wait for session persistence (runner sends resume after append)
-			if !ev.IsPartial() && invocationCtx.Resume != nil {
+			if !ev.IsPartial() && runCtx.Resume != nil {
 				select {
-				case <-invocationCtx.Context.Done():
+				case <-runCtx.Context.Done():
 					return lastEvent
-				case <-invocationCtx.Resume:
+				case <-runCtx.Resume:
 				}
 			}
 
 			// Handle function calls
 			if fnCalls := ev.GetFunctionCalls(); len(fnCalls) > 0 {
 				for _, fnCall := range fnCalls {
-					toolCtx := core.NewToolContext(invocationCtx, fnCall.ID)
+					toolCtx := core.NewToolContext(runCtx, fnCall.ID)
+
 					start := time.Now()
 					result, err := f.agent.ExecuteTool(toolCtx, fnCall.Name, fnCall.Arguments)
 					dur := time.Since(start)
-					if invocationCtx.Logger != nil {
-						invocationCtx.Logger.Info("agent.tool.executed", "agent", f.agent.GetName(), "tool", fnCall.Name, "duration_ms", dur.Milliseconds(), "error", err != nil)
+
+					if runCtx.Logger != nil {
+						runCtx.Logger.Info("agent.tool.executed", "agent", f.agent.GetName(), "tool", fnCall.Name, "duration_ms", dur.Milliseconds(), "error", err != nil)
 					}
 
 					respEv := core.NewFunctionResponseEvent(f.agent.GetName(), fnCall.ID, fnCall.Name, result, err)
@@ -181,11 +183,11 @@ loop:
 					eventChan <- respEv
 
 					// Wait for session persistence of tool response
-					if invocationCtx.Resume != nil {
+					if runCtx.Resume != nil {
 						select {
-						case <-invocationCtx.Context.Done():
+						case <-runCtx.Context.Done():
 							return lastEvent
-						case <-invocationCtx.Resume:
+						case <-runCtx.Resume:
 						}
 					}
 				}

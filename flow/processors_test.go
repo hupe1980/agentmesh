@@ -16,22 +16,22 @@ type MockFlowAgent struct {
 func NewMockFlowAgent(name string) *MockFlowAgent {
 	return &MockFlowAgent{name: name, subAgents: []FlowAgent{}}
 }
-func (m *MockFlowAgent) GetName() string                  { return m.name }
-func (m *MockFlowAgent) GetLLM() model.Model              { return m.llm }
-func (m *MockFlowAgent) GetTools() map[string]interface{} { return map[string]interface{}{} }
-func (m *MockFlowAgent) GetSubAgents() []FlowAgent        { return m.subAgents }
-func (m *MockFlowAgent) IsFunctionCallingEnabled() bool   { return false }
-func (m *MockFlowAgent) IsStreamingEnabled() bool         { return false }
-func (m *MockFlowAgent) IsTransferEnabled() bool          { return false }
-func (m *MockFlowAgent) GetOutputKey() string             { return "" }
-func (m *MockFlowAgent) MaxHistoryMessages() int          { return 10 }
-func (m *MockFlowAgent) ResolveInstructions(invocationCtx *core.RunContext) (string, error) {
+func (m *MockFlowAgent) GetName() string                { return m.name }
+func (m *MockFlowAgent) GetLLM() model.Model            { return m.llm }
+func (m *MockFlowAgent) GetTools() map[string]any       { return map[string]any{} }
+func (m *MockFlowAgent) GetSubAgents() []FlowAgent      { return m.subAgents }
+func (m *MockFlowAgent) IsFunctionCallingEnabled() bool { return false }
+func (m *MockFlowAgent) IsStreamingEnabled() bool       { return false }
+func (m *MockFlowAgent) IsTransferEnabled() bool        { return false }
+func (m *MockFlowAgent) GetOutputKey() string           { return "" }
+func (m *MockFlowAgent) MaxHistoryMessages() int        { return 10 }
+func (m *MockFlowAgent) ResolveInstructions(_ *core.RunContext) (string, error) {
 	return "You are a test assistant.", nil
 }
-func (m *MockFlowAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error) {
+func (m *MockFlowAgent) ExecuteTool(_ *core.ToolContext, _ string, _ string) (any, error) {
 	return "mock tool result", nil
 }
-func (m *MockFlowAgent) TransferToAgent(invocationCtx *core.RunContext, agentName string) error {
+func (m *MockFlowAgent) TransferToAgent(_ *core.RunContext, _ string) error {
 	return nil
 }
 

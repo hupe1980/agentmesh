@@ -18,22 +18,22 @@ func NewInstructionsProcessor() *InstructionsProcessor { return &InstructionsPro
 func (p *InstructionsProcessor) Name() string { return "instructions" }
 
 // ProcessRequest adds system instructions to the chat request.
-func (p *InstructionsProcessor) ProcessRequest(invocationCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
-	instructions, err := agent.ResolveInstructions(invocationCtx)
+func (p *InstructionsProcessor) ProcessRequest(runCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
+	instructions, err := agent.ResolveInstructions(runCtx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve instruction: %w", err)
 	}
 
-	if invocationCtx.Logger != nil {
+	if runCtx.Logger != nil {
 		if la, ok := agent.(interface{ GetName() string }); ok {
-			invocationCtx.Logger.Debug("agent.instruction.resolved", "agent", la.GetName(), "length", len(instructions))
+			runCtx.Logger.Debug("agent.instruction.resolved", "agent", la.GetName(), "length", len(instructions))
 		}
 	}
 
-	if invocationCtx.Session != nil && invocationCtx.Session.State != nil {
+	if runCtx.Session != nil && runCtx.Session.State != nil {
 		var tplErr error
 		// Apply template substitution to system prompt using session state
-		req.Instructions, tplErr = internalutil.RenderTemplate(instructions, invocationCtx.Session.State)
+		req.Instructions, tplErr = internalutil.RenderTemplate(instructions, runCtx.Session.State)
 		if tplErr != nil {
 			return fmt.Errorf("failed to render template: %w", tplErr)
 		}
@@ -54,15 +54,15 @@ func NewContentsProcessor() *ContentsProcessor { return &ContentsProcessor{} }
 func (p *ContentsProcessor) Name() string { return "contents" }
 
 // ProcessRequest adds user content to the chat request.
-func (p *ContentsProcessor) ProcessRequest(invocationCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
+func (p *ContentsProcessor) ProcessRequest(runCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
 	contents := []core.Content{{
 		Role:  "system",
 		Parts: []core.Part{core.TextPart{Text: req.Instructions}},
 	}}
 
 	// Add conversation history if available
-	if invocationCtx.Session != nil {
-		events := invocationCtx.Session.GetConversationHistory()
+	if runCtx.Session != nil {
+		events := runCtx.Session.GetConversationHistory()
 		if len(events) > agent.MaxHistoryMessages() {
 			events = events[len(events)-agent.MaxHistoryMessages():]
 		}
