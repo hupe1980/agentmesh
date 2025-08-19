@@ -85,9 +85,11 @@ func (ic *RunContext) GetState(k string) (any, bool) {
 	if v, ok := ic.StateDelta[k]; ok {
 		return v, true
 	}
+
 	if ic.Session != nil {
 		return ic.Session.GetState(k)
 	}
+
 	return nil, false
 }
 
@@ -105,20 +107,24 @@ func (ic *RunContext) AddArtifact(id string) { ic.Artifacts = append(ic.Artifact
 // SaveArtifact stores bytes in the ArtifactStore and stages the id for the next emitted event.
 func (ic *RunContext) SaveArtifact(id string, data []byte) error {
 	if ic.ArtifactStore == nil {
-		return fmt.Errorf("artifact service not configured")
+		return fmt.Errorf("artifact store not configured")
 	}
+
 	if err := ic.ArtifactStore.Save(ic.SessionID, id, data); err != nil {
 		return err
 	}
+
 	ic.AddArtifact(id)
+
 	return nil
 }
 
 // GetArtifact retrieves previously saved artifact bytes.
 func (ic *RunContext) GetArtifact(id string) ([]byte, error) {
 	if ic.ArtifactStore == nil {
-		return nil, fmt.Errorf("artifact service not configured")
+		return nil, fmt.Errorf("artifact store not configured")
 	}
+
 	return ic.ArtifactStore.Get(ic.SessionID, id)
 }
 
@@ -127,6 +133,7 @@ func (ic *RunContext) ListArtifacts() ([]string, error) {
 	if ic.ArtifactStore == nil {
 		return []string{}, nil
 	}
+
 	return ic.ArtifactStore.List(ic.SessionID)
 }
 
@@ -135,13 +142,14 @@ func (ic *RunContext) SearchMemory(q string, limit int) ([]SearchResult, error) 
 	if ic.MemoryStore == nil {
 		return []SearchResult{}, nil
 	}
+
 	return ic.MemoryStore.Search(ic.SessionID, q, limit)
 }
 
 // StoreMemory appends content plus metadata to the MemoryStore.
 func (ic *RunContext) StoreMemory(content string, md map[string]any) error {
 	if ic.MemoryStore == nil {
-		return fmt.Errorf("memory service not configured")
+		return fmt.Errorf("memory store not configured")
 	}
 	return ic.MemoryStore.Store(ic.SessionID, content, md)
 }
@@ -149,13 +157,16 @@ func (ic *RunContext) StoreMemory(content string, md map[string]any) error {
 // RefreshSession reloads the session snapshot from the SessionStore.
 func (ic *RunContext) RefreshSession() error {
 	if ic.SessionStore == nil {
-		return fmt.Errorf("session service not configured")
+		return fmt.Errorf("session store not configured")
 	}
+
 	s, err := ic.SessionStore.Get(ic.SessionID)
 	if err != nil {
 		return err
 	}
+
 	ic.Session = s
+
 	return nil
 }
 
@@ -164,13 +175,17 @@ func (ic *RunContext) CommitStateDelta() error {
 	if len(ic.StateDelta) == 0 {
 		return nil
 	}
+
 	if ic.SessionStore == nil {
-		return fmt.Errorf("session service not configured")
+		return fmt.Errorf("session store not configured")
 	}
+
 	if err := ic.SessionStore.ApplyDelta(ic.SessionID, ic.StateDelta); err != nil {
 		return err
 	}
+
 	ic.StateDelta = map[string]any{}
+
 	return nil
 }
 
@@ -179,6 +194,7 @@ func (ic *RunContext) GetSessionHistory() []Event {
 	if ic.Session == nil {
 		return []Event{}
 	}
+
 	return ic.Session.GetEvents()
 }
 
@@ -263,6 +279,7 @@ func (ic *RunContext) EmitEvent(ev Event) error {
 			}
 		}
 	}
+
 	if len(ic.Artifacts) > 0 {
 		if ev.Actions.ArtifactDelta == nil {
 			ev.Actions.ArtifactDelta = map[string]int{}
@@ -271,13 +288,16 @@ func (ic *RunContext) EmitEvent(ev Event) error {
 			ev.Actions.ArtifactDelta[id] = 1
 		}
 	}
+
 	select {
 	case <-ic.Context.Done():
 		return ic.Context.Err()
 	case ic.Emit <- ev:
 	}
+
 	ic.StateDelta = map[string]any{}
 	ic.Artifacts = []string{}
+
 	return nil
 }
 
@@ -286,6 +306,7 @@ func (ic *RunContext) WaitForResume() error {
 	if ic.Resume == nil {
 		return nil
 	}
+
 	select {
 	case <-ic.Resume:
 		return nil
