@@ -114,7 +114,21 @@ func newTestRunContext() *core.RunContext {
 	sessSvc := session.NewInMemoryStore()
 	sess, _ := sessSvc.Create("test-session")
 
-	runCtx := core.NewRunContext(ctx, "test-session", "test-invocation", core.AgentInfo{Name: "TestAgent", Type: "flow-test"}, core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}, eventChan, nil, sess, sessSvc, nil, &MockMemoryService{}, logging.NoOpLogger{})
+	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test message"}}}
+	runCtx := core.NewRunContext(
+		ctx,
+		"test-session",
+		"test-invocation",
+		core.AgentInfo{Name: "TestAgent", Type: "flow-test"},
+		userContent,
+		eventChan,
+		nil,
+		sess,
+		sessSvc,
+		nil,
+		&MockMemoryService{},
+		logging.NoOpLogger{},
+	)
 
 	return runCtx
 }
@@ -160,13 +174,21 @@ func TestSingleAgentFlow(t *testing.T) {
 	agent := &mockFlowAgent{name: "test-agent", llm: mockModel}
 	runCtx := newTestRunContext()
 	f := NewSingleAgentFlow(agent)
-	eventChan, err := f.Execute(runCtx)
+	eventChan, errChan, err := f.Execute(runCtx)
 	if err != nil {
 		t.Fatalf("Flow execution failed: %v", err)
 	}
 	var events []core.Event
 	for ev := range eventChan {
 		events = append(events, ev)
+	}
+	// check async error
+	select {
+	case e, ok := <-errChan:
+		if ok && e != nil {
+			t.Fatalf("Flow async error: %v", e)
+		}
+	default:
 	}
 	if len(events) == 0 {
 		t.Error("Expected at least one event from flow execution")

@@ -28,6 +28,7 @@ func NewToolContext(runCtx *RunContext, functionCallID string) *ToolContext {
 		runCtx:         runCtx,
 		functionCallID: functionCallID,
 		agentInfo:      runCtx.Agent,
+		eventActions:   EventActions{},
 		valid:          true,
 		loggerAdapter:  newLoggerAdapter(runCtx.Logger()),
 	}
@@ -55,17 +56,18 @@ func (tc *ToolContext) AgentName() string { return tc.agentInfo.Name }
 func (tc *ToolContext) AgentType() string { return tc.agentInfo.Type }
 
 // GetState retrieves the state associated with the given key.
-func (tc *ToolContext) GetState(k string) (interface{}, bool) {
+func (tc *ToolContext) GetState(k string) (any, bool) {
 	return tc.runCtx.GetState(k)
 }
 
 // SetState records a state mutation both on the underlying invocation context
 // (for immediate visibility) and in the local EventActions delta for emission.
-func (tc *ToolContext) SetState(k string, v interface{}) {
+func (tc *ToolContext) SetState(k string, v any) {
 	tc.runCtx.SetState(k, v)
 	if tc.eventActions.StateDelta == nil {
 		tc.eventActions.StateDelta = map[string]any{}
 	}
+
 	tc.eventActions.StateDelta[k] = v
 }
 
@@ -83,10 +85,7 @@ func (tc *ToolContext) SkipSummarization() {
 
 // TransferToAgent signals orchestration to handoff control to another agent.
 func (tc *ToolContext) TransferToAgent(name string) {
-	if tc.eventActions.TransferToAgent == nil {
-		tc.eventActions.TransferToAgent = &name
-	}
-
+	tc.eventActions.TransferToAgent = &name
 	tc.LogInfo("tool.transfer.request", "from_agent", tc.AgentName(), "to_agent", name, "function_call_id", tc.functionCallID)
 }
 
@@ -147,7 +146,7 @@ func (tc *ToolContext) SearchMemory(q string, limit int) ([]SearchResult, error)
 }
 
 // StoreMemory appends new content to the session's memory store with metadata.
-func (tc *ToolContext) StoreMemory(content string, md map[string]interface{}) error {
+func (tc *ToolContext) StoreMemory(content string, md map[string]any) error {
 	if tc.runCtx.MemoryStore == nil {
 		return fmt.Errorf("memory service not configured")
 	}

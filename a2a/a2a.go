@@ -34,5 +34,9 @@ func (ae *agentExecutor) Execute(ctx context.Context, reqCtx a2asrv.RequestConte
 //
 // Returns an error if the cancellation request cannot be processed.
 func (ae *agentExecutor) Cancel(ctx context.Context, reqCtx a2asrv.RequestContext, queue a2asrv.EventWriter) error {
-	return ae.engine.Cancel(reqCtx.ContextID)
+	if err := ae.engine.Cancel(string(reqCtx.TaskID)); err != nil {
+		return err
+	}
+
+	return nil
 }

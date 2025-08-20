@@ -225,38 +225,3 @@ func (l *LoopAgent) runChildWithEscalationMonitoring(invocationCtx *core.RunCont
 		}
 	}
 }
-
-// CreateEscalationEvent creates an event that signals escalation to the parent agent.
-//
-// This helper function creates a properly formatted event with the escalation flag set,
-// following the Google ADK escalation pattern. Agents can use this to create escalation
-// events when they determine that they cannot complete their task and need to escalate
-// to a higher level agent.
-//
-// Parameters:
-//   - author: Name of the agent creating the escalation event
-//   - runID: Current run context identifier
-//   - content: Optional content describing the reason for escalation
-//
-// Returns a fully configured Event with Escalate=true.
-//
-// Example usage:
-//
-//	event := CreateEscalationEvent(
-//	    ctx.RunID,
-//	    "TaskAgent",
-//	    &event.Content{
-//	        Role: "assistant",
-//	        Parts: []event.Part{event.TextPart{Text: "Task complexity exceeds my capabilities"}},
-//	    },
-//	)
-//	return ctx.EmitEvent(event)
-//
-// CreateEscalationEvent helper for constructing an escalation signal event.
-func CreateEscalationEvent(runID, author string, content *core.Content) core.Event {
-	escalate := true
-	ev := core.NewEvent(runID, author)
-	ev.Actions.Escalate = &escalate
-	ev.Content = content
-	return ev
-}

@@ -40,45 +40,51 @@ func (f *BaseFlow) AddResponseProcessor(processor ResponseProcessor) {
 // Execute launches the flow asynchronously and returns a channel of Events.
 // The channel is closed when a final response is emitted or an unrecoverable
 // error occurs. Callers should range over the returned channel.
-func (f *BaseFlow) Execute(runCtx *core.RunContext) (<-chan core.Event, error) {
+func (f *BaseFlow) Execute(runCtx *core.RunContext) (<-chan core.Event, <-chan error, error) {
 	eventChan := make(chan core.Event, 100)
+	errChan := make(chan error, 1)
 
 	go func() {
 		defer close(eventChan)
+		defer close(errChan)
 
 		for {
-			last := f.runOnce(runCtx, eventChan)
-			if last == nil {
-				break
+			last, err := f.runOnce(runCtx, eventChan)
+			if err != nil {
+				// Propagate terminal error then stop.
+				errChan <- fmt.Errorf("flow execution failed: %w", err)
+				return
+			}
+			if last == nil { // termination (model stream closed with no event)
+				return
 			}
 			// If we just emitted a function response, we want another LLM turn
 			if len(last.GetFunctionResponses()) > 0 {
 				continue
 			}
-			if last.IsPartial() {
-				fmt.Println("WARNING: last event is partial, which is not expected.")
-				break
+			if last.IsPartial() { // unexpected partial as last event
+				return
 			}
 			if last.IsFinalResponse() {
-				break
+				return
 			}
 		}
 	}()
 
-	return eventChan, nil
+	return eventChan, errChan, nil
 }
 
-// emitError converts an internal error to a system Event.
-func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
-	ev := core.NewEvent("", "system")
-	msg := err.Error()
-	ev.ErrorMessage = &msg
-	eventChan <- ev
-}
+// // emitError converts an internal error to a system Event.
+// func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
+// 	ev := core.NewEvent("", "system")
+// 	msg := err.Error()
+// 	ev.ErrorMessage = &msg
+// 	eventChan <- ev
+// }
 
 // runOnce performs one model turn (including any tool executions) and returns
 // the last emitted Event (final or intermediate). A nil return signals termination.
-func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event) *core.Event {
+func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event) (*core.Event, error) {
 	// Refresh session snapshot so request processors see latest conversation (including tool responses)
 	if runCtx.SessionStore != nil {
 		if latest, err := runCtx.SessionStore.Get(runCtx.SessionID); err == nil && latest != nil {
@@ -92,8 +98,7 @@ func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event)
 	// Run request processors
 	for _, processor := range f.requestProcessors {
 		if err := processor.ProcessRequest(runCtx, req, f.agent); err != nil {
-			f.emitError(eventChan, fmt.Errorf("request processor %s failed: %w", processor.Name(), err))
-			return nil
+			return nil, fmt.Errorf("request processor %s failed: %w", processor.Name(), err)
 		}
 	}
 
@@ -118,7 +123,6 @@ func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event)
 
 	// Execute LLM request
 	llm := f.agent.GetLLM()
-
 	respCh, errCh := llm.Generate(runCtx.Context, *req)
 
 	var lastEvent *core.Event
@@ -134,31 +138,21 @@ loop:
 			// Apply response processors
 			for _, processor := range f.responseProcessors {
 				if err := processor.ProcessResponse(runCtx, &resp, f.agent); err != nil {
-					f.emitError(eventChan, fmt.Errorf("response processor %s failed: %w", processor.Name(), err))
-					return nil
+					return nil, fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
 				}
 			}
 
-			// Emit processed event
-			ev := core.NewEvent(runCtx.RunID, f.agent.GetName())
-			ev.Content = &resp.Content
-			ev.Partial = &resp.Partial
-
-			// Mark turn complete if this is a final assistant response with no pending tool calls
-			if !resp.Partial && len(ev.GetFunctionCalls()) == 0 {
-				complete := true
-				ev.TurnComplete = &complete
-			}
-
+			ev := core.NewAssistantEvent(runCtx.RunID, f.agent.GetName(), resp.Content, resp.Partial)
 			lastEvent = &ev
 
+			// Emit processed event
 			eventChan <- ev
 
 			// Wait for session persistence (runner sends resume after append)
 			if !ev.IsPartial() && runCtx.Resume != nil {
 				select {
 				case <-runCtx.Context.Done():
-					return lastEvent
+					return lastEvent, nil
 				case <-runCtx.Resume:
 				}
 			}
@@ -172,19 +166,25 @@ loop:
 					result, err := f.agent.ExecuteTool(toolCtx, fnCall.Name, fnCall.Arguments)
 					dur := time.Since(start)
 
-					runCtx.LogInfo("agent.tool.executed", "agent", f.agent.GetName(), "tool", fnCall.Name, "duration_ms", dur.Milliseconds(), "error", err != nil)
+					runCtx.LogInfo(
+						"agent.tool.executed",
+						"agent", f.agent.GetName(),
+						"tool", fnCall.Name,
+						"duration_ms", dur.Milliseconds(),
+						"error", err != nil,
+					)
 
 					respEv := core.NewFunctionResponseEvent(f.agent.GetName(), fnCall.ID, fnCall.Name, result, err)
-
 					lastEvent = &respEv
 
+					// Emit processed event
 					eventChan <- respEv
 
 					// Wait for session persistence of tool response
 					if runCtx.Resume != nil {
 						select {
 						case <-runCtx.Context.Done():
-							return lastEvent
+							return lastEvent, nil
 						case <-runCtx.Resume:
 						}
 					}
@@ -198,5 +198,5 @@ loop:
 		}
 	}
 
-	return lastEvent
+	return lastEvent, nil
 }

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestEscalatingAgent is a mock agent that escalates after a certain number of runs
@@ -24,39 +26,36 @@ func NewTestEscalatingAgent(name string, escalateOn int) *TestEscalatingAgent {
 	}
 }
 
-func (t *TestEscalatingAgent) Run(invocationCtx *core.RunContext) error {
+func (t *TestEscalatingAgent) Run(runCtx *core.RunContext) error {
 	t.runCount++
 
-	// Create a basic event
-	ev := core.NewEvent(t.Name(), invocationCtx.RunID)
+	var ev core.Event
 
 	if t.runCount >= t.escalateOn {
 		// Create escalation event
-		escalate := true
-		ev.Actions.Escalate = &escalate
-		ev.Content = &core.Content{
+		ev = core.NewEscalationEvent(runCtx.RunID, t.Name(), core.Content{
 			Role: "assistant",
 			Parts: []core.Part{core.TextPart{
 				Text: "Task complexity exceeds my capabilities, escalating to parent",
 			}},
-		}
+		})
 	} else {
 		// Regular event
-		ev.Content = &core.Content{
+		ev = core.NewAssistantEvent(runCtx.RunID, t.Name(), core.Content{
 			Role: "assistant",
 			Parts: []core.Part{core.TextPart{
 				Text: "Working on task iteration " + string(rune(t.runCount+'0')),
 			}},
-		}
+		}, false)
 	}
 
 	// Emit the event
-	if err := invocationCtx.EmitEvent(ev); err != nil {
+	if err := runCtx.EmitEvent(ev); err != nil {
 		return err
 	}
 
 	// Wait for resume
-	return invocationCtx.WaitForResume()
+	return runCtx.WaitForResume()
 }
 
 // TestRegularAgent is a mock agent that never escalates
@@ -72,25 +71,20 @@ func NewTestRegularAgent(name string) *TestRegularAgent {
 	}
 }
 
-func (t *TestRegularAgent) Run(invocationCtx *core.RunContext) error {
+func (t *TestRegularAgent) Run(runCtx *core.RunContext) error {
 	t.runCount++
 
-	// Create a regular event
-	ev := core.NewEvent(invocationCtx.RunID, t.Name())
-	ev.Content = &core.Content{
-		Role: "assistant",
-		Parts: []core.Part{core.TextPart{
-			Text: "Working on task iteration " + string(rune(t.runCount+'0')),
-		}},
-	}
+	ev := core.NewAssistantEvent(runCtx.RunID, t.Name(), core.Content{
+		Role:  "assistant",
+		Parts: []core.Part{core.TextPart{Text: "Working on task iteration " + string(rune(t.runCount+'0'))}},
+	}, false)
 
 	// Emit the event
-	if err := invocationCtx.EmitEvent(ev); err != nil {
+	if err := runCtx.EmitEvent(ev); err != nil {
 		return err
 	}
 
-	// Wait for resume
-	return invocationCtx.WaitForResume()
+	return runCtx.WaitForResume()
 }
 
 func TestLoopAgent_EscalationHandling(t *testing.T) {
@@ -125,37 +119,36 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create loop agent
-			loopAgent := NewLoopAgent("TestLoop", tt.childAgent, func(o *LoopAgentOptions) {
-				o.MaxIters = tt.maxIters
-			})
+		tt := tt
 
-			// Create test context
+		// Use a subtest to isolate each case
+		t.Run(tt.name, func(t *testing.T) {
+			loopAgent := NewLoopAgent("TestLoop", tt.childAgent, func(o *LoopAgentOptions) { o.MaxIters = tt.maxIters })
+
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			// Create mock invocation context with proper bidirectional channels
 			emitChan := make(chan core.Event, 10)
 			resumeChan := make(chan struct{}, 10)
 
-			invocationCtx := &core.RunContext{
+			runCtx := &core.RunContext{
 				Context: ctx,
 				RunID:   "test-invocation",
 				Emit:    emitChan,
 				Resume:  resumeChan,
 			}
 
-			// Track events in a separate goroutine
-			var events []core.Event
-			var eventWg sync.WaitGroup
-			eventWg.Add(1)
+			var (
+				events []core.Event
+				wg     sync.WaitGroup
+			)
+
+			wg.Add(1)
 
 			go func() {
-				defer eventWg.Done()
-				for event := range emitChan {
-					events = append(events, event)
-					// Send resume signal
+				defer wg.Done()
+				for ev := range emitChan {
+					events = append(events, ev)
 					select {
 					case resumeChan <- struct{}{}:
 					case <-ctx.Done():
@@ -164,47 +157,26 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 				}
 			}()
 
-			// Run the loop agent
-			err := loopAgent.Run(invocationCtx)
+			err := loopAgent.Run(runCtx)
 
-			// Close channels and wait for event processing to complete
 			close(emitChan)
-			eventWg.Wait()
+			wg.Wait()
 			close(resumeChan)
 
-			// Verify results
-			if err != nil {
-				t.Errorf("Loop agent returned unexpected error: %v", err)
+			require.NoError(t, err, "unexpected loop run error")
+			assert.Len(t, events, tt.expectedIterations, "iteration count mismatch")
+
+			if tt.shouldEscalate && len(events) > 0 {
+				last := events[len(events)-1]
+				require.NotNil(t, last.Actions.Escalate, "expected escalation flag present")
+				assert.True(t, *last.Actions.Escalate, "escalation flag should be true")
 			}
 
-			// Check the number of events (should match expected iterations)
-			if len(events) != tt.expectedIterations {
-				t.Errorf("Expected %d events, got %d", tt.expectedIterations, len(events))
-			}
-
-			// Check if escalation was handled correctly
-			if tt.shouldEscalate {
-				// Last event should have escalation flag set
-				if len(events) > 0 {
-					lastEvent := events[len(events)-1]
-					if lastEvent.Actions.Escalate == nil || !*lastEvent.Actions.Escalate {
-						t.Error("Expected last event to have escalation flag set")
-					}
-				}
-			}
-
-			// Verify iteration counts in child agents
 			switch child := tt.childAgent.(type) {
 			case *TestEscalatingAgent:
-				if child.runCount != tt.expectedIterations {
-					t.Errorf("Expected escalating agent to run %d times, ran %d times",
-						tt.expectedIterations, child.runCount)
-				}
+				assert.Equal(t, tt.expectedIterations, child.runCount, "escalating agent run count")
 			case *TestRegularAgent:
-				if child.runCount != tt.expectedIterations {
-					t.Errorf("Expected regular agent to run %d times, ran %d times",
-						tt.expectedIterations, child.runCount)
-				}
+				assert.Equal(t, tt.expectedIterations, child.runCount, "regular agent run count")
 			}
 		})
 	}
@@ -214,38 +186,25 @@ func TestCreateEscalationEvent(t *testing.T) {
 	// Test the escalation event helper function
 	author := "TestAgent"
 	runID := "test-invocation-123"
-	content := &core.Content{
+	content := core.Content{
 		Role: "assistant",
 		Parts: []core.Part{core.TextPart{
 			Text: "Cannot complete task, escalating",
 		}},
 	}
 
-	event := CreateEscalationEvent(runID, author, content)
+	event := core.NewEscalationEvent(runID, author, content)
 
 	// Verify event properties
-	if event.Author != author {
-		t.Errorf("Expected author %s, got %s", author, event.Author)
-	}
+	assert.Equal(t, author, event.Author, "author mismatch")
+	assert.Equal(t, runID, event.RunID, "runID mismatch")
+	require.NotNil(t, event.Actions.Escalate, "escalate flag pointer should be set")
+	assert.True(t, *event.Actions.Escalate, "escalation flag should be true")
 
-	if event.RunID != runID {
-		t.Errorf("Expected runID %s, got %s", runID, event.RunID)
-	}
-
-	if event.Actions.Escalate == nil || !*event.Actions.Escalate {
-		t.Error("Expected escalation flag to be set to true")
-	}
-
-	if event.Content != content {
-		t.Error("Expected content to match provided content")
-	}
+	require.NotNil(t, event.Content)
+	assert.Equal(t, content, *event.Content, "content mismatch")
 
 	// Verify that the event has proper metadata
-	if event.ID == "" {
-		t.Error("Expected event to have generated ID")
-	}
-
-	if event.Timestamp.IsZero() {
-		t.Error("Expected event to have generated timestamp")
-	}
+	assert.NotEmpty(t, event.ID, "expected generated ID")
+	assert.False(t, event.Timestamp.IsZero(), "expected non-zero timestamp")
 }

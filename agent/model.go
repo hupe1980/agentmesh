@@ -12,18 +12,14 @@ import (
 )
 
 // Helper functions for pointer types used throughout the agent implementations.
+// Helper functions for pointer types used throughout the agent implementations.
 
 // boolPtr creates a pointer to a boolean value.
 // This is useful for optional fields in structs where nil indicates "not set".
-func boolPtr(b bool) *bool {
-	return &b
-}
+func boolPtr(b bool) *bool { return &b }
 
 // stringPtr creates a pointer to a string value.
-// This is useful for optional fields in structs where nil indicates "not set".
-func stringPtr(s string) *string {
-	return &s
-}
+func stringPtr(s string) *string { return &s }
 
 // ModelAgentOptions configures a ModelAgent instance.
 //
@@ -315,7 +311,7 @@ func (a *ModelAgent) Run(runCtx *core.RunContext) error {
 	)
 
 	// Execute the flow
-	eventChan, err := fl.Execute(runCtx)
+	eventChan, flowErrChan, err := fl.Execute(runCtx)
 	if err != nil {
 		runCtx.LogError(
 			"agent.flow.execute.error",
@@ -349,9 +345,24 @@ func (a *ModelAgent) Run(runCtx *core.RunContext) error {
 			)
 		case <-ctx.Done():
 			runCtx.LogWarn("agent.run.context_done", "agent", a.Name(), "error", ctx.Err())
-
 			return ctx.Err()
+		case flowErr, ok := <-flowErrChan:
+			if ok && flowErr != nil {
+				runCtx.LogError("agent.flow.error", "agent", a.Name(), "error", flowErr.Error())
+				return flowErr
+			}
+			// closed or nil error: ignore and continue
 		}
+	}
+
+	// Drain any remaining error if present (non-blocking)
+	select {
+	case flowErr, ok := <-flowErrChan:
+		if ok && flowErr != nil {
+			runCtx.LogError("agent.flow.error.trailing", "agent", a.Name(), "error", flowErr.Error())
+			return flowErr
+		}
+	default:
 	}
 
 	runCtx.LogDebug("agent.flow.execute.complete", "agent", a.Name())

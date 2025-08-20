@@ -19,8 +19,11 @@ import (
 // such as simple execution, agent transfers, or complex multi-step workflows.
 type Flow interface {
 	// Execute runs the flow with the given context and request.
-	// It returns a channel of events that represent the execution progress.
-	Execute(runCtx *core.RunContext) (<-chan core.Event, error)
+	// It returns a channel of events representing execution progress and an error channel.
+	// The error channel will deliver at most one terminal error then be closed. When either
+	// a final response event is emitted (and no further turns are required) or an error
+	// occurs, both channels are closed.
+	Execute(runCtx *core.RunContext) (<-chan core.Event, <-chan error, error)
 }
 
 // FlowAgent defines the interface that agents must implement to work with flows.
