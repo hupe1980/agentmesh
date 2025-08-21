@@ -21,6 +21,8 @@ type Options struct {
 	EnableStreaming bool
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
+	// MaxModelCalls limits the number of model calls per run.
+	MaxModelCalls int
 	// Session management services.
 	SessionStore core.SessionStore
 	// Artifact management services.
@@ -40,6 +42,7 @@ type Runner struct {
 	maxConcurrentInvocations int
 	enableStreaming          bool
 	eventBufferSize          int
+	maxModelCalls            int
 
 	sessionStore  core.SessionStore
 	artifactStore core.ArtifactStore
@@ -56,6 +59,7 @@ func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 		MaxConcurrentInvocations: 10,
 		EnableStreaming:          true,
 		EventBufferSize:          100,
+		MaxModelCalls:            100,
 		SessionStore:             session.NewInMemoryStore(),
 		ArtifactStore:            artifact.NewInMemoryStore(),
 		MemoryStore:              memory.NewInMemoryStore(),
@@ -71,6 +75,7 @@ func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 		maxConcurrentInvocations: opts.MaxConcurrentInvocations,
 		enableStreaming:          opts.EnableStreaming,
 		eventBufferSize:          opts.EventBufferSize,
+		maxModelCalls:            opts.MaxModelCalls,
 		sessionStore:             opts.SessionStore,
 		artifactStore:            opts.ArtifactStore,
 		memoryStore:              opts.MemoryStore,
@@ -97,19 +102,20 @@ func (r *Runner) Run(
 	agentEmit := make(chan core.Event, r.eventBufferSize)
 	resumeCh := make(chan struct{}, 1)
 
-	invocationCtx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	r.mu.Lock()
 	r.activeRuns[runID] = cancel
 	r.mu.Unlock()
 
 	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
 
-	invCtx := core.NewRunContext(
-		invocationCtx,
+	runCtx := core.NewRunContext(
+		ctx,
 		sessionID,
 		runID,
 		agentInfo,
 		userContent,
+		r.maxModelCalls,
 		agentEmit,
 		resumeCh,
 		session,
@@ -131,9 +137,10 @@ func (r *Runner) Run(
 			delete(r.activeRuns, runID)
 			r.mu.Unlock()
 		}()
-		if err := r.runAgent(invCtx); err != nil {
+
+		if err := r.runAgent(runCtx); err != nil {
 			select {
-			case <-invocationCtx.Done():
+			case <-runCtx.Done():
 				return
 			case errorsCh <- fmt.Errorf("agent execution failed: %w", err):
 			}
@@ -142,7 +149,8 @@ func (r *Runner) Run(
 
 	go func() {
 		defer func() { close(eventsCh); close(errorsCh) }()
-		r.processEvents(invocationCtx, sessionID, agentEmit, resumeCh, eventsCh, errorsCh)
+
+		r.processEvents(runCtx, sessionID, agentEmit, resumeCh, eventsCh, errorsCh)
 	}()
 
 	return runID, eventsCh, errorsCh, nil
@@ -167,6 +175,8 @@ func (r *Runner) runAgent(runCtx *core.RunContext) error {
 	if err := r.agent.Start(runCtx); err != nil {
 		return err
 	}
+
+	// Ensure the agent is stopped when the run context is done
 	defer func() {
 		if err := r.agent.Stop(runCtx); err != nil {
 			r.logger.Warn("error stopping agent %s: %v", r.agent.Name(), err)
@@ -177,7 +187,7 @@ func (r *Runner) runAgent(runCtx *core.RunContext) error {
 }
 
 func (r *Runner) processEvents(
-	ctx context.Context,
+	runCtx *core.RunContext,
 	sessionID string,
 	agentEmit <-chan core.Event,
 	resumeCh chan<- struct{},
@@ -186,7 +196,7 @@ func (r *Runner) processEvents(
 ) {
 	for {
 		select {
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			return
 		case ev, ok := <-agentEmit:
 			if !ok {
@@ -194,7 +204,7 @@ func (r *Runner) processEvents(
 			}
 			if err := r.applyEventActions(sessionID, ev); err != nil {
 				select {
-				case <-ctx.Done():
+				case <-runCtx.Done():
 					return
 				case errorsCh <- fmt.Errorf("failed to process event actions: %w", err):
 				}
@@ -203,7 +213,7 @@ func (r *Runner) processEvents(
 			if !ev.IsPartial() {
 				if err := r.sessionStore.AppendEvent(sessionID, ev); err != nil {
 					select {
-					case <-ctx.Done():
+					case <-runCtx.Done():
 						return
 					case errorsCh <- fmt.Errorf("failed to append event to session: %w", err):
 					}
@@ -211,14 +221,14 @@ func (r *Runner) processEvents(
 				}
 			}
 			select {
-			case <-ctx.Done():
+			case <-runCtx.Done():
 				return
 			case eventsCh <- ev:
 				r.logger.Debug("runner delivered event event_id=%s session_id=%s", ev.ID, sessionID)
 			}
 			if !ev.IsPartial() {
 				select {
-				case <-ctx.Done():
+				case <-runCtx.Done():
 					return
 				case resumeCh <- struct{}{}:
 				default:
@@ -234,14 +244,18 @@ func (r *Runner) applyEventActions(sessionID string, ev core.Event) error {
 			return fmt.Errorf("failed to apply state delta: %w", err)
 		}
 	}
+
 	if len(ev.Actions.ArtifactDelta) > 0 {
 		_ = r.artifactStore
 	}
+
 	if ev.Actions.TransferToAgent != nil && *ev.Actions.TransferToAgent != "" {
 		r.logger.Debug("runner.event.transfer_to_agent target=%s session_id=%s", *ev.Actions.TransferToAgent, sessionID)
 	}
+
 	if ev.Actions.Escalate != nil && *ev.Actions.Escalate {
 		r.logger.Debug("runner.event.escalate session_id=%s", sessionID)
 	}
+
 	return nil
 }

@@ -121,6 +121,7 @@ func newTestRunContext() *core.RunContext {
 		"test-invocation",
 		core.AgentInfo{Name: "TestAgent", Type: "flow-test"},
 		userContent,
+		100,
 		eventChan,
 		nil,
 		sess,

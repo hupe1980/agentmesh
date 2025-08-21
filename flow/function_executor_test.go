@@ -75,7 +75,7 @@ func newTERunContext(t *testing.T) *core.RunContext {
 	sess, _ := sessSvc.Create("sess")
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "msg"}}}
 
-	return core.NewRunContext(ctx, "sess", "run", core.AgentInfo{Name: "agent", Type: "test"}, userContent, eventChan, nil, sess, sessSvc, nil, nil, logging.NoOpLogger{})
+	return core.NewRunContext(ctx, "sess", "run", core.AgentInfo{Name: "agent", Type: "test"}, userContent, 100, eventChan, nil, sess, sessSvc, nil, nil, logging.NoOpLogger{})
 }
 
 func TestFunctionExecutor_Single(t *testing.T) {

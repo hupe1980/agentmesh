@@ -28,6 +28,7 @@ type RunContext struct {
 	SessionID, RunID string
 	Agent            AgentInfo
 	UserContent      Content
+	MaxModelCalls    int
 	Emit             chan<- Event
 	Resume           <-chan struct{}
 	SessionStore     SessionStore
@@ -38,6 +39,7 @@ type RunContext struct {
 	Artifacts        []string
 	Branch           string
 
+	modelCalls int
 	*loggerAdapter
 }
 
@@ -48,6 +50,7 @@ func NewRunContext(
 	sessionID, runID string,
 	agent AgentInfo,
 	userContent Content,
+	maxModelCalls int,
 	emit chan<- Event,
 	resume <-chan struct{},
 	sess *Session,
@@ -62,6 +65,7 @@ func NewRunContext(
 		RunID:         runID,
 		Agent:         agent,
 		UserContent:   userContent,
+		MaxModelCalls: maxModelCalls,
 		Emit:          emit,
 		Resume:        resume,
 		Session:       sess,
@@ -70,6 +74,7 @@ func NewRunContext(
 		MemoryStore:   memoryStore,
 		StateDelta:    map[string]any{},
 		Artifacts:     []string{},
+		modelCalls:    0,
 		loggerAdapter: newLoggerAdapter(logger),
 	}
 }
@@ -313,4 +318,15 @@ func (ic *RunContext) WaitForResume() error {
 	case <-ic.Context.Done():
 		return ic.Context.Err()
 	}
+}
+
+// IncrementModelCalls increments the model call counter and checks against the max limit.
+func (ic *RunContext) IncrementModelCalls() error {
+	ic.modelCalls++
+
+	if ic.MaxModelCalls > 0 && ic.modelCalls > ic.MaxModelCalls {
+		return fmt.Errorf("exceeded max model calls: %d", ic.MaxModelCalls)
+	}
+
+	return nil
 }

@@ -49,7 +49,7 @@ func newMergeRunContext() *core.RunContext {
 	sessSvc := session.NewInMemoryStore()
 	sess, _ := sessSvc.Create("sess")
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "merge"}}}
-	return core.NewRunContext(ctx, "sess", "run", core.AgentInfo{Name: "agent", Type: "test"}, userContent, eventChan, nil, sess, sessSvc, nil, nil, logging.NoOpLogger{})
+	return core.NewRunContext(ctx, "sess", "run", core.AgentInfo{Name: "agent", Type: "test"}, userContent, 100, eventChan, nil, sess, sessSvc, nil, nil, logging.NoOpLogger{})
 }
 
 func TestBaseFlow_MergeFunctionResponses(t *testing.T) {

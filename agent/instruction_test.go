@@ -25,6 +25,7 @@ func newTestRunContext() *core.RunContext {
 		"invocation-id",
 		core.AgentInfo{Name: "TestAgent", Type: "test"},
 		baseContent,
+		100,
 		make(chan core.Event, 1),
 		nil,
 		sess,

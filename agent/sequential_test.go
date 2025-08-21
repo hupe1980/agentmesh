@@ -52,7 +52,7 @@ func TestSequentialAgent_Run_Success(t *testing.T) {
 	resume := make(chan struct{}, 1)
 
 	invocationCtx := core.NewRunContext(
-		ctx, sessionID, runID, agentInfo, userContent,
+		ctx, sessionID, runID, agentInfo, userContent, 100,
 		emit, resume, sess, nil, nil, nil, logging.NoOpLogger{},
 	)
 
@@ -80,7 +80,7 @@ func TestSequentialAgent_Run_FirstChildError(t *testing.T) {
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
-		make(chan core.Event, 10), make(chan struct{}, 1), sess,
+		100, make(chan core.Event, 10), make(chan struct{}, 1), sess,
 		nil, nil, nil, logging.NoOpLogger{},
 	)
 
@@ -104,7 +104,7 @@ func TestSequentialAgent_Run_NoChildren(t *testing.T) {
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
-		make(chan core.Event, 10), make(chan struct{}, 1), sess,
+		100, make(chan core.Event, 10), make(chan struct{}, 1), sess,
 		nil, nil, nil, logging.NoOpLogger{},
 	)
 
@@ -124,7 +124,7 @@ func TestSequentialAgent_ContextPropagation(t *testing.T) {
 		ctx, "test-session", "test-invocation",
 		core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
 		core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "test input"}}},
-		make(chan core.Event, 10), make(chan struct{}, 1), sess,
+		100, make(chan core.Event, 10), make(chan struct{}, 1), sess,
 		nil, nil, nil, logging.NoOpLogger{},
 	)
 

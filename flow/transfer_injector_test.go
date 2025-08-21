@@ -37,7 +37,7 @@ func TestTransferToolInjector_Injection(t *testing.T) {
 	sessStore := session.NewInMemoryStore()
 	sess, _ := sessStore.Create("sess")
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "hi"}}}
-	runCtx := core.NewRunContext(context.Background(), "sess", "run", core.AgentInfo{Name: "root", Type: "test"}, userContent, make(chan core.Event, 1), nil, sess, sessStore, nil, nil, logging.NoOpLogger{})
+	runCtx := core.NewRunContext(context.Background(), "sess", "run", core.AgentInfo{Name: "root", Type: "test"}, userContent, 100, make(chan core.Event, 1), nil, sess, sessStore, nil, nil, logging.NoOpLogger{})
 	req := &model.Request{}
 	if err := inj.ProcessRequest(runCtx, req, agent); err != nil {
 		t.Fatalf("inject error: %v", err)

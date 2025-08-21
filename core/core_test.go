@@ -85,5 +85,5 @@ func newRunContextForTest() (*RunContext, chan Event) {
 	aSvc := &icMockArtifactService{}
 	mSvc := &icMockMemoryService{}
 
-	return NewRunContext(context.Background(), "sess-x", "run-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, emit, resume, sess, sSvc, aSvc, mSvc, logging.NoOpLogger{}), emit
+	return NewRunContext(context.Background(), "sess-x", "run-x", AgentInfo{Name: "Agent1", Type: "test"}, Content{}, 100, emit, resume, sess, sSvc, aSvc, mSvc, logging.NoOpLogger{}), emit
 }

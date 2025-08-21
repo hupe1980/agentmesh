@@ -92,7 +92,7 @@ func createTestInvocationContext() *RunContext {
 	return NewRunContext(
 		context.Background(), "test-session", "test-invocation", AgentInfo{Name: "Test Agent", Type: "test"},
 		Content{Role: "user", Parts: []Part{TextPart{Text: "Test input"}}},
-		emit, resume, sess, sessSvc, artSvc, memSvc, logging.NoOpLogger{},
+		100, emit, resume, sess, sessSvc, artSvc, memSvc, logging.NoOpLogger{},
 	)
 }
 
@@ -122,7 +122,7 @@ func TestToolContext_BasicFunctionality(t *testing.T) {
 func TestToolContext_StateManagement(t *testing.T) {
 	tc := NewToolContext(NewRunContext(
 		context.Background(), "test-session", "test-invocation", AgentInfo{Name: "Test Agent", Type: "test"},
-		Content{}, nil, nil, nil, nil, nil, nil, nil,
+		Content{}, 100, nil, nil, nil, nil, nil, nil, nil,
 	), "test-call-id")
 	tc.SetState("test_key", "test_value")
 	actions := tc.Actions()

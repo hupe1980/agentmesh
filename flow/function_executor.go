@@ -81,6 +81,7 @@ func (e *parallelFunctionExecutor) Execute(
 		}
 		wg.Add(1)
 		sem <- struct{}{}
+
 		go func(idx int, fc core.FunctionCall) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -100,10 +101,12 @@ func (e *parallelFunctionExecutor) Execute(
 			}
 
 			execStart := time.Now()
+
 			var (
 				result any
 				err    error
 			)
+
 			func() { // panic safety
 				defer func() {
 					if r := recover(); r != nil {
@@ -131,9 +134,12 @@ func (e *parallelFunctionExecutor) Execute(
 				results[idx] = fnResult{index: idx, event: respEv}
 				mu.Unlock()
 			} else {
+				// emit callback may not be thread-safe; serialize emission
+				mu.Lock()
 				if err := emit(respEv); err != nil {
 					runCtx.LogError("agent.function.emit.error", "function", fc.Name, "error", err.Error())
 				}
+				mu.Unlock()
 			}
 		}(i, fnCalls[i])
 	}

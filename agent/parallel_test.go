@@ -52,7 +52,7 @@ func makeInvocationCtx(t *testing.T, agentID, agentName, agentType string) *core
 	userContent := core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: "hello"}}}
 	info := core.AgentInfo{Name: agentName, Type: agentType}
 
-	return core.NewRunContext(context.Background(), "session-1", "inv-1", info, userContent, emit, resume, core.NewSession("session-1"), nil, nil, nil, logging.NoOpLogger{})
+	return core.NewRunContext(context.Background(), "session-1", "inv-1", info, userContent, 100, emit, resume, core.NewSession("session-1"), nil, nil, nil, logging.NoOpLogger{})
 }
 
 func TestParallelAgent_Run_Success(t *testing.T) {

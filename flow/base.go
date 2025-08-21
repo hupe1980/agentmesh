@@ -106,6 +106,10 @@ func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event)
 	}
 
 	// Execute LLM request
+	if err := runCtx.IncrementModelCalls(); err != nil {
+		return nil, fmt.Errorf("failed to increment model calls: %w", err)
+	}
+
 	llm := f.agent.GetLLM()
 	respCh, errCh := llm.Generate(runCtx.Context, *req)
 

@@ -277,7 +277,7 @@ func dummyRunContext() *core.RunContext {
 	emit := make(chan core.Event, 10)
 	resume := make(chan struct{}, 1)
 
-	return core.NewRunContext(context.Background(), sessionID, "inv-1", core.AgentInfo{Name: "Agent", Type: "test"}, core.Content{}, emit, resume, core.NewSession(sessionID), sessSvc, artSvc, memSvc, logging.NoOpLogger{})
+	return core.NewRunContext(context.Background(), sessionID, "inv-1", core.AgentInfo{Name: "Agent", Type: "test"}, core.Content{}, 100, emit, resume, core.NewSession(sessionID), sessSvc, artSvc, memSvc, logging.NoOpLogger{})
 }
 
 func TestStateManagerTool_SetAndGetState(t *testing.T) {
