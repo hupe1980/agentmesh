@@ -34,12 +34,12 @@ type RunContext struct {
 	SessionStore     SessionStore
 	ArtifactStore    ArtifactStore
 	MemoryStore      MemoryStore
+	Limiter          *ModelLimiter
 	Session          *Session
 	StateDelta       map[string]any
 	Artifacts        []string
 	Branch           string
 
-	modelCalls int
 	*loggerAdapter
 }
 
@@ -72,9 +72,9 @@ func NewRunContext(
 		SessionStore:  sessionStore,
 		ArtifactStore: artifactStore,
 		MemoryStore:   memoryStore,
+		Limiter:       NewModelLimiter(maxModelCalls),
 		StateDelta:    map[string]any{},
 		Artifacts:     []string{},
-		modelCalls:    0,
 		loggerAdapter: newLoggerAdapter(logger),
 	}
 }
@@ -222,6 +222,7 @@ func (ic *RunContext) Clone() *RunContext {
 		SessionStore:  ic.SessionStore,
 		ArtifactStore: ic.ArtifactStore,
 		MemoryStore:   ic.MemoryStore,
+		Limiter:       ic.Limiter,
 		Session:       ic.Session,
 		StateDelta:    map[string]any{},
 		Artifacts:     []string{},
@@ -261,6 +262,7 @@ func (ic *RunContext) NewChildContext(emit chan<- Event, resume <-chan struct{},
 		SessionStore:  ic.SessionStore,
 		ArtifactStore: ic.ArtifactStore,
 		MemoryStore:   ic.MemoryStore,
+		Limiter:       ic.Limiter,
 		Session:       ic.Session,
 		StateDelta:    map[string]any{}, // fresh buffers
 		Artifacts:     []string{},
@@ -318,15 +320,4 @@ func (ic *RunContext) WaitForResume() error {
 	case <-ic.Context.Done():
 		return ic.Context.Err()
 	}
-}
-
-// IncrementModelCalls increments the model call counter and checks against the max limit.
-func (ic *RunContext) IncrementModelCalls() error {
-	ic.modelCalls++
-
-	if ic.MaxModelCalls > 0 && ic.modelCalls > ic.MaxModelCalls {
-		return fmt.Errorf("exceeded max model calls: %d", ic.MaxModelCalls)
-	}
-
-	return nil
 }
