@@ -65,7 +65,7 @@ func main() {
 
 	agent.RegisterTool(&GetWeatherTool{})
 
-	runner := runner.New(agent, func(o *runner.Options) {
+	r := runner.New(agent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, "text", false)
 	})
 
@@ -74,9 +74,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	_, eventsCh, errorsCh, err := runner.Run(ctx, "sess1", userContent)
+	_, eventsCh, errorsCh, err := r.Run(ctx, "sess1", userContent)
 	if err != nil {
-		log.Fatalf("invoke failed: %v", err)
+		log.Fatalf("run failed: %v", err)
 	}
 
 	fmt.Println("=== Weather Agent ===")
@@ -113,6 +113,7 @@ func accumulate(eventsCh <-chan core.Event, errorsCh <-chan error, focus string)
 			}
 		}
 	}
+
 	if answer != "" {
 		fmt.Printf("Weather: %s\n", answer)
 	} else {
@@ -122,5 +123,8 @@ func accumulate(eventsCh <-chan core.Event, errorsCh <-chan error, focus string)
 
 // Shared helpers
 func newUserText(txt string) core.Content {
-	return core.Content{Role: "user", Parts: []core.Part{core.TextPart{Text: txt}}}
+	return core.Content{
+		Role:  "user",
+		Parts: []core.Part{core.TextPart{Text: txt}},
+	}
 }

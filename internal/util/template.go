@@ -30,7 +30,7 @@ func RenderTemplate(text string, state map[string]any) (string, error) {
 			}
 			return strings.ToUpper(string(s[0])) + strings.ToLower(s[1:])
 		},
-		"join": func(sep string, items []interface{}) string {
+		"join": func(sep string, items []any) string {
 			strItems := make([]string, len(items))
 			for i, item := range items {
 				strItems[i] = fmt.Sprintf("%v", item)

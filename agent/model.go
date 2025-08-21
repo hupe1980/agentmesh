@@ -311,13 +311,29 @@ func (a *ModelAgent) Run(runCtx *core.RunContext) error {
 
 	// Process events emitted by the flow
 	for event := range eventChan {
+		// If an output key is configured and this is a final assistant response with text,
+		// attach it directly to the event's StateDelta (do NOT persist immediately via runCtx state).
+		if ok := a.GetOutputKey(); ok != "" && !event.IsPartial() && event.IsFinalResponse() && event.Content != nil {
+			var aggregated string
+			for _, p := range event.Content.Parts {
+				if tp, okp := p.(core.TextPart); okp {
+					aggregated += tp.Text
+				}
+			}
+			if aggregated != "" {
+				if event.Actions.StateDelta == nil {
+					event.Actions.StateDelta = map[string]any{}
+				}
+				event.Actions.StateDelta[ok] = aggregated
+			}
+		}
+
 		select {
 		case runCtx.Emit <- event:
 			role := ""
 			if event.Content != nil {
 				role = event.Content.Role
 			}
-
 			runCtx.LogDebug(
 				"agent.event.forward",
 				"agent", a.Name(),

@@ -159,41 +159,6 @@ func (ic *RunContext) StoreMemory(content string, md map[string]any) error {
 	return ic.MemoryStore.Store(ic.SessionID, content, md)
 }
 
-// RefreshSession reloads the session snapshot from the SessionStore.
-func (ic *RunContext) RefreshSession() error {
-	if ic.SessionStore == nil {
-		return fmt.Errorf("session store not configured")
-	}
-
-	s, err := ic.SessionStore.Get(ic.SessionID)
-	if err != nil {
-		return err
-	}
-
-	ic.Session = s
-
-	return nil
-}
-
-// CommitStateDelta persists the accumulated StateDelta then clears the buffer.
-func (ic *RunContext) CommitStateDelta() error {
-	if len(ic.StateDelta) == 0 {
-		return nil
-	}
-
-	if ic.SessionStore == nil {
-		return fmt.Errorf("session store not configured")
-	}
-
-	if err := ic.SessionStore.ApplyDelta(ic.SessionID, ic.StateDelta); err != nil {
-		return err
-	}
-
-	ic.StateDelta = map[string]any{}
-
-	return nil
-}
-
 // GetSessionHistory returns all historical events for the session.
 func (ic *RunContext) GetSessionHistory() []Event {
 	if ic.Session == nil {
@@ -234,13 +199,6 @@ func (ic *RunContext) Clone() *RunContext {
 
 	c.Artifacts = append(c.Artifacts, ic.Artifacts...)
 
-	return c
-}
-
-// WithBranch clones the context and sets the Branch label.
-func (ic *RunContext) WithBranch(b string) *RunContext {
-	c := ic.Clone()
-	c.Branch = b
 	return c
 }
 

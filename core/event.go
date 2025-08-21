@@ -82,9 +82,14 @@ func NewUserMessageEvent(runID, message string) Event {
 
 // NewUserContentEvent creates a user-authored event with arbitrary Content.
 // Useful for cases where the Content is not just a simple text message.
-func NewUserContentEvent(runID string, content *Content) Event {
+func NewUserContentEvent(runID string, content *Content, stateDelta map[string]any) Event {
 	e := newEvent(runID, "user")
+
 	e.Content = content
+	if stateDelta != nil {
+		e.Actions.StateDelta = stateDelta
+	}
+
 	return e
 }
 

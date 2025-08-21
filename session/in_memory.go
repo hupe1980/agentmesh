@@ -61,13 +61,17 @@ func (s *InMemoryStore) AppendEvent(sessionID string, ev core.Event) error {
 		sess = s.createSessionLocked(sessionID)
 	}
 
+	if ev.Actions.StateDelta != nil {
+		sess.MergeState(ev.Actions.StateDelta)
+	}
+
 	sess.AddEvent(ev)
 
 	return nil
 }
 
 // ApplyDelta merges a key/value delta into the session state.
-func (s *InMemoryStore) ApplyDelta(sessionID string, delta map[string]interface{}) error {
+func (s *InMemoryStore) ApplyDelta(sessionID string, delta map[string]any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

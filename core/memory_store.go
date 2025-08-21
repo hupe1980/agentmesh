@@ -1,5 +1,13 @@
 package core
 
+// SearchResult represents a retrieved memory item with a relevance score and arbitrary metadata.
+type SearchResult struct {
+	ID       string
+	Content  string
+	Score    float64
+	Metadata map[string]any
+}
+
 // MemoryStore defines persistence + retrieval (search) for conversational
 // memory snippets. Implementations can back search with embeddings, keywords
 // or any heuristic. Short method names align with other *Store interfaces.

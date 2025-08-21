@@ -21,8 +21,6 @@ type Options struct {
 	EnableStreaming bool
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
-	// MaxModelCalls limits the number of model calls per run.
-	MaxModelCalls int
 	// Session management services.
 	SessionStore core.SessionStore
 	// Artifact management services.
@@ -42,7 +40,6 @@ type Runner struct {
 	maxConcurrentInvocations int
 	enableStreaming          bool
 	eventBufferSize          int
-	maxModelCalls            int
 
 	sessionStore  core.SessionStore
 	artifactStore core.ArtifactStore
@@ -59,7 +56,6 @@ func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 		MaxConcurrentInvocations: 10,
 		EnableStreaming:          true,
 		EventBufferSize:          100,
-		MaxModelCalls:            100,
 		SessionStore:             session.NewInMemoryStore(),
 		ArtifactStore:            artifact.NewInMemoryStore(),
 		MemoryStore:              memory.NewInMemoryStore(),
@@ -75,7 +71,6 @@ func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 		maxConcurrentInvocations: opts.MaxConcurrentInvocations,
 		enableStreaming:          opts.EnableStreaming,
 		eventBufferSize:          opts.EventBufferSize,
-		maxModelCalls:            opts.MaxModelCalls,
 		sessionStore:             opts.SessionStore,
 		artifactStore:            opts.ArtifactStore,
 		memoryStore:              opts.MemoryStore,
@@ -84,12 +79,28 @@ func New(agent core.Agent, optFns ...func(o *Options)) *Runner {
 	}
 }
 
+// RunOptions holds configuration options for a single run.
+type RunOptions struct {
+	// MaxModelCalls limits the number of model calls per run.
+	MaxModelCalls int
+	StateDelta    map[string]any
+}
+
 // Run starts an asynchronous invocation.
 func (r *Runner) Run(
 	ctx context.Context,
 	sessionID string,
 	userContent core.Content,
+	optFns ...func(o *RunOptions),
 ) (string, <-chan core.Event, <-chan error, error) {
+	opts := RunOptions{
+		MaxModelCalls: 100,
+	}
+
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
 	session, err := r.sessionStore.Get(sessionID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to get session: %w", err)
@@ -115,7 +126,7 @@ func (r *Runner) Run(
 		runID,
 		agentInfo,
 		userContent,
-		r.maxModelCalls,
+		opts.MaxModelCalls,
 		agentEmit,
 		resumeCh,
 		session,
@@ -125,17 +136,18 @@ func (r *Runner) Run(
 		r.logger,
 	)
 
-	userEvent := core.NewUserContentEvent(runID, &userContent)
+	userEvent := core.NewUserContentEvent(runID, &userContent, opts.StateDelta)
 	if err := r.sessionStore.AppendEvent(sessionID, userEvent); err != nil {
 		return "", nil, nil, fmt.Errorf("failed to append user event: %w", err)
 	}
 
 	go func() {
 		defer func() {
-			close(agentEmit)
 			r.mu.Lock()
 			delete(r.activeRuns, runID)
 			r.mu.Unlock()
+
+			close(agentEmit)
 		}()
 
 		if err := r.runAgent(runCtx); err != nil {
@@ -202,14 +214,7 @@ func (r *Runner) processEvents(
 			if !ok {
 				return
 			}
-			if err := r.applyEventActions(sessionID, ev); err != nil {
-				select {
-				case <-runCtx.Done():
-					return
-				case errorsCh <- fmt.Errorf("failed to process event actions: %w", err):
-				}
-				return
-			}
+
 			if !ev.IsPartial() {
 				if err := r.sessionStore.AppendEvent(sessionID, ev); err != nil {
 					select {
@@ -217,15 +222,18 @@ func (r *Runner) processEvents(
 						return
 					case errorsCh <- fmt.Errorf("failed to append event to session: %w", err):
 					}
+
 					return
 				}
 			}
+
 			select {
 			case <-runCtx.Done():
 				return
 			case eventsCh <- ev:
 				r.logger.Debug("runner delivered event event_id=%s session_id=%s", ev.ID, sessionID)
 			}
+
 			if !ev.IsPartial() {
 				select {
 				case <-runCtx.Done():
@@ -236,26 +244,4 @@ func (r *Runner) processEvents(
 			}
 		}
 	}
-}
-
-func (r *Runner) applyEventActions(sessionID string, ev core.Event) error {
-	if len(ev.Actions.StateDelta) > 0 {
-		if err := r.sessionStore.ApplyDelta(sessionID, ev.Actions.StateDelta); err != nil {
-			return fmt.Errorf("failed to apply state delta: %w", err)
-		}
-	}
-
-	if len(ev.Actions.ArtifactDelta) > 0 {
-		_ = r.artifactStore
-	}
-
-	if ev.Actions.TransferToAgent != nil && *ev.Actions.TransferToAgent != "" {
-		r.logger.Debug("runner.event.transfer_to_agent target=%s session_id=%s", *ev.Actions.TransferToAgent, sessionID)
-	}
-
-	if ev.Actions.Escalate != nil && *ev.Actions.Escalate {
-		r.logger.Debug("runner.event.escalate session_id=%s", sessionID)
-	}
-
-	return nil
 }

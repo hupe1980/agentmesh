@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -15,13 +16,12 @@ import (
 //     excludes partial streaming fragments
 //   - Clone performs deep copies of maps/slices for safe divergence.
 type Session struct {
-	ID       string            `json:"id"`
-	State    map[string]any    `json:"state"`
-	Events   []Event           `json:"events"`
-	Created  time.Time         `json:"created"`
-	Updated  time.Time         `json:"updated"`
-	Metadata map[string]string `json:"metadata"`
-	mu       sync.RWMutex
+	ID      string         `json:"id"`
+	State   map[string]any `json:"state"`
+	Events  []Event        `json:"events"`
+	Created time.Time      `json:"created"`
+	Updated time.Time      `json:"updated"`
+	mu      sync.RWMutex
 }
 
 // NewSession creates a new session with the given ID.
@@ -29,12 +29,11 @@ func NewSession(id string) *Session {
 	now := time.Now().UTC()
 
 	return &Session{
-		ID:       id,
-		State:    map[string]any{},
-		Events:   []Event{},
-		Created:  now,
-		Updated:  now,
-		Metadata: map[string]string{},
+		ID:      id,
+		State:   map[string]any{},
+		Events:  []Event{},
+		Created: now,
+		Updated: now,
 	}
 }
 
@@ -61,9 +60,7 @@ func (s *Session) MergeState(delta map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for k, v := range delta {
-		s.State[k] = v
-	}
+	maps.Copy(s.State, delta)
 
 	s.Updated = time.Now().UTC()
 }
@@ -117,12 +114,11 @@ func (s *Session) Clone() *Session {
 	defer s.mu.RUnlock()
 
 	clone := &Session{
-		ID:       s.ID,
-		State:    make(map[string]any, len(s.State)),
-		Events:   make([]Event, len(s.Events)),
-		Created:  s.Created,
-		Updated:  s.Updated,
-		Metadata: make(map[string]string, len(s.Metadata)),
+		ID:      s.ID,
+		State:   make(map[string]any, len(s.State)),
+		Events:  make([]Event, len(s.Events)),
+		Created: s.Created,
+		Updated: s.Updated,
 	}
 
 	for k, v := range s.State {
@@ -130,10 +126,6 @@ func (s *Session) Clone() *Session {
 	}
 
 	copy(clone.Events, s.Events)
-
-	for k, v := range s.Metadata {
-		clone.Metadata[k] = v
-	}
 
 	return clone
 }

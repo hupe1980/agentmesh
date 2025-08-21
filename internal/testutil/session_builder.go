@@ -10,19 +10,18 @@ import (
 //	sess := NewSessionBuilder("sess-1").State("k","v").Events(ev1, ev2).Build()
 type SessionBuilder struct {
 	id     string
-	state  map[string]interface{}
+	state  map[string]any
 	events []core.Event
-	meta   map[string]string
 }
 
 // NewSessionBuilder creates a new builder for a session with the given id.
 // Use chainable methods (State, Event, Events) then call Build.
 func NewSessionBuilder(id string) *SessionBuilder {
-	return &SessionBuilder{id: id, state: map[string]interface{}{}, meta: map[string]string{}}
+	return &SessionBuilder{id: id, state: map[string]any{}}
 }
 
 // State sets or overwrites a state key/value pair on the resulting session (chainable).
-func (b *SessionBuilder) State(key string, val interface{}) *SessionBuilder {
+func (b *SessionBuilder) State(key string, val any) *SessionBuilder {
 	b.state[key] = val
 	return b
 }
@@ -45,10 +44,6 @@ func (b *SessionBuilder) Build() *core.Session {
 
 	for k, v := range b.state {
 		s.State[k] = v
-	}
-
-	for k, v := range b.meta {
-		s.Metadata[k] = v
 	}
 
 	s.Events = append(s.Events, b.events...)

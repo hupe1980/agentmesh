@@ -28,21 +28,6 @@ func TestRunContext_EmitEventStateAndArtifacts(t *testing.T) {
 	}
 }
 
-func TestRunContext_CommitStateDelta(t *testing.T) {
-	ic, _ := newRunContextForTest()
-	sSvc := ic.SessionStore.(*icMockSessionService)
-	ic.SetState("k1", 123)
-	if err := ic.CommitStateDelta(); err != nil {
-		t.Fatalf("CommitStateDelta error: %v", err)
-	}
-	if sSvc.applied == nil || sSvc.applied[ic.SessionID]["k1"].(int) != 123 {
-		t.Fatalf("State delta not applied: %+v", sSvc.applied)
-	}
-	if len(ic.StateDelta) != 0 {
-		t.Error("StateDelta should be cleared after commit")
-	}
-}
-
 func TestRunContext_CloneIsolation(t *testing.T) {
 	ic, _ := newRunContextForTest()
 	ic.SetState("a", 1)
@@ -57,16 +42,5 @@ func TestRunContext_CloneIsolation(t *testing.T) {
 	}
 	if v, _ := clone.GetState("a"); v.(int) != 1 {
 		t.Error("Clone missing original state")
-	}
-}
-
-func TestRunContext_WithBranch(t *testing.T) {
-	ic, _ := newRunContextForTest()
-	branched := ic.WithBranch("Root.Child")
-	if branched.Branch != "Root.Child" {
-		t.Errorf("Expected branch Root.Child, got %s", branched.Branch)
-	}
-	if ic.Branch != "" {
-		t.Error("Original branch should remain empty")
 	}
 }
