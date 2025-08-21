@@ -2,7 +2,6 @@ package flow
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/model"
@@ -14,15 +13,24 @@ type BaseFlow struct {
 	agent              FlowAgent
 	requestProcessors  []RequestProcessor
 	responseProcessors []ResponseProcessor
+	functionExecutor   FunctionExecutor
 }
 
 // NewBaseFlow creates a new basic single-agent flow.
 func NewBaseFlow(agent FlowAgent) *BaseFlow {
-	return &BaseFlow{
+	bf := &BaseFlow{
 		agent:              agent,
 		requestProcessors:  []RequestProcessor{},
 		responseProcessors: []ResponseProcessor{},
+		functionExecutor: NewParallelFunctionExecutor(
+			FunctionExecutorConfig{
+				MaxParallel:   4,
+				PreserveOrder: true,
+			},
+		),
 	}
+
+	return bf
 }
 
 // AddRequestProcessor adds a request processor to the flow.
@@ -159,36 +167,27 @@ loop:
 
 			// Handle function calls
 			if fnCalls := ev.GetFunctionCalls(); len(fnCalls) > 0 {
-				for _, fnCall := range fnCalls {
-					toolCtx := core.NewToolContext(runCtx, fnCall.ID)
-
-					start := time.Now()
-					result, err := f.agent.ExecuteTool(toolCtx, fnCall.Name, fnCall.Arguments)
-					dur := time.Since(start)
-
-					runCtx.LogInfo(
-						"agent.tool.executed",
-						"agent", f.agent.GetName(),
-						"tool", fnCall.Name,
-						"duration_ms", dur.Milliseconds(),
-						"error", err != nil,
-					)
-
-					respEv := core.NewFunctionResponseEvent(f.agent.GetName(), fnCall.ID, fnCall.Name, result, err)
-					lastEvent = &respEv
-
+				emit := func(outEv core.Event) error {
+					lastEvent = &outEv
 					// Emit processed event
-					eventChan <- respEv
+					select {
+					case <-runCtx.Context.Done():
+						return runCtx.Context.Err()
+					case eventChan <- outEv:
+					}
 
 					// Wait for session persistence of tool response
 					if runCtx.Resume != nil {
 						select {
 						case <-runCtx.Context.Done():
-							return lastEvent, nil
+							return runCtx.Context.Err()
 						case <-runCtx.Resume:
 						}
 					}
+					return nil
 				}
+
+				_ = f.functionExecutor.Execute(runCtx, f.agent, fnCalls, emit)
 			}
 		case err, ok := <-errCh:
 			if ok {

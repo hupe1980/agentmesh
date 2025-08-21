@@ -37,13 +37,13 @@ type Tool interface {
 
 	// Parameters returns a JSON schema describing the expected input format.
 	// This schema is used for parameter validation and LLM function calling.
-	Parameters() map[string]interface{}
+	Parameters() map[string]any
 
 	// Call executes the tool with structured arguments and ToolContext.
 	// This method provides tools with access to session state, agent actions,
 	// authentication, memory, and artifact management capabilities.
 	// Arguments are parsed from JSON and validated against the tool's schema.
-	Call(toolCtx *core.ToolContext, args map[string]interface{}) (interface{}, error)
+	Call(toolCtx *core.ToolContext, args map[string]any) (any, error)
 }
 
 // ValidationError represents parameter validation errors with detailed information.
@@ -51,10 +51,10 @@ type ValidationError = util.ValidationError
 
 // ToolError represents errors that occur during tool execution.
 type ToolError struct {
-	Tool    string      `json:"tool"`              // Name of the tool that failed
-	Message string      `json:"message"`           // Error message
-	Code    string      `json:"code"`              // Error code for categorization
-	Details interface{} `json:"details,omitempty"` // Additional error details
+	Tool    string `json:"tool"`              // Name of the tool that failed
+	Message string `json:"message"`           // Error message
+	Code    string `json:"code"`              // Error code for categorization
+	Details any    `json:"details,omitempty"` // Additional error details
 }
 
 func (e *ToolError) Error() string {
