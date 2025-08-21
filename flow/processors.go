@@ -6,6 +6,7 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	internalutil "github.com/hupe1980/agentmesh/internal/util"
 	"github.com/hupe1980/agentmesh/model"
+	"github.com/hupe1980/agentmesh/tool"
 )
 
 // InstructionsProcessor handles system prompt and instruction processing.
@@ -24,12 +25,11 @@ func (p *InstructionsProcessor) ProcessRequest(runCtx *core.RunContext, req *mod
 		return fmt.Errorf("failed to resolve instruction: %w", err)
 	}
 
-	if la, ok := agent.(interface{ GetName() string }); ok {
-		runCtx.LogDebug("agent.instruction.resolved", "agent", la.GetName(), "length", len(instructions))
-	}
+	runCtx.LogDebug("agent.instruction.resolved", "agent", agent.GetName(), "length", len(instructions))
 
 	if runCtx.Session != nil && runCtx.Session.State != nil {
 		var tplErr error
+
 		// Apply template substitution to system prompt using session state
 		req.Instructions, tplErr = internalutil.RenderTemplate(instructions, runCtx.Session.State)
 		if tplErr != nil {
@@ -73,6 +73,46 @@ func (p *ContentsProcessor) ProcessRequest(runCtx *core.RunContext, req *model.R
 	}
 
 	req.Contents = contents
+
+	return nil
+}
+
+// TransferToolInjector injects the transfer_to_agent tool definition when transfer is enabled.
+type TransferToolInjector struct{}
+
+// NewTransferToolInjector creates a processor that injects the transfer_to_agent tool
+// definition into a model request when transfer is enabled and sub-agents exist.
+func NewTransferToolInjector() *TransferToolInjector { return &TransferToolInjector{} }
+
+// Name returns the unique identifier for the transfer tool injector processor.
+func (p *TransferToolInjector) Name() string { return "transfer_tool_injector" }
+
+// ProcessRequest conditionally appends the transfer_to_agent tool definition to the
+// outgoing model request so the LLM can choose to call it. It is idempotent and will
+// not add duplicates.
+func (p *TransferToolInjector) ProcessRequest(runCtx *core.RunContext, req *model.Request, agent FlowAgent) error {
+	// Check if transfer is enabled
+	if !agent.IsTransferEnabled() {
+		return nil
+	}
+	// Only inject if the agent has sub-agents
+	if len(agent.GetSubAgents()) == 0 {
+		return nil
+	}
+
+	// Avoid duplicate injection
+	for _, td := range req.Tools {
+		if td.Function.Name == "transfer_to_agent" {
+			return nil
+		}
+	}
+
+	// Create transfer tool definition
+	tool := tool.NewTransferToAgentTool()
+
+	req.AddTool(tool)
+
+	runCtx.LogDebug("agent.transfer.tool.injected", "agent", agent.GetName())
 
 	return nil
 }

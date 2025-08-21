@@ -7,6 +7,7 @@
 //   - weather_agent: Tool integration with custom weather lookup function
 //   - multi_agent: Sequential workflow with state sharing between agents
 //   - tool_usage: Mathematical calculations with step-by-step reasoning
+//   - transfer_agent: Dynamic delegation using transfer_to_agent tool
 //
 // Each example is self-contained and includes:
 //   - Environment setup (API keys, dependencies)

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -247,23 +246,6 @@ func (a *ModelAgent) MaxHistoryMessages() int {
 // by resolving static or dynamic instruction sources.
 func (a *ModelAgent) ResolveInstructions(runCtx *core.RunContext) (string, error) {
 	return a.instruction.Resolve(runCtx)
-}
-
-// ExecuteTool executes a named tool with the given arguments.
-// ExecuteTool deserializes JSON arguments and invokes the named tool returning
-// its result or an error if the tool is unknown or validation fails.
-func (a *ModelAgent) ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error) {
-	tool, exists := a.tools[toolName]
-	if !exists {
-		return nil, fmt.Errorf("tool %s not found", toolName)
-	}
-
-	argsMap := make(map[string]interface{})
-	if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal args: %w", err)
-	}
-
-	return tool.Call(toolCtx, argsMap)
 }
 
 // TransferToAgent transfers execution to a named sub-agent.

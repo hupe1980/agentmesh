@@ -5,7 +5,6 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/util"
@@ -322,13 +321,6 @@ func TestStateManagerTool_FlowControlActions(t *testing.T) {
 	assert.NotNil(t, tc.Actions().Escalate)
 	assert.True(t, *tc.Actions().Escalate)
 
-	// transfer_agent
-	tc2 := core.NewToolContext(inv, "fc-transfer")
-	_, err = sm.Call(tc2, map[string]any{"operation": "transfer_agent", "agent_name": "NextAgent"})
-	assert.NoError(t, err)
-	assert.NotNil(t, tc2.Actions().TransferToAgent)
-	assert.Equal(t, "NextAgent", *tc2.Actions().TransferToAgent)
-
 	// skip_summarization
 	tc3 := core.NewToolContext(inv, "fc-skip")
 	_, err = sm.Call(tc3, map[string]any{"operation": "skip_summarization"})
@@ -343,11 +335,4 @@ func TestToolErrorFormatting(t *testing.T) {
 	err := NewToolError("demo", "something failed", "E123")
 	assert.Contains(t, err.Error(), "E123")
 	assert.Contains(t, err.Error(), "demo")
-}
-
-// Ensure tests run quickly (sanity)
-func TestToolPackageTestDuration(t *testing.T) {
-	start := time.Now()
-	// no-op
-	assert.Less(t, time.Since(start), 100*time.Millisecond)
 }

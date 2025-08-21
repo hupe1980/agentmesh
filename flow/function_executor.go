@@ -1,11 +1,14 @@
 package flow
 
 import (
+	"encoding/json"
+	"fmt"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/tool"
 )
 
 // FunctionExecutor executes a batch of function/tool calls possibly in parallel and emits
@@ -17,7 +20,7 @@ import (
 //
 // The emit callback is responsible for persistence synchronization (resume handling).
 type FunctionExecutor interface {
-	Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error)
+	Execute(runCtx *core.RunContext, agent FlowAgent, toolRegistry map[string]tool.Tool, fnCalls []core.FunctionCall, emit func(core.Event) error)
 }
 
 // FunctionExecutorConfig configures the default parallel executor.
@@ -37,7 +40,13 @@ func NewParallelFunctionExecutor(cfg FunctionExecutorConfig) FunctionExecutor {
 	return &parallelFunctionExecutor{cfg: cfg}
 }
 
-func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error) {
+func (e *parallelFunctionExecutor) Execute(
+	runCtx *core.RunContext,
+	agent FlowAgent,
+	toolRegistry map[string]tool.Tool,
+	fnCalls []core.FunctionCall,
+	emit func(core.Event) error,
+) {
 	n := len(fnCalls)
 	if n == 0 {
 		return
@@ -45,7 +54,7 @@ func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAg
 
 	// Fast path: single call, execute inline.
 	if n == 1 {
-		e.executeSingle(runCtx, agent, fnCalls[0], emit)
+		e.executeSingle(runCtx, agent, toolRegistry, fnCalls[0], emit)
 		return
 	}
 
@@ -102,7 +111,7 @@ func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAg
 						runCtx.LogError("agent.function.panic", "agent", agent.GetName(), "function", fc.Name, "recover", r)
 					}
 				}()
-				result, err = agent.ExecuteTool(toolCtx, fc.Name, fc.Arguments)
+				result, err = executeTool(toolRegistry, toolCtx, fc.Name, fc.Arguments)
 			}()
 			dur := time.Since(execStart)
 
@@ -153,7 +162,13 @@ func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAg
 	)
 }
 
-func (e *parallelFunctionExecutor) executeSingle(runCtx *core.RunContext, agent FlowAgent, fc core.FunctionCall, emit func(core.Event) error) {
+func (e *parallelFunctionExecutor) executeSingle(
+	runCtx *core.RunContext,
+	agent FlowAgent,
+	toolRegistry map[string]tool.Tool,
+	fc core.FunctionCall,
+	emit func(core.Event) error,
+) {
 	toolCtx := core.NewToolContext(runCtx, fc.ID)
 	if e.cfg.LogStartEvents {
 		runCtx.LogInfo("agent.function.start", "agent", agent.GetName(), "function", fc.Name, "function_call_id", fc.ID)
@@ -170,7 +185,7 @@ func (e *parallelFunctionExecutor) executeSingle(runCtx *core.RunContext, agent 
 				runCtx.LogError("agent.function.panic", "agent", agent.GetName(), "function", fc.Name, "recover", r)
 			}
 		}()
-		result, err = agent.ExecuteTool(toolCtx, fc.Name, fc.Arguments)
+		result, err = executeTool(toolRegistry, toolCtx, fc.Name, fc.Arguments)
 	}()
 	dur := time.Since(start)
 	runCtx.LogInfo(
@@ -194,3 +209,19 @@ type panicErr struct {
 }
 
 func (p *panicErr) Error() string { return "panic recovered" }
+
+// executeTool centralizes tool lookup & execution using agent tool registry.
+func executeTool(toolRegistry map[string]tool.Tool, toolCtx *core.ToolContext, toolName, args string) (any, error) {
+	impl, ok := toolRegistry[toolName]
+	if !ok {
+		return nil, fmt.Errorf("tool %s not found", toolName)
+	}
+
+	var argMap map[string]any
+	if args == "" {
+		argMap = map[string]any{}
+	} else if err := json.Unmarshal([]byte(args), &argMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal args: %w", err)
+	}
+	return impl.Call(toolCtx, argMap)
+}

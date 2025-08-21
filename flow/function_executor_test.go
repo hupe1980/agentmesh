@@ -65,10 +65,7 @@ func (a *teAgent) IsStreamingEnabled() bool                             { return
 func (a *teAgent) IsTransferEnabled() bool                              { return true }
 func (a *teAgent) GetOutputKey() string                                 { return "" }
 func (a *teAgent) MaxHistoryMessages() int                              { return 50 }
-func (a *teAgent) ExecuteTool(tc *core.ToolContext, name string, _ string) (any, error) {
-	return a.tools[name].Call(tc, map[string]any{})
-}
-func (a *teAgent) TransferToAgent(*core.RunContext, string) error { return nil }
+func (a *teAgent) TransferToAgent(*core.RunContext, string) error       { return nil }
 
 // helper to make run context
 func newTERunContext(t *testing.T) *core.RunContext {
@@ -90,7 +87,7 @@ func TestFunctionExecutor_Single(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "one", Arguments: "{}"}}
 	events := make([]core.Event, 0)
 	emit := func(ev core.Event) error { events = append(events, ev); return nil }
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event got %d", len(events))
 	}
@@ -107,7 +104,7 @@ func TestFunctionExecutor_ParallelUnordered(t *testing.T) {
 	var order []string
 	emit := func(ev core.Event) error { order = append(order, ev.GetFunctionResponses()[0].Name); return nil }
 	start := time.Now()
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if len(order) != 2 {
 		t.Fatalf("want 2 events got %d", len(order))
 	}
@@ -130,7 +127,7 @@ func TestFunctionExecutor_PreserveOrder(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "t1", Arguments: "{}"}, {ID: "2", Name: "t2", Arguments: "{}"}}
 	var order []string
 	emit := func(ev core.Event) error { order = append(order, ev.GetFunctionResponses()[0].Name); return nil }
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if order[0] != "t1" || order[1] != "t2" {
 		t.Fatalf("order not preserved: %v", order)
 	}
@@ -151,7 +148,7 @@ func TestFunctionExecutor_ErrorIsolation(t *testing.T) {
 		}
 		return nil
 	}
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if atomic.LoadInt32(&errs) != 1 {
 		t.Fatalf("expected 1 error event got %d", errs)
 	}
@@ -171,7 +168,7 @@ func TestFunctionExecutor_PanicRecovery(t *testing.T) {
 		}
 		return nil
 	}
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if !got {
 		t.Fatalf("expected panic converted to error")
 	}
@@ -186,7 +183,7 @@ func TestFunctionExecutor_ActionsApplied(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "act", Arguments: "{}"}}
 	var evs []core.Event
 	emit := func(ev core.Event) error { evs = append(evs, ev); return nil }
-	te.Execute(rc, a, fnCalls, emit)
+	te.Execute(rc, a, a.tools, fnCalls, emit)
 	if len(evs) != 1 {
 		t.Fatalf("expected 1 event got %d", len(evs))
 	}

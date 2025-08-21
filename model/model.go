@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/tool"
 )
 
 // ToolCall represents a function call request surfaced by a model provider.
@@ -40,7 +41,47 @@ type Request struct {
 	Instructions string           `json:"instructions"` // Instructions for the model
 	Contents     []core.Content   `json:"contents"`     // Higher-level content converted to provider messages
 	Tools        []ToolDefinition `json:"tools,omitempty"`
-	Stream       bool             `json:"stream,omitempty"`
+	// RawTools holds the runtime tool implementations keyed by name (not serialized)
+	RawTools map[string]tool.Tool `json:"-"`
+	Stream   bool                 `json:"stream,omitempty"`
+}
+
+// AddTool registers a single tool with the request, updating both the serialized
+// tool definition slice (for the model provider) and the internal RawTools map
+// used at execution time. Duplicate names overwrite previous entries.
+func (r *Request) AddTool(t tool.Tool) {
+	if r.RawTools == nil {
+		r.RawTools = make(map[string]tool.Tool)
+	}
+	// Append / replace definition
+	def := ToolDefinition{
+		Type: "function",
+		Function: FunctionDefinition{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Parameters:  t.Parameters(),
+		},
+	}
+	// Replace existing definition if same name
+	replaced := false
+	for i, existing := range r.Tools {
+		if existing.Function.Name == def.Function.Name {
+			r.Tools[i] = def
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		r.Tools = append(r.Tools, def)
+	}
+	r.RawTools[t.Name()] = t
+}
+
+// AddTools registers multiple tools convenience wrapper.
+func (r *Request) AddTools(ts ...tool.Tool) {
+	for _, t := range ts {
+		r.AddTool(t)
+	}
 }
 
 // TokenUsage captures token usage statistics for a response.

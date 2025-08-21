@@ -60,9 +60,6 @@ type FlowAgent interface {
 	// MaxHistoryMessages returns the maximum number of conversation history messages to keep.
 	MaxHistoryMessages() int
 
-	// ExecuteTool executes a named tool with the given arguments.
-	ExecuteTool(toolCtx *core.ToolContext, toolName string, args string) (interface{}, error)
-
 	// TransferToAgent transfers execution to a named sub-agent.
 	TransferToAgent(runCtx *core.RunContext, agentName string) error
 }

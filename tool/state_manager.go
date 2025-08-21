@@ -54,7 +54,7 @@ func (t *StateManagerTool) Parameters() map[string]any {
 			"operation": map[string]any{
 				"type": "string",
 				"enum": []string{
-					"get_state", "set_state", "transfer_agent", "escalate",
+					"get_state", "set_state", "escalate",
 					"save_artifact", "load_artifact", "search_memory", "store_memory",
 					"list_artifacts", "get_session_history", "skip_summarization",
 				},
@@ -66,10 +66,6 @@ func (t *StateManagerTool) Parameters() map[string]any {
 			},
 			"value": map[string]any{
 				"description": "Value for set_state operations (any type)",
-			},
-			"agent_name": map[string]any{
-				"type":        "string",
-				"description": "Agent name for transfer_agent operation",
 			},
 			"artifact_id": map[string]any{
 				"type":        "string",
@@ -113,8 +109,6 @@ func (t *StateManagerTool) Call(toolCtx *core.ToolContext, args map[string]any) 
 		return t.handleGetState(toolCtx, args)
 	case "set_state":
 		return t.handleSetState(toolCtx, args)
-	case "transfer_agent":
-		return t.handleTransferAgent(toolCtx, args)
 	case "escalate":
 		return t.handleEscalate(toolCtx, args)
 	case "save_artifact":
@@ -175,22 +169,6 @@ func (t *StateManagerTool) handleSetState(toolCtx *core.ToolContext, args map[st
 		"value":   value,
 		"success": true,
 		"message": fmt.Sprintf("State key '%s' set successfully", key),
-	}, nil
-}
-
-// handleTransferAgent initiates agent transfer.
-func (t *StateManagerTool) handleTransferAgent(toolCtx *core.ToolContext, args map[string]any) (any, error) {
-	agentName, ok := args["agent_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("agent_name parameter is required for transfer_agent operation")
-	}
-
-	toolCtx.TransferToAgent(agentName)
-
-	return map[string]any{
-		"agent_name": agentName,
-		"success":    true,
-		"message":    fmt.Sprintf("Transfer to agent '%s' initiated", agentName),
 	}, nil
 }
 

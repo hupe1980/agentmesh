@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/model"
+	"github.com/hupe1980/agentmesh/tool"
 )
 
 // BaseFlow is a minimal single‑agent flow implementation that supports a
@@ -59,9 +60,13 @@ func (f *BaseFlow) Execute(runCtx *core.RunContext) (<-chan core.Event, <-chan e
 			if last == nil { // termination (model stream closed with no event)
 				return
 			}
-			// If we just emitted a function response, we want another LLM turn
+			// If we just emitted a function response without transfer/escalation, allow another LLM turn.
 			if len(last.GetFunctionResponses()) > 0 {
-				continue
+				if last.Actions.TransferToAgent == nil && last.Actions.Escalate == nil {
+					continue
+				}
+				// transfer or escalation ends the originating agent's loop
+				return
 			}
 			if last.IsPartial() { // unexpected partial as last event
 				return
@@ -95,23 +100,9 @@ func (f *BaseFlow) runOnce(runCtx *core.RunContext, eventChan chan<- core.Event)
 		}
 	}
 
-	// Build tool definitions
-	tools := f.agent.GetTools()
-	if len(tools) > 0 {
-		toolDefinitions := make([]model.ToolDefinition, 0, len(tools))
-		for _, t := range tools {
-			toolDefinitions = append(toolDefinitions, model.ToolDefinition{
-				Type: "function",
-				Function: model.FunctionDefinition{
-					Name:        t.Name(),
-					Description: t.Description(),
-					Parameters:  t.Parameters(),
-				},
-			})
-		}
-
-		// Add tools to request
-		req.Tools = toolDefinitions
+	// Build tool definitions and raw tool registry
+	for _, t := range f.agent.GetTools() {
+		req.AddTool(t)
 	}
 
 	// Execute LLM request
@@ -152,7 +143,24 @@ loop:
 
 			// Handle function calls
 			if fnCalls := ev.GetFunctionCalls(); len(fnCalls) > 0 {
-				lastEvent = f.handleFunctionCalls(runCtx, eventChan, fnCalls, lastEvent)
+				lastEvent = f.handleFunctionCalls(runCtx, eventChan, fnCalls, req.RawTools, lastEvent)
+				// If transfer requested, execute sub-agent inline (same event stream) and append its final event
+				if lastEvent != nil && lastEvent.Actions.TransferToAgent != nil {
+					targetName := *lastEvent.Actions.TransferToAgent
+					if ma, ok := f.agent.(interface {
+						TransferToAgent(*core.RunContext, string) error
+					}); ok {
+						// Reuse run context emission channel; create child context for sub-agent
+						childCtx := runCtx.Clone()
+						childCtx.Agent = core.AgentInfo{Name: targetName, Type: "unknown"}
+						// Run sub-agent; its events will flow through parent agent's Run since runner only sees the aggregate channel
+						if err := ma.TransferToAgent(childCtx, targetName); err != nil {
+							runCtx.LogError("agent.transfer.execute.error", "from", f.agent.GetName(), "to", targetName, "error", err.Error())
+						} else {
+							runCtx.LogDebug("agent.transfer.complete", "from", f.agent.GetName(), "to", targetName)
+						}
+					}
+				}
 			}
 		case err, ok := <-errCh:
 			if ok {
@@ -171,11 +179,12 @@ func (f *BaseFlow) handleFunctionCalls(
 	runCtx *core.RunContext,
 	eventChan chan<- core.Event,
 	fnCalls []core.FunctionCall,
+	toolRegistry map[string]tool.Tool,
 	last *core.Event,
 ) *core.Event {
 	collected := make([]core.Event, 0, len(fnCalls))
 	collect := func(outEv core.Event) error { collected = append(collected, outEv); last = &outEv; return nil }
-	f.functionExecutor.Execute(runCtx, f.agent, fnCalls, collect)
+	f.functionExecutor.Execute(runCtx, f.agent, toolRegistry, fnCalls, collect)
 	if len(collected) == 0 {
 		return last
 	}

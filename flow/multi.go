@@ -13,6 +13,8 @@ func NewMultiAgentFlow(agent FlowAgent) *MultiAgentFlow {
 	// Add default processors for advanced functionality
 	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
 	baseFlow.AddRequestProcessor(NewContentsProcessor())
+	// Inject transfer_to_agent tool definition dynamically when applicable
+	baseFlow.AddRequestProcessor(NewTransferToolInjector())
 
 	return &MultiAgentFlow{BaseFlow: baseFlow}
 }
