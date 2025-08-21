@@ -10,12 +10,11 @@ import (
 // All fields are optional pointers / maps so absence can be distinguished from zero values.
 // The engine interprets these after persistence (see engine.ApplyEventActions).
 type EventActions struct {
-	SkipSummarization    *bool          `json:"skip_summarization,omitempty"`
-	StateDelta           map[string]any `json:"state_delta,omitempty"`
-	ArtifactDelta        map[string]int `json:"artifact_delta,omitempty"`
-	TransferToAgent      *string        `json:"transfer_to_agent,omitempty"`
-	Escalate             *bool          `json:"escalate,omitempty"`
-	RequestedAuthConfigs map[string]any `json:"requested_auth_configs,omitempty"`
+	SkipSummarization *bool          `json:"skip_summarization,omitempty"`
+	StateDelta        map[string]any `json:"state_delta,omitempty"`
+	ArtifactDelta     map[string]int `json:"artifact_delta,omitempty"`
+	TransferToAgent   *string        `json:"transfer_to_agent,omitempty"`
+	Escalate          *bool          `json:"escalate,omitempty"`
 }
 
 // Event is the primary unit of communication between agents, the engine and
@@ -32,20 +31,19 @@ type EventActions struct {
 // time.Time (UTC). Use helper methods (e.g. UnixSeconds) if numeric forms are
 // needed for metrics or legacy clients.
 type Event struct {
-	ID                string            `json:"id"`
-	RunID             string            `json:"run_id"`
-	Author            string            `json:"author"`
-	Actions           EventActions      `json:"actions"`
-	Branch            *string           `json:"branch,omitempty"`
-	Timestamp         time.Time         `json:"timestamp"`
-	Content           *Content          `json:"content,omitempty"`
-	Partial           *bool             `json:"partial,omitempty"`
-	TurnComplete      *bool             `json:"turn_complete,omitempty"`
-	ErrorCode         *string           `json:"error_code,omitempty"`
-	ErrorMessage      *string           `json:"error_message,omitempty"`
-	Interrupted       *bool             `json:"interrupted,omitempty"`
-	GroundingMetadata any               `json:"grounding_metadata,omitempty"`
-	CustomMetadata    map[string]string `json:"custom_metadata,omitempty"`
+	ID             string            `json:"id"`
+	RunID          string            `json:"run_id"`
+	Author         string            `json:"author"`
+	Actions        EventActions      `json:"actions"`
+	Branch         *string           `json:"branch,omitempty"`
+	Timestamp      time.Time         `json:"timestamp"`
+	Content        *Content          `json:"content,omitempty"`
+	Partial        *bool             `json:"partial,omitempty"`
+	TurnComplete   *bool             `json:"turn_complete,omitempty"`
+	ErrorCode      *string           `json:"error_code,omitempty"`
+	ErrorMessage   *string           `json:"error_message,omitempty"`
+	Interrupted    *bool             `json:"interrupted,omitempty"`
+	CustomMetadata map[string]string `json:"custom_metadata,omitempty"`
 }
 
 // NewAssistantEvent creates an assistant-authored event with the given content and partial flag.

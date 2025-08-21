@@ -223,5 +223,6 @@ func executeTool(toolRegistry map[string]tool.Tool, toolCtx *core.ToolContext, t
 	} else if err := json.Unmarshal([]byte(args), &argMap); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal args: %w", err)
 	}
+
 	return impl.Call(toolCtx, argMap)
 }
