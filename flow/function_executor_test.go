@@ -81,17 +81,6 @@ func newTERunContext(t *testing.T) *core.RunContext {
 	return core.NewRunContext(ctx, "sess", "run", core.AgentInfo{Name: "agent", Type: "test"}, userContent, eventChan, nil, sess, sessSvc, nil, nil, logging.NoOpLogger{})
 }
 
-func collectEvents(ch chan core.Event) []core.Event {
-	close(ch)
-	var evs []core.Event
-	for ev := range ch {
-		if ev.Content != nil && ev.Content.Role == "tool" {
-			evs = append(evs, ev)
-		}
-	}
-	return evs
-}
-
 func TestFunctionExecutor_Single(t *testing.T) {
 	a := &teAgent{name: "A", tools: map[string]tool.Tool{
 		"one": &teMockTool{name: "one", result: 42},
@@ -101,9 +90,7 @@ func TestFunctionExecutor_Single(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "one", Arguments: "{}"}}
 	events := make([]core.Event, 0)
 	emit := func(ev core.Event) error { events = append(events, ev); return nil }
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event got %d", len(events))
 	}
@@ -120,9 +107,7 @@ func TestFunctionExecutor_ParallelUnordered(t *testing.T) {
 	var order []string
 	emit := func(ev core.Event) error { order = append(order, ev.GetFunctionResponses()[0].Name); return nil }
 	start := time.Now()
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if len(order) != 2 {
 		t.Fatalf("want 2 events got %d", len(order))
 	}
@@ -145,9 +130,7 @@ func TestFunctionExecutor_PreserveOrder(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "t1", Arguments: "{}"}, {ID: "2", Name: "t2", Arguments: "{}"}}
 	var order []string
 	emit := func(ev core.Event) error { order = append(order, ev.GetFunctionResponses()[0].Name); return nil }
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if order[0] != "t1" || order[1] != "t2" {
 		t.Fatalf("order not preserved: %v", order)
 	}
@@ -168,9 +151,7 @@ func TestFunctionExecutor_ErrorIsolation(t *testing.T) {
 		}
 		return nil
 	}
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if atomic.LoadInt32(&errs) != 1 {
 		t.Fatalf("expected 1 error event got %d", errs)
 	}
@@ -190,9 +171,7 @@ func TestFunctionExecutor_PanicRecovery(t *testing.T) {
 		}
 		return nil
 	}
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if !got {
 		t.Fatalf("expected panic converted to error")
 	}
@@ -207,9 +186,7 @@ func TestFunctionExecutor_ActionsApplied(t *testing.T) {
 	fnCalls := []core.FunctionCall{{ID: "1", Name: "act", Arguments: "{}"}}
 	var evs []core.Event
 	emit := func(ev core.Event) error { evs = append(evs, ev); return nil }
-	if err := te.Execute(rc, a, fnCalls, emit); err != nil {
-		t.Fatalf("execute error: %v", err)
-	}
+	te.Execute(rc, a, fnCalls, emit)
 	if len(evs) != 1 {
 		t.Fatalf("expected 1 event got %d", len(evs))
 	}

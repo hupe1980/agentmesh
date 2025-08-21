@@ -17,7 +17,7 @@ import (
 //
 // The emit callback is responsible for persistence synchronization (resume handling).
 type FunctionExecutor interface {
-	Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error) error
+	Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error)
 }
 
 // FunctionExecutorConfig configures the default parallel executor.
@@ -37,15 +37,16 @@ func NewParallelFunctionExecutor(cfg FunctionExecutorConfig) FunctionExecutor {
 	return &parallelFunctionExecutor{cfg: cfg}
 }
 
-func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error) error {
+func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAgent, fnCalls []core.FunctionCall, emit func(core.Event) error) {
 	n := len(fnCalls)
 	if n == 0 {
-		return nil
+		return
 	}
 
 	// Fast path: single call, execute inline.
 	if n == 1 {
-		return e.executeSingle(runCtx, agent, fnCalls[0], emit)
+		e.executeSingle(runCtx, agent, fnCalls[0], emit)
+		return
 	}
 
 	maxPar := e.cfg.MaxParallel
@@ -150,10 +151,9 @@ func (e *parallelFunctionExecutor) Execute(runCtx *core.RunContext, agent FlowAg
 		"preserve_order", e.cfg.PreserveOrder,
 		"duration_ms", time.Since(batchStart).Milliseconds(),
 	)
-	return nil
 }
 
-func (e *parallelFunctionExecutor) executeSingle(runCtx *core.RunContext, agent FlowAgent, fc core.FunctionCall, emit func(core.Event) error) error {
+func (e *parallelFunctionExecutor) executeSingle(runCtx *core.RunContext, agent FlowAgent, fc core.FunctionCall, emit func(core.Event) error) {
 	toolCtx := core.NewToolContext(runCtx, fc.ID)
 	if e.cfg.LogStartEvents {
 		runCtx.LogInfo("agent.function.start", "agent", agent.GetName(), "function", fc.Name, "function_call_id", fc.ID)
@@ -182,7 +182,7 @@ func (e *parallelFunctionExecutor) executeSingle(runCtx *core.RunContext, agent 
 	)
 	respEv := core.NewFunctionResponseEvent(agent.GetName(), fc.ID, fc.Name, result, err)
 	toolCtx.InternalApplyActions(&respEv)
-	return emit(respEv)
+	_ = emit(respEv)
 }
 
 // panicError converts a recovered panic value to an error without pulling external dependencies.

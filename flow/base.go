@@ -18,19 +18,12 @@ type BaseFlow struct {
 
 // NewBaseFlow creates a new basic single-agent flow.
 func NewBaseFlow(agent FlowAgent) *BaseFlow {
-	bf := &BaseFlow{
+	return &BaseFlow{
 		agent:              agent,
 		requestProcessors:  []RequestProcessor{},
 		responseProcessors: []ResponseProcessor{},
-		functionExecutor: NewParallelFunctionExecutor(
-			FunctionExecutorConfig{
-				MaxParallel:   4,
-				PreserveOrder: true,
-			},
-		),
+		functionExecutor:   NewParallelFunctionExecutor(FunctionExecutorConfig{MaxParallel: 4, PreserveOrder: true}),
 	}
-
-	return bf
 }
 
 // AddRequestProcessor adds a request processor to the flow.
@@ -81,14 +74,6 @@ func (f *BaseFlow) Execute(runCtx *core.RunContext) (<-chan core.Event, <-chan e
 
 	return eventChan, errChan, nil
 }
-
-// // emitError converts an internal error to a system Event.
-// func (f *BaseFlow) emitError(eventChan chan<- core.Event, err error) {
-// 	ev := core.NewEvent("", "system")
-// 	msg := err.Error()
-// 	ev.ErrorMessage = &msg
-// 	eventChan <- ev
-// }
 
 // runOnce performs one model turn (including any tool executions) and returns
 // the last emitted Event (final or intermediate). A nil return signals termination.
@@ -167,27 +152,7 @@ loop:
 
 			// Handle function calls
 			if fnCalls := ev.GetFunctionCalls(); len(fnCalls) > 0 {
-				emit := func(outEv core.Event) error {
-					lastEvent = &outEv
-					// Emit processed event
-					select {
-					case <-runCtx.Context.Done():
-						return runCtx.Context.Err()
-					case eventChan <- outEv:
-					}
-
-					// Wait for session persistence of tool response
-					if runCtx.Resume != nil {
-						select {
-						case <-runCtx.Context.Done():
-							return runCtx.Context.Err()
-						case <-runCtx.Resume:
-						}
-					}
-					return nil
-				}
-
-				_ = f.functionExecutor.Execute(runCtx, f.agent, fnCalls, emit)
+				lastEvent = f.handleFunctionCalls(runCtx, eventChan, fnCalls, lastEvent)
 			}
 		case err, ok := <-errCh:
 			if ok {
@@ -198,4 +163,83 @@ loop:
 	}
 
 	return lastEvent, nil
+}
+
+// handleFunctionCalls executes all function calls, merges their responses into a single
+// tool event (aggregating actions) and emits it. Returns the last event pointer updated.
+func (f *BaseFlow) handleFunctionCalls(
+	runCtx *core.RunContext,
+	eventChan chan<- core.Event,
+	fnCalls []core.FunctionCall,
+	last *core.Event,
+) *core.Event {
+	collected := make([]core.Event, 0, len(fnCalls))
+	collect := func(outEv core.Event) error { collected = append(collected, outEv); last = &outEv; return nil }
+	f.functionExecutor.Execute(runCtx, f.agent, fnCalls, collect)
+	if len(collected) == 0 {
+		return last
+	}
+	if len(collected) == 1 { // single tool call
+		outEv := collected[0]
+		last = &outEv
+		select {
+		case <-runCtx.Context.Done():
+			return last
+		case eventChan <- outEv:
+		}
+		if runCtx.Resume != nil {
+			_ = runCtx.WaitForResume()
+		}
+		return last
+	}
+	firstResp := collected[0].GetFunctionResponses()[0]
+	merged := core.NewFunctionResponseEvent(f.agent.GetName(), firstResp.ID, firstResp.Name, firstResp.Response, nil)
+	// gather parts & actions
+	parts := make([]core.Part, 0, len(collected))
+	stateDelta := map[string]any{}
+	artifactDelta := map[string]int{}
+	var transferTo *string
+	var escalate *bool
+	for _, ce := range collected {
+		for _, fr := range ce.GetFunctionResponses() {
+			parts = append(parts, core.FunctionResponsePart{FunctionResponse: fr})
+		}
+		for k, v := range ce.Actions.StateDelta {
+			stateDelta[k] = v
+		}
+		for k, v := range ce.Actions.ArtifactDelta {
+			artifactDelta[k] = v
+		}
+		if transferTo == nil && ce.Actions.TransferToAgent != nil {
+			transferTo = ce.Actions.TransferToAgent
+		}
+		if escalate == nil && ce.Actions.Escalate != nil {
+			escalate = ce.Actions.Escalate
+		}
+	}
+	if merged.Content != nil {
+		merged.Content.Parts = parts
+	}
+	if len(stateDelta) > 0 {
+		merged.Actions.StateDelta = stateDelta
+	}
+	if len(artifactDelta) > 0 {
+		merged.Actions.ArtifactDelta = artifactDelta
+	}
+	if transferTo != nil {
+		merged.Actions.TransferToAgent = transferTo
+	}
+	if escalate != nil {
+		merged.Actions.Escalate = escalate
+	}
+	last = &merged
+	select {
+	case <-runCtx.Context.Done():
+		return last
+	case eventChan <- merged:
+	}
+	if runCtx.Resume != nil {
+		_ = runCtx.WaitForResume()
+	}
+	return last
 }
