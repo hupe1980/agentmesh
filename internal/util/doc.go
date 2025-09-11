@@ -1,4 +1,2 @@
-// Package util provides utility functions for JSON schema, pointer helpers, and IDs.
-//
-// Intentional umbrella for small helpers used across packages.
+// Package util contains utility functions and helpers used across the project.
 package util
