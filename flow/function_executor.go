@@ -111,62 +111,62 @@ func (e *parallelFunctionExecutor) executeToolWithPlugins(
 	argMap map[string]any,
 ) (any, error) {
 	log := logging.FromContext(ctx)
-	// BEFORE
-	if overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, argMap); err != nil {
+
+	var final any
+
+	overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, argMap)
+	if err != nil {
 		log.Error("agent.function.before_tool.error", "error", err)
 		return nil, err
-	} else if overridden != nil {
-		// Short‑circuited
-		if modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, overridden); err != nil {
-			log.Error("agent.function.after_tool.error", "error", err)
-			return nil, err
-		} else if modified != nil {
-			return modified, nil
-		}
-		return overridden, nil
 	}
 
-	// EXECUTE (panic safe)
-	var result any
-	var callErr error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				callErr = panicError(r)
-				log.Error("agent.function.tool.panic", "recover", r)
-			}
+	if overridden != nil {
+		final = overridden
+	} else {
+		var (
+			callErr error
+			result  any
+		)
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					callErr = panicError(r)
+					log.Error("agent.function.tool.panic", "recover", r)
+				}
+			}()
+
+			result, callErr = tool.Call(ctx, toolCtx, argMap)
 		}()
-		result, callErr = tool.Call(ctx, toolCtx, argMap)
-	}()
 
-	// ERROR HANDLING
-	if callErr != nil {
-		recovered, err := reqCtx.RunOnToolError(ctx, tool, toolCtx, argMap, callErr)
-		if err != nil { // plugin error supersedes original
-			log.Error("agent.function.error", "error", err)
-			return nil, err
-		}
-		if recovered != nil { // treat as success; run AfterTool for post‑processing
-			if modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, recovered); err != nil {
-				log.Error("agent.function.after_tool.error", "error", err)
-				return nil, err
-			} else if modified != nil {
-				return modified, nil
+		if callErr != nil {
+			recovered, herr := reqCtx.RunOnToolError(ctx, tool, toolCtx, argMap, callErr)
+			if herr != nil { // plugin error supersedes original
+				log.Error("agent.function.error", "error", herr)
+				return nil, herr
 			}
-			return recovered, nil
+
+			if recovered == nil { // unrecovered error
+				return nil, callErr
+			}
+
+			final = recovered
+		} else { // success path
+			final = result
 		}
-		return nil, callErr
 	}
 
-	// AFTER (success path)
-	if modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, result); err != nil {
+	modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, final)
+	if err != nil {
 		log.Error("agent.function.after_tool.error", "error", err)
 		return nil, err
-	} else if modified != nil {
-		return modified, nil
 	}
 
-	return result, nil
+	if modified != nil {
+		final = modified
+	}
+
+	return final, nil
 }
 
 // parseFunctionArguments converts the raw JSON argument string into a map for tool execution.
