@@ -289,34 +289,30 @@ func (a *ModelAgent) attachOutputToEvent(ev *core.Event) {
 // aspects of agent functionality. It automatically selects the appropriate flow
 // based on the agent's capabilities.
 func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue core.EventWriter) error {
-	log := logging.FromContext(ctx)
-	log.Debug("agent.run.start", "agent", a.Name(), "run", reqCtx.RunID())
+	log := logging.FromContext(ctx).With("agent", a.Name())
+
+	log.Debug("agent.run.start")
 
 	// Select appropriate flow based on agent capabilities
 	fl := a.flowSelector.SelectFlow(a)
 
-	log.Debug("agent.flow.selected", "agent", a.Name(), "flow", fmt.Sprintf("%T", fl))
+	log.Debug("agent.flow.selected", "flow", fmt.Sprintf("%T", fl))
 
 	// Execute the flow; the flow writes events directly to queue
 	if err := fl.Execute(ctx, reqCtx, eventWriterFunc(func(c context.Context, ev *core.Event) error {
 		// Attach final output to state when configured
 		a.attachOutputToEvent(ev)
 
-		var role = ev.Role()
-		log.Debug("agent.event.forward",
-			"agent", a.Name(),
-			"event_id", ev.ID,
-			"role", role,
-			"fn_calls", len(ev.GetFunctionCalls()),
-		)
+		log.Debug("agent.event.forward", "event_id", ev.ID, "role", ev.Role(), "fn_calls", len(ev.GetFunctionCalls()))
 
 		return queue.Write(c, ev)
 	})); err != nil {
-		log.Error("agent.flow.execute.error", "agent", a.Name(), "error", err)
+		log.Error("agent.flow.execute.error", "error", err)
+
 		return fmt.Errorf("flow execution failed: %w", err)
 	}
 
-	log.Debug("agent.flow.execute.complete", "agent", a.Name())
+	log.Debug("agent.flow.execute.complete")
 
 	return nil
 }
