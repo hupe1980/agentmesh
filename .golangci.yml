@@ -1,0 +1,71 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - revive
+    - gocyclo
+    - dupl
+    - goconst
+    - unconvert
+    - nakedret
+    - misspell
+    - lll
+    - prealloc
+    - gosec
+  disable:
+    - godot
+    - nlreturn
+    - wsl
+    - funlen
+    - gocognit
+    - nestif
+    - mnd
+    - unparam
+  exclusions:
+    rules:
+      # Internal utility functions 
+      - path: ^internal/util/
+        linters:
+          - revive
+        text: "avoid meaningless package names"
+      
+      # Internal test utilities
+      - path: internal/testutil/
+        linters:
+          - revive      # Test builders can have different patterns
+          - unparam     # Test utilities may have unused params by design
+      
+      # Exclude some linters from running on tests files
+      - path: _test\.go
+        linters:
+          - revive      # Tests can have different patterns
+          - gosec       # Security less critical in tests
+          - dupl        # Test code duplication is acceptable
+          - goconst     # Test constants can be inline
+      
+      # Examples can have relaxed rules
+      - path: ^examples/
+        linters:
+          - revive      # Examples can have different patterns
+          - errcheck    # Example code can ignore some errors
+          - gosec       # Examples may use simplified patterns
+          - goconst     # Examples can repeat strings for clarity
+          - lll         # Allow long lines in examples for readability
+
+      # Globally ignore specific warning texts
+      - path: \.go$
+        linters:
+          - revive
+        text: "unused-parameter"
+
+severity:
+  default: warning

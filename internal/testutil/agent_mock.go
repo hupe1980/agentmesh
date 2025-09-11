@@ -1,0 +1,175 @@
+package testutil
+
+import (
+	"context"
+
+	"github.com/hupe1980/agentmesh/core"
+)
+
+// MockAgent is a lightweight, function-based test double for agents.
+//
+// It is designed for unit tests to avoid ad-hoc mock types. Configure behavior
+// by setting the exported fields or by providing function hooks. Hierarchy is
+// modeled via the read-only Parent/SubAgents methods; set SubAgentsList and
+// ParentAgent directly in tests to shape the tree.
+//
+// Example:
+//
+//	m := testutil.NewMockAgent("A")
+//	m.SubAgentsList = []core.Agent{testutil.NewMockAgent("child")}
+//	m.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
+//	    return "you are a test agent", nil
+//	}
+//
+// All methods have safe defaults; function hooks (when set) take precedence.
+// NOTE: This lives in internal/testutil and is intended only for tests. Do not
+// use from production code.
+//
+//nolint:revive // this is a test utility with many exported fields for convenience
+type MockAgent struct {
+	// Static fields (used when corresponding Func hook is nil)
+	NameVal                 string
+	DescriptionVal          string
+	ModelVal                core.Model
+	ToolsMap                map[string]core.Tool
+	ParentAgent             core.Agent
+	SubAgentsList           []core.Agent
+	FunctionCallingEnabled  bool
+	StreamingEnabled        bool
+	TransferToPeersEnabled  bool
+	TransferToParentEnabled bool
+	OutputKeyVal            string
+	MaxHistoryVal           int
+	InstructionsText        string
+
+	// Optional function hooks to override behaviors
+	// RunFunc, when set, will be invoked by Run; return its error.
+	RunFunc                 func(ctx context.Context, reqCtx core.RequestContext, writer core.EventWriter) error
+	RunCount                int
+	ResolveInstructionsFunc func(ctx context.Context, roCtx core.ReadonlyContext) (string, error)
+	TransferToAgentFunc     func(
+		ctx context.Context,
+		reqCtx core.RequestContext,
+		queue core.EventWriter,
+		agentName string,
+	) error
+	HasSubAgentsFunc func() bool
+	SubAgentsFunc    func() []core.Agent
+}
+
+// NewMockAgent constructs a MockAgent with the given name and sensible defaults.
+func NewMockAgent(name string) *MockAgent {
+	return &MockAgent{
+		NameVal:                 name,
+		ToolsMap:                map[string]core.Tool{},
+		SubAgentsList:           []core.Agent{},
+		FunctionCallingEnabled:  false,
+		StreamingEnabled:        false,
+		TransferToPeersEnabled:  false,
+		TransferToParentEnabled: false,
+		OutputKeyVal:            "",
+		MaxHistoryVal:           10,
+		InstructionsText:        "",
+	}
+}
+
+// Name returns the mock's name.
+func (m *MockAgent) Name() string { return m.NameVal }
+
+// Description returns the mock's description.
+func (m *MockAgent) Description() string { return m.DescriptionVal }
+
+// Run is a no-op implementation suitable for tests that don't need execution.
+func (m *MockAgent) Run(ctx context.Context, reqCtx core.RequestContext, writer core.EventWriter) error {
+	m.RunCount++
+	if m.RunFunc != nil {
+		return m.RunFunc(ctx, reqCtx, writer)
+	}
+	// Default no-op
+	return nil
+}
+
+// Model returns the configured model (if any).
+func (m *MockAgent) Model() core.Model { return m.ModelVal }
+
+// ResolveInstructions returns instructions using the hook when provided; otherwise InstructionsText.
+func (m *MockAgent) ResolveInstructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error) {
+	if m.ResolveInstructionsFunc != nil {
+		return m.ResolveInstructionsFunc(ctx, roCtx)
+	}
+	return m.InstructionsText, nil
+}
+
+// Tools returns the configured tool map.
+func (m *MockAgent) Tools() map[string]core.Tool { return m.ToolsMap }
+
+// Parent returns the configured parent agent.
+func (m *MockAgent) Parent() core.Agent { return m.ParentAgent }
+
+// RootAgent returns the top-most ancestor in the hierarchy.
+func (m *MockAgent) RootAgent() core.Agent {
+	if m.ParentAgent == nil {
+		return m
+	}
+
+	// Traverse up to find the root
+	current := m.ParentAgent
+	for current.Parent() != nil {
+		current = current.Parent()
+	}
+
+	return current
+}
+
+// HasSubAgents reports whether SubAgentsList is non-empty unless overridden by HasSubAgentsFunc.
+func (m *MockAgent) HasSubAgents() bool {
+	if m.HasSubAgentsFunc != nil {
+		return m.HasSubAgentsFunc()
+	}
+	return len(m.SubAgentsList) > 0
+}
+
+// SubAgents returns the configured SubAgentsList unless overridden by SubAgentsFunc.
+func (m *MockAgent) SubAgents() []core.Agent {
+	if m.SubAgentsFunc != nil {
+		return m.SubAgentsFunc()
+	}
+	return m.SubAgentsList
+}
+
+// FindAgent performs a depth-first search starting at this mock and including its SubAgents.
+func (m *MockAgent) FindAgent(name string) (core.Agent, error) {
+	if m.NameVal == name {
+		return m, nil
+	}
+
+	return m.FindSubAgent(name)
+}
+
+func (m *MockAgent) FindSubAgent(name string) (core.Agent, error) {
+	// Search through all child agents
+	for _, sub := range m.SubAgentsList {
+		if result, err := sub.FindAgent(name); err == nil {
+			return result, nil
+		}
+	}
+	return nil, core.ErrAgentNotFound
+}
+
+// IsFunctionCallingEnabled returns the configured flag.
+func (m *MockAgent) IsFunctionCallingEnabled() bool { return m.FunctionCallingEnabled }
+
+// IsStreamingEnabled returns the configured flag.
+func (m *MockAgent) IsStreamingEnabled() bool { return m.StreamingEnabled }
+
+// IsTransferToPeersEnabled returns the configured flag.
+func (m *MockAgent) IsTransferToPeersEnabled() bool { return m.TransferToPeersEnabled }
+
+// IsTransferToParentEnabled returns the configured flag.
+func (m *MockAgent) IsTransferToParentEnabled() bool { return m.TransferToParentEnabled }
+
+// OutputKey returns the configured output key.
+func (m *MockAgent) OutputKey() string { return m.OutputKeyVal }
+
+// MaxHistoryMessages returns the configured max history size.
+func (m *MockAgent) MaxHistoryMessages() int { return m.MaxHistoryVal }

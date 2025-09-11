@@ -1,0 +1,183 @@
+package agent
+
+import (
+	"context"
+	"testing"
+
+	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/testutil"
+	"github.com/stretchr/testify/assert"
+)
+
+// LLM Agent Test Cases
+func TestModelAgent_NewAgent(t *testing.T) {
+	mockLLM := &testutil.MockModel{}
+	agent := NewModelAgent("Test Agent", mockLLM)
+
+	assert.NotNil(t, agent)
+	assert.Equal(t, mockLLM, agent.model)
+	assert.NotNil(t, agent.tools)
+	assert.Empty(t, agent.tools)
+	assert.True(t, agent.enableStreaming)
+	assert.True(t, agent.enableFunctionCalling)
+}
+
+func TestModelAgent_ResolveInstructions(t *testing.T) {
+	inst := NewInstructionsFromText("custom inst")
+	a := NewModelAgent("AgentX", nil, func(o *ModelAgentOptions) { o.Instructions = inst })
+
+	ctx := context.Background()
+	ro := core.NewRequestContext(core.RequestContextParams{
+		RunID:   "run",
+		Agent:   core.AgentInfo{Name: a.Name(), Type: "model"},
+		Session: core.NewSession("app", "user", "sess"),
+	})
+
+	got, err := a.ResolveInstructions(ctx, ro)
+	assert.NoError(t, err)
+	assert.Equal(t, "custom inst", got)
+}
+
+// minimalTool is a lightweight tool for registry tests
+type minimalTool struct{ name, desc string }
+
+func (m minimalTool) Name() string        { return m.name }
+func (m minimalTool) Description() string { return m.desc }
+func (m minimalTool) Parameters() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+func (m minimalTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, req *core.ModelRequest) error {
+	return nil
+}
+func (m minimalTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error) {
+	return nil, nil
+}
+
+func TestModelAgent_ToolRegistry(t *testing.T) {
+	// Use a nil model; we are only testing registry behavior
+	a := NewModelAgent("RegistryAgent", nil)
+
+	t1 := minimalTool{name: "t1", desc: "tool one"}
+	t2 := minimalTool{name: "t2", desc: "tool two"}
+
+	// Register single
+	a.RegisterTool(t1)
+	assert.True(t, a.HasTool("t1"))
+
+	// Register multiple
+	a.RegisterTools(t2)
+	assert.True(t, a.HasTool("t2"))
+
+	// Get tool
+	got, ok := a.GetTool("t1")
+	assert.True(t, ok)
+	assert.Equal(t, "t1", got.Name())
+
+	// Tools returns a copy
+	m := a.Tools()
+	delete(m, "t1")
+	assert.True(t, a.HasTool("t1"))
+
+	// Unregister
+	ok = a.UnregisterTool("t2")
+	assert.True(t, ok)
+	assert.False(t, a.HasTool("t2"))
+
+	// Clear
+	a.ClearTools()
+	assert.False(t, a.HasTool("t1"))
+}
+
+// newReqCtx is a tiny helper to create a RequestContext for tests.
+func newReqCtx(t *testing.T, a *ModelAgent) core.RequestContext {
+	t.Helper()
+	return core.NewRequestContext(core.RequestContextParams{
+		RunID:   "run-test",
+		Agent:   core.AgentInfo{Name: a.Name(), Type: "model"},
+		Session: core.NewSession("app", "user", "sess"),
+	})
+}
+
+func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
+	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	req := newReqCtx(t, a)
+
+	ev := core.NewFullAssistantEvent(req.RunID(), "OtherAgent", core.NewPartFromText("hello"))
+
+	a.attachOutputToEvent(ev)
+
+	_, set := ev.Actions.StateDelta.Get()
+	assert.False(t, set, "state delta should not be set when author mismatches")
+}
+
+func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
+	a := NewModelAgent("AgentA", nil) // no OutputKey
+	req := newReqCtx(t, a)
+
+	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("hello"))
+
+	a.attachOutputToEvent(ev)
+
+	_, set := ev.Actions.StateDelta.Get()
+	assert.False(t, set, "state delta should not be set without output key")
+}
+
+func TestAttachOutputToEvent_NotFinal(t *testing.T) {
+	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	req := newReqCtx(t, a)
+
+	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("partial"))
+	ev.Partial = core.Bool(true) // mark non-final
+
+	a.attachOutputToEvent(ev)
+
+	_, set := ev.Actions.StateDelta.Get()
+	assert.False(t, set, "state delta should not be set for non-final events")
+}
+
+func TestAttachOutputToEvent_NoParts(t *testing.T) {
+	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	req := newReqCtx(t, a)
+
+	// No parts
+	ev := core.NewFullAssistantEvent(req.RunID(), a.Name())
+	ev.Parts = nil
+
+	a.attachOutputToEvent(ev)
+
+	_, set := ev.Actions.StateDelta.Get()
+	assert.False(t, set, "state delta should not be set when there are no parts")
+}
+
+func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
+	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	req := newReqCtx(t, a)
+
+	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(),
+		core.NewPartFromText("Hello, "),
+		core.NewPartFromText("World!"),
+	)
+
+	a.attachOutputToEvent(ev)
+
+	sd := ev.Actions.StateDelta.Or(nil)
+	if assert.NotNil(t, sd, "state delta should be present") {
+		assert.Equal(t, "Hello, World!", sd["out"])
+	}
+}
+
+func TestAttachOutputToEvent_PreservesExistingState(t *testing.T) {
+	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	req := newReqCtx(t, a)
+
+	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("val"))
+	ev.Actions.StateDelta = core.Map(map[string]any{"prev": 123})
+
+	a.attachOutputToEvent(ev)
+
+	sd := ev.Actions.StateDelta.Or(nil)
+	if assert.NotNil(t, sd) {
+		assert.Equal(t, 123, sd["prev"])
+		assert.Equal(t, "val", sd["out"])
+	}
+}
