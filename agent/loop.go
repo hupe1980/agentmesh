@@ -106,7 +106,8 @@ func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOpti
 // Run implements core.Agent performing iterative execution with escalation
 // detection. It returns early (nil error) on escalation events.
 func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue core.EventWriter) error {
-	log := logging.FromContext(ctx)
+	log := logging.FromContext(ctx).With("agent", l.Name())
+
 	// Execute the loop with configured termination conditions and escalation monitoring
 	for i := 0; i < l.maxIters; i++ {
 		// Check for context cancellation
@@ -116,7 +117,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 		default:
 		}
 
-		log.Debug("loop.start_iteration", "agent", l.Name(), "iter", i+1)
+		log.Debug("loop.start_iteration", "iter", i+1)
 
 		var escalated atomic.Bool
 
@@ -133,7 +134,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 				return fmt.Errorf("loop iteration %d failed for agent %s: %w", i+1, l.child.Name(), err)
 			}
 
-			log.Warn("loop.child_error_continue", "agent", l.Name(), "iter", i+1, "error", err)
+			log.Warn("loop.child_error_continue", "iter", i+1, "error", err)
 			// Continue loop if configured to ignore errors
 		}
 
@@ -143,7 +144,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 
 		// Apply interval delay between iterations (except after last iteration)
 		if l.interval > 0 && i < l.maxIters-1 {
-			log.Debug("loop.sleep", "agent", l.Name(), "duration", l.interval)
+			log.Debug("loop.sleep", "duration", l.interval)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -153,7 +154,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 		}
 	}
 
-	log.Info("loop.complete", "agent", l.Name(), "iters", l.maxIters)
+	log.Info("loop.complete", "iters", l.maxIters)
 
 	return nil
 }
