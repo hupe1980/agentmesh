@@ -15,19 +15,19 @@ type MockModel struct {
 
 	// GenerateFunc, if set, is invoked by Generate. When nil, a default
 	// one-shot, non-streaming response is produced.
-	GenerateFunc func(ctx context.Context, req core.ModelRequest) (<-chan core.ModelResponse, <-chan error)
+	GenerateFunc func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error)
 }
 
 // Generate implements core.Model.
-func (m *MockModel) Generate(ctx context.Context, req core.ModelRequest) (<-chan core.ModelResponse, <-chan error) {
+func (m *MockModel) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 	if m.GenerateFunc != nil {
 		return m.GenerateFunc(ctx, req)
 	}
 
-	respCh := make(chan core.ModelResponse, 1)
+	respCh := make(chan *core.ModelResponse, 1)
 	errCh := make(chan error, 1)
 
-	respCh <- core.ModelResponse{
+	respCh <- &core.ModelResponse{
 		Partial:      false,
 		Parts:        []core.Part{core.NewPartFromText("test")},
 		FinishReason: "stop",

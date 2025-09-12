@@ -51,19 +51,19 @@ type onceToolCallModel struct{ called int }
 
 func (m *onceToolCallModel) Generate(
 	ctx context.Context,
-	_ core.ModelRequest,
-) (<-chan core.ModelResponse, <-chan error) {
-	rc := make(chan core.ModelResponse, 1)
+	_ *core.ModelRequest,
+) (<-chan *core.ModelResponse, <-chan error) {
+	rc := make(chan *core.ModelResponse, 1)
 	ec := make(chan error, 1)
 	go func() {
 		defer close(rc)
 		defer close(ec)
 		if m.called == 0 {
-			rc <- core.ModelResponse{Partial: false, Parts: []core.Part{
+			rc <- &core.ModelResponse{Partial: false, Parts: []core.Part{
 				core.NewPartFromFunctionCall("call1", "echo", "{\"x\":1}"),
 			}}
 		} else {
-			rc <- core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText("done")}}
+			rc <- &core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText("done")}}
 		}
 		m.called++
 	}()
@@ -76,13 +76,13 @@ func (m *onceToolCallModel) Info() core.ModelInfo {
 // model that emits a single plain text response
 type textModel struct{ text string }
 
-func (m *textModel) Generate(ctx context.Context, _ core.ModelRequest) (<-chan core.ModelResponse, <-chan error) {
-	rc := make(chan core.ModelResponse, 1)
+func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
+	rc := make(chan *core.ModelResponse, 1)
 	ec := make(chan error, 1)
 	go func() {
 		defer close(rc)
 		defer close(ec)
-		rc <- core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText(m.text)}}
+		rc <- &core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText(m.text)}}
 	}()
 	return rc, ec
 }

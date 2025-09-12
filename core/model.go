@@ -140,7 +140,7 @@ type ModelInfo struct {
 // Model is the minimal interface required by flows & agents to drive generation.
 type Model interface {
 	// Generate initiates a generation request to the model.
-	Generate(ctx context.Context, req ModelRequest) (<-chan ModelResponse, <-chan error)
+	Generate(ctx context.Context, req *ModelRequest) (<-chan *ModelResponse, <-chan error)
 	// Info returns information about the model implementation.
 	Info() ModelInfo
 }

@@ -36,15 +36,16 @@ func (m *MockModel) AddResponse(prompt, response string) {
 }
 
 // Generate implements Model; emits optional streaming char chunks then final response.
-func (m *MockModel) Generate(ctx context.Context, req core.ModelRequest) (<-chan core.ModelResponse, <-chan error) {
-	respCh := make(chan core.ModelResponse, 16)
+
+func (m *MockModel) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
+	respCh := make(chan *core.ModelResponse, 16)
 	errCh := make(chan error, 1)
 
 	go func() {
 		defer close(respCh)
 		defer close(errCh)
 
-		if len(req.Messages) == 0 {
+		if req == nil || len(req.Messages) == 0 {
 			errCh <- fmt.Errorf("no contents provided")
 			return
 		}
@@ -69,14 +70,14 @@ func (m *MockModel) Generate(ctx context.Context, req core.ModelRequest) (<-chan
 				case <-ctx.Done():
 					errCh <- ctx.Err()
 					return
-				case respCh <- core.ModelResponse{
+				case respCh <- &core.ModelResponse{
 					Partial: true,
 					Parts:   []core.Part{core.NewPartFromText(string(r))},
 				}:
 				}
 			}
 		}
-		respCh <- core.ModelResponse{ // Final response
+		respCh <- &core.ModelResponse{ // Final response
 			Partial:      false,
 			Parts:        []core.Part{core.NewPartFromText(full)},
 			FinishReason: "stop",

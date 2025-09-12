@@ -99,17 +99,21 @@ func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options
 
 // Generate implements unified streaming / non-streaming generation.
 // It adapts OpenAI Chat Completions (with function/tool calling) into core.ModelResponse events.
-func (m *Model) Generate(ctx context.Context, req core.ModelRequest) (<-chan core.ModelResponse, <-chan error) {
-	out := make(chan core.ModelResponse, 32)
+func (m *Model) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
+	out := make(chan *core.ModelResponse, 32)
 	errCh := make(chan error, 1)
 
 	go func() {
 		defer close(out)
 		defer close(errCh)
 
-		messages := buildMessages(req)
+		if req == nil {
+			errCh <- fmt.Errorf("nil model request")
+			return
+		}
+		messages := buildMessages(*req)
 
-		params := m.buildParams(req, messages)
+		params := m.buildParams(*req, messages)
 
 		if req.Stream {
 			m.handleStreaming(ctx, params, out, errCh)
@@ -280,7 +284,7 @@ func (m *Model) buildParams(
 func (m *Model) handleStreaming(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
-	out chan<- core.ModelResponse,
+	out chan<- *core.ModelResponse,
 	errCh chan<- error,
 ) {
 	stream := m.client.ChatCompletionsStreaming(ctx, params)
@@ -313,7 +317,7 @@ func (m *Model) handleStreaming(
 func (m *Model) emitTextDelta(
 	ch openai.ChatCompletionChunkChoice,
 	builder *strings.Builder,
-	out chan<- core.ModelResponse,
+	out chan<- *core.ModelResponse,
 ) {
 	if ch.Delta.Content == "" {
 		return
@@ -321,7 +325,7 @@ func (m *Model) emitTextDelta(
 
 	builder.WriteString(ch.Delta.Content)
 
-	out <- core.ModelResponse{
+	out <- &core.ModelResponse{
 		Partial: true,
 		Parts:   []core.Part{core.NewPartFromText(ch.Delta.Content)},
 	}
@@ -331,7 +335,7 @@ func (m *Model) emitTextDelta(
 func (m *Model) emitToolCallDeltas(
 	ch openai.ChatCompletionChunkChoice,
 	agg map[int64]*aggCall,
-	out chan<- core.ModelResponse,
+	out chan<- *core.ModelResponse,
 ) {
 	for _, tc := range ch.Delta.ToolCalls {
 		ac, ok := agg[tc.Index]
@@ -352,7 +356,7 @@ func (m *Model) emitToolCallDeltas(
 			ac.args += tc.Function.Arguments
 		}
 
-		out <- core.ModelResponse{
+		out <- &core.ModelResponse{
 			Partial: true,
 			Parts:   []core.Part{core.NewPartFromFunctionCall(ac.id, ac.name, ac.args)},
 		}
@@ -364,7 +368,7 @@ func (m *Model) emitFinalChunk(
 	ch openai.ChatCompletionChunkChoice,
 	builder *strings.Builder,
 	toolAgg map[int64]*aggCall,
-	out chan<- core.ModelResponse,
+	out chan<- *core.ModelResponse,
 ) {
 	finalParts := make([]core.Part, 0, len(toolAgg)+1)
 	if builder.Len() > 0 {
@@ -375,7 +379,7 @@ func (m *Model) emitFinalChunk(
 		finalParts = append(finalParts, core.NewPartFromFunctionCall(ac.id, ac.name, ac.args))
 	}
 
-	out <- core.ModelResponse{
+	out <- &core.ModelResponse{
 		Partial:      false,
 		Parts:        finalParts,
 		FinishReason: ch.FinishReason,
@@ -386,7 +390,7 @@ func (m *Model) emitFinalChunk(
 func (m *Model) handleNonStreaming(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
-	out chan<- core.ModelResponse,
+	out chan<- *core.ModelResponse,
 	errCh chan<- error,
 ) {
 	resp, err := m.client.ChatCompletions(ctx, params)
@@ -414,7 +418,7 @@ func (m *Model) handleNonStreaming(
 		}
 	}
 
-	out <- core.ModelResponse{
+	out <- &core.ModelResponse{
 		Partial:      false,
 		Parts:        parts,
 		FinishReason: ch0.FinishReason,

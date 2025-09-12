@@ -54,31 +54,30 @@ type Plugin interface {
 
 	// BeforeModel runs before a request is sent to the model.
 	//
-	// Use this to inspect, log, augment, or rewrite the pending ModelRequest,
-	// or to implement caching. Returning a non-zero ModelResponse (with nil
-	// error) may be interpreted by the runner as a cache hit / short‑circuit
-	// that skips the actual model invocation (implementation specific). Return
-	// an empty ModelResponse (zero value) to proceed normally. Return an error
-	// to abort execution.
-	BeforeModel(ctx context.Context, cbCtx CallbackContext, req ModelRequest) (ModelResponse, error)
+	// Use this to inspect, log, augment, or rewrite the pending *ModelRequest,
+	// or to implement caching. Returning a non-nil *ModelResponse (with nil
+	// error) is treated as a cache hit / short‑circuit that skips the actual
+	// model invocation (implementation specific). Returning nil proceeds
+	// normally. Return an error to abort execution.
+	BeforeModel(ctx context.Context, cbCtx CallbackContext, req *ModelRequest) (*ModelResponse, error)
 
 	// AfterModel runs after a response is received from the model.
 	//
 	// Use this to log raw model output, collect metrics (latency, token usage),
 	// normalize or post‑process content, or apply safety filters. Returning a
-	// modified ModelResponse (with nil error) replaces the original; returning
-	// the unmodified value (or an identical copy) leaves it as-is. Return an
-	// error to signal failure and abort downstream handling.
-	AfterModel(ctx context.Context, cbCtx CallbackContext, res ModelResponse) (ModelResponse, error)
+	// non-nil *ModelResponse (with nil error) replaces the original pointer;
+	// returning nil keeps the original. Return an error to signal failure and
+	// abort downstream handling.
+	AfterModel(ctx context.Context, cbCtx CallbackContext, res *ModelResponse) (*ModelResponse, error)
 
 	// OnModelError runs when a model invocation returns an error.
 	//
 	// Use this to log failures, implement retries, fallback models, or synthesize
-	// a graceful degradation response. Returning a non-zero ModelResponse (with
+	// a graceful degradation response. Returning a non-nil *ModelResponse (with
 	// nil error) replaces the failed call's output and suppresses the original
-	// error. Returning the zero value with a nil error leaves behavior
-	// implementation‑defined; returning a non-nil error propagates the failure.
-	OnModelError(ctx context.Context, cbCtx CallbackContext, req ModelRequest, err error) (ModelResponse, error)
+	// error. Returning nil with a nil error leaves behavior implementation‑defined;
+	// returning a non-nil error propagates the failure.
+	OnModelError(ctx context.Context, cbCtx CallbackContext, req *ModelRequest, err error) (*ModelResponse, error)
 
 	// BeforeTool runs before a tool is executed.
 	//

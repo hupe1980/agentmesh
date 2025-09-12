@@ -269,24 +269,24 @@ func (p *toolHookPlugin) AfterAgent(context.Context, core.CallbackContext, core.
 func (p *toolHookPlugin) BeforeModel(
 	ctx context.Context,
 	cb core.CallbackContext,
-	req core.ModelRequest,
-) (core.ModelResponse, error) {
-	return core.ModelResponse{}, nil
+	req *core.ModelRequest,
+) (*core.ModelResponse, error) {
+	return nil, nil
 }
 func (p *toolHookPlugin) AfterModel(
 	ctx context.Context,
 	cb core.CallbackContext,
-	resp core.ModelResponse,
-) (core.ModelResponse, error) {
-	return core.ModelResponse{}, nil
+	resp *core.ModelResponse,
+) (*core.ModelResponse, error) {
+	return nil, nil
 }
 func (p *toolHookPlugin) OnModelError(
-	context.Context,
-	core.CallbackContext,
-	core.ModelRequest,
-	error,
-) (core.ModelResponse, error) {
-	return core.ModelResponse{}, nil
+	ctx context.Context,
+	cb core.CallbackContext,
+	req *core.ModelRequest,
+	err error,
+) (*core.ModelResponse, error) {
+	return nil, nil
 }
 func (p *toolHookPlugin) BeforeTool(
 	ctx context.Context,

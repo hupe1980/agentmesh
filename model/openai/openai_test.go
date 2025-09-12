@@ -171,9 +171,9 @@ func TestModel_Generate_NonStreaming_TextOnly(t *testing.T) {
 	mc := &mockClient{nextResp: resp}
 	m := &Model{client: mc, opts: Options{Model: oa.ChatModelGPT4oMini, Temperature: 0.7, MaxCompletionTokens: 128}}
 
-	out, errCh := m.Generate(context.Background(), core.ModelRequest{Stream: false})
+	out, errCh := m.Generate(context.Background(), &core.ModelRequest{Stream: false})
 
-	var results = make([]core.ModelResponse, 0, 1)
+	var results = make([]*core.ModelResponse, 0, 1)
 	for r := range out {
 		results = append(results, r)
 	}
@@ -208,7 +208,7 @@ func TestModel_Generate_Streaming_TextAccumulation_ClosesStream(t *testing.T) {
 	mc := &mockClient{stream: ms}
 	m := &Model{client: mc, opts: Options{Model: oa.ChatModelGPT4oMini, Temperature: 0.7, MaxCompletionTokens: 128}}
 
-	out, errCh := m.Generate(context.Background(), core.ModelRequest{Stream: true})
+	out, errCh := m.Generate(context.Background(), &core.ModelRequest{Stream: true})
 
 	var partials []string
 	var final *core.ModelResponse
@@ -217,8 +217,7 @@ func TestModel_Generate_Streaming_TextAccumulation_ClosesStream(t *testing.T) {
 			tp := r.Parts[0].(*core.TextPart)
 			partials = append(partials, tp.Text)
 		} else {
-			rr := r
-			final = &rr
+			final = r
 		}
 	}
 

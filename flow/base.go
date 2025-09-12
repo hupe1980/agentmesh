@@ -216,7 +216,7 @@ func (f *BaseFlow) stepCall(
 	}
 
 	mdl := f.agent.Model()
-	respCh, errCh := mdl.Generate(ctx, *fr.req)
+	respCh, errCh := mdl.Generate(ctx, fr.req)
 
 	var (
 		lastEvent *core.Event
@@ -231,9 +231,12 @@ func (f *BaseFlow) stepCall(
 				respCh = nil
 				continue
 			}
+			if resp == nil { // skip nil pointer (used optionally as sentinel)
+				continue
+			}
 
 			for _, processor := range f.responseProcessors {
-				if err := processor.ProcessResponse(ctx, reqCtx, &resp, f.agent); err != nil {
+				if err := processor.ProcessResponse(ctx, reqCtx, resp, f.agent); err != nil {
 					return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
 				}
 			}

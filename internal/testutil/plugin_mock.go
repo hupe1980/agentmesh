@@ -15,9 +15,9 @@ type PluginMock struct {
 	OnEventFunc      func(context.Context, core.RequestContext, *core.Event) (*core.Event, error)
 	BeforeAgentFunc  func(context.Context, core.CallbackContext, core.Agent) ([]core.Part, error)
 	AfterAgentFunc   func(context.Context, core.CallbackContext, core.Agent) ([]core.Part, error)
-	BeforeModelFunc  func(context.Context, core.CallbackContext, core.ModelRequest) (core.ModelResponse, error)
-	AfterModelFunc   func(context.Context, core.CallbackContext, core.ModelResponse) (core.ModelResponse, error)
-	OnModelErrorFunc func(context.Context, core.CallbackContext, core.ModelRequest, error) (core.ModelResponse, error)
+	BeforeModelFunc  func(context.Context, core.CallbackContext, *core.ModelRequest) (*core.ModelResponse, error)
+	AfterModelFunc   func(context.Context, core.CallbackContext, *core.ModelResponse) (*core.ModelResponse, error)
+	OnModelErrorFunc func(context.Context, core.CallbackContext, *core.ModelRequest, error) (*core.ModelResponse, error)
 	BeforeToolFunc   func(context.Context, core.Tool, core.ToolContext, map[string]any) (any, error)
 	AfterToolFunc    func(context.Context, core.Tool, core.ToolContext, map[string]any, any) (any, error)
 	OnToolErrorFunc  func(context.Context, core.Tool, core.ToolContext, map[string]any, error) (any, error)
@@ -62,33 +62,33 @@ func (m *PluginMock) AfterAgent(ctx context.Context, cb core.CallbackContext, a 
 func (m *PluginMock) BeforeModel(
 	ctx context.Context,
 	cb core.CallbackContext,
-	req core.ModelRequest,
-) (core.ModelResponse, error) {
+	req *core.ModelRequest,
+) (*core.ModelResponse, error) {
 	if m.BeforeModelFunc != nil {
 		return m.BeforeModelFunc(ctx, cb, req)
 	}
-	return core.ModelResponse{}, nil
+	return nil, nil
 }
 func (m *PluginMock) AfterModel(
 	ctx context.Context,
 	cb core.CallbackContext,
-	res core.ModelResponse,
-) (core.ModelResponse, error) {
+	res *core.ModelResponse,
+) (*core.ModelResponse, error) {
 	if m.AfterModelFunc != nil {
 		return m.AfterModelFunc(ctx, cb, res)
 	}
-	return core.ModelResponse{}, nil
+	return nil, nil
 }
 func (m *PluginMock) OnModelError(
 	ctx context.Context,
 	cb core.CallbackContext,
-	req core.ModelRequest,
+	req *core.ModelRequest,
 	err error,
-) (core.ModelResponse, error) {
+) (*core.ModelResponse, error) {
 	if m.OnModelErrorFunc != nil {
 		return m.OnModelErrorFunc(ctx, cb, req, err)
 	}
-	return core.ModelResponse{}, nil
+	return nil, nil
 }
 func (m *PluginMock) BeforeTool(
 	ctx context.Context,
