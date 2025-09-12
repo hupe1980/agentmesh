@@ -203,6 +203,10 @@ func (e *parallelFunctionExecutor) Execute(
 
 	// Fast path: single call
 	if n == 1 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, agent, toolRegistry, fnCalls[0])
 		if err != nil {
 			return err
@@ -244,6 +248,11 @@ func (e *parallelFunctionExecutor) Execute(
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			if err := ctx.Err(); err != nil {
+				addErr(fmt.Errorf("function %s (id=%s): canceled: %w", call.Name, call.ID, err))
+				return
+			}
+
 			ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, agent, toolRegistry, call)
 			if err != nil {
 				addErr(err)
@@ -264,6 +273,7 @@ func (e *parallelFunctionExecutor) Execute(
 	if len(errs) == 0 {
 		return nil
 	}
+
 	return errors.Join(errs...)
 }
 
