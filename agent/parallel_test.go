@@ -25,18 +25,6 @@ func TestNewParallelAgent(t *testing.T) {
 	assert.Same(t, c2, p.SubAgents()[1])
 }
 
-func makeRequestCtx(t *testing.T, agentID, agentName, agentType string) core.RequestContext {
-	t.Helper()
-	info := core.AgentInfo{Name: agentName, Type: agentType}
-	return core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         info,
-		UserParts:     []core.Part{core.TextPart{Text: "hello"}},
-		MaxModelCalls: 100,
-		Session:       core.NewSession("app", "user1", "sess1"),
-	})
-}
-
 func TestParallelAgent_Run_Success(t *testing.T) {
 	// Collect branches concurrently
 	var mu sync.Mutex
@@ -56,8 +44,9 @@ func TestParallelAgent_Run_Success(t *testing.T) {
 	c3 := mkChild("Child3")
 
 	p := NewParallelAgent("ParallelAgent", []core.Agent{c1, c2, c3})
-
-	reqCtx := makeRequestCtx(t, "p1", "ParallelAgent", "parallel")
+	reqCtx := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = p
+	})
 
 	err := p.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 	assert.NoError(t, err)
@@ -93,7 +82,9 @@ func TestParallelAgent_Run_ErrorAggregation(t *testing.T) {
 	)
 
 	p := NewParallelAgent("ParallelAgent", []core.Agent{c1, c2, c3})
-	reqCtx := makeRequestCtx(t, "p1", "ParallelAgent", "parallel")
+	reqCtx := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = p
+	})
 
 	err := p.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 	assert.Error(t, err)
@@ -109,7 +100,9 @@ func TestParallelAgent_Run_ErrorAggregation(t *testing.T) {
 
 func TestParallelAgent_Run_NoChildren(t *testing.T) {
 	p := NewParallelAgent("ParallelAgent", []core.Agent{})
-	reqCtx := makeRequestCtx(t, "p1", "ParallelAgent", "parallel")
+	reqCtx := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = p
+	})
 	err := p.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 	assert.NoError(t, err)
 }
@@ -126,7 +119,9 @@ func TestParallelAgent_Run_TimeoutWrap(t *testing.T) {
 	p := NewParallelAgent("P", []core.Agent{child}, func(o *ParallelAgentOptions) {
 		o.Timeout = 10 * time.Millisecond
 	})
-	reqCtx := makeRequestCtx(t, "p1", "P", "parallel")
+	reqCtx := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = p
+	})
 
 	start := time.Now()
 	err := p.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})

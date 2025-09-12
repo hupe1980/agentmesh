@@ -129,7 +129,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 			return queue.Write(c, ev)
 		})
 
-		if err := ExecuteAgent(ctx, reqCtx, l.child, intercept); err != nil {
+		if err := core.ExecuteAgent(ctx, reqCtx, l.child, intercept); err != nil {
 			if l.stopOnError {
 				return fmt.Errorf("loop iteration %d failed for agent %s: %w", i+1, l.child.Name(), err)
 			}

@@ -215,63 +215,62 @@ func (f *BaseFlow) stepCall(
 		return fmt.Errorf("failed to increment model calls: %w", err)
 	}
 
-	mdl := f.agent.Model()
-	respCh, errCh := mdl.Generate(ctx, fr.req)
-
-	var (
-		lastEvent *core.Event
-		fnCalls   []*core.FunctionCall
-	)
-
-	// Drain both channels and respect context cancellation to avoid leaks.
-	for respCh != nil || errCh != nil {
-		select {
-		case resp, ok := <-respCh:
-			if !ok {
-				respCh = nil
-				continue
+	// Wrap queue writer with response processor application logic.
+	procWriter := &responseProcessingWriter{
+		base:             queue,
+		processors:       f.responseProcessors,
+		agent:            f.agent,
+		ctx:              ctx,
+		reqCtx:           reqCtx,
+		captureLastEvent: func(ev *core.Event) { fr.lastEvent = ev },
+		captureFunctionCalls: func(ev *core.Event) {
+			if !ev.IsPartial() {
+				fr.fnCalls = ev.GetFunctionCalls()
 			}
-			if resp == nil { // skip nil pointer (used optionally as sentinel)
-				continue
-			}
-
-			for _, processor := range f.responseProcessors {
-				if err := processor.ProcessResponse(ctx, reqCtx, resp, f.agent); err != nil {
-					return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
-				}
-			}
-
-			ev := func() *core.Event {
-				if resp.Partial {
-					return core.NewPartialAssistantEvent(reqCtx.RunID(), f.agent.Name(), resp.Parts...)
-				}
-				return core.NewFullAssistantEvent(reqCtx.RunID(), f.agent.Name(), resp.Parts...)
-			}()
-
-			lastEvent = ev
-
-			if queue != nil {
-				if err := queue.Write(ctx, ev); err != nil {
-					return err
-				}
-			}
-
-			if !resp.Partial {
-				fnCalls = ev.GetFunctionCalls()
-			}
-		case err, ok := <-errCh:
-			if ok {
-				return fmt.Errorf("model generation failed for agent %s: %w", f.agent.Name(), err)
-			}
-			errCh = nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		},
 	}
 
-	fr.lastEvent = lastEvent
-	fr.fnCalls = fnCalls
+	// Execute model using shared executor.
+	_, err := ExecuteModel(ctx, reqCtx, f.agent, fr.req, procWriter)
+	if err != nil {
+		return fmt.Errorf("model execution failed: %w", err)
+	}
 
+	return nil
+}
+
+// responseProcessingWriter applies response processors before forwarding events
+// and captures last event and function calls.
+type responseProcessingWriter struct {
+	base                 core.EventWriter
+	processors           []ResponseProcessor
+	agent                Agent
+	ctx                  context.Context
+	reqCtx               core.RequestContext
+	captureLastEvent     func(*core.Event)
+	captureFunctionCalls func(*core.Event)
+}
+
+func (w *responseProcessingWriter) Write(_ context.Context, ev *core.Event) error {
+	// Build a synthetic ModelResponse for processors from event parts.
+	resp := &core.ModelResponse{Parts: ev.Parts, Partial: ev.IsPartial()}
+	for _, processor := range w.processors {
+		if err := processor.ProcessResponse(w.ctx, w.reqCtx, resp, w.agent); err != nil {
+			return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
+		}
+	}
+	// Emit event downstream.
+	if w.base != nil {
+		if err := w.base.Write(w.ctx, ev); err != nil {
+			return err
+		}
+	}
+	if w.captureLastEvent != nil {
+		w.captureLastEvent(ev)
+	}
+	if w.captureFunctionCalls != nil {
+		w.captureFunctionCalls(ev)
+	}
 	return nil
 }
 
@@ -306,8 +305,8 @@ func (f *BaseFlow) stepHandle(
 			return fmt.Errorf("failed to find agent '%s': %w", targetName, err)
 		}
 
-		// Execute the target agent with the current context
-		if err := targetAgent.Run(ctx, reqCtx, writer); err != nil {
+		// Execute the target agent
+		if err := core.ExecuteAgent(ctx, reqCtx, targetAgent, writer); err != nil {
 			return fmt.Errorf("failed to run agent '%s': %w", targetName, err)
 		}
 

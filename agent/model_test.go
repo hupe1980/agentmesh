@@ -27,10 +27,8 @@ func TestModelAgent_ResolveInstructions(t *testing.T) {
 	a := NewModelAgent("AgentX", nil, func(o *ModelAgentOptions) { o.Instructions = inst })
 
 	ctx := context.Background()
-	ro := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run",
-		Agent:   core.AgentInfo{Name: a.Name(), Type: "model"},
-		Session: core.NewSession("app", "user", "sess"),
+	ro := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
 	})
 
 	got, err := a.ResolveInstructions(ctx, ro)
@@ -89,18 +87,13 @@ func TestModelAgent_ToolRegistry(t *testing.T) {
 }
 
 // newReqCtx is a tiny helper to create a RequestContext for tests.
-func newReqCtx(t *testing.T, a *ModelAgent) core.RequestContext {
-	t.Helper()
-	return core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run-test",
-		Agent:   core.AgentInfo{Name: a.Name(), Type: "model"},
-		Session: core.NewSession("app", "user", "sess"),
-	})
-}
+// helper replaced by testutil.NewTestRequestContext
 
 func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
 	ev := core.NewFullAssistantEvent(req.RunID(), "OtherAgent", core.NewPartFromText("hello"))
 
@@ -112,7 +105,9 @@ func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
 
 func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
 	a := NewModelAgent("AgentA", nil) // no OutputKey
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
 	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("hello"))
 
@@ -124,9 +119,11 @@ func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
 
 func TestAttachOutputToEvent_NotFinal(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
-	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("partial"))
+	ev := core.NewFullAssistantEvent(req.RunID(), req.AgentName(), core.NewPartFromText("partial"))
 	ev.Partial = core.Bool(true) // mark non-final
 
 	a.attachOutputToEvent(ev)
@@ -137,7 +134,9 @@ func TestAttachOutputToEvent_NotFinal(t *testing.T) {
 
 func TestAttachOutputToEvent_NoParts(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
 	// No parts
 	ev := core.NewFullAssistantEvent(req.RunID(), a.Name())
@@ -151,7 +150,9 @@ func TestAttachOutputToEvent_NoParts(t *testing.T) {
 
 func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
 	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(),
 		core.NewPartFromText("Hello, "),
@@ -168,7 +169,9 @@ func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
 
 func TestAttachOutputToEvent_PreservesExistingState(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
-	req := newReqCtx(t, a)
+	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
+		rcp.Agent = a
+	})
 
 	ev := core.NewFullAssistantEvent(req.RunID(), a.Name(), core.NewPartFromText("val"))
 	ev.Actions.StateDelta = core.Map(map[string]any{"prev": 123})

@@ -2,10 +2,11 @@ package core
 
 import (
 	"context"
+	"fmt"
 )
 
-// Identity captures the common metadata exposed by agents.
-type Identity interface {
+// AgentIdentity captures the common metadata exposed by agents.
+type AgentIdentity interface {
 	// Name returns the human-readable name for this agent.
 	Name() string
 
@@ -13,8 +14,8 @@ type Identity interface {
 	Description() string
 }
 
-// Hierarchical exposes read-only tree navigation for agents.
-type Hierarchical interface {
+// HierarchicalAgent exposes read-only tree navigation for agents.
+type HierarchicalAgent interface {
 	// Parent returns the current parent agent or nil if this agent is root.
 	Parent() Agent
 
@@ -43,9 +44,9 @@ type Hierarchical interface {
 // complex workflows. Hierarchy mutation is handled by constructors; the
 // interface is read-only for traversal.
 type Agent interface {
-	Identity
+	AgentIdentity
 
-	Hierarchical
+	HierarchicalAgent
 
 	// Run executes the agent's processing logic.
 	Run(ctx context.Context, reqCtx RequestContext, writer EventWriter) error
@@ -55,9 +56,9 @@ type Agent interface {
 // It exposes capabilities and metadata without requiring the executable Run method.
 // Implemented by agent implementations to participate in flow orchestration.
 type FlowAgent interface {
-	Identity
+	AgentIdentity
 
-	Hierarchical
+	HierarchicalAgent
 
 	// ResolveInstructions returns the agent's instructions for the given context.
 	ResolveInstructions(ctx context.Context, roCtx ReadonlyContext) (string, error)
@@ -87,6 +88,52 @@ type FlowAgent interface {
 	OutputKey() string
 }
 
-// AgentInfo carries identifying details about an agent for contexts and events.
-// Name is the external identifier; Type categorizes implementation.
-type AgentInfo struct{ Name, Type string }
+// ExecuteAgent runs an agent with BeforeAgent / AfterAgent hook semantics.
+//
+// Lifecycle:
+//  1. BeforeAgent: if it returns a non-nil []Part, the agent's Run is skipped and
+//     those parts are emitted as a synthetic assistant event (short-circuit). AfterAgent still runs.
+//  2. Agent Run (only if not short-circuited) emits its normal events directly to the provided writer.
+//  3. AfterAgent: if it returns a non-nil []Part, a new assistant event is appended
+//     (it does not mutate or retract earlier output).
+//
+// History is strictly append-only; no prior events are modified or removed.
+func ExecuteAgent(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error {
+	// If the RequestContext's agent identity doesn't match the target agent's name,
+	// clone the context so emitted events have the correct Author. This centralizes
+	// transfer / delegation behavior so callers don't need to clone manually.
+	if reqCtx.AgentName() != ag.Name() { // lightweight check; cloning is cheap (shallow)
+		reqCtx = CloneRequestContextWithAgent(reqCtx, ag)
+	}
+
+	// BeforeAgent short-circuit path
+	if parts, err := reqCtx.RunBeforeAgent(ctx, ag); err != nil {
+		return fmt.Errorf("plugin: before_agent: %w", err)
+	} else if parts != nil {
+		assist := NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), parts...)
+		if err := w.Write(ctx, assist); err != nil {
+			return fmt.Errorf("failed to write synthetic assistant event: %w", err)
+		}
+		return runAfterAgent(ctx, reqCtx, ag, w)
+	}
+
+	if err := ag.Run(ctx, reqCtx, w); err != nil {
+		return err
+	}
+	return runAfterAgent(ctx, reqCtx, ag, w)
+}
+
+// runAfterAgent invokes the AfterAgent plugin hook and, if parts are returned,
+// appends a new assistant event. Returns any error encountered.
+func runAfterAgent(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error {
+	if afterParts, err := reqCtx.RunAfterAgent(ctx, ag); err != nil {
+		return fmt.Errorf("plugin: after_agent: %w", err)
+	} else if afterParts != nil {
+		repl := NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), afterParts...)
+		if err := w.Write(ctx, repl); err != nil {
+			return fmt.Errorf("failed to write after_agent replacement event: %w", err)
+		}
+	}
+
+	return nil
+}

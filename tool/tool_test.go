@@ -119,15 +119,15 @@ func dummyRequestContext() core.RequestContext {
 		panic(err)
 	}
 
-	return core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run1",
-		Agent:         core.AgentInfo{Name: "Agent", Type: "test"},
-		UserParts:     nil,
-		MaxModelCalls: 100,
-		Session:       core.NewSession(appName, userID, sessionID),
-		SessionStore:  sessSvc,
-		ArtifactStore: artSvc,
-		MemoryStore:   memSvc,
+	ag := testutil.NewMockAgent("Agent")
+	return testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = ag
+		p.RunID = "run1"
+		p.Session = core.NewSession(appName, userID, sessionID)
+		p.SessionStore = sessSvc
+		p.ArtifactStore = artSvc
+		p.MemoryStore = memSvc
+		p.MaxModelCalls = 100
 	})
 }
 

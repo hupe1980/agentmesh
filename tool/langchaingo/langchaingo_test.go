@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,7 @@ func TestLangChain_Call_Success(t *testing.T) {
 	wrapped := New(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
-		dummyRequestContext(),
+		testutil.NewTestRequestContext(),
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
@@ -80,7 +81,7 @@ func TestLangChain_Call_MissingArg(t *testing.T) {
 	wrapped := New(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
-		dummyRequestContext(),
+		testutil.NewTestRequestContext(),
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
@@ -97,7 +98,7 @@ func TestLangChain_Call_UnderlyingError(t *testing.T) {
 	wrapped := New(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
-		dummyRequestContext(),
+		testutil.NewTestRequestContext(),
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
@@ -108,14 +109,4 @@ func TestLangChain_Call_UnderlyingError(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "EXECUTION_ERROR", terr.Code)
 	assert.Contains(t, terr.Error(), "boom")
-}
-
-// helper: mimic testutil request context (simplified) without importing internal packages.
-func dummyRequestContext() core.RequestContext {
-	sess := core.NewSession("app", "user", "sess1")
-	return core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "test"},
-		Session: sess,
-	})
 }

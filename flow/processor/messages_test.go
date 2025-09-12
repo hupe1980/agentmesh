@@ -72,12 +72,13 @@ func TestMessagesProcessor_MaxAfterFilter(t *testing.T) {
 	)
 
 	// Request context on branch root.child with max 2 messages
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "r1",
-		Agent:         core.AgentInfo{Name: "agent", Type: "flow"},
-		UserParts:     []core.Part{core.NewPartFromText("hello")},
-		MaxModelCalls: 10,
-		Session:       sess,
+	ag := testutil.NewMockAgent("agent")
+	reqCtx := testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = ag
+		p.RunID = "r1"
+		p.UserParts = []core.Part{core.NewPartFromText("hello")}
+		p.MaxModelCalls = 10
+		p.Session = sess
 	})
 
 	// Manually set branch on request context via sub-agent branch helper

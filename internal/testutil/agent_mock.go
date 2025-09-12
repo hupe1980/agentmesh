@@ -173,3 +173,18 @@ func (m *MockAgent) OutputKey() string { return m.OutputKeyVal }
 
 // MaxHistoryMessages returns the configured max history size.
 func (m *MockAgent) MaxHistoryMessages() int { return m.MaxHistoryVal }
+
+type MockAgentIdentity struct {
+	name        string
+	description string
+}
+
+func NewMockAgentIdentity(name, description string) *MockAgentIdentity {
+	return &MockAgentIdentity{name: name, description: description}
+}
+
+func (a *MockAgentIdentity) Name() string        { return a.name }
+func (a *MockAgentIdentity) Description() string { return a.description }
+
+// Compile-time assertion
+var _ core.AgentIdentity = (*MockAgentIdentity)(nil)

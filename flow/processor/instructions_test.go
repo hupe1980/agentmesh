@@ -15,16 +15,23 @@ func TestInstructionsProcessor_Name(t *testing.T) {
 	assert.Equal(t, "instructions", NewInstructionsProcessor().Name())
 }
 
+func buildReqCtx(runID string, mutate func(sess *core.Session)) core.RequestContext {
+	sess := core.NewSession("app", "user", "sess")
+	if mutate != nil {
+		mutate(sess)
+	}
+	ag := testutil.NewMockAgent("agent")
+	return testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = ag
+		p.RunID = runID
+		p.Session = sess
+	})
+}
+
 func TestInstructionsProcessor_ProcessRequest_AppendsResolved(t *testing.T) {
 	p := NewInstructionsProcessor()
 	req := &core.ModelRequest{}
-
-	sess := core.NewSession("app", "user", "sess")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "flow"},
-		Session: sess,
-	})
+	reqCtx := buildReqCtx("run1", nil)
 
 	agent := testutil.NewMockAgent("a")
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {
@@ -39,14 +46,7 @@ func TestInstructionsProcessor_ProcessRequest_AppendsResolved(t *testing.T) {
 func TestInstructionsProcessor_ProcessRequest_RendersTemplateWithState(t *testing.T) {
 	p := NewInstructionsProcessor()
 	req := &core.ModelRequest{}
-
-	sess := core.NewSession("app", "user", "sess")
-	sess.SetState("user", "Alice")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "flow"},
-		Session: sess,
-	})
+	reqCtx := buildReqCtx("run1", func(sess *core.Session) { sess.SetState("user", "Alice") })
 
 	agent := testutil.NewMockAgent("a")
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {
@@ -61,15 +61,7 @@ func TestInstructionsProcessor_ProcessRequest_RendersTemplateWithState(t *testin
 func TestInstructionsProcessor_ProcessRequest_RendersDefaultWhenMissingKey(t *testing.T) {
 	p := NewInstructionsProcessor()
 	req := &core.ModelRequest{}
-
-	sess := core.NewSession("app", "user", "sess")
-	// Ensure snapshot is non-empty so templating is attempted, but omit the referenced key
-	sess.SetState("other", 1)
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "flow"},
-		Session: sess,
-	})
+	reqCtx := buildReqCtx("run1", func(sess *core.Session) { sess.SetState("other", 1) })
 
 	agent := testutil.NewMockAgent("a")
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {
@@ -84,13 +76,7 @@ func TestInstructionsProcessor_ProcessRequest_RendersDefaultWhenMissingKey(t *te
 func TestInstructionsProcessor_ProcessRequest_AppendsToExisting(t *testing.T) {
 	p := NewInstructionsProcessor()
 	req := &core.ModelRequest{Instructions: "system base"}
-
-	sess := core.NewSession("app", "user", "sess")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "flow"},
-		Session: sess,
-	})
+	reqCtx := buildReqCtx("run1", nil)
 
 	agent := testutil.NewMockAgent("a")
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {
@@ -105,13 +91,7 @@ func TestInstructionsProcessor_ProcessRequest_AppendsToExisting(t *testing.T) {
 func TestInstructionsProcessor_ProcessRequest_ErrorOnResolve(t *testing.T) {
 	p := NewInstructionsProcessor()
 	req := &core.ModelRequest{}
-
-	sess := core.NewSession("app", "user", "sess")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:   "run1",
-		Agent:   core.AgentInfo{Name: "agent", Type: "flow"},
-		Session: sess,
-	})
+	reqCtx := buildReqCtx("run1", nil)
 
 	agent := testutil.NewMockAgent("a")
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {

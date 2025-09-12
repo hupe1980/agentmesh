@@ -128,13 +128,7 @@ func TestLoopAgent_EscalationHandling(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			reqCtx := core.NewRequestContext(core.RequestContextParams{
-				RunID:         "run_id",
-				Agent:         core.AgentInfo{},
-				UserParts:     nil,
-				MaxModelCalls: 100,
-				Session:       core.NewSession("app", "user1", "sess1"),
-			})
+			reqCtx := itestutil.NewTestRequestContext()
 
 			q := &itestutil.CollectingWriter{}
 

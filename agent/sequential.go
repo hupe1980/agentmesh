@@ -52,7 +52,7 @@ func (s *SequentialAgent) Run(ctx context.Context, reqCtx core.RequestContext, q
 	// Execute child agents in sequence, propagating state between them
 	for _, child := range s.SubAgents() {
 		// Pass the same request context and queue to maintain shared state
-		if err := ExecuteAgent(ctx, reqCtx, child, queue); err != nil {
+		if err := core.ExecuteAgent(ctx, reqCtx, child, queue); err != nil {
 			return fmt.Errorf("sequential execution failed at agent %s: %w", child.Name(), err)
 		}
 	}

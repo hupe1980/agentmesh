@@ -93,32 +93,24 @@ func (m *MockModel) Info() core.ModelInfo { return m.info }
 func newTestRunContext() core.RequestContext {
 	sessSvc := session.NewInMemoryStore()
 	sess, _ := sessSvc.GetOrCreate(context.Background(), "app", "user1", "sess1")
-
+	ag := testutil.NewMockAgent("TestAgent")
 	userParts := []core.Part{core.NewPartFromText("test message")}
-
-	// Ensure current user message is present in history so ContentsProcessor includes it
 	sess.AddEvent(core.NewUserContentEvent("run_id", userParts...))
-
-	// Memory store mock
 	memStore := &testutil.MemoryStoreMock{
 		SearchFunc: func(_ context.Context, _, _ string, _ string) (*core.SearchResult, error) {
 			return &core.SearchResult{Memories: nil}, nil
 		},
 		AddSessionFunc: func(_ context.Context, _ *core.Session) error { return nil },
 	}
-
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         core.AgentInfo{Name: "TestAgent", Type: "flow-test"},
-		UserParts:     userParts,
-		MaxModelCalls: 100,
-		Session:       sess,
-		SessionStore:  sessSvc,
-		ArtifactStore: nil,
-		MemoryStore:   memStore,
+	return testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = ag
+		p.RunID = "run_id"
+		p.UserParts = userParts
+		p.MaxModelCalls = 100
+		p.Session = sess
+		p.SessionStore = sessSvc
+		p.MemoryStore = memStore
 	})
-
-	return reqCtx
 }
 
 func TestSingleAgentFlow(t *testing.T) {
@@ -130,9 +122,10 @@ func TestSingleAgentFlow(t *testing.T) {
 		return "You are a test assistant.", nil
 	}
 
-	runCtx := newTestRunContext()
+	//runCtx := newTestRunContext()
 
 	f := NewSingleAgentFlow(agent)
+	reqCtx := newTestRunContext()
 
 	events := make([]*core.Event, 0, 8)
 	eventCh := make(chan *core.Event, 64)
@@ -155,7 +148,7 @@ func TestSingleAgentFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	err := f.Execute(ctx, runCtx, q)
+	err := f.Execute(ctx, reqCtx, q)
 	require.NoError(t, err, "Flow execution failed")
 
 	// Close channel to stop collector and wait for it to drain.

@@ -7,14 +7,12 @@ import (
 	"sync"
 	"time"
 
-	agent "github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
 	"github.com/hupe1980/agentmesh/metrics"
-	"github.com/hupe1980/agentmesh/plugin"
 	"github.com/hupe1980/agentmesh/session"
 	"github.com/hupe1980/agentmesh/trace"
 )
@@ -86,7 +84,7 @@ func New(appName string, agent core.Agent, optFns ...func(o *Options)) *Runner {
 		SessionStore:    session.NewInMemoryStore(),
 		ArtifactStore:   artifact.NewInMemoryStore(),
 		MemoryStore:     memory.NewInMemoryStore(),
-		PluginManager:   plugin.NewManager(),
+		PluginManager:   core.NewPluginManager(),
 		Logger:          logging.NoopLogger{},
 		Metrics:         metrics.Noop(),
 		Tracer:          trace.Noop(),
@@ -149,10 +147,8 @@ func (r *Runner) Run(
 		return "", nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
-
 	// Build initial request context
-	reqCtx := r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+	reqCtx := r.buildRequestContext(runID, session, userParts, opts)
 
 	// BeforeRun hook: allows global setup / early short-circuit.
 	if resultsChan, err := func() (<-chan core.RunResult, error) {
@@ -175,7 +171,7 @@ func (r *Runner) Run(
 				return reqCtx.RunOnEvent(ctx, ev)
 			},
 		}
-		beforeEvent := core.NewFullAssistantEvent(runID, agentInfo.Name, parts...)
+		beforeEvent := core.NewFullAssistantEvent(runID, r.agent.Name(), parts...)
 		if err := writer.Write(ctx, beforeEvent); err != nil {
 			close(results)
 			return nil, fmt.Errorf("failed to write before_run event: %w", err)
@@ -204,7 +200,7 @@ func (r *Runner) Run(
 		return "", nil, err
 	} else if replaced != nil {
 		userParts = replaced
-		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+		reqCtx = r.buildRequestContext(runID, session, userParts, opts)
 	}
 
 	// Save blobs as artifacts if requested
@@ -215,7 +211,7 @@ func (r *Runner) Run(
 			return "", nil, err
 		}
 		userParts = updated
-		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+		reqCtx = r.buildRequestContext(runID, session, userParts, opts)
 	}
 
 	if len(userParts) == 0 {
@@ -310,14 +306,13 @@ func (r *Runner) Close() error {
 // buildRequestContext constructs a RequestContext for this run with the given inputs.
 func (r *Runner) buildRequestContext(
 	runID string,
-	agentInfo core.AgentInfo,
 	session *core.Session,
 	userParts []core.Part,
 	opts core.RunOptions,
 ) core.RequestContext {
 	return core.NewRequestContext(core.RequestContextParams{
 		RunID:         runID,
-		Agent:         agentInfo,
+		Agent:         r.agent,
 		UserParts:     userParts,
 		MaxModelCalls: opts.MaxModelCalls,
 		Session:       session,
@@ -471,7 +466,7 @@ func (r *Runner) launchRun(
 			r.wg.Done()
 		}()
 
-		if err := agent.ExecuteAgent(ctx, reqCtx, r.agent, writer); err != nil {
+		if err := core.ExecuteAgent(ctx, reqCtx, r.agent, writer); err != nil {
 			select {
 			case <-ctx.Done():
 				return

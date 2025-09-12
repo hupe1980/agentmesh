@@ -41,7 +41,6 @@ type ReadonlyContext interface {
 	SessionID() string
 	RunID() string
 	AgentName() string
-	AgentType() string
 
 	// State access
 	StateSnapshotter
@@ -74,6 +73,9 @@ type RequestContext interface {
 	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
 	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any) (any, error)
 	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, result any) (any, error)
+	RunBeforeModel(ctx context.Context, req *ModelRequest) (*ModelResponse, error)
+	RunAfterModel(ctx context.Context, res *ModelResponse) (*ModelResponse, error)
+	RunOnModelError(ctx context.Context, req *ModelRequest, err error) (*ModelResponse, error)
 
 	// Branching
 	NewBranchContextForSubAgent(branchName string) RequestContext
@@ -123,7 +125,7 @@ type ToolContext interface {
 
 type requestContext struct {
 	runID         string
-	agent         AgentInfo
+	agent         AgentIdentity
 	userParts     []Part
 	maxModelCalls int
 	sessionStore  SessionStore
@@ -135,11 +137,24 @@ type requestContext struct {
 	branch        string
 }
 
+// CloneRequestContextWithAgent returns a shallow clone of the provided RequestContext
+// with AgentIdentity replaced. Internal pointers (session, stores, limiter) are shared.
+// If the underlying implementation is unknown, the original context is returned.
+func CloneRequestContextWithAgent(rc RequestContext, agent AgentIdentity) RequestContext {
+	if impl, ok := rc.(*requestContext); ok {
+		clone := *impl
+		clone.agent = agent
+		return &clone
+	}
+
+	return rc
+}
+
 // RequestContextParams groups the inputs required to construct a RequestContext.
 // Using a struct improves readability and makes call sites less error-prone.
 type RequestContextParams struct {
 	RunID         string
-	Agent         AgentInfo
+	Agent         AgentIdentity
 	UserParts     []Part
 	MaxModelCalls int
 	Session       *Session
@@ -170,8 +185,7 @@ func (rc *requestContext) AppName() string   { return rc.session.AppName() }
 func (rc *requestContext) UserID() string    { return rc.session.UserID() }
 func (rc *requestContext) SessionID() string { return rc.session.ID() }
 func (rc *requestContext) RunID() string     { return rc.runID }
-func (rc *requestContext) AgentName() string { return rc.agent.Name }
-func (rc *requestContext) AgentType() string { return rc.agent.Type }
+func (rc *requestContext) AgentName() string { return rc.agent.Name() }
 
 // StateSnapshot returns a merged, read-only view of session state with staged
 // delta applied (delta overrides persisted values). A nil map indicates no state.
@@ -298,10 +312,29 @@ func (rc *requestContext) RunAfterTool(
 	return rc.pluginManager.RunAfterTool(ctx, tool, toolCtx, toolArgs, result)
 }
 
-// GetAgentName returns the logical agent name for this invocation.
-// Backward helpers retained for internal wrappers
-func (rc *requestContext) GetAgentName() string { return rc.agent.Name }
-func (rc *requestContext) GetAgentType() string { return rc.agent.Type }
+// RunBeforeModel executes the BeforeModel hook chain.
+func (rc *requestContext) RunBeforeModel(ctx context.Context, req *ModelRequest) (*ModelResponse, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
+	return rc.pluginManager.RunBeforeModel(ctx, rc, req)
+}
+
+// RunAfterModel executes the AfterModel hook chain.
+func (rc *requestContext) RunAfterModel(ctx context.Context, res *ModelResponse) (*ModelResponse, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
+	return rc.pluginManager.RunAfterModel(ctx, rc, res)
+}
+
+// RunOnModelError executes the OnModelError hook chain for model invocation errors.
+func (rc *requestContext) RunOnModelError(ctx context.Context, req *ModelRequest, err error) (*ModelResponse, error) {
+	if rc.pluginManager == nil {
+		return nil, err
+	}
+	return rc.pluginManager.RunOnModelError(ctx, rc, req, err)
+}
 
 // NewBranchContextForSubAgent creates a branched RequestContext for a sub-agent.
 // The branch shares the underlying session and stores but carries a distinct branch name.

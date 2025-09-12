@@ -41,26 +41,12 @@ func TestSequentialAgent_Run_Success(t *testing.T) {
 
 	agent := NewSequentialAgent("Sequential Agent", []core.Agent{child1, child2, child3})
 
-	ctx := context.Background()
-
-	sess := core.NewSession("app", "user1", "sess1")
-	agentInfo := core.AgentInfo{
-		Name: "Sequential Agent",
-		Type: "sequential",
-	}
-
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         agentInfo,
-		UserParts:     []core.Part{core.TextPart{Text: "test input"}},
-		MaxModelCalls: 100,
-		Session:       sess,
-		SessionStore:  nil,
-		ArtifactStore: nil,
-		MemoryStore:   nil,
+	reqCtx := testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = agent
+		p.UserParts = []core.Part{core.TextPart{Text: "test input"}}
 	})
 
-	err := agent.Run(ctx, reqCtx, testutil.DiscardingWriter{})
+	err := agent.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 
 	assert.NoError(t, err)
 }
@@ -80,17 +66,12 @@ func TestSequentialAgent_Run_FirstChildError(t *testing.T) {
 
 	agent := NewSequentialAgent("Sequential Agent", []core.Agent{child1, child2})
 
-	ctx := context.Background()
-	sess := core.NewSession("app", "user1", "sess1")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
-		UserParts:     []core.Part{core.TextPart{Text: "test input"}},
-		MaxModelCalls: 100,
-		Session:       sess,
+	reqCtx := testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = agent
+		p.UserParts = []core.Part{core.TextPart{Text: "test input"}}
 	})
 
-	err := agent.Run(ctx, reqCtx, testutil.DiscardingWriter{})
+	err := agent.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinel) // Check that the original error is wrapped
@@ -99,17 +80,12 @@ func TestSequentialAgent_Run_FirstChildError(t *testing.T) {
 func TestSequentialAgent_Run_NoChildren(t *testing.T) {
 	agent := NewSequentialAgent("Sequential Agent", []core.Agent{})
 
-	ctx := context.Background()
-	sess := core.NewSession("app", "user1", "sess1")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
-		UserParts:     []core.Part{core.TextPart{Text: "test input"}},
-		MaxModelCalls: 100,
-		Session:       sess,
+	reqCtx := testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = agent
+		p.UserParts = []core.Part{core.TextPart{Text: "test input"}}
 	})
 
-	err := agent.Run(ctx, reqCtx, testutil.DiscardingWriter{})
+	err := agent.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 	assert.NoError(t, err)
 }
 
@@ -125,17 +101,12 @@ func TestSequentialAgent_ContextPropagation(t *testing.T) {
 
 	agent := NewSequentialAgent("Sequential Agent", []core.Agent{child1, child2})
 
-	ctx := context.Background()
-	sess := core.NewSession("app", "user1", "sess1")
-	reqCtx := core.NewRequestContext(core.RequestContextParams{
-		RunID:         "run_id",
-		Agent:         core.AgentInfo{Name: "Sequential Agent", Type: "sequential"},
-		UserParts:     []core.Part{core.TextPart{Text: "test input"}},
-		MaxModelCalls: 100,
-		Session:       sess,
+	reqCtx := testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = agent
+		p.UserParts = []core.Part{core.TextPart{Text: "test input"}}
 	})
 
-	err := agent.Run(ctx, reqCtx, testutil.DiscardingWriter{})
+	err := agent.Run(context.Background(), reqCtx, testutil.DiscardingWriter{})
 
 	assert.NoError(t, err)
 	assert.Equal(t, reqCtx.RunID(), child1.ReceivedCtx().RunID())

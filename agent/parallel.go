@@ -81,7 +81,7 @@ func (p *ParallelAgent) Run(ctx context.Context, reqCtx core.RequestContext, wri
 			}
 
 			// Execute child agent with isolated context
-			if err := ExecuteAgent(ctx, branchCtx, c, writer); err != nil {
+			if err := core.ExecuteAgent(ctx, branchCtx, c, writer); err != nil {
 				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					err = fmt.Errorf("parallel execution timed out for agent %s: %w", c.Name(), core.ErrParallelTimeout)
 				}
