@@ -62,6 +62,42 @@ func (m *manager) RunOnEvent(
 	return nil, nil
 }
 
+// RunBeforeAgent executes BeforeAgent hooks until one returns non-nil parts.
+func (m *manager) RunBeforeAgent(
+	ctx context.Context,
+	cbCtx core.CallbackContext,
+	agent core.Agent,
+) ([]core.Part, error) {
+	for _, p := range m.plugins {
+		out, err := p.BeforeAgent(ctx, cbCtx, agent)
+		if err != nil {
+			return nil, err
+		}
+		if out != nil {
+			return out, nil
+		}
+	}
+	return nil, nil
+}
+
+// RunAfterAgent executes AfterAgent hooks until one returns non-nil parts.
+func (m *manager) RunAfterAgent(
+	ctx context.Context,
+	cbCtx core.CallbackContext,
+	agent core.Agent,
+) ([]core.Part, error) {
+	for _, p := range m.plugins {
+		out, err := p.AfterAgent(ctx, cbCtx, agent)
+		if err != nil {
+			return nil, err
+		}
+		if out != nil {
+			return out, nil
+		}
+	}
+	return nil, nil
+}
+
 // RunBeforeRun executes the BeforeRun hook across all plugins in order.
 // If any plugin returns a non-nil []Part, it short-circuits and returns it.
 func (m *manager) RunBeforeRun(ctx context.Context, reqCtx core.RequestContext) ([]core.Part, error) {

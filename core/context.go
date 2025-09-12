@@ -66,6 +66,8 @@ type RequestContext interface {
 
 	// PluginManager
 	RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error)
+	RunBeforeAgent(ctx context.Context, agent Agent) ([]Part, error)
+	RunAfterAgent(ctx context.Context, agent Agent) ([]Part, error)
 	RunOnEvent(ctx context.Context, event *Event) (*Event, error)
 	RunBeforeRun(ctx context.Context) ([]Part, error)
 	RunAfterRun(ctx context.Context) error
@@ -209,21 +211,49 @@ func (rc *requestContext) GetSessionHistory() []*Event {
 
 // RunOnUserParts executes the OnUserParts hook across all plugins in order.
 func (rc *requestContext) RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
 	return rc.pluginManager.RunOnUserParts(ctx, rc, userParts)
 }
 
 // RunOnEvent executes the OnEvent hook chain allowing mutation of events.
 func (rc *requestContext) RunOnEvent(ctx context.Context, event *Event) (*Event, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
 	return rc.pluginManager.RunOnEvent(ctx, rc, event)
+}
+
+// RunBeforeAgent executes BeforeAgent hooks.
+func (rc *requestContext) RunBeforeAgent(ctx context.Context, agent Agent) ([]Part, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
+	return rc.pluginManager.RunBeforeAgent(ctx, rc, agent)
+}
+
+// RunAfterAgent executes AfterAgent hooks.
+func (rc *requestContext) RunAfterAgent(ctx context.Context, agent Agent) ([]Part, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
+	return rc.pluginManager.RunAfterAgent(ctx, rc, agent)
 }
 
 // RunBeforeRun executes the BeforeRun hook across all plugins in order.
 func (rc *requestContext) RunBeforeRun(ctx context.Context) ([]Part, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
 	return rc.pluginManager.RunBeforeRun(ctx, rc)
 }
 
 // RunAfterRun executes the AfterRun hook across all plugins in order.
 func (rc *requestContext) RunAfterRun(ctx context.Context) error {
+	if rc.pluginManager == nil {
+		return nil
+	}
 	return rc.pluginManager.RunAfterRun(ctx, rc)
 }
 
@@ -235,6 +265,9 @@ func (rc *requestContext) RunOnToolError(
 	toolArgs map[string]any,
 	err error,
 ) (any, error) {
+	if rc.pluginManager == nil {
+		return nil, err
+	}
 	return rc.pluginManager.RunOnToolError(ctx, tool, toolCtx, toolArgs, err)
 }
 
@@ -245,6 +278,9 @@ func (rc *requestContext) RunBeforeTool(
 	toolCtx ToolContext,
 	toolArgs map[string]any,
 ) (any, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
 	return rc.pluginManager.RunBeforeTool(ctx, tool, toolCtx, toolArgs)
 }
 
@@ -256,6 +292,9 @@ func (rc *requestContext) RunAfterTool(
 	toolArgs map[string]any,
 	result any,
 ) (any, error) {
+	if rc.pluginManager == nil {
+		return nil, nil
+	}
 	return rc.pluginManager.RunAfterTool(ctx, tool, toolCtx, toolArgs, result)
 }
 

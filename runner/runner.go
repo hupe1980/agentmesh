@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	agent "github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/util"
@@ -470,7 +471,7 @@ func (r *Runner) launchRun(
 			r.wg.Done()
 		}()
 
-		if err := r.agent.Run(ctx, reqCtx, writer); err != nil {
+		if err := agent.ExecuteAgent(ctx, reqCtx, r.agent, writer); err != nil {
 			select {
 			case <-ctx.Done():
 				return
