@@ -15,6 +15,12 @@ require (
 )
 
 require (
+	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
+	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254 // indirect
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -24,6 +30,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/tmc/langchaingo v0.1.13
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
