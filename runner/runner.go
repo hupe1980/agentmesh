@@ -18,7 +18,7 @@ import (
 	"github.com/hupe1980/agentmesh/trace"
 )
 
-// Options holds dependency + configuration overrides passed to New().
+// Options for configuring the Runner.
 type Options struct {
 	// EnableStreaming toggles real-time event streaming vs buffered.
 	EnableStreaming bool
@@ -111,6 +111,188 @@ func New(appName string, agent core.Agent, optFns ...func(o *Options)) *Runner {
 		},
 		activeRuns: make(map[string]context.CancelFunc),
 	}
+}
+
+// Run starts an asynchronous invocation. (Refactored wiring + small helpers)
+func (r *Runner) Run(
+	ctx context.Context,
+	userID, sessionID string,
+	userParts []core.Part,
+	optFns ...func(o *core.RunOptions),
+) (string, <-chan core.RunResult, error) {
+	runID := util.NewID()
+
+	// Prepare context & observability (logger, metrics, tracing)
+	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, runID, sessionID)
+
+	// Register active run cancel func
+	r.registerRun(runID, cancel)
+
+	// Ensure duration recorded & span ended when Run returns.
+	defer func() {
+		// record duration
+		r.recordRunDuration(ctx, sp, start)
+	}()
+
+	// Increment metric for run count
+	r.svc.metrics.Counter("agentmesh_runs_total").
+		Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
+
+	// Apply options
+	opts := r.buildRunOptions(optFns)
+
+	// Load or create session
+	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
+	if err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
+	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
+
+	// Build initial request context
+	reqCtx := r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+
+	// BeforeRun hook: allows global setup / early short-circuit.
+	if resultsChan, err := func() (<-chan core.RunResult, error) {
+		parts, err := reqCtx.RunBeforeRun(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("plugin: before_run: %w", err)
+		}
+
+		if parts == nil {
+			return nil, nil
+		}
+
+		results := make(chan core.RunResult, 1)
+		writer := &sessionWriter{runID: runID, session: session, store: r.svc.sessionStore, results: results}
+		beforeEvent := core.NewFullAssistantEvent(runID, agentInfo.Name, parts...)
+		if err := writer.Write(ctx, beforeEvent); err != nil {
+			close(results)
+			return nil, fmt.Errorf("failed to write before_run event: %w", err)
+		}
+
+		// AfterRun still invoked for short-circuited runs.
+		if err := reqCtx.RunAfterRun(ctx); err != nil {
+			close(results)
+			return nil, fmt.Errorf("plugin: after_run: %w", err)
+		}
+
+		results <- core.RunResult{RunID: runID, Event: beforeEvent}
+		close(results)
+		return results, nil
+	}(); err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, err
+	} else if resultsChan != nil {
+		runLogger.Info("run finished (before_run short-circuit)", "session_id", sessionID)
+		return runID, resultsChan, nil
+	}
+
+	// Allow plugins to observe/modify the incoming user parts.
+	if replaced, err := r.onUserParts(ctx, reqCtx, userParts); err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, err
+	} else if replaced != nil {
+		userParts = replaced
+		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+	}
+
+	// Save blobs as artifacts if requested
+	if opts.SaveInputBlobsAsArtifacts {
+		updated, err := r.rewriteBlobsAsArtifacts(ctx, r.appName, userID, sessionID, userParts)
+		if err != nil {
+			r.unregisterRunAndCancel(runID)
+			return "", nil, err
+		}
+		userParts = updated
+		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
+	}
+
+	if len(userParts) == 0 {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, fmt.Errorf("no user parts provided")
+	}
+
+	// Record the initial user content
+	userEvent := core.NewUserContentEvent(runID, userParts...)
+	if opts.StateDelta != nil {
+		userEvent.Actions.StateDelta = core.Map(opts.StateDelta)
+	}
+
+	results := make(chan core.RunResult, r.eventBufferSize)
+	writer := &sessionWriter{
+		runID:   runID,
+		session: session,
+		store:   r.svc.sessionStore,
+		results: results,
+	}
+	if err := writer.Write(ctx, userEvent); err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, fmt.Errorf("failed to write user event: %w", err)
+	}
+
+	runLogger.Info("run started", "session_id", sessionID)
+
+	// Launch asynchronous execution goroutine (keeps same semantics as before).
+	r.launchRun(ctx, runID, reqCtx, writer, results, runLogger, sessionID)
+
+	return runID, results, nil
+}
+
+// Cancel cancels a running run by ID.
+func (r *Runner) Cancel(runID string) error {
+	r.mu.Lock()
+	cancel, exists := r.activeRuns[runID]
+	if exists {
+		delete(r.activeRuns, runID)
+	}
+	r.mu.Unlock()
+
+	if !exists {
+		return fmt.Errorf("%w: id=%s", core.ErrRunNotFound, runID)
+	}
+
+	if cancel != nil {
+		cancel()
+	}
+
+	return nil
+}
+
+// Close waits for all active runs to finish and closes stores if supported.
+func (r *Runner) Close() error {
+	r.wg.Wait()
+
+	// storeClosers holds the list of stores that need to be closed.
+	type storeCloser struct {
+		name  string
+		store interface{ Close() error }
+	}
+
+	stores := []storeCloser{
+		{"session", r.svc.sessionStore},
+		{"artifact", r.svc.artifactStore},
+		{"memory", r.svc.memoryStore},
+	}
+
+	var errs []error
+	for _, s := range stores {
+		if s.store != nil {
+			if err := s.store.Close(); err != nil {
+				// Log each failure for observability at shutdown.
+				r.svc.logger.Error("store close failed", "app", r.appName, "store", s.name, "error", err)
+
+				errs = append(errs, fmt.Errorf("%s: close: %w", s.name, err))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	return nil
 }
 
 // buildRequestContext constructs a RequestContext for this run with the given inputs.
@@ -288,133 +470,6 @@ func (r *Runner) launchRun(
 	}()
 }
 
-// Run starts an asynchronous invocation. (Refactored wiring + small helpers)
-func (r *Runner) Run(
-	ctx context.Context,
-	userID, sessionID string,
-	userParts []core.Part,
-	optFns ...func(o *core.RunOptions),
-) (string, <-chan core.RunResult, error) {
-	runID := util.NewID()
-
-	// Prepare context & observability (logger, metrics, tracing)
-	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, runID, sessionID)
-
-	// Register active run cancel func
-	r.registerRun(runID, cancel)
-
-	// Ensure duration recorded & span ended when Run returns.
-	defer func() {
-		// record duration
-		r.recordRunDuration(ctx, sp, start)
-	}()
-
-	// Increment metric for run count
-	r.svc.metrics.Counter("agentmesh_runs_total").
-		Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
-
-	// Apply options
-	opts := r.buildRunOptions(optFns)
-
-	// Load or create session
-	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
-	if err != nil {
-		r.unregisterRunAndCancel(runID)
-		return "", nil, fmt.Errorf("failed to get session: %w", err)
-	}
-
-	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
-
-	// Build initial request context
-	reqCtx := r.buildRequestContext(runID, agentInfo, session, userParts, opts)
-
-	// BeforeRun hook: allows global setup / early short-circuit.
-	if resultsChan, err := func() (<-chan core.RunResult, error) {
-		parts, err := reqCtx.RunBeforeRun(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("plugin: before_run: %w", err)
-		}
-
-		if parts == nil {
-			return nil, nil
-		}
-
-		results := make(chan core.RunResult, 1)
-		writer := &sessionWriter{runID: runID, session: session, store: r.svc.sessionStore, results: results}
-		beforeEvent := core.NewFullAssistantEvent(runID, agentInfo.Name, parts...)
-		if err := writer.Write(ctx, beforeEvent); err != nil {
-			close(results)
-			return nil, fmt.Errorf("failed to write before_run event: %w", err)
-		}
-
-		// AfterRun still invoked for short-circuited runs.
-		if err := reqCtx.RunAfterRun(ctx); err != nil {
-			close(results)
-			return nil, fmt.Errorf("plugin: after_run: %w", err)
-		}
-
-		results <- core.RunResult{RunID: runID, Event: beforeEvent}
-		close(results)
-		return results, nil
-	}(); err != nil {
-		r.unregisterRunAndCancel(runID)
-		return "", nil, err
-	} else if resultsChan != nil {
-		runLogger.Info("run finished (before_run short-circuit)", "session_id", sessionID)
-		return runID, resultsChan, nil
-	}
-
-	// Allow plugins to observe/modify the incoming user parts.
-	if replaced, err := r.onUserParts(ctx, reqCtx, userParts); err != nil {
-		r.unregisterRunAndCancel(runID)
-		return "", nil, err
-	} else if replaced != nil {
-		userParts = replaced
-		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
-	}
-
-	// Save blobs as artifacts if requested
-	if opts.SaveInputBlobsAsArtifacts {
-		updated, err := r.rewriteBlobsAsArtifacts(ctx, r.appName, userID, sessionID, userParts)
-		if err != nil {
-			r.unregisterRunAndCancel(runID)
-			return "", nil, err
-		}
-		userParts = updated
-		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
-	}
-
-	if len(userParts) == 0 {
-		r.unregisterRunAndCancel(runID)
-		return "", nil, fmt.Errorf("no user parts provided")
-	}
-
-	// Record the initial user content
-	userEvent := core.NewUserContentEvent(runID, userParts...)
-	if opts.StateDelta != nil {
-		userEvent.Actions.StateDelta = core.Map(opts.StateDelta)
-	}
-
-	results := make(chan core.RunResult, r.eventBufferSize)
-	writer := &sessionWriter{
-		runID:   runID,
-		session: session,
-		store:   r.svc.sessionStore,
-		results: results,
-	}
-	if err := writer.Write(ctx, userEvent); err != nil {
-		r.unregisterRunAndCancel(runID)
-		return "", nil, fmt.Errorf("failed to write user event: %w", err)
-	}
-
-	runLogger.Info("run started", "session_id", sessionID)
-
-	// Launch asynchronous execution goroutine (keeps same semantics as before).
-	r.launchRun(ctx, runID, reqCtx, writer, results, runLogger, sessionID)
-
-	return runID, results, nil
-}
-
 func (r *Runner) onUserParts(
 	ctx context.Context,
 	reqCtx core.RequestContext,
@@ -456,59 +511,4 @@ func (r *Runner) unregisterRunAndCancel(runID string) {
 	if ok && cancel != nil {
 		cancel()
 	}
-}
-
-// Cancel cancels a running run by ID.
-func (r *Runner) Cancel(runID string) error {
-	r.mu.Lock()
-	cancel, exists := r.activeRuns[runID]
-	if exists {
-		delete(r.activeRuns, runID)
-	}
-	r.mu.Unlock()
-
-	if !exists {
-		return fmt.Errorf("%w: id=%s", core.ErrRunNotFound, runID)
-	}
-
-	if cancel != nil {
-		cancel()
-	}
-
-	return nil
-}
-
-// Close waits for all active runs to finish and closes stores if supported.
-func (r *Runner) Close() error {
-	r.wg.Wait()
-
-	// storeClosers holds the list of stores that need to be closed.
-	type storeCloser struct {
-		name  string
-		store interface{ Close() error }
-	}
-
-	stores := []storeCloser{
-		{"session", r.svc.sessionStore},
-		{"artifact", r.svc.artifactStore},
-		{"memory", r.svc.memoryStore},
-	}
-
-	var errs []error
-	for _, s := range stores {
-		if s.store != nil {
-			if err := s.store.Close(); err != nil {
-				// Log each failure for observability at shutdown.
-				r.svc.logger.Error("store close failed", "app", r.appName, "store", s.name, "error", err)
-
-				errs = append(errs, fmt.Errorf("%s: close: %w", s.name, err))
-			}
-		}
-	}
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-
-	return nil
 }
