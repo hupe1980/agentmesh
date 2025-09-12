@@ -66,6 +66,7 @@ type RequestContext interface {
 
 	// PluginManager
 	RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error)
+	RunOnEvent(ctx context.Context, event *Event) (*Event, error)
 	RunBeforeRun(ctx context.Context) ([]Part, error)
 	RunAfterRun(ctx context.Context) error
 	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
@@ -209,6 +210,11 @@ func (rc *requestContext) GetSessionHistory() []*Event {
 // RunOnUserParts executes the OnUserParts hook across all plugins in order.
 func (rc *requestContext) RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error) {
 	return rc.pluginManager.RunOnUserParts(ctx, rc, userParts)
+}
+
+// RunOnEvent executes the OnEvent hook chain allowing mutation of events.
+func (rc *requestContext) RunOnEvent(ctx context.Context, event *Event) (*Event, error) {
+	return rc.pluginManager.RunOnEvent(ctx, rc, event)
 }
 
 // RunBeforeRun executes the BeforeRun hook across all plugins in order.

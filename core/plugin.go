@@ -111,6 +111,12 @@ type PluginManager interface {
 	// RunOnUserParts runs the OnUserParts hook across all plugins and returns the first non-nil replacement.
 	RunOnUserParts(ctx context.Context, reqCtx RequestContext, userParts []Part) ([]Part, error)
 
+	// RunOnEvent executes the OnEvent hook across all plugins in order, allowing
+	// each to inspect or modify the event. Implementations should pass the
+	// (possibly replaced) event to subsequent plugins. A non-nil *Event returned
+	// by a plugin replaces the current event. Errors abort processing.
+	RunOnEvent(ctx context.Context, reqCtx RequestContext, event *Event) (*Event, error)
+
 	// RunBeforeRun executes the BeforeRun hook across all plugins in order.
 	RunBeforeRun(ctx context.Context, reqCtx RequestContext) ([]Part, error)
 

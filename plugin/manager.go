@@ -39,6 +39,29 @@ func (m *manager) RunOnUserParts(
 	return nil, nil
 }
 
+// RunOnEvent executes OnEvent across plugins sequentially, feeding the (possibly
+// replaced) event into the next plugin. Returns final replacement (if any).
+func (m *manager) RunOnEvent(
+	ctx context.Context,
+	reqCtx core.RequestContext,
+	event *core.Event,
+) (*core.Event, error) {
+	cur := event
+	for _, p := range m.plugins {
+		out, err := p.OnEvent(ctx, reqCtx, cur)
+		if err != nil {
+			return nil, err
+		}
+		if out != nil {
+			cur = out
+		}
+	}
+	if cur != event {
+		return cur, nil
+	}
+	return nil, nil
+}
+
 // RunBeforeRun executes the BeforeRun hook across all plugins in order.
 // If any plugin returns a non-nil []Part, it short-circuits and returns it.
 func (m *manager) RunBeforeRun(ctx context.Context, reqCtx core.RequestContext) ([]core.Part, error) {

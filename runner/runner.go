@@ -165,7 +165,15 @@ func (r *Runner) Run(
 		}
 
 		results := make(chan core.RunResult, 1)
-		writer := &sessionWriter{runID: runID, session: session, store: r.svc.sessionStore, results: results}
+		writer := &sessionWriter{
+			runID:   runID,
+			session: session,
+			store:   r.svc.sessionStore,
+			results: results,
+			onEvent: func(ctx context.Context, ev *core.Event) (*core.Event, error) {
+				return reqCtx.RunOnEvent(ctx, ev)
+			},
+		}
 		beforeEvent := core.NewFullAssistantEvent(runID, agentInfo.Name, parts...)
 		if err := writer.Write(ctx, beforeEvent); err != nil {
 			close(results)
@@ -226,6 +234,9 @@ func (r *Runner) Run(
 		session: session,
 		store:   r.svc.sessionStore,
 		results: results,
+		onEvent: func(ctx context.Context, ev *core.Event) (*core.Event, error) {
+			return reqCtx.RunOnEvent(ctx, ev)
+		},
 	}
 	if err := writer.Write(ctx, userEvent); err != nil {
 		r.unregisterRunAndCancel(runID)
