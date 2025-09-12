@@ -64,7 +64,13 @@ type RequestContext interface {
 	// Session history
 	SessionReader
 
-	PluginManager
+	// PluginManager
+	RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error)
+	RunBeforeRun(ctx context.Context) ([]Part, error)
+	RunAfterRun(ctx context.Context) error
+	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
+	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any) (any, error)
+	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, result any) (any, error)
 
 	// Branching
 	NewBranchContextForSubAgent(branchName string) RequestContext
@@ -201,18 +207,18 @@ func (rc *requestContext) GetSessionHistory() []*Event {
 }
 
 // RunOnUserParts executes the OnUserParts hook across all plugins in order.
-func (rc *requestContext) RunOnUserParts(ctx context.Context, reqCtx RequestContext, userParts []Part) ([]Part, error) {
-	return rc.pluginManager.RunOnUserParts(ctx, reqCtx, userParts)
+func (rc *requestContext) RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error) {
+	return rc.pluginManager.RunOnUserParts(ctx, rc, userParts)
 }
 
 // RunBeforeRun executes the BeforeRun hook across all plugins in order.
-func (rc *requestContext) RunBeforeRun(ctx context.Context, reqCtx RequestContext) ([]Part, error) {
-	return rc.pluginManager.RunBeforeRun(ctx, reqCtx)
+func (rc *requestContext) RunBeforeRun(ctx context.Context) ([]Part, error) {
+	return rc.pluginManager.RunBeforeRun(ctx, rc)
 }
 
 // RunAfterRun executes the AfterRun hook across all plugins in order.
-func (rc *requestContext) RunAfterRun(ctx context.Context, reqCtx RequestContext) error {
-	return rc.pluginManager.RunAfterRun(ctx, reqCtx)
+func (rc *requestContext) RunAfterRun(ctx context.Context) error {
+	return rc.pluginManager.RunAfterRun(ctx, rc)
 }
 
 // RunOnToolError executes the OnToolError hook across all plugins in order.

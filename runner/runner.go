@@ -48,6 +48,17 @@ type Options struct {
 	Tracer trace.Provider
 }
 
+// services groups the various stores and services used by the runner.
+type services struct {
+	sessionStore  core.SessionStore
+	artifactStore core.ArtifactStore
+	memoryStore   core.MemoryStore
+	pluginManager core.PluginManager
+	logger        logging.Logger
+	metrics       metrics.Provider
+	tracer        trace.Provider
+}
+
 // Runner coordinates agent execution: resolves the root agent, creates
 // invocation contexts, streams events, applies side-effects, and persists
 // history. Public methods are safe for concurrent use.
@@ -58,13 +69,7 @@ type Runner struct {
 	enableStreaming bool
 	eventBufferSize int
 
-	sessionStore  core.SessionStore
-	artifactStore core.ArtifactStore
-	memoryStore   core.MemoryStore
-	pluginManager core.PluginManager
-	logger        logging.Logger
-	metrics       metrics.Provider
-	tracer        trace.Provider
+	svc services
 
 	activeRuns map[string]context.CancelFunc
 	mu         sync.RWMutex
@@ -95,39 +100,16 @@ func New(appName string, agent core.Agent, optFns ...func(o *Options)) *Runner {
 		agent:           agent,
 		enableStreaming: opts.EnableStreaming,
 		eventBufferSize: opts.EventBufferSize,
-		sessionStore:    opts.SessionStore,
-		artifactStore:   opts.ArtifactStore,
-		memoryStore:     opts.MemoryStore,
-		pluginManager:   opts.PluginManager,
-		logger:          opts.Logger,
-		metrics:         opts.Metrics,
-		tracer:          opts.Tracer,
-		activeRuns:      make(map[string]context.CancelFunc),
-	}
-}
-
-// sessionQueue implements core.EventWriter and is responsible for persisting
-// non-partial events to the session store and forwarding all events to results.
-type sessionQueue struct {
-	runID   string
-	session *core.Session
-	store   core.SessionStore
-	results chan<- core.RunResult
-}
-
-func (q *sessionQueue) Write(ctx context.Context, ev *core.Event) error {
-	if err := q.store.AppendEvent(ctx, q.session, ev); err != nil {
-		return fmt.Errorf("failed to append event to session: %w", err)
-	}
-
-	// Forward the event to consumers
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case q.results <- core.RunResult{RunID: q.runID, Event: ev}:
-		logging.FromContext(ctx).
-			Debug("runner delivered event", "session_id", q.session.ID, "event_id", ev.ID)
-		return nil
+		svc: services{
+			sessionStore:  opts.SessionStore,
+			artifactStore: opts.ArtifactStore,
+			memoryStore:   opts.MemoryStore,
+			pluginManager: opts.PluginManager,
+			logger:        opts.Logger,
+			metrics:       opts.Metrics,
+			tracer:        opts.Tracer,
+		},
+		activeRuns: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -145,71 +127,168 @@ func (r *Runner) buildRequestContext(
 		UserParts:     userParts,
 		MaxModelCalls: opts.MaxModelCalls,
 		Session:       session,
-		SessionStore:  r.sessionStore,
-		ArtifactStore: r.artifactStore,
-		MemoryStore:   r.memoryStore,
-		PluginManager: r.pluginManager,
+		SessionStore:  r.svc.sessionStore,
+		ArtifactStore: r.svc.artifactStore,
+		MemoryStore:   r.svc.memoryStore,
+		PluginManager: r.svc.pluginManager,
 	})
 }
 
-// runOnUserPartsHook lets plugins observe or replace the incoming user parts.
-func (r *Runner) runOnUserPartsHook(
-	ctx context.Context,
-	reqCtx core.RequestContext,
-	parts []core.Part,
-) ([]core.Part, error) {
-	if r.pluginManager == nil {
-		return nil, nil
-	}
-
-	replaced, err := r.pluginManager.RunOnUserParts(ctx, reqCtx, parts)
-	if err != nil {
-		return nil, fmt.Errorf("plugin: on_user_parts: %w", err)
-	}
-
-	return replaced, nil
-}
-
-// rewriteBlobsAsArtifacts scans a user content for blob-like parts, saves them as
-// artifacts, and returns content with those parts replaced by FileURI references.
+// rewriteBlobsAsArtifacts scans user content for blob-like parts, saves them as
+// artifacts, and replaces them with FileURI references.
 func (r *Runner) rewriteBlobsAsArtifacts(
 	ctx context.Context,
 	appName, userID, sessionID string,
 	parts []core.Part,
 ) ([]core.Part, error) {
 	filtered := make([]core.Part, 0, len(parts))
+
 	for i, p := range parts {
-		switch fp := p.(type) {
-		case *core.FilePart:
-			// Only treat raw bytes and base64 as blob-like that should be saved/stripped.
-			switch fp.File.(type) {
-			case *core.FileRawBytes, *core.FileBase64:
-				name := fp.Name
-				if name == "" {
-					name = fmt.Sprintf("upload-%s-%d", util.NewID(), i)
-				}
-
-				if err := r.artifactStore.Save(ctx, appName, userID, sessionID, name, fp); err != nil {
-					return nil, fmt.Errorf("artifact: failed to save input blob '%s': %w", name, err)
-				}
-
-				filtered = append(filtered, &core.FilePart{
-					File:     &core.FileURI{URI: "artifact:" + name},
-					MimeType: fp.MimeType,
-					Name:     fp.Name,
-				})
-			default:
-				filtered = append(filtered, p)
+		if fp, ok := p.(*core.FilePart); ok {
+			updated, err := r.handleFilePart(ctx, fp, appName, userID, sessionID, i)
+			if err != nil {
+				return nil, err
 			}
-		default:
-			filtered = append(filtered, p)
+			filtered = append(filtered, updated...)
+			continue
 		}
+		filtered = append(filtered, p)
 	}
 
 	return filtered, nil
 }
 
-// Run starts an asynchronous invocation.
+// handleFilePart decides whether to store a blob as an artifact or keep as-is.
+func (r *Runner) handleFilePart(
+	ctx context.Context,
+	fp *core.FilePart,
+	appName, userID, sessionID string,
+	index int,
+) ([]core.Part, error) {
+	switch fp.File.(type) {
+	case *core.FileRawBytes, *core.FileBase64:
+		return r.saveBlobAsArtifact(ctx, fp, appName, userID, sessionID, index)
+	default:
+		return []core.Part{fp}, nil
+	}
+}
+
+// saveBlobAsArtifact persists a blob into the ArtifactStore and returns a FileURI reference.
+func (r *Runner) saveBlobAsArtifact(
+	ctx context.Context,
+	fp *core.FilePart,
+	appName, userID, sessionID string,
+	index int,
+) ([]core.Part, error) {
+	name := fp.Name
+	if name == "" {
+		name = fmt.Sprintf("upload-%s-%d", util.NewID(), index)
+	}
+
+	if err := r.svc.artifactStore.Save(ctx, appName, userID, sessionID, name, fp); err != nil {
+		return nil, fmt.Errorf("artifact: failed to save input blob '%s': %w", name, err)
+	}
+
+	return []core.Part{
+		&core.FilePart{
+			File:     &core.FileURI{URI: "artifact:" + name},
+			MimeType: fp.MimeType,
+			Name:     fp.Name,
+		},
+	}, nil
+}
+
+// prepareRunContext wires logger/metrics/tracer into ctx and returns ctx, cancel,
+// the run-scoped logger, the span and the start time.
+func (r *Runner) prepareRunContext(
+	ctx context.Context,
+	runID, sessionID string,
+) (
+	context.Context,
+	context.CancelFunc,
+	logging.Logger,
+	trace.Span,
+	time.Time,
+) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	// logger with run_id
+	runLogger := r.svc.logger.With("run_id", runID)
+
+	// attach logger/metrics/tracer to context
+	ctx = logging.WithLogger(ctx, runLogger)
+	ctx = metrics.WithProvider(ctx, r.svc.metrics)
+	ctx = trace.WithProvider(ctx, r.svc.tracer)
+
+	// start span
+	tr := r.svc.tracer.Tracer("agentmesh/runner")
+	ctx, sp := tr.Start(ctx, "Runner.Run", trace.Attr{Key: "session.id", Value: sessionID})
+
+	return ctx, cancel, runLogger, sp, time.Now()
+}
+
+// recordRunDuration records histogram and ends the span.
+func (r *Runner) recordRunDuration(ctx context.Context, sp trace.Span, start time.Time) {
+	r.svc.metrics.
+		Histogram("agentmesh_run_duration_seconds").
+		Record(ctx, time.Since(start).Seconds(), metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
+	sp.End(nil)
+}
+
+// buildRunOptions applies option functions and returns the resulting RunOptions.
+func (r *Runner) buildRunOptions(optFns []func(o *core.RunOptions)) core.RunOptions {
+	opts := core.RunOptions{
+		MaxModelCalls:             100,
+		SaveInputBlobsAsArtifacts: false,
+	}
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+	return opts
+}
+
+// launchRun starts the agent execution goroutine and returns immediately.
+// Keeps semantics identical to your previous code but centralized here.
+func (r *Runner) launchRun(
+	ctx context.Context,
+	runID string,
+	reqCtx core.RequestContext,
+	writer *sessionWriter,
+	results chan core.RunResult,
+	runLogger logging.Logger,
+	sessionID string,
+) {
+	r.wg.Add(1)
+	go func() {
+		defer func() {
+			r.unregisterRun(runID)
+
+			// Run AfterRun before closing results so errors can propagate.
+			if err := reqCtx.RunAfterRun(ctx); err != nil {
+				// best-effort deliver the error unless context canceled
+				select {
+				case <-ctx.Done():
+				default:
+					results <- core.RunResult{RunID: runID, Err: fmt.Errorf("plugin: after_run: %w", err)}
+				}
+			}
+			close(results)
+			runLogger.Info("run finished", "session_id", sessionID)
+			r.wg.Done()
+		}()
+
+		if err := r.agent.Run(ctx, reqCtx, writer); err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				results <- core.RunResult{RunID: runID, Err: fmt.Errorf("agent execution failed: %w", err)}
+			}
+		}
+	}()
+}
+
+// Run starts an asynchronous invocation. (Refactored wiring + small helpers)
 func (r *Runner) Run(
 	ctx context.Context,
 	userID, sessionID string,
@@ -218,149 +297,183 @@ func (r *Runner) Run(
 ) (string, <-chan core.RunResult, error) {
 	runID := util.NewID()
 
-	// Add run_id to logger context
-	r.logger = r.logger.With("run_id", runID)
+	// Prepare context & observability (logger, metrics, tracing)
+	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, runID, sessionID)
 
-	// Attach logger/metrics/tracer to context for downstream propagation
-	ctx = logging.WithLogger(ctx, r.logger)
-	ctx = metrics.WithProvider(ctx, r.metrics)
-	ctx = trace.WithProvider(ctx, r.tracer)
+	// Register active run cancel func
+	r.registerRun(runID, cancel)
 
-	tr := r.tracer.Tracer("agentmesh/runner")
-	ctx, sp := tr.Start(ctx, "Runner.Run", trace.Attr{Key: "session.id", Value: sessionID})
-
-	// record duration at end
-	start := time.Now()
+	// Ensure duration recorded & span ended when Run returns.
 	defer func() {
-		r.metrics.
-			Histogram("agentmesh_run_duration_seconds").
-			Record(
-				ctx,
-				time.Since(start).Seconds(),
-				metrics.Attr{Key: "agent.name", Value: r.agent.Name()},
-			)
-		sp.End(nil)
+		// record duration
+		r.recordRunDuration(ctx, sp, start)
 	}()
 
-	r.metrics.Counter("agentmesh_runs_total").Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
+	// Increment metric for run count
+	r.svc.metrics.Counter("agentmesh_runs_total").
+		Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
 
-	// Default options
-	opts := core.RunOptions{
-		MaxModelCalls:             100,
-		SaveInputBlobsAsArtifacts: false,
-	}
+	// Apply options
+	opts := r.buildRunOptions(optFns)
 
-	for _, fn := range optFns {
-		fn(&opts)
-	}
-
-	session, err := r.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
+	// Load or create session
+	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
 	if err != nil {
+		r.unregisterRunAndCancel(runID)
 		return "", nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	results := make(chan core.RunResult, r.eventBufferSize)
-
-	ctx, cancel := context.WithCancel(ctx)
-	r.mu.Lock()
-	r.activeRuns[runID] = cancel
-	r.mu.Unlock()
-
 	agentInfo := core.AgentInfo{Name: r.agent.Name(), Type: "unknown"}
 
-	// Build initial request context from parts
+	// Build initial request context
 	reqCtx := r.buildRequestContext(runID, agentInfo, session, userParts, opts)
 
+	// BeforeRun hook: allows global setup / early short-circuit.
+	if resultsChan, err := func() (<-chan core.RunResult, error) {
+		parts, err := reqCtx.RunBeforeRun(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("plugin: before_run: %w", err)
+		}
+
+		if parts == nil {
+			return nil, nil
+		}
+
+		results := make(chan core.RunResult, 1)
+		writer := &sessionWriter{runID: runID, session: session, store: r.svc.sessionStore, results: results}
+		beforeEvent := core.NewFullAssistantEvent(runID, agentInfo.Name, parts...)
+		if err := writer.Write(ctx, beforeEvent); err != nil {
+			close(results)
+			return nil, fmt.Errorf("failed to write before_run event: %w", err)
+		}
+
+		// AfterRun still invoked for short-circuited runs.
+		if err := reqCtx.RunAfterRun(ctx); err != nil {
+			close(results)
+			return nil, fmt.Errorf("plugin: after_run: %w", err)
+		}
+
+		results <- core.RunResult{RunID: runID, Event: beforeEvent}
+		close(results)
+		return results, nil
+	}(); err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, err
+	} else if resultsChan != nil {
+		runLogger.Info("run finished (before_run short-circuit)", "session_id", sessionID)
+		return runID, resultsChan, nil
+	}
+
 	// Allow plugins to observe/modify the incoming user parts.
-	if replaced, err := r.runOnUserPartsHook(ctx, reqCtx, userParts); err != nil {
+	if replaced, err := r.onUserParts(ctx, reqCtx, userParts); err != nil {
+		r.unregisterRunAndCancel(runID)
 		return "", nil, err
 	} else if replaced != nil {
 		userParts = replaced
 		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
 	}
 
-	if len(userParts) == 0 {
-		return "", nil, fmt.Errorf("no user parts provided")
-	}
-
+	// Save blobs as artifacts if requested
 	if opts.SaveInputBlobsAsArtifacts {
-		updated, err := r.rewriteBlobsAsArtifacts(
-			ctx,
-			r.appName,
-			userID,
-			sessionID,
-			userParts,
-		)
+		updated, err := r.rewriteBlobsAsArtifacts(ctx, r.appName, userID, sessionID, userParts)
 		if err != nil {
+			r.unregisterRunAndCancel(runID)
 			return "", nil, err
 		}
 		userParts = updated
 		reqCtx = r.buildRequestContext(runID, agentInfo, session, userParts, opts)
 	}
 
+	if len(userParts) == 0 {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, fmt.Errorf("no user parts provided")
+	}
+
 	// Record the initial user content
 	userEvent := core.NewUserContentEvent(runID, userParts...)
-
-	// Merge optional state delta into user event actions
 	if opts.StateDelta != nil {
 		userEvent.Actions.StateDelta = core.Map(opts.StateDelta)
 	}
 
-	// Create a queue that persists and forwards events
-	queue := &sessionQueue{
+	results := make(chan core.RunResult, r.eventBufferSize)
+	writer := &sessionWriter{
 		runID:   runID,
 		session: session,
-		store:   r.sessionStore,
+		store:   r.svc.sessionStore,
 		results: results,
 	}
-
-	// Write the user event to the queue
-	if err := queue.Write(ctx, userEvent); err != nil {
-		return "", nil, fmt.Errorf("failed to write user event to queue: %w", err)
+	if err := writer.Write(ctx, userEvent); err != nil {
+		r.unregisterRunAndCancel(runID)
+		return "", nil, fmt.Errorf("failed to write user event: %w", err)
 	}
 
-	r.logger.Info("run started", "session_id", sessionID)
+	runLogger.Info("run started", "session_id", sessionID)
 
-	r.wg.Add(1)
-
-	go func() {
-		defer func() {
-			r.mu.Lock()
-			delete(r.activeRuns, runID)
-			r.mu.Unlock()
-			close(results)
-
-			r.logger.Info("run finished", "session_id", sessionID)
-			r.wg.Done()
-		}()
-
-		if err := r.agent.Run(ctx, reqCtx, queue); err != nil {
-			// Propagate error unless canceled
-			select {
-			case <-ctx.Done():
-				return
-			case results <- core.RunResult{
-				RunID: runID,
-				Err:   fmt.Errorf("agent execution failed: %w", err),
-			}:
-			}
-		}
-	}()
+	// Launch asynchronous execution goroutine (keeps same semantics as before).
+	r.launchRun(ctx, runID, reqCtx, writer, results, runLogger, sessionID)
 
 	return runID, results, nil
 }
 
+func (r *Runner) onUserParts(
+	ctx context.Context,
+	reqCtx core.RequestContext,
+	parts []core.Part,
+) ([]core.Part, error) {
+	replaced, err := reqCtx.RunOnUserParts(ctx, parts)
+	if err != nil {
+		return nil, fmt.Errorf("plugin: on_user_parts: %w", err)
+	}
+	return replaced, nil
+}
+
+// registerRun stores the cancel func for a run in a threadsafe way.
+func (r *Runner) registerRun(runID string, cancel context.CancelFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.activeRuns[runID] = cancel
+}
+
+// unregisterRun safely removes a run from activeRuns.
+func (r *Runner) unregisterRun(runID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.activeRuns, runID)
+}
+
+// unregisterRunAndCancel retrieves the cancel func (if any), calls it and removes the run.
+//
+// Use this when you want to ensure any associated goroutine/context is cancelled and
+// the run entry is removed from the registry.
+func (r *Runner) unregisterRunAndCancel(runID string) {
+	r.mu.Lock()
+	cancel, ok := r.activeRuns[runID]
+	if ok {
+		delete(r.activeRuns, runID)
+	}
+	r.mu.Unlock()
+
+	if ok && cancel != nil {
+		cancel()
+	}
+}
+
 // Cancel cancels a running run by ID.
 func (r *Runner) Cancel(runID string) error {
-	r.mu.RLock()
+	r.mu.Lock()
 	cancel, exists := r.activeRuns[runID]
-	r.mu.RUnlock()
+	if exists {
+		delete(r.activeRuns, runID)
+	}
+	r.mu.Unlock()
 
 	if !exists {
 		return fmt.Errorf("%w: id=%s", core.ErrRunNotFound, runID)
 	}
 
-	cancel()
+	if cancel != nil {
+		cancel()
+	}
 
 	return nil
 }
@@ -376,9 +489,9 @@ func (r *Runner) Close() error {
 	}
 
 	stores := []storeCloser{
-		{"session", r.sessionStore},
-		{"artifact", r.artifactStore},
-		{"memory", r.memoryStore},
+		{"session", r.svc.sessionStore},
+		{"artifact", r.svc.artifactStore},
+		{"memory", r.svc.memoryStore},
 	}
 
 	var errs []error
@@ -386,11 +499,7 @@ func (r *Runner) Close() error {
 		if s.store != nil {
 			if err := s.store.Close(); err != nil {
 				// Log each failure for observability at shutdown.
-				r.logger.With(
-					"app", r.appName,
-					"store", s.name,
-					"error", err,
-				).Error("store close failed")
+				r.svc.logger.Error("store close failed", "app", r.appName, "store", s.name, "error", err)
 
 				errs = append(errs, fmt.Errorf("%s: close: %w", s.name, err))
 			}
