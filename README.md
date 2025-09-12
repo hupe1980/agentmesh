@@ -3,14 +3,20 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 
-Composable, testable multi-agent orchestration for Go.
+**Composable, testable, and extensible multi-agent orchestration for Go.**
 
-- 🧩 Composability: Sequential, Parallel, and Loop agents nest arbitrarily
-- 📡 Streaming: Unified event stream with partial and final responses
-- 🛠️ Tools: Strongly typed, schema-validated tool calls with bounded execution
-- 🗂️ Pluggable stores: memory, artifacts, session; tools run with a scoped ToolContext
-- 🔭 Observability: Structured logging, metrics, and tracing (OpenTelemetry providers included)
-- 🔁 Determinism: Explicit control over ordering and side-effects for testability
+AgentMesh helps you build production-grade AI systems in Go. It provides 
+composable agent patterns (sequential, parallel, looping), streaming event 
+delivery, plugin hooks, persistent session storage, and first-class 
+observability (logging, metrics, tracing). Everything is deterministic 
+and testable by design.
+
+- 🧩 Composability: Sequential, Parallel, and Loop agents nest arbitrarily  
+- 📡 Streaming: Unified event stream with partial and final responses  
+- 🛠️ Tools: Strongly typed, schema-validated tool calls with bounded execution  
+- 🗂️ Pluggable stores: memory, artifacts, session; tools run with a scoped ToolContext  
+- 🔭 Observability: Structured logging, metrics, and tracing (OpenTelemetry providers included)  
+- 🔁 Determinism: Explicit control over ordering and side-effects for testability 
 
 ---
 
