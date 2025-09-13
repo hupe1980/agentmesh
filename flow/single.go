@@ -1,8 +1,6 @@
 package flow
 
 import (
-	"context"
-
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow/processor"
 )
@@ -14,18 +12,12 @@ import (
 type SingleAgentFlow struct{ *BaseFlow }
 
 // NewSingleAgentFlow creates a new basic single-agent flow.
-func NewSingleAgentFlow(agent Agent, exec core.AgentExecutor) *SingleAgentFlow {
+func NewSingleAgentFlow(agent core.FlowAgent, exec core.AgentExecutor) *SingleAgentFlow {
 	baseFlow := NewBaseFlow(agent, exec)
 
-	// Add default processors with adapters
-	ip := processor.NewInstructionsProcessor()
-	baseFlow.AddRequestProcessor(&requestProcessorAdapter{name: ip.Name(), fn: func(ctx context.Context, rc core.RequestContext, req *core.ModelRequest, ag Agent) error {
-		return ip.ProcessRequest(ctx, rc, req, ag)
-	}})
-	mp := processor.NewMessagesProcessor()
-	baseFlow.AddRequestProcessor(&requestProcessorAdapter{name: mp.Name(), fn: func(ctx context.Context, rc core.RequestContext, req *core.ModelRequest, ag Agent) error {
-		return mp.ProcessRequest(ctx, rc, req, ag)
-	}})
+	// Add default processors for advanced functionality
+	baseFlow.AddRequestProcessor(processor.NewInstructionsProcessor())
+	baseFlow.AddRequestProcessor(processor.NewMessagesProcessor())
 
 	return &SingleAgentFlow{BaseFlow: baseFlow}
 }

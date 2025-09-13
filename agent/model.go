@@ -325,7 +325,5 @@ func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue 
 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*ModelAgent)(nil)
-
-// Ensure ModelAgent satisfies flow.Agent (orchestration view).
-var _ flow.Agent = (*ModelAgent)(nil)
+var _ core.FlowAgent = (*ModelAgent)(nil)
 var _ parentSetter = (*ModelAgent)(nil)

@@ -9,13 +9,6 @@ import (
 	"github.com/hupe1980/agentmesh/logging"
 )
 
-// agentView is a narrowed view of a flow.Agent to avoid import cycle (flow -> processor -> flow).
-// Any flow Agent must satisfy this subset.
-type agentView interface {
-	Name() string
-	ResolveInstructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error)
-}
-
 // InstructionsProcessor handles system prompt and instruction processing.
 type InstructionsProcessor struct{}
 
@@ -30,7 +23,7 @@ func (p *InstructionsProcessor) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent agentView,
+	agent core.FlowAgent,
 ) error {
 	log := logging.FromContext(ctx)
 	instructions, err := agent.ResolveInstructions(ctx, reqCtx)

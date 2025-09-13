@@ -7,11 +7,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 )
 
-// agentHistoryView is the subset of a flow.Agent needed for message selection.
-type agentHistoryView interface {
-	MaxHistoryMessages() int
-}
-
 // MessagesProcessor selects and injects conversation messages into the request.
 type MessagesProcessor struct{}
 
@@ -35,7 +30,7 @@ func (p *MessagesProcessor) ProcessRequest(
 	_ context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent agentHistoryView,
+	agent core.FlowAgent,
 ) error {
 	// Add conversation history if available
 	events := reqCtx.GetSessionHistory()
