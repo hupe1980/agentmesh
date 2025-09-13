@@ -11,6 +11,8 @@ import (
 type SequentialAgentOptions struct {
 	// Human-readable agent description
 	Description string
+	// Agent executor for running agent tasks
+	AgentExecutor core.AgentExecutor
 }
 
 // SequentialAgent coordinates the execution of multiple child agents in sequence.
@@ -19,7 +21,8 @@ type SequentialAgentOptions struct {
 // another, passing the accumulated session state between them. Each agent's
 // output becomes available to subsequent agents in the sequence.
 type SequentialAgent struct {
-	*BaseAgent // Embedded base agent functionality
+	*BaseAgent                       // Embedded base agent functionality
+	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
 // NewSequentialAgent creates a new sequential execution coordinator.
@@ -32,7 +35,8 @@ func NewSequentialAgent(
 	optFns ...func(o *SequentialAgentOptions),
 ) *SequentialAgent {
 	opts := SequentialAgentOptions{
-		Description: "",
+		Description:   "",
+		AgentExecutor: DefaultAgentExecutor,
 	}
 
 	// Apply option functions to override defaults
@@ -40,7 +44,7 @@ func NewSequentialAgent(
 		fn(&opts)
 	}
 
-	a := &SequentialAgent{}
+	a := &SequentialAgent{agentExecutor: opts.AgentExecutor}
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
 	a.setSubAgents(subAgents...)
 
@@ -52,7 +56,7 @@ func (s *SequentialAgent) Run(ctx context.Context, reqCtx core.RequestContext, q
 	// Execute child agents in sequence, propagating state between them
 	for _, child := range s.SubAgents() {
 		// Pass the same request context and queue to maintain shared state
-		if err := core.ExecuteAgent(ctx, reqCtx, child, queue); err != nil {
+		if err := s.agentExecutor.Execute(ctx, reqCtx, child, queue); err != nil {
 			return fmt.Errorf("sequential execution failed at agent %s: %w", child.Name(), err)
 		}
 	}

@@ -1,6 +1,9 @@
 package flow
 
-import "github.com/hupe1980/agentmesh/flow/processor"
+import (
+	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/flow/processor"
+)
 
 // MultiAgentFlow orchestrates an agent that may perform tool calls and
 // transfer control to sub-agents, enabling hierarchical or branching flows.
@@ -9,8 +12,8 @@ import "github.com/hupe1980/agentmesh/flow/processor"
 type MultiAgentFlow struct{ *BaseFlow }
 
 // NewMultiAgentFlow creates a new multi-agent flow with default processors.
-func NewMultiAgentFlow(agent Agent) *MultiAgentFlow {
-	baseFlow := NewBaseFlow(agent)
+func NewMultiAgentFlow(agent core.FlowAgent, exec core.AgentExecutor) *MultiAgentFlow {
+	baseFlow := NewBaseFlow(agent, exec)
 
 	// Add default processors for advanced functionality
 	baseFlow.AddRequestProcessor(processor.NewInstructionsProcessor())

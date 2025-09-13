@@ -15,7 +15,7 @@ import (
 // mock types for processors
 type mockReqProc struct {
 	name string
-	fn   func(ctx context.Context, reqCtx core.RequestContext, req *core.ModelRequest, agent Agent) error
+	fn   func(ctx context.Context, reqCtx core.RequestContext, req *core.ModelRequest, agent core.FlowAgent) error
 }
 
 func (m *mockReqProc) Name() string { return m.name }
@@ -24,14 +24,14 @@ func (m *mockReqProc) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent Agent,
+	agent core.FlowAgent,
 ) error {
 	return m.fn(ctx, reqCtx, req, agent)
 }
 
 type mockRespProc struct {
 	name string
-	fn   func(ctx context.Context, reqCtx core.RequestContext, resp *core.ModelResponse, agent Agent) error
+	fn   func(ctx context.Context, reqCtx core.RequestContext, resp *core.ModelResponse, agent core.FlowAgent) error
 }
 
 func (m *mockRespProc) Name() string { return m.name }
@@ -40,7 +40,7 @@ func (m *mockRespProc) ProcessResponse(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	resp *core.ModelResponse,
-	agent Agent,
+	agent core.FlowAgent,
 ) error {
 	return m.fn(ctx, reqCtx, resp, agent)
 }
@@ -94,7 +94,7 @@ type fakeExec struct{ transferTo core.Opt[string] }
 func (e *fakeExec) Execute(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent Agent,
+	agent core.FlowAgent,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 	emit func(*core.Event) error,
@@ -120,7 +120,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	// Minimal request processor to add user content (so model has input)
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
@@ -128,7 +128,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -160,7 +160,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	// Provide a trivial request
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
@@ -168,7 +168,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -207,14 +207,14 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	f.AddRequestProcessor(&mockReqProc{
 		name: "fail",
 		fn: func(
 			context.Context,
 			core.RequestContext,
 			*core.ModelRequest,
-			Agent,
+			core.FlowAgent,
 		) error {
 			return errors.New("boom")
 		},
@@ -237,14 +237,14 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{
 				Role:  core.RoleUser,
@@ -273,14 +273,14 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 	child := testutil.NewMockAgent("child")
 	agent.SubAgentsList = []core.Agent{child}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -314,14 +314,14 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent)
+	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -333,7 +333,7 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			res *core.ModelResponse,
-			agent Agent,
+			agent core.FlowAgent,
 		) error {
 			return assert.AnError
 		},

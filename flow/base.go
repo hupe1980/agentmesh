@@ -14,18 +14,20 @@ import (
 // BaseFlow is a minimal single‑agent flow implementation that supports a
 // request → LLM → (optional tool loop) cycle with pluggable request/response processors.
 type BaseFlow struct {
-	agent              Agent
+	agent              core.FlowAgent
 	requestProcessors  []RequestProcessor
 	responseProcessors []ResponseProcessor
+	agentExecutor      core.AgentExecutor
 	functionExecutor   FunctionExecutor
 }
 
 // NewBaseFlow creates a new basic single-agent flow.
-func NewBaseFlow(agent Agent) *BaseFlow {
+func NewBaseFlow(agent core.FlowAgent, exec core.AgentExecutor) *BaseFlow {
 	return &BaseFlow{
 		agent:              agent,
 		requestProcessors:  []RequestProcessor{},
 		responseProcessors: []ResponseProcessor{},
+		agentExecutor:      exec,
 		functionExecutor:   NewParallelFunctionExecutor(4),
 	}
 }
@@ -244,7 +246,7 @@ func (f *BaseFlow) stepCall(
 type responseProcessingWriter struct {
 	base                 core.EventWriter
 	processors           []ResponseProcessor
-	agent                Agent
+	agent                core.FlowAgent
 	ctx                  context.Context
 	reqCtx               core.RequestContext
 	captureLastEvent     func(*core.Event)
@@ -306,7 +308,7 @@ func (f *BaseFlow) stepHandle(
 		}
 
 		// Execute the target agent
-		if err := core.ExecuteAgent(ctx, reqCtx, targetAgent, writer); err != nil {
+		if err := f.agentExecutor.Execute(ctx, reqCtx, targetAgent, writer); err != nil {
 			return fmt.Errorf("failed to run agent '%s': %w", targetName, err)
 		}
 

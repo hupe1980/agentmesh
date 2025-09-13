@@ -16,6 +16,8 @@ type ParallelAgentOptions struct {
 	Description string
 	// Maximum execution time for all children
 	Timeout time.Duration
+	// Agent executor for running agent tasks
+	AgentExecutor core.AgentExecutor
 }
 
 // ParallelAgent coordinates the concurrent execution of multiple child agents.
@@ -25,8 +27,9 @@ type ParallelAgentOptions struct {
 // a separate branch context to prevent state conflicts while maintaining
 // access to the shared session state.
 type ParallelAgent struct {
-	*BaseAgent               // Embedded base agent functionality
-	timeout    time.Duration // Maximum execution time for all children
+	*BaseAgent                       // Embedded base agent functionality
+	timeout       time.Duration      // Maximum execution time for all children
+	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
 // NewParallelAgent creates a new parallel execution coordinator.
@@ -37,8 +40,9 @@ type ParallelAgent struct {
 // bounded by the specified duration.
 func NewParallelAgent(name string, subAgents []core.Agent, optFns ...func(o *ParallelAgentOptions)) *ParallelAgent {
 	opts := ParallelAgentOptions{
-		Description: "",
-		Timeout:     0, // No timeout by default
+		Description:   "",
+		Timeout:       0, // No timeout by default
+		AgentExecutor: DefaultAgentExecutor,
 	}
 
 	// Apply option functions to override defaults
@@ -47,7 +51,8 @@ func NewParallelAgent(name string, subAgents []core.Agent, optFns ...func(o *Par
 	}
 
 	a := &ParallelAgent{
-		timeout: opts.Timeout,
+		timeout:       opts.Timeout,
+		agentExecutor: opts.AgentExecutor,
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
@@ -81,7 +86,7 @@ func (p *ParallelAgent) Run(ctx context.Context, reqCtx core.RequestContext, wri
 			}
 
 			// Execute child agent with isolated context
-			if err := core.ExecuteAgent(ctx, branchCtx, c, writer); err != nil {
+			if err := p.agentExecutor.Execute(ctx, branchCtx, c, writer); err != nil {
 				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					err = fmt.Errorf("parallel execution timed out for agent %s: %w", c.Name(), core.ErrParallelTimeout)
 				}

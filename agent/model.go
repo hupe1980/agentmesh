@@ -37,6 +37,8 @@ type ModelAgentOptions struct {
 	AllowTransferToParent bool
 	// Registered tools for function calling
 	Tools map[string]core.Tool
+	// Agent executor for running agent tasks
+	AgentExecutor core.AgentExecutor
 	// Selector for choosing the appropriate flow
 	FlowSelector flow.Selector
 	// Sub-agents managed by this agent
@@ -101,11 +103,15 @@ func NewModelAgent(name string, model core.Model, optFns ...func(o *ModelAgentOp
 		AllowTransferToPeers:  true,
 		AllowTransferToParent: true,
 		Tools:                 make(map[string]core.Tool),
-		FlowSelector:          flow.NewDefaultSelector(),
+		AgentExecutor:         DefaultAgentExecutor,
 	}
 
 	for _, fn := range optFns {
 		fn(&opts)
+	}
+
+	if opts.FlowSelector == nil {
+		opts.FlowSelector = flow.NewDefaultSelector(opts.AgentExecutor)
 	}
 
 	a := &ModelAgent{
@@ -319,5 +325,5 @@ func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue 
 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*ModelAgent)(nil)
-var _ flow.Agent = (*ModelAgent)(nil)
+var _ core.FlowAgent = (*ModelAgent)(nil)
 var _ parentSetter = (*ModelAgent)(nil)

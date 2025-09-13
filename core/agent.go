@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 )
 
 // AgentIdentity captures the common metadata exposed by agents.
@@ -88,52 +87,16 @@ type FlowAgent interface {
 	OutputKey() string
 }
 
-// ExecuteAgent runs an agent with BeforeAgent / AfterAgent hook semantics.
-//
-// Lifecycle:
-//  1. BeforeAgent: if it returns a non-nil []Part, the agent's Run is skipped and
-//     those parts are emitted as a synthetic assistant event (short-circuit). AfterAgent still runs.
-//  2. Agent Run (only if not short-circuited) emits its normal events directly to the provided writer.
-//  3. AfterAgent: if it returns a non-nil []Part, a new assistant event is appended
-//     (it does not mutate or retract earlier output).
-//
-// History is strictly append-only; no prior events are modified or removed.
-func ExecuteAgent(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error {
-	// If the RequestContext's agent identity doesn't match the target agent's name,
-	// clone the context so emitted events have the correct Author. This centralizes
-	// transfer / delegation behavior so callers don't need to clone manually.
-	if reqCtx.AgentName() != ag.Name() { // lightweight check; cloning is cheap (shallow)
-		reqCtx = CloneRequestContextWithAgent(reqCtx, ag)
-	}
-
-	// BeforeAgent short-circuit path
-	if parts, err := reqCtx.RunBeforeAgent(ctx, ag); err != nil {
-		return fmt.Errorf("plugin: before_agent: %w", err)
-	} else if parts != nil {
-		assist := NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), parts...)
-		if err := w.Write(ctx, assist); err != nil {
-			return fmt.Errorf("failed to write synthetic assistant event: %w", err)
-		}
-		return runAfterAgent(ctx, reqCtx, ag, w)
-	}
-
-	if err := ag.Run(ctx, reqCtx, w); err != nil {
-		return err
-	}
-	return runAfterAgent(ctx, reqCtx, ag, w)
+// AgentExecutor abstracts agent execution with lifecycle hooks.
+type AgentExecutor interface {
+	Execute(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error
 }
 
-// runAfterAgent invokes the AfterAgent plugin hook and, if parts are returned,
-// appends a new assistant event. Returns any error encountered.
-func runAfterAgent(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error {
-	if afterParts, err := reqCtx.RunAfterAgent(ctx, ag); err != nil {
-		return fmt.Errorf("plugin: after_agent: %w", err)
-	} else if afterParts != nil {
-		repl := NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), afterParts...)
-		if err := w.Write(ctx, repl); err != nil {
-			return fmt.Errorf("failed to write after_agent replacement event: %w", err)
-		}
-	}
+// AgentExecutorFunc is an adapter to allow plain functions to satisfy AgentExecutor.
+type AgentExecutorFunc func(context.Context, RequestContext, Agent, EventWriter) error
 
-	return nil
+// Execute calls the underlying function to execute the agent with the given context, request context,
+// agent, and event writer.
+func (f AgentExecutorFunc) Execute(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error {
+	return f(ctx, reqCtx, ag, w)
 }

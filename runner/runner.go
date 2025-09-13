@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/util"
@@ -24,6 +25,8 @@ type Options struct {
 
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
+
+	AgentExecutor core.AgentExecutor
 
 	// Session management services.
 	SessionStore core.SessionStore
@@ -68,7 +71,8 @@ type Runner struct {
 	enableStreaming bool
 	eventBufferSize int
 
-	svc services
+	agentExecutor core.AgentExecutor
+	svc           services
 
 	activeRuns map[string]context.CancelFunc
 	mu         sync.RWMutex
@@ -77,10 +81,11 @@ type Runner struct {
 }
 
 // New constructs a Runner with optional overrides.
-func New(appName string, agent core.Agent, optFns ...func(o *Options)) *Runner {
+func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 	opts := Options{
 		EnableStreaming: true,
 		EventBufferSize: 100,
+		AgentExecutor:   agent.DefaultAgentExecutor,
 		SessionStore:    session.NewInMemoryStore(),
 		ArtifactStore:   artifact.NewInMemoryStore(),
 		MemoryStore:     memory.NewInMemoryStore(),
@@ -96,9 +101,10 @@ func New(appName string, agent core.Agent, optFns ...func(o *Options)) *Runner {
 
 	return &Runner{
 		appName:         appName,
-		agent:           agent,
+		agent:           ag,
 		enableStreaming: opts.EnableStreaming,
 		eventBufferSize: opts.EventBufferSize,
+		agentExecutor:   opts.AgentExecutor,
 		svc: services{
 			sessionStore:  opts.SessionStore,
 			artifactStore: opts.ArtifactStore,
@@ -466,7 +472,7 @@ func (r *Runner) launchRun(
 			r.wg.Done()
 		}()
 
-		if err := core.ExecuteAgent(ctx, reqCtx, r.agent, writer); err != nil {
+		if err := r.agentExecutor.Execute(ctx, reqCtx, r.agent, writer); err != nil {
 			select {
 			case <-ctx.Done():
 				return

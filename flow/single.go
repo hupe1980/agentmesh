@@ -1,6 +1,9 @@
 package flow
 
-import "github.com/hupe1980/agentmesh/flow/processor"
+import (
+	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/flow/processor"
+)
 
 // SingleAgentFlow implements a basic execution flow for a standalone agent
 // (no transfers, no sub-agent delegation). It wires default processors for
@@ -9,8 +12,8 @@ import "github.com/hupe1980/agentmesh/flow/processor"
 type SingleAgentFlow struct{ *BaseFlow }
 
 // NewSingleAgentFlow creates a new basic single-agent flow.
-func NewSingleAgentFlow(agent Agent) *SingleAgentFlow {
-	baseFlow := NewBaseFlow(agent)
+func NewSingleAgentFlow(agent core.FlowAgent, exec core.AgentExecutor) *SingleAgentFlow {
+	baseFlow := NewBaseFlow(agent, exec)
 
 	// Add default processors for advanced functionality
 	baseFlow.AddRequestProcessor(processor.NewInstructionsProcessor())

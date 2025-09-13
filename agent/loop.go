@@ -24,6 +24,8 @@ type LoopAgentOptions struct {
 	Interval time.Duration
 	// StopOnError determines whether to stop the loop on errors.
 	StopOnError bool
+	// Agent executor for running agent tasks
+	AgentExecutor core.AgentExecutor
 }
 
 // LoopAgent coordinates the repeated execution of a child agent.
@@ -49,20 +51,22 @@ type LoopAgentOptions struct {
 //   - Workflows requiring convergence checking
 type LoopAgent struct {
 	*BaseAgent
-	child       core.Agent    // Child agent to execute repeatedly
-	maxIters    int           // Maximum number of iterations allowed
-	interval    time.Duration // Time delay between iterations
-	stopOnError bool          // Whether to stop execution on child agent errors
+	child         core.Agent         // Child agent to execute repeatedly
+	maxIters      int                // Maximum number of iterations allowed
+	interval      time.Duration      // Time delay between iterations
+	stopOnError   bool               // Whether to stop execution on child agent errors
+	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
 // NewLoopAgent constructs a looping coordinator around a child agent.
 // The child is wired at construction; the hierarchy is read-only at runtime.
 func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOptions)) *LoopAgent {
 	opts := &LoopAgentOptions{
-		Description: "",
-		MaxIters:    100,
-		Interval:    0,
-		StopOnError: true,
+		Description:   "",
+		MaxIters:      100,
+		Interval:      0,
+		StopOnError:   true,
+		AgentExecutor: DefaultAgentExecutor,
 	}
 
 	for _, fn := range optFns {
@@ -70,10 +74,11 @@ func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOpti
 	}
 
 	a := &LoopAgent{
-		child:       child,
-		maxIters:    opts.MaxIters,
-		interval:    opts.Interval,
-		stopOnError: opts.StopOnError,
+		child:         child,
+		maxIters:      opts.MaxIters,
+		interval:      opts.Interval,
+		stopOnError:   opts.StopOnError,
+		agentExecutor: opts.AgentExecutor,
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
@@ -129,7 +134,7 @@ func (l *LoopAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue c
 			return queue.Write(c, ev)
 		})
 
-		if err := core.ExecuteAgent(ctx, reqCtx, l.child, intercept); err != nil {
+		if err := l.agentExecutor.Execute(ctx, reqCtx, l.child, intercept); err != nil {
 			if l.stopOnError {
 				return fmt.Errorf("loop iteration %d failed for agent %s: %w", i+1, l.child.Name(), err)
 			}

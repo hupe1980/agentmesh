@@ -134,7 +134,7 @@ func TestFunctionExecutor_EmitsOutOfOrder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -155,7 +155,7 @@ func TestFunctionExecutor_AppliesToolActions(t *testing.T) {
 
 	exec := NewParallelFunctionExecutor(1)
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), agent, reg, calls, emit)
@@ -181,7 +181,7 @@ func TestFunctionExecutor_RecoversFromPanic(t *testing.T) {
 	calls := []*core.FunctionCall{{ID: "p1", Name: "panic"}}
 	exec := NewParallelFunctionExecutor(2)
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
@@ -200,7 +200,7 @@ func TestFunctionExecutor_ToolNotFound(t *testing.T) {
 	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
 	exec := NewParallelFunctionExecutor(4)
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
@@ -219,7 +219,7 @@ func TestFunctionExecutor_InvalidArgs(t *testing.T) {
 	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
 	exec := NewParallelFunctionExecutor(1)
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
@@ -352,7 +352,7 @@ func TestFunctionExecutor_Plugin_BeforeShortCircuit(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -388,7 +388,7 @@ func TestFunctionExecutor_Plugin_ErrorRecovery(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -423,7 +423,7 @@ func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -443,7 +443,7 @@ func TestFunctionExecutor_Plugin_AfterFailureStops(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -463,7 +463,7 @@ func TestFunctionExecutor_Plugin_ErrorHookFailure(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -487,7 +487,7 @@ func TestFunctionExecutor_RespectsMaxParallel(t *testing.T) {
 	defer cancel()
 
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
@@ -534,7 +534,7 @@ func TestFunctionExecutor_AggregatesMultipleErrors(t *testing.T) {
 
 	exec := NewParallelFunctionExecutor(3)
 	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = NewMockModel("m", "mock")
+	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 

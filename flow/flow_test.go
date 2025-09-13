@@ -2,7 +2,6 @@ package flow
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -11,84 +10,6 @@ import (
 	"github.com/hupe1980/agentmesh/session"
 	"github.com/stretchr/testify/require"
 )
-
-// MockModel is a lightweight in‑memory Model useful for tests & examples.
-type MockModel struct {
-	info      core.ModelInfo
-	responses map[string]string
-}
-
-// NewMockModel constructs a MockModel with basic tool support enabled.
-func NewMockModel(name, provider string) *MockModel {
-	return &MockModel{
-		info: core.ModelInfo{
-			Name:          name,
-			Provider:      provider,
-			SupportsTools: true,
-		},
-		responses: make(map[string]string),
-	}
-}
-
-// AddResponse registers a deterministic canned completion for an input prompt.
-func (m *MockModel) AddResponse(prompt, response string) {
-	m.responses[prompt] = response
-}
-
-// Generate implements Model; emits optional streaming char chunks then final response.
-
-func (m *MockModel) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
-	respCh := make(chan *core.ModelResponse, 16)
-	errCh := make(chan error, 1)
-
-	go func() {
-		defer close(respCh)
-		defer close(errCh)
-
-		if req == nil || len(req.Messages) == 0 {
-			errCh <- fmt.Errorf("no contents provided")
-			return
-		}
-
-		// Extract last content text
-		last := req.Messages[len(req.Messages)-1]
-		var inputText string
-		for _, p := range last.Parts {
-			if tp, ok := p.(*core.TextPart); ok {
-				inputText += tp.Text
-			}
-		}
-
-		full := m.responses[inputText]
-		if full == "" {
-			full = fmt.Sprintf("Mock response to: %s", inputText)
-		}
-
-		if req.Stream {
-			for _, r := range full { // Emit character chunks as partials
-				select {
-				case <-ctx.Done():
-					errCh <- ctx.Err()
-					return
-				case respCh <- &core.ModelResponse{
-					Partial: true,
-					Parts:   []core.Part{core.NewPartFromText(string(r))},
-				}:
-				}
-			}
-		}
-		respCh <- &core.ModelResponse{ // Final response
-			Partial:      false,
-			Parts:        []core.Part{core.NewPartFromText(full)},
-			FinishReason: "stop",
-		}
-	}()
-
-	return respCh, errCh
-}
-
-// Info implements Model interface
-func (m *MockModel) Info() core.ModelInfo { return m.info }
 
 func newTestRunContext() core.RequestContext {
 	sessSvc := session.NewInMemoryStore()
@@ -114,17 +35,15 @@ func newTestRunContext() core.RequestContext {
 }
 
 func TestSingleAgentFlow(t *testing.T) {
-	mockModel := NewMockModel("test-model", "mock")
-	mockModel.AddResponse("test message", "Hello! This is a test response.")
+	mockModel := &testutil.MockModel{InfoVal: core.ModelInfo{Name: "test-model", Provider: "mock", SupportsTools: true}}
+	// Optionally customize via mockModel.GenerateFunc
 	agent := testutil.NewMockAgent("test-agent")
 	agent.ModelVal = mockModel
 	agent.ResolveInstructionsFunc = func(_ context.Context, _ core.ReadonlyContext) (string, error) {
 		return "You are a test assistant.", nil
 	}
 
-	//runCtx := newTestRunContext()
-
-	f := NewSingleAgentFlow(agent)
+	f := NewSingleAgentFlow(agent, testutil.NewAgentExecutorMock())
 	reqCtx := newTestRunContext()
 
 	events := make([]*core.Event, 0, 8)
@@ -160,10 +79,10 @@ func TestSingleAgentFlow(t *testing.T) {
 
 func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 	a := testutil.NewMockAgent("iso")
-	a.ModelVal = NewMockModel("m", "mock")
+	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = false
 	a.SubAgentsList = nil
-	sel := NewDefaultSelector()
+	sel := NewDefaultSelector(testutil.NewAgentExecutorMock())
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*SingleAgentFlow)
 	require.True(t, ok, "expected SingleAgentFlow, got %T", fl)
@@ -171,9 +90,9 @@ func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 
 func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 	a := testutil.NewMockAgent("xfer")
-	a.ModelVal = NewMockModel("m", "mock")
+	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = true
-	sel := NewDefaultSelector()
+	sel := NewDefaultSelector(testutil.NewAgentExecutorMock())
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
@@ -181,10 +100,10 @@ func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 
 func TestSelector_ReturnsMultiAgentFlow_WhenHasSubAgents(t *testing.T) {
 	a := testutil.NewMockAgent("subs")
-	a.ModelVal = NewMockModel("m", "mock")
+	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = false
 	a.HasSubAgentsFunc = func() bool { return true }
-	sel := NewDefaultSelector()
+	sel := NewDefaultSelector(testutil.NewAgentExecutorMock())
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
