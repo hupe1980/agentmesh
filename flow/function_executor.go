@@ -28,7 +28,7 @@ type FunctionExecutor interface {
 	Execute(
 		ctx context.Context,
 		reqCtx core.RequestContext,
-		agent core.FlowAgent,
+		agent Agent,
 		toolRegistry map[string]core.Tool,
 		fnCalls []*core.FunctionCall,
 		emit func(*core.Event) error,
@@ -51,7 +51,7 @@ func NewParallelFunctionExecutor(maxParallel int) FunctionExecutor {
 func (e *parallelFunctionExecutor) buildFunctionResponseEvent(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent core.FlowAgent,
+	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fc *core.FunctionCall,
 ) (*core.Event, error) {
@@ -191,7 +191,7 @@ func parseFunctionArguments(raw string) (map[string]any, error) {
 func (e *parallelFunctionExecutor) Execute(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent core.FlowAgent,
+	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 	emit func(*core.Event) error,

@@ -1,6 +1,8 @@
 package flow
 
 import (
+	"context"
+
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow/processor"
 )
@@ -12,15 +14,22 @@ import (
 type MultiAgentFlow struct{ *BaseFlow }
 
 // NewMultiAgentFlow creates a new multi-agent flow with default processors.
-func NewMultiAgentFlow(agent core.FlowAgent, exec core.AgentExecutor) *MultiAgentFlow {
+func NewMultiAgentFlow(agent Agent, exec core.AgentExecutor) *MultiAgentFlow {
 	baseFlow := NewBaseFlow(agent, exec)
 
-	// Add default processors for advanced functionality
-	baseFlow.AddRequestProcessor(processor.NewInstructionsProcessor())
-	baseFlow.AddRequestProcessor(processor.NewMessagesProcessor())
-
-	// Inject transfer_to_agent tool definition dynamically when applicable
-	baseFlow.AddRequestProcessor(processor.NewTransferToolInjector())
+	// Add default processors with adapters
+	ip := processor.NewInstructionsProcessor()
+	baseFlow.AddRequestProcessor(&requestProcessorAdapter{name: ip.Name(), fn: func(ctx context.Context, rc core.RequestContext, req *core.ModelRequest, ag Agent) error {
+		return ip.ProcessRequest(ctx, rc, req, ag)
+	}})
+	mp := processor.NewMessagesProcessor()
+	baseFlow.AddRequestProcessor(&requestProcessorAdapter{name: mp.Name(), fn: func(ctx context.Context, rc core.RequestContext, req *core.ModelRequest, ag Agent) error {
+		return mp.ProcessRequest(ctx, rc, req, ag)
+	}})
+	tp := processor.NewTransferToolInjector()
+	baseFlow.AddRequestProcessor(&requestProcessorAdapter{name: tp.Name(), fn: func(ctx context.Context, rc core.RequestContext, req *core.ModelRequest, ag Agent) error {
+		return tp.ProcessRequest(ctx, rc, req, ag)
+	}})
 
 	return &MultiAgentFlow{BaseFlow: baseFlow}
 }

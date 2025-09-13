@@ -15,7 +15,7 @@ import (
 // mock types for processors
 type mockReqProc struct {
 	name string
-	fn   func(ctx context.Context, reqCtx core.RequestContext, req *core.ModelRequest, agent core.FlowAgent) error
+	fn   func(ctx context.Context, reqCtx core.RequestContext, req *core.ModelRequest, agent Agent) error
 }
 
 func (m *mockReqProc) Name() string { return m.name }
@@ -24,14 +24,14 @@ func (m *mockReqProc) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent core.FlowAgent,
+	agent Agent,
 ) error {
 	return m.fn(ctx, reqCtx, req, agent)
 }
 
 type mockRespProc struct {
 	name string
-	fn   func(ctx context.Context, reqCtx core.RequestContext, resp *core.ModelResponse, agent core.FlowAgent) error
+	fn   func(ctx context.Context, reqCtx core.RequestContext, resp *core.ModelResponse, agent Agent) error
 }
 
 func (m *mockRespProc) Name() string { return m.name }
@@ -40,7 +40,7 @@ func (m *mockRespProc) ProcessResponse(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	resp *core.ModelResponse,
-	agent core.FlowAgent,
+	agent Agent,
 ) error {
 	return m.fn(ctx, reqCtx, resp, agent)
 }
@@ -94,7 +94,7 @@ type fakeExec struct{ transferTo core.Opt[string] }
 func (e *fakeExec) Execute(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent core.FlowAgent,
+	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 	emit func(*core.Event) error,
@@ -128,7 +128,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -168,7 +168,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -214,7 +214,7 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 			context.Context,
 			core.RequestContext,
 			*core.ModelRequest,
-			core.FlowAgent,
+			Agent,
 		) error {
 			return errors.New("boom")
 		},
@@ -244,7 +244,7 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			req.Messages = []*core.Message{{
 				Role:  core.RoleUser,
@@ -280,7 +280,7 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -321,7 +321,7 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			req *core.ModelRequest,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
 			return nil
@@ -333,7 +333,7 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 			ctx context.Context,
 			reqCtx core.RequestContext,
 			res *core.ModelResponse,
-			agent core.FlowAgent,
+			agent Agent,
 		) error {
 			return assert.AnError
 		},

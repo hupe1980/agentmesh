@@ -10,6 +10,15 @@ import (
 	"github.com/hupe1980/agentmesh/tool"
 )
 
+// agentTransferView is the subset of a flow.Agent required for transfer tool logic.
+type agentTransferView interface {
+	Name() string
+	SubAgents() []core.Agent
+	Parent() core.Agent
+	IsTransferToParentEnabled() bool
+	IsTransferToPeersEnabled() bool
+}
+
 // TransferToolInjector injects the transfer_to_agent tool definition when transfer is enabled.
 type TransferToolInjector struct{}
 
@@ -27,7 +36,7 @@ func (p *TransferToolInjector) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent core.FlowAgent,
+	agent agentTransferView,
 ) error {
 	log := logging.FromContext(ctx)
 
@@ -56,7 +65,7 @@ func (p *TransferToolInjector) ProcessRequest(
 
 // getTransferTargets returns the list of agents that the given agent is allowed
 // to transfer control to, based on hierarchy and transfer settings.
-func getTransferTargets(agent core.FlowAgent) []core.Agent {
+func getTransferTargets(agent agentTransferView) []core.Agent {
 	// Always include direct sub-agents
 	targets := append([]core.Agent{}, agent.SubAgents()...)
 
@@ -66,7 +75,8 @@ func getTransferTargets(agent core.FlowAgent) []core.Agent {
 	}
 
 	// Parent must also be a FlowAgent to support transfers
-	if _, ok := parent.(core.FlowAgent); !ok {
+	// parent must implement the same subset for transfers (duck typing)
+	if _, ok := parent.(agentTransferView); !ok {
 		return targets
 	}
 
@@ -89,7 +99,7 @@ func getTransferTargets(agent core.FlowAgent) []core.Agent {
 
 // buildTargetAgentsInstructions builds a natural-language instruction block
 // describing available transfer targets and when to call the transfer tool.
-func buildTargetAgentsInstructions(agent core.FlowAgent, targets []core.Agent) string {
+func buildTargetAgentsInstructions(agent agentTransferView, targets []core.Agent) string {
 	// Helper to format single agent info
 	buildInfo := func(a core.Agent) string {
 		return fmt.Sprintf("Agent name: %s\nAgent description: %s\n", a.Name(), a.Description())

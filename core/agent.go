@@ -51,42 +51,6 @@ type Agent interface {
 	Run(ctx context.Context, reqCtx RequestContext, writer EventWriter) error
 }
 
-// FlowAgent is the orchestration-facing contract used by flows and processors.
-// It exposes capabilities and metadata without requiring the executable Run method.
-// Implemented by agent implementations to participate in flow orchestration.
-type FlowAgent interface {
-	AgentIdentity
-
-	HierarchicalAgent
-
-	// ResolveInstructions returns the agent's instructions for the given context.
-	ResolveInstructions(ctx context.Context, roCtx ReadonlyContext) (string, error)
-
-	// Model returns the language model instance.
-	Model() Model
-
-	// Tools returns the registered tools for function calling.
-	Tools() map[string]Tool
-
-	// MaxHistoryMessages returns the maximum number of conversation history messages to keep.
-	MaxHistoryMessages() int
-
-	// IsFunctionCallingEnabled returns whether function calling is enabled.
-	IsFunctionCallingEnabled() bool
-
-	// IsStreamingEnabled returns whether streaming responses are enabled.
-	IsStreamingEnabled() bool
-
-	// IsTransferToPeersEnabled returns whether transfer to peer/sub-agents is enabled.
-	IsTransferToPeersEnabled() bool
-
-	// IsTransferToParentEnabled returns whether transfer to parent is enabled.
-	IsTransferToParentEnabled() bool
-
-	// OutputKey returns the session state key for saving responses.
-	OutputKey() string
-}
-
 // AgentExecutor abstracts agent execution with lifecycle hooks.
 type AgentExecutor interface {
 	Execute(ctx context.Context, reqCtx RequestContext, ag Agent, w EventWriter) error

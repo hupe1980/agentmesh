@@ -22,7 +22,7 @@ import (
 func ExecuteModel(
 	ctx context.Context,
 	requestCtx core.RequestContext,
-	agent core.FlowAgent,
+	agent Agent,
 	req *core.ModelRequest,
 	writer core.EventWriter,
 ) (*core.ModelResponse, error) {
