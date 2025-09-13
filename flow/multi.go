@@ -2,7 +2,6 @@ package flow
 
 import (
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/flow/processor"
 )
 
 // MultiAgentFlow orchestrates an agent that may perform tool calls and
@@ -12,15 +11,15 @@ import (
 type MultiAgentFlow struct{ *BaseFlow }
 
 // NewMultiAgentFlow creates a new multi-agent flow with default processors.
-func NewMultiAgentFlow(agent core.FlowAgent, exec core.AgentExecutor) *MultiAgentFlow {
+func NewMultiAgentFlow(agent Agent, exec core.AgentExecutor) *MultiAgentFlow {
 	baseFlow := NewBaseFlow(agent, exec)
 
 	// Add default processors for advanced functionality
-	baseFlow.AddRequestProcessor(processor.NewInstructionsProcessor())
-	baseFlow.AddRequestProcessor(processor.NewMessagesProcessor())
+	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
+	baseFlow.AddRequestProcessor(NewMessagesProcessor())
 
 	// Inject transfer_to_agent tool definition dynamically when applicable
-	baseFlow.AddRequestProcessor(processor.NewTransferToolInjector())
+	baseFlow.AddRequestProcessor(NewTransferToolInjector())
 
 	return &MultiAgentFlow{BaseFlow: baseFlow}
 }
