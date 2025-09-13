@@ -17,7 +17,7 @@ func TestBaseAgent_SubAgents_CopyAndHas(t *testing.T) {
 	assert.False(t, root.HasSubAgents())
 
 	// Set children establishes relationships
-	root.setSubAgents(c1, c2)
+	_ = root.AddSubAgents(c1, c2)
 	assert.True(t, root.HasSubAgents())
 
 	// SubAgents returns a copy; mutating the returned slice must not affect internal state
@@ -38,17 +38,19 @@ func TestBaseAgent_Parent_SetAndInvariant(t *testing.T) {
 	parent := newMockAgent("Parent", nil)
 	child := newMockAgent("Child", nil)
 
-	// Direct setParent works (internal)
-	child.setParent(parent)
+	// Establish parent via public SetParent
+	_ = child.SetParent(parent)
 	got := child.Parent()
 	if assert.NotNil(t, got) {
 		assert.Equal(t, parent.Name(), got.Name())
 	}
 
-	// Overwrite via setSubAgents ensures single-parent invariant
+	// Attempt to re-parent via AddSubAgents should fail (immutability)
 	other := newMockAgent("OtherParent", nil)
-	other.setSubAgents(child)
-	assert.Equal(t, other.Name(), child.Parent().Name())
+	err := other.AddSubAgents(child)
+	assert.Error(t, err)
+	// Parent remains unchanged
+	assert.Equal(t, parent.Name(), child.Parent().Name())
 }
 
 // FindAgent should return self on name match and traverse descendants depth-first.
@@ -60,9 +62,9 @@ func TestBaseAgent_FindAgent_SelfAndDescendants(t *testing.T) {
 	x2 := newMockAgent("X", nil) // same name in different subtree to validate DFS order
 
 	// Tree: Root -> [A(X), B(X)]
-	a.setSubAgents(x1)
-	b.setSubAgents(x2)
-	root.setSubAgents(a, b)
+	_ = a.AddSubAgents(x1)
+	_ = b.AddSubAgents(x2)
+	_ = root.AddSubAgents(a, b)
 
 	// Self match
 	got, err := root.FindAgent("Root")
@@ -83,31 +85,14 @@ func TestBaseAgent_FindAgent_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, core.ErrAgentNotFound)
 }
 
-// FindSubAgent excludes self and searches only descendants.
-func TestBaseAgent_FindSubAgent_ExcludesSelf(t *testing.T) {
-	root := newMockAgent("Root", nil)
-	a := newMockAgent("A", nil)
-	root.setSubAgents(a)
-
-	// Searching for "Root" in descendants should fail
-	_, err := root.FindSubAgent("Root")
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, core.ErrAgentNotFound)
-
-	// But descendant should be found via FindSubAgent
-	got, err := root.FindSubAgent("A")
-	assert.NoError(t, err)
-	assert.Equal(t, "A", got.Name())
-}
-
 // RootAgent should return the highest ancestor; for root it returns self.
 func TestBaseAgent_RootAgent(t *testing.T) {
 	root := newMockAgent("Root", nil)
 	a := newMockAgent("A", nil)
 	b := newMockAgent("B", nil)
 
-	a.setSubAgents(b)
-	root.setSubAgents(a)
+	_ = a.AddSubAgents(b)
+	_ = root.AddSubAgents(a)
 
 	// Leaf's root should be Root
 	assert.Equal(t, "Root", b.RootAgent().Name())
@@ -116,49 +101,26 @@ func TestBaseAgent_RootAgent(t *testing.T) {
 	assert.Equal(t, "Root", root.RootAgent().Name())
 }
 
-// Reassigning children should clear old parents and update search surface accordingly.
-func TestBaseAgent_SetSubAgents_Reassign_ClearsOldParentsAndSearch(t *testing.T) {
-	root := newMockAgent("Root", nil)
-	c1 := newMockAgent("Child1", nil)
-	c2 := newMockAgent("Child2", nil)
-	c3 := newMockAgent("Child3", nil)
+// Immutability: SetParent should error on reassign when non-nil parent already set.
+func TestBaseAgent_SetParent_ErrorOnReassign(t *testing.T) {
+	p1 := newMockAgent("P1", nil)
+	p2 := newMockAgent("P2", nil)
+	child := newMockAgent("Child", nil)
 
-	root.setSubAgents(c1, c2)
-	root.setSubAgents(c3) // reassign
-
-	// Old children lost parent
-	assert.Nil(t, c1.Parent())
-	assert.Nil(t, c2.Parent())
-
-	// New child has parent
-	assert.Equal(t, root.Name(), c3.Parent().Name())
-
-	// Old child not found anymore
-	a, err := root.FindAgent("Child1")
+	_ = child.SetParent(p1)
+	err := child.SetParent(p2)
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, core.ErrAgentNotFound)
-	assert.Nil(t, a)
-
-	// New child found
-	a, err = root.FindAgent("Child3")
-	assert.NoError(t, err)
-	assert.NotNil(t, a)
+	assert.Equal(t, p1.Name(), child.Parent().Name())
 }
 
-// Setting no children should clear child set and remove parent links from previous children.
-func TestBaseAgent_SetSubAgents_ClearChildren(t *testing.T) {
-	root := newMockAgent("Root", nil)
-	c1 := newMockAgent("Child1", nil)
-	c2 := newMockAgent("Child2", nil)
+// Immutability: AddSubAgents should error if a child already has a different parent.
+func TestBaseAgent_AddSubAgents_ErrorIfAlreadyParented(t *testing.T) {
+	parent1 := newMockAgent("Parent1", nil)
+	parent2 := newMockAgent("Parent2", nil)
+	child := newMockAgent("Child", nil)
 
-	root.setSubAgents(c1, c2)
-	assert.True(t, root.HasSubAgents())
-	assert.NotNil(t, c1.Parent())
-	assert.NotNil(t, c2.Parent())
-
-	// Clear children
-	root.setSubAgents()
-	assert.False(t, root.HasSubAgents())
-	assert.Nil(t, c1.Parent())
-	assert.Nil(t, c2.Parent())
+	_ = parent1.AddSubAgents(child)
+	err := parent2.AddSubAgents(child)
+	assert.Error(t, err)
+	assert.Equal(t, parent1.Name(), child.Parent().Name())
 }

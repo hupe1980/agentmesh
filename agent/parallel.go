@@ -56,7 +56,11 @@ func NewParallelAgent(name string, subAgents []core.Agent, optFns ...func(o *Par
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
-	a.setSubAgents(subAgents...)
+	if len(subAgents) > 0 {
+		if err := a.AddSubAgents(subAgents...); err != nil {
+			panic(err)
+		}
+	}
 
 	return a
 }
@@ -109,4 +113,3 @@ func (p *ParallelAgent) Run(ctx context.Context, reqCtx core.RequestContext, wri
 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*ParallelAgent)(nil)
-var _ parentSetter = (*ParallelAgent)(nil)

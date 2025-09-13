@@ -139,7 +139,7 @@ func TestBaseAgent_SetSubAgentsAndFind(t *testing.T) {
 	c2 := newMockAgent("Child2", nil)
 
 	// Establish children
-	root.setSubAgents(c1, c2)
+	_ = root.AddSubAgents(c1, c2)
 	subs := root.SubAgents()
 	assert.Len(t, subs, 2)
 
@@ -160,30 +160,18 @@ func TestBaseAgent_SetSubAgentsAndFind(t *testing.T) {
 	assert.NotNil(t, foundRoot)
 }
 
-func TestBaseAgent_SetSubAgents_ReassignClearsOldParents(t *testing.T) {
+func TestBaseAgent_AddSubAgents_ReassignDenied(t *testing.T) {
 	root := newMockAgent("Root", nil)
 	c1 := newMockAgent("Child1", nil)
 	c2 := newMockAgent("Child2", nil)
 	c3 := newMockAgent("Child3", nil)
 
-	root.setSubAgents(c1, c2)
-	root.setSubAgents(c3) // reassign
-
-	// Old children lost parent
-	assert.Nil(t, c1.Parent())
-	assert.Nil(t, c2.Parent())
-
-	// New child has parent
-	assert.Equal(t, root.Name(), c3.Parent().Name())
-
-	// Old child not found anymore
-	a, err := root.FindAgent("Child1")
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, core.ErrAgentNotFound)
-	assert.Nil(t, a)
-
-	// New child found
-	a, err = root.FindAgent("Child3")
+	_ = root.AddSubAgents(c1, c2)
+	// Attempt to forcibly clear and reassign should not change existing parent of c1,c2
+	// and adding c3 still works (appending) since it's new.
+	err := root.AddSubAgents(c3)
 	assert.NoError(t, err)
-	assert.NotNil(t, a)
+	assert.Equal(t, root.Name(), c3.Parent().Name())
+	assert.Equal(t, root.Name(), c1.Parent().Name())
+	assert.Equal(t, 3, len(root.SubAgents()))
 }

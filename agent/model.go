@@ -129,7 +129,11 @@ func NewModelAgent(name string, model core.Model, optFns ...func(o *ModelAgentOp
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
-	a.setSubAgents(opts.SubAgents...)
+	if len(opts.SubAgents) > 0 {
+		if err := a.AddSubAgents(opts.SubAgents...); err != nil {
+			panic(err)
+		}
+	}
 
 	return a
 }
@@ -326,4 +330,3 @@ func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*ModelAgent)(nil)
 var _ flow.Agent = (*ModelAgent)(nil)
-var _ parentSetter = (*ModelAgent)(nil)

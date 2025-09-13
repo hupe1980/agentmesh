@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
 )
@@ -137,16 +138,46 @@ func (m *MockAgent) SubAgents() []core.Agent {
 	return m.SubAgentsList
 }
 
+// SetParent assigns the parent of the mock; allows single assignment (basic mimic of real invariant).
+func (m *MockAgent) SetParent(p core.Agent) error {
+	if p == nil {
+		// allow detach in tests
+		m.ParentAgent = nil
+		return nil
+	}
+	if m.ParentAgent != nil && m.ParentAgent != p {
+		return fmt.Errorf("mockagent: parent already set")
+	}
+	m.ParentAgent = p
+	return nil
+}
+
+// AddSubAgents appends children and sets their parent when they expose SetParent.
+func (m *MockAgent) AddSubAgents(children ...core.Agent) error {
+	for _, c := range children {
+		if c == nil {
+			continue
+		}
+		if setter, ok := c.(interface{ SetParent(core.Agent) error }); ok {
+			if err := setter.SetParent(m); err != nil {
+				return err
+			}
+		}
+		m.SubAgentsList = append(m.SubAgentsList, c)
+	}
+	return nil
+}
+
 // FindAgent performs a depth-first search starting at this mock and including its SubAgents.
 func (m *MockAgent) FindAgent(name string) (core.Agent, error) {
 	if m.NameVal == name {
 		return m, nil
 	}
 
-	return m.FindSubAgent(name)
+	return m.findSubAgent(name)
 }
 
-func (m *MockAgent) FindSubAgent(name string) (core.Agent, error) {
+func (m *MockAgent) findSubAgent(name string) (core.Agent, error) {
 	// Search through all child agents
 	for _, sub := range m.SubAgentsList {
 		if result, err := sub.FindAgent(name); err == nil {

@@ -44,7 +44,11 @@ func NewFuncAgent(name string, run RunFunc, optFns ...func(o *FuncAgentOptions))
 
 	a := &FuncAgent{run: run}
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
-	a.setSubAgents(opts.SubAgents...)
+	if len(opts.SubAgents) > 0 {
+		if err := a.AddSubAgents(opts.SubAgents...); err != nil {
+			panic(err)
+		}
+	}
 
 	return a
 }

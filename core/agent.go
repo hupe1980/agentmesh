@@ -15,11 +15,17 @@ type AgentIdentity interface {
 
 // HierarchicalAgent exposes read-only tree navigation for agents.
 type HierarchicalAgent interface {
+	// SetParent sets the parent agent
+	SetParent(p Agent) error
+
 	// Parent returns the current parent agent or nil if this agent is root.
 	Parent() Agent
 
 	// RootAgent returns the root ancestor of this agent in the hierarchy.
 	RootAgent() Agent
+
+	// AddSubAgents appends child agents to this agent, establishing parent-child relationships.
+	AddSubAgents(children ...Agent) error
 
 	// SubAgents returns a shallow copy of current child agents for safe iteration.
 	SubAgents() []Agent
@@ -30,10 +36,6 @@ type HierarchicalAgent interface {
 	// FindAgent performs a depth-first search over the subtree rooted at this
 	// agent (including itself) returning the first agent whose Name matches.
 	FindAgent(name string) (Agent, error)
-
-	// FindSubAgent performs a depth-first search over the subtree rooted at this
-	// agent (excluding itself) returning the first agent whose Name matches.
-	FindSubAgent(name string) (Agent, error)
 }
 
 // Agent is the executable contract implemented by all processing units.

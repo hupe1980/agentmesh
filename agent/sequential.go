@@ -46,7 +46,11 @@ func NewSequentialAgent(
 
 	a := &SequentialAgent{agentExecutor: opts.AgentExecutor}
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
-	a.setSubAgents(subAgents...)
+	if len(subAgents) > 0 {
+		if err := a.AddSubAgents(subAgents...); err != nil {
+			panic(err)
+		}
+	}
 
 	return a
 }
@@ -66,4 +70,3 @@ func (s *SequentialAgent) Run(ctx context.Context, reqCtx core.RequestContext, q
 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*SequentialAgent)(nil)
-var _ parentSetter = (*SequentialAgent)(nil)
