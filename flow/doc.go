@@ -1,17 +1,17 @@
 // Package flow orchestrates agent execution pipelines.
 //
 // Responsibilities:
-//   - Build ModelRequest objects via request processors (e.g. instructions, memory, tools).
-//   - Invoke the shared model.ExecuteModel orchestration (emits partial + final events).
-//   - Buffer emitted model events, apply response processors to the final
-//     ModelResponse, then forward all events to the caller's EventWriter in order.
+//   - Build ModelRequest objects via request processors (instructions, memory, tools, transfers).
+//   - Stream model output (partial + final) directly; each chunk is passed through registered
+//     ResponseProcessors before emission.
 //   - Extract and execute function/tool calls, optionally looping until no calls remain.
-//   - Handle agent transfers (escalation) via FunctionResponseEvent actions.
+//   - Merge multiple function responses deterministically and propagate tool / state actions.
+//   - Handle agent transfers (escalation) via FunctionResponseEvent actions to peers/parent.
 //
-// Buffering rationale: response processors may wish to mutate or inspect the final
-// ModelResponse before any assistant event becomes visible externally; buffering keeps
-// the user-facing event stream stable while still allowing incremental partial output
-// semantics internally.
+// The flow no longer buffers model events: response processors operate per chunk to allow
+// real‑time transformation or enrichment of partial outputs while preserving streaming UX.
+// If post‑hoc mutation of only the final chunk is desired, a processor can simply ignore
+// partial responses (resp.Partial == true) and act only on the terminal response.
 //
-// Selection between single- and multi-agent flows is policy-driven via Selector.
+// Selection between single‑ and multi‑agent flows is policy‑driven via a Selector.
 package flow

@@ -36,9 +36,9 @@ func (m *partialStreamingModel) Info() core.ModelInfo {
 	return core.ModelInfo{Name: "m", Provider: "test"}
 }
 
-// TestBaseFlow_PartialBuffering ensures partial events are captured and written in order
-// and that only the final event is non-partial.
-func TestBaseFlow_PartialBuffering(t *testing.T) {
+// TestBaseFlow_PartialStreaming validates partial assistant events stream in order
+// followed by a final non-partial event.
+func TestBaseFlow_PartialStreaming(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &partialStreamingModel{}
 	agent.ToolsMap = map[string]core.Tool{}
