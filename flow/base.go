@@ -136,7 +136,7 @@ func (f *BaseFlow) handleFunctionCalls(
 	}
 
 	// Execute all function calls
-	if err := f.functionExecutor.Execute(ctx, reqCtx, f.agent, toolRegistry, fnCalls, collect); err != nil {
+	if err := f.functionExecutor.Execute(ctx, reqCtx, toolRegistry, fnCalls, collect); err != nil {
 		return nil, fmt.Errorf("failed to execute function calls: %w", err)
 	}
 

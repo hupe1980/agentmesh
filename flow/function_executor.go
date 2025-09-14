@@ -28,7 +28,6 @@ type FunctionExecutor interface {
 	Execute(
 		ctx context.Context,
 		reqCtx core.RequestContext,
-		agent Agent,
 		toolRegistry map[string]core.Tool,
 		fnCalls []*core.FunctionCall,
 		emit func(*core.Event) error,
@@ -51,32 +50,31 @@ func NewParallelFunctionExecutor(maxParallel int) FunctionExecutor {
 func (e *parallelFunctionExecutor) buildFunctionResponseEvent(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fc *core.FunctionCall,
 ) (*core.Event, error) {
 	tr := trace.FromContext(ctx).Tracer(traceNamespace)
 	met := metrics.FromContext(ctx)
 	log := logging.FromContext(ctx).With(
-		"agent", agent.Name(),
+		"agent", reqCtx.AgentName(),
 		"function", fc.Name,
 		"function_call_id", fc.ID,
 	)
 
 	ctx, span := tr.Start(ctx, "Function.Call",
-		trace.Attr{Key: "agent.name", Value: agent.Name()},
+		trace.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
 		trace.Attr{Key: "function.name", Value: fc.Name},
 		trace.Attr{Key: "function_call.id", Value: fc.ID},
 	)
 	start := time.Now()
 	defer func() {
 		met.Histogram(metricFunctionDuration).Record(ctx, time.Since(start).Seconds(),
-			metrics.Attr{Key: "agent.name", Value: agent.Name()},
+			metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
 			metrics.Attr{Key: "function.name", Value: fc.Name},
 		)
 		span.End(nil)
 	}()
-	met.Counter(metricFunctionsTotal).Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: agent.Name()})
+	met.Counter(metricFunctionsTotal).Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()})
 
 	toolCtx := core.NewToolContext(reqCtx, func(o *core.ToolContextOptions) { o.FunctionCallID = core.String(fc.ID) })
 	tool, ok := toolRegistry[fc.Name]
@@ -96,7 +94,7 @@ func (e *parallelFunctionExecutor) buildFunctionResponseEvent(
 		return nil, err
 	}
 
-	ev := core.NewFunctionResponseEvent(reqCtx.RunID(), agent.Name(), fc.ID, fc.Name, result)
+	ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), fc.ID, fc.Name, result)
 	ev.ApplyActions(toolCtx.EventActions())
 
 	return ev, nil
@@ -191,7 +189,6 @@ func parseFunctionArguments(raw string) (map[string]any, error) {
 func (e *parallelFunctionExecutor) Execute(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 	emit func(*core.Event) error,
@@ -207,7 +204,7 @@ func (e *parallelFunctionExecutor) Execute(
 			return err
 		}
 
-		ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, agent, toolRegistry, fnCalls[0])
+		ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, toolRegistry, fnCalls[0])
 		if err != nil {
 			return err
 		}
@@ -253,7 +250,7 @@ func (e *parallelFunctionExecutor) Execute(
 				return
 			}
 
-			ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, agent, toolRegistry, call)
+			ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, toolRegistry, call)
 			if err != nil {
 				addErr(err)
 				return

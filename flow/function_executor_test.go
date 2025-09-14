@@ -133,12 +133,8 @@ func TestFunctionExecutor_EmitsOutOfOrder(t *testing.T) {
 	exec := NewParallelFunctionExecutor(2)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
-	err := exec.Execute(ctx, testutil.NewTestRequestContext(), agent, reg, calls, emit)
+	err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls, emit)
 	require.NoError(t, err)
 
 	// Expect fast emitted before slow (out-of-order). This should be stable given delays.
@@ -154,11 +150,7 @@ func TestFunctionExecutor_AppliesToolActions(t *testing.T) {
 	emit := func(ev *core.Event) error { mu.Lock(); evs = append(evs, ev); mu.Unlock(); return nil }
 
 	exec := NewParallelFunctionExecutor(1)
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
-	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), agent, reg, calls, emit)
+	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls, emit)
 	require.NoError(t, err)
 	require.Len(t, evs, 1)
 
@@ -180,14 +172,9 @@ func TestFunctionExecutor_RecoversFromPanic(t *testing.T) {
 	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
 	calls := []*core.FunctionCall{{ID: "p1", Name: "panic"}}
 	exec := NewParallelFunctionExecutor(2)
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
 		context.Background(),
 		testutil.NewTestRequestContext(),
-		agent,
 		reg,
 		calls,
 		func(*core.Event) error { return nil },
@@ -199,14 +186,9 @@ func TestFunctionExecutor_ToolNotFound(t *testing.T) {
 	reg := map[string]core.Tool{}
 	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
 	exec := NewParallelFunctionExecutor(4)
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
 		context.Background(),
 		testutil.NewTestRequestContext(),
-		agent,
 		reg,
 		calls,
 		func(*core.Event) error { return nil },
@@ -218,14 +200,9 @@ func TestFunctionExecutor_InvalidArgs(t *testing.T) {
 	reg := map[string]core.Tool{"n": &sleepTool{name: "n", delay: 1 * time.Millisecond}}
 	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
 	exec := NewParallelFunctionExecutor(1)
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 	err := exec.Execute(
 		context.Background(),
 		testutil.NewTestRequestContext(),
-		agent,
 		reg,
 		calls,
 		func(*core.Event) error { return nil },
@@ -351,16 +328,11 @@ func TestFunctionExecutor_Plugin_BeforeShortCircuit(t *testing.T) {
 	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
 	var out []*core.Event
 	err := exec.Execute(
 		context.Background(),
 		rc,
-		agent,
 		reg,
 		calls,
 		func(ev *core.Event) error {
@@ -387,16 +359,11 @@ func TestFunctionExecutor_Plugin_ErrorRecovery(t *testing.T) {
 	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
 	var out []*core.Event
 	err := exec.Execute(
 		context.Background(),
 		rc,
-		agent,
 		reg,
 		calls,
 		func(ev *core.Event) error {
@@ -422,12 +389,8 @@ func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
 	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
-	err := exec.Execute(context.Background(), rc, agent, reg, calls, func(*core.Event) error { return nil })
+	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
 	assert.Equal(t, 0, plug.afterCalled)
@@ -442,12 +405,8 @@ func TestFunctionExecutor_Plugin_AfterFailureStops(t *testing.T) {
 	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
-	err := exec.Execute(context.Background(), rc, agent, reg, calls, func(*core.Event) error { return nil })
+	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
 	assert.Equal(t, 1, plug.afterCalled)
@@ -462,12 +421,8 @@ func TestFunctionExecutor_Plugin_ErrorHookFailure(t *testing.T) {
 	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
-	err := exec.Execute(context.Background(), rc, agent, reg, calls, func(*core.Event) error { return nil })
+	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.errorCalled)
 }
@@ -486,12 +441,7 @@ func TestFunctionExecutor_RespectsMaxParallel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
-
-	err := exec.Execute(ctx, testutil.NewTestRequestContext(), agent, reg, calls, emit)
+	err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls, emit)
 	require.NoError(t, err)
 
 	// With MaxParallel=1 we should never observe >1 concurrent execution
@@ -533,12 +483,8 @@ func TestFunctionExecutor_AggregatesMultipleErrors(t *testing.T) {
 	emit := func(ev *core.Event) error { mu.Lock(); events = append(events, ev); mu.Unlock(); return nil }
 
 	exec := NewParallelFunctionExecutor(3)
-	agent := testutil.NewMockAgent("agent")
-	agent.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
-	agent.FunctionCallingEnabled = true
-	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) { return "", nil }
 
-	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), agent, reg, calls, emit)
+	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls, emit)
 	require.Error(t, err)
 	// Aggregated error should contain both underlying errors
 	assert.ErrorIs(t, err, errA)

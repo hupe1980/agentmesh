@@ -94,13 +94,12 @@ type fakeExec struct{ transferTo core.Opt[string] }
 func (e *fakeExec) Execute(
 	ctx context.Context,
 	reqCtx core.RequestContext,
-	agent Agent,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 	emit func(*core.Event) error,
 ) error {
 	for _, c := range fnCalls {
-		ev := core.NewFunctionResponseEvent(reqCtx.RunID(), agent.Name(), c.ID, c.Name, map[string]any{"ok": true})
+		ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), c.ID, c.Name, map[string]any{"ok": true})
 		ev.Actions.TransferToAgent = e.transferTo
 		if err := emit(ev); err != nil {
 			return err
