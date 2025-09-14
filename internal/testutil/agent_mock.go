@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/orderedmap"
 )
 
 // MockAgent is a lightweight, function-based test double for agents.
@@ -32,7 +33,7 @@ type MockAgent struct {
 	NameVal                 string
 	DescriptionVal          string
 	ModelVal                core.Model
-	ToolsMap                map[string]core.Tool
+	ToolsMap                *orderedmap.OrderedMap[string, core.Tool]
 	ParentAgent             core.Agent
 	SubAgentsList           []core.Agent
 	FunctionCallingEnabled  bool
@@ -62,7 +63,7 @@ type MockAgent struct {
 func NewMockAgent(name string) *MockAgent {
 	return &MockAgent{
 		NameVal:                 name,
-		ToolsMap:                map[string]core.Tool{},
+		ToolsMap:                orderedmap.New[string, core.Tool](),
 		SubAgentsList:           []core.Agent{},
 		FunctionCallingEnabled:  false,
 		StreamingEnabled:        false,
@@ -102,7 +103,7 @@ func (m *MockAgent) ResolveInstructions(ctx context.Context, roCtx core.Readonly
 }
 
 // Tools returns the configured tool map.
-func (m *MockAgent) Tools() map[string]core.Tool { return m.ToolsMap }
+func (m *MockAgent) Tools() []core.Tool { return m.ToolsMap.Values() }
 
 // Parent returns the configured parent agent.
 func (m *MockAgent) Parent() core.Agent { return m.ParentAgent }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,7 +111,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 	// Use text-only model, ensure processors run and at least one assistant event is written
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &textModel{text: "hello"}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
@@ -153,7 +154,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
@@ -200,7 +201,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,
@@ -233,7 +234,7 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,
@@ -271,7 +272,7 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
@@ -319,7 +320,7 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &textModel{text: "hello"}
-	agent.ToolsMap = map[string]core.Tool{}
+	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil

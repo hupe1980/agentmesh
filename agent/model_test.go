@@ -17,7 +17,7 @@ func TestModelAgent_NewAgent(t *testing.T) {
 	assert.NotNil(t, agent)
 	assert.Equal(t, mockLLM, agent.model)
 	assert.NotNil(t, agent.tools)
-	assert.Empty(t, agent.tools)
+	assert.Equal(t, 0, len(agent.Tools()), "no tools registered initially")
 	assert.True(t, agent.enableStreaming)
 	assert.True(t, agent.enableFunctionCalling)
 }
@@ -71,10 +71,16 @@ func TestModelAgent_ToolRegistry(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "t1", got.Name())
 
-	// Tools returns a copy
-	m := a.Tools()
-	delete(m, "t1")
-	assert.True(t, a.HasTool("t1"))
+	// Tools returns the registered slice; ensure it contains expected names
+	tools := a.Tools()
+	found := false
+	for _, tt := range tools {
+		if tt.Name() == "t1" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected to find tool t1 in Tools slice")
 
 	// Unregister
 	ok = a.UnregisterTool("t2")

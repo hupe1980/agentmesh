@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow/sm"
@@ -187,18 +186,11 @@ func (f *BaseFlow) stepBuild(ctx context.Context, reqCtx core.RequestContext, fr
 	}
 
 	tools := f.agent.Tools()
-	names := make([]string, 0, len(tools))
-	for name := range tools {
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
-
-	for _, name := range names {
+	for _, tool := range tools {
 		toolCtx := core.NewToolContext(reqCtx)
 
-		if err := tools[name].ProcessModelRequest(ctx, toolCtx, req); err != nil {
-			return fmt.Errorf("failed to process model request for tool %s: %w", name, err)
+		if err := tool.ProcessModelRequest(ctx, toolCtx, req); err != nil {
+			return fmt.Errorf("failed to process model request for tool %s: %w", tool.Name(), err)
 		}
 	}
 

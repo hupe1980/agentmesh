@@ -3,13 +3,12 @@ package agent
 import (
 	"context"
 	"fmt"
-	"maps"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow"
+	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model"
 )
@@ -37,7 +36,7 @@ type ModelAgentOptions struct {
 	// Whether agent can transfer control to its parent agent (escalation)
 	AllowTransferToParent bool
 	// Registered tools for function calling
-	Tools map[string]core.Tool
+	Tools []core.Tool
 	// Selector for choosing the appropriate flow
 	FlowSelector flow.Selector
 	// Sub-agents managed by this agent
@@ -58,19 +57,19 @@ type ModelAgentOptions struct {
 // It uses flow processors under the hood and logs via the RequestContext's
 // logging interface.
 type ModelAgent struct {
-	*BaseAgent                                 // Embedded base agent functionality
-	model                 core.Model           // Language model interface
-	instructions          Instructions         // Instructions for the LLM
-	tools                 map[string]core.Tool // Registered tools for function calling
-	toolsMu               sync.RWMutex         // Protects concurrent access to tools map
-	enableFunctionCalling bool                 // Whether to enable tool usage
-	enableStreaming       bool                 // Whether to stream responses
-	toolTimeout           time.Duration        // Timeout for individual tool calls
-	outputKey             string               // Key for saving responses to session state
-	maxHistoryMessages    int                  // Maximum number of conversation history messages to keep
-	allowTransferToPeers  bool                 // Whether agent can transfer control to sub-agents
-	allowTransferToParent bool                 // Whether agent can transfer control to parent agent
-	flowSelector          flow.Selector        // Selector for choosing the appropriate flow
+	*BaseAgent                                                      // Embedded base agent functionality
+	model                 core.Model                                // Language model interface
+	instructions          Instructions                              // Instructions for the LLM
+	tools                 *orderedmap.OrderedMap[string, core.Tool] // Registered tools for function calling
+	enableFunctionCalling bool                                      // Whether to enable tool usage
+	enableStreaming       bool                                      // Whether to stream responses
+	toolTimeout           time.Duration                             // Timeout for individual tool calls
+	outputKey             string                                    // Key for saving responses to session state
+	maxHistoryMessages    int                                       // Maximum number of conversation history
+	// messages to keep
+	allowTransferToPeers  bool          // Whether agent can transfer control to sub-agents
+	allowTransferToParent bool          // Whether agent can transfer control to parent agent
+	flowSelector          flow.Selector // Selector for choosing the appropriate flow
 }
 
 // NewModelAgent creates a new model-based agent with sensible defaults.
@@ -101,7 +100,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		MaxHistoryMessages:    20,
 		AllowTransferToPeers:  true,
 		AllowTransferToParent: true,
-		Tools:                 make(map[string]core.Tool),
+		Tools:                 make([]core.Tool, 0),
 		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
 			AgentExecutor: DefaultAgentExecutor,
 			ModelExecutor: model.DefaultModelExecutor,
@@ -122,8 +121,15 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		maxHistoryMessages:    opts.MaxHistoryMessages,
 		allowTransferToPeers:  opts.AllowTransferToPeers,
 		allowTransferToParent: opts.AllowTransferToParent,
-		tools:                 opts.Tools,
+		tools:                 orderedmap.New[string, core.Tool](),
 		flowSelector:          opts.FlowSelector,
+	}
+
+	// Register initial tools if provided
+	if len(opts.Tools) > 0 {
+		for _, t := range opts.Tools {
+			a.tools.Set(t.Name(), t)
+		}
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
@@ -147,9 +153,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 //	weatherTool := NewFuncTool("get_weather", "Get weather for a location", schema, weatherFunc)
 //	agent.RegisterTool(weatherTool)
 func (a *ModelAgent) RegisterTool(t core.Tool) {
-	a.toolsMu.Lock()
-	defer a.toolsMu.Unlock()
-	a.tools[t.Name()] = t
+	a.tools.Set(t.Name(), t)
 }
 
 // RegisterTools adds multiple tools to the agent's capability set.
@@ -162,10 +166,8 @@ func (a *ModelAgent) RegisterTool(t core.Tool) {
 //	mathTools := tool.CreateMathTools()
 //	agent.RegisterTools(mathTools...)
 func (a *ModelAgent) RegisterTools(tools ...core.Tool) {
-	a.toolsMu.Lock()
-	defer a.toolsMu.Unlock()
 	for _, t := range tools {
-		a.tools[t.Name()] = t
+		a.tools.Set(t.Name(), t)
 	}
 }
 
@@ -173,55 +175,41 @@ func (a *ModelAgent) RegisterTools(tools ...core.Tool) {
 //
 // Returns true if the tool was found and removed, false if it wasn't registered.
 func (a *ModelAgent) UnregisterTool(name string) bool {
-	a.toolsMu.Lock()
-	defer a.toolsMu.Unlock()
+	if _, ok := a.tools.Get(name); ok {
+		a.tools.Delete(name)
 
-	if _, exists := a.tools[name]; exists {
-		delete(a.tools, name)
 		return true
 	}
+
 	return false
 }
 
 // HasTool checks if a tool is registered with the agent.
 func (a *ModelAgent) HasTool(name string) bool {
-	a.toolsMu.RLock()
-	defer a.toolsMu.RUnlock()
-	_, exists := a.tools[name]
-	return exists
+	_, ok := a.tools.Get(name)
+	return ok
 }
 
 // GetTool retrieves a specific tool by name.
 //
 // Returns the tool and true if found, nil and false if not registered.
 func (a *ModelAgent) GetTool(name string) (core.Tool, bool) {
-	a.toolsMu.RLock()
-	defer a.toolsMu.RUnlock()
-	t, exists := a.tools[name]
-	return t, exists
+	return a.tools.Get(name)
 }
 
 // ClearTools removes all registered tools from the agent.
 func (a *ModelAgent) ClearTools() {
-	a.toolsMu.Lock()
-	defer a.toolsMu.Unlock()
-	a.tools = make(map[string]core.Tool)
+	a.tools.Clear()
+}
+
+// Tools returns the registered tools for function calling.
+func (a *ModelAgent) Tools() []core.Tool {
+	return a.tools.Values()
 }
 
 // Model returns the language model instance.
 func (a *ModelAgent) Model() core.Model {
 	return a.model
-}
-
-// Tools returns the registered tools for function calling.
-func (a *ModelAgent) Tools() map[string]core.Tool {
-	a.toolsMu.RLock()
-	defer a.toolsMu.RUnlock()
-
-	tools := make(map[string]core.Tool, len(a.tools))
-	maps.Copy(tools, a.tools)
-
-	return tools
 }
 
 // IsFunctionCallingEnabled returns whether function calling is enabled.

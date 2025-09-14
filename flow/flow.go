@@ -12,7 +12,7 @@ type Agent interface {
 	core.HierarchicalAgent
 	ResolveInstructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error)
 	Model() core.Model
-	Tools() map[string]core.Tool
+	Tools() []core.Tool
 	MaxHistoryMessages() int
 	IsFunctionCallingEnabled() bool
 	IsStreamingEnabled() bool
