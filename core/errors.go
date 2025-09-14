@@ -4,9 +4,6 @@ import "errors"
 
 // Core and hierarchy errors (grouped for consistent style)
 var (
-	// Agent hierarchy / lookup
-	ErrAgentNotFound = errors.New("agent not found")
-
 	// Sessions
 	ErrSessionNotFound = errors.New("session not found")
 
@@ -26,9 +23,11 @@ var (
 	ErrRunNotFound = errors.New("run not found")
 
 	// Hierarchy management
-	ErrParentAlreadySet = errors.New("agent: parent already set")
-	ErrSelfParent       = errors.New("agent: cannot set parent to self")
-	ErrParentCycle      = errors.New("agent: setting parent would create a cycle")
-	ErrParentNil        = errors.New("agent: parent cannot be nil")
-	ErrSubAgentSelf     = errors.New("agent: cannot add self as sub-agent")
+	ErrAgentNotFound         = errors.New("agent not found")
+	ErrParentAlreadySet      = errors.New("agent: parent already set")
+	ErrSelfParent            = errors.New("agent: cannot set parent to self")
+	ErrParentCycle           = errors.New("agent: setting parent would create a cycle")
+	ErrParentNil             = errors.New("agent: parent cannot be nil")
+	ErrSubAgentSelf          = errors.New("agent: cannot add self as sub-agent")
+	ErrSubAgentAlreadyExists = errors.New("agent: sub-agent already exists")
 )

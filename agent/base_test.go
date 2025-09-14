@@ -124,3 +124,18 @@ func TestBaseAgent_AddSubAgents_ErrorIfAlreadyParented(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, parent1.Name(), child.Parent().Name())
 }
+
+// Duplicate sub-agent should return ErrSubAgentAlreadyExists and not duplicate entries.
+func TestBaseAgent_AddSubAgents_DuplicateError(t *testing.T) {
+	root := newMockAgent("Root", nil)
+	c1 := newMockAgent("Child1", nil)
+
+	err := root.AddSubAgents(c1)
+	assert.NoError(t, err)
+	assert.Len(t, root.SubAgents(), 1)
+
+	err = root.AddSubAgents(c1) // duplicate
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, core.ErrSubAgentAlreadyExists)
+	assert.Len(t, root.SubAgents(), 1)
+}

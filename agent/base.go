@@ -1,18 +1,21 @@
 package agent
 
 import (
+	"fmt"
+
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/orderedset"
 )
 
 // BaseAgent bundles shared identity and hierarchy helpers for concrete agents.
 // Embed it in your agent types and supply a Run method to satisfy core.Agent.
 // Use AddSubAgents to build trees; SetParent is invoked internally.
 type BaseAgent struct {
-	self        core.Agent   // Concrete agent embedding this BaseAgent (for Parent/FindAgent)
-	name        string       // Human-readable name
-	description string       // Detailed description of agent's purpose
-	parent      core.Agent   // Parent agent in hierarchical structures
-	subAgents   []core.Agent // Child agents managed by this agent
+	self        core.Agent                  // Concrete agent embedding this BaseAgent (for Parent/FindAgent)
+	name        string                      // Human-readable name
+	description string                      // Detailed description of agent's purpose
+	parent      core.Agent                  // Parent agent in hierarchical structures
+	subAgents   *orderedset.Set[core.Agent] // Child agents managed by this agent
 }
 
 // NewBaseAgent constructs a BaseAgent.
@@ -25,6 +28,7 @@ func NewBaseAgent(self core.Agent, name, description string) *BaseAgent {
 		self:        self,
 		name:        name,
 		description: description,
+		subAgents:   orderedset.New[core.Agent](),
 	}
 }
 
@@ -64,8 +68,6 @@ func (b *BaseAgent) SetParent(p core.Agent) error {
 // AddSubAgents appends child agents and sets their parent (once). If a child already
 // has a different parent, an error is returned and no further children are added.
 func (b *BaseAgent) AddSubAgents(children ...core.Agent) error {
-	toAdd := make([]core.Agent, 0, len(children))
-
 	for _, child := range children {
 		if child == nil {
 			continue
@@ -75,14 +77,14 @@ func (b *BaseAgent) AddSubAgents(children ...core.Agent) error {
 			return core.ErrSubAgentSelf
 		}
 
+		if !b.subAgents.Add(child) {
+			return fmt.Errorf("%w: %s", core.ErrSubAgentAlreadyExists, child.Name())
+		}
+
 		if err := child.SetParent(b.self); err != nil {
 			return err
 		}
-
-		toAdd = append(toAdd, child)
 	}
-
-	b.subAgents = append(b.subAgents, toAdd...)
 
 	return nil
 }
@@ -94,14 +96,11 @@ func (b *BaseAgent) Parent() core.Agent {
 
 // SubAgents returns a shallow copy of current child agents for safe iteration.
 func (b *BaseAgent) SubAgents() []core.Agent {
-	result := make([]core.Agent, len(b.subAgents))
-	copy(result, b.subAgents)
-
-	return result
+	return b.subAgents.Values()
 }
 
 // HasSubAgents returns true if this agent manages one or more sub-agents.
-func (b *BaseAgent) HasSubAgents() bool { return len(b.subAgents) > 0 }
+func (b *BaseAgent) HasSubAgents() bool { return b.subAgents.Len() > 0 }
 
 // FindAgent performs a depth-first search starting at this agent and including
 // its descendants, returning the first agent whose Name matches.
