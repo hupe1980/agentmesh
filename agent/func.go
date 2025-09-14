@@ -46,7 +46,7 @@ func NewFuncAgent(name string, run RunFunc, optFns ...func(o *FuncAgentOptions))
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
 	if len(opts.SubAgents) > 0 {
 		if err := a.AddSubAgents(opts.SubAgents...); err != nil {
-			panic(err)
+			panic(err) // Should not happen with valid input
 		}
 	}
 

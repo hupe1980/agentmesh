@@ -48,7 +48,7 @@ func NewSequentialAgent(
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
 	if len(subAgents) > 0 {
 		if err := a.AddSubAgents(subAgents...); err != nil {
-			panic(err)
+			panic(err) // Should not happen with valid input
 		}
 	}
 
