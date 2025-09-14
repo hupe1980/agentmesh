@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow"
 	"github.com/hupe1980/agentmesh/logging"
+	"github.com/hupe1980/agentmesh/model"
 )
 
 // ModelAgentOptions configures a ModelAgent instance.
@@ -37,8 +38,6 @@ type ModelAgentOptions struct {
 	AllowTransferToParent bool
 	// Registered tools for function calling
 	Tools map[string]core.Tool
-	// Agent executor for running agent tasks
-	AgentExecutor core.AgentExecutor
 	// Selector for choosing the appropriate flow
 	FlowSelector flow.Selector
 	// Sub-agents managed by this agent
@@ -92,7 +91,7 @@ type ModelAgent struct {
 // Children are wired at construction via options (ModelAgentOptions.SubAgents);
 // the hierarchy is read-only at runtime. Returns a fully configured ModelAgent
 // ready for conversation.
-func NewModelAgent(name string, model core.Model, optFns ...func(o *ModelAgentOptions)) *ModelAgent {
+func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOptions)) *ModelAgent {
 	opts := ModelAgentOptions{
 		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
 		Description:           "",
@@ -103,19 +102,18 @@ func NewModelAgent(name string, model core.Model, optFns ...func(o *ModelAgentOp
 		AllowTransferToPeers:  true,
 		AllowTransferToParent: true,
 		Tools:                 make(map[string]core.Tool),
-		AgentExecutor:         DefaultAgentExecutor,
+		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
+			AgentExecutor: DefaultAgentExecutor,
+			ModelExecutor: model.DefaultModelExecutor,
+		}),
 	}
 
 	for _, fn := range optFns {
 		fn(&opts)
 	}
 
-	if opts.FlowSelector == nil {
-		opts.FlowSelector = flow.NewDefaultSelector(opts.AgentExecutor)
-	}
-
 	a := &ModelAgent{
-		model:                 model,
+		model:                 m,
 		instructions:          opts.Instructions,
 		enableStreaming:       opts.EnableStreaming,
 		enableFunctionCalling: opts.EnableFunctionCalling,

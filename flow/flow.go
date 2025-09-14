@@ -51,18 +51,18 @@ type ResponseProcessor interface {
 }
 
 // selector is the default Selector implementation.
-type selector struct{ exec core.AgentExecutor }
+type selector struct{ executors *Executors }
 
 // NewDefaultSelector creates a new default flow selector.
-func NewDefaultSelector(exec core.AgentExecutor) Selector { return &selector{exec: exec} }
+func NewDefaultSelector(executors *Executors) Selector { return &selector{executors: executors} }
 
 // SelectFlow chooses the appropriate flow for the given agent.
 func (s *selector) SelectFlow(agent Agent) Flow {
 	// Use simple flow for isolated agents
 	if !agent.IsTransferToParentEnabled() && !agent.IsTransferToPeersEnabled() && !agent.HasSubAgents() {
-		return NewSingleAgentFlow(agent, s.exec)
+		return NewSingleAgentFlow(agent, s.executors)
 	}
 
 	// Use multi-agent flow for agents with transfer capabilities or sub-agents
-	return NewMultiAgentFlow(agent, s.exec)
+	return NewMultiAgentFlow(agent, s.executors)
 }

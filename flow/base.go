@@ -11,23 +11,30 @@ import (
 	"github.com/hupe1980/agentmesh/logging"
 )
 
+// Executors bundles the executors required by flows.
+type Executors struct {
+	AgentExecutor core.AgentExecutor
+	ModelExecutor core.ModelExecutor
+	ToolExecutor  core.ToolExecutor
+}
+
 // BaseFlow is a minimal single‑agent flow implementation that supports a
 // request → LLM → (optional tool loop) cycle with pluggable request/response processors.
 type BaseFlow struct {
 	agent              Agent
 	requestProcessors  []RequestProcessor
 	responseProcessors []ResponseProcessor
-	agentExecutor      core.AgentExecutor
+	executors          *Executors
 	functionExecutor   FunctionExecutor
 }
 
 // NewBaseFlow creates a new basic single-agent flow.
-func NewBaseFlow(agent Agent, exec core.AgentExecutor) *BaseFlow {
+func NewBaseFlow(agent Agent, executors *Executors) *BaseFlow {
 	return &BaseFlow{
 		agent:              agent,
 		requestProcessors:  []RequestProcessor{},
 		responseProcessors: []ResponseProcessor{},
-		agentExecutor:      exec,
+		executors:          executors,
 		functionExecutor:   NewParallelFunctionExecutor(4),
 	}
 }
@@ -232,6 +239,9 @@ func (f *BaseFlow) stepCall(
 		},
 	}
 
+	//mdl := f.agent.Model()
+	//f.executors.ModelExecutor.Execute(ctx, reqCtx, mdl, fr.req, procWriter)
+
 	// Execute model using shared executor.
 	_, err := ExecuteModel(ctx, reqCtx, f.agent, fr.req, procWriter)
 	if err != nil {
@@ -308,7 +318,7 @@ func (f *BaseFlow) stepHandle(
 		}
 
 		// Execute the target agent
-		if err := f.agentExecutor.Execute(ctx, reqCtx, targetAgent, writer); err != nil {
+		if err := f.executors.AgentExecutor.Execute(ctx, reqCtx, targetAgent, writer); err != nil {
 			return fmt.Errorf("failed to run agent '%s': %w", targetName, err)
 		}
 

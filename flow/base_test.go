@@ -120,7 +120,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	// Minimal request processor to add user content (so model has input)
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
@@ -160,7 +160,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	// Provide a trivial request
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
@@ -207,7 +207,7 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	f.AddRequestProcessor(&mockReqProc{
 		name: "fail",
 		fn: func(
@@ -237,7 +237,7 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
@@ -273,7 +273,7 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 	child := testutil.NewMockAgent("child")
 	agent.SubAgentsList = []core.Agent{child}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
@@ -314,7 +314,7 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 		return "inst", nil
 	}
 
-	f := NewBaseFlow(agent, testutil.NewAgentExecutorMock())
+	f := NewBaseFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
