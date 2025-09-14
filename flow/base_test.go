@@ -96,17 +96,14 @@ func (e *fakeExec) Execute(
 	reqCtx core.RequestContext,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
-	emit func(*core.Event) error,
-) error {
+) ([]*core.Event, error) {
+	events := make([]*core.Event, 0, len(fnCalls))
 	for _, c := range fnCalls {
 		ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), c.ID, c.Name, map[string]any{"ok": true})
 		ev.Actions.TransferToAgent = e.transferTo
-		if err := emit(ev); err != nil {
-			return err
-		}
+		events = append(events, ev)
 	}
-
-	return nil
+	return events, nil
 }
 
 func TestBaseFlow_Simple_NoTools(t *testing.T) {

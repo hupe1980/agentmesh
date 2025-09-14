@@ -128,16 +128,10 @@ func (f *BaseFlow) handleFunctionCalls(
 ) (*core.Event, error) {
 	log := logging.FromContext(ctx)
 
-	collected := make([]*core.Event, 0, len(fnCalls))
-	collect := func(outEv *core.Event) error {
-		collected = append(collected, outEv)
-		last = outEv
-		return nil
-	}
-
-	// Execute all function calls
-	if err := f.functionExecutor.Execute(ctx, reqCtx, toolRegistry, fnCalls, collect); err != nil {
-		return nil, fmt.Errorf("failed to execute function calls: %w", err)
+	// Execute all function calls (out-of-order completion)
+	collected, execErr := f.functionExecutor.Execute(ctx, reqCtx, toolRegistry, fnCalls)
+	if execErr != nil {
+		return nil, fmt.Errorf("failed to execute function calls: %w", execErr)
 	}
 
 	if len(collected) == 0 {
@@ -168,7 +162,7 @@ func (f *BaseFlow) handleFunctionCalls(
 	parts := buildPartsInOrder(fnCalls, respByID)
 	stateDelta, artifactDelta, transferTo, escalate, skip := mergeActionsInOrder(fnCalls, actionsByID)
 	merged := assembleMergedFunctionResponseEvent(
-		reqCtx.RunID(), f.agent.Name(), tmplResp, parts, stateDelta, artifactDelta, transferTo, escalate, skip,
+		reqCtx.RunID(), reqCtx.AgentName(), tmplResp, parts, stateDelta, artifactDelta, transferTo, escalate, skip,
 	)
 
 	last = merged

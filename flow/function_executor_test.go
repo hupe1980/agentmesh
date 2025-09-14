@@ -3,7 +3,6 @@ package flow
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -106,55 +105,34 @@ func (t *counterTool) Call(ctx context.Context, toolCtx core.ToolContext, toolAr
 func TestFunctionExecutor_EmitsOutOfOrder(t *testing.T) {
 	t.Parallel()
 
-	// Prepare registry with slow and fast tools
 	reg := map[string]core.Tool{
 		"slow": &sleepTool{name: "slow", delay: 120 * time.Millisecond},
 		"fast": &sleepTool{name: "fast", delay: 10 * time.Millisecond},
 	}
-
-	// Calls provided in order: slow, fast
-	calls := []*core.FunctionCall{
-		{ID: "1", Name: "slow"},
-		{ID: "2", Name: "fast"},
-	}
-
-	// Collect emitted order
-	var mu sync.Mutex
-	var got []string
-	emit := func(ev *core.Event) error {
-		mu.Lock()
-		defer mu.Unlock()
-		frs := ev.GetFunctionResponses()
-		require.NotEmpty(t, frs)
-		got = append(got, frs[0].Name)
-		return nil
-	}
+	calls := []*core.FunctionCall{{ID: "1", Name: "slow"}, {ID: "2", Name: "fast"}}
 
 	exec := NewParallelFunctionExecutor(2)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls, emit)
+	events, err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls)
 	require.NoError(t, err)
+	require.Len(t, events, 2)
 
-	// Expect fast emitted before slow (out-of-order). This should be stable given delays.
-	require.Len(t, got, 2)
+	// Returned slice should reflect completion order (fast before slow)
+	got := []string{events[0].GetFunctionResponses()[0].Name, events[1].GetFunctionResponses()[0].Name}
 	assert.Equal(t, []string{"fast", "slow"}, got)
 }
 
 func TestFunctionExecutor_AppliesToolActions(t *testing.T) {
 	reg := map[string]core.Tool{"actions": &actionsTool{name: "actions"}}
 	calls := []*core.FunctionCall{{ID: "a1", Name: "actions"}}
-	var evs []*core.Event
-	var mu sync.Mutex
-	emit := func(ev *core.Event) error { mu.Lock(); evs = append(evs, ev); mu.Unlock(); return nil }
-
 	exec := NewParallelFunctionExecutor(1)
-	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls, emit)
+	events, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	require.NoError(t, err)
-	require.Len(t, evs, 1)
+	require.Len(t, events, 1)
 
-	ev := evs[0]
+	ev := events[0]
 
 	// State/Artifact deltas merged
 	assert.Equal(t, map[string]any{"k": "v"}, ev.Actions.StateDelta.Or(nil))
@@ -172,13 +150,7 @@ func TestFunctionExecutor_RecoversFromPanic(t *testing.T) {
 	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
 	calls := []*core.FunctionCall{{ID: "p1", Name: "panic"}}
 	exec := NewParallelFunctionExecutor(2)
-	err := exec.Execute(
-		context.Background(),
-		testutil.NewTestRequestContext(),
-		reg,
-		calls,
-		func(*core.Event) error { return nil },
-	)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	assert.Error(t, err)
 }
 
@@ -186,13 +158,7 @@ func TestFunctionExecutor_ToolNotFound(t *testing.T) {
 	reg := map[string]core.Tool{}
 	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
 	exec := NewParallelFunctionExecutor(4)
-	err := exec.Execute(
-		context.Background(),
-		testutil.NewTestRequestContext(),
-		reg,
-		calls,
-		func(*core.Event) error { return nil },
-	)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	assert.Error(t, err)
 }
 
@@ -200,13 +166,7 @@ func TestFunctionExecutor_InvalidArgs(t *testing.T) {
 	reg := map[string]core.Tool{"n": &sleepTool{name: "n", delay: 1 * time.Millisecond}}
 	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
 	exec := NewParallelFunctionExecutor(1)
-	err := exec.Execute(
-		context.Background(),
-		testutil.NewTestRequestContext(),
-		reg,
-		calls,
-		func(*core.Event) error { return nil },
-	)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	assert.Error(t, err)
 }
 
@@ -329,24 +289,14 @@ func TestFunctionExecutor_Plugin_BeforeShortCircuit(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 
-	var out []*core.Event
-	err := exec.Execute(
-		context.Background(),
-		rc,
-		reg,
-		calls,
-		func(ev *core.Event) error {
-			out = append(out, ev)
-			return nil
-		},
-	)
+	events, err := exec.Execute(context.Background(), rc, reg, calls)
 	require.NoError(t, err)
-	require.Len(t, out, 1)
-	fr := out[0].GetFunctionResponses()
+	require.Len(t, events, 1)
+	fr := events[0].GetFunctionResponses()
 	require.Len(t, fr, 1)
 	assert.Equal(t, "precomputed", fr[0].Response)
 	assert.Equal(t, 1, plug.beforeCalled)
-	assert.Equal(t, 1, plug.afterCalled) // after should run on short-circuit
+	assert.Equal(t, 1, plug.afterCalled)
 	assert.Equal(t, 0, plug.errorCalled)
 }
 
@@ -360,25 +310,14 @@ func TestFunctionExecutor_Plugin_ErrorRecovery(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 
-	var out []*core.Event
-	err := exec.Execute(
-		context.Background(),
-		rc,
-		reg,
-		calls,
-		func(ev *core.Event) error {
-			out = append(out, ev)
-			return nil
-		},
-	)
-	// Original panic -> error -> recovered by plugin => no error returned
+	events, err := exec.Execute(context.Background(), rc, reg, calls)
 	require.NoError(t, err)
-	require.Len(t, out, 1)
-	fr := out[0].GetFunctionResponses()
+	require.Len(t, events, 1)
+	fr := events[0].GetFunctionResponses()
 	require.Len(t, fr, 1)
 	assert.Equal(t, "recovered", fr[0].Response)
 	assert.Equal(t, 1, plug.errorCalled)
-	assert.Equal(t, 1, plug.afterCalled) // after runs after recovery
+	assert.Equal(t, 1, plug.afterCalled)
 }
 
 func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
@@ -390,7 +329,7 @@ func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 
-	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
+	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
 	assert.Equal(t, 0, plug.afterCalled)
@@ -406,7 +345,7 @@ func TestFunctionExecutor_Plugin_AfterFailureStops(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 
-	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
+	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
 	assert.Equal(t, 1, plug.afterCalled)
@@ -422,7 +361,7 @@ func TestFunctionExecutor_Plugin_ErrorHookFailure(t *testing.T) {
 		rcp.PluginManager = core.NewPluginManager(plug)
 	})
 
-	err := exec.Execute(context.Background(), rc, reg, calls, func(*core.Event) error { return nil })
+	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.errorCalled)
 }
@@ -432,19 +371,12 @@ func TestFunctionExecutor_RespectsMaxParallel(t *testing.T) {
 	reg := map[string]core.Tool{
 		"c": &counterTool{name: "c", delay: 40 * time.Millisecond, current: &current, max: &max},
 	}
-
-	// Three calls to the same tool
 	calls := []*core.FunctionCall{{ID: "1", Name: "c"}, {ID: "2", Name: "c"}, {ID: "3", Name: "c"}}
-	emit := func(*core.Event) error { return nil }
-
 	exec := NewParallelFunctionExecutor(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-
-	err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls, emit)
+	_, err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls)
 	require.NoError(t, err)
-
-	// With MaxParallel=1 we should never observe >1 concurrent execution
 	assert.LessOrEqual(t, int(max), 1)
 }
 
@@ -469,28 +401,17 @@ func TestFunctionExecutor_AggregatesMultipleErrors(t *testing.T) {
 
 	errA := errors.New("fail A")
 	errB := errors.New("fail B")
-
 	reg := map[string]core.Tool{
 		"failA": &failingTool{name: "failA", err: errA},
 		"failB": &failingTool{name: "failB", err: errB},
 		"ok":    &valueTool{name: "ok", value: "success"},
 	}
-
 	calls := []*core.FunctionCall{{ID: "1", Name: "failA"}, {ID: "2", Name: "failB"}, {ID: "3", Name: "ok"}}
-
-	var mu sync.Mutex
-	var events []*core.Event
-	emit := func(ev *core.Event) error { mu.Lock(); events = append(events, ev); mu.Unlock(); return nil }
-
 	exec := NewParallelFunctionExecutor(3)
-
-	err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls, emit)
+	events, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	require.Error(t, err)
-	// Aggregated error should contain both underlying errors
 	assert.ErrorIs(t, err, errA)
 	assert.ErrorIs(t, err, errB)
-
-	// Only the successful tool should have emitted an event
 	require.Len(t, events, 1)
 	fr := events[0].GetFunctionResponses()
 	require.Len(t, fr, 1)

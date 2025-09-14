@@ -30,8 +30,7 @@ type FunctionExecutor interface {
 		reqCtx core.RequestContext,
 		toolRegistry map[string]core.Tool,
 		fnCalls []*core.FunctionCall,
-		emit func(*core.Event) error,
-	) error
+	) ([]*core.Event, error)
 }
 
 // parallelFunctionExecutor is the default implementation.
@@ -191,29 +190,24 @@ func (e *parallelFunctionExecutor) Execute(
 	reqCtx core.RequestContext,
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
-	emit func(*core.Event) error,
-) error {
+) ([]*core.Event, error) {
 	n := len(fnCalls)
 	if n == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Fast path: single call
 	if n == 1 {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 
 		ev, err := e.buildFunctionResponseEvent(ctx, reqCtx, toolRegistry, fnCalls[0])
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		if err := emit(ev); err != nil {
-			return err
-		}
-
-		return nil
+		return []*core.Event{ev}, nil
 	}
 
 	maxPar := e.maxParallel
@@ -222,10 +216,12 @@ func (e *parallelFunctionExecutor) Execute(
 	}
 
 	var (
-		wg    sync.WaitGroup
-		sem   = make(chan struct{}, maxPar)
-		errs  []error
-		errMu sync.Mutex
+		wg     sync.WaitGroup
+		sem    = make(chan struct{}, maxPar)
+		errs   []error
+		errMu  sync.Mutex
+		events = make([]*core.Event, 0, n)
+		evMu   sync.Mutex
 	)
 
 	addErr := func(err error) {
@@ -256,22 +252,22 @@ func (e *parallelFunctionExecutor) Execute(
 				return
 			}
 
-			if ev == nil { // safety guard; should not happen if err==nil
+			if ev == nil { // safety guard
 				return
 			}
 
-			if emitErr := emit(ev); emitErr != nil {
-				addErr(emitErr)
-			}
+			evMu.Lock()
+			events = append(events, ev)
+			evMu.Unlock()
 		}(i, fc)
 	}
 
 	wg.Wait()
 	if len(errs) == 0 {
-		return nil
+		return events, nil
 	}
 
-	return errors.Join(errs...)
+	return events, errors.Join(errs...)
 }
 
 // panicError converts a recovered panic to an error type
