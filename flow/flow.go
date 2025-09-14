@@ -29,7 +29,6 @@ type Flow interface {
 }
 
 // Selector determines which flow to use based on agent capabilities.
-// (Renamed from previous core.FlowSelector to keep public surface smaller.)
 type Selector interface{ SelectFlow(agent Agent) Flow }
 
 // RequestProcessor processes the request before sending it to the LLM.

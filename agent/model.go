@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model"
+	"github.com/hupe1980/agentmesh/tool"
 )
 
 // ModelAgentOptions configures a ModelAgent instance.
@@ -104,6 +105,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
 			AgentExecutor: DefaultAgentExecutor,
 			ModelExecutor: model.DefaultModelExecutor,
+			ToolExecutor:  tool.NewParallelToolExecutor(4),
 		}),
 	}
 

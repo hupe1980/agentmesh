@@ -1,4 +1,4 @@
-package flow
+package tool
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// test tool implementations
+// sleepTool simulates latency before returning its name.
 type sleepTool struct {
 	name  string
 	delay time.Duration
@@ -22,10 +22,10 @@ type sleepTool struct {
 func (t *sleepTool) Name() string               { return t.name }
 func (t *sleepTool) Description() string        { return "sleep tool for testing" }
 func (t *sleepTool) Parameters() map[string]any { return map[string]any{} }
-func (t *sleepTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, _ *core.ModelRequest) error {
+func (t *sleepTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *sleepTool) Call(ctx context.Context, toolCtx core.ToolContext, toolArgs map[string]any) (any, error) {
+func (t *sleepTool) Call(ctx context.Context, toolCtx core.ToolContext, _ map[string]any) (any, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -39,18 +39,16 @@ type actionsTool struct{ name string }
 func (t *actionsTool) Name() string               { return t.name }
 func (t *actionsTool) Description() string        { return "actions tool" }
 func (t *actionsTool) Parameters() map[string]any { return map[string]any{} }
-func (t *actionsTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, _ *core.ModelRequest) error {
+func (t *actionsTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *actionsTool) Call(ctx context.Context, tc core.ToolContext, toolArgs map[string]any) (any, error) {
-	// mutate actions through accessor
+func (t *actionsTool) Call(ctx context.Context, tc core.ToolContext, _ map[string]any) (any, error) {
 	acts := tc.EventActions()
 	acts.StateDelta = core.Map(map[string]any{"k": "v"})
 	acts.ArtifactDelta = core.Map(map[string]int{"a": 1})
 	tc.TransferToAgent("ChildAgent")
 	tc.Escalate()
 	tc.SkipSummarization()
-
 	return "ok", nil
 }
 
@@ -59,7 +57,7 @@ type panicTool struct{ name string }
 func (t *panicTool) Name() string               { return t.name }
 func (t *panicTool) Description() string        { return "panic tool" }
 func (t *panicTool) Parameters() map[string]any { return map[string]any{} }
-func (t *panicTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, _ *core.ModelRequest) error {
+func (t *panicTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
 func (t *panicTool) Call(context.Context, core.ToolContext, map[string]any) (any, error) {
@@ -76,10 +74,10 @@ type counterTool struct {
 func (t *counterTool) Name() string               { return t.name }
 func (t *counterTool) Description() string        { return "counter tool" }
 func (t *counterTool) Parameters() map[string]any { return map[string]any{} }
-func (t *counterTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, _ *core.ModelRequest) error {
+func (t *counterTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *counterTool) Call(ctx context.Context, toolCtx core.ToolContext, toolArgs map[string]any) (any, error) {
+func (t *counterTool) Call(ctx context.Context, _ core.ToolContext, _ map[string]any) (any, error) {
 	c := atomic.AddInt32(t.current, 1)
 	for {
 		m := atomic.LoadInt32(t.max)
@@ -91,7 +89,6 @@ func (t *counterTool) Call(ctx context.Context, toolCtx core.ToolContext, toolAr
 		}
 		break
 	}
-	// simulate work
 	select {
 	case <-ctx.Done():
 		_ = atomic.AddInt32(t.current, -1)
@@ -102,75 +99,6 @@ func (t *counterTool) Call(ctx context.Context, toolCtx core.ToolContext, toolAr
 	}
 }
 
-func TestFunctionExecutor_EmitsOutOfOrder(t *testing.T) {
-	t.Parallel()
-
-	reg := map[string]core.Tool{
-		"slow": &sleepTool{name: "slow", delay: 120 * time.Millisecond},
-		"fast": &sleepTool{name: "fast", delay: 10 * time.Millisecond},
-	}
-	calls := []*core.FunctionCall{{ID: "1", Name: "slow"}, {ID: "2", Name: "fast"}}
-
-	exec := NewParallelFunctionExecutor(2)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	events, err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls)
-	require.NoError(t, err)
-	require.Len(t, events, 2)
-
-	// Returned slice should reflect completion order (fast before slow)
-	got := []string{events[0].GetFunctionResponses()[0].Name, events[1].GetFunctionResponses()[0].Name}
-	assert.Equal(t, []string{"fast", "slow"}, got)
-}
-
-func TestFunctionExecutor_AppliesToolActions(t *testing.T) {
-	reg := map[string]core.Tool{"actions": &actionsTool{name: "actions"}}
-	calls := []*core.FunctionCall{{ID: "a1", Name: "actions"}}
-	exec := NewParallelFunctionExecutor(1)
-	events, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
-	require.NoError(t, err)
-	require.Len(t, events, 1)
-
-	ev := events[0]
-
-	// State/Artifact deltas merged
-	assert.Equal(t, map[string]any{"k": "v"}, ev.Actions.StateDelta.Or(nil))
-	assert.Equal(t, map[string]int{"a": 1}, ev.Actions.ArtifactDelta.Or(nil))
-	// Transfer / escalate / skip summarization flags present
-	require.NotNil(t, ev.Actions.TransferToAgent)
-	assert.Equal(t, "ChildAgent", ev.Actions.TransferToAgent.Or(""))
-	require.NotNil(t, ev.Actions.Escalate)
-	assert.True(t, ev.Actions.Escalate.Or(false))
-	require.NotNil(t, ev.Actions.SkipSummarization)
-	assert.True(t, ev.Actions.SkipSummarization.Or(false))
-}
-
-func TestFunctionExecutor_RecoversFromPanic(t *testing.T) {
-	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
-	calls := []*core.FunctionCall{{ID: "p1", Name: "panic"}}
-	exec := NewParallelFunctionExecutor(2)
-	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
-	assert.Error(t, err)
-}
-
-func TestFunctionExecutor_ToolNotFound(t *testing.T) {
-	reg := map[string]core.Tool{}
-	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
-	exec := NewParallelFunctionExecutor(4)
-	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
-	assert.Error(t, err)
-}
-
-func TestFunctionExecutor_InvalidArgs(t *testing.T) {
-	reg := map[string]core.Tool{"n": &sleepTool{name: "n", delay: 1 * time.Millisecond}}
-	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
-	exec := NewParallelFunctionExecutor(1)
-	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
-	assert.Error(t, err)
-}
-
-// plugin capturing hook calls and allowing overrides
 type toolHookPlugin struct {
 	beforeCalled int
 	afterCalled  int
@@ -201,21 +129,21 @@ func (p *toolHookPlugin) AfterAgent(context.Context, core.CallbackContext, core.
 }
 func (p *toolHookPlugin) BeforeModel(
 	ctx context.Context,
-	cb core.CallbackContext,
+	cbCtx core.CallbackContext,
 	req *core.ModelRequest,
 ) (*core.ModelResponse, error) {
 	return nil, nil
 }
 func (p *toolHookPlugin) AfterModel(
 	ctx context.Context,
-	cb core.CallbackContext,
+	cbCtx core.CallbackContext,
 	resp *core.ModelResponse,
 ) (*core.ModelResponse, error) {
 	return nil, nil
 }
 func (p *toolHookPlugin) OnModelError(
 	ctx context.Context,
-	cb core.CallbackContext,
+	cbCtx core.CallbackContext,
 	req *core.ModelRequest,
 	err error,
 ) (*core.ModelResponse, error) {
@@ -266,7 +194,6 @@ func (p *toolHookPlugin) OnToolError(
 	return nil, nil
 }
 
-// simple tool returning static value
 type valueTool struct{ name, value string }
 
 func (t *valueTool) Name() string               { return t.name }
@@ -279,16 +206,73 @@ func (t *valueTool) Call(context.Context, core.ToolContext, map[string]any) (any
 	return t.value, nil
 }
 
-func TestFunctionExecutor_Plugin_BeforeShortCircuit(t *testing.T) {
+// --- Tests ---
+
+func TestParallelToolExecutor_OutOfOrder(t *testing.T) {
+	reg := map[string]core.Tool{
+		"slow": &sleepTool{name: "slow", delay: 120 * time.Millisecond},
+		"fast": &sleepTool{name: "fast", delay: 10 * time.Millisecond},
+	}
+	calls := []*core.FunctionCall{{ID: "1", Name: "slow"}, {ID: "2", Name: "fast"}}
+	exec := NewParallelToolExecutor(2)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	events, err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls)
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	got := []string{events[0].GetFunctionResponses()[0].Name, events[1].GetFunctionResponses()[0].Name}
+	assert.Equal(t, []string{"fast", "slow"}, got)
+}
+
+func TestParallelToolExecutor_ActionsApplied(t *testing.T) {
+	reg := map[string]core.Tool{"actions": &actionsTool{name: "actions"}}
+	calls := []*core.FunctionCall{{ID: "a1", Name: "actions"}}
+	exec := NewParallelToolExecutor(1)
+	events, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	Ev := events[0]
+	assert.Equal(t, map[string]any{"k": "v"}, Ev.Actions.StateDelta.Or(nil))
+	assert.Equal(t, map[string]int{"a": 1}, Ev.Actions.ArtifactDelta.Or(nil))
+	assert.Equal(t, "ChildAgent", Ev.Actions.TransferToAgent.Or(""))
+	assert.True(t, Ev.Actions.Escalate.Or(false))
+	assert.True(t, Ev.Actions.SkipSummarization.Or(false))
+}
+
+func TestParallelToolExecutor_PanicRecovery(t *testing.T) {
+	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
+	calls := []*core.FunctionCall{{ID: "p1", Name: "panic"}}
+	exec := NewParallelToolExecutor(2)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
+	assert.Error(t, err)
+}
+
+func TestParallelToolExecutor_ToolNotFound(t *testing.T) {
+	reg := map[string]core.Tool{}
+	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
+	exec := NewParallelToolExecutor(4)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
+	assert.Error(t, err)
+}
+
+func TestParallelToolExecutor_InvalidArgs(t *testing.T) {
+	reg := map[string]core.Tool{"n": &sleepTool{name: "n", delay: time.Millisecond}}
+	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
+	exec := NewParallelToolExecutor(1)
+	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
+	assert.Error(t, err)
+}
+
+func TestParallelToolExecutor_PluginShortCircuit(t *testing.T) {
 	plug := &toolHookPlugin{beforeResult: "precomputed"}
 	reg := map[string]core.Tool{"v": &valueTool{name: "v", value: "ignored"}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "v"}}
-	exec := NewParallelFunctionExecutor(1)
-
-	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
-		rcp.PluginManager = core.NewPluginManager(plug)
-	})
-
+	exec := NewParallelToolExecutor(1)
+	rc := testutil.NewTestRequestContext(
+		func(rcp *core.RequestContextParams) {
+			rcp.PluginManager = core.NewPluginManager(plug)
+		},
+	)
 	events, err := exec.Execute(context.Background(), rc, reg, calls)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
@@ -300,16 +284,16 @@ func TestFunctionExecutor_Plugin_BeforeShortCircuit(t *testing.T) {
 	assert.Equal(t, 0, plug.errorCalled)
 }
 
-func TestFunctionExecutor_Plugin_ErrorRecovery(t *testing.T) {
+func TestParallelToolExecutor_PluginRecovery(t *testing.T) {
 	plug := &toolHookPlugin{errorResult: "recovered"}
-	failing := &panicTool{name: "panic"}
-	reg := map[string]core.Tool{"panic": failing}
+	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "panic"}}
-	exec := NewParallelFunctionExecutor(1)
-	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
-		rcp.PluginManager = core.NewPluginManager(plug)
-	})
-
+	exec := NewParallelToolExecutor(1)
+	rc := testutil.NewTestRequestContext(
+		func(rcp *core.RequestContextParams) {
+			rcp.PluginManager = core.NewPluginManager(plug)
+		},
+	)
 	events, err := exec.Execute(context.Background(), rc, reg, calls)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
@@ -320,15 +304,16 @@ func TestFunctionExecutor_Plugin_ErrorRecovery(t *testing.T) {
 	assert.Equal(t, 1, plug.afterCalled)
 }
 
-func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
+func TestParallelToolExecutor_PluginBeforeFailure(t *testing.T) {
 	plug := &toolHookPlugin{failBefore: errors.New("before fail")}
 	reg := map[string]core.Tool{"v": &valueTool{name: "v", value: "x"}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "v"}}
-	exec := NewParallelFunctionExecutor(1)
-	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
-		rcp.PluginManager = core.NewPluginManager(plug)
-	})
-
+	exec := NewParallelToolExecutor(1)
+	rc := testutil.NewTestRequestContext(
+		func(rcp *core.RequestContextParams) {
+			rcp.PluginManager = core.NewPluginManager(plug)
+		},
+	)
 	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
@@ -336,15 +321,16 @@ func TestFunctionExecutor_Plugin_BeforeFailureStops(t *testing.T) {
 	assert.Equal(t, 0, plug.errorCalled)
 }
 
-func TestFunctionExecutor_Plugin_AfterFailureStops(t *testing.T) {
+func TestParallelToolExecutor_PluginAfterFailure(t *testing.T) {
 	plug := &toolHookPlugin{afterResult: "unused", failAfter: errors.New("after fail")}
 	reg := map[string]core.Tool{"v": &valueTool{name: "v", value: "orig"}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "v"}}
-	exec := NewParallelFunctionExecutor(1)
-	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
-		rcp.PluginManager = core.NewPluginManager(plug)
-	})
-
+	exec := NewParallelToolExecutor(1)
+	rc := testutil.NewTestRequestContext(
+		func(rcp *core.RequestContextParams) {
+			rcp.PluginManager = core.NewPluginManager(plug)
+		},
+	)
 	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.beforeCalled)
@@ -352,27 +338,26 @@ func TestFunctionExecutor_Plugin_AfterFailureStops(t *testing.T) {
 	assert.Equal(t, 0, plug.errorCalled)
 }
 
-func TestFunctionExecutor_Plugin_ErrorHookFailure(t *testing.T) {
+func TestParallelToolExecutor_PluginErrorHookFailure(t *testing.T) {
 	plug := &toolHookPlugin{failError: errors.New("error hook fail")}
 	reg := map[string]core.Tool{"panic": &panicTool{name: "panic"}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "panic"}}
-	exec := NewParallelFunctionExecutor(1)
-	rc := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
-		rcp.PluginManager = core.NewPluginManager(plug)
-	})
-
+	exec := NewParallelToolExecutor(1)
+	rc := testutil.NewTestRequestContext(
+		func(rcp *core.RequestContextParams) {
+			rcp.PluginManager = core.NewPluginManager(plug)
+		},
+	)
 	_, err := exec.Execute(context.Background(), rc, reg, calls)
 	assert.Error(t, err)
 	assert.Equal(t, 1, plug.errorCalled)
 }
 
-func TestFunctionExecutor_RespectsMaxParallel(t *testing.T) {
+func TestParallelToolExecutor_RespectsMaxParallel(t *testing.T) {
 	var current, max int32
-	reg := map[string]core.Tool{
-		"c": &counterTool{name: "c", delay: 40 * time.Millisecond, current: &current, max: &max},
-	}
+	reg := map[string]core.Tool{"c": &counterTool{name: "c", delay: 40 * time.Millisecond, current: &current, max: &max}}
 	calls := []*core.FunctionCall{{ID: "1", Name: "c"}, {ID: "2", Name: "c"}, {ID: "3", Name: "c"}}
-	exec := NewParallelFunctionExecutor(1)
+	exec := NewParallelToolExecutor(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, err := exec.Execute(ctx, testutil.NewTestRequestContext(), reg, calls)
@@ -380,7 +365,6 @@ func TestFunctionExecutor_RespectsMaxParallel(t *testing.T) {
 	assert.LessOrEqual(t, int(max), 1)
 }
 
-// failing tool used to generate distinct errors
 type failingTool struct {
 	name string
 	err  error
@@ -396,9 +380,7 @@ func (t *failingTool) Call(context.Context, core.ToolContext, map[string]any) (a
 	return nil, t.err
 }
 
-func TestFunctionExecutor_AggregatesMultipleErrors(t *testing.T) {
-	t.Parallel()
-
+func TestParallelToolExecutor_AggregatesMultipleErrors(t *testing.T) {
 	errA := errors.New("fail A")
 	errB := errors.New("fail B")
 	reg := map[string]core.Tool{
@@ -407,7 +389,7 @@ func TestFunctionExecutor_AggregatesMultipleErrors(t *testing.T) {
 		"ok":    &valueTool{name: "ok", value: "success"},
 	}
 	calls := []*core.FunctionCall{{ID: "1", Name: "failA"}, {ID: "2", Name: "failB"}, {ID: "3", Name: "ok"}}
-	exec := NewParallelFunctionExecutor(3)
+	exec := NewParallelToolExecutor(3)
 	events, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errA)

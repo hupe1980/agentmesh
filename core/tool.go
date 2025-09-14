@@ -43,21 +43,22 @@ type Tool interface {
 	Call(ctx context.Context, toolCtx ToolContext, args map[string]any) (any, error)
 }
 
-// ToolExecutor abstracts executing a Tool with a prepared argument map and ToolContext.
-// It mirrors AgentExecutor for symmetry and future middleware (logging, tracing, retry).
+// ToolExecutor defines an interface for executing tools with a given context, request context, and tool registry.
+// It also takes a list of function calls to execute.
 type ToolExecutor interface {
-	Execute(ctx context.Context, toolCtx ToolContext, tool Tool, args map[string]any) (any, error)
+	Execute(ctx context.Context, reqCtx RequestContext, toolRegistry map[string]Tool, fnCalls []*FunctionCall,
+	) ([]*Event, error)
 }
 
 // ToolExecutorFunc is a function adapter implementing ToolExecutor.
-type ToolExecutorFunc func(context.Context, ToolContext, Tool, map[string]any) (any, error)
+type ToolExecutorFunc func(context.Context, RequestContext, map[string]Tool, []*FunctionCall) ([]*Event, error)
 
 // Execute calls the underlying function.
 func (f ToolExecutorFunc) Execute(
 	ctx context.Context,
-	toolCtx ToolContext,
-	tool Tool,
-	args map[string]any,
-) (any, error) {
-	return f(ctx, toolCtx, tool, args)
+	reqCtx RequestContext,
+	toolRegistry map[string]Tool,
+	fnCalls []*FunctionCall,
+) ([]*Event, error) {
+	return f(ctx, reqCtx, toolRegistry, fnCalls)
 }

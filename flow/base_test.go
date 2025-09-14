@@ -89,24 +89,6 @@ func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan 
 }
 func (m *textModel) Info() core.ModelInfo { return core.ModelInfo{Name: "m", Provider: "test"} }
 
-// fake executor that emits a simple function response event per call, with optional transfer.
-type fakeExec struct{ transferTo core.Opt[string] }
-
-func (e *fakeExec) Execute(
-	ctx context.Context,
-	reqCtx core.RequestContext,
-	toolRegistry map[string]core.Tool,
-	fnCalls []*core.FunctionCall,
-) ([]*core.Event, error) {
-	events := make([]*core.Event, 0, len(fnCalls))
-	for _, c := range fnCalls {
-		ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), c.ID, c.Name, map[string]any{"ok": true})
-		ev.Actions.TransferToAgent = e.transferTo
-		events = append(events, ev)
-	}
-	return events, nil
-}
-
 func TestBaseFlow_Simple_NoTools(t *testing.T) {
 	// Use text-only model, ensure processors run and at least one assistant event is written
 	agent := testutil.NewMockAgent("A")
@@ -120,6 +102,7 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  testutil.NewToolExecutorMock(),
 	})
 	// Minimal request processor to add user content (so model has input)
 	f.AddRequestProcessor(&mockReqProc{
@@ -163,6 +146,7 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  testutil.NewToolExecutorMock(),
 	})
 	// Provide a trivial request
 	f.AddRequestProcessor(&mockReqProc{
@@ -177,9 +161,6 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 			return nil
 		},
 	})
-
-	// Inject fake executor that returns a tool response (no transfer), so flow loops back to build -> call
-	f.functionExecutor = &fakeExec{}
 
 	q := &testutil.CollectingWriter{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -213,7 +194,9 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  testutil.NewToolExecutorMock(),
 	})
+
 	f.AddRequestProcessor(&mockReqProc{
 		name: "fail",
 		fn: func(
@@ -243,10 +226,15 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 		return "inst", nil
 	}
 
+	toolExexutor := testutil.NewToolExecutorMock()
+	toolExexutor.TransferTo = core.String("non-existent")
+
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  toolExexutor,
 	})
+
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
 		fn: func(
@@ -262,8 +250,7 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 			return nil
 		},
 	})
-	// executor signals transfer to non-existent agent
-	f.functionExecutor = &fakeExec{transferTo: core.String("does-not-exist")}
+
 	q := &testutil.CollectingWriter{}
 	err := f.Execute(context.Background(), newTestRunContext(), q)
 	require.Error(t, err)
@@ -282,9 +269,13 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 	child := testutil.NewMockAgent("child")
 	agent.SubAgentsList = []core.Agent{child}
 
+	toolExexutor := testutil.NewToolExecutorMock()
+	toolExexutor.TransferTo = core.String("child")
+
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  toolExexutor,
 	})
 	f.AddRequestProcessor(&mockReqProc{
 		name: "addUser",
@@ -299,12 +290,10 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 		},
 	})
 
-	// Function executor will request a transfer to the child
-	f.functionExecutor = &fakeExec{transferTo: core.String("child")}
-
-	q := &testutil.CollectingWriter{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
+	q := &testutil.CollectingWriter{}
 	err := f.Execute(ctx, newTestRunContext(), q)
 	require.NoError(t, err)
 
@@ -329,6 +318,7 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 	f := NewBaseFlow(agent, &Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
+		ToolExecutor:  testutil.NewToolExecutorMock(),
 	})
 
 	f.AddRequestProcessor(&mockReqProc{

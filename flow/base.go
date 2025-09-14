@@ -24,7 +24,6 @@ type BaseFlow struct {
 	requestProcessors  []RequestProcessor
 	responseProcessors []ResponseProcessor
 	executors          *Executors
-	functionExecutor   FunctionExecutor
 }
 
 // NewBaseFlow creates a new basic single-agent flow.
@@ -34,7 +33,6 @@ func NewBaseFlow(agent Agent, executors *Executors) *BaseFlow {
 		requestProcessors:  []RequestProcessor{},
 		responseProcessors: []ResponseProcessor{},
 		executors:          executors,
-		functionExecutor:   NewParallelFunctionExecutor(4),
 	}
 }
 
@@ -128,7 +126,7 @@ func (f *BaseFlow) handleFunctionCalls(
 	log := logging.FromContext(ctx)
 
 	// Execute all function calls (out-of-order completion)
-	collected, execErr := f.functionExecutor.Execute(ctx, reqCtx, toolRegistry, fnCalls)
+	collected, execErr := f.executors.ToolExecutor.Execute(ctx, reqCtx, toolRegistry, fnCalls)
 	if execErr != nil {
 		return nil, fmt.Errorf("failed to execute function calls: %w", execErr)
 	}
