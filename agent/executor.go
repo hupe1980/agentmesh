@@ -60,3 +60,6 @@ func runAfterAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agen
 // DefaultAgentExecutor is the reusable core.AgentExecutor implementation
 // using ExecuteAgent. Inject this into flows/selectors.
 var DefaultAgentExecutor core.AgentExecutor = core.AgentExecutorFunc(ExecuteAgent)
+
+// Compile-time assertion for the function adapter variable.
+var _ core.AgentExecutor = DefaultAgentExecutor

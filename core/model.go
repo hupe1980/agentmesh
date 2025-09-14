@@ -144,3 +144,27 @@ type Model interface {
 	// Info returns information about the model implementation.
 	Info() ModelInfo
 }
+
+// ModelExecutor abstracts execution of a Model request, allowing decoration
+// (metrics, tracing, timeouts) similar to AgentExecutor / ToolExecutor.
+type ModelExecutor interface {
+	Execute(
+		ctx context.Context,
+		reqCtx RequestContext,
+		model Model,
+		req *ModelRequest,
+	) (<-chan *ModelResponse, <-chan error)
+}
+
+// ModelExecutorFunc is an adapter to allow plain functions to satisfy ModelExecutor.
+type ModelExecutorFunc func(context.Context, RequestContext, Model, *ModelRequest) (<-chan *ModelResponse, <-chan error)
+
+// Execute calls the underlying function to execute the model request.
+func (f ModelExecutorFunc) Execute(
+	ctx context.Context,
+	reqCtx RequestContext,
+	model Model,
+	req *ModelRequest,
+) (<-chan *ModelResponse, <-chan error) {
+	return f(ctx, reqCtx, model, req)
+}
