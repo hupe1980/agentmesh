@@ -224,65 +224,54 @@ func (f *BaseFlow) stepCall(
 		return fmt.Errorf("failed to increment model calls: %w", err)
 	}
 
-	// Wrap queue writer with response processor application logic.
-	procWriter := &responseProcessingWriter{
-		base:             queue,
-		processors:       f.responseProcessors,
-		agent:            f.agent,
-		ctx:              ctx,
-		reqCtx:           reqCtx,
-		captureLastEvent: func(ev *core.Event) { fr.lastEvent = ev },
-		captureFunctionCalls: func(ev *core.Event) {
-			if !ev.IsPartial() {
+	mdl := f.agent.Model()
+	respCh, errCh := f.executors.ModelExecutor.Execute(ctx, reqCtx, mdl, fr.req)
+
+	for respCh != nil || errCh != nil {
+		select {
+		case r, ok := <-respCh:
+			if !ok {
+				respCh = nil
+				continue
+			}
+			if r == nil {
+				continue
+			}
+
+			// Apply response processors to each chunk (partial or final).
+			for _, processor := range f.responseProcessors {
+				if err := processor.ProcessResponse(ctx, reqCtx, r, f.agent); err != nil {
+					return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
+				}
+			}
+
+			// Convert model response into appropriate event type.
+			var ev *core.Event
+			if r.Partial {
+				ev = core.NewPartialAssistantEvent(reqCtx.RunID(), f.agent.Name(), r.Parts...)
+			} else {
+				ev = core.NewFullAssistantEvent(reqCtx.RunID(), f.agent.Name(), r.Parts...)
+			}
+
+			if err := queue.Write(ctx, ev); err != nil {
+				return fmt.Errorf("failed to write event: %w", err)
+			}
+
+			fr.lastEvent = ev
+			if !r.Partial {
 				fr.fnCalls = ev.GetFunctionCalls()
 			}
-		},
-	}
+		case err, ok := <-errCh:
+			if ok {
+				return fmt.Errorf("model execution failed: %w", err)
+			}
 
-	//mdl := f.agent.Model()
-	//f.executors.ModelExecutor.Execute(ctx, reqCtx, mdl, fr.req, procWriter)
-
-	// Execute model using shared executor.
-	_, err := ExecuteModel(ctx, reqCtx, f.agent, fr.req, procWriter)
-	if err != nil {
-		return fmt.Errorf("model execution failed: %w", err)
-	}
-
-	return nil
-}
-
-// responseProcessingWriter applies response processors before forwarding events
-// and captures last event and function calls.
-type responseProcessingWriter struct {
-	base                 core.EventWriter
-	processors           []ResponseProcessor
-	agent                Agent
-	ctx                  context.Context
-	reqCtx               core.RequestContext
-	captureLastEvent     func(*core.Event)
-	captureFunctionCalls func(*core.Event)
-}
-
-func (w *responseProcessingWriter) Write(_ context.Context, ev *core.Event) error {
-	// Build a synthetic ModelResponse for processors from event parts.
-	resp := &core.ModelResponse{Parts: ev.Parts, Partial: ev.IsPartial()}
-	for _, processor := range w.processors {
-		if err := processor.ProcessResponse(w.ctx, w.reqCtx, resp, w.agent); err != nil {
-			return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
+			errCh = nil
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	// Emit event downstream.
-	if w.base != nil {
-		if err := w.base.Write(w.ctx, ev); err != nil {
-			return err
-		}
-	}
-	if w.captureLastEvent != nil {
-		w.captureLastEvent(ev)
-	}
-	if w.captureFunctionCalls != nil {
-		w.captureFunctionCalls(ev)
-	}
+
 	return nil
 }
 

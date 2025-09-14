@@ -43,7 +43,13 @@ func TestSingleAgentFlow(t *testing.T) {
 		return "You are a test assistant.", nil
 	}
 
-	f := NewSingleAgentFlow(agent, &Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
+	f := NewSingleAgentFlow(
+		agent,
+		&Executors{
+			AgentExecutor: testutil.NewAgentExecutorMock(),
+			ModelExecutor: testutil.NewModelExecutorMock(),
+		},
+	)
 	reqCtx := newTestRunContext()
 
 	events := make([]*core.Event, 0, 8)
@@ -54,7 +60,7 @@ func TestSingleAgentFlow(t *testing.T) {
 		eventCh <- ev
 	})
 
-	// Collector goroutine appends on the test goroutine’s behalf.
+	// Collector goroutine appends on the test goroutine's behalf.
 	done := make(chan struct{})
 	go func() {
 		for ev := range eventCh {
@@ -82,7 +88,10 @@ func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = false
 	a.SubAgentsList = nil
-	sel := NewDefaultSelector(&Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
+	sel := NewDefaultSelector(&Executors{
+		AgentExecutor: testutil.NewAgentExecutorMock(),
+		ModelExecutor: testutil.NewModelExecutorMock(),
+	})
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*SingleAgentFlow)
 	require.True(t, ok, "expected SingleAgentFlow, got %T", fl)
@@ -92,7 +101,10 @@ func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 	a := testutil.NewMockAgent("xfer")
 	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = true
-	sel := NewDefaultSelector(&Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
+	sel := NewDefaultSelector(&Executors{
+		AgentExecutor: testutil.NewAgentExecutorMock(),
+		ModelExecutor: testutil.NewModelExecutorMock(),
+	})
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
@@ -103,7 +115,10 @@ func TestSelector_ReturnsMultiAgentFlow_WhenHasSubAgents(t *testing.T) {
 	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
 	a.TransferToPeersEnabled = false
 	a.HasSubAgentsFunc = func() bool { return true }
-	sel := NewDefaultSelector(&Executors{AgentExecutor: testutil.NewAgentExecutorMock()})
+	sel := NewDefaultSelector(&Executors{
+		AgentExecutor: testutil.NewAgentExecutorMock(),
+		ModelExecutor: testutil.NewModelExecutorMock(),
+	})
 	fl := sel.SelectFlow(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
