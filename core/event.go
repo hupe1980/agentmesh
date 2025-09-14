@@ -5,7 +5,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/hupe1980/agentmesh/internal/util"
+	"github.com/google/uuid"
 )
 
 // EventWriter is a minimal queue abstraction for writing events with cancellation.
@@ -230,7 +230,7 @@ func (e *Event) ApplyActions(actions *EventActions) {
 // newEvent creates a new Event with the given runID, author and optional parts.
 func newEvent(runID, author string, parts ...Part) *Event {
 	return &Event{
-		ID:        util.NewID(),
+		ID:        uuid.NewString(),
 		RunID:     runID,
 		Author:    author,
 		Timestamp: time.Now(),

@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
 	"github.com/hupe1980/agentmesh/metrics"
@@ -125,7 +125,7 @@ func (r *Runner) Run(
 	userParts []core.Part,
 	optFns ...func(o *core.RunOptions),
 ) (string, <-chan core.RunResult, error) {
-	runID := util.NewID()
+	runID := uuid.NewString()
 
 	// Prepare context & observability (logger, metrics, tracing)
 	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, runID, sessionID)
@@ -377,7 +377,7 @@ func (r *Runner) saveBlobAsArtifact(
 ) ([]core.Part, error) {
 	name := fp.Name
 	if name == "" {
-		name = fmt.Sprintf("upload-%s-%d", util.NewID(), index)
+		name = fmt.Sprintf("upload-%s-%d", uuid.NewString(), index)
 	}
 
 	if err := r.svc.artifactStore.Save(ctx, appName, userID, sessionID, name, fp); err != nil {
