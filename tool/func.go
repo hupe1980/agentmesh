@@ -123,7 +123,7 @@ func (t *FuncTool) Description() string { return t.description }
 // Parameters returns the (minimal) JSON schema describing expected arguments.
 func (t *FuncTool) Parameters() map[string]any { return t.parameters }
 
-// ProcessModelRequest is a no-op for FuncTool and exists to satisfy the core.Tool interface.
+// ProcessModelRequest adds this tool to the provided request.
 func (t *FuncTool) ProcessModelRequest(
 	ctx context.Context,
 	toolCtx core.ToolContext,
