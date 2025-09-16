@@ -15,7 +15,7 @@ import (
 	"github.com/hupe1980/agentmesh/trace"
 )
 
-// Metric / tracing identifiers (deduplicated literals)
+// Metric / tracing identifiers
 const (
 	metricFunctionDuration = "agentmesh_function_duration_seconds"
 	metricFunctionsTotal   = "agentmesh_functions_total"
@@ -132,12 +132,15 @@ func (e *parallelToolExecutor) buildToolEvent(
 		"function", fc.Name,
 		"function_call_id", fc.ID,
 	)
+
 	ctx, span := tr.Start(ctx, "Function.Call",
 		trace.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
 		trace.Attr{Key: "function.name", Value: fc.Name},
 		trace.Attr{Key: "function_call.id", Value: fc.ID},
 	)
+
 	start := time.Now()
+
 	defer func() {
 		met.Histogram(metricFunctionDuration).Record(ctx, time.Since(start).Seconds(),
 			metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
@@ -145,25 +148,31 @@ func (e *parallelToolExecutor) buildToolEvent(
 		)
 		span.End(nil)
 	}()
+
 	met.Counter(metricFunctionsTotal).Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()})
 
 	toolCtx := core.NewToolContext(reqCtx, func(o *core.ToolContextOptions) { o.FunctionCallID = core.String(fc.ID) })
+
 	tool, ok := toolRegistry[fc.Name]
 	if !ok {
 		return nil, fmt.Errorf("%w: tool=%s", core.ErrToolNotFound, fc.Name)
 	}
+
 	argMap, argErr := parseArgs(fc.Arguments)
 	if argErr != nil {
 		return nil, argErr
 	}
+
 	log.Info("agent.function.start")
 	result, err := e.executeWithPlugins(ctx, reqCtx, toolCtx, tool, argMap)
 	if err != nil {
 		return nil, err
 	}
-	Ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), fc.ID, fc.Name, result)
-	Ev.ApplyActions(toolCtx.EventActions())
-	return Ev, nil
+
+	ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), fc.ID, fc.Name, result)
+	ev.ApplyActions(toolCtx.EventActions())
+
+	return ev, nil
 }
 
 // executeWithPlugins runs plugin hooks around a tool call.
@@ -175,12 +184,15 @@ func (e *parallelToolExecutor) executeWithPlugins(
 	argMap map[string]any,
 ) (any, error) {
 	log := logging.FromContext(ctx)
-	var final any
+
 	overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, argMap)
 	if err != nil {
 		log.Error("agent.function.before_tool.error", "error", err)
 		return nil, err
 	}
+
+	var final any
+
 	if overridden != nil {
 		final = overridden
 	} else {
@@ -188,6 +200,7 @@ func (e *parallelToolExecutor) executeWithPlugins(
 			callErr error
 			result  any
 		)
+
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -197,6 +210,7 @@ func (e *parallelToolExecutor) executeWithPlugins(
 			}()
 			result, callErr = tool.Call(ctx, toolCtx, argMap)
 		}()
+
 		if callErr != nil {
 			recovered, herr := reqCtx.RunOnToolError(ctx, tool, toolCtx, argMap, callErr)
 			if herr != nil {
@@ -211,14 +225,17 @@ func (e *parallelToolExecutor) executeWithPlugins(
 			final = result
 		}
 	}
+
 	modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, final)
 	if err != nil {
 		log.Error("agent.function.after_tool.error", "error", err)
 		return nil, err
 	}
+
 	if modified != nil {
 		final = modified
 	}
+
 	return final, nil
 }
 
@@ -227,13 +244,16 @@ func parseArgs(raw string) (map[string]any, error) {
 	if raw == "" {
 		return map[string]any{}, nil
 	}
+
 	var argMap map[string]any
 	if err := json.Unmarshal([]byte(raw), &argMap); err != nil {
 		return nil, fmt.Errorf("%w: %v", core.ErrInvalidToolArgs, err)
 	}
+
 	if argMap == nil {
 		argMap = map[string]any{}
 	}
+
 	return argMap, nil
 }
 
