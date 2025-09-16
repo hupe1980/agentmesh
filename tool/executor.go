@@ -40,6 +40,41 @@ func (e *parallelToolExecutor) Execute(
 	toolRegistry map[string]core.Tool,
 	fnCalls []*core.FunctionCall,
 ) ([]*core.Event, error) {
+	tr := trace.FromContext(ctx).Tracer(traceNamespace)
+	met := metrics.FromContext(ctx)
+	log := logging.FromContext(ctx).With("agent", reqCtx.AgentName())
+
+	ctx, span := tr.Start(ctx, "Functions.Batch",
+		trace.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
+		trace.Attr{Key: "functions.count", Value: fmt.Sprintf("%d", len(fnCalls))},
+	)
+
+	batchStart := time.Now()
+
+	defer func() {
+		met.Histogram("agentmesh_functions_batch_duration_seconds").Record(
+			ctx,
+			time.Since(batchStart).Seconds(),
+			metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
+			metrics.Attr{Key: "functions.count", Value: fmt.Sprintf("%d", len(fnCalls))},
+		)
+		span.End(nil)
+	}()
+
+	met.Counter("agentmesh_functions_batches_total").Add(
+		ctx,
+		1,
+		metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
+	)
+
+	met.Histogram("agentmesh_functions_batch_size").Record(
+		ctx,
+		float64(len(fnCalls)),
+		metrics.Attr{Key: "agent.name", Value: reqCtx.AgentName()},
+	)
+
+	log.Info("agent.functions.batch.start", "count", len(fnCalls))
+
 	n := len(fnCalls)
 	if n == 0 {
 		return nil, nil
@@ -50,12 +85,12 @@ func (e *parallelToolExecutor) Execute(
 			return nil, err
 		}
 
-		Ev, err := e.buildToolEvent(ctx, reqCtx, toolRegistry, fnCalls[0])
+		ev, err := e.buildToolEvent(ctx, reqCtx, toolRegistry, fnCalls[0])
 		if err != nil {
 			return nil, err
 		}
 
-		return []*core.Event{Ev}, nil
+		return []*core.Event{ev}, nil
 	}
 
 	maxPar := e.maxParallel
@@ -76,6 +111,7 @@ func (e *parallelToolExecutor) Execute(
 		if err == nil {
 			return
 		}
+
 		errMu.Lock()
 		errs = append(errs, err)
 		errMu.Unlock()
@@ -84,6 +120,7 @@ func (e *parallelToolExecutor) Execute(
 	for i, fc := range fnCalls {
 		wg.Add(1)
 		sem <- struct{}{}
+
 		go func(_ int, call *core.FunctionCall) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -164,6 +201,7 @@ func (e *parallelToolExecutor) buildToolEvent(
 	}
 
 	log.Info("agent.function.start")
+
 	result, err := e.executeWithPlugins(ctx, reqCtx, toolCtx, tool, argMap)
 	if err != nil {
 		return nil, err
@@ -208,6 +246,7 @@ func (e *parallelToolExecutor) executeWithPlugins(
 					log.Error("agent.function.tool.panic", "recover", r)
 				}
 			}()
+
 			result, callErr = tool.Call(ctx, toolCtx, argMap)
 		}()
 
@@ -217,9 +256,11 @@ func (e *parallelToolExecutor) executeWithPlugins(
 				log.Error("agent.function.error", "error", herr)
 				return nil, herr
 			}
+
 			if recovered == nil {
 				return nil, callErr
 			}
+
 			final = recovered
 		} else {
 			final = result
