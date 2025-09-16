@@ -94,6 +94,7 @@ func (p *ParallelAgent) Run(ctx context.Context, reqCtx core.RequestContext, wri
 				if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					err = fmt.Errorf("parallel execution timed out for agent %s: %w", c.Name(), core.ErrParallelTimeout)
 				}
+
 				errCh <- fmt.Errorf("parallel execution failed for agent %s: %w", c.Name(), err)
 			}
 		}(child)
