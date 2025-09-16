@@ -149,10 +149,10 @@ a := agent.NewModelAgent("A", openai.NewModel())
 b := agent.NewModelAgent("B", openai.NewModel())
 
 // Parallel branch
-par := agent.NewParallelAgent("FanOut", a, b)
+par := agent.NewParallelAgent("FanOut", []core.Agent{a, b})
 
 // Sequential pipeline
-pipe := agent.NewSequentialAgent("Pipeline", par /* then more children... */)
+pipe := agent.NewSequentialAgent("Pipeline", []core.Agent{par /* then more children... */})
 
 // Run with runner like in Quick Start
 ```
