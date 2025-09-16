@@ -3,8 +3,18 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/logging"
+	"github.com/hupe1980/agentmesh/metrics"
+	"github.com/hupe1980/agentmesh/trace"
+)
+
+const (
+	metricAgentRunsTotal   = "agentmesh_agent_runs_total"
+	metricAgentRunDuration = "agentmesh_agent_run_duration_seconds"
+	traceAgentNamespace    = "agentmesh/agent"
 )
 
 // ExecuteAgent runs an agent with BeforeAgent / AfterAgent hook semantics.
@@ -18,6 +28,30 @@ import (
 //
 // History is strictly append-only; no prior events are modified or removed.
 func ExecuteAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agent, w core.EventWriter) error {
+	tr := trace.FromContext(ctx).Tracer(traceAgentNamespace)
+	met := metrics.FromContext(ctx)
+	log := logging.FromContext(ctx).With("agent", ag.Name())
+
+	ctx, span := tr.Start(ctx, "Agent.Execute",
+		trace.Attr{Key: "agent.name", Value: ag.Name()},
+		trace.Attr{Key: "run.id", Value: reqCtx.RunID()},
+	)
+
+	start := time.Now()
+
+	defer func() {
+		met.Histogram(metricAgentRunDuration).Record(
+			ctx,
+			time.Since(start).Seconds(),
+			metrics.Attr{Key: "agent.name", Value: ag.Name()},
+		)
+		span.End(nil)
+	}()
+
+	met.Counter(metricAgentRunsTotal).Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: ag.Name()})
+
+	log.Info("agent.execute.start")
+
 	// If the RequestContext's agent identity doesn't match the target agent's name,
 	// clone the context so emitted events have the correct Author. This centralizes
 	// transfer / delegation behavior so callers don't need to clone manually.
@@ -27,18 +61,29 @@ func ExecuteAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agent
 
 	// BeforeAgent short-circuit path
 	if parts, err := reqCtx.RunBeforeAgent(ctx, ag); err != nil {
+		log.Error("agent.before.error", "error", err)
+
 		return fmt.Errorf("plugin: before_agent: %w", err)
 	} else if parts != nil {
 		assist := core.NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), parts...)
+
 		if err := w.Write(ctx, assist); err != nil {
+			log.Error("agent.synthetic.write.error", "error", err)
 			return fmt.Errorf("failed to write synthetic assistant event: %w", err)
 		}
+
+		log.Info("agent.execute.short_circuit")
+
 		return runAfterAgent(ctx, reqCtx, ag, w)
 	}
 
 	if err := ag.Run(ctx, reqCtx, w); err != nil {
+		log.Error("agent.run.error", "error", err)
 		return err
 	}
+
+	log.Info("agent.run.finished")
+
 	return runAfterAgent(ctx, reqCtx, ag, w)
 }
 
@@ -49,6 +94,7 @@ func runAfterAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agen
 		return fmt.Errorf("plugin: after_agent: %w", err)
 	} else if afterParts != nil {
 		repl := core.NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), afterParts...)
+
 		if err := w.Write(ctx, repl); err != nil {
 			return fmt.Errorf("failed to write after_agent replacement event: %w", err)
 		}
