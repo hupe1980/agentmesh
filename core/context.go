@@ -16,6 +16,7 @@ type ArtifactReader interface {
 // ArtifactWriter provides write access to artifacts scoped to the session.
 type ArtifactWriter interface {
 	SaveArtifact(ctx context.Context, fileName string, artifact Part) error
+	DeleteArtifact(ctx context.Context, fileName string) error
 }
 
 // MemoryReader provides read access to the memory store.
@@ -111,7 +112,14 @@ type SummarizationSkipper interface {
 // ToolContext extends RequestContext with tool orchestration abilities.
 type ToolContext interface {
 	ReadonlyContext
+
+	// Artifact access
+	ArtifactReader
+	ArtifactWriter
+
+	// Memory access
 	MemoryReader
+
 	TransferRequester
 	Escalator
 	SummarizationSkipper
@@ -127,7 +135,6 @@ type requestContext struct {
 	runID         string
 	agent         AgentIdentity
 	userParts     []Part
-	maxModelCalls int
 	sessionStore  SessionStore
 	artifactStore ArtifactStore
 	memoryStore   MemoryStore
@@ -170,7 +177,6 @@ func NewRequestContext(p RequestContextParams) RequestContext {
 		runID:         p.RunID,
 		agent:         p.Agent,
 		userParts:     p.UserParts,
-		maxModelCalls: p.MaxModelCalls,
 		session:       p.Session,
 		sessionStore:  p.SessionStore,
 		artifactStore: p.ArtifactStore,
@@ -196,6 +202,11 @@ func (rc *requestContext) StateSnapshot() map[string]any {
 // SaveArtifact stores bytes in the ArtifactStore and stages the id for the next emitted event.
 func (rc *requestContext) SaveArtifact(ctx context.Context, fileName string, artifact Part) error {
 	return rc.artifactStore.Save(ctx, rc.AppName(), rc.UserID(), rc.SessionID(), fileName, artifact)
+}
+
+// DeleteArtifact removes an artifact from the ArtifactStore.
+func (rc *requestContext) DeleteArtifact(ctx context.Context, fileName string) error {
+	return rc.artifactStore.Delete(ctx, rc.AppName(), rc.UserID(), rc.SessionID(), fileName)
 }
 
 // LoadArtifact retrieves previously saved artifact bytes.
@@ -384,6 +395,7 @@ var (
 
 type toolContext struct {
 	RequestContext
+
 	functionCallID Opt[string]
 	eventActions   EventActions
 }
@@ -441,6 +453,8 @@ func (tc *toolContext) Escalate() {
 // Compile-time assertions: ToolContext satisfies capability interfaces
 var (
 	_ StateSnapshotter  = (*toolContext)(nil)
+	_ ArtifactReader    = (*toolContext)(nil)
+	_ ArtifactWriter    = (*toolContext)(nil)
 	_ MemoryReader      = (*toolContext)(nil)
 	_ TransferRequester = (*toolContext)(nil)
 	_ Escalator         = (*toolContext)(nil)

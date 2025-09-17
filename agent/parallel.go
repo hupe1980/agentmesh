@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/executor"
 )
 
 // ParallelAgentOptions holds configuration for a ParallelAgent.
@@ -42,7 +43,7 @@ func NewParallelAgent(name string, subAgents []core.Agent, optFns ...func(o *Par
 	opts := ParallelAgentOptions{
 		Description:   "",
 		Timeout:       0, // No timeout by default
-		AgentExecutor: DefaultAgentExecutor,
+		AgentExecutor: executor.DefaultAgentExecutor,
 	}
 
 	// Apply option functions to override defaults

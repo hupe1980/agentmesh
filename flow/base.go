@@ -20,14 +20,14 @@ type Executors struct {
 // BaseFlow is a minimal single‑agent flow implementation that supports a
 // request → LLM → (optional tool loop) cycle with pluggable request/response processors.
 type BaseFlow struct {
-	agent              Agent
+	agent              core.FlowAgent
 	requestProcessors  []RequestProcessor
 	responseProcessors []ResponseProcessor
 	executors          *Executors
 }
 
 // NewBaseFlow creates a new basic single-agent flow.
-func NewBaseFlow(agent Agent, executors *Executors) *BaseFlow {
+func NewBaseFlow(agent core.FlowAgent, executors *Executors) *BaseFlow {
 	return &BaseFlow{
 		agent:              agent,
 		requestProcessors:  []RequestProcessor{},

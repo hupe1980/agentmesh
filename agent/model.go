@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/flow"
 	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/logging"
-	"github.com/hupe1980/agentmesh/model"
-	"github.com/hupe1980/agentmesh/tool"
 )
 
 // ModelAgentOptions configures a ModelAgent instance.
@@ -32,6 +31,8 @@ type ModelAgentOptions struct {
 	OutputKey string
 	// Maximum number of conversation history messages to keep
 	MaxHistoryMessages int
+	// What kind of history the agent receives
+	HistoryMode core.HistoryMode
 	// Whether agent can transfer control to sub-agents (peer agents)
 	AllowTransferToPeers bool
 	// Whether agent can transfer control to its parent agent (escalation)
@@ -39,7 +40,7 @@ type ModelAgentOptions struct {
 	// Registered tools for function calling
 	Tools []core.Tool
 	// Selector for choosing the appropriate flow
-	FlowSelector flow.Selector
+	FlowSelector core.FlowSelector
 	// Sub-agents managed by this agent
 	SubAgents []core.Agent
 }
@@ -68,9 +69,10 @@ type ModelAgent struct {
 	outputKey             string                                    // Key for saving responses to session state
 	maxHistoryMessages    int                                       // Maximum number of conversation history
 	// messages to keep
-	allowTransferToPeers  bool          // Whether agent can transfer control to sub-agents
-	allowTransferToParent bool          // Whether agent can transfer control to parent agent
-	flowSelector          flow.Selector // Selector for choosing the appropriate flow
+	historyMode           core.HistoryMode  // What kind of history the agent receives
+	allowTransferToPeers  bool              // Whether agent can transfer control to sub-agents
+	allowTransferToParent bool              // Whether agent can transfer control to parent agent
+	flowSelector          core.FlowSelector // Selector for choosing the appropriate flow
 }
 
 // NewModelAgent creates a new model-based agent with sensible defaults.
@@ -99,13 +101,14 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		EnableFunctionCalling: true,
 		ToolTimeout:           15 * time.Second,
 		MaxHistoryMessages:    20,
+		HistoryMode:           core.HistoryAll,
 		AllowTransferToPeers:  true,
 		AllowTransferToParent: true,
 		Tools:                 make([]core.Tool, 0),
 		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
-			AgentExecutor: DefaultAgentExecutor,
-			ModelExecutor: model.DefaultModelExecutor,
-			ToolExecutor:  tool.NewParallelToolExecutor(4),
+			AgentExecutor: executor.DefaultAgentExecutor,
+			ModelExecutor: executor.DefaultModelExecutor,
+			ToolExecutor:  executor.NewParallelToolExecutor(4),
 		}),
 	}
 
@@ -121,6 +124,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		toolTimeout:           opts.ToolTimeout,
 		outputKey:             opts.OutputKey,
 		maxHistoryMessages:    opts.MaxHistoryMessages,
+		historyMode:           opts.HistoryMode,
 		allowTransferToPeers:  opts.AllowTransferToPeers,
 		allowTransferToParent: opts.AllowTransferToParent,
 		tools:                 orderedmap.New[string, core.Tool](),
@@ -244,6 +248,11 @@ func (a *ModelAgent) MaxHistoryMessages() int {
 	return a.maxHistoryMessages
 }
 
+// HistoryMode returns what kind of history the agent receives.
+func (a *ModelAgent) HistoryMode() core.HistoryMode {
+	return a.historyMode
+}
+
 // ResolveInstructions produces the final instruction string (system prompt)
 // by resolving static or dynamic instruction sources.
 func (a *ModelAgent) ResolveInstructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error) {
@@ -292,7 +301,7 @@ func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue 
 	log.Debug("agent.run.start")
 
 	// Select appropriate flow based on agent capabilities
-	fl := a.flowSelector.SelectFlow(a)
+	fl := a.flowSelector.Select(a)
 
 	log.Debug("agent.flow.selected", "flow", fmt.Sprintf("%T", fl))
 
@@ -317,4 +326,4 @@ func (a *ModelAgent) Run(ctx context.Context, reqCtx core.RequestContext, queue 
 
 // Interface compliance (compile-time assertions)
 var _ core.Agent = (*ModelAgent)(nil)
-var _ flow.Agent = (*ModelAgent)(nil)
+var _ core.FlowAgent = (*ModelAgent)(nil)

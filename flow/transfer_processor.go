@@ -24,7 +24,7 @@ func (p *TransferToolInjector) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent Agent,
+	agent core.FlowAgent,
 ) error {
 	log := logging.FromContext(ctx)
 
@@ -49,14 +49,14 @@ func (p *TransferToolInjector) ProcessRequest(
 }
 
 // getTransferTargets returns allowable transfer targets.
-func getTransferTargets(agent Agent) []core.Agent {
+func getTransferTargets(agent core.FlowAgent) []core.Agent {
 	targets := append([]core.Agent{}, agent.SubAgents()...)
 	parent := agent.Parent()
 	if parent == nil {
 		return targets
 	}
 
-	if _, ok := parent.(Agent); !ok { // parent must satisfy orchestration view
+	if _, ok := parent.(core.FlowAgent); !ok { // parent must satisfy orchestration view
 		return targets
 	}
 
@@ -75,7 +75,7 @@ func getTransferTargets(agent Agent) []core.Agent {
 }
 
 // buildTargetAgentsInstructions builds guidance for transfer choices.
-func buildTargetAgentsInstructions(agent Agent, targets []core.Agent) string {
+func buildTargetAgentsInstructions(agent core.FlowAgent, targets []core.Agent) string {
 	buildInfo := func(a core.Agent) string {
 		return fmt.Sprintf("Agent name: %s\nAgent description: %s\n", a.Name(), a.Description())
 	}

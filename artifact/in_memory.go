@@ -32,7 +32,11 @@ func NewInMemoryStore() *InMemoryStore {
 }
 
 // Save stores (or overwrites) the artifact for the given composite key.
-func (a *InMemoryStore) Save(_ context.Context, appName, userID, sessionID, fileName string, artifact core.Part) error {
+func (a *InMemoryStore) Save(
+	ctx context.Context,
+	appName, userID, sessionID, fileName string,
+	artifact core.Part,
+) error {
 	key := keyForArtifact(appName, userID, sessionID, fileName)
 
 	a.mu.Lock()
@@ -50,7 +54,7 @@ func (a *InMemoryStore) Save(_ context.Context, appName, userID, sessionID, file
 }
 
 // Load returns a copy of the stored artifact or ErrNotFound.
-func (a *InMemoryStore) Load(_ context.Context, appName, userID, sessionID, fileName string) (core.Part, error) {
+func (a *InMemoryStore) Load(ctx context.Context, appName, userID, sessionID, fileName string) (core.Part, error) {
 	key := keyForArtifact(appName, userID, sessionID, fileName)
 
 	a.mu.RLock()
@@ -66,7 +70,7 @@ func (a *InMemoryStore) Load(_ context.Context, appName, userID, sessionID, file
 }
 
 // ListKeys returns all artifact keys for the given session.
-func (a *InMemoryStore) ListKeys(_ context.Context, appName, userID, sessionID string) ([]string, error) {
+func (a *InMemoryStore) ListKeys(ctx context.Context, appName, userID, sessionID string) ([]string, error) {
 	prefix := fmt.Sprintf("%s/%s/%s/", appName, userID, sessionID)
 
 	a.mu.RLock()
@@ -85,7 +89,7 @@ func (a *InMemoryStore) ListKeys(_ context.Context, appName, userID, sessionID s
 }
 
 // Delete removes the artifact if present or returns ErrNotFound.
-func (a *InMemoryStore) Delete(_ context.Context, appName, userID, sessionID, fileName string) error {
+func (a *InMemoryStore) Delete(ctx context.Context, appName, userID, sessionID, fileName string) error {
 	key := keyForArtifact(appName, userID, sessionID, fileName)
 
 	a.mu.Lock()

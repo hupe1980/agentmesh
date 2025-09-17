@@ -38,6 +38,12 @@ type HierarchicalAgent interface {
 	FindAgent(name string) (Agent, error)
 }
 
+// InstructionResolver defines the interface for resolving instructions.
+type InstructionResolver interface {
+	// ResolveInstructions resolves the instructions for the agent.
+	ResolveInstructions(ctx context.Context, roCtx ReadonlyContext) (string, error)
+}
+
 // Agent is the executable contract implemented by all processing units.
 //
 // Agents receive input via a RequestContext and stream Events through an
@@ -51,6 +57,49 @@ type Agent interface {
 
 	// Run executes the agent's processing logic.
 	Run(ctx context.Context, reqCtx RequestContext, writer EventWriter) error
+}
+
+// HistoryMode determines what kind of history an agent receives.
+type HistoryMode int
+
+const (
+	// HistoryNone means no history, current turn only.
+	HistoryNone HistoryMode = iota
+	// HistoryOwn includes only the agent’s own history plus user messages
+	HistoryOwn
+	// HistoryAll includes all history (multi-agent)
+	HistoryAll
+)
+
+// FlowAgent represents the orchestration-facing view of an agent used by flows and processors.
+// It bundles identity, hierarchy, instruction resolution, model/tools, feature flags and output key.
+// This is intentionally separate from Agent (which defines Run) so flows can orchestrate without
+// requiring the concrete execution entrypoint.
+type FlowAgent interface {
+	AgentIdentity
+	HierarchicalAgent
+	InstructionResolver
+
+	// Model returns the underlying model used by the agent.
+	Model() Model
+	// Tools returns the list of tools available to the agent.
+	Tools() []Tool
+
+	// MaxHistoryMessages limits how many past messages to include.
+	MaxHistoryMessages() int
+	// HistoryMode controls what kind of history the agent receives.
+	HistoryMode() HistoryMode
+	// IsFunctionCallingEnabled indicates whether the agent can call functions/tools.
+	IsFunctionCallingEnabled() bool
+	// IsStreamingEnabled indicates whether the agent streams model output.
+	IsStreamingEnabled() bool
+	// IsTransferToPeersEnabled indicates whether the agent may transfer to peer agents.
+	IsTransferToPeersEnabled() bool
+	// IsTransferToParentEnabled indicates whether the agent may transfer to its parent.
+	IsTransferToParentEnabled() bool
+
+	// OutputKey specifies where the final output should be stored in session state.
+	OutputKey() string
 }
 
 // AgentExecutor abstracts agent execution with lifecycle hooks.

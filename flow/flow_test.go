@@ -92,7 +92,7 @@ func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
 	})
-	fl := sel.SelectFlow(a)
+	fl := sel.Select(a)
 	_, ok := fl.(*SingleAgentFlow)
 	require.True(t, ok, "expected SingleAgentFlow, got %T", fl)
 }
@@ -105,7 +105,7 @@ func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
 	})
-	fl := sel.SelectFlow(a)
+	fl := sel.Select(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
 }
@@ -119,7 +119,7 @@ func TestSelector_ReturnsMultiAgentFlow_WhenHasSubAgents(t *testing.T) {
 		AgentExecutor: testutil.NewAgentExecutorMock(),
 		ModelExecutor: testutil.NewModelExecutorMock(),
 	})
-	fl := sel.SelectFlow(a)
+	fl := sel.Select(a)
 	_, ok := fl.(*MultiAgentFlow)
 	require.True(t, ok, "expected MultiAgentFlow, got %T", fl)
 }

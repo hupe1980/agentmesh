@@ -42,6 +42,7 @@ type MockAgent struct {
 	TransferToParentEnabled bool
 	OutputKeyVal            string
 	MaxHistoryVal           int
+	HistoryModeVal          core.HistoryMode
 	InstructionsText        string
 
 	// Optional function hooks to override behaviors
@@ -71,6 +72,7 @@ func NewMockAgent(name string) *MockAgent {
 		TransferToParentEnabled: false,
 		OutputKeyVal:            "",
 		MaxHistoryVal:           10,
+		HistoryModeVal:          core.HistoryAll,
 		InstructionsText:        "",
 	}
 }
@@ -205,6 +207,9 @@ func (m *MockAgent) OutputKey() string { return m.OutputKeyVal }
 
 // MaxHistoryMessages returns the configured max history size.
 func (m *MockAgent) MaxHistoryMessages() int { return m.MaxHistoryVal }
+
+// HistoryMode returns what kind of history the agent receives.
+func (m *MockAgent) HistoryMode() core.HistoryMode { return m.HistoryModeVal }
 
 type MockAgentIdentity struct {
 	name        string

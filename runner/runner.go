@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
 	"github.com/hupe1980/agentmesh/metrics"
@@ -85,7 +85,7 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 	opts := Options{
 		EnableStreaming: true,
 		EventBufferSize: 100,
-		AgentExecutor:   agent.DefaultAgentExecutor,
+		AgentExecutor:   executor.DefaultAgentExecutor,
 		SessionStore:    session.NewInMemoryStore(),
 		ArtifactStore:   artifact.NewInMemoryStore(),
 		MemoryStore:     memory.NewInMemoryStore(),

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/logging"
 )
 
@@ -66,7 +67,7 @@ func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOpti
 		MaxIters:      100,
 		Interval:      0,
 		StopOnError:   true,
-		AgentExecutor: DefaultAgentExecutor,
+		AgentExecutor: executor.DefaultAgentExecutor,
 	}
 
 	for _, fn := range optFns {

@@ -25,9 +25,10 @@ func (p *InstructionsProcessor) ProcessRequest(
 	ctx context.Context,
 	reqCtx core.RequestContext,
 	req *core.ModelRequest,
-	agent Agent,
+	agent core.FlowAgent,
 ) error {
 	log := logging.FromContext(ctx)
+
 	instructions, err := agent.ResolveInstructions(ctx, reqCtx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve instruction: %w", err)

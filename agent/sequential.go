@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/executor"
 )
 
 // SequentialAgentOptions holds configuration for a SequentialAgent.
@@ -36,7 +37,7 @@ func NewSequentialAgent(
 ) *SequentialAgent {
 	opts := SequentialAgentOptions{
 		Description:   "",
-		AgentExecutor: DefaultAgentExecutor,
+		AgentExecutor: executor.DefaultAgentExecutor,
 	}
 
 	// Apply option functions to override defaults

@@ -63,7 +63,7 @@ func TestBaseFlow_PartialStreaming(t *testing.T) {
 			ctx context.Context,
 			rc core.RequestContext,
 			req *core.ModelRequest,
-			a Agent,
+			a core.FlowAgent,
 		) error {
 			req.Messages = []*core.Message{{
 				Role:  core.RoleUser,
