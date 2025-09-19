@@ -14,6 +14,7 @@ import (
 // mockModel implements llms.Model for testing the adapter behavior.
 type mockModel struct {
 	CapturedMessages []llms.MessageContent
+	CapturedTools    []llms.Tool
 	StreamChunks     []string
 	FinalContent     string
 	StopReason       string
@@ -32,6 +33,10 @@ func (m *mockModel) GenerateContent(
 	var opts llms.CallOptions
 	for _, opt := range options {
 		opt(&opts)
+	}
+	// Capture tools
+	if len(opts.Tools) > 0 {
+		m.CapturedTools = append([]llms.Tool(nil), opts.Tools...)
 	}
 
 	// Simulate streaming if requested
@@ -204,6 +209,133 @@ func TestGenerate_LLMError_Propagates(t *testing.T) {
 	require.Len(t, resps, 0)
 	require.Len(t, errs, 1)
 	assert.Contains(t, errs[0].Error(), "boom")
+}
+
+func TestGenerate_WithTools_MapsDefinitions(t *testing.T) {
+	mm := &mockModel{FinalContent: "ok"}
+	m, err := NewModel(mm)
+	require.NoError(t, err)
+
+	req := &core.ModelRequest{
+		Instructions: "Sys",
+		Messages:     []*core.Message{{Role: core.RoleUser, Parts: []core.Part{&core.TextPart{Text: "Hi"}}}},
+		Tools: []core.ToolDefinition{{
+			Type: "function",
+			Function: core.FunctionDefinition{
+				Name:        "get_weather",
+				Description: "Get the weather",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"city": map[string]any{
+							"type": "string",
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	ctx := context.Background()
+	outCh, errCh := m.Generate(ctx, req)
+	_, errs := drain(outCh, errCh)
+	require.Len(t, errs, 0)
+
+	require.Len(t, mm.CapturedTools, 1)
+	tool := mm.CapturedTools[0]
+	require.NotNil(t, tool.Function)
+	assert.Equal(t, "function", tool.Type)
+	assert.Equal(t, "get_weather", tool.Function.Name)
+	assert.Equal(t, "Get the weather", tool.Function.Description)
+	// Spot-check parameters mapping
+	require.IsType(t, map[string]any{}, tool.Function.Parameters)
+	params := tool.Function.Parameters.(map[string]any)
+	assert.Equal(t, "object", params["type"])
+}
+
+func TestBuildMessages_AttachToolResponses_AfterAssistant(t *testing.T) {
+	// Conversation: instructions, user, assistant tool calls (2), then tool responses for each
+	mm := &mockModel{FinalContent: "ok"}
+	m, err := NewModel(mm)
+	require.NoError(t, err)
+
+	asst := &core.Message{Role: core.RoleAssistant, Parts: []core.Part{
+		core.NewPartFromFunctionCall("tc-1", "calc", "{}"),
+		core.NewPartFromFunctionCall("tc-2", "calc", "{}"),
+	}}
+	tool := &core.Message{Role: core.RoleTool, Parts: []core.Part{
+		core.NewPartFromFunctionResponse("tc-1", "calc", "3.14"),
+		core.NewPartFromFunctionResponse("tc-2", "calc", 7),
+	}}
+
+	req := &core.ModelRequest{
+		Instructions: "You are helpful",
+		Messages: []*core.Message{
+			{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("compute area")}},
+			asst,
+			tool,
+		},
+	}
+
+	ctx := context.Background()
+	outCh, errCh := m.Generate(ctx, req)
+	// Drain to ensure Generate runs fully
+	_, errs := drain(outCh, errCh)
+	require.Len(t, errs, 0)
+
+	// Expect: System, User, Assistant (with 2 ToolCall parts), Tool (response 1), Tool (response 2)
+	require.GreaterOrEqual(t, len(mm.CapturedMessages), 5)
+
+	// System
+	m0 := mm.CapturedMessages[0]
+	assert.Equal(t, llms.ChatMessageTypeSystem, m0.Role)
+	require.Len(t, m0.Parts, 1)
+	if tc, ok := m0.Parts[0].(llms.TextContent); assert.True(t, ok) {
+		assert.Equal(t, "You are helpful", tc.Text)
+	}
+
+	// User
+	m1 := mm.CapturedMessages[1]
+	assert.Equal(t, llms.ChatMessageTypeHuman, m1.Role)
+	require.Len(t, m1.Parts, 1)
+	if tc, ok := m1.Parts[0].(llms.TextContent); assert.True(t, ok) {
+		assert.Equal(t, "compute area", tc.Text)
+	}
+
+	// Assistant with ToolCalls
+	m2 := mm.CapturedMessages[2]
+	assert.Equal(t, llms.ChatMessageTypeAI, m2.Role)
+	require.Len(t, m2.Parts, 2)
+	if tc, ok := m2.Parts[0].(llms.ToolCall); assert.True(t, ok) {
+		assert.Equal(t, "tc-1", tc.ID)
+		require.NotNil(t, tc.FunctionCall)
+		assert.Equal(t, "calc", tc.FunctionCall.Name)
+	}
+	if tc, ok := m2.Parts[1].(llms.ToolCall); assert.True(t, ok) {
+		assert.Equal(t, "tc-2", tc.ID)
+		require.NotNil(t, tc.FunctionCall)
+		assert.Equal(t, "calc", tc.FunctionCall.Name)
+	}
+
+	// Tool response for tc-1
+	m3 := mm.CapturedMessages[3]
+	assert.Equal(t, llms.ChatMessageTypeTool, m3.Role)
+	require.Len(t, m3.Parts, 1)
+	if tr, ok := m3.Parts[0].(llms.ToolCallResponse); assert.True(t, ok) {
+		assert.Equal(t, "tc-1", tr.ToolCallID)
+		assert.Equal(t, "calc", tr.Name)
+		assert.Equal(t, "3.14", tr.Content)
+	}
+
+	// Tool response for tc-2
+	m4 := mm.CapturedMessages[4]
+	assert.Equal(t, llms.ChatMessageTypeTool, m4.Role)
+	require.Len(t, m4.Parts, 1)
+	if tr, ok := m4.Parts[0].(llms.ToolCallResponse); assert.True(t, ok) {
+		assert.Equal(t, "tc-2", tr.ToolCallID)
+		assert.Equal(t, "calc", tr.Name)
+		assert.Equal(t, "7", tr.Content)
+	}
 }
 
 // Helpers

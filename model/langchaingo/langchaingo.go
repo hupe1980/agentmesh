@@ -42,21 +42,25 @@ func (m *Model) Generate(
 			return
 		}
 
-		chatMsgs := buildChatMessages(req)
-		messages := toMessageContent(chatMsgs)
+		messages := buildMessageContents(req)
 
 		if len(messages) == 0 {
 			errCh <- fmt.Errorf("empty prompt")
 			return
 		}
 
+		// Prepare call options (tools, streaming, etc.).
+		var callOpts []llms.CallOption
+		if len(req.Tools) > 0 {
+			callOpts = append(callOpts, llms.WithTools(toLLMSTools(req.Tools)))
+		}
+
 		// Streaming mode: emit partial deltas via WithStreamingFunc and a final chunk at the end.
 		if req.Stream {
-			var builder strings.Builder
 			resp, err := m.llm.GenerateContent(
 				ctx,
 				messages,
-				llms.WithStreamingFunc(func(cctx context.Context, chunk []byte) error {
+				append(callOpts, llms.WithStreamingFunc(func(cctx context.Context, chunk []byte) error {
 					// Respect cancellation
 					select {
 					case <-ctx.Done():
@@ -68,13 +72,14 @@ func (m *Model) Generate(
 					if s == "" {
 						return nil
 					}
-					builder.WriteString(s)
+
 					out <- &core.ModelResponse{
 						Partial: true,
 						Parts:   []core.Part{core.NewPartFromText(s)},
 					}
+
 					return nil
-				}),
+				}))...,
 			)
 			if err != nil {
 				// If context canceled, surface as error channel termination
@@ -82,16 +87,17 @@ func (m *Model) Generate(
 				return
 			}
 
+			// Some providers may not invoke the streaming callback; fallback to response content.
 			out <- &core.ModelResponse{
 				Partial:      false,
-				Parts:        []core.Part{core.NewPartFromText(builder.String())},
+				Parts:        buildPartsFromResponse(resp),
 				FinishReason: firstStopReason(resp),
 			}
 			return
 		}
 
 		// Non-streaming path
-		resp, err := m.llm.GenerateContent(ctx, messages)
+		resp, err := m.llm.GenerateContent(ctx, messages, callOpts...)
 		if err != nil {
 			errCh <- fmt.Errorf("langchaingo generate: %w", err)
 			return
@@ -99,7 +105,7 @@ func (m *Model) Generate(
 
 		out <- &core.ModelResponse{
 			Partial:      false,
-			Parts:        []core.Part{core.NewPartFromText(firstContent(resp))},
+			Parts:        buildPartsFromResponse(resp),
 			FinishReason: firstStopReason(resp),
 		}
 	}()
@@ -108,20 +114,20 @@ func (m *Model) Generate(
 }
 
 // buildChatMessages converts instructions and message history into llms.ChatMessage values.
-// Role mapping: system -> SystemChatMessage, user -> HumanChatMessage, assistant ->
-// AIChatMessage, tool -> ToolChatMessage (ID omitted), others -> GenericChatMessage.
-// Only text parts are included; function/tool-call parts are ignored.
-func buildChatMessages(req *core.ModelRequest) []llms.ChatMessage {
-	var out []llms.ChatMessage
+func buildMessageContents(req *core.ModelRequest) []llms.MessageContent {
+	var out []llms.MessageContent
 	if req.Instructions != "" {
-		out = append(out, llms.SystemChatMessage{Content: req.Instructions})
+		out = append(out, llms.TextParts(llms.ChatMessageTypeSystem, req.Instructions))
 	}
+
+	toolResponses := collectToolResponses(req)
 
 	for _, msg := range req.Messages {
 		if msg == nil {
 			continue
 		}
 
+		// Aggregate text parts
 		var tb strings.Builder
 		for _, p := range msg.Parts {
 			if tp, ok := p.(*core.TextPart); ok {
@@ -129,41 +135,133 @@ func buildChatMessages(req *core.ModelRequest) []llms.ChatMessage {
 			}
 		}
 
-		text := strings.TrimSpace(tb.String())
-		if text == "" {
-			continue
-		}
+		text := tb.String()
 
 		switch msg.Role {
 		case core.RoleSystem:
-			out = append(out, llms.SystemChatMessage{Content: text})
+			if text != "" {
+				out = append(out, llms.TextParts(llms.ChatMessageTypeSystem, text))
+			}
 		case core.RoleUser:
-			out = append(out, llms.HumanChatMessage{Content: text})
-		case core.RoleAssistant:
-			out = append(out, llms.AIChatMessage{Content: text})
+			if text != "" {
+				out = append(out, llms.TextParts(llms.ChatMessageTypeHuman, text))
+			}
 		case core.RoleTool:
-			// ToolChatMessage requires an ID; it's optional for our text-only path.
-			out = append(out, llms.ToolChatMessage{ID: "", Content: text})
+			// Forward text-only tool messages; function responses are attached after assistant calls.
+			if text != "" {
+				out = append(out, llms.TextParts(llms.ChatMessageTypeTool, text))
+			}
+		case core.RoleAssistant:
+			// Build assistant message parts: optional text + tool calls
+			parts := make([]llms.ContentPart, 0, len(msg.Parts)+1)
+			if text != "" {
+				parts = append(parts, llms.TextPart(text))
+			}
+
+			// Gather tool call IDs and names in order
+			var callIDs []string
+			callNames := map[string]string{}
+			idx := 0
+
+			for _, p := range msg.Parts {
+				if fc, ok := p.(*core.FunctionCallPart); ok && fc.FunctionCall != nil && fc.FunctionCall.Name != "" {
+					id := fc.FunctionCall.ID
+					if id == "" {
+						idx++
+						id = fmt.Sprintf("tc-%d", idx)
+					}
+					callIDs = append(callIDs, id)
+					callNames[id] = fc.FunctionCall.Name
+					parts = append(parts, llms.ToolCall{
+						ID:   id,
+						Type: "function",
+						FunctionCall: &llms.FunctionCall{
+							Name:      fc.FunctionCall.Name,
+							Arguments: fc.FunctionCall.Arguments,
+						},
+					})
+				}
+			}
+
+			out = append(out, llms.MessageContent{Role: llms.ChatMessageTypeAI, Parts: parts})
+
+			// Attach tool responses right after
+			for _, id := range callIDs {
+				if id == "" {
+					continue
+				}
+				if resp, ok := toolResponses[id]; ok {
+					out = append(out, llms.MessageContent{
+						Role: llms.ChatMessageTypeTool,
+						Parts: []llms.ContentPart{
+							llms.ToolCallResponse{ToolCallID: id, Name: callNames[id], Content: resp},
+						},
+					})
+					delete(toolResponses, id)
+				}
+			}
 		default:
-			out = append(out, llms.GenericChatMessage{Content: text, Role: string(msg.Role)})
+			if text != "" {
+				out = append(out, llms.TextParts(llms.ChatMessageTypeGeneric, text))
+			}
 		}
 	}
 
 	return out
 }
 
-// toMessageContent flattens chat messages into text-only MessageContent items for GenerateContent.
-func toMessageContent(msgs []llms.ChatMessage) []llms.MessageContent {
-	out := make([]llms.MessageContent, 0, len(msgs))
-	for _, m := range msgs {
-		if m == nil {
+// collectToolResponses indexes tool (function) responses by id preserving first-seen order.
+func collectToolResponses(req *core.ModelRequest) map[string]string {
+	responses := map[string]string{}
+	for _, c := range req.Messages {
+		if c == nil || c.Role != core.RoleTool {
 			continue
 		}
+		for _, p := range c.Parts {
+			fr, ok := p.(*core.FunctionResponsePart)
+			if !ok || fr.FunctionResponse == nil || fr.FunctionResponse.ID == "" {
+				continue
+			}
 
-		out = append(out, llms.TextParts(m.GetType(), m.GetContent()))
+			// Preserve first-seen response for each id.
+			if _, exists := responses[fr.FunctionResponse.ID]; exists {
+				continue
+			}
+
+			var text string
+			if s, ok := fr.FunctionResponse.Response.(string); ok {
+				text = s
+			} else {
+				text = fmt.Sprintf("%v", fr.FunctionResponse.Response)
+			}
+
+			responses[fr.FunctionResponse.ID] = text
+		}
 	}
 
-	return out
+	return responses
+}
+
+// toLLMSTools converts core.ToolDefinition into langchaingo llms.Tool slice.
+func toLLMSTools(defs []core.ToolDefinition) []llms.Tool {
+	if len(defs) == 0 {
+		return nil
+	}
+
+	tools := make([]llms.Tool, 0, len(defs))
+	for _, d := range defs {
+		fn := d.Function
+		tools = append(tools, llms.Tool{
+			Type: "function",
+			Function: &llms.FunctionDefinition{
+				Name:        fn.Name,
+				Description: fn.Description,
+				Parameters:  fn.Parameters,
+			},
+		})
+	}
+
+	return tools
 }
 
 // firstContent extracts the first choice content from a ContentResponse (safe default "").
@@ -182,4 +280,37 @@ func firstStopReason(resp *llms.ContentResponse) string {
 	}
 
 	return resp.Choices[0].StopReason
+}
+
+// buildPartsFromResponse constructs core.Parts from a langchaingo ContentResponse.
+// It includes a text part (using defaultText if provided, otherwise the response content),
+// followed by any tool/function call parts from the first choice.
+func buildPartsFromResponse(resp *llms.ContentResponse) []core.Part {
+	parts := make([]core.Part, 0, 4)
+
+	// Text content
+	text := firstContent(resp)
+	if text != "" {
+		parts = append(parts, core.NewPartFromText(text))
+	}
+
+	// Tool calls (first choice only)
+	if resp != nil && len(resp.Choices) > 0 && resp.Choices[0] != nil {
+		ch := resp.Choices[0]
+		// Prefer explicit ToolCalls if present; else FuncCall; else fall back to GenerationInfo
+		if len(ch.ToolCalls) > 0 {
+			for i, tc := range ch.ToolCalls {
+				if tc.FunctionCall != nil && tc.FunctionCall.Name != "" {
+					id := tc.ID
+					if id == "" {
+						id = fmt.Sprintf("tc-%d", i+1)
+					}
+
+					parts = append(parts, core.NewPartFromFunctionCall(id, tc.FunctionCall.Name, tc.FunctionCall.Arguments))
+				}
+			}
+		}
+	}
+
+	return parts
 }
