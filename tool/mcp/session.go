@@ -18,24 +18,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// headerInjector is an http.RoundTripper that injects custom headers into every request.
-// Use this to add authentication or other metadata to outbound MCP HTTP/S requests.
-type headerInjector struct {
-	Base    http.RoundTripper
-	Headers map[string]string
-}
-
-// RoundTrip implements the RoundTripper interface.
-func (h *headerInjector) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone the request to avoid modifying the original
-	newReq := req.Clone(req.Context())
-	for k, v := range h.Headers {
-		newReq.Header.Set(k, v)
-	}
-
-	return h.Base.RoundTrip(newReq)
-}
-
 // SessionFactoryOptions controls how a SessionFactory creates an MCP session..
 type SessionFactoryOptions struct {
 	// MCPClient allows overriding the default MCP client instance.
@@ -132,6 +114,24 @@ func buildHTTPClient(httpOpts HTTPOptions, headers map[string]string) *http.Clie
 	}
 }
 
+// headerInjector is an http.RoundTripper that injects custom headers into every request.
+// Use this to add authentication or other metadata to outbound MCP HTTP/S requests.
+type headerInjector struct {
+	Base    http.RoundTripper
+	Headers map[string]string
+}
+
+// RoundTrip implements the RoundTripper interface.
+func (h *headerInjector) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Clone the request to avoid modifying the original
+	newReq := req.Clone(req.Context())
+	for k, v := range h.Headers {
+		newReq.Header.Set(k, v)
+	}
+
+	return h.Base.RoundTrip(newReq)
+}
+
 // NewStreamableSessionFactory returns a SessionFactory that connects to an
 // MCP server via HTTP using a streamable transport. Custom headers can be
 // provided for authentication or other purposes via HTTPOptions and/or per-call
@@ -186,6 +186,7 @@ func newHTTPSessionFactory(
 		opts := SessionFactoryOptions{
 			MCPClient: mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil),
 		}
+
 		for _, fn := range optFns {
 			fn(&opts)
 		}
