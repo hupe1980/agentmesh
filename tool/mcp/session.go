@@ -18,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// SessionFactoryOptions controls how a SessionFactory creates an MCP session..
+// SessionFactoryOptions controls how a SessionFactory creates an MCP session.
 type SessionFactoryOptions struct {
 	// MCPClient allows overriding the default MCP client instance.
 	MCPClient *mcp.Client
@@ -26,8 +26,21 @@ type SessionFactoryOptions struct {
 	Headers map[string]string
 }
 
+// ExecOptions controls how an MCP stdio command is started.
+type ExecOptions struct {
+	// Env defines environment variables for the child process.
+	// If nil, the process inherits the parent’s environment.
+	Env []string
+
+	// Dir sets the working directory of the command.
+	// If empty, defaults to the current working directory.
+	Dir string
+}
+
 // HTTPOptions configures HTTP-based transports (Streamable/SSE).
-// Provide these via NewStreamableSessionFactory/NewSSESessionFactory option fns.
+// Pass these when constructing a factory via NewStreamableSessionFactory or
+// NewSSESessionFactory. Headers provided here are merged with the per-call
+// SessionFactoryOptions.Headers in CreateSession.
 type HTTPOptions struct {
 	// Timeout used by the underlying HTTP client.
 	Timeout time.Duration
@@ -37,8 +50,8 @@ type HTTPOptions struct {
 	BaseTransport http.RoundTripper
 }
 
-// SessionFactory creates and connects an *mcp.ClientSession* using the
-// provided ReadonlyContext and configurable options. Implementations below
+// SessionFactory creates and connects an *mcp.ClientSession* using the provided
+// core.ReadonlyContext and configurable options. Implementations below
 // demonstrate stdio (local command), in-memory, and HTTP/S (streamable, SSE)
 // transports. Additional transports can be added following this pattern.
 //
@@ -77,7 +90,13 @@ func NewInMemorySessionFactory(transport *mcp.InMemoryTransport) SessionFactory 
 
 // NewStdioSessionFactory returns a SessionFactory that starts a local MCP
 // server via stdio (command + args) and connects to it.
-func NewStdioSessionFactory(command string, args ...string) SessionFactory {
+func NewStdioSessionFactory(command string, args []string, optFns ...func(o *ExecOptions)) SessionFactory {
+	execOpts := ExecOptions{}
+
+	for _, fn := range optFns {
+		fn(&execOpts)
+	}
+
 	return func(
 		ctx context.Context,
 		roCtx core.ReadonlyContext,
@@ -92,6 +111,8 @@ func NewStdioSessionFactory(command string, args ...string) SessionFactory {
 		}
 
 		cmd := exec.CommandContext(ctx, command, args...)
+		cmd.Env = execOpts.Env
+		cmd.Dir = execOpts.Dir
 
 		transport := &mcp.CommandTransport{
 			Command: cmd,
@@ -116,6 +137,7 @@ func buildHTTPClient(httpOpts HTTPOptions, headers map[string]string) *http.Clie
 
 // headerInjector is an http.RoundTripper that injects custom headers into every request.
 // Use this to add authentication or other metadata to outbound MCP HTTP/S requests.
+// If Base is nil, http.DefaultTransport is used.
 type headerInjector struct {
 	Base    http.RoundTripper
 	Headers map[string]string
@@ -129,13 +151,19 @@ func (h *headerInjector) RoundTrip(req *http.Request) (*http.Response, error) {
 		newReq.Header.Set(k, v)
 	}
 
-	return h.Base.RoundTrip(newReq)
+	base := h.Base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+
+	return base.RoundTrip(newReq)
 }
 
 // NewStreamableSessionFactory returns a SessionFactory that connects to an
-// MCP server via HTTP using a streamable transport. Custom headers can be
-// provided for authentication or other purposes via HTTPOptions and/or per-call
-// SessionFactoryOptions in CreateSession.
+// MCP server via HTTP using a streamable transport. The endpoint should be the
+// full URL of the transport. Custom headers can be provided for authentication
+// or other purposes via HTTPOptions and/or per-call SessionFactoryOptions in
+// CreateSession.
 func NewStreamableSessionFactory(endpoint string, optFns ...func(o *HTTPOptions)) SessionFactory {
 	return newHTTPSessionFactory(endpoint,
 		func(endpoint string, client *http.Client) mcp.Transport {
@@ -149,8 +177,9 @@ func NewStreamableSessionFactory(endpoint string, optFns ...func(o *HTTPOptions)
 }
 
 // NewSSESessionFactory returns a SessionFactory that connects to an MCP server
-// using Server-Sent Events (SSE). Headers from HTTPOptions and per-call
-// SessionFactoryOptions are applied to requests.
+// using Server-Sent Events (SSE). The endpoint should be the full URL of the
+// SSE transport. Headers from HTTPOptions and per-call SessionFactoryOptions are
+// merged and applied to requests.
 func NewSSESessionFactory(endpoint string, optFns ...func(o *HTTPOptions)) SessionFactory {
 	return newHTTPSessionFactory(endpoint,
 		func(endpoint string, client *http.Client) mcp.Transport {
@@ -163,7 +192,9 @@ func NewSSESessionFactory(endpoint string, optFns ...func(o *HTTPOptions)) Sessi
 	)
 }
 
-// newHTTPSessionFactory is a generic factory helper for Streamable or SSE transports
+// newHTTPSessionFactory is a generic factory helper for Streamable or SSE transports.
+// It merges headers from HTTPOptions with per-call SessionFactoryOptions and
+// builds an http.Client with those headers injected into every request.
 func newHTTPSessionFactory(
 	endpoint string,
 	transportBuilder func(endpoint string, client *http.Client) mcp.Transport,
@@ -206,7 +237,8 @@ func newHTTPSessionFactory(
 }
 
 // mergeHeaders merges a base set (optional) with additional headers and
-// returns a new map. Callers can pass nil for either argument.
+// returns a new map. Callers can pass nil for either argument. Values in
+// 'additional' override keys from 'base'.
 func mergeHeaders(base map[string]string, additional map[string]string) map[string]string {
 	if base == nil && additional == nil {
 		return nil
@@ -291,8 +323,6 @@ func (m *SessionManager) CreateSession(
 	// Observe session termination so future calls can recreate as needed.
 	go func(e *sessionEntry) {
 		// ClientSession.Wait() returns when the session terminates.
-		// If your go-sdk version doesn't expose Wait, replace this with a
-		// suitable detection mechanism (e.g., polling a closed flag).
 		_ = sess.Wait()
 		close(e.closed)
 	}(entry)
