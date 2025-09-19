@@ -103,9 +103,8 @@ func main() {
 				"- Always provide both 'a' and 'b' for binary operations (add, subtract, multiply, divide, power).\n" +
 				"Then summarize the final numeric answer.",
 		)
+		o.Tools = []core.Tool{newCalculatorTool()}
 	})
-
-	calcAgent.RegisterTool(newCalculatorTool())
 
 	r := runner.New("calculator_app", calcAgent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)

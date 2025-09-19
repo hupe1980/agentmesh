@@ -39,7 +39,7 @@ func (d *dummyLangChainTool) Call(ctx context.Context, input string) (string, er
 
 func TestLangChain_New_Defaults(t *testing.T) {
 	d := &dummyLangChainTool{name: "lc_echo", description: "echoes input"}
-	wrapped := New(d)
+	wrapped := NewTool(d)
 
 	assert.Equal(t, d.name, wrapped.Name())
 	assert.Equal(t, d.description, wrapped.Description())
@@ -52,7 +52,7 @@ func TestLangChain_New_Defaults(t *testing.T) {
 
 func TestLangChain_New_OverrideOptions(t *testing.T) {
 	d := &dummyLangChainTool{name: "orig", description: "original"}
-	wrapped := New(d, func(o *Options) {
+	wrapped := NewTool(d, func(o *Options) {
 		o.Name = "override_name"
 		o.Description = "override desc"
 	})
@@ -63,7 +63,7 @@ func TestLangChain_New_OverrideOptions(t *testing.T) {
 
 func TestLangChain_Call_Success(t *testing.T) {
 	d := &dummyLangChainTool{name: "lc", description: "d"}
-	wrapped := New(d)
+	wrapped := NewTool(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
 		testutil.NewTestRequestContext(),
@@ -78,7 +78,7 @@ func TestLangChain_Call_Success(t *testing.T) {
 
 func TestLangChain_Call_MissingArg(t *testing.T) {
 	d := &dummyLangChainTool{name: "lc", description: "d"}
-	wrapped := New(d)
+	wrapped := NewTool(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
 		testutil.NewTestRequestContext(),
@@ -95,7 +95,7 @@ func TestLangChain_Call_MissingArg(t *testing.T) {
 func TestLangChain_Call_UnderlyingError(t *testing.T) {
 	underErr := errors.New("boom")
 	d := &dummyLangChainTool{name: "lc", description: "d", err: underErr}
-	wrapped := New(d)
+	wrapped := NewTool(d)
 	ctx := context.Background()
 	toolCtx := core.NewToolContext(
 		testutil.NewTestRequestContext(),

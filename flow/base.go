@@ -183,7 +183,11 @@ func (f *BaseFlow) stepBuild(ctx context.Context, reqCtx core.RequestContext, fr
 		}
 	}
 
-	tools := f.agent.Tools()
+	tools, err := f.agent.ResolveTools(ctx, reqCtx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tools: %w", err)
+	}
+
 	for _, tool := range tools {
 		toolCtx := core.NewToolContext(reqCtx)
 

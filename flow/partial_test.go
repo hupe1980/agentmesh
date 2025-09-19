@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +41,6 @@ func (m *partialStreamingModel) Info() core.ModelInfo {
 func TestBaseFlow_PartialStreaming(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &partialStreamingModel{}
-	agent.ToolsMap = orderedmap.New[string, core.Tool]()
 	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,

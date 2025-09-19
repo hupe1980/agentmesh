@@ -82,8 +82,8 @@ type FlowAgent interface {
 
 	// Model returns the underlying model used by the agent.
 	Model() Model
-	// Tools returns the list of tools available to the agent.
-	Tools() []Tool
+	// ResolveTools aggregates tools from tools and toolsets.
+	ResolveTools(ctx context.Context, roCtx ReadonlyContext) ([]Tool, error)
 
 	// MaxHistoryMessages limits how many past messages to include.
 	MaxHistoryMessages() int

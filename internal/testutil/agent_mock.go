@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/internal/orderedmap"
 )
 
 // MockAgent is a lightweight, function-based test double for agents.
@@ -33,7 +32,8 @@ type MockAgent struct {
 	NameVal                 string
 	DescriptionVal          string
 	ModelVal                core.Model
-	ToolsMap                *orderedmap.OrderedMap[string, core.Tool]
+	ToolsList               []core.Tool
+	ToolsetList             []core.Toolset
 	ParentAgent             core.Agent
 	SubAgentsList           []core.Agent
 	FunctionCallingEnabled  bool
@@ -64,7 +64,8 @@ type MockAgent struct {
 func NewMockAgent(name string) *MockAgent {
 	return &MockAgent{
 		NameVal:                 name,
-		ToolsMap:                orderedmap.New[string, core.Tool](),
+		ToolsList:               []core.Tool{},
+		ToolsetList:             []core.Toolset{},
 		SubAgentsList:           []core.Agent{},
 		FunctionCallingEnabled:  false,
 		StreamingEnabled:        false,
@@ -105,7 +106,20 @@ func (m *MockAgent) ResolveInstructions(ctx context.Context, roCtx core.Readonly
 }
 
 // Tools returns the configured tool map.
-func (m *MockAgent) Tools() []core.Tool { return m.ToolsMap.Values() }
+func (m *MockAgent) ResolveTools(ctx context.Context, roCtx core.ReadonlyContext) ([]core.Tool, error) {
+	// Start with locally registered tools
+	allTools := append([]core.Tool(nil), m.ToolsList...)
+
+	for _, ts := range m.ToolsetList {
+		tools, err := ts.ListTools(ctx, roCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list tools from toolset: %w", err)
+		}
+		allTools = append(allTools, tools...)
+	}
+
+	return allTools, nil
+}
 
 // Parent returns the configured parent agent.
 func (m *MockAgent) Parent() core.Agent { return m.ParentAgent }

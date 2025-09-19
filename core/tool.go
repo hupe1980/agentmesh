@@ -43,6 +43,12 @@ type Tool interface {
 	Call(ctx context.Context, toolCtx ToolContext, args map[string]any) (any, error)
 }
 
+// Toolset defines a collection of tools that can be managed together.
+type Toolset interface {
+	ListTools(ctx context.Context, roCtx ReadonlyContext) ([]Tool, error)
+	Close() error
+}
+
 // ToolExecutor defines an interface for executing tools with a given context, request context, and tool registry.
 // It also takes a list of function calls to execute.
 type ToolExecutor interface {

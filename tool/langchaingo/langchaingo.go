@@ -14,10 +14,10 @@ type Options struct {
 	Description string
 }
 
-// New creates a core.Tool that wraps the provided langchaingo Tool.
+// NewTool creates a core.Tool that wraps the provided langchaingo Tool.
 // The tool is configured with the provided options. If Name or Description
 // are not set in options, they default to the values from the langchaingo Tool.
-func New(t lg.Tool, optFns ...func(o *Options)) core.Tool {
+func NewTool(t lg.Tool, optFns ...func(o *Options)) core.Tool {
 	opts := Options{
 		Name:        t.Name(),
 		Description: t.Description(),

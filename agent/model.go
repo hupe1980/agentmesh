@@ -9,7 +9,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/flow"
-	"github.com/hupe1980/agentmesh/internal/orderedmap"
 	"github.com/hupe1980/agentmesh/logging"
 )
 
@@ -39,6 +38,8 @@ type ModelAgentOptions struct {
 	AllowTransferToParent bool
 	// Registered tools for function calling
 	Tools []core.Tool
+	// Registered toolsets for function calling
+	Toolsets []core.Toolset
 	// Selector for choosing the appropriate flow
 	FlowSelector core.FlowSelector
 	// Sub-agents managed by this agent
@@ -59,15 +60,16 @@ type ModelAgentOptions struct {
 // It uses flow processors under the hood and logs via the RequestContext's
 // logging interface.
 type ModelAgent struct {
-	*BaseAgent                                                      // Embedded base agent functionality
-	model                 core.Model                                // Language model interface
-	instructions          Instructions                              // Instructions for the LLM
-	tools                 *orderedmap.OrderedMap[string, core.Tool] // Registered tools for function calling
-	enableFunctionCalling bool                                      // Whether to enable tool usage
-	enableStreaming       bool                                      // Whether to stream responses
-	toolTimeout           time.Duration                             // Timeout for individual tool calls
-	outputKey             string                                    // Key for saving responses to session state
-	maxHistoryMessages    int                                       // Maximum number of conversation history
+	*BaseAgent                           // Embedded base agent functionality
+	model                 core.Model     // Language model interface
+	instructions          Instructions   // Instructions for the LLM
+	tools                 []core.Tool    // Registered tools for function calling
+	toolsets              []core.Toolset // Registered toolsets for function calling
+	enableFunctionCalling bool           // Whether to enable tool usage
+	enableStreaming       bool           // Whether to stream responses
+	toolTimeout           time.Duration  // Timeout for individual tool calls
+	outputKey             string         // Key for saving responses to session state
+	maxHistoryMessages    int            // Maximum number of conversation history
 	// messages to keep
 	historyMode           core.HistoryMode  // What kind of history the agent receives
 	allowTransferToPeers  bool              // Whether agent can transfer control to sub-agents
@@ -105,6 +107,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		AllowTransferToPeers:  true,
 		AllowTransferToParent: true,
 		Tools:                 make([]core.Tool, 0),
+		Toolsets:              make([]core.Toolset, 0),
 		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
 			AgentExecutor: executor.DefaultAgentExecutor,
 			ModelExecutor: executor.DefaultModelExecutor,
@@ -127,15 +130,9 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		historyMode:           opts.HistoryMode,
 		allowTransferToPeers:  opts.AllowTransferToPeers,
 		allowTransferToParent: opts.AllowTransferToParent,
-		tools:                 orderedmap.New[string, core.Tool](),
+		tools:                 opts.Tools,
+		toolsets:              opts.Toolsets,
 		flowSelector:          opts.FlowSelector,
-	}
-
-	// Register initial tools if provided
-	if len(opts.Tools) > 0 {
-		for _, t := range opts.Tools {
-			a.tools.Set(t.Name(), t)
-		}
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
@@ -148,69 +145,30 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 	return a
 }
 
-// RegisterTool adds a function tool to the agent's capability set.
-//
-// Registered tools become available for the language model to call during
-// conversations when function calling is enabled. Tools should implement
-// the core.Tool interface with proper JSON schema definitions.
-//
-// Example:
-//
-//	weatherTool := NewFuncTool("get_weather", "Get weather for a location", schema, weatherFunc)
-//	agent.RegisterTool(weatherTool)
-func (a *ModelAgent) RegisterTool(t core.Tool) {
-	a.tools.Set(t.Name(), t)
-}
-
-// RegisterTools adds multiple tools to the agent's capability set.
-//
-// This is a convenience method for registering multiple tools at once.
-// If any tool fails to register, the operation continues with remaining tools.
-//
-// Example:
-//
-//	mathTools := tool.CreateMathTools()
-//	agent.RegisterTools(mathTools...)
-func (a *ModelAgent) RegisterTools(tools ...core.Tool) {
-	for _, t := range tools {
-		a.tools.Set(t.Name(), t)
-	}
-}
-
-// UnregisterTool removes a tool from the agent's capability set.
-//
-// Returns true if the tool was found and removed, false if it wasn't registered.
-func (a *ModelAgent) UnregisterTool(name string) bool {
-	if _, ok := a.tools.Get(name); ok {
-		a.tools.Delete(name)
-
-		return true
-	}
-
-	return false
-}
-
-// HasTool checks if a tool is registered with the agent.
-func (a *ModelAgent) HasTool(name string) bool {
-	_, ok := a.tools.Get(name)
-	return ok
-}
-
-// GetTool retrieves a specific tool by name.
-//
-// Returns the tool and true if found, nil and false if not registered.
-func (a *ModelAgent) GetTool(name string) (core.Tool, bool) {
-	return a.tools.Get(name)
-}
-
-// ClearTools removes all registered tools from the agent.
-func (a *ModelAgent) ClearTools() {
-	a.tools.Clear()
-}
-
 // Tools returns the registered tools for function calling.
 func (a *ModelAgent) Tools() []core.Tool {
-	return a.tools.Values()
+	return a.tools
+}
+
+// Toolsets returns the registered toolsets for function calling.
+func (a *ModelAgent) Toolsets() []core.Toolset {
+	return a.toolsets
+}
+
+// ResolveTools aggregates tools from tools and toolsets.
+func (a *ModelAgent) ResolveTools(ctx context.Context, roCtx core.ReadonlyContext) ([]core.Tool, error) {
+	// Start with locally registered tools
+	allTools := append([]core.Tool(nil), a.tools...)
+
+	for _, ts := range a.toolsets {
+		tools, err := ts.ListTools(ctx, roCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list tools from toolset: %w", err)
+		}
+		allTools = append(allTools, tools...)
+	}
+
+	return allTools, nil
 }
 
 // Model returns the language model instance.

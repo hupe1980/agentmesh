@@ -164,3 +164,6 @@ func (t *FuncTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[
 
 	return res, nil
 }
+
+// Compile-time assertion: ensure FuncTool implements the core.Tool interface.
+var _ core.Tool = (*FuncTool)(nil)

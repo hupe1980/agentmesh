@@ -36,65 +36,6 @@ func TestModelAgent_ResolveInstructions(t *testing.T) {
 	assert.Equal(t, "custom inst", got)
 }
 
-// minimalTool is a lightweight tool for registry tests
-type minimalTool struct{ name, desc string }
-
-func (m minimalTool) Name() string        { return m.name }
-func (m minimalTool) Description() string { return m.desc }
-func (m minimalTool) Parameters() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{}}
-}
-func (m minimalTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, req *core.ModelRequest) error {
-	return nil
-}
-func (m minimalTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error) {
-	return nil, nil
-}
-
-func TestModelAgent_ToolRegistry(t *testing.T) {
-	// Use a nil model; we are only testing registry behavior
-	a := NewModelAgent("RegistryAgent", nil)
-
-	t1 := minimalTool{name: "t1", desc: "tool one"}
-	t2 := minimalTool{name: "t2", desc: "tool two"}
-
-	// Register single
-	a.RegisterTool(t1)
-	assert.True(t, a.HasTool("t1"))
-
-	// Register multiple
-	a.RegisterTools(t2)
-	assert.True(t, a.HasTool("t2"))
-
-	// Get tool
-	got, ok := a.GetTool("t1")
-	assert.True(t, ok)
-	assert.Equal(t, "t1", got.Name())
-
-	// Tools returns the registered slice; ensure it contains expected names
-	tools := a.Tools()
-	found := false
-	for _, tt := range tools {
-		if tt.Name() == "t1" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "expected to find tool t1 in Tools slice")
-
-	// Unregister
-	ok = a.UnregisterTool("t2")
-	assert.True(t, ok)
-	assert.False(t, a.HasTool("t2"))
-
-	// Clear
-	a.ClearTools()
-	assert.False(t, a.HasTool("t1"))
-}
-
-// newReqCtx is a tiny helper to create a RequestContext for tests.
-// helper replaced by testutil.NewTestRequestContext
-
 func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
 	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {

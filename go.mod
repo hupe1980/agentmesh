@@ -16,7 +16,9 @@ require (
 
 require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/google/jsonschema-go v0.2.3 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.starlark.net v0.0.0-20230302034142-4b1e35fe2254 // indirect
 )
 
@@ -24,6 +26,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/modelcontextprotocol/go-sdk v0.5.0
 	github.com/openai/openai-go/v2 v2.3.0
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
