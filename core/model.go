@@ -129,20 +129,10 @@ type ModelResponse struct {
 	Usage        *TokenUsage `json:"usage,omitempty"`
 }
 
-// ModelInfo contains metadata about a model implementation.
-// Previously named ModelInfo; renamed to avoid stutter at call sites.
-type ModelInfo struct {
-	Name          string `json:"name"`
-	Provider      string `json:"provider"` // "openai", "anthropic", "local", etc.
-	SupportsTools bool   `json:"supports_tools"`
-}
-
 // Model is the minimal interface required by flows & agents to drive generation.
 type Model interface {
 	// Generate initiates a generation request to the model.
 	Generate(ctx context.Context, req *ModelRequest) (<-chan *ModelResponse, <-chan error)
-	// Info returns information about the model implementation.
-	Info() ModelInfo
 }
 
 // ModelExecutor abstracts execution of a Model request, allowing decoration

@@ -111,6 +111,7 @@ func (m *Model) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *c
 			errCh <- fmt.Errorf("nil model request")
 			return
 		}
+
 		messages := buildMessages(*req)
 
 		params := m.buildParams(*req, messages)
@@ -422,14 +423,5 @@ func (m *Model) handleNonStreaming(
 		Partial:      false,
 		Parts:        parts,
 		FinishReason: ch0.FinishReason,
-	}
-}
-
-// Info returns metadata describing this OpenAI model implementation.
-func (m *Model) Info() core.ModelInfo {
-	return core.ModelInfo{
-		Name:          m.opts.Model,
-		Provider:      "openai",
-		SupportsTools: true,
 	}
 }

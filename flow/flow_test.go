@@ -35,7 +35,7 @@ func newTestRunContext() core.RequestContext {
 }
 
 func TestSingleAgentFlow(t *testing.T) {
-	mockModel := &testutil.MockModel{InfoVal: core.ModelInfo{Name: "test-model", Provider: "mock", SupportsTools: true}}
+	mockModel := &testutil.MockModel{}
 	// Optionally customize via mockModel.GenerateFunc
 	agent := testutil.NewMockAgent("test-agent")
 	agent.ModelVal = mockModel
@@ -85,7 +85,7 @@ func TestSingleAgentFlow(t *testing.T) {
 
 func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 	a := testutil.NewMockAgent("iso")
-	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
+	a.ModelVal = &testutil.MockModel{}
 	a.TransferToPeersEnabled = false
 	a.SubAgentsList = nil
 	sel := NewDefaultSelector(&Executors{
@@ -99,7 +99,7 @@ func TestSelector_ReturnsSingleAgentFlow_WhenIsolated(t *testing.T) {
 
 func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 	a := testutil.NewMockAgent("xfer")
-	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
+	a.ModelVal = &testutil.MockModel{}
 	a.TransferToPeersEnabled = true
 	sel := NewDefaultSelector(&Executors{
 		AgentExecutor: testutil.NewAgentExecutorMock(),
@@ -112,7 +112,7 @@ func TestSelector_ReturnsMultiAgentFlow_WhenTransferEnabled(t *testing.T) {
 
 func TestSelector_ReturnsMultiAgentFlow_WhenHasSubAgents(t *testing.T) {
 	a := testutil.NewMockAgent("subs")
-	a.ModelVal = &testutil.MockModel{InfoVal: core.ModelInfo{Name: "m", Provider: "mock", SupportsTools: true}}
+	a.ModelVal = &testutil.MockModel{}
 	a.TransferToPeersEnabled = false
 	a.HasSubAgentsFunc = func() bool { return true }
 	sel := NewDefaultSelector(&Executors{

@@ -32,9 +32,6 @@ func (m *partialStreamingModel) Generate(
 	}()
 	return respCh, errCh
 }
-func (m *partialStreamingModel) Info() core.ModelInfo {
-	return core.ModelInfo{Name: "m", Provider: "test"}
-}
 
 // TestBaseFlow_PartialStreaming validates partial assistant events stream in order
 // followed by a final non-partial event.

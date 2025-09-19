@@ -69,9 +69,6 @@ func (m *onceToolCallModel) Generate(
 	}()
 	return rc, ec
 }
-func (m *onceToolCallModel) Info() core.ModelInfo {
-	return core.ModelInfo{Name: "m", Provider: "test", SupportsTools: true}
-}
 
 // model that emits a single plain text response
 type textModel struct{ text string }
@@ -86,7 +83,6 @@ func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan 
 	}()
 	return rc, ec
 }
-func (m *textModel) Info() core.ModelInfo { return core.ModelInfo{Name: "m", Provider: "test"} }
 
 func TestBaseFlow_Simple_NoTools(t *testing.T) {
 	// Use text-only model, ensure processors run and at least one assistant event is written

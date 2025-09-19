@@ -9,21 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFuncModel_Info(t *testing.T) {
-	mi := core.ModelInfo{Name: "mock", Provider: "test", SupportsTools: true}
-	fm := NewFuncModel(mi, func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
-		out := make(chan *core.ModelResponse)
-		errCh := make(chan error)
-		close(out)
-		close(errCh)
-		return out, errCh
-	})
-	assert.Equal(t, mi, fm.Info())
-}
-
 func TestFuncModel_Generate_SingleResponse(t *testing.T) {
 	fm := NewFuncModel(
-		core.ModelInfo{Name: "mock", Provider: "test"},
 		func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 			out := make(chan *core.ModelResponse, 1)
 			errCh := make(chan error, 1)
@@ -58,7 +45,6 @@ func TestFuncModel_Generate_SingleResponse(t *testing.T) {
 func TestFuncModel_Generate_Error(t *testing.T) {
 	sentinel := assert.AnError
 	fm := NewFuncModel(
-		core.ModelInfo{Name: "mock", Provider: "test"},
 		func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 			out := make(chan *core.ModelResponse)
 			errCh := make(chan error, 1)
@@ -75,7 +61,7 @@ func TestFuncModel_Generate_Error(t *testing.T) {
 
 func TestNewFuncModel_PanicsOnNilFunc(t *testing.T) {
 	assert.Panics(t, func() {
-		NewFuncModel(core.ModelInfo{Name: "x"}, nil)
+		NewFuncModel(nil)
 	})
 }
 
