@@ -2,9 +2,7 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -18,7 +16,7 @@ type tool struct {
 // NewTool returns a core.Tool that proxies function calls to a Model Context Protocol
 // server using the provided MCP tool declaration and a SessionManager.
 func NewTool(mcpTool *mcp.Tool, sessionManager *SessionManager) (core.Tool, error) {
-	parameters, err := SchemaToMap(mcpTool.InputSchema)
+	parameters, err := core.SchemaToMap(mcpTool.InputSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -77,25 +75,4 @@ func (t *tool) Call(ctx context.Context, tc core.ToolContext, args map[string]an
 	}
 
 	return res.StructuredContent, nil
-}
-
-// SchemaToMap converts a *jsonschema.Schema into a generic map[string]any.
-func SchemaToMap(s *jsonschema.Schema) (map[string]any, error) {
-	if s == nil {
-		return nil, nil
-	}
-
-	// First marshal schema to JSON
-	b, err := json.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-
-	// Then unmarshal into a generic map
-	var out map[string]any
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, err
-	}
-
-	return out, nil
 }

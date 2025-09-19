@@ -1,5 +1,11 @@
 package core
 
+import (
+	"encoding/json"
+
+	"github.com/google/jsonschema-go/jsonschema"
+)
+
 // String creates an optional string value (Opt[string]) set to v.
 // Zero value of Opt[string] represents None.
 func String(v string) Opt[string] {
@@ -36,4 +42,25 @@ func Map[K comparable, V any](m map[K]V) Opt[map[K]V] {
 		return None[map[K]V]()
 	}
 	return Some(m)
+}
+
+// SchemaToMap converts a *jsonschema.Schema into a generic map[string]any.
+func SchemaToMap(s *jsonschema.Schema) (map[string]any, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	// First marshal schema to JSON
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+
+	// Then unmarshal into a generic map
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
