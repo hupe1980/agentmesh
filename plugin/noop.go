@@ -10,11 +10,8 @@ import (
 // All hooks return nil to indicate "proceed as normal".
 type Noop struct{}
 
-// Ensure Noop implements core.Plugin.
-var _ core.Plugin = (*Noop)(nil)
-
 // NewNoop returns a no-op plugin.
-func NewNoop() *Noop { return &Noop{} }
+func NewNoop() core.Plugin { return &Noop{} }
 
 // OnUserParts returns nil to proceed without modifying user parts.
 func (Noop) OnUserParts(ctx context.Context, reqCtx core.RequestContext, userParts []core.Part) ([]core.Part, error) {
