@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
 	"time"
@@ -178,4 +179,16 @@ func (s *Session) UnmarshalJSON(data []byte) error {
 	s.events = aux.Events
 
 	return nil
+}
+
+// SessionStore persists sessions and their evolving event history.
+type SessionStore interface {
+	// GetOrCreate retrieves an existing session or creates a new one.
+	GetOrCreate(ctx context.Context, appName, userID, sessionID string) (*Session, error)
+
+	// AppendEvent adds a new event to the session's event history.
+	AppendEvent(ctx context.Context, session *Session, event *Event) error
+
+	// Close releases any resources held by the store.
+	Close() error
 }
