@@ -64,11 +64,7 @@ func consume(results <-chan core.RunResult, focus string) {
 		}
 
 		if res.Event.Author == focus {
-			for _, p := range res.Event.Parts {
-				if tp, ok := p.(*core.TextPart); ok {
-					fmt.Println(tp.Text)
-				}
-			}
+			fmt.Println(res.Event.Text())
 		}
 	}
 }

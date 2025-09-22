@@ -90,11 +90,8 @@ func main() {
       log.Printf("error: %v", res.Err)
       continue
     }
-    for _, p := range res.Event.Parts {
-      if tp, ok := p.(*core.TextPart); ok {
-        fmt.Println(tp.Text)
-      }
-    }
+    
+    fmt.Println(res.Event.Text())
   }
 }
 ```

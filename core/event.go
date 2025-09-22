@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -138,6 +139,18 @@ func (e *Event) IsFinalResponse() bool {
 	}
 
 	return !e.HasFunctionCalls() && !e.HasFunctionResponses() && !e.IsPartial()
+}
+
+// Text aggregates all text parts into a single string.
+func (e *Event) Text() string {
+	var b strings.Builder
+	for _, p := range e.Parts {
+		if tp, ok := p.(*TextPart); ok {
+			b.WriteString(tp.Text)
+		}
+	}
+
+	return b.String()
 }
 
 // Clone returns a copy of the event with independent maps and option pointers.
