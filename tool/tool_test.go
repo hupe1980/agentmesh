@@ -1,17 +1,12 @@
 package tool
 
 import (
-	"context"
+	"reflect"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/internal/testutil"
-	"github.com/hupe1980/agentmesh/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// -------------------- Schema & Validation Tests --------------------
 
 type sampleSchema struct {
 	A string `json:"a" description:"Field A"`
@@ -19,23 +14,42 @@ type sampleSchema struct {
 	C int    `json:"c,omitempty" description:"Omit empty field"`
 }
 
-func TestCreateSchema(t *testing.T) {
-	schema := util.CreateSchema(sampleSchema{})
+func TestInferParameterSchema(t *testing.T) {
+	schema, err := InferParameterSchema(sampleSchema{})
+	require.NoError(t, err)
+
 	props, ok := schema["properties"].(map[string]any)
 	assert.True(t, ok)
 	// Properties present
 	assert.Contains(t, props, "a")
 	assert.Contains(t, props, "b")
 	assert.Contains(t, props, "c")
-	// Required only includes non-pointer, non-omitempty exported fields
-	req, _ := schema["required"].([]string)
-	if req == nil { // reflection may produce []any
-		ifaceReq, _ := schema["required"].([]any)
-		for _, v := range ifaceReq {
-			req = append(req, v.(string))
+	// Required includes fields without 'omitempty' (jsonschema-go behavior)
+	var req []string
+	if r, ok := schema["required"].([]string); ok {
+		req = r
+	} else if rAny, ok := schema["required"].([]any); ok {
+		for _, v := range rAny {
+			if s, ok := v.(string); ok {
+				req = append(req, s)
+			}
 		}
 	}
-	assert.ElementsMatch(t, []string{"a"}, req)
+	// a should be required
+	assert.Contains(t, req, "a")
+	// c has omitempty and should not be required
+	assert.NotContains(t, req, "c")
+}
+
+func TestInferParameterSchema_VariousInputs(t *testing.T) {
+	inputs := []any{sampleSchema{}, &sampleSchema{}, reflect.TypeOf(sampleSchema{})}
+	for _, in := range inputs {
+		schema, err := InferParameterSchema(in)
+		require.NoError(t, err)
+		props, ok := schema["properties"].(map[string]any)
+		assert.True(t, ok)
+		assert.Contains(t, props, "a")
+	}
 }
 
 func TestValidateParameters(t *testing.T) {
@@ -49,86 +63,16 @@ func TestValidateParameters(t *testing.T) {
 	}
 
 	// Success
-	err := util.ValidateParameters(map[string]any{"x": 5}, schema)
+	err := ValidateParameters(schema, map[string]any{"x": 5})
 	assert.NoError(t, err)
 
 	// Wrong type
-	err = util.ValidateParameters(map[string]any{"x": "not-int"}, schema)
+	err = ValidateParameters(schema, map[string]any{"x": "not-int"})
 	assert.Error(t, err)
-	require.IsType(t, &util.ValidationError{}, err)
-	vErr := err.(*util.ValidationError)
-	assert.Contains(t, vErr.Message, "expected type integer")
-}
 
-// -------------------- FuncTool Tests --------------------
-
-func TestFunctionTool_Success(t *testing.T) {
-	params := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"a": map[string]any{"type": "number"},
-			"b": map[string]any{"type": "number"},
-		},
-		"required": []string{"a", "b"},
-	}
-
-	sumTool := NewFuncTool(
-		"sum",
-		"Add numbers",
-		params,
-		func(_ context.Context, _ core.ToolContext, args map[string]any) (any, error) {
-			a := args["a"].(float64)
-			b := args["b"].(float64)
-			return a + b, nil
-		},
-	)
-
-	reqCtx := dummyRequestContext()
-	tc := core.NewToolContext(reqCtx, func(o *core.ToolContextOptions) {
-		o.FunctionCallID = core.String("fc1")
-	})
-	result, err := sumTool.Call(context.Background(), tc, map[string]any{"a": 2.0, "b": 3.0})
-	assert.NoError(t, err)
-	assert.Equal(t, 5.0, result)
-}
-
-func dummyRequestContext() core.RequestContext {
-	sessSvc := &testutil.SessionStoreMock{
-		GetOrCreateFunc: func(_ context.Context, appName, userID, id string) (*core.Session, error) {
-			return core.NewSession(appName, userID, id), nil
-		},
-		AppendEventFunc: func(ctx context.Context, sess *core.Session, ev *core.Event) error { return nil },
-	}
-	artSvc := &testutil.ArtifactStoreMock{
-		SaveFunc:     func(ctx context.Context, _, _, _, _ string, _ core.Part) error { return nil },
-		LoadFunc:     func(ctx context.Context, _, _, _, _ string) (core.Part, error) { return nil, nil },
-		ListKeysFunc: func(ctx context.Context, _, _, _ string) ([]string, error) { return []string{}, nil },
-		DeleteFunc:   func(ctx context.Context, _, _, _, _ string) error { return nil },
-	}
-	memSvc := &testutil.MemoryStoreMock{
-		SearchFunc: func(ctx context.Context, _, _ string, _ string) (*core.SearchResult, error) {
-			return &core.SearchResult{Memories: nil}, nil
-		},
-		AddSessionFunc: func(ctx context.Context, _ *core.Session) error { return nil },
-	}
-
-	appName := "app1"
-	userID := "user1"
-	sessionID := "sess1"
-	if _, err := sessSvc.GetOrCreate(context.Background(), appName, userID, sessionID); err != nil {
-		panic(err)
-	}
-
-	ag := testutil.NewMockAgent("Agent")
-	return testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
-		p.Agent = ag
-		p.RunID = "run1"
-		p.Session = core.NewSession(appName, userID, sessionID)
-		p.SessionStore = sessSvc
-		p.ArtifactStore = artSvc
-		p.MemoryStore = memSvc
-		p.MaxModelCalls = 100
-	})
+	// Missing required
+	err = ValidateParameters(schema, map[string]any{})
+	assert.Error(t, err)
 }
 
 func TestErrorFormatting(t *testing.T) {

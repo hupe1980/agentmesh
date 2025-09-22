@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/internal/util"
 )
 
 // Func is the function signature expected by FuncTool. Implementations receive:
@@ -108,9 +107,12 @@ func NewFuncTool(
 	}
 }
 
-// NewFuncToolFromStruct derives the parameter schema from a struct using reflection.
-// It is a convenience for simple argument containers and produces a schema equivalent
-// to util.CreateSchema(structType).
+// NewFuncToolFromType derives the parameter schema from a struct using jsonschema-go's
+// inference (draft 2020-12). It respects json tags for names and omitempty for required.
+//
+// structType may be either:
+//   - a struct value (e.g., SumArgs{}) or pointer to struct (e.g., &SumArgs{})
+//   - a reflect.Type describing the struct type (e.g., reflect.TypeOf(SumArgs{}))
 //
 // Example:
 //
@@ -127,13 +129,17 @@ func NewFuncTool(
 //	    return args["a"].(float64) + args["b"].(float64), nil
 //	  },
 //	)
-func NewFuncToolFromStruct(
+func NewFuncToolFromType(
 	name, description string,
 	structType any,
 	fn Func,
-) core.Tool {
-	schema := util.CreateSchema(structType)
-	return NewFuncTool(name, description, schema, fn)
+) (core.Tool, error) {
+	schema, err := InferParameterSchema(structType)
+	if err != nil {
+		return nil, fmt.Errorf("NewFuncToolFromType: %w", err)
+	}
+
+	return NewFuncTool(name, description, schema, fn), nil
 }
 
 // Name returns the unique tool name used in function call declarations and routing.
@@ -161,9 +167,9 @@ func (t *FuncTool) ProcessModelRequest(
 // - no panic recovery (executor guarantees "never panic")
 // - normalizes errors to *ToolError for consistent downstream handling
 func (t *FuncTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error) {
-	// Validate parameters (convert validation errors to *Error with code)
-	if err := util.ValidateParameters(args, t.parameters); err != nil {
-		return nil, NewError(t.name, fmt.Sprintf("invalid parameters: %v", err), "VALIDATION_ERROR")
+	// Validate parameters against JSON Schema using helper (no fallback)
+	if err := ValidateParameters(t.parameters, args); err != nil {
+		return nil, NewError(t.name, err.Error(), "VALIDATION_ERROR")
 	}
 
 	// Respect cancellation early

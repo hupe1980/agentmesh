@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"time"
 
@@ -13,65 +12,10 @@ import (
 	"github.com/hupe1980/agentmesh/logging"
 	lcg "github.com/hupe1980/agentmesh/model/langchaingo"
 	"github.com/hupe1980/agentmesh/runner"
-	"github.com/hupe1980/agentmesh/tool"
+	lcgtools "github.com/hupe1980/agentmesh/tool/langchaingo"
 	lcgopenai "github.com/tmc/langchaingo/llms/openai"
+	lctools "github.com/tmc/langchaingo/tools"
 )
-
-// newCalculatorTool returns a simple calculator tool to demonstrate tool-use via the langchaingo adapter.
-func newCalculatorTool() core.Tool {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"op": map[string]any{
-				"type":        "string",
-				"description": "Operation to perform",
-				"enum":        []string{"add", "sub", "mul", "div", "pow"},
-			},
-			"a": map[string]any{
-				"type":        "number",
-				"description": "First operand",
-			},
-			"b": map[string]any{
-				"type":        "number",
-				"description": "Second operand (required except maybe pow depending on usage)",
-			},
-		},
-		"required": []string{"op", "a"},
-	}
-
-	fn := func(_ context.Context, _ core.ToolContext, args map[string]any) (any, error) {
-		op, _ := args["op"].(string)
-		av, ok := args["a"].(float64)
-		if !ok {
-			return nil, fmt.Errorf("invalid or missing 'a'")
-		}
-		var bv float64
-		if braw, has := args["b"]; has {
-			if v, ok := braw.(float64); ok {
-				bv = v
-			}
-		}
-		switch op {
-		case "add":
-			return av + bv, nil
-		case "sub":
-			return av - bv, nil
-		case "mul":
-			return av * bv, nil
-		case "div":
-			if bv == 0 {
-				return nil, fmt.Errorf("division by zero")
-			}
-			return av / bv, nil
-		case "pow":
-			return math.Pow(av, bv), nil
-		default:
-			return nil, fmt.Errorf("unsupported op: %s", op)
-		}
-	}
-
-	return tool.NewFuncTool("calc", "Simple calculator supporting add/sub/mul/div/pow", schema, fn)
-}
 
 func main() {
 	if os.Getenv("OPENAI_API_KEY") == "" {
@@ -95,7 +39,8 @@ func main() {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a concise assistant. Use the calc tool when arithmetic is involved.",
 		)
-		o.Tools = []core.Tool{newCalculatorTool()}
+		// Wrap the langchaingo Calculator tool using our adapter
+		o.Tools = []core.Tool{lcgtools.NewTool(&lctools.Calculator{})}
 	})
 
 	r := runner.New("langchaingo_example", ag, func(o *runner.Options) {
@@ -103,7 +48,7 @@ func main() {
 	})
 	defer func() { _ = r.Close() }()
 
-	userParts := []core.Part{core.NewPartFromText("What is (12.5 + 7.5) * 2? Show steps briefly.")}
+	userParts := []core.Part{core.NewPartFromText("What is (12.5 + 7.5) * 2?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

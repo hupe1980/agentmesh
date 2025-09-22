@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,7 +74,6 @@ func TestFunctionTool_CanceledContext(t *testing.T) {
 		params,
 		func(_ context.Context, _ core.ToolContext, _ map[string]any) (any, error) { return nil, nil },
 	)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
@@ -137,7 +137,7 @@ func TestFunctionToolFromStruct_SchemaAndCall(t *testing.T) {
 		B float64 `json:"b"`
 	}
 
-	tool := NewFuncToolFromStruct(
+	tool, err := NewFuncToolFromType(
 		"sum_struct",
 		"sum using struct schema",
 		SumArgs{},
@@ -145,6 +145,7 @@ func TestFunctionToolFromStruct_SchemaAndCall(t *testing.T) {
 			return args["a"].(float64) + args["b"].(float64), nil
 		},
 	)
+	require.NoError(t, err)
 
 	// Access schema and ensure it has expected shape
 	params := tool.Parameters()
@@ -159,6 +160,46 @@ func TestFunctionToolFromStruct_SchemaAndCall(t *testing.T) {
 	res, err := tool.Call(context.Background(), tc, map[string]any{"a": 1.5, "b": 2.5})
 	require.NoError(t, err)
 	assert.Equal(t, 4.0, res)
+}
+
+// Test helper used by FuncTool tests
+func dummyRequestContext() core.RequestContext {
+	sessSvc := &testutil.SessionStoreMock{
+		GetOrCreateFunc: func(_ context.Context, appName, userID, id string) (*core.Session, error) {
+			return core.NewSession(appName, userID, id), nil
+		},
+		AppendEventFunc: func(ctx context.Context, sess *core.Session, ev *core.Event) error { return nil },
+	}
+	artSvc := &testutil.ArtifactStoreMock{
+		SaveFunc:     func(ctx context.Context, _, _, _, _ string, _ core.Part) error { return nil },
+		LoadFunc:     func(ctx context.Context, _, _, _, _ string) (core.Part, error) { return nil, nil },
+		ListKeysFunc: func(ctx context.Context, _, _, _ string) ([]string, error) { return []string{}, nil },
+		DeleteFunc:   func(ctx context.Context, _, _, _, _ string) error { return nil },
+	}
+	memSvc := &testutil.MemoryStoreMock{
+		SearchFunc: func(ctx context.Context, _, _ string, _ string) (*core.SearchResult, error) {
+			return &core.SearchResult{Memories: nil}, nil
+		},
+		AddSessionFunc: func(ctx context.Context, _ *core.Session) error { return nil },
+	}
+
+	appName := "app1"
+	userID := "user1"
+	sessionID := "sess1"
+	if _, err := sessSvc.GetOrCreate(context.Background(), appName, userID, sessionID); err != nil {
+		panic(err)
+	}
+
+	ag := testutil.NewMockAgent("Agent")
+	return testutil.NewTestRequestContext(func(p *core.RequestContextParams) {
+		p.Agent = ag
+		p.RunID = "run1"
+		p.Session = core.NewSession(appName, userID, sessionID)
+		p.SessionStore = sessSvc
+		p.ArtifactStore = artSvc
+		p.MemoryStore = memSvc
+		p.MaxModelCalls = 100
+	})
 }
 
 func TestFunctionTool_ProcessModelRequest_NoOp(t *testing.T) {
