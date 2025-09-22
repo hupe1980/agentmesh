@@ -2,20 +2,34 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// ToolOptions holds configuration options for an individual MCP tool.
+type ToolOptions struct {
+	// NamePrefix is prepended to the tool name, separated by an underscore.
+	NamePrefix string
+}
+
+// tool is an implementation of core.Tool that proxies calls to an MCP tool.
 type tool struct {
 	mcpTool        *mcp.Tool
 	parameters     map[string]any
 	sessionManager *SessionManager
+	opts           ToolOptions
 }
 
 // NewTool returns a core.Tool that proxies function calls to a Model Context Protocol
 // server using the provided MCP tool declaration and a SessionManager.
-func NewTool(mcpTool *mcp.Tool, sessionManager *SessionManager) (core.Tool, error) {
+func NewTool(mcpTool *mcp.Tool, sessionManager *SessionManager, optFns ...func(*ToolOptions)) (core.Tool, error) {
+	opts := ToolOptions{}
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
 	parameters, err := core.SchemaToMap(mcpTool.InputSchema)
 	if err != nil {
 		return nil, err
@@ -25,12 +39,13 @@ func NewTool(mcpTool *mcp.Tool, sessionManager *SessionManager) (core.Tool, erro
 		mcpTool:        mcpTool,
 		parameters:     parameters,
 		sessionManager: sessionManager,
+		opts:           opts,
 	}, nil
 }
 
 // Name returns the MCP tool's name.
 func (t *tool) Name() string {
-	return t.mcpTool.Name
+	return fmt.Sprintf("%s_%s", t.opts.NamePrefix, t.mcpTool.Name)
 }
 
 // Description returns the MCP tool's description.
@@ -41,6 +56,11 @@ func (t *tool) Description() string {
 // Parameters returns a JSON schema for arguments.
 func (t *tool) Parameters() map[string]any {
 	return t.parameters
+}
+
+// RawTool returns the underlying MCP tool descriptor.
+func (t *tool) RawTool() *mcp.Tool {
+	return t.mcpTool
 }
 
 // ProcessModelRequest registers this tool on the outgoing model request so

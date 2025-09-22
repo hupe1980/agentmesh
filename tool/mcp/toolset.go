@@ -7,16 +7,31 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// ToolsetOptions holds configuration options for the MCP toolset.
+type ToolsetOptions struct {
+	// NamePrefix is prepended to each tool name, separated by an underscore.
+	// This can be useful to avoid name collisions when multiple MCP toolsets
+	// are used in the same agent.
+	NamePrefix string
+}
+
 type toolset struct {
 	sessionManager *SessionManager
+	opts           ToolsetOptions
 }
 
 // NewToolset constructs a core.Toolset backed by a Model Context Protocol server.
 // It creates an internal SessionManager using the provided SessionFactory (e.g.,
 // NewStdioSessionFactory). Tools are discovered at runtime via the MCP protocol.
-func NewToolset(sessionFactory SessionFactory) core.Toolset {
+func NewToolset(sessionFactory SessionFactory, optFns ...func(*ToolsetOptions)) core.Toolset {
+	opts := ToolsetOptions{}
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
 	return &toolset{
 		sessionManager: NewSessionManager(sessionFactory),
+		opts:           opts,
 	}
 }
 
@@ -37,7 +52,9 @@ func (t *toolset) ListTools(ctx context.Context, roCtx core.ReadonlyContext) ([]
 			return nil, err
 		}
 
-		t, err := NewTool(tool, t.sessionManager)
+		t, err := NewTool(tool, t.sessionManager, func(opts *ToolOptions) {
+			opts.NamePrefix = t.opts.NamePrefix
+		})
 		if err != nil {
 			return nil, err
 		}

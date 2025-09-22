@@ -8,6 +8,28 @@ import (
 	"github.com/hupe1980/agentmesh/internal/util"
 )
 
+// Func is the function signature expected by FuncTool. Implementations receive:
+//   - ctx: request-scoped context (cancellation, deadlines)
+//   - toolCtx: AgentMesh ToolContext with session/run metadata
+//   - args: already-validated arguments matching the declared Parameters schema
+//
+// The return value should be JSON-serializable.
+type Func func(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error)
+
+// FuncWithCredential is the function signature expected by FuncToolWithCredential. Implementations receive:
+//   - ctx: request-scoped context (cancellation, deadlines)
+//   - toolCtx: AgentMesh ToolContext with session/run metadata
+//   - args: already-validated arguments matching the declared Parameters schema
+//   - credential: Credential of type T associated with the tool call
+//
+// The return value should be JSON-serializable.
+type FuncWithCredential[T core.Credential] func(
+	ctx context.Context,
+	toolCtx core.ToolContext,
+	args map[string]any,
+	credential T,
+) (any, error)
+
 // FuncTool is a generic adapter that exposes a plain Go function as an AgentMesh tool.
 // Responsibilities:
 //   - Holds a lightweight JSON-Schema-like parameter specification (parameters)
@@ -42,7 +64,7 @@ type FuncTool struct {
 	// JSON schema describing accepted arguments
 	parameters map[string]any
 	// User supplied implementation
-	fn func(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error)
+	fn Func
 }
 
 // NewFuncTool constructs a FuncTool from explicit schema and function.
@@ -76,7 +98,7 @@ type FuncTool struct {
 func NewFuncTool(
 	name, description string,
 	parameters map[string]any,
-	fn func(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error),
+	fn Func,
 ) core.Tool {
 	return &FuncTool{
 		name:        name,
@@ -108,7 +130,7 @@ func NewFuncTool(
 func NewFuncToolFromStruct(
 	name, description string,
 	structType any,
-	fn func(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error),
+	fn Func,
 ) core.Tool {
 	schema := util.CreateSchema(structType)
 	return NewFuncTool(name, description, schema, fn)
