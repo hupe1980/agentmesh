@@ -71,7 +71,10 @@ import (
 func main() {
   model := openai.NewModel()
 
-  basic := agent.NewModelAgent("basic_agent", model)
+  basic, err := agent.NewModelAgent("basic_agent", model)
+  if err != nil {
+		log.Fatalf("failed to create agent: %v", err)
+	}
 
   r := runner.New("basic_app", basic)
   defer r.Close()

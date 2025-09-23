@@ -54,10 +54,13 @@ func main() {
 
 	model := openai.NewModel()
 
-	agent := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
+	agent, err := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText("You are a weather assistant.")
 		o.Tools = []core.Tool{newGetWeatherTool()}
 	})
+	if err != nil {
+		log.Fatalf("failed creating agent: %v", err)
+	}
 
 	r := runner.New("weather_app", agent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)

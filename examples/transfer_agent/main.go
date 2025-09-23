@@ -28,7 +28,7 @@ func main() {
 	})
 
 	// Specialist child agents
-	mathAgent := agent.NewModelAgent("MathAgent", model, func(o *agent.ModelAgentOptions) {
+	mathAgent, err := agent.NewModelAgent("MathAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a math expert.\n" +
 				"- Solve with clear, concise steps and provide a boxed final answer.\n" +
@@ -38,8 +38,11 @@ func main() {
 		o.Description = "Expert in mathematics: algebra, calculus (derivatives, integrals), and general calculations."
 		o.AllowTransferToParent = false
 	})
+	if err != nil {
+		log.Fatalf("failed creating math agent: %v", err)
+	}
 
-	historyAgent := agent.NewModelAgent("HistoryAgent", model, func(o *agent.ModelAgentOptions) {
+	historyAgent, err := agent.NewModelAgent("HistoryAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a history expert.\n" +
 				"- Provide concise, factual answers with dates and key names when available.\n" +
@@ -48,15 +51,23 @@ func main() {
 		o.Description = "Expert in historical facts, events, timelines, and context."
 		o.AllowTransferToParent = false
 	})
+	if err != nil {
+		log.Fatalf("failed creating history agent: %v", err)
+	}
 
 	// Build hierarchy at construction: root -> (math, history)
-	root := agent.NewModelAgent("RouterAgent", model, func(o *agent.ModelAgentOptions) {
+	root, err := agent.NewModelAgent("RouterAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a routing assistant. Not a subject-matter expert. Prefer delegating to specialists; answer directly only if no specialist fits.",
 		)
 		o.Description = "Routing orchestrator. Not a subject-matter expert. Prefer delegating to specialists; answer directly only if no specialist fits."
 		o.SubAgents = []core.Agent{mathAgent, historyAgent}
 	})
+	if err != nil {
+		log.Fatalf("failed creating root agent: %v", err)
+	}
+
+	// Application runner
 
 	r := runner.New("transfer_app", root, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)

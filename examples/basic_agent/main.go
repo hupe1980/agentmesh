@@ -25,11 +25,14 @@ func main() {
 	// 1. Create model + agent with an instruction prompt
 	model := openai.NewModel()
 
-	llmAgent := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
+	llmAgent, err := agent.NewModelAgent("BasicAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a helpful assistant. Keep responses concise and friendly.",
 		)
 	})
+	if err != nil {
+		log.Fatalf("failed to create agent: %v", err)
+	}
 
 	// 2. Create the runner with a standard logger
 	r := runner.New("basic_agent_app", llmAgent, func(o *runner.Options) {

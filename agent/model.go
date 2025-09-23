@@ -26,6 +26,8 @@ type ModelAgentOptions struct {
 	EnableFunctionCalling bool
 	// Timeout for tool calls
 	ToolTimeout time.Duration
+	// Output structure for the agent's responses
+	OutputStructure map[string]any
 	// Key for saving responses to session state
 	OutputKey string
 	// Maximum number of conversation history messages to keep
@@ -95,7 +97,7 @@ type ModelAgent struct {
 // Children are wired at construction via options (ModelAgentOptions.SubAgents);
 // the hierarchy is read-only at runtime. Returns a fully configured ModelAgent
 // ready for conversation.
-func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOptions)) *ModelAgent {
+func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOptions)) (*ModelAgent, error) {
 	opts := ModelAgentOptions{
 		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
 		Description:           "",
@@ -138,11 +140,11 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
 	if len(opts.SubAgents) > 0 {
 		if err := a.AddSubAgents(opts.SubAgents...); err != nil {
-			panic(err) // Should not happen with valid input
+			return nil, fmt.Errorf("failed to add sub-agents: %w", err)
 		}
 	}
 
-	return a
+	return a, nil
 }
 
 // Tools returns the registered tools for function calling.

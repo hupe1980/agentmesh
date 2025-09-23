@@ -92,7 +92,7 @@ func main() {
 		o.Temperature = 0
 	})
 
-	calcAgent := agent.NewModelAgent("CalculatorAgent", model, func(o *agent.ModelAgentOptions) {
+	calcAgent, err := agent.NewModelAgent("CalculatorAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a careful math assistant.\n" +
 				"- Use the calculator tool for each numeric step.\n" +
@@ -105,6 +105,9 @@ func main() {
 		)
 		o.Tools = []core.Tool{newCalculatorTool()}
 	})
+	if err != nil {
+		log.Fatalf("failed creating agent: %v", err)
+	}
 
 	r := runner.New("calculator_app", calcAgent, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)

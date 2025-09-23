@@ -7,13 +7,14 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // LLM Agent Test Cases
 func TestModelAgent_NewAgent(t *testing.T) {
 	mockLLM := &testutil.MockModel{}
-	agent := NewModelAgent("Test Agent", mockLLM)
-
+	agent, err := NewModelAgent("Test Agent", mockLLM)
+	require.NoError(t, err)
 	assert.NotNil(t, agent)
 	assert.Equal(t, mockLLM, agent.model)
 	assert.NotNil(t, agent.tools)
@@ -24,7 +25,8 @@ func TestModelAgent_NewAgent(t *testing.T) {
 
 func TestModelAgent_ResolveInstructions(t *testing.T) {
 	inst := NewInstructionsFromText("custom inst")
-	a := NewModelAgent("AgentX", nil, func(o *ModelAgentOptions) { o.Instructions = inst })
+	a, err := NewModelAgent("AgentX", nil, func(o *ModelAgentOptions) { o.Instructions = inst })
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	ro := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -37,7 +39,9 @@ func TestModelAgent_ResolveInstructions(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
-	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})
@@ -51,7 +55,9 @@ func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
-	a := NewModelAgent("AgentA", nil) // no OutputKey
+	a, err := NewModelAgent("AgentA", nil) // no OutputKey
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})
@@ -65,7 +71,9 @@ func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NotFinal(t *testing.T) {
-	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})
@@ -80,7 +88,9 @@ func TestAttachOutputToEvent_NotFinal(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NoParts(t *testing.T) {
-	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})
@@ -96,7 +106,9 @@ func TestAttachOutputToEvent_NoParts(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
-	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})
@@ -115,7 +127,9 @@ func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_PreservesExistingState(t *testing.T) {
-	a := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	require.NoError(t, err)
+
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
 		rcp.Agent = a
 	})

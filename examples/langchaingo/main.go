@@ -35,13 +35,16 @@ func main() {
 		log.Fatalf("failed creating adapter: %v", err)
 	}
 
-	ag := agent.NewModelAgent("LangChainGoAgent", model, func(o *agent.ModelAgentOptions) {
+	ag, err := agent.NewModelAgent("LangChainGoAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			"You are a concise assistant. Use the calc tool when arithmetic is involved.",
 		)
 		// Wrap the langchaingo Calculator tool using our adapter
 		o.Tools = []core.Tool{lcgtools.NewTool(&lctools.Calculator{})}
 	})
+	if err != nil {
+		log.Fatalf("failed creating agent: %v", err)
+	}
 
 	r := runner.New("langchaingo_example", ag, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)

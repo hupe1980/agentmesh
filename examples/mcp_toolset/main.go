@@ -68,10 +68,13 @@ func main() {
 	// 3) Build an LLM agent and attach the MCP toolset
 	model := openai.NewModel(func(o *openai.Options) { o.Temperature = 0 })
 
-	llmAgent := agent.NewModelAgent("MCPAgent", model, func(o *agent.ModelAgentOptions) {
+	llmAgent, err := agent.NewModelAgent("MCPAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText("You can call the 'sum' tool to add two numbers. When asked to add, call the tool and return the numeric result.")
 		o.Toolsets = []core.Toolset{ts}
 	})
+	if err != nil {
+		log.Fatalf("failed creating agent: %v", err)
+	}
 
 	// 4) Run a sample conversation where the agent should invoke the MCP tool
 	r := runner.New("mcp_example_app", llmAgent, func(o *runner.Options) {

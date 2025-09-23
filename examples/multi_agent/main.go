@@ -26,7 +26,7 @@ func main() {
 	today := time.Now().Format("2006-01-02")
 
 	// Step 1: Research specialist
-	researchAgent := agent.NewModelAgent("ResearchAgent", model, func(o *agent.ModelAgentOptions) {
+	researchAgent, err := agent.NewModelAgent("ResearchAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(fmt.Sprintf(
 			`
 You are a senior research analyst focused on EU AI regulation. Your task is to research the latest news and official updates about Generative AI regulation in the EU as of %s.
@@ -57,9 +57,12 @@ Sources:
 `, today))
 		o.OutputKey = "research_data"
 	})
+	if err != nil {
+		log.Fatalf("failed creating research agent: %v", err)
+	}
 
 	// Step 2: Analysis specialist (consumes research_data)
-	analysisAgent := agent.NewModelAgent("AnalysisAgent", model, func(o *agent.ModelAgentOptions) {
+	analysisAgent, err := agent.NewModelAgent("AnalysisAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			`
 You are a policy and risk analysis specialist. Analyze the following research to derive actionable insights:
@@ -100,9 +103,12 @@ Recommendations:
 		)
 		o.OutputKey = "analysis_results"
 	})
+	if err != nil {
+		log.Fatalf("failed creating analysis agent: %v", err)
+	}
 
 	// Step 3: Report writer (consumes analysis_results)
-	reportAgent := agent.NewModelAgent("ReportAgent", model, func(o *agent.ModelAgentOptions) {
+	reportAgent, err := agent.NewModelAgent("ReportAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText(
 			`
 You are a concise technical report writer. Using the analysis below, craft a clear, executive-ready report in Markdown.
@@ -138,6 +144,9 @@ Output format (Markdown):
 `,
 		)
 	})
+	if err != nil {
+		log.Fatalf("failed creating report agent: %v", err)
+	}
 
 	// Sequential workflow: Research → Analysis → Report
 	workflow := agent.NewSequentialAgent("MultiAgent", []core.Agent{researchAgent, analysisAgent, reportAgent})
