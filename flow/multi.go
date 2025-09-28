@@ -13,6 +13,7 @@ func NewMultiAgentFlow(agent core.FlowAgent, executors *Executors) *MultiAgentFl
 	baseFlow := NewBaseFlow(agent, executors)
 
 	// Add default processors for advanced functionality
+	baseFlow.AddRequestProcessor(NewBasicProcessor())
 	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
 	baseFlow.AddRequestProcessor(NewMessagesProcessor())
 

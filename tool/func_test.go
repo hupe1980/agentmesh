@@ -51,15 +51,15 @@ func TestFunctionTool_ValidationError(t *testing.T) {
 	})
 
 	// Missing required field
-	_, err := tool.Call(context.Background(), tc, map[string]any{})
+	_, err := tool.Call(context.Background(), tc, "{}")
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
 	assert.Equal(t, "VALIDATION_ERROR", terr.Code)
-	assert.Contains(t, terr.Error(), "invalid parameters")
+	assert.Contains(t, terr.Error(), "invalid value: validating root: required: missing properties: [\"a\"]")
 
 	// Wrong type
-	_, err = tool.Call(context.Background(), tc, map[string]any{"a": "not-a-number"})
+	_, err = tool.Call(context.Background(), tc, testutil.MustJSON(t, map[string]any{"a": "not-a-number"}))
 	require.Error(t, err)
 	terr, ok = err.(*Error)
 	require.True(t, ok)
@@ -79,7 +79,7 @@ func TestFunctionTool_CanceledContext(t *testing.T) {
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc1")
 	})
-	_, err := tool.Call(ctx, tc, map[string]any{})
+	_, err := tool.Call(ctx, tc, "{}")
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
@@ -101,12 +101,12 @@ func TestFunctionTool_WrapsExecutionError(t *testing.T) {
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc1")
 	})
-	_, err := tool.Call(context.Background(), tc, map[string]any{})
+	_, err := tool.Call(context.Background(), tc, "")
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
-	assert.Equal(t, "EXECUTION_ERROR", terr.Code)
-	assert.Contains(t, terr.Error(), "boom")
+	assert.Equal(t, "VALIDATION_ERROR", terr.Code)
+	assert.Contains(t, terr.Error(), "tool error [VALIDATION_ERROR] in fail: invalid value: empty string")
 }
 
 func TestFunctionTool_PassthroughToolError(t *testing.T) {
@@ -123,7 +123,7 @@ func TestFunctionTool_PassthroughToolError(t *testing.T) {
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc1")
 	})
-	_, err := tool.Call(context.Background(), tc, map[string]any{})
+	_, err := tool.Call(context.Background(), tc, "{}")
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
@@ -157,7 +157,8 @@ func TestFunctionToolFromStruct_SchemaAndCall(t *testing.T) {
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc1")
 	})
-	res, err := tool.Call(context.Background(), tc, map[string]any{"a": 1.5, "b": 2.5})
+
+	res, err := tool.Call(context.Background(), tc, testutil.MustJSON(t, map[string]any{"a": 1.5, "b": 2.5}))
 	require.NoError(t, err)
 	assert.Equal(t, 4.0, res)
 }

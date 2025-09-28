@@ -3,7 +3,11 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
+
+	"github.com/hupe1980/agentmesh/internal/jsonschema"
 )
 
 // ToolCall represents a function call request surfaced by a model provider.
@@ -40,12 +44,116 @@ type Message struct {
 	Parts []Part `json:"parts"`          // Ordered heterogeneous parts
 }
 
+// OutputSchema describes a structured response format that the model should
+// try to follow when generating output. This is typically expressed as a JSON
+// Schema and may be used to guide the model to return well-formed structured
+// data instead of free-form text.
+//
+// Note: Models may not always respect the schema strictly. Use the `Strict`
+// field to indicate whether strict adherence is expected, but even then,
+// enforcement is not guaranteed.
+type OutputSchema struct {
+	// Name is the identifier for the response format. Must consist of a-z,
+	// A-Z, 0-9, underscores, or dashes, with a maximum length of 64
+	// characters. It is surfaced to the model as the schema name.
+	Name string `json:"name"`
+
+	// Strict indicates whether the model should strictly adhere to the schema.
+	// If omitted, the model may treat the schema as a hint rather than a hard
+	// requirement.
+	Strict Opt[bool] `json:"strict,omitzero"`
+
+	// Description explains the purpose of this output schema. It is provided
+	// to the model to help it understand when and how to use the format.
+	Description Opt[string] `json:"description,omitzero"`
+
+	// Schema contains the actual schema definition, usually expressed as a
+	// JSON Schema object (map[string]any).
+	// This defines the expected shape of the response.
+	Schema map[string]any `json:"schema"`
+}
+
+// OutputSchemaOptions holds optional parameters for NewOutputSchema.
+type OutputSchemaOptions struct {
+	Strict                    bool
+	Description               string
+	AllowAdditionalProperties bool
+}
+
+// NewOutputSchema creates an OutputSchema from either a map or a struct.
+// If schema is a struct, it will be converted to a map via MapFromStruct.
+// Returns an error if the schema type is unsupported or conversion fails.
+func NewOutputSchema[T any](name string, schema T, optFns ...func(*OutputSchemaOptions)) (Opt[OutputSchema], error) {
+	opts := OutputSchemaOptions{
+		Strict:                    true,
+		AllowAdditionalProperties: false,
+	}
+
+	for _, opt := range optFns {
+		opt(&opts)
+	}
+
+	var finalSchema map[string]any
+	val := reflect.ValueOf(schema)
+	typ := val.Type()
+
+	switch typ.Kind() {
+	case reflect.Map:
+		m, ok := any(schema).(map[string]any)
+		if !ok {
+			return None[OutputSchema](), fmt.Errorf("expected map[string]any, got %T", schema)
+		}
+
+		finalSchema = m
+	case reflect.Struct, reflect.Pointer:
+		m, err := jsonschema.MapFromStruct(schema)
+		if err != nil {
+			return None[OutputSchema](), fmt.Errorf("failed to convert struct to schema: %w", err)
+		}
+
+		finalSchema = m
+	default:
+		return None[OutputSchema](), fmt.Errorf("unsupported schema type: %T", schema)
+	}
+
+	finalSchema["additionalProperties"] = opts.AllowAdditionalProperties
+
+	// Validate minimal keys
+	if _, ok := finalSchema["type"]; !ok {
+		return None[OutputSchema](), fmt.Errorf("output schema missing 'type'")
+	}
+	if _, ok := finalSchema["properties"]; !ok {
+		return None[OutputSchema](), fmt.Errorf("output schema missing 'properties'")
+	}
+	if _, ok := finalSchema["required"]; !ok {
+		return None[OutputSchema](), fmt.Errorf("output schema missing 'required'")
+	}
+
+	return Some(OutputSchema{
+		Name:        name,
+		Strict:      Some(opts.Strict),
+		Description: Some(opts.Description),
+		Schema:      finalSchema,
+	}), nil
+}
+
+// MustNewOutputSchema is a convenience wrapper around NewOutputSchema that panics on error.
+func MustNewOutputSchema[T any](name string, schema T, optFns ...func(*OutputSchemaOptions)) Opt[OutputSchema] {
+	o, err := NewOutputSchema(name, schema, optFns...)
+	if err != nil {
+		panic(err)
+	}
+
+	return o
+}
+
 // ModelRequest captures the normalized model input produced by flows.
 type ModelRequest struct {
-	Instructions string           `json:"instructions"` // Instructions for the model
-	Messages     []*Message       `json:"messages"`     // Conversation messages (role + parts)
-	Tools        []ToolDefinition `json:"tools,omitempty"`
-	Stream       bool             `json:"stream,omitempty"`
+	Instructions string            `json:"instructions"` // Instructions for the model
+	Messages     []*Message        `json:"messages"`     // Conversation messages (role + parts)
+	OutputSchema Opt[OutputSchema] `json:"output_schema,omitzero"`
+	Tools        []ToolDefinition  `json:"tools,omitempty"`
+	Stream       bool              `json:"stream,omitempty"`
 
 	// ToolRegistry holds the runtime tool implementations keyed by name (not serialized)
 	ToolRegistry map[string]Tool `json:"-"`

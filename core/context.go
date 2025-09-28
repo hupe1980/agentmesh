@@ -71,9 +71,9 @@ type RequestContext interface {
 	RunOnEvent(ctx context.Context, event *Event) (*Event, error)
 	RunBeforeRun(ctx context.Context) ([]Part, error)
 	RunAfterRun(ctx context.Context) error
-	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
-	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any) (any, error)
-	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, result any) (any, error)
+	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, err error) (any, error)
+	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string) (any, error)
+	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, result any) (any, error)
 	RunBeforeModel(ctx context.Context, req *ModelRequest) (*ModelResponse, error)
 	RunAfterModel(ctx context.Context, res *ModelResponse) (*ModelResponse, error)
 	RunOnModelError(ctx context.Context, req *ModelRequest, err error) (*ModelResponse, error)
@@ -287,7 +287,7 @@ func (rc *requestContext) RunOnToolError(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	err error,
 ) (any, error) {
 	if rc.pluginManager == nil {
@@ -301,7 +301,7 @@ func (rc *requestContext) RunBeforeTool(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 ) (any, error) {
 	if rc.pluginManager == nil {
 		return nil, nil
@@ -314,7 +314,7 @@ func (rc *requestContext) RunAfterTool(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	result any,
 ) (any, error) {
 	if rc.pluginManager == nil {

@@ -98,6 +98,8 @@ type FlowAgent interface {
 	// IsTransferToParentEnabled indicates whether the agent may transfer to its parent.
 	IsTransferToParentEnabled() bool
 
+	// OutputSchema returns the expected output schema for responses.
+	OutputSchema() Opt[OutputSchema]
 	// OutputKey specifies where the final output should be stored in session state.
 	OutputKey() string
 }

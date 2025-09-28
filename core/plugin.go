@@ -86,7 +86,7 @@ type Plugin interface {
 	// actual tool call and that value is treated as the synthetic tool result.
 	// Returning nil continues with the original (possibly modified in-place)
 	// arguments.
-	BeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any) (any, error)
+	BeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string) (any, error)
 
 	// AfterTool runs after a tool has executed successfully.
 	//
@@ -94,7 +94,7 @@ type Plugin interface {
 	// non-nil map[string]any replaces the original result (enabling
 	// post‑processing or normalization). Returning nil keeps the original
 	// result unchanged.
-	AfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, result any) (any, error)
+	AfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, result any) (any, error)
 
 	// OnToolError runs when a tool invocation returns an error.
 	//
@@ -102,7 +102,7 @@ type Plugin interface {
 	// non-nil value signals an alternate "successful" tool output (the exact
 	// interpretation is implementation specific). Returning nil means no
 	// override and normal error handling proceeds.
-	OnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
+	OnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, err error) (any, error)
 }
 
 // PluginManager coordinates execution of Plugin hooks across a set of plugins.
@@ -138,15 +138,15 @@ type PluginManager interface {
 	RunOnModelError(ctx context.Context, cbCtx CallbackContext, req *ModelRequest, err error) (*ModelResponse, error)
 
 	// RunOnToolError executes the OnToolError hook across all plugins in order.
-	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, err error) (any, error)
+	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, err error) (any, error)
 
 	// RunBeforeTool executes the BeforeTool hook across all plugins in order.
 	// It stops on the first non-nil override result or error.
-	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any) (any, error)
+	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string) (any, error)
 
 	// RunAfterTool executes the AfterTool hook across all plugins in order.
 	// It stops on the first non-nil modified result or error.
-	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs map[string]any, result any) (any, error)
+	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, result any) (any, error)
 }
 
 // manager coordinates execution of Plugin hooks across a set of plugins.
@@ -275,7 +275,7 @@ func (m *pluginManager) RunOnToolError(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	err error,
 ) (any, error) {
 	var currentErr = err
@@ -298,7 +298,7 @@ func (m *pluginManager) RunBeforeTool(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 ) (any, error) {
 	for _, plugin := range m.plugins {
 		out, err := plugin.BeforeTool(ctx, tool, toolCtx, toolArgs)
@@ -318,7 +318,7 @@ func (m *pluginManager) RunAfterTool(
 	ctx context.Context,
 	tool Tool,
 	toolCtx ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	result any,
 ) (any, error) {
 	current := result

@@ -18,9 +18,9 @@ type PluginMock struct {
 	BeforeModelFunc  func(context.Context, core.CallbackContext, *core.ModelRequest) (*core.ModelResponse, error)
 	AfterModelFunc   func(context.Context, core.CallbackContext, *core.ModelResponse) (*core.ModelResponse, error)
 	OnModelErrorFunc func(context.Context, core.CallbackContext, *core.ModelRequest, error) (*core.ModelResponse, error)
-	BeforeToolFunc   func(context.Context, core.Tool, core.ToolContext, map[string]any) (any, error)
-	AfterToolFunc    func(context.Context, core.Tool, core.ToolContext, map[string]any, any) (any, error)
-	OnToolErrorFunc  func(context.Context, core.Tool, core.ToolContext, map[string]any, error) (any, error)
+	BeforeToolFunc   func(context.Context, core.Tool, core.ToolContext, string) (any, error)
+	AfterToolFunc    func(context.Context, core.Tool, core.ToolContext, string, any) (any, error)
+	OnToolErrorFunc  func(context.Context, core.Tool, core.ToolContext, string, error) (any, error)
 }
 
 func (m *PluginMock) OnUserParts(ctx context.Context, r core.RequestContext, p []core.Part) ([]core.Part, error) {
@@ -94,7 +94,7 @@ func (m *PluginMock) BeforeTool(
 	ctx context.Context,
 	t core.Tool,
 	tc core.ToolContext,
-	args map[string]any,
+	args string,
 ) (any, error) {
 	if m.BeforeToolFunc != nil {
 		return m.BeforeToolFunc(ctx, t, tc, args)
@@ -105,7 +105,7 @@ func (m *PluginMock) AfterTool(
 	ctx context.Context,
 	t core.Tool,
 	tc core.ToolContext,
-	args map[string]any,
+	args string,
 	result any,
 ) (any, error) {
 	if m.AfterToolFunc != nil {
@@ -117,7 +117,7 @@ func (m *PluginMock) OnToolError(
 	ctx context.Context,
 	t core.Tool,
 	tc core.ToolContext,
-	args map[string]any,
+	args string,
 	err error,
 ) (any, error) {
 	if m.OnToolErrorFunc != nil {

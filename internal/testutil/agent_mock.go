@@ -40,6 +40,7 @@ type MockAgent struct {
 	StreamingEnabled        bool
 	TransferToPeersEnabled  bool
 	TransferToParentEnabled bool
+	OutputSchemaVal         core.Opt[core.OutputSchema]
 	OutputKeyVal            string
 	MaxHistoryVal           int
 	HistoryModeVal          core.HistoryMode
@@ -215,6 +216,11 @@ func (m *MockAgent) IsTransferToPeersEnabled() bool { return m.TransferToPeersEn
 
 // IsTransferToParentEnabled returns the configured flag.
 func (m *MockAgent) IsTransferToParentEnabled() bool { return m.TransferToParentEnabled }
+
+// OutputSchema returns the expected output schema for responses.
+func (m *MockAgent) OutputSchema() core.Opt[core.OutputSchema] {
+	return m.OutputSchemaVal
+}
 
 // OutputKey returns the configured output key.
 func (m *MockAgent) OutputKey() string { return m.OutputKeyVal }

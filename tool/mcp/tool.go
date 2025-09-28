@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -30,7 +32,7 @@ func NewTool(mcpTool *mcp.Tool, sessionManager *SessionManager, optFns ...func(*
 		fn(&opts)
 	}
 
-	parameters, err := core.SchemaToMap(mcpTool.InputSchema)
+	parameters, err := schemaToMap(mcpTool.InputSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +81,7 @@ func (t *tool) ProcessModelRequest(
 // structured content from the MCP server.
 //
 // Errors from session creation or the MCP invocation are propagated unchanged.
-func (t *tool) Call(ctx context.Context, tc core.ToolContext, args map[string]any) (any, error) {
+func (t *tool) Call(ctx context.Context, tc core.ToolContext, args string) (any, error) {
 	session, err := t.sessionManager.CreateSession(ctx, tc, nil) // TODO: pass headers
 	if err != nil {
 		return nil, err
@@ -95,4 +97,25 @@ func (t *tool) Call(ctx context.Context, tc core.ToolContext, args map[string]an
 	}
 
 	return res.StructuredContent, nil
+}
+
+// schemaToMap converts a *jsonschema.Schema into a generic map[string]any.
+func schemaToMap(s *jsonschema.Schema) (map[string]any, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	// First marshal schema to JSON
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+
+	// Then unmarshal into a generic map
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }

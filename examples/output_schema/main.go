@@ -57,6 +57,17 @@ func main() {
 	agent, err := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
 		o.Instructions = agent.NewInstructionsFromText("You are a weather assistant.")
 		o.Tools = []core.Tool{newGetWeatherTool()}
+		o.OutputSchema = core.MustNewOutputSchema("weather_response", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"location":      map[string]any{"type": "string"},
+				"temperature_c": map[string]any{"type": "number"},
+				"condition":     map[string]any{"type": "string"},
+				"humidity":      map[string]any{"type": "number"},
+				"wind_kph":      map[string]any{"type": "number"},
+			},
+			"required": []string{"location", "temperature_c", "condition", "humidity", "wind_kph"},
+		})
 	})
 	if err != nil {
 		log.Fatalf("failed creating agent: %v", err)

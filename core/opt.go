@@ -1,8 +1,10 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 )
 
 // Opt represents an optional value of type T.
@@ -39,6 +41,7 @@ func (o Opt[T]) Or(defaultVal T) T {
 	if o.set {
 		return o.value
 	}
+
 	return defaultVal
 }
 
@@ -60,27 +63,34 @@ func (o Opt[T]) MarshalJSON() ([]byte, error) {
 	if !o.set {
 		return []byte("null"), nil
 	}
+
 	return json.Marshal(o.value)
 }
 
 // UnmarshalJSON decodes a value into the option.
 func (o *Opt[T]) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
+	b = bytes.TrimSpace(b)
+
+	// Fast path: detect JSON literal "null" by raw byte comparison.
+	// Avoids string conversion and extra allocation.
+	if len(b) == 4 && b[0] == 'n' && b[1] == 'u' && b[2] == 'l' && b[3] == 'l' {
 		o.Clear()
 		return nil
 	}
+
 	if err := json.Unmarshal(b, &o.value); err != nil {
 		return fmt.Errorf("failed to unmarshal Opt: %w", err)
 	}
+
 	o.set = true
+
 	return nil
 }
 
 // MergeMap merges two Opt[map[K]V], combining their entries.
 func MergeMap[K comparable, V any](dst, src Opt[map[K]V]) Opt[map[K]V] {
 	merged := dst.Or(make(map[K]V))
-	for k, v := range src.Or(nil) {
-		merged[k] = v
-	}
+	maps.Copy(merged, src.Or(nil))
+
 	return Map(merged)
 }

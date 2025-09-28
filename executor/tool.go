@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime/debug"
@@ -195,14 +194,9 @@ func (e *parallelToolExecutor) buildToolEvent(
 		return nil, fmt.Errorf("%w: tool=%s", core.ErrToolNotFound, fc.Name)
 	}
 
-	argMap, argErr := parseArgs(fc.Arguments)
-	if argErr != nil {
-		return nil, argErr
-	}
-
 	log.Info("agent.function.start")
 
-	result, err := e.executeWithPlugins(ctx, reqCtx, toolCtx, tool, argMap)
+	result, err := e.executeWithPlugins(ctx, reqCtx, toolCtx, tool, fc.Arguments)
 	if err != nil {
 		return nil, err
 	}
@@ -219,11 +213,11 @@ func (e *parallelToolExecutor) executeWithPlugins(
 	reqCtx core.RequestContext,
 	toolCtx core.ToolContext,
 	tool core.Tool,
-	argMap map[string]any,
+	toolArgs string,
 ) (any, error) {
 	log := logging.FromContext(ctx)
 
-	overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, argMap)
+	overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, toolArgs)
 	if err != nil {
 		log.Error("agent.function.before_tool.error", "error", err)
 		return nil, err
@@ -247,11 +241,11 @@ func (e *parallelToolExecutor) executeWithPlugins(
 				}
 			}()
 
-			result, callErr = tool.Call(ctx, toolCtx, argMap)
+			result, callErr = tool.Call(ctx, toolCtx, toolArgs)
 		}()
 
 		if callErr != nil {
-			recovered, herr := reqCtx.RunOnToolError(ctx, tool, toolCtx, argMap, callErr)
+			recovered, herr := reqCtx.RunOnToolError(ctx, tool, toolCtx, toolArgs, callErr)
 			if herr != nil {
 				log.Error("agent.function.error", "error", herr)
 				return nil, herr
@@ -267,7 +261,7 @@ func (e *parallelToolExecutor) executeWithPlugins(
 		}
 	}
 
-	modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, argMap, final)
+	modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, toolArgs, final)
 	if err != nil {
 		log.Error("agent.function.after_tool.error", "error", err)
 		return nil, err
@@ -278,24 +272,6 @@ func (e *parallelToolExecutor) executeWithPlugins(
 	}
 
 	return final, nil
-}
-
-// parseArgs parses JSON arguments string safely.
-func parseArgs(raw string) (map[string]any, error) {
-	if raw == "" {
-		return map[string]any{}, nil
-	}
-
-	var argMap map[string]any
-	if err := json.Unmarshal([]byte(raw), &argMap); err != nil {
-		return nil, fmt.Errorf("%w: %v", core.ErrInvalidToolArgs, err)
-	}
-
-	if argMap == nil {
-		argMap = map[string]any{}
-	}
-
-	return argMap, nil
 }
 
 // panicError adapts panic to error.

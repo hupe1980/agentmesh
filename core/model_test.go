@@ -20,7 +20,7 @@ func (m mockTool) Parameters() map[string]any { return m.params }
 func (m mockTool) ProcessModelRequest(_ context.Context, _ ToolContext, _ *ModelRequest) error {
 	return nil
 }
-func (m mockTool) Call(ctx context.Context, _ ToolContext, _ map[string]any) (any, error) {
+func (m mockTool) Call(ctx context.Context, _ ToolContext, _ string) (any, error) {
 	return nil, nil
 }
 
@@ -101,4 +101,115 @@ func keys[K comparable, V any](m map[K]V) []K {
 	}
 
 	return out
+}
+
+// Example struct for testing
+type WeatherArgs struct {
+	Location     string  `json:"location"`
+	TemperatureC float64 `json:"temperature_c"`
+	Condition    string  `json:"condition"`
+	Humidity     float64 `json:"humidity"`
+	WindKph      float64 `json:"wind_kph"`
+}
+
+func TestNewOutputSchema_Map(t *testing.T) {
+	schemaMap := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"foo": map[string]any{"type": "string"},
+		},
+		"required": []string{"foo"},
+	}
+
+	optSchema, err := NewOutputSchema("test_map", schemaMap)
+	require.NoError(t, err)
+	assert.True(t, optSchema.IsSet())
+
+	os := optSchema.Or(OutputSchema{})
+	assert.Equal(t, "test_map", os.Name)
+
+	assert.Equal(t, false, os.Schema["additionalProperties"])
+}
+
+func TestNewOutputSchema_Struct(t *testing.T) {
+	optSchema, err := NewOutputSchema("weather", WeatherArgs{})
+	require.NoError(t, err)
+	assert.True(t, optSchema.IsSet())
+
+	os := optSchema.Or(OutputSchema{})
+	assert.Equal(t, "weather", os.Name)
+	assert.Contains(t, os.Schema, "properties")
+	assert.Contains(t, os.Schema["properties"].(map[string]any), "location")
+	assert.Equal(t, false, os.Schema["additionalProperties"])
+}
+
+func TestNewOutputSchema_Pointer(t *testing.T) {
+	args := &WeatherArgs{}
+	optSchema, err := NewOutputSchema("weather_ptr", args)
+	require.NoError(t, err)
+	assert.True(t, optSchema.IsSet())
+
+	os := optSchema.Or(OutputSchema{})
+	assert.Equal(t, "weather_ptr", os.Name)
+}
+
+func TestNewOutputSchema_Options(t *testing.T) {
+	schemaMap := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"opt": map[string]any{"type": "string"},
+		},
+		"required": []string{"opt"},
+	}
+
+	optSchema, err := NewOutputSchema("with_opts", schemaMap,
+		func(o *OutputSchemaOptions) { o.Strict = false },
+		func(o *OutputSchemaOptions) { o.AllowAdditionalProperties = true },
+		func(o *OutputSchemaOptions) { o.Description = "optional description" },
+	)
+	require.NoError(t, err)
+
+	os := optSchema.Or(OutputSchema{})
+	assert.Equal(t, "with_opts", os.Name)
+	assert.Equal(t, "optional description", os.Description.Or(""))
+	assert.Equal(t, true, os.Schema["additionalProperties"])
+}
+
+func TestNewOutputSchema_MapMissingType(t *testing.T) {
+	schemaMap := map[string]any{
+		// missing "type"
+		"properties": map[string]any{"foo": map[string]any{"type": "string"}},
+		"required":   []string{"foo"},
+	}
+	_, err := NewOutputSchema("missing_type", schemaMap)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing 'type'")
+}
+
+func TestNewOutputSchema_MapMissingProperties(t *testing.T) {
+	schemaMap := map[string]any{
+		"type": "object",
+		// missing "properties"
+		"required": []string{},
+	}
+	_, err := NewOutputSchema("missing_props", schemaMap)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing 'properties'")
+}
+
+func TestNewOutputSchema_MapMissingRequired(t *testing.T) {
+	schemaMap := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"foo": map[string]any{"type": "string"}},
+		// missing "required"
+	}
+	_, err := NewOutputSchema("missing_required", schemaMap)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing 'required'")
+}
+
+func TestMustNewOutputSchema_Panic(t *testing.T) {
+	assert.Panics(t, func() {
+		MustNewOutputSchema("bad", 123) // unsupported type
+	})
 }

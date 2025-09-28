@@ -25,7 +25,7 @@ func (t *sleepTool) Parameters() map[string]any { return map[string]any{} }
 func (t *sleepTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *sleepTool) Call(ctx context.Context, toolCtx core.ToolContext, _ map[string]any) (any, error) {
+func (t *sleepTool) Call(ctx context.Context, toolCtx core.ToolContext, _ string) (any, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -42,7 +42,7 @@ func (t *actionsTool) Parameters() map[string]any { return map[string]any{} }
 func (t *actionsTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *actionsTool) Call(ctx context.Context, tc core.ToolContext, _ map[string]any) (any, error) {
+func (t *actionsTool) Call(ctx context.Context, tc core.ToolContext, _ string) (any, error) {
 	acts := tc.EventActions()
 	acts.StateDelta = core.Map(map[string]any{"k": "v"})
 	acts.ArtifactDelta = core.Map(map[string]int{"a": 1})
@@ -60,7 +60,7 @@ func (t *panicTool) Parameters() map[string]any { return map[string]any{} }
 func (t *panicTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *panicTool) Call(context.Context, core.ToolContext, map[string]any) (any, error) {
+func (t *panicTool) Call(context.Context, core.ToolContext, string) (any, error) {
 	panic("boom")
 }
 
@@ -77,7 +77,7 @@ func (t *counterTool) Parameters() map[string]any { return map[string]any{} }
 func (t *counterTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *counterTool) Call(ctx context.Context, _ core.ToolContext, _ map[string]any) (any, error) {
+func (t *counterTool) Call(ctx context.Context, _ core.ToolContext, _ string) (any, error) {
 	c := atomic.AddInt32(t.current, 1)
 	for {
 		m := atomic.LoadInt32(t.max)
@@ -153,7 +153,7 @@ func (p *toolHookPlugin) BeforeTool(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 ) (any, error) {
 	p.beforeCalled++
 	if p.failBefore != nil {
@@ -165,7 +165,7 @@ func (p *toolHookPlugin) AfterTool(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	result any,
 ) (any, error) {
 	p.afterCalled++
@@ -181,7 +181,7 @@ func (p *toolHookPlugin) OnToolError(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	err error,
 ) (any, error) {
 	p.errorCalled++
@@ -202,7 +202,7 @@ func (t *valueTool) Parameters() map[string]any { return map[string]any{} }
 func (t *valueTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *valueTool) Call(context.Context, core.ToolContext, map[string]any) (any, error) {
+func (t *valueTool) Call(context.Context, core.ToolContext, string) (any, error) {
 	return t.value, nil
 }
 
@@ -251,14 +251,6 @@ func TestParallelToolExecutor_ToolNotFound(t *testing.T) {
 	reg := map[string]core.Tool{}
 	calls := []*core.FunctionCall{{ID: "m1", Name: "missing"}}
 	exec := NewParallelToolExecutor(4)
-	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
-	assert.Error(t, err)
-}
-
-func TestParallelToolExecutor_InvalidArgs(t *testing.T) {
-	reg := map[string]core.Tool{"n": &sleepTool{name: "n", delay: time.Millisecond}}
-	calls := []*core.FunctionCall{{ID: "x", Name: "n", Arguments: "{"}}
-	exec := NewParallelToolExecutor(1)
 	_, err := exec.Execute(context.Background(), testutil.NewTestRequestContext(), reg, calls)
 	assert.Error(t, err)
 }
@@ -376,7 +368,7 @@ func (t *failingTool) Parameters() map[string]any { return map[string]any{} }
 func (t *failingTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
-func (t *failingTool) Call(context.Context, core.ToolContext, map[string]any) (any, error) {
+func (t *failingTool) Call(context.Context, core.ToolContext, string) (any, error) {
 	return nil, t.err
 }
 

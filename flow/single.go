@@ -13,6 +13,7 @@ func NewSingleAgentFlow(agent core.FlowAgent, executors *Executors) *SingleAgent
 	baseFlow := NewBaseFlow(agent, executors)
 
 	// Add default processors for advanced functionality
+	baseFlow.AddRequestProcessor(NewBasicProcessor())
 	baseFlow.AddRequestProcessor(NewInstructionsProcessor())
 	baseFlow.AddRequestProcessor(NewMessagesProcessor())
 

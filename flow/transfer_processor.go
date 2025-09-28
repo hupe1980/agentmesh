@@ -34,7 +34,11 @@ func (p *TransferToolInjector) ProcessRequest(
 		return nil
 	}
 
-	t := tool.NewTransferToAgentTool()
+	t, err := tool.NewTransferToAgentTool()
+	if err != nil {
+		return fmt.Errorf("failed to create transfer tool: %w", err)
+	}
+
 	toolCtx := core.NewToolContext(reqCtx)
 	if err := t.ProcessModelRequest(ctx, toolCtx, req); err != nil {
 		return fmt.Errorf("failed to process model request for transfer tool: %w", err)

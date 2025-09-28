@@ -70,7 +70,7 @@ func TestLangChain_Call_Success(t *testing.T) {
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
-	res, err := wrapped.Call(ctx, toolCtx, map[string]any{"__arg1": "hello"})
+	res, err := wrapped.Call(ctx, toolCtx, testutil.MustJSON(t, map[string]any{"__arg1": "hello"}))
 	require.NoError(t, err)
 	assert.Contains(t, res.(string), "hello")
 	assert.Equal(t, 1, d.calls)
@@ -85,7 +85,7 @@ func TestLangChain_Call_MissingArg(t *testing.T) {
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
-	_, err := wrapped.Call(ctx, toolCtx, map[string]any{})
+	_, err := wrapped.Call(ctx, toolCtx, "")
 	require.Error(t, err)
 	terr, ok := err.(*tool.Error)
 	require.True(t, ok)
@@ -102,7 +102,7 @@ func TestLangChain_Call_UnderlyingError(t *testing.T) {
 		func(o *core.ToolContextOptions) { o.FunctionCallID = core.String("fc1") },
 	)
 
-	_, err := wrapped.Call(ctx, toolCtx, map[string]any{"__arg1": "x"})
+	_, err := wrapped.Call(ctx, toolCtx, testutil.MustJSON(t, map[string]any{"__arg1": "x"}))
 	// The adapter does not wrap errors itself; underlying func tool should wrap as EXECUTION_ERROR
 	require.Error(t, err)
 	terr, ok := err.(*tool.Error)

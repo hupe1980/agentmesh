@@ -76,7 +76,7 @@ func (Noop) BeforeTool(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 ) (any, error) {
 	return nil, nil
 }
@@ -86,7 +86,7 @@ func (Noop) AfterTool(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	result any,
 ) (any, error) {
 	return nil, nil
@@ -97,7 +97,7 @@ func (Noop) OnToolError(
 	ctx context.Context,
 	tool core.Tool,
 	toolCtx core.ToolContext,
-	toolArgs map[string]any,
+	toolArgs string,
 	err error,
 ) (any, error) {
 	return nil, nil

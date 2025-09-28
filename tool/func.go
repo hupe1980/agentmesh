@@ -2,9 +2,11 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/jsonschema"
 )
 
 // Func is the function signature expected by FuncTool. Implementations receive:
@@ -13,7 +15,7 @@ import (
 //   - args: already-validated arguments matching the declared Parameters schema
 //
 // The return value should be JSON-serializable.
-type Func func(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error)
+type Func[T any] func(ctx context.Context, toolCtx core.ToolContext, args T) (any, error)
 
 // FuncWithCredential is the function signature expected by FuncToolWithCredential. Implementations receive:
 //   - ctx: request-scoped context (cancellation, deadlines)
@@ -22,11 +24,11 @@ type Func func(ctx context.Context, toolCtx core.ToolContext, args map[string]an
 //   - credential: Credential of type T associated with the tool call
 //
 // The return value should be JSON-serializable.
-type FuncWithCredential[T core.Credential] func(
+type FuncWithCredential[T any, C core.Credential] func(
 	ctx context.Context,
 	toolCtx core.ToolContext,
-	args map[string]any,
-	credential T,
+	args T,
+	credential C,
 ) (any, error)
 
 // FuncTool is a generic adapter that exposes a plain Go function as an AgentMesh tool.
@@ -55,7 +57,7 @@ type FuncWithCredential[T core.Credential] func(
 //
 //	The returned value can be any Go type that is JSON‑serializable by the higher layer.
 //	If more structure or streaming is required, create a custom Tool implementation instead.
-type FuncTool struct {
+type FuncTool[T any] struct {
 	// Tool identifier (snake_case recommended)
 	name string
 	// Human-readable description shown to models
@@ -63,7 +65,7 @@ type FuncTool struct {
 	// JSON schema describing accepted arguments
 	parameters map[string]any
 	// User supplied implementation
-	fn Func
+	fn Func[T]
 }
 
 // NewFuncTool constructs a FuncTool from explicit schema and function.
@@ -94,12 +96,12 @@ type FuncTool struct {
 //	    return a + b, nil
 //	  },
 //	)
-func NewFuncTool(
+func NewFuncTool[T any](
 	name, description string,
 	parameters map[string]any,
-	fn Func,
+	fn Func[T],
 ) core.Tool {
-	return &FuncTool{
+	return &FuncTool[T]{
 		name:        name,
 		description: description,
 		parameters:  parameters,
@@ -129,12 +131,12 @@ func NewFuncTool(
 //	    return args["a"].(float64) + args["b"].(float64), nil
 //	  },
 //	)
-func NewFuncToolFromType(
+func NewFuncToolFromType[T any](
 	name, description string,
 	structType any,
-	fn Func,
+	fn Func[T],
 ) (core.Tool, error) {
-	schema, err := InferParameterSchema(structType)
+	schema, err := jsonschema.MapFromStruct(structType)
 	if err != nil {
 		return nil, fmt.Errorf("NewFuncToolFromType: %w", err)
 	}
@@ -143,16 +145,16 @@ func NewFuncToolFromType(
 }
 
 // Name returns the unique tool name used in function call declarations and routing.
-func (t *FuncTool) Name() string { return t.name }
+func (t *FuncTool[T]) Name() string { return t.name }
 
 // Description returns the short natural language description exposed to models.
-func (t *FuncTool) Description() string { return t.description }
+func (t *FuncTool[T]) Description() string { return t.description }
 
 // Parameters returns the (minimal) JSON schema describing expected arguments.
-func (t *FuncTool) Parameters() map[string]any { return t.parameters }
+func (t *FuncTool[T]) Parameters() map[string]any { return t.parameters }
 
 // ProcessModelRequest adds this tool to the provided request.
-func (t *FuncTool) ProcessModelRequest(
+func (t *FuncTool[T]) ProcessModelRequest(
 	ctx context.Context,
 	toolCtx core.ToolContext,
 	req *core.ModelRequest,
@@ -166,10 +168,15 @@ func (t *FuncTool) ProcessModelRequest(
 // - no logging (executor owns logging/timing)
 // - no panic recovery (executor guarantees "never panic")
 // - normalizes errors to *ToolError for consistent downstream handling
-func (t *FuncTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[string]any) (any, error) {
+func (t *FuncTool[T]) Call(ctx context.Context, toolCtx core.ToolContext, args string) (any, error) {
 	// Validate parameters against JSON Schema using helper (no fallback)
-	if err := ValidateParameters(t.parameters, args); err != nil {
+	if err := jsonschema.Validate(t.parameters, args); err != nil {
 		return nil, NewError(t.name, err.Error(), "VALIDATION_ERROR")
+	}
+
+	var argsMap T
+	if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
+		return nil, NewError(t.name, fmt.Sprintf("invalid JSON arguments: %v", err), "VALIDATION_ERROR")
 	}
 
 	// Respect cancellation early
@@ -180,7 +187,7 @@ func (t *FuncTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[
 	}
 
 	// Execute function
-	res, err := t.fn(ctx, toolCtx, args)
+	res, err := t.fn(ctx, toolCtx, argsMap)
 	if err != nil {
 		// Pass through if already a *tool.Error, otherwise wrap
 		if _, ok := err.(*Error); !ok {
@@ -194,4 +201,4 @@ func (t *FuncTool) Call(ctx context.Context, toolCtx core.ToolContext, args map[
 }
 
 // Compile-time assertion: ensure FuncTool implements the core.Tool interface.
-var _ core.Tool = (*FuncTool)(nil)
+var _ core.Tool = (*FuncTool[any])(nil)

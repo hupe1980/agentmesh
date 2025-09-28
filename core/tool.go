@@ -39,8 +39,7 @@ type Tool interface {
 	// Call executes the tool with structured arguments and ToolContext.
 	// This method provides tools with access to session state, agent actions,
 	// authentication, memory, and artifact management capabilities.
-	// Arguments are parsed from JSON and validated against the tool's schema.
-	Call(ctx context.Context, toolCtx ToolContext, args map[string]any) (any, error)
+	Call(ctx context.Context, toolCtx ToolContext, args string) (any, error)
 }
 
 // Toolset defines a collection of tools that can be managed together.

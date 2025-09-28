@@ -5,17 +5,19 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/core"
+	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTransferToAgentTool_SetsActionAndReturnsPayload(t *testing.T) {
-	tool := NewTransferToAgentTool()
+	tool, err := NewTransferToAgentTool()
+	require.NoError(t, err)
 
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc-1")
 	})
-	res, err := tool.Call(context.Background(), tc, map[string]any{"agent": "router"})
+	res, err := tool.Call(context.Background(), tc, testutil.MustJSON(t, map[string]any{"agent": "router"}))
 
 	require.NoError(t, err)
 
@@ -32,12 +34,14 @@ func TestTransferToAgentTool_SetsActionAndReturnsPayload(t *testing.T) {
 }
 
 func TestTransferToAgentTool_MissingAgent(t *testing.T) {
-	tool := NewTransferToAgentTool()
+	tool, err := NewTransferToAgentTool()
+	require.NoError(t, err)
+
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc-1")
 	})
 
-	_, err := tool.Call(context.Background(), tc, map[string]any{})
+	_, err = tool.Call(context.Background(), tc, "")
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
@@ -45,12 +49,14 @@ func TestTransferToAgentTool_MissingAgent(t *testing.T) {
 }
 
 func TestTransferToAgentTool_WrongType(t *testing.T) {
-	tool := NewTransferToAgentTool()
+	tool, err := NewTransferToAgentTool()
+	require.NoError(t, err)
+
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc-1")
 	})
 
-	_, err := tool.Call(context.Background(), tc, map[string]any{"agent": 42})
+	_, err = tool.Call(context.Background(), tc, testutil.MustJSON(t, map[string]any{"agent": 42}))
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
@@ -58,12 +64,14 @@ func TestTransferToAgentTool_WrongType(t *testing.T) {
 }
 
 func TestTransferToAgentTool_EmptyString(t *testing.T) {
-	tool := NewTransferToAgentTool()
+	tool, err := NewTransferToAgentTool()
+	require.NoError(t, err)
+
 	tc := core.NewToolContext(dummyRequestContext(), func(o *core.ToolContextOptions) {
 		o.FunctionCallID = core.String("fc-1")
 	})
 
-	_, err := tool.Call(context.Background(), tc, map[string]any{"agent": ""})
+	_, err = tool.Call(context.Background(), tc, testutil.MustJSON(t, map[string]any{"agent": ""}))
 	require.Error(t, err)
 	terr, ok := err.(*Error)
 	require.True(t, ok)
@@ -71,7 +79,9 @@ func TestTransferToAgentTool_EmptyString(t *testing.T) {
 }
 
 func TestTransferToAgentTool_ParametersShape(t *testing.T) {
-	tool := NewTransferToAgentTool()
+	tool, err := NewTransferToAgentTool()
+	require.NoError(t, err)
+
 	params := tool.Parameters()
 
 	props, ok := params["properties"].(map[string]any)

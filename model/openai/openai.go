@@ -260,6 +260,19 @@ func (m *Model) buildParams(
 		MaxCompletionTokens: openai.Int(m.opts.MaxCompletionTokens),
 	}
 
+	if os, ok := req.OutputSchema.Get(); ok {
+		schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        os.Name,
+			Description: openai.String(os.Description.Or("response format for the model")),
+			Schema:      os.Schema,
+			Strict:      openai.Bool(os.Strict.Or(false)),
+		}
+
+		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
+		}
+	}
+
 	if len(req.Tools) == 0 {
 		return params
 	}

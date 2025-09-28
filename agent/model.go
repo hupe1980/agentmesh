@@ -26,8 +26,8 @@ type ModelAgentOptions struct {
 	EnableFunctionCalling bool
 	// Timeout for tool calls
 	ToolTimeout time.Duration
-	// Output structure for the agent's responses
-	OutputStructure map[string]any
+	// Output schema for the agent's responses
+	OutputSchema core.Opt[core.OutputSchema]
 	// Key for saving responses to session state
 	OutputKey string
 	// Maximum number of conversation history messages to keep
@@ -70,8 +70,11 @@ type ModelAgent struct {
 	enableFunctionCalling bool           // Whether to enable tool usage
 	enableStreaming       bool           // Whether to stream responses
 	toolTimeout           time.Duration  // Timeout for individual tool calls
-	outputKey             string         // Key for saving responses to session state
-	maxHistoryMessages    int            // Maximum number of conversation history
+
+	outputSchema core.Opt[core.OutputSchema] // Expected output schema for responses
+	outputKey    string                      // Key for saving responses to session state
+
+	maxHistoryMessages int // Maximum number of conversation history
 	// messages to keep
 	historyMode           core.HistoryMode  // What kind of history the agent receives
 	allowTransferToPeers  bool              // Whether agent can transfer control to sub-agents
@@ -80,23 +83,6 @@ type ModelAgent struct {
 }
 
 // NewModelAgent creates a new model-based agent with sensible defaults.
-//
-// The agent is initialized with:
-//   - Standard agent lifecycle inherited from BaseAgent
-//   - Empty tool registry for function calling
-//   - Streaming enabled for real-time responses
-//   - Function calling enabled for tool usage
-//   - 15-second timeout for tool calls
-//   - 20-message conversation history limit
-//   - Sub-agent transfer capabilities enabled
-//
-// Parameters:
-//   - name: Human-readable name used in system prompt
-//   - model: Language model implementation for text generation
-//
-// Children are wired at construction via options (ModelAgentOptions.SubAgents);
-// the hierarchy is read-only at runtime. Returns a fully configured ModelAgent
-// ready for conversation.
 func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOptions)) (*ModelAgent, error) {
 	opts := ModelAgentOptions{
 		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
@@ -104,6 +90,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		EnableStreaming:       true,
 		EnableFunctionCalling: true,
 		ToolTimeout:           15 * time.Second,
+		OutputSchema:          core.None[core.OutputSchema](),
 		MaxHistoryMessages:    20,
 		HistoryMode:           core.HistoryAll,
 		AllowTransferToPeers:  true,
@@ -127,6 +114,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		enableStreaming:       opts.EnableStreaming,
 		enableFunctionCalling: opts.EnableFunctionCalling,
 		toolTimeout:           opts.ToolTimeout,
+		outputSchema:          opts.OutputSchema,
 		outputKey:             opts.OutputKey,
 		maxHistoryMessages:    opts.MaxHistoryMessages,
 		historyMode:           opts.HistoryMode,
@@ -167,6 +155,7 @@ func (a *ModelAgent) ResolveTools(ctx context.Context, roCtx core.ReadonlyContex
 		if err != nil {
 			return nil, fmt.Errorf("failed to list tools from toolset: %w", err)
 		}
+
 		allTools = append(allTools, tools...)
 	}
 
@@ -196,6 +185,11 @@ func (a *ModelAgent) IsTransferToPeersEnabled() bool {
 // IsTransferToParentEnabled returns whether transfer to the parent agent is enabled.
 func (a *ModelAgent) IsTransferToParentEnabled() bool {
 	return a.allowTransferToParent
+}
+
+// OutputSchema returns the expected output schema for responses.
+func (a *ModelAgent) OutputSchema() core.Opt[core.OutputSchema] {
+	return a.outputSchema
 }
 
 // OutputKey returns the session state key for saving responses.
@@ -240,13 +234,10 @@ func (a *ModelAgent) attachOutputToEvent(ev *core.Event) {
 		}
 	}
 
-	sd := ev.Actions.StateDelta.Or(nil)
-	if sd == nil {
-		sd = map[string]any{}
-	}
+	sd := ev.Actions.StateDelta.Or(map[string]any{})
 
-	out := b.String()
-	sd[ok] = out
+	sd[ok] = b.String()
+
 	ev.Actions.StateDelta = core.Map(sd)
 }
 
