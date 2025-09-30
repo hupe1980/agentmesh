@@ -45,29 +45,14 @@ func main() {
 	// 3. Build user content (helper function style across examples)
 	userParts := []core.Part{core.NewPartFromText("Hello! What can you help me with?")}
 
-	// 4. Invoke agent with timeout context
+	// 4. Invoke agent with timeout context and get only the final text
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	runID, results, err := r.Run(ctx, "user1", "sess1", userParts)
+	runID, text, err := runner.RunFinalText(ctx, r, "user1", "sess1", userParts)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}
 
-	fmt.Printf("=== Basic Agent [runID=%s] ===\n", runID)
-	consume(results, llmAgent.Name())
-}
-
-// consume handles RunResult stream (events + errors unified).
-func consume(results <-chan core.RunResult, focus string) {
-	for res := range results {
-		if res.Err != nil {
-			log.Printf("error: %v", res.Err)
-			continue
-		}
-
-		if res.Event.Author == focus {
-			fmt.Println(res.Event.Text())
-		}
-	}
+	fmt.Printf("=== Basic Agent [runID=%s] ===\n%s\n", runID, text)
 }

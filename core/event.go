@@ -134,6 +134,10 @@ func (e *Event) GetFunctionResponses() []*FunctionResponse {
 // IsFinalResponse implements heuristic used by higher layers to decide when an
 // assistant turn is complete (no pending tool calls/responses, not partial, not skipped summarization).
 func (e *Event) IsFinalResponse() bool {
+	if e.Role() == RoleUser {
+		return false
+	}
+
 	if sa, ok := e.Actions.SkipSummarization.Get(); ok && sa {
 		return true
 	}

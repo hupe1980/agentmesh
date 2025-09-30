@@ -20,7 +20,8 @@ var (
 	ErrInvalidToolArgs = errors.New("invalid tool arguments")
 
 	// Runs
-	ErrRunNotFound = errors.New("run not found")
+	ErrRunNotFound     = errors.New("run not found")
+	ErrNoFinalResponse = errors.New("no final response emitted")
 
 	// Hierarchy management
 	ErrAgentNotFound         = errors.New("agent not found")

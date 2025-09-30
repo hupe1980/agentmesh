@@ -63,39 +63,21 @@ import (
   "time"
 
   "github.com/hupe1980/agentmesh/agent"
-  "github.com/hupe1980/agentmesh/core"
-  "github.com/hupe1980/agentmesh/model/openai"
-  "github.com/hupe1980/agentmesh/runner"
-)
+    runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
+    if err != nil {
+      log.Fatalf("run failed: %v", err)
+    }
 
-func main() {
-  model := openai.NewModel()
-
-  basic, err := agent.NewModelAgent("basic_agent", model)
-  if err != nil {
-		log.Fatalf("failed to create agent: %v", err)
-	}
-
-  r := runner.New("basic_app", basic)
-  defer r.Close()
+    fmt.Printf("=== Basic Agent [runID=%s] ===\n%s\n", runID, text)
 
   userParts := []core.Part{core.NewPartFromText("Hello! What can you do?")}
 
-  runID, results, err := r.Run(context.Background(), "user1", "sess1", userParts)
+  runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
   if err != nil {
     log.Fatalf("run failed: %v", err)
   }
 
-  fmt.Printf("=== Basic Agent [runID=%s] ===\n", runID)
-
-  for res := range results {
-    if res.Err != nil {
-      log.Printf("error: %v", res.Err)
-      continue
-    }
-    
-    fmt.Println(res.Event.Text())
-  }
+  fmt.Printf("=== Basic Agent [runID=%s] ===\n%s\n", runID, text)
 }
 ```
 
