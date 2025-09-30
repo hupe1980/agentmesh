@@ -68,6 +68,8 @@ func (t *AgentTool) Call(
 	}
 
 	r := runner.New(t.Name(), t.agent, func(o *runner.Options) {
+		// Use a distinct key to avoid colliding with outer run_id.
+		o.RunIDKey = "tool_run_id"
 		o.Logger = log
 		o.ArtifactStore = &artifactStoreAdapter{toolCtx: toolCtx}
 		o.PluginManager = toolCtx.PluginManager()
@@ -85,15 +87,20 @@ func (t *AgentTool) Call(
 		return nil, NewError(t.Name(), "agent run failed: "+err.Error(), "EXECUTION_ERROR")
 	}
 
+	lastContent := ""
 	for res := range results {
 		if res.Event != nil {
 			if delta, ok := res.Event.Actions.StateDelta.Get(); ok && delta != nil {
 				toolCtx.State().Update(delta)
 			}
+
+			if res.Event.IsFinalResponse() {
+				lastContent = res.Event.Text()
+			}
 		}
 	}
 
-	return nil, nil
+	return lastContent, nil
 }
 
 type artifactStoreAdapter struct {

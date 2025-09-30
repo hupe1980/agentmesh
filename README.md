@@ -107,6 +107,8 @@ Reference: [examples/basic_agent/main.go](examples/basic_agent/main.go)
 
 - Basic agent: [examples/basic_agent/main.go](examples/basic_agent/main.go)
 - Tool usage: [examples/tool_usage/main.go](examples/tool_usage/main.go)
+- Agent tool: [examples/agent_tool/main.go](examples/agent_tool/main.go)
+- Output schema: [examples/output_schema/main.go](examples/output_schema/main.go)
 - Multi-agent: [examples/multi_agent/main.go](examples/multi_agent/main.go)
 - Transfer between agents: [examples/transfer_agent/main.go](examples/transfer_agent/main.go)
 - OpenTelemetry (tracing & metrics): [examples/opentelemetry/main.go](examples/opentelemetry/main.go)

@@ -22,32 +22,27 @@ import (
 type Options struct {
 	// EnableStreaming toggles real-time event streaming vs buffered.
 	EnableStreaming bool
-
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
-
-	AgentExecutor core.AgentExecutor
-
+	AgentExecutor   core.AgentExecutor
 	// Session management services.
 	SessionStore core.SessionStore
-
 	// Artifact management services.
 	ArtifactStore core.ArtifactStore
-
 	// Memory management services.
 	MemoryStore core.MemoryStore
-
 	// Plugin management services.
 	PluginManager core.PluginManager
-
 	// Logging services.
 	Logger logging.Logger
-
 	// Metrics services.
 	Metrics metrics.Provider
-
 	// Tracing services.
 	Tracer trace.Provider
+
+	// RunIDKey controls the structured log key for the run identifier.
+	// Defaults to "run_id".
+	RunIDKey string
 }
 
 // services groups the various stores and services used by the runner.
@@ -74,6 +69,8 @@ type Runner struct {
 	agentExecutor core.AgentExecutor
 	svc           services
 
+	runIDKey string // <- add
+
 	activeRuns map[string]context.CancelFunc
 	mu         sync.RWMutex
 
@@ -93,8 +90,8 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 		Logger:          logging.NoopLogger{},
 		Metrics:         metrics.Noop(),
 		Tracer:          trace.Noop(),
+		RunIDKey:        "run_id",
 	}
-
 	for _, fn := range optFns {
 		fn(&opts)
 	}
@@ -114,6 +111,7 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 			metrics:       opts.Metrics,
 			tracer:        opts.Tracer,
 		},
+		runIDKey:   opts.RunIDKey,
 		activeRuns: make(map[string]context.CancelFunc),
 	}
 }
@@ -419,8 +417,8 @@ func (r *Runner) prepareRunContext(
 ) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	// logger with run_id
-	runLogger := r.svc.logger.With("run_id", runID)
+	// Use configurable run ID key.
+	runLogger := r.svc.logger.With(r.runIDKey, runID)
 
 	// attach logger/metrics/tracer to context
 	ctx = logging.WithLogger(ctx, runLogger)
