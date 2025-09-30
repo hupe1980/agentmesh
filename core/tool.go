@@ -13,13 +13,6 @@ import (
 // All tools have access to ToolContext for session state, agent flow control,
 // authentication, memory, and artifact management. This enables tools to build
 // sophisticated workflows and integrate deeply with the AgentMesh framework infrastructure.
-//
-// Tool implementations should:
-//   - Provide clear, descriptive names and descriptions
-//   - Define proper JSON schema for parameters
-//   - Handle errors gracefully
-//   - Be thread-safe if used concurrently
-//   - Follow consistent naming conventions
 type Tool interface {
 	// Name returns the unique identifier for this tool.
 	// Names should be descriptive and follow function naming conventions (snake_case recommended).

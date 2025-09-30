@@ -189,6 +189,7 @@ func (r *ModelRequest) AddTool(t Tool) {
 	if r.ToolRegistry == nil {
 		r.ToolRegistry = make(map[string]Tool)
 	}
+
 	// Append / replace definition
 	def := ToolDefinition{
 		Type: "function",
@@ -198,6 +199,7 @@ func (r *ModelRequest) AddTool(t Tool) {
 			Parameters:  t.Parameters(),
 		},
 	}
+
 	// Replace existing definition if same name
 	replaced := false
 	for i, existing := range r.Tools {
@@ -207,6 +209,7 @@ func (r *ModelRequest) AddTool(t Tool) {
 			break
 		}
 	}
+
 	if !replaced {
 		r.Tools = append(r.Tools, def)
 	}
