@@ -46,6 +46,12 @@ func (s *Session) UpdatedAt() time.Time {
 	return s.updated
 }
 
+// State returns the internal state map for read-only access by callers.
+// Callers MUST NOT mutate the returned map directly; use SetState/MergeState instead.
+// A defensive snapshot should be taken by higher layers when exposure outside
+// the core package is required.
+func (s *Session) State() map[string]any { return s.state }
+
 // GetState returns the value and existence flag for a state key.
 func (s *Session) GetState(key string) (any, bool) {
 	v, ok := s.state[key]
@@ -135,15 +141,6 @@ func (s *Session) Clone() *Session {
 	}
 
 	return clone
-}
-
-// StateSnapshot returns a defensive copy of the current session state map.
-// Modifications to the returned map do not affect the session.
-func (s *Session) StateSnapshot() map[string]any {
-	snapshot := make(map[string]any, len(s.state))
-	maps.Copy(snapshot, s.state)
-
-	return snapshot
 }
 
 // MarshalJSON implements custom JSON marshaling for private fields.

@@ -158,9 +158,13 @@ func (r *Runner) Run(
 
 	// BeforeRun hook: allows global setup / early short-circuit.
 	if resultsChan, err := func() (<-chan core.RunResult, error) {
-		parts, err := reqCtx.RunBeforeRun(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("plugin: before_run: %w", err)
+		var parts []core.Part
+		if pm := reqCtx.PluginManager(); pm != nil {
+			out, err := pm.RunBeforeRun(ctx, reqCtx)
+			if err != nil {
+				return nil, fmt.Errorf("plugin: before_run: %w", err)
+			}
+			parts = out
 		}
 
 		if parts == nil {
@@ -174,7 +178,10 @@ func (r *Runner) Run(
 			store:   r.svc.sessionStore,
 			results: results,
 			onEvent: func(ctx context.Context, ev *core.Event) (*core.Event, error) {
-				return reqCtx.RunOnEvent(ctx, ev)
+				if pm := reqCtx.PluginManager(); pm != nil {
+					return pm.RunOnEvent(ctx, reqCtx, ev)
+				}
+				return nil, nil
 			},
 		}
 		beforeEvent := core.NewFullAssistantEvent(runID, r.agent.Name(), parts...)
@@ -184,9 +191,11 @@ func (r *Runner) Run(
 		}
 
 		// AfterRun still invoked for short-circuited runs.
-		if err := reqCtx.RunAfterRun(ctx); err != nil {
-			close(results)
-			return nil, fmt.Errorf("plugin: after_run: %w", err)
+		if pm := reqCtx.PluginManager(); pm != nil {
+			if err := pm.RunAfterRun(ctx, reqCtx); err != nil {
+				close(results)
+				return nil, fmt.Errorf("plugin: after_run: %w", err)
+			}
 		}
 
 		results <- core.RunResult{RunID: runID, Event: beforeEvent}
@@ -238,7 +247,10 @@ func (r *Runner) Run(
 		store:   r.svc.sessionStore,
 		results: results,
 		onEvent: func(ctx context.Context, ev *core.Event) (*core.Event, error) {
-			return reqCtx.RunOnEvent(ctx, ev)
+			if pm := reqCtx.PluginManager(); pm != nil {
+				return pm.RunOnEvent(ctx, reqCtx, ev)
+			}
+			return nil, nil
 		},
 	}
 	if err := writer.Write(ctx, userEvent); err != nil {
@@ -459,12 +471,14 @@ func (r *Runner) launchRun(
 			r.unregisterRun(runID)
 
 			// Run AfterRun before closing results so errors can propagate.
-			if err := reqCtx.RunAfterRun(ctx); err != nil {
-				// best-effort deliver the error unless context canceled
-				select {
-				case <-ctx.Done():
-				default:
-					results <- core.RunResult{RunID: runID, Err: fmt.Errorf("plugin: after_run: %w", err)}
+			if pm := reqCtx.PluginManager(); pm != nil {
+				if err := pm.RunAfterRun(ctx, reqCtx); err != nil {
+					// best-effort deliver the error unless context canceled
+					select {
+					case <-ctx.Done():
+					default:
+						results <- core.RunResult{RunID: runID, Err: fmt.Errorf("plugin: after_run: %w", err)}
+					}
 				}
 			}
 			close(results)
@@ -488,7 +502,11 @@ func (r *Runner) onUserParts(
 	reqCtx core.RequestContext,
 	parts []core.Part,
 ) ([]core.Part, error) {
-	replaced, err := reqCtx.RunOnUserParts(ctx, parts)
+	var replaced []core.Part
+	var err error
+	if pm := reqCtx.PluginManager(); pm != nil {
+		replaced, err = pm.RunOnUserParts(ctx, reqCtx, parts)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("plugin: on_user_parts: %w", err)
 	}

@@ -59,12 +59,19 @@ func ExecuteAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agent
 		reqCtx = core.CloneRequestContextWithAgent(reqCtx, ag)
 	}
 
-	// BeforeAgent short-circuit path
-	if parts, err := reqCtx.RunBeforeAgent(ctx, ag); err != nil {
-		log.Error("agent.before.error", "error", err)
+	// BeforeAgent short-circuit path via PluginManager
+	var parts []core.Part
+	if pm := reqCtx.PluginManager(); pm != nil {
+		cbCtx := core.NewCallbackContext(reqCtx)
+		p, err := pm.RunBeforeAgent(ctx, cbCtx, ag)
+		if err != nil {
+			log.Error("agent.before.error", "error", err)
+			return fmt.Errorf("plugin: before_agent: %w", err)
+		}
+		parts = p
+	}
 
-		return fmt.Errorf("plugin: before_agent: %w", err)
-	} else if parts != nil {
+	if parts != nil {
 		assist := core.NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), parts...)
 
 		if err := w.Write(ctx, assist); err != nil {
@@ -90,9 +97,17 @@ func ExecuteAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agent
 // runAfterAgent invokes the AfterAgent plugin hook and, if parts are returned,
 // appends a new assistant event. Returns any error encountered.
 func runAfterAgent(ctx context.Context, reqCtx core.RequestContext, ag core.Agent, w core.EventWriter) error {
-	if afterParts, err := reqCtx.RunAfterAgent(ctx, ag); err != nil {
-		return fmt.Errorf("plugin: after_agent: %w", err)
-	} else if afterParts != nil {
+	var afterParts []core.Part
+	if pm := reqCtx.PluginManager(); pm != nil {
+		cbCtx := core.NewCallbackContext(reqCtx)
+		p, err := pm.RunAfterAgent(ctx, cbCtx, ag)
+		if err != nil {
+			return fmt.Errorf("plugin: after_agent: %w", err)
+		}
+		afterParts = p
+	}
+
+	if afterParts != nil {
 		repl := core.NewFullAssistantEvent(reqCtx.RunID(), reqCtx.AgentName(), afterParts...)
 
 		if err := w.Write(ctx, repl); err != nil {

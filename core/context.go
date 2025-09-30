@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"maps"
+)
 
 // StateSnapshotter exposes a read-only snapshot of session state.
 type StateSnapshotter interface {
@@ -64,19 +67,8 @@ type RequestContext interface {
 	// Session history
 	SessionReader
 
-	// PluginManager
-	RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error)
-	RunBeforeAgent(ctx context.Context, agent Agent) ([]Part, error)
-	RunAfterAgent(ctx context.Context, agent Agent) ([]Part, error)
-	RunOnEvent(ctx context.Context, event *Event) (*Event, error)
-	RunBeforeRun(ctx context.Context) ([]Part, error)
-	RunAfterRun(ctx context.Context) error
-	RunOnToolError(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, err error) (any, error)
-	RunBeforeTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string) (any, error)
-	RunAfterTool(ctx context.Context, tool Tool, toolCtx ToolContext, toolArgs string, result any) (any, error)
-	RunBeforeModel(ctx context.Context, req *ModelRequest) (*ModelResponse, error)
-	RunAfterModel(ctx context.Context, res *ModelResponse) (*ModelResponse, error)
-	RunOnModelError(ctx context.Context, req *ModelRequest, err error) (*ModelResponse, error)
+	// PluginManager access
+	PluginManager() PluginManager
 
 	// Branching
 	NewBranchContextForSubAgent(branchName string) RequestContext
@@ -92,6 +84,14 @@ type RequestContext interface {
 // to observe request metadata, state, logging, and history without mutation.
 type CallbackContext interface {
 	ReadonlyContext
+
+	State() *State
+
+	ArtifactReader
+	ArtifactWriter
+
+	// EventActions returns a pointer to the mutable EventActions accumulated.
+	EventActions() *EventActions
 }
 
 // TransferRequester allows requesting control transfer to another agent.
@@ -109,16 +109,16 @@ type SummarizationSkipper interface {
 	SkipSummarization()
 }
 
-// ToolContext extends RequestContext with tool orchestration abilities.
+// ToolContext extends CallbackContext with tool orchestration abilities.
 type ToolContext interface {
-	ReadonlyContext
+	// Inherit identity/state/artifacts/actions
+	CallbackContext
 
-	// Artifact access
-	ArtifactReader
-	ArtifactWriter
-
-	// Memory access
+	// Memory access convenience
 	MemoryReader
+
+	// PluginManager access
+	PluginManager() PluginManager
 
 	TransferRequester
 	Escalator
@@ -127,8 +127,8 @@ type ToolContext interface {
 	// FunctionCallID returns the ID of the current function call, if available.
 	FunctionCallID() (string, bool)
 
-	// EventActions returns a pointer to the mutable EventActions accumulated
-	EventActions() *EventActions
+	// Actions returns a pointer to the mutable EventActions accumulated (alias of EventActions).
+	Actions() *EventActions
 }
 
 type requestContext struct {
@@ -193,10 +193,12 @@ func (rc *requestContext) SessionID() string { return rc.session.ID() }
 func (rc *requestContext) RunID() string     { return rc.runID }
 func (rc *requestContext) AgentName() string { return rc.agent.Name() }
 
-// StateSnapshot returns a merged, read-only view of session state with staged
-// delta applied (delta overrides persisted values). A nil map indicates no state.
+// StateSnapshot returns a read-only copy of the session state map.
 func (rc *requestContext) StateSnapshot() map[string]any {
-	return rc.session.StateSnapshot()
+	src := rc.session.State()
+	snapshot := make(map[string]any, len(src))
+	maps.Copy(snapshot, src)
+	return snapshot
 }
 
 // SaveArtifact stores bytes in the ArtifactStore and stages the id for the next emitted event.
@@ -219,6 +221,9 @@ func (rc *requestContext) ListArtifactKeys(ctx context.Context) ([]string, error
 	return rc.artifactStore.ListKeys(ctx, rc.AppName(), rc.UserID(), rc.SessionID())
 }
 
+// PluginManager returns the underlying PluginManager for direct hook execution.
+func (rc *requestContext) PluginManager() PluginManager { return rc.pluginManager }
+
 // SearchMemory queries the MemoryStore for relevant content.
 func (rc *requestContext) SearchMemory(ctx context.Context, q string) (*SearchResult, error) {
 	return rc.memoryStore.Search(ctx, rc.AppName(), rc.UserID(), q)
@@ -234,119 +239,6 @@ func (rc *requestContext) GetSessionHistory() []*Event {
 	return rc.session.Events()
 }
 
-// RunOnUserParts executes the OnUserParts hook across all plugins in order.
-func (rc *requestContext) RunOnUserParts(ctx context.Context, userParts []Part) ([]Part, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunOnUserParts(ctx, rc, userParts)
-}
-
-// RunOnEvent executes the OnEvent hook chain allowing mutation of events.
-func (rc *requestContext) RunOnEvent(ctx context.Context, event *Event) (*Event, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunOnEvent(ctx, rc, event)
-}
-
-// RunBeforeAgent executes BeforeAgent hooks.
-func (rc *requestContext) RunBeforeAgent(ctx context.Context, agent Agent) ([]Part, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunBeforeAgent(ctx, rc, agent)
-}
-
-// RunAfterAgent executes AfterAgent hooks.
-func (rc *requestContext) RunAfterAgent(ctx context.Context, agent Agent) ([]Part, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunAfterAgent(ctx, rc, agent)
-}
-
-// RunBeforeRun executes the BeforeRun hook across all plugins in order.
-func (rc *requestContext) RunBeforeRun(ctx context.Context) ([]Part, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunBeforeRun(ctx, rc)
-}
-
-// RunAfterRun executes the AfterRun hook across all plugins in order.
-func (rc *requestContext) RunAfterRun(ctx context.Context) error {
-	if rc.pluginManager == nil {
-		return nil
-	}
-	return rc.pluginManager.RunAfterRun(ctx, rc)
-}
-
-// RunOnToolError executes the OnToolError hook across all plugins in order.
-func (rc *requestContext) RunOnToolError(
-	ctx context.Context,
-	tool Tool,
-	toolCtx ToolContext,
-	toolArgs string,
-	err error,
-) (any, error) {
-	if rc.pluginManager == nil {
-		return nil, err
-	}
-	return rc.pluginManager.RunOnToolError(ctx, tool, toolCtx, toolArgs, err)
-}
-
-// RunBeforeTool executes the BeforeTool hook across all plugins in order.
-func (rc *requestContext) RunBeforeTool(
-	ctx context.Context,
-	tool Tool,
-	toolCtx ToolContext,
-	toolArgs string,
-) (any, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunBeforeTool(ctx, tool, toolCtx, toolArgs)
-}
-
-// RunAfterTool executes the AfterTool hook across all plugins in order.
-func (rc *requestContext) RunAfterTool(
-	ctx context.Context,
-	tool Tool,
-	toolCtx ToolContext,
-	toolArgs string,
-	result any,
-) (any, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunAfterTool(ctx, tool, toolCtx, toolArgs, result)
-}
-
-// RunBeforeModel executes the BeforeModel hook chain.
-func (rc *requestContext) RunBeforeModel(ctx context.Context, req *ModelRequest) (*ModelResponse, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunBeforeModel(ctx, rc, req)
-}
-
-// RunAfterModel executes the AfterModel hook chain.
-func (rc *requestContext) RunAfterModel(ctx context.Context, res *ModelResponse) (*ModelResponse, error) {
-	if rc.pluginManager == nil {
-		return nil, nil
-	}
-	return rc.pluginManager.RunAfterModel(ctx, rc, res)
-}
-
-// RunOnModelError executes the OnModelError hook chain for model invocation errors.
-func (rc *requestContext) RunOnModelError(ctx context.Context, req *ModelRequest, err error) (*ModelResponse, error) {
-	if rc.pluginManager == nil {
-		return nil, err
-	}
-	return rc.pluginManager.RunOnModelError(ctx, rc, req, err)
-}
-
 // NewBranchContextForSubAgent creates a branched RequestContext for a sub-agent.
 // The branch shares the underlying session and stores but carries a distinct branch name.
 func (rc *requestContext) NewBranchContextForSubAgent(branchName string) RequestContext {
@@ -357,13 +249,11 @@ func (rc *requestContext) NewBranchContextForSubAgent(branchName string) Request
 		sessionStore:  rc.sessionStore,
 		artifactStore: rc.artifactStore,
 		memoryStore:   rc.memoryStore,
+		pluginManager: rc.pluginManager, // <- copy plugin manager
 		limiter:       rc.limiter,
 		session:       rc.session,
-		branch:        rc.branch,
+		branch:        branchName, // set directly
 	}
-
-	c.branch = branchName
-
 	return c
 }
 
@@ -389,15 +279,77 @@ var (
 	_ RequestContext   = (*requestContext)(nil)
 )
 
-// ToolContext provides a constrained, auditable surface for tool/function execution.
-// It accumulates EventActions (state deltas, transfers, escalation signals, artifact diffs)
-// without directly mutating the underlying session until applied.
-
-type toolContext struct {
+// callbackContext implements CallbackContext by layering a delta-aware State()
+// over the session snapshot and delegating artifact access to the underlying
+// RequestContext. Any state mutations are applied to the provided delta map,
+// allowing the orchestration layer to capture and commit them later.
+type callbackContext struct {
 	RequestContext
 
+	state        *State
+	eventActions *EventActions
+}
+
+// CallbackContextOptions configures construction of a callbackContext.
+// If StateDelta is provided, it will be used as the backing delta for State(),
+// enabling mutation capture without touching the session directly.
+type CallbackContextOptions struct {
+	// EventActions accumulates actions (e.g., state/artifact diffs) requested during callbacks.
+	EventActions *EventActions
+
+	// StateDelta allows wiring a specific delta map (e.g., from EventActions) so that
+	// ctx.State().Set(...) records into that map.
+	StateDelta map[string]any
+}
+
+// NewCallbackContext constructs a CallbackContext bound to a parent RequestContext.
+// State() returns a delta-aware view backed by StateDelta if provided; otherwise, an empty delta.
+func NewCallbackContext(reqCtx RequestContext, optFns ...func(o *CallbackContextOptions)) CallbackContext {
+	opts := &CallbackContextOptions{}
+
+	for _, fn := range optFns {
+		fn(opts)
+	}
+
+	// Ensure EventActions is non-nil after options.
+	if opts.EventActions == nil {
+		opts.EventActions = &EventActions{}
+	}
+
+	// Build a delta-aware State that overlays the session snapshot with the provided delta.
+	value := reqCtx.StateSnapshot()
+
+	// Ensure StateDelta is non-nil after options.
+	if opts.StateDelta == nil {
+		opts.StateDelta = make(map[string]any)
+	}
+
+	return &callbackContext{
+		RequestContext: reqCtx,
+		state:          NewState(value, opts.StateDelta),
+		eventActions:   opts.EventActions,
+	}
+}
+
+// State returns the delta-aware state for the current session.
+func (cc *callbackContext) State() *State { return cc.state }
+
+// EventActions returns the event actions accumulated in the callback context.
+func (cc *callbackContext) EventActions() *EventActions { return cc.eventActions }
+
+// Compile-time assertions: callbackContext satisfies capability interfaces
+var (
+	_ ReadonlyContext = (*callbackContext)(nil)
+	_ ArtifactReader  = (*callbackContext)(nil) // via embedded RequestContext
+	_ ArtifactWriter  = (*callbackContext)(nil) // via embedded RequestContext
+	_ CallbackContext = (*callbackContext)(nil)
+)
+
+type toolContext struct {
+	// Embed callbackContext to provide delta-aware state, artifact access, and actions accumulation.
+	*callbackContext
+
 	functionCallID Opt[string]
-	eventActions   EventActions
 }
 
 // ToolContextOptions groups options for constructing a ToolContext.
@@ -406,24 +358,42 @@ type ToolContextOptions struct {
 	FunctionCallID Opt[string]
 
 	// EventActions accumulates actions requested during tool execution.
-	EventActions EventActions
+	EventActions *EventActions
+
+	// StateDelta allows wiring a specific delta map
+	StateDelta map[string]any
 }
 
 // NewToolContext constructs a tool context bound to a parent RequestContext
 // and the provided FunctionCallID.
 func NewToolContext(reqCtx RequestContext, optFns ...func(o *ToolContextOptions)) ToolContext {
-	opts := &ToolContextOptions{
-		EventActions: EventActions{},
-	}
+	opts := &ToolContextOptions{}
 
 	for _, fn := range optFns {
 		fn(opts)
 	}
 
-	return &toolContext{
+	// Ensure EventActions is non-nil after options.
+	if opts.EventActions == nil {
+		opts.EventActions = &EventActions{}
+	}
+
+	// Ensure StateDelta is non-nil after options.
+	if opts.StateDelta == nil {
+		opts.StateDelta = make(map[string]any)
+	}
+
+	value := reqCtx.StateSnapshot()
+
+	cb := &callbackContext{
 		RequestContext: reqCtx,
-		functionCallID: opts.FunctionCallID,
+		state:          NewState(value, opts.StateDelta),
 		eventActions:   opts.EventActions,
+	}
+
+	return &toolContext{
+		callbackContext: cb,
+		functionCallID:  opts.FunctionCallID,
 	}
 }
 
@@ -431,8 +401,11 @@ func NewToolContext(reqCtx RequestContext, optFns ...func(o *ToolContextOptions)
 // and a boolean indicating whether it was set.
 func (tc *toolContext) FunctionCallID() (string, bool) { return tc.functionCallID.Get() }
 
-// EventActions returns the event actions accumulated in the tool context.
-func (tc *toolContext) EventActions() *EventActions { return &tc.eventActions }
+// Actions returns the event actions accumulated in the tool context (alias of EventActions).
+func (tc *toolContext) Actions() *EventActions { return tc.EventActions() }
+
+// PluginManager exposes the underlying PluginManager from the embedded RequestContext.
+func (tc *toolContext) PluginManager() PluginManager { return tc.callbackContext.PluginManager() }
 
 // SkipSummarization requests that post-processing summarization be bypassed
 // for the originating event.
@@ -459,5 +432,6 @@ var (
 	_ TransferRequester = (*toolContext)(nil)
 	_ Escalator         = (*toolContext)(nil)
 	_ ReadonlyContext   = (*toolContext)(nil)
+	_ CallbackContext   = (*toolContext)(nil)
 	_ ToolContext       = (*toolContext)(nil)
 )

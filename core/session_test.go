@@ -14,7 +14,7 @@ func TestSession_NewDefaults(t *testing.T) {
 	require.NotNil(t, s)
 
 	assert.Equal(t, "sess1", s.ID())
-	assert.Empty(t, s.StateSnapshot())
+	assert.Empty(t, s.State())
 	assert.Empty(t, s.Events())
 }
 
@@ -34,7 +34,7 @@ func TestSession_MergeState(t *testing.T) {
 	prev := s.UpdatedAt()
 
 	s.MergeState(map[string]any{"a": 1, "b": 2})
-	ss := s.StateSnapshot()
+	ss := s.State()
 	assert.Equal(t, any(1), ss["a"])
 	assert.Equal(t, any(2), ss["b"])
 	assert.NotEqual(t, prev, s.UpdatedAt())
@@ -64,7 +64,7 @@ func TestSession_AddEvents_MergesAndAppends(t *testing.T) {
 
 	s.AddEvents(e1, e2)
 
-	ss := s.StateSnapshot()
+	ss := s.State()
 	assert.Equal(t, any(1), ss["a"])
 	assert.Equal(t, any(2), ss["b"])
 	assert.Len(t, s.Events(), 2)
@@ -145,7 +145,7 @@ func TestSession_AddEvents_IgnoresPartialAndMergesNonPartial(t *testing.T) {
 	evs := s.Events()
 	require.Len(t, evs, 1)
 
-	ss := s.StateSnapshot()
+	ss := s.State()
 	_, hasA := ss["a"]
 
 	assert.False(t, hasA)

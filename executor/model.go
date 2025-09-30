@@ -28,10 +28,17 @@ func ExecuteModel(
 		defer close(outCh)
 		defer close(errCh)
 
-		if sc, err := reqCtx.RunBeforeModel(ctx, req); err != nil {
-			errCh <- fmt.Errorf("plugin: before_model: %w", err)
-			return
-		} else if sc != nil {
+		var sc *core.ModelResponse
+		if pm := reqCtx.PluginManager(); pm != nil {
+			cbCtx := core.NewCallbackContext(reqCtx)
+			out, err := pm.RunBeforeModel(ctx, cbCtx, req)
+			if err != nil {
+				errCh <- fmt.Errorf("plugin: before_model: %w", err)
+				return
+			}
+			sc = out
+		}
+		if sc != nil {
 			if _, err := emitFinal(ctx, reqCtx, sc, outCh); err != nil {
 				errCh <- err
 			}
@@ -63,12 +70,15 @@ func ExecuteModel(
 				final = r
 			case err, ok := <-genErrCh:
 				if ok {
-					if rec, hookErr := reqCtx.RunOnModelError(ctx, req, err); hookErr != nil {
-						errCh <- fmt.Errorf("plugin: on_model_error: %w", hookErr)
-						return
-					} else if rec != nil {
-						final = rec
-						break loop
+					if pm := reqCtx.PluginManager(); pm != nil {
+						cbCtx := core.NewCallbackContext(reqCtx)
+						if rec, hookErr := pm.RunOnModelError(ctx, cbCtx, req, err); hookErr != nil {
+							errCh <- fmt.Errorf("plugin: on_model_error: %w", hookErr)
+							return
+						} else if rec != nil {
+							final = rec
+							break loop
+						}
 					}
 					errCh <- err
 					return
@@ -88,6 +98,16 @@ func ExecuteModel(
 			return
 		}
 
+		if pm := reqCtx.PluginManager(); pm != nil {
+			cbCtx := core.NewCallbackContext(reqCtx)
+			if rep, err := pm.RunAfterModel(ctx, cbCtx, final); err != nil {
+				errCh <- fmt.Errorf("plugin: after_model: %w", err)
+				return
+			} else if rep != nil {
+				final = rep
+			}
+		}
+
 		if _, err := emitFinal(ctx, reqCtx, final, outCh); err != nil {
 			errCh <- err
 		}
@@ -98,21 +118,14 @@ func ExecuteModel(
 
 // emitFinal runs AfterModel hook (allowing replacement) then emits the full response on outCh.
 func emitFinal(
-	ctx context.Context,
-	reqCtx core.RequestContext,
+	_ context.Context,
+	_ core.RequestContext,
 	res *core.ModelResponse,
 	outCh chan<- *core.ModelResponse,
 ) (*core.ModelResponse, error) {
-	if rep, err := reqCtx.RunAfterModel(ctx, res); err != nil {
-		return nil, fmt.Errorf("plugin: after_model: %w", err)
-	} else if rep != nil {
-		res = rep
-	}
-
 	// Mark as non-partial to signal completion semantics downstream.
 	res.Partial = false
 	outCh <- res
-
 	return res, nil
 }
 

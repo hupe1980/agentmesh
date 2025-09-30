@@ -217,10 +217,14 @@ func (e *parallelToolExecutor) executeWithPlugins(
 ) (any, error) {
 	log := logging.FromContext(ctx)
 
-	overridden, err := reqCtx.RunBeforeTool(ctx, tool, toolCtx, toolArgs)
-	if err != nil {
-		log.Error("agent.function.before_tool.error", "error", err)
-		return nil, err
+	var overridden any
+	if pm := reqCtx.PluginManager(); pm != nil {
+		out, err := pm.RunBeforeTool(ctx, tool, toolCtx, toolArgs)
+		if err != nil {
+			log.Error("agent.function.before_tool.error", "error", err)
+			return nil, err
+		}
+		overridden = out
 	}
 
 	var final any
@@ -245,30 +249,33 @@ func (e *parallelToolExecutor) executeWithPlugins(
 		}()
 
 		if callErr != nil {
-			recovered, herr := reqCtx.RunOnToolError(ctx, tool, toolCtx, toolArgs, callErr)
-			if herr != nil {
-				log.Error("agent.function.error", "error", herr)
-				return nil, herr
-			}
-
-			if recovered == nil {
+			if pm := reqCtx.PluginManager(); pm != nil {
+				recovered, herr := pm.RunOnToolError(ctx, tool, toolCtx, toolArgs, callErr)
+				if herr != nil {
+					log.Error("agent.function.error", "error", herr)
+					return nil, herr
+				}
+				if recovered == nil {
+					return nil, callErr
+				}
+				final = recovered
+			} else {
 				return nil, callErr
 			}
-
-			final = recovered
 		} else {
 			final = result
 		}
 	}
 
-	modified, err := reqCtx.RunAfterTool(ctx, tool, toolCtx, toolArgs, final)
-	if err != nil {
-		log.Error("agent.function.after_tool.error", "error", err)
-		return nil, err
-	}
-
-	if modified != nil {
-		final = modified
+	if pm := reqCtx.PluginManager(); pm != nil {
+		modified, err := pm.RunAfterTool(ctx, tool, toolCtx, toolArgs, final)
+		if err != nil {
+			log.Error("agent.function.after_tool.error", "error", err)
+			return nil, err
+		}
+		if modified != nil {
+			final = modified
+		}
 	}
 
 	return final, nil
