@@ -63,15 +63,31 @@ import (
   "time"
 
   "github.com/hupe1980/agentmesh/agent"
-    runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
-    if err != nil {
-      log.Fatalf("run failed: %v", err)
-    }
+)
+  
+func main() {
+  // 1. Create model + agent with an instruction prompt
+  model := openai.NewModel()
 
-    fmt.Printf("=== Basic Agent [runID=%s] ===\n%s\n", runID, text)
+  ag, err := agent.NewModelAgent("basic_agent", model, func(o *agent.ModelAgentOptions) {
+    o.Instructions = agent.NewInstructionsFromText(
+      "You are a helpful assistant. Keep responses concise and friendly.",
+    )
+  })
+  if err != nil {
+    log.Fatalf("failed to create agent: %v", err)
+  }
 
+  // 2. Create the runner
+  r := runner.New("basic_agent_app", ag)
+  defer func() {
+    _ = r.Close()
+  }()
+
+  // 3. Build user content
   userParts := []core.Part{core.NewPartFromText("Hello! What can you do?")}
 
+  // 4. Invoke agent and get only the final text
   runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
   if err != nil {
     log.Fatalf("run failed: %v", err)
