@@ -282,7 +282,8 @@
 <body>
   <header>
     <div class="topbar">
-      <a class="brand" href="/">
+  {% assign brand_href = '/' | relative_url %}
+  <a class="brand" href="{{ brand_href }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M12 3l8.196 4.5v9L12 21l-8.196-4.5v-9L12 3z" stroke-linejoin="round" />
           <path d="M12 3v18" stroke-linecap="round" />
@@ -297,10 +298,28 @@
         <p>{{ page.hero.description | default: site.description }}</p>
         <div class="cta-group">
           {% if page.hero.primary_cta %}
-            <a class="cta primary" href="{{ page.hero.primary_cta.href }}">{{ page.hero.primary_cta.label }}</a>
+            {% assign primary_href = page.hero.primary_cta.href | default: '' %}
+            {% assign primary_first = primary_href | slice: 0, 1 %}
+            {% if primary_href contains '://' %}
+              {% assign primary_url = primary_href %}
+            {% elsif primary_first == '#' %}
+              {% assign primary_url = primary_href %}
+            {% else %}
+              {% assign primary_url = primary_href | relative_url %}
+            {% endif %}
+            <a class="cta primary" href="{{ primary_url }}">{{ page.hero.primary_cta.label }}</a>
           {% endif %}
           {% if page.hero.secondary_cta %}
-            <a class="cta secondary" href="{{ page.hero.secondary_cta.href }}"{% if page.hero.secondary_cta.external %} target="_blank" rel="noopener"{% endif %}>{{ page.hero.secondary_cta.label }}</a>
+            {% assign secondary_href = page.hero.secondary_cta.href | default: '' %}
+            {% assign secondary_first = secondary_href | slice: 0, 1 %}
+            {% if page.hero.secondary_cta.external or secondary_href contains '://' %}
+              {% assign secondary_url = secondary_href %}
+            {% elsif secondary_first == '#' %}
+              {% assign secondary_url = secondary_href %}
+            {% else %}
+              {% assign secondary_url = secondary_href | relative_url %}
+            {% endif %}
+            <a class="cta secondary" href="{{ secondary_url }}"{% if page.hero.secondary_cta.external %} target="_blank" rel="noopener"{% endif %}>{{ page.hero.secondary_cta.label }}</a>
           {% endif %}
         </div>
       </div>
@@ -335,9 +354,18 @@
             {% if item.href == current_url or item.href == page.url %}
               {% assign is_active = true %}
             {% endif %}
+            {% assign nav_href = item.href | default: '' %}
+            {% assign nav_first = nav_href | slice: 0, 1 %}
+            {% if nav_href contains '://' %}
+              {% assign nav_url = nav_href %}
+            {% elsif nav_first == '#' %}
+              {% assign nav_url = nav_href %}
+            {% else %}
+              {% assign nav_url = nav_href | relative_url %}
+            {% endif %}
             <li class="{% if is_active %}active{% endif %}">
               <span class="active-indicator"></span>
-              <a class="{% if is_active %}active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+              <a class="{% if is_active %}active{% endif %}" href="{{ nav_url }}">{{ item.label }}</a>
             </li>
           {% endfor %}
         </ul>
