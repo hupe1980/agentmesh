@@ -189,6 +189,12 @@ func (f *BaseFlow) stepBuild(ctx context.Context, reqCtx core.RequestContext, fr
 	}
 
 	for _, tool := range tools {
+		// Skip the set_model_response fallback; the output schema processor attaches
+		// it when needed so we avoid duplicating the definition here.
+		if tool.Name() == "set_model_response" {
+			continue
+		}
+
 		toolCtx := core.NewToolContext(reqCtx)
 
 		if err := tool.ProcessModelRequest(ctx, toolCtx, req); err != nil {

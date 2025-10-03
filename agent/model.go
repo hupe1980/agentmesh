@@ -20,8 +20,6 @@ type ModelAgentOptions struct {
 	Description string
 	// Enable streaming responses
 	EnableStreaming bool
-	// Enable function calling
-	EnableFunctionCalling bool
 	// Timeout for tool calls
 	ToolTimeout time.Duration
 	// Output schema for the agent's responses
@@ -52,7 +50,6 @@ func DefaultModelAgentOptions(name string) ModelAgentOptions {
 		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
 		Description:           "",
 		EnableStreaming:       true,
-		EnableFunctionCalling: true,
 		ToolTimeout:           15 * time.Second,
 		OutputSchema:          core.None[core.OutputSchema](),
 		OutputKey:             "",
@@ -80,14 +77,13 @@ func DefaultModelAgentOptions(name string) ModelAgentOptions {
 // It uses flow processors under the hood and logs via the RequestContext's
 // logging interface.
 type ModelAgent struct {
-	*BaseAgent                           // Embedded base agent functionality
-	model                 core.Model     // Language model interface
-	instructions          Instructions   // Instructions for the LLM
-	tools                 []core.Tool    // Registered tools for function calling
-	toolsets              []core.Toolset // Registered toolsets for function calling
-	enableFunctionCalling bool           // Whether to enable tool usage
-	enableStreaming       bool           // Whether to stream responses
-	toolTimeout           time.Duration  // Timeout for individual tool calls
+	*BaseAgent                     // Embedded base agent functionality
+	model           core.Model     // Language model interface
+	instructions    Instructions   // Instructions for the LLM
+	tools           []core.Tool    // Registered tools for function calling
+	toolsets        []core.Toolset // Registered toolsets for function calling
+	enableStreaming bool           // Whether to stream responses
+	toolTimeout     time.Duration  // Timeout for individual tool calls
 
 	outputSchema core.Opt[core.OutputSchema] // Expected output schema for responses
 	outputKey    string                      // Key for saving responses to session state
@@ -121,7 +117,6 @@ func NewModelAgent(
 		model:                 m,
 		instructions:          opts.Instructions,
 		enableStreaming:       opts.EnableStreaming,
-		enableFunctionCalling: opts.EnableFunctionCalling,
 		toolTimeout:           opts.ToolTimeout,
 		outputSchema:          opts.OutputSchema,
 		outputKey:             opts.OutputKey,
@@ -174,11 +169,6 @@ func (a *ModelAgent) ResolveTools(ctx context.Context, roCtx core.ReadonlyContex
 // Model returns the language model instance.
 func (a *ModelAgent) Model() core.Model {
 	return a.model
-}
-
-// IsFunctionCallingEnabled returns whether function calling is enabled.
-func (a *ModelAgent) IsFunctionCallingEnabled() bool {
-	return a.enableFunctionCalling
 }
 
 // IsStreamingEnabled returns whether streaming responses are enabled.

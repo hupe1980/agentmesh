@@ -89,8 +89,6 @@ type FlowAgent interface {
 	MaxHistoryMessages() int
 	// HistoryMode controls what kind of history the agent receives.
 	HistoryMode() HistoryMode
-	// IsFunctionCallingEnabled indicates whether the agent can call functions/tools.
-	IsFunctionCallingEnabled() bool
 	// IsStreamingEnabled indicates whether the agent streams model output.
 	IsStreamingEnabled() bool
 	// IsTransferToPeersEnabled indicates whether the agent may transfer to peer agents.

@@ -65,6 +65,24 @@ func TestNewFuncModel_PanicsOnNilFunc(t *testing.T) {
 	})
 }
 
+func TestFuncModel_Capabilities(t *testing.T) {
+	fm := NewFuncModel(func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
+		out := make(chan *core.ModelResponse)
+		errCh := make(chan error)
+		close(out)
+		close(errCh)
+		return out, errCh
+	})
+
+	// Default is zero-value capabilities.
+	assert.False(t, fm.Capabilities().SupportsStructuredOutput)
+
+	// Update and verify getter reflects the change.
+	caps := core.ModelCapabilities{SupportsStructuredOutput: true}
+	fm.SetCapabilities(caps)
+	assert.Equal(t, caps, fm.Capabilities())
+}
+
 // collectAllResponses drains a response channel into a slice.
 func collectAllResponses(ch <-chan *core.ModelResponse) []*core.ModelResponse {
 	// Preallocate with a reasonable default capacity

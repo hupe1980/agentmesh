@@ -20,7 +20,6 @@ func TestModelAgent_NewAgent(t *testing.T) {
 	assert.NotNil(t, agent.tools)
 	assert.Equal(t, 0, len(agent.Tools()), "no tools registered initially")
 	assert.True(t, agent.enableStreaming)
-	assert.True(t, agent.enableFunctionCalling)
 }
 
 func TestModelAgent_ResolveInstructions(t *testing.T) {

@@ -36,7 +36,6 @@ type MockAgent struct {
 	ToolsetList             []core.Toolset
 	ParentAgent             core.Agent
 	SubAgentsList           []core.Agent
-	FunctionCallingEnabled  bool
 	StreamingEnabled        bool
 	TransferToPeersEnabled  bool
 	TransferToParentEnabled bool
@@ -68,7 +67,6 @@ func NewMockAgent(name string) *MockAgent {
 		ToolsList:               []core.Tool{},
 		ToolsetList:             []core.Toolset{},
 		SubAgentsList:           []core.Agent{},
-		FunctionCallingEnabled:  false,
 		StreamingEnabled:        false,
 		TransferToPeersEnabled:  false,
 		TransferToParentEnabled: false,
@@ -204,9 +202,6 @@ func (m *MockAgent) findSubAgent(name string) (core.Agent, error) {
 	}
 	return nil, core.ErrAgentNotFound
 }
-
-// IsFunctionCallingEnabled returns the configured flag.
-func (m *MockAgent) IsFunctionCallingEnabled() bool { return m.FunctionCallingEnabled }
 
 // IsStreamingEnabled returns the configured flag.
 func (m *MockAgent) IsStreamingEnabled() bool { return m.StreamingEnabled }

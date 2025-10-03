@@ -33,12 +33,15 @@ func (m *partialStreamingModel) Generate(
 	return respCh, errCh
 }
 
+func (m *partialStreamingModel) Capabilities() core.ModelCapabilities {
+	return core.ModelCapabilities{}
+}
+
 // TestBaseFlow_PartialStreaming validates partial assistant events stream in order
 // followed by a final non-partial event.
 func TestBaseFlow_PartialStreaming(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &partialStreamingModel{}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,
 		_ core.ReadonlyContext,

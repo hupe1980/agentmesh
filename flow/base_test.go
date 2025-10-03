@@ -70,6 +70,10 @@ func (m *onceToolCallModel) Generate(
 	return rc, ec
 }
 
+func (m *onceToolCallModel) Capabilities() core.ModelCapabilities {
+	return core.ModelCapabilities{}
+}
+
 // model that emits a single plain text response
 type textModel struct{ text string }
 
@@ -84,11 +88,14 @@ func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan 
 	return rc, ec
 }
 
+func (m *textModel) Capabilities() core.ModelCapabilities {
+	return core.ModelCapabilities{}
+}
+
 func TestBaseFlow_Simple_NoTools(t *testing.T) {
 	// Use text-only model, ensure processors run and at least one assistant event is written
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &textModel{text: "hello"}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
 	}
@@ -131,7 +138,6 @@ func TestBaseFlow_Simple_NoTools(t *testing.T) {
 func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
 	}
@@ -175,7 +181,6 @@ func TestBaseFlow_FunctionCall_LoopsOnce(t *testing.T) {
 func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,
 		roCtx core.ReadonlyContext,
@@ -209,7 +214,6 @@ func TestBaseFlow_NoLoopOnTransferOrEscalate(t *testing.T) {
 func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(
 		ctx context.Context,
 		roCtx core.ReadonlyContext,
@@ -250,7 +254,6 @@ func TestBaseFlow_TransferMissingAgentError(t *testing.T) {
 func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &onceToolCallModel{}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
 	}
@@ -299,7 +302,6 @@ func TestBaseFlow_TransferToAgent_RunsTargetAgent(t *testing.T) {
 func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 	agent := testutil.NewMockAgent("A")
 	agent.ModelVal = &textModel{text: "hello"}
-	agent.FunctionCallingEnabled = true
 	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
 		return "inst", nil
 	}

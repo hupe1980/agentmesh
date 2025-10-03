@@ -14,7 +14,8 @@ type GenerateFunc func(ctx context.Context, req *core.ModelRequest) (<-chan *cor
 // FuncModel is a lightweight adapter allowing tests or custom code to supply
 // generation logic as a first-class function alongside static ModelInfo.
 type FuncModel struct {
-	gen GenerateFunc
+	gen  GenerateFunc
+	caps core.ModelCapabilities
 }
 
 // NewFuncModel constructs a new FuncModel. Panics if gen is nil to surface configuration errors early.
@@ -28,6 +29,17 @@ func NewFuncModel(gen GenerateFunc) *FuncModel {
 // Generate delegates to the underlying function.
 func (m *FuncModel) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 	return m.gen(ctx, req)
+}
+
+// Capabilities returns the advertised feature set for this functional model.
+// Tests may mutate the capabilities directly to simulate provider behavior.
+func (m *FuncModel) Capabilities() core.ModelCapabilities {
+	return m.caps
+}
+
+// SetCapabilities allows tests to configure the capability flags surfaced by the model.
+func (m *FuncModel) SetCapabilities(caps core.ModelCapabilities) {
+	m.caps = caps
 }
 
 // Compile-time assertion that FuncModel implements core.Model.

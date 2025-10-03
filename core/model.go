@@ -240,10 +240,21 @@ type ModelResponse struct {
 	Usage        *TokenUsage `json:"usage,omitempty"`
 }
 
+// ModelCapabilities advertises the features supported by a model implementation.
+// Downstream components use this to adapt orchestration behavior without
+// hard-coding provider-specific checks.
+type ModelCapabilities struct {
+	// SupportsStructuredOutput reports whether the model can natively honor
+	// structured output requests (e.g., JSON Schema via response_format).
+	SupportsStructuredOutput bool
+}
+
 // Model is the minimal interface required by flows & agents to drive generation.
 type Model interface {
 	// Generate initiates a generation request to the model.
 	Generate(ctx context.Context, req *ModelRequest) (<-chan *ModelResponse, <-chan error)
+	// Capabilities returns the feature flags advertised by the model implementation.
+	Capabilities() ModelCapabilities
 }
 
 // ModelExecutor abstracts execution of a Model request, allowing decoration

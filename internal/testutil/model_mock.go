@@ -13,6 +13,8 @@ type MockModel struct {
 	// GenerateFunc, if set, is invoked by Generate. When nil, a default
 	// one-shot, non-streaming response is produced.
 	GenerateFunc func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error)
+	// CapabilitiesVal surfaces feature flags for tests.
+	CapabilitiesVal core.ModelCapabilities
 }
 
 // Generate implements core.Model.
@@ -34,6 +36,11 @@ func (m *MockModel) Generate(ctx context.Context, req *core.ModelRequest) (<-cha
 	close(errCh)
 
 	return respCh, errCh
+}
+
+// Capabilities returns the configured capability flags (zero-value by default).
+func (m *MockModel) Capabilities() core.ModelCapabilities {
+	return m.CapabilitiesVal
 }
 
 // Compile-time assertion
