@@ -1,9 +1,10 @@
 # 🤖 AgentMesh
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
+[![Documentation](https://img.shields.io/badge/docs-online-success)](https://hupe1980.github.io/agentmesh/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 
-**Composable, testable, and extensible multi-agent orchestration for Go.**
+**Composable multi-agent orchestration for Go.**
 
 AgentMesh helps you build production-grade AI systems in Go. It provides 
 composable agent patterns (sequential, parallel, looping), streaming event 

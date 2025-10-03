@@ -4,9 +4,15 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
+  "secrets": {
+    "OPENAI_API_KEY": {
+      "description": "The API key for accessing OpenAI services"
+    }
+  },
   "remoteUser": "vscode",
   "containerEnv": {
-    "GOPATH": "/go"
+    "GOPATH": "/go",
+    "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}"
   },
   "customizations": {
     "vscode": {
@@ -21,5 +27,5 @@
       ]
     }
   },
-  "postCreateCommand": "go version && just --version && golangci-lint --version && jekyll --version"
+  "postCreateCommand": "go mod tidy"
 }
