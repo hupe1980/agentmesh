@@ -18,7 +18,8 @@
       --text-muted: #4b5563;
       --border: #e5e7eb;
       --border-strong: #d1d5db;
-      --code-bg: #0f172a;
+  --code-bg: #0f172a;
+  --code-fg: #e2e8f0;
       --card-radius: 18px;
       --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.08);
     }
@@ -225,12 +226,78 @@
     }
     pre {
       background: var(--code-bg);
-      color: #f8fafc;
+      color: var(--code-fg);
       padding: 16px 20px;
       border-radius: 12px;
       overflow-x: auto;
       font-size: 0.95rem;
     }
+    .highlight {
+      background: var(--code-bg);
+      border-radius: 12px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    .highlight pre {
+      margin: 0;
+      background: transparent;
+      color: var(--code-fg);
+      padding: 20px 22px;
+      min-width: max-content;
+    }
+    .highlight code { color: inherit; }
+    .highlight .c, /* Comment */
+    .highlight .cm,
+    .highlight .c1,
+    .highlight .cs {
+      color: #94a3b8;
+      font-style: italic;
+    }
+    .highlight .k, /* Keyword */
+    .highlight .kd,
+    .highlight .kn,
+    .highlight .kp,
+    .highlight .kr,
+    .highlight .kt {
+      color: #93c5fd;
+      font-weight: 600;
+    }
+    .highlight .nf, /* Function name */
+    .highlight .nx {
+      color: #facc15;
+    }
+    .highlight .nc, /* Class name */
+    .highlight .nn {
+      color: #38bdf8;
+    }
+    .highlight .s, /* String */
+    .highlight .sa,
+    .highlight .sb,
+    .highlight .sd,
+    .highlight .s1,
+    .highlight .s2,
+    .highlight .se,
+    .highlight .sh,
+    .highlight .si,
+    .highlight .sx {
+      color: #f472b6;
+    }
+    .highlight .mi, /* Number */
+    .highlight .il,
+    .highlight .mf,
+    .highlight .mh,
+    .highlight .mo {
+      color: #f97316;
+    }
+    .highlight .o, /* Operator */
+    .highlight .ow,
+    .highlight .p {
+      color: #e2e8f0;
+    }
+    .highlight .na { color: #c4b5fd; }
+    .highlight .nb { color: #a5f3fc; }
+    .highlight .bp { color: #fcd34d; }
+    .highlight .err { color: #fca5a5; background: rgba(248, 113, 113, 0.12); }
     code {
       font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }

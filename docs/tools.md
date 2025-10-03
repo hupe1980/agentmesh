@@ -20,8 +20,10 @@ sidebar:
     children:
       - title: MCP toolset
         url: "#mcp-toolset"
-  - title: Agent tools
-    url: "#agent-tools"
+  - title: AgentTool
+    url: "#agenttool"
+  - title: LangChainGo tool
+    url: "#langchaingo-tool"
   - title: Tool execution
     url: "#tool-execution"
 ---
@@ -112,7 +114,7 @@ Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFac
 
 ---
 
-## Agent tools {#agent-tools}
+## AgentTool {#agenttool}
 
 `tool.NewAgentTool` turns an existing agent into a tool, allowing higher-level planners to delegate entire flows. It spins up a nested runner with isolated artifacts and state.
 
@@ -130,6 +132,33 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
   o.Tools = append(o.Tools, summarizerTool)
 })
 ```
+
+---
+
+## LangChainGo tool {#langchaingo-tool}
+
+The [`tool/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/tool/langchaingo) adapter wraps any [`langchaingo`](https://github.com/tmc/langchaingo) `tools.Tool` so it can be used as an AgentMesh `core.Tool` without rewriting integrations. Try it with the built-in calculator from `github.com/tmc/langchaingo/tools`—the same one showcased in [`examples/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/examples/langchaingo).
+
+- **When to use**: reuse existing LangChainGo tool implementations alongside native AgentMesh tools.
+- **Behavior**:
+  - Mirrors name and description from the wrapped tool by default (override via options)
+  - Presents a single string argument (`__arg1`) that is forwarded to the LangChainGo tool
+  - Surfaces validation errors using `tool.Error` for consistent error handling
+
+```go
+import (
+  langchainTool "github.com/hupe1980/agentmesh/tool/langchaingo"
+  lctools "github.com/tmc/langchaingo/tools"
+)
+
+calcTool := langchainTool.NewTool(&lctools.Calculator{})
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.Tools = append(o.Tools, calcTool)
+})
+```
+
+Need additional metadata or custom validation? Pass option functions to `NewTool` to override the generated name and description or wrap the result with your own schema enforcement.
 
 ---
 

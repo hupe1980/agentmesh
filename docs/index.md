@@ -55,8 +55,9 @@ Key ideas:
 ## Explore the documentation
 
 - **[Getting started →](/getting-started/)** – Install the module, run the quick start, and browse local tooling tips.
+- **[Models guide →](/models/)** – Connect OpenAI, LangChainGo, or custom providers with structured outputs and tool calls.
 - **[Agents guide →](/agents/)** – Learn how Sequential, Parallel, Loop, Model, and Func agents compose orchestration graphs.
-- **[Tools guide →](/tools/)** – Build function tools, agent tools, and MCP-backed toolsets with confidence.
+- **[Tools guide →](/tools/)** – Build function tools, the AgentTool wrapper, and MCP-backed toolsets with confidence.
 - **[Architecture →](/architecture/)** – Understand the flow engine, runner lifecycle, and how the core packages fit together.
 - **[Resources →](/resources/)** – Jump to examples, issues, and contribution guides.
 
