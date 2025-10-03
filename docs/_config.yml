@@ -1,0 +1,16 @@
+title: AgentMesh Documentation
+baseurl: ""
+url: ""
+markdown: kramdown
+kramdown:
+  input: GFM
+permalink: pretty
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules

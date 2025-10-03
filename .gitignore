@@ -35,3 +35,10 @@ go.work.sum
 .DS_Store
 TODO.md
 
+# docs build artifacts
+docs/_site/
+docs/.jekyll-cache/
+docs/.sass-cache/
+docs/vendor/
+docs/.bundle/
+

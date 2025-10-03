@@ -1,0 +1,25 @@
+{
+  "name": "AgentMesh",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "GOPATH": "/go"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.gopath": "/go",
+        "go.toolsManagement.autoUpdate": true,
+        "go.formatTool": "gofmt"
+      },
+      "extensions": [
+        "golang.go",
+        "ms-vscode.makefile-tools"
+      ]
+    }
+  },
+  "postCreateCommand": "go version && just --version && golangci-lint --version && jekyll --version"
+}

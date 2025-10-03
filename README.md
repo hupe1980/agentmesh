@@ -232,7 +232,22 @@ go test ./... -race
 golangci-lint run --config .golangci.yml
 ```
 
-CI runs tests, lint, and publishes releases via GoReleaser. See [.github/workflows/build.yml](.github/workflows/build.yml).
+### Local docs preview
+
+The devcontainer includes Ruby, Bundler, and Jekyll so you can iterate on the site in `docs/`.
+
+```sh
+just docs-serve
+```
+
+That runs Bundler (isolated in `docs/vendor`) and starts Jekyll with livereload on http://localhost:4000. Prefer manual control?
+
+```sh
+cd docs
+bundle config set --local path 'vendor/bundle'
+bundle install
+bundle exec jekyll serve --livereload --host 0.0.0.0
+```
 
 ---
 

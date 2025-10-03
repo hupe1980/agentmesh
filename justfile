@@ -52,3 +52,9 @@ test-pkg package:
 cover-summary:
     go test ./... -coverprofile=coverage.out
     go tool cover -func=coverage.out | grep -E "(total|\.go:)"
+
+# Serve documentation site locally with live reload
+docs-serve:
+    cd docs && bundle config set --local path 'vendor/bundle'
+    cd docs && bundle install
+    cd docs && bundle exec jekyll serve --livereload --host 0.0.0.0 --port 4000

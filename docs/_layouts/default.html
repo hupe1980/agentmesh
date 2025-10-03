@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ page.title }} | {{ site.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --bg-alt: #f6f8fb;
+      --primary: #0b57d0;
+      --primary-dark: #08429b;
+      --text: #1a1f36;
+      --text-light: #4b5563;
+      --border: #d8dee8;
+      --card-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      background: linear-gradient(135deg, rgba(11,87,208,0.92), rgba(54,179,126,0.88));
+      color: white;
+      padding: 64px 32px 96px;
+      position: relative;
+      overflow: hidden;
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(255,255,255,0.22), transparent 45%);
+      pointer-events: none;
+    }
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1120px;
+      margin: 0 auto 56px;
+    }
+    nav .brand {
+      font-size: 1.125rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 20px;
+      font-weight: 500;
+    }
+    .hero {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 56px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      position: relative;
+      z-index: 1;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 3.5rem);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      font-size: 1.125rem;
+      color: rgba(255,255,255,0.86);
+      margin-bottom: 32px;
+    }
+    .cta-group {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .cta {
+      padding: 14px 24px;
+      border-radius: 999px;
+      font-weight: 600;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cta.primary {
+      background: white;
+      color: var(--primary-dark);
+      box-shadow: 0 12px 30px rgba(8, 66, 155, 0.25);
+    }
+    .cta.secondary {
+      border: 1px solid rgba(255,255,255,0.55);
+      color: white;
+      background: transparent;
+    }
+    .cta:hover { transform: translateY(-2px); }
+    main {
+      margin-top: -56px;
+      padding: 0 32px 120px;
+    }
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--bg);
+      border-radius: 18px;
+      padding: 40px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      margin-bottom: 32px;
+    }
+    .content-area {
+      background: var(--bg);
+      border-radius: 18px;
+      padding: 48px;
+      box-shadow: var(--card-shadow);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+    }
+    .content-area > * + * {
+      margin-top: 32px;
+    }
+    .content-area h2 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .content-area h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .content-area p, .content-area li {
+      color: var(--text-light);
+      font-size: 1.02rem;
+    }
+    footer {
+      margin-top: 72px;
+      padding: 56px 32px;
+      background: var(--bg-alt);
+      border-top: 1px solid var(--border);
+    }
+    footer .footer-shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-light);
+      font-size: 0.95rem;
+    }
+    pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 16px 20px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 0.95rem;
+    }
+    code {
+      font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    @media (max-width: 720px) {
+      nav { flex-direction: column; gap: 24px; }
+      .hero { gap: 36px; }
+      .card { padding: 28px; }
+      .content-area { padding: 32px; }
+      .cta-group { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span class="brand">{{ site.title }}</span>
+      <ul>
+        {% assign nav_items = page.nav %}
+        {% if nav_items == nil or nav_items == empty %}
+          {% assign nav_items = site.data.navigation %}
+        {% endif %}
+        {% if nav_items %}
+          {% for item in nav_items %}
+            <li><a href="{{ item.href }}">{{ item.label }}</a></li>
+          {% endfor %}
+        {% endif %}
+      </ul>
+    </nav>
+    <div class="hero">
+      <div>
+        <h1>{{ page.hero.title | default: site.title }}</h1>
+        <p>{{ page.hero.description | default: site.description }}</p>
+        <div class="cta-group">
+          {% if page.hero.primary_cta %}
+            <a class="cta primary" href="{{ page.hero.primary_cta.href }}">{{ page.hero.primary_cta.label }}</a>
+          {% endif %}
+          {% if page.hero.secondary_cta %}
+            <a class="cta secondary" href="{{ page.hero.secondary_cta.href }}"{% if page.hero.secondary_cta.external %} target="_blank" rel="noopener"{% endif %}>{{ page.hero.secondary_cta.label }}</a>
+          {% endif %}
+        </div>
+      </div>
+      {% if page.hero.highlights %}
+      <div>
+        <div class="card" style="background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.24);">
+          <h2 style="margin-bottom: 16px; font-size: 1.35rem;">{{ page.hero.highlights.title }}</h2>
+          <ul style="list-style: none; display: grid; gap: 18px; font-size: 0.98rem;">
+            {% for highlight in page.hero.highlights.items %}
+              <li>{{ highlight }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  <main>
+    <div class="shell">
+      <div class="content-area">
+        {{ content }}
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-shell">
+      <span>© {{ site.time | date: "%Y" }} AgentMesh</span>
+      <span>Released under the MIT License • Crafted for production AI workloads</span>
+    </div>
+  </footer>
+</body>
+</html>
