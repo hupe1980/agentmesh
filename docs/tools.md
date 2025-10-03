@@ -1,0 +1,157 @@
+---
+layout: doc
+title: Tools
+permalink: /tools/
+hero:
+  title: Give agents reliable capabilities
+  description: Build function tools, wrap sub-agents, or plug in MCP providers with consistent validation and observability.
+  primary_cta:
+    label: Publish a tool
+    href: "#function-tools"
+  secondary_cta:
+    label: Tool API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/tool"
+    external: true
+sidebar:
+  - title: Function tools
+    url: "#function-tools"
+  - title: Toolsets
+    url: "#toolsets"
+    children:
+      - title: MCP toolset
+        url: "#mcp-toolset"
+  - title: Agent tools
+    url: "#agent-tools"
+  - title: Tool execution
+    url: "#tool-execution"
+---
+
+Tools let models trigger deterministic side effects—API calls, computations, or even other agents—while respecting schema validation and observability. Everything lives under [`tool/`](https://github.com/hupe1980/agentmesh/tree/main/tool) and works with the shared [`core.Tool`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Tool) contract.
+
+---
+
+## Function tools {#function-tools}
+
+`tool.NewFuncTool` and `tool.NewFuncToolFromType` wrap pure Go functions with JSON Schema validation. They are perfect when you want quick utility functions or lightweight integrations.
+
+- **When to use**: simple RPC-like operations, deterministic calculations, thin wrappers over internal services.
+- **Behavior**:
+  - Validates incoming JSON arguments against your schema before calling the function
+  - Normalizes errors to `tool.Error` codes (`VALIDATION_ERROR`, `EXECUTION_ERROR`)
+  - Runs safely in parallel; no shared mutable state
+
+```go
+type SumArgs struct {
+  A float64 `json:"a"`
+  B float64 `json:"b"`
+}
+
+sumTool, _ := tool.NewFuncToolFromType("calculate_sum", "Add two numbers", SumArgs{}, func(ctx context.Context, tc core.ToolContext, args SumArgs) (any, error) {
+  return args.A + args.B, nil
+})
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.Tools = []core.Tool{sumTool}
+})
+```
+
+Prefer handwritten schemas? `NewFuncTool` accepts a `map[string]any` schema instead of deriving it from a struct.
+
+---
+
+## Toolsets {#toolsets}
+
+Registering dozens of tools up front can overwhelm the prompt. Implement `core.Toolset` to load tools on demand based on the current context, or reuse the built-in adapters (for example, MCP).
+
+- **When to use**: dynamic connectors, per-user tool catalogs, or rate-limited APIs.
+- **Behavior**:
+  - Toolsets decide at call time which tools to expose via `ListTools`
+  - Works alongside inline tools; the executor merges duplicates by name
+  - Often paired with caching or feature flags to keep prompts trim
+
+```go
+type DocsToolset struct{}
+
+func (DocsToolset) ListTools(ctx context.Context, ro core.ReadonlyContext) ([]core.Tool, error) {
+  // e.g., only surface tools relevant to the active workspace
+  return []core.Tool{sumTool, searchDocsTool}, nil
+}
+
+researcher, _ := am.NewModelAgent("researcher", llm, func(o *am.ModelAgentOptions) {
+  o.Toolsets = []core.Toolset{DocsToolset{}}
+})
+```
+
+---
+
+## MCP toolset {#mcp-toolset}
+
+The [`tool/mcp`](https://github.com/hupe1980/agentmesh/tree/main/tool/mcp) adapter lets you connect to external MCP servers and expose their declared tools to your agents. It handles session pooling, schema conversion, and remote execution over stdio or HTTP transports.
+
+- **When to use**: integrate hosted tool providers, share capabilities with other MCP-compliant runtimes, or proxy heavy operations out of process.
+- **Behavior**:
+  - Discovers remote tools at runtime via `ListTools`
+  - Reuses pooled sessions keyed by auth headers for efficiency
+  - Supports stdio (`command`), streamable HTTP, and SSE transports out of the box
+
+```go
+import mcptool "github.com/hupe1980/agentmesh/tool/mcp"
+
+factory := mcptool.NewStdioSessionFactory("mcp-server", []string{"serve"})
+mcpToolset := mcptool.NewToolset(factory, func(o *mcptool.ToolsetOptions) {
+  o.NamePrefix = "remote"
+})
+defer mcpToolset.Close()
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.Toolsets = append(o.Toolsets, mcpToolset)
+})
+```
+
+Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFactory` or `mcptool.NewSSESessionFactory` with custom headers. The adapter forwards `ToolContext` metadata so nested tool calls can still access artifacts and plugins.
+
+---
+
+## Agent tools {#agent-tools}
+
+`tool.NewAgentTool` turns an existing agent into a tool, allowing higher-level planners to delegate entire flows. It spins up a nested runner with isolated artifacts and state.
+
+- **When to use**: hierarchical planners, reusable sub-agents, fallback escalation paths.
+- **Behavior**:
+  - Shares the caller’s plugin manager and artifact store via `ToolContext`
+  - Streams events back into the parent run; final text becomes the tool response
+  - Works with any `core.Agent` (model-based or purely functional)
+
+```go
+summarizer := am.NewSequentialAgent("summarizer", []am.Agent{writer, editor})
+summarizerTool := tool.NewAgentTool(summarizer)
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.Tools = append(o.Tools, summarizerTool)
+})
+```
+
+---
+
+## Tool execution {#tool-execution}
+
+Under the hood, agents rely on `tool.NewParallelToolExecutor(maxParallel)` to execute function calls. It enforces concurrency limits, records metrics, emits trace spans, and protects against panics.
+
+- Max concurrency defaults to the batch size; configure it to bound resource usage.
+- Tool runs gain a `core.ToolContext` exposing session state, artifact helpers, and plugin hooks.
+- Errors are aggregated so the agent can decide whether to retry, escalate, or continue.
+
+```go
+selector := flow.NewDefaultSelector(&flow.Executors{
+  AgentExecutor: agent.DefaultAgentExecutor,
+  ModelExecutor: model.DefaultModelExecutor,
+  ToolExecutor:  tool.NewParallelToolExecutor(4),
+})
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.FlowSelector = selector
+  o.Tools = []core.Tool{sumTool, summarizerTool}
+})
+```
+
+Combine these building blocks to give agents actionable capabilities without sacrificing determinism or observability.

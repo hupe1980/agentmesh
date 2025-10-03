@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ page.title }} | {{ site.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --text: #111827;
+      --text-muted: #4b5563;
+      --border: #e5e7eb;
+      --border-strong: #d1d5db;
+      --code-bg: #0f172a;
+      --card-radius: 18px;
+      --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      background: linear-gradient(135deg, rgba(37,99,235,0.95), rgba(12,74,110,0.95));
+      color: white;
+      padding: 44px 32px 54px;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid rgba(255,255,255,0.18);
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top right, rgba(255,255,255,0.18), transparent 55%);
+      pointer-events: none;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto 6px;
+    }
+    .brand {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .brand svg {
+      width: 28px;
+      height: 28px;
+    }
+    .hero {
+      max-width: 1200px;
+      margin: 4px auto 0;
+      display: grid;
+      gap: 36px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      position: relative;
+      z-index: 1;
+    }
+    .hero h1 {
+      font-size: clamp(2.4rem, 4.5vw, 3.4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      font-size: 1.1rem;
+      color: rgba(255,255,255,0.86);
+      margin-bottom: 28px;
+    }
+    .cta-group {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .cta {
+      padding: 12px 22px;
+      border-radius: 999px;
+      font-weight: 600;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cta.primary {
+      background: white;
+      color: var(--primary-dark);
+      box-shadow: 0 12px 30px rgba(8, 66, 155, 0.25);
+    }
+    .cta.secondary {
+      border: 1px solid rgba(255,255,255,0.55);
+      color: white;
+      background: transparent;
+    }
+    .cta:hover { transform: translateY(-2px); }
+    main {
+      margin-top: -40px;
+      padding: 0 32px 96px;
+      background: var(--surface);
+    }
+    .layout-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 32px;
+      align-items: start;
+    }
+    .layout-shell.has-right-nav {
+      grid-template-columns: 240px minmax(0, 1fr) 240px;
+    }
+    .nav-card {
+      background: var(--bg);
+      border-radius: var(--card-radius);
+      padding: 28px 26px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+      position: sticky;
+      top: 96px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .nav-card h2 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+      color: var(--text-muted);
+    }
+    .nav-card ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nav-card a {
+      color: var(--text);
+      font-weight: 500;
+      font-size: 0.97rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-card a.active {
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .page-nav ul li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      transition: background 0.2s ease;
+    }
+    .page-nav ul li.active {
+      background: rgba(37, 99, 235, 0.12);
+    }
+    .page-nav .active-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--border);
+      flex-shrink: 0;
+      transition: background 0.2s ease;
+    }
+    .page-nav ul li.active .active-indicator {
+      background: var(--primary);
+    }
+    .on-page-nav .children {
+      margin-top: 6px;
+      margin-left: 14px;
+      border-left: 2px solid var(--border);
+      padding-left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .on-page-nav ul li {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .content-area {
+      background: #ffffff;
+      border-radius: var(--card-radius);
+      padding: 52px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+    }
+    .content-area > * + * {
+      margin-top: 32px;
+    }
+    .content-area h2 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .content-area h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .content-area p, .content-area li {
+      color: var(--text-muted);
+      font-size: 1.02rem;
+    }
+    pre {
+      background: var(--code-bg);
+      color: #f8fafc;
+      padding: 16px 20px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 0.95rem;
+    }
+    code {
+      font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    footer {
+      margin-top: 72px;
+      padding: 48px 32px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+    }
+    footer .footer-shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: space-between;
+      align-items: center;
+  color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    @media (max-width: 1100px) {
+      .layout-shell,
+      .layout-shell.has-right-nav {
+        grid-template-columns: 200px minmax(0, 1fr);
+      }
+      .on-page-nav {
+        display: none;
+      }
+    }
+    @media (max-width: 960px) {
+      .layout-shell,
+      .layout-shell.has-right-nav {
+        grid-template-columns: 1fr;
+      }
+      .nav-card {
+        position: static;
+        max-height: none;
+        margin-bottom: 24px;
+      }
+    }
+    @media (max-width: 720px) {
+      header { padding: 32px 24px 44px; }
+      .topbar { flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 32px; }
+      main { padding: 0 20px 72px; }
+      .content-area { padding: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <a class="brand" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 3l8.196 4.5v9L12 21l-8.196-4.5v-9L12 3z" stroke-linejoin="round" />
+          <path d="M12 3v18" stroke-linecap="round" />
+          <path d="M3.804 7.5L12 12l8.196-4.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {{ site.title }}
+      </a>
+    </div>
+    <div class="hero">
+      <div>
+        <h1>{{ page.hero.title | default: page.title }}</h1>
+        <p>{{ page.hero.description | default: site.description }}</p>
+        <div class="cta-group">
+          {% if page.hero.primary_cta %}
+            <a class="cta primary" href="{{ page.hero.primary_cta.href }}">{{ page.hero.primary_cta.label }}</a>
+          {% endif %}
+          {% if page.hero.secondary_cta %}
+            <a class="cta secondary" href="{{ page.hero.secondary_cta.href }}"{% if page.hero.secondary_cta.external %} target="_blank" rel="noopener"{% endif %}>{{ page.hero.secondary_cta.label }}</a>
+          {% endif %}
+        </div>
+      </div>
+      {% if page.hero.highlights %}
+      <div>
+        <div class="card" style="background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.24); border-radius: 18px; padding: 32px;">
+          <h2 style="margin-bottom: 16px; font-size: 1.25rem;">{{ page.hero.highlights.title }}</h2>
+          <ul style="list-style: none; display: grid; gap: 14px; font-size: 0.98rem;">
+            {% for highlight in page.hero.highlights.items %}
+              <li>{{ highlight }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  <main>
+    {% assign sidebar_items = page.sidebar %}
+    {% assign current_url = page.url %}
+    {% if page.permalink %}
+      {% assign current_url = page.permalink %}
+    {% endif %}
+    <div class="layout-shell{% if sidebar_items %} has-right-nav{% endif %}">
+      {% if site.data.navigation %}
+      <aside class="nav-card page-nav">
+        <h2>Documentation</h2>
+        <ul>
+          {% for item in site.data.navigation %}
+            {% assign is_active = false %}
+            {% if item.href == current_url or item.href == page.url %}
+              {% assign is_active = true %}
+            {% endif %}
+            <li class="{% if is_active %}active{% endif %}">
+              <span class="active-indicator"></span>
+              <a class="{% if is_active %}active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+            </li>
+          {% endfor %}
+        </ul>
+      </aside>
+      {% endif %}
+      <div class="content-area">
+        {{ content }}
+      </div>
+      {% if sidebar_items %}
+      <aside class="nav-card on-page-nav">
+        <h2>On this page</h2>
+        <ul>
+          {% for item in sidebar_items %}
+            <li>
+              <a href="{{ item.url }}">{{ item.title }}</a>
+              {% if item.children %}
+                <div class="children">
+                  {% for child in item.children %}
+                    <a href="{{ child.url }}">{{ child.title }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </aside>
+      {% endif %}
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-shell">
+      <span>© {{ site.time | date: "%Y" }} AgentMesh</span>
+      <span>Released under the MIT License • Crafted for production AI workloads</span>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,20 +1,12 @@
 ---
+layout: doc
 title: AgentMesh Documentation
-nav:
-  - label: Get Started
-    href: "#get-started"
-  - label: Capabilities
-    href: "#capabilities"
-  - label: Architecture
-    href: "#architecture"
-  - label: Resources
-    href: "#resources"
 hero:
   title: Composable multi-agent orchestration for Go
   description: AgentMesh helps teams build production AI systems with streaming outputs, deterministic control, and pluggable observability.
   primary_cta:
-    label: Start building
-    href: "#get-started"
+    label: Get started
+    href: "/getting-started/"
   secondary_cta:
     label: View on GitHub →
     href: "https://github.com/hupe1980/agentmesh"
@@ -27,30 +19,29 @@ hero:
       - 📡 Streaming-first event pipeline with partial updates
       - 🧩 Pluggable stores for session, memory, artifact data
       - 🔭 Built-in logging, tracing, and metrics hooks
+sidebar:
+  - title: What is AgentMesh?
+    url: "#what-is-agentmesh"
+  - title: Core capabilities
+    url: "#core-capabilities"
+  - title: Explore the documentation
+    url: "#explore-the-documentation"
 ---
 
-## Get started in minutes {#get-started}
+## What is AgentMesh?
 
-### 1. Install
+AgentMesh is a Go framework for composing reliable AI agents. It gives you deterministic orchestration patterns, streaming event pipelines, and pluggable observability so you can ship production-grade AI systems with confidence.
 
-```bash
-go get github.com/hupe1980/agentmesh
-```
+Key ideas:
 
-> Requires Go 1.24+ and appropriate model credentials (for example, `OPENAI_API_KEY`).
-
-### 2. Run the quick start
-
-```bash
-export OPENAI_API_KEY="your-key"
-go run ./examples/basic_agent/main.go
-```
-
-Ready-to-run examples demonstrate streaming outputs, tool usage, and multi-agent orchestration.
+- Compose agents as sequential pipelines, parallel fan-outs, or iterative loops.
+- Expose strongly typed tools (including MCP providers) to your models.
+- Stream partial and final results to downstream consumers.
+- Plug in your logging, metrics, tracing, and storage without forking the runtime.
 
 ---
 
-## Core capabilities {#capabilities}
+## Core capabilities
 
 - **Agent patterns**: compose sequential, parallel, and looping agents to model complex workflows.
 - **Tool ecosystem**: register strongly typed tools with JSON Schema validation, cooldowns, and action propagation.
@@ -61,19 +52,12 @@ Ready-to-run examples demonstrate streaming outputs, tool usage, and multi-agent
 
 ---
 
-## Architecture at a glance {#architecture}
+## Explore the documentation
 
-AgentMesh embraces a layered design so teams can evolve capabilities without rewiring everything:
-
-1. **Core contracts** – minimal interfaces for agents, models, tools, sessions, and events ensure loose coupling.
-2. **Flows** – deterministic state machines assemble model requests, process responses, and loop over tool calls.
-3. **Runner** – coordinates session lifecycle, plugin hooks, observability, and streaming to consumers.
-4. **Adapters** – model and tool adapters translate third-party SDKs into AgentMesh abstractions.
+- **[Getting started →](/getting-started/)** – Install the module, run the quick start, and browse local tooling tips.
+- **[Agents guide →](/agents/)** – Learn how Sequential, Parallel, Loop, Model, and Func agents compose orchestration graphs.
+- **[Tools guide →](/tools/)** – Build function tools, agent tools, and MCP-backed toolsets with confidence.
+- **[Architecture →](/architecture/)** – Understand the flow engine, runner lifecycle, and how the core packages fit together.
+- **[Resources →](/resources/)** – Jump to examples, issues, and contribution guides.
 
 ---
-
-## Key resources {#resources}
-
-- Repository: [github.com/hupe1980/agentmesh](https://github.com/hupe1980/agentmesh)
-- Examples: [examples directory](https://github.com/hupe1980/agentmesh/tree/main/examples)
-- Issues & roadmap: [GitHub issues](https://github.com/hupe1980/agentmesh/issues)
