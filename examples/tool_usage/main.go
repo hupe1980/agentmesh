@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
@@ -92,8 +92,8 @@ func main() {
 		o.Temperature = 0
 	})
 
-	calcAgent, err := agent.NewModelAgent("CalculatorAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	calcAgent, err := am.NewModelAgent("CalculatorAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			"You are a careful math assistant.\n" +
 				"- Use the calculator tool for each numeric step.\n" +
 				"- For squaring a value x, call operation 'power' with a=x and b=2 (always include b).\n" +
@@ -116,7 +116,7 @@ func main() {
 		_ = r.Close()
 	}()
 
-	userParts := []core.Part{core.NewPartFromText(
+	userParts := []am.Part{am.NewPartFromText(
 		"Calculate the area of a circle with radius 5.5, " +
 			"then what percent of a square of side 12 it is.",
 	)}

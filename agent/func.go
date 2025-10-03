@@ -28,14 +28,20 @@ type FuncAgent struct {
 	run RunFunc
 }
 
+// DefaultFuncAgentOptions returns the default configuration used when creating a FuncAgent.
+func DefaultFuncAgentOptions() FuncAgentOptions {
+	return FuncAgentOptions{
+		Description: "",
+		SubAgents:   nil,
+	}
+}
+
 // NewFuncAgent constructs a FuncAgent with the given name and run function.
 // Children are wired at construction via options; the hierarchy is read-only at runtime.
 // The provided function is invoked each time the agent runs. Optional option
 // functions can override defaults (e.g., Description).
 func NewFuncAgent(name string, run RunFunc, optFns ...func(o *FuncAgentOptions)) *FuncAgent {
-	opts := FuncAgentOptions{
-		Description: "",
-	}
+	opts := DefaultFuncAgentOptions()
 
 	// Apply options
 	for _, fn := range optFns {

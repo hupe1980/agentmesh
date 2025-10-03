@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/executor"
 )
 
 // SequentialAgentOptions holds configuration for a SequentialAgent.
@@ -26,6 +25,14 @@ type SequentialAgent struct {
 	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
+// DefaultSequentialAgentOptions returns the default configuration for SequentialAgent.
+func DefaultSequentialAgentOptions() SequentialAgentOptions {
+	return SequentialAgentOptions{
+		Description:   "",
+		AgentExecutor: DefaultAgentExecutor,
+	}
+}
+
 // NewSequentialAgent creates a new sequential execution coordinator.
 // Children are wired at construction; the hierarchy is read-only at runtime.
 // The agent executes the provided child agents in order, passing the same
@@ -35,10 +42,7 @@ func NewSequentialAgent(
 	subAgents []core.Agent,
 	optFns ...func(o *SequentialAgentOptions),
 ) *SequentialAgent {
-	opts := SequentialAgentOptions{
-		Description:   "",
-		AgentExecutor: executor.DefaultAgentExecutor,
-	}
+	opts := DefaultSequentialAgentOptions()
 
 	// Apply option functions to override defaults
 	for _, fn := range optFns {

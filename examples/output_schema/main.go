@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
@@ -54,8 +54,8 @@ func main() {
 
 	model := openai.NewModel()
 
-	agent, err := agent.NewModelAgent("WeatherAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText("You are a weather assistant.")
+	agent, err := am.NewModelAgent("WeatherAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText("You are a weather assistant.")
 		o.Tools = []core.Tool{newGetWeatherTool()}
 		o.OutputSchema = core.MustNewOutputSchema("weather_response", map[string]any{
 			"type": "object",
@@ -80,7 +80,7 @@ func main() {
 		_ = r.Close()
 	}()
 
-	userParts := []core.Part{core.NewPartFromText("What's the weather like in Berlin?")}
+	userParts := []am.Part{am.NewPartFromText("What's the weather like in Berlin?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()

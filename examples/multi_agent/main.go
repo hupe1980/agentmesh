@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
@@ -26,8 +26,8 @@ func main() {
 	today := time.Now().Format("2006-01-02")
 
 	// Step 1: Research specialist
-	researchAgent, err := agent.NewModelAgent("ResearchAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(fmt.Sprintf(
+	researchAgent, err := am.NewModelAgent("ResearchAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(fmt.Sprintf(
 			`
 You are a senior research analyst focused on EU AI regulation. Your task is to research the latest news and official updates about Generative AI regulation in the EU as of %s.
 
@@ -62,8 +62,8 @@ Sources:
 	}
 
 	// Step 2: Analysis specialist (consumes research_data)
-	analysisAgent, err := agent.NewModelAgent("AnalysisAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	analysisAgent, err := am.NewModelAgent("AnalysisAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			`
 You are a policy and risk analysis specialist. Analyze the following research to derive actionable insights:
 
@@ -108,8 +108,8 @@ Recommendations:
 	}
 
 	// Step 3: Report writer (consumes analysis_results)
-	reportAgent, err := agent.NewModelAgent("ReportAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	reportAgent, err := am.NewModelAgent("ReportAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			`
 You are a concise technical report writer. Using the analysis below, craft a clear, executive-ready report in Markdown.
 
@@ -149,7 +149,7 @@ Output format (Markdown):
 	}
 
 	// Sequential workflow: Research → Analysis → Report
-	workflow := agent.NewSequentialAgent("MultiAgent", []core.Agent{researchAgent, analysisAgent, reportAgent})
+	workflow := am.NewSequentialAgent("MultiAgent", []am.Agent{researchAgent, analysisAgent, reportAgent})
 
 	r := runner.New("multi_agent_app", workflow, func(o *runner.Options) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
@@ -158,7 +158,7 @@ Output format (Markdown):
 		_ = r.Close()
 	}()
 
-	userParts := []core.Part{core.NewPartFromText(
+	userParts := []am.Part{am.NewPartFromText(
 		"Research and summarize the latest news about Generative AI regulation in the EU.",
 	)}
 

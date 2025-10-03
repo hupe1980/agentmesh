@@ -13,7 +13,7 @@ import (
 // LLM Agent Test Cases
 func TestModelAgent_NewAgent(t *testing.T) {
 	mockLLM := &testutil.MockModel{}
-	agent, err := NewModelAgent("Test Agent", mockLLM)
+	agent, err := NewModelAgent("Test Agent", mockLLM, testutil.NewMockFlowSelector())
 	require.NoError(t, err)
 	assert.NotNil(t, agent)
 	assert.Equal(t, mockLLM, agent.model)
@@ -25,7 +25,12 @@ func TestModelAgent_NewAgent(t *testing.T) {
 
 func TestModelAgent_ResolveInstructions(t *testing.T) {
 	inst := NewInstructionsFromText("custom inst")
-	a, err := NewModelAgent("AgentX", nil, func(o *ModelAgentOptions) { o.Instructions = inst })
+	a, err := NewModelAgent(
+		"AgentX",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.Instructions = inst },
+	)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -39,7 +44,12 @@ func TestModelAgent_ResolveInstructions(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent(
+		"AgentA",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.OutputKey = "out" },
+	)
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -55,7 +65,7 @@ func TestAttachOutputToEvent_AuthorMismatch(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil) // no OutputKey
+	a, err := NewModelAgent("AgentA", nil, testutil.NewMockFlowSelector()) // no OutputKey
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -71,7 +81,12 @@ func TestAttachOutputToEvent_NoOutputKey(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NotFinal(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent(
+		"AgentA",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.OutputKey = "out" },
+	)
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -88,7 +103,12 @@ func TestAttachOutputToEvent_NotFinal(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_NoParts(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent(
+		"AgentA",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.OutputKey = "out" },
+	)
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -106,7 +126,12 @@ func TestAttachOutputToEvent_NoParts(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent(
+		"AgentA",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.OutputKey = "out" },
+	)
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {
@@ -127,7 +152,12 @@ func TestAttachOutputToEvent_AggregatesText(t *testing.T) {
 }
 
 func TestAttachOutputToEvent_PreservesExistingState(t *testing.T) {
-	a, err := NewModelAgent("AgentA", nil, func(o *ModelAgentOptions) { o.OutputKey = "out" })
+	a, err := NewModelAgent(
+		"AgentA",
+		nil,
+		testutil.NewMockFlowSelector(),
+		func(o *ModelAgentOptions) { o.OutputKey = "out" },
+	)
 	require.NoError(t, err)
 
 	req := testutil.NewTestRequestContext(func(rcp *core.RequestContextParams) {

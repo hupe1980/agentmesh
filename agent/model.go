@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/executor"
-	"github.com/hupe1980/agentmesh/flow"
 	"github.com/hupe1980/agentmesh/logging"
 )
 
@@ -42,10 +40,30 @@ type ModelAgentOptions struct {
 	Tools []core.Tool
 	// Registered toolsets for function calling
 	Toolsets []core.Toolset
-	// Selector for choosing the appropriate flow
-	FlowSelector core.FlowSelector
 	// Sub-agents managed by this agent
 	SubAgents []core.Agent
+}
+
+// DefaultModelAgentOptions returns a fresh copy of the sensible defaults used by
+// NewModelAgent. The options are parameterized by name so the default
+// instructions can reference the agent.
+func DefaultModelAgentOptions(name string) ModelAgentOptions {
+	return ModelAgentOptions{
+		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
+		Description:           "",
+		EnableStreaming:       true,
+		EnableFunctionCalling: true,
+		ToolTimeout:           15 * time.Second,
+		OutputSchema:          core.None[core.OutputSchema](),
+		OutputKey:             "",
+		MaxHistoryMessages:    20,
+		HistoryMode:           core.HistoryAll,
+		AllowTransferToPeers:  true,
+		AllowTransferToParent: true,
+		Tools:                 []core.Tool{},
+		Toolsets:              []core.Toolset{},
+		SubAgents:             []core.Agent{},
+	}
 }
 
 // ModelAgent integrates with language models to provide intelligent text processing capabilities.
@@ -83,26 +101,17 @@ type ModelAgent struct {
 }
 
 // NewModelAgent creates a new model-based agent with sensible defaults.
-func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOptions)) (*ModelAgent, error) {
-	opts := ModelAgentOptions{
-		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
-		Description:           "",
-		EnableStreaming:       true,
-		EnableFunctionCalling: true,
-		ToolTimeout:           15 * time.Second,
-		OutputSchema:          core.None[core.OutputSchema](),
-		MaxHistoryMessages:    20,
-		HistoryMode:           core.HistoryAll,
-		AllowTransferToPeers:  true,
-		AllowTransferToParent: true,
-		Tools:                 make([]core.Tool, 0),
-		Toolsets:              make([]core.Toolset, 0),
-		FlowSelector: flow.NewDefaultSelector(&flow.Executors{
-			AgentExecutor: executor.DefaultAgentExecutor,
-			ModelExecutor: executor.DefaultModelExecutor,
-			ToolExecutor:  executor.NewParallelToolExecutor(4),
-		}),
+func NewModelAgent(
+	name string,
+	m core.Model,
+	flowSelector core.FlowSelector,
+	optFns ...func(o *ModelAgentOptions),
+) (*ModelAgent, error) {
+	if flowSelector == nil {
+		return nil, fmt.Errorf("flow selector is required")
 	}
+
+	opts := DefaultModelAgentOptions(name)
 
 	for _, fn := range optFns {
 		fn(&opts)
@@ -122,7 +131,7 @@ func NewModelAgent(name string, m core.Model, optFns ...func(o *ModelAgentOption
 		allowTransferToParent: opts.AllowTransferToParent,
 		tools:                 opts.Tools,
 		toolsets:              opts.Toolsets,
-		flowSelector:          opts.FlowSelector,
+		flowSelector:          flowSelector,
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)

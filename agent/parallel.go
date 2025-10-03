@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/executor"
 )
 
 // ParallelAgentOptions holds configuration for a ParallelAgent.
@@ -33,6 +32,15 @@ type ParallelAgent struct {
 	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
+// DefaultParallelAgentOptions returns the default configuration for ParallelAgent.
+func DefaultParallelAgentOptions() ParallelAgentOptions {
+	return ParallelAgentOptions{
+		Description:   "",
+		Timeout:       0,
+		AgentExecutor: DefaultAgentExecutor,
+	}
+}
+
 // NewParallelAgent creates a new parallel execution coordinator.
 // Children are wired at construction; the hierarchy is read-only at runtime.
 // The agent executes the provided children concurrently, each with its own
@@ -40,11 +48,7 @@ type ParallelAgent struct {
 // conflicts while sharing session state. If timeout > 0, each child run is
 // bounded by the specified duration.
 func NewParallelAgent(name string, subAgents []core.Agent, optFns ...func(o *ParallelAgentOptions)) *ParallelAgent {
-	opts := ParallelAgentOptions{
-		Description:   "",
-		Timeout:       0, // No timeout by default
-		AgentExecutor: executor.DefaultAgentExecutor,
-	}
+	opts := DefaultParallelAgentOptions()
 
 	// Apply option functions to override defaults
 	for _, fn := range optFns {

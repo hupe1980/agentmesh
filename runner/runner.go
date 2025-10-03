@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/agent"
 	"github.com/hupe1980/agentmesh/artifact"
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/memory"
 	"github.com/hupe1980/agentmesh/metrics"
@@ -24,7 +24,8 @@ type Options struct {
 	EnableStreaming bool
 	// EventBufferSize sets channel buffering for events.
 	EventBufferSize int
-	AgentExecutor   core.AgentExecutor
+	// AgentExecutor to use for running agents.
+	AgentExecutor core.AgentExecutor
 	// Session management services.
 	SessionStore core.SessionStore
 	// Artifact management services.
@@ -43,6 +44,21 @@ type Options struct {
 	// RunIDKey controls the structured log key for the run identifier.
 	// Defaults to "run_id".
 	RunIDKey string
+}
+
+// DefaultOptions provides the default configuration for Runner.
+var DefaultOptions = Options{
+	EnableStreaming: true,
+	EventBufferSize: 100,
+	AgentExecutor:   agent.DefaultAgentExecutor,
+	SessionStore:    session.NewInMemoryStore(),
+	ArtifactStore:   artifact.NewInMemoryStore(),
+	MemoryStore:     memory.NewInMemoryStore(),
+	PluginManager:   core.NewPluginManager(),
+	Logger:          logging.NoopLogger{},
+	Metrics:         metrics.Noop(),
+	Tracer:          trace.Noop(),
+	RunIDKey:        "run_id",
 }
 
 // services groups the various stores and services used by the runner.
@@ -79,19 +95,8 @@ type Runner struct {
 
 // New constructs a Runner with optional overrides.
 func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
-	opts := Options{
-		EnableStreaming: true,
-		EventBufferSize: 100,
-		AgentExecutor:   executor.DefaultAgentExecutor,
-		SessionStore:    session.NewInMemoryStore(),
-		ArtifactStore:   artifact.NewInMemoryStore(),
-		MemoryStore:     memory.NewInMemoryStore(),
-		PluginManager:   core.NewPluginManager(),
-		Logger:          logging.NoopLogger{},
-		Metrics:         metrics.Noop(),
-		Tracer:          trace.Noop(),
-		RunIDKey:        "run_id",
-	}
+	opts := DefaultOptions
+
 	for _, fn := range optFns {
 		fn(&opts)
 	}
@@ -116,6 +121,12 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 	}
 }
 
+// DefaultRunOptions provides the default configuration for Run invocations.
+var DefaultRunOptions = core.RunOptions{
+	MaxModelCalls:             100,
+	SaveInputBlobsAsArtifacts: false,
+}
+
 // Run starts an asynchronous invocation. (Refactored wiring + small helpers)
 func (r *Runner) Run(
 	ctx context.Context,
@@ -123,6 +134,7 @@ func (r *Runner) Run(
 	userParts []core.Part,
 	optFns ...func(o *core.RunOptions),
 ) (string, <-chan core.RunResult, error) {
+	// Generate a new run ID.
 	runID := uuid.NewString()
 
 	// Prepare context & observability (logger, metrics, tracing)
@@ -141,8 +153,11 @@ func (r *Runner) Run(
 	r.svc.metrics.Counter("agentmesh_runs_total").
 		Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
 
-	// Apply options
-	opts := r.buildRunOptions(optFns)
+	opts := DefaultRunOptions
+
+	for _, fn := range optFns {
+		fn(&opts)
+	}
 
 	// Load or create session
 	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
@@ -438,18 +453,6 @@ func (r *Runner) recordRunDuration(ctx context.Context, sp trace.Span, start tim
 		Histogram("agentmesh_run_duration_seconds").
 		Record(ctx, time.Since(start).Seconds(), metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
 	sp.End(nil)
-}
-
-// buildRunOptions applies option functions and returns the resulting RunOptions.
-func (r *Runner) buildRunOptions(optFns []func(o *core.RunOptions)) core.RunOptions {
-	opts := core.RunOptions{
-		MaxModelCalls:             100,
-		SaveInputBlobsAsArtifacts: false,
-	}
-	for _, fn := range optFns {
-		fn(&opts)
-	}
-	return opts
 }
 
 // launchRun starts the agent execution goroutine and returns immediately.

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/executor"
 	"github.com/hupe1980/agentmesh/logging"
 )
 
@@ -59,19 +58,24 @@ type LoopAgent struct {
 	agentExecutor core.AgentExecutor // Executor for running agent tasks
 }
 
-// NewLoopAgent constructs a looping coordinator around a child agent.
-// The child is wired at construction; the hierarchy is read-only at runtime.
-func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOptions)) *LoopAgent {
-	opts := &LoopAgentOptions{
+// DefaultLoopAgentOptions returns the default loop agent configuration.
+func DefaultLoopAgentOptions() LoopAgentOptions {
+	return LoopAgentOptions{
 		Description:   "",
 		MaxIters:      100,
 		Interval:      0,
 		StopOnError:   true,
-		AgentExecutor: executor.DefaultAgentExecutor,
+		AgentExecutor: DefaultAgentExecutor,
 	}
+}
+
+// NewLoopAgent constructs a looping coordinator around a child agent.
+// The child is wired at construction; the hierarchy is read-only at runtime.
+func NewLoopAgent(name string, child core.Agent, optFns ...func(o *LoopAgentOptions)) *LoopAgent {
+	opts := DefaultLoopAgentOptions()
 
 	for _, fn := range optFns {
-		fn(opts)
+		fn(&opts)
 	}
 
 	a := &LoopAgent{

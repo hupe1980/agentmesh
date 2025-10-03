@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	metricsotel "github.com/hupe1980/agentmesh/metrics/opentelemetry"
@@ -60,7 +60,7 @@ func main() {
 
 	// Create a simple functional agent
 	agentName := "otel_demo_agent"
-	a := agent.NewFuncAgent(agentName, func(ctx context.Context, reqCtx core.RequestContext, q core.EventWriter) error {
+	a := am.NewFuncAgent(agentName, func(ctx context.Context, reqCtx core.RequestContext, q core.EventWriter) error {
 		tr := trace.FromContext(ctx).Tracer("agentmesh/examples/otel")
 		log := logging.FromContext(ctx)
 		ctx, span := tr.Start(ctx, "Agent.Run", trace.Attr{Key: "agent", Value: agentName})
@@ -76,7 +76,7 @@ func main() {
 		ev := core.NewFullAssistantEvent(
 			reqCtx.RunID(),
 			agentName,
-			core.NewPartFromText("Hello from OTel example"),
+			am.NewPartFromText("Hello from OTel example"),
 		)
 		_ = q.Write(ctx, ev)
 		return nil
@@ -90,7 +90,7 @@ func main() {
 	defer r.Close()
 
 	// Run with a simple user message and print events
-	runID, results, err := r.Run(ctx, "user1", "sess1", []core.Part{core.NewPartFromText("ping")})
+	runID, results, err := r.Run(ctx, "user1", "sess1", []am.Part{am.NewPartFromText("ping")})
 	if err != nil {
 		panic(err)
 	}

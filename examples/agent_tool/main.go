@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
@@ -29,8 +29,8 @@ func main() {
 	})
 
 	// Inner agent that actually crafts the greeting
-	greeter, err := agent.NewModelAgent("GreeterAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	greeter, err := am.NewModelAgent("GreeterAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			"You are a warm greeter. The user message is the exact subject to greet (name or short phrase).\n" +
 				"Constraints:\n" +
 				"- Respond with exactly one sentence addressing the subject by name.\n" +
@@ -47,8 +47,8 @@ func main() {
 	greeterTool := tool.NewAgentTool(greeter)
 
 	// Outer agent that decides when to invoke the greeter tool
-	supervisor, err := agent.NewModelAgent("SupervisorAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	supervisor, err := am.NewModelAgent("SupervisorAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			"You are a routing assistant. When the user asks to greet someone:\n" +
 				"- Call the GreeterAgent tool.\n" +
 				"- Pass ONLY the subject to greet (e.g., the person's name) in the '__arg1' field.\n" +
@@ -68,7 +68,7 @@ func main() {
 	defer func() { _ = r.Close() }()
 
 	// Ask for a greeting; the supervisor should call the greeter tool.
-	userParts := []core.Part{core.NewPartFromText("Greet Alice politely.")}
+	userParts := []am.Part{am.NewPartFromText("Greet Alice politely.")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

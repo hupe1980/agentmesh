@@ -62,15 +62,15 @@ import (
   "os"
   "time"
 
-  "github.com/hupe1980/agentmesh/agent"
+  am "github.com/hupe1980/agentmesh"
 )
   
 func main() {
   // 1. Create model + agent with an instruction prompt
   model := openai.NewModel()
 
-  ag, err := agent.NewModelAgent("basic_agent", model, func(o *agent.ModelAgentOptions) {
-    o.Instructions = agent.NewInstructionsFromText(
+  ag, err := am.NewModelAgent("basic_agent", model, func(o *am.ModelAgentOptions) {
+    o.Instructions = am.NewInstructionsFromText(
       "You are a helpful assistant. Keep responses concise and friendly.",
     )
   })
@@ -85,7 +85,7 @@ func main() {
   }()
 
   // 3. Build user content
-  userParts := []core.Part{core.NewPartFromText("Hello! What can you do?")}
+  userParts := []am.Part{am.NewPartFromText("Hello! What can you do?")}
 
   // 4. Invoke agent and get only the final text
   runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
@@ -122,7 +122,7 @@ go run ./examples/basic_agent/main.go
 ## 🧠 Core Concepts
 
 - Agent: anything that can Run with a scoped context. See [`core.Agent`](core/agent.go).
-- ModelAgent: LLM + tools + flow selection (streaming/function calling/transfer). See [`agent.NewModelAgent`](agent/model.go).
+- ModelAgent: LLM + tools + flow selection (streaming/function calling/transfer). See [`NewModelAgent`](agentmesh.go).
 - Model: provider-agnostic interface implemented by adapters. See [`model.Model`](model/model.go).
 - Runner: orchestrates invocations, streaming, persistence, lifecycle. See [runner/](runner/).
 - Events: streaming outputs (partial/final) carrying content and actions. See [core/](core/).
@@ -145,14 +145,14 @@ Example (sequential + parallel composition):
 
 ```go
 // Create leaf model agents
-a := agent.NewModelAgent("A", openai.NewModel())
-b := agent.NewModelAgent("B", openai.NewModel())
+a, _ := am.NewModelAgent("A", openai.NewModel())
+b, _ := am.NewModelAgent("B", openai.NewModel())
 
 // Parallel branch
-par := agent.NewParallelAgent("FanOut", []core.Agent{a, b})
+par := am.NewParallelAgent("FanOut", []am.Agent{a, b})
 
 // Sequential pipeline
-pipe := agent.NewSequentialAgent("Pipeline", []core.Agent{par /* then more children... */})
+pipe := am.NewSequentialAgent("Pipeline", []am.Agent{par /* then more children... */})
 
 // Run with runner like in Quick Start
 ```

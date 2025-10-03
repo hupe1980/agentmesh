@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/hupe1980/agentmesh/agent"
+	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	lcg "github.com/hupe1980/agentmesh/model/langchaingo"
@@ -35,8 +35,8 @@ func main() {
 		log.Fatalf("failed creating adapter: %v", err)
 	}
 
-	ag, err := agent.NewModelAgent("LangChainGoAgent", model, func(o *agent.ModelAgentOptions) {
-		o.Instructions = agent.NewInstructionsFromText(
+	ag, err := am.NewModelAgent("LangChainGoAgent", model, func(o *am.ModelAgentOptions) {
+		o.Instructions = am.NewInstructionsFromText(
 			"You are a concise assistant. Use the calc tool when arithmetic is involved.",
 		)
 		// Wrap the langchaingo Calculator tool using our adapter
@@ -51,7 +51,7 @@ func main() {
 	})
 	defer func() { _ = r.Close() }()
 
-	userParts := []core.Part{core.NewPartFromText("What is (12.5 + 7.5) * 2?")}
+	userParts := []am.Part{am.NewPartFromText("What is (12.5 + 7.5) * 2?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
