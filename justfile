@@ -57,4 +57,4 @@ cover-summary:
 docs-serve:
     cd docs && bundle config set --local path 'vendor/bundle'
     cd docs && bundle install
-    cd docs && bundle exec jekyll serve --livereload --host 0.0.0.0 --port 4000
+    cd docs && bundle exec jekyll serve --livereload --host 0.0.0.0 --port 4000 --config _config.yml,_config.dev.yml

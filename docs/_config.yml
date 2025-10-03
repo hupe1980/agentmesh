@@ -1,6 +1,6 @@
 title: AgentMesh Documentation
-baseurl: ""
-url: ""
+baseurl: "/agentmesh"
+url: "https://hupe1980.github.io"
 markdown: kramdown
 kramdown:
   input: GFM

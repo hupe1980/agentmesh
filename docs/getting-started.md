@@ -69,7 +69,7 @@ The devcontainer (or a local Ruby install) includes everything you need to itera
 cd docs
 bundle config set --local path 'vendor/bundle'
 bundle install
-bundle exec jekyll serve --livereload --host 0.0.0.0
+bundle exec jekyll serve --livereload --host 0.0.0.0 --config _config.yml,_config.dev.yml
 ```
 
 Prefer a single command in the devcontainer? Run `just docs-serve` from the repo root.
