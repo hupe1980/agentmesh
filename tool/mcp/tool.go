@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/hupe1980/agentmesh/core"
@@ -87,9 +88,18 @@ func (t *tool) Call(ctx context.Context, tc core.ToolContext, args string) (any,
 		return nil, err
 	}
 
+	var arguments any
+	if strings.TrimSpace(args) != "" {
+		var parsed any
+		if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+			return nil, fmt.Errorf("mcp: decode tool arguments: %w", err)
+		}
+		arguments = parsed
+	}
+
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      t.mcpTool.Name,
-		Arguments: args,
+		Arguments: arguments,
 	})
 
 	if err != nil {
@@ -99,22 +109,48 @@ func (t *tool) Call(ctx context.Context, tc core.ToolContext, args string) (any,
 	return res.StructuredContent, nil
 }
 
-// schemaToMap converts a *jsonschema.Schema into a generic map[string]any.
-func schemaToMap(s *jsonschema.Schema) (map[string]any, error) {
+// schemaToMap normalizes the various schema representations supported by the MCP SDK
+// into a generic map[string]any suitable for AgentMesh tool definitions.
+func schemaToMap(schema any) (map[string]any, error) {
+	if schema == nil {
+		return nil, nil
+	}
+
+	switch v := schema.(type) {
+	case map[string]any:
+		return v, nil
+	case *jsonschema.Schema:
+		return marshalSchema(v)
+	case jsonschema.Schema:
+		return marshalSchema(&v)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: marshal schema (%T): %w", v, err)
+		}
+
+		var out map[string]any
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, fmt.Errorf("mcp: decode schema bytes: %w", err)
+		}
+
+		return out, nil
+	}
+}
+
+func marshalSchema(s *jsonschema.Schema) (map[string]any, error) {
 	if s == nil {
 		return nil, nil
 	}
 
-	// First marshal schema to JSON
 	b, err := json.Marshal(s)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mcp: marshal json schema: %w", err)
 	}
 
-	// Then unmarshal into a generic map
 	var out map[string]any
 	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mcp: decode schema bytes: %w", err)
 	}
 
 	return out, nil
