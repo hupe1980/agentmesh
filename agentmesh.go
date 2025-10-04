@@ -41,26 +41,26 @@ type SessionStore = core.SessionStore
 // CredentialStore re-exports core.CredentialStore for convenience.
 type CredentialStore = core.CredentialStore
 
-// Instructions re-exports agent.Instructions for convenience.
-type Instructions = agent.Instructions
+// Instructions re-exports core.Instructions for convenience.
+type Instructions = core.Instructions
 
-// InstructionsProvider re-exports agent.InstructionsProvider for convenience.
-type InstructionsProvider = agent.InstructionsProvider
+// InstructionsProvider re-exports core.InstructionsProvider for convenience.
+type InstructionsProvider = core.InstructionsProvider
 
-// InstructionsProviderFunc re-exports agent.InstructionsProviderFunc for convenience.
-type InstructionsProviderFunc = agent.InstructionsProviderFunc
+// InstructionsProviderFunc re-exports core.InstructionsProviderFunc for convenience.
+type InstructionsProviderFunc = core.InstructionsProviderFunc
 
 // NewInstructionsFromText creates instructions from a literal string.
-func NewInstructionsFromText(text string) Instructions { return agent.NewInstructionsFromText(text) }
+func NewInstructionsFromText(text string) Instructions { return core.NewInstructionsFromText(text) }
 
 // NewInstructionsFromProvider creates instructions by delegating to the provided source.
 func NewInstructionsFromProvider(p InstructionsProvider) Instructions {
-	return agent.NewInstructionsFromProvider(p)
+	return core.NewInstructionsFromProvider(p)
 }
 
 // NewInstructionsFromFunc wraps a function that produces instructions at runtime.
 func NewInstructionsFromFunc(f func(context.Context, core.ReadonlyContext) (string, error)) Instructions {
-	return agent.NewInstructionsFromFunc(f)
+	return core.NewInstructionsFromFunc(f)
 }
 
 // NewPartFromText constructs a simple text part.

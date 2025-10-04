@@ -1,22 +1,18 @@
-package agent
+package core
 
-import (
-	"context"
-
-	"github.com/hupe1980/agentmesh/core"
-)
+import "context"
 
 // InstructionsProvider supplies dynamic instruction text at runtime.
 // Implementations can derive instructions from session state, configuration, or environment.
 type InstructionsProvider interface {
-	Instructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error)
+	Instructions(ctx context.Context, roCtx ReadonlyContext) (string, error)
 }
 
 // InstructionsProviderFunc is a functional adapter to allow ordinary functions to be used as InstructionsProviders.
-type InstructionsProviderFunc func(ctx context.Context, roCtx core.ReadonlyContext) (string, error)
+type InstructionsProviderFunc func(ctx context.Context, roCtx ReadonlyContext) (string, error)
 
 // Instructions implements InstructionsProvider for InstructionsProviderFunc.
-func (f InstructionsProviderFunc) Instructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error) {
+func (f InstructionsProviderFunc) Instructions(ctx context.Context, roCtx ReadonlyContext) (string, error) {
 	return f(ctx, roCtx)
 }
 
@@ -36,7 +32,7 @@ func NewInstructionsFromProvider(p InstructionsProvider) Instructions {
 }
 
 // NewInstructionsFromFunc creates Instructions from a function.
-func NewInstructionsFromFunc(f func(context.Context, core.ReadonlyContext) (string, error)) Instructions {
+func NewInstructionsFromFunc(f func(context.Context, ReadonlyContext) (string, error)) Instructions {
 	return Instructions{provider: InstructionsProviderFunc(f)}
 }
 
@@ -44,7 +40,7 @@ func NewInstructionsFromFunc(f func(context.Context, core.ReadonlyContext) (stri
 func (i Instructions) IsStatic() bool { return i.provider == nil }
 
 // Resolve returns the instruction text, invoking the provider if needed.
-func (i Instructions) Resolve(ctx context.Context, roCtx core.ReadonlyContext) (string, error) {
+func (i Instructions) Resolve(ctx context.Context, roCtx ReadonlyContext) (string, error) {
 	if i.provider != nil {
 		return i.provider.Instructions(ctx, roCtx)
 	}

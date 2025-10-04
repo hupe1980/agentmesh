@@ -23,7 +23,7 @@ func TestModelAgent_NewAgent(t *testing.T) {
 }
 
 func TestModelAgent_ResolveInstructions(t *testing.T) {
-	inst := NewInstructionsFromText("custom inst")
+	inst := core.NewInstructionsFromText("custom inst")
 	a, err := NewModelAgent(
 		"AgentX",
 		nil,

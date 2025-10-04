@@ -15,7 +15,7 @@ import (
 // Use functional options with NewModelAgent to override defaults.
 type ModelAgentOptions struct {
 	// Instructions for the LLM
-	Instructions Instructions
+	Instructions core.Instructions
 	// Human-readable agent description
 	Description string
 	// Enable streaming responses
@@ -47,7 +47,7 @@ type ModelAgentOptions struct {
 // instructions can reference the agent.
 func DefaultModelAgentOptions(name string) ModelAgentOptions {
 	return ModelAgentOptions{
-		Instructions:          NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
+		Instructions:          core.NewInstructionsFromText(fmt.Sprintf("You are %s, a helpful AI assistant.", name)),
 		Description:           "",
 		EnableStreaming:       true,
 		ToolTimeout:           15 * time.Second,
@@ -77,13 +77,13 @@ func DefaultModelAgentOptions(name string) ModelAgentOptions {
 // It uses flow processors under the hood and logs via the RequestContext's
 // logging interface.
 type ModelAgent struct {
-	*BaseAgent                     // Embedded base agent functionality
-	model           core.Model     // Language model interface
-	instructions    Instructions   // Instructions for the LLM
-	tools           []core.Tool    // Registered tools for function calling
-	toolsets        []core.Toolset // Registered toolsets for function calling
-	enableStreaming bool           // Whether to stream responses
-	toolTimeout     time.Duration  // Timeout for individual tool calls
+	*BaseAgent                        // Embedded base agent functionality
+	model           core.Model        // Language model interface
+	instructions    core.Instructions // Instructions for the LLM
+	tools           []core.Tool       // Registered tools for function calling
+	toolsets        []core.Toolset    // Registered toolsets for function calling
+	enableStreaming bool              // Whether to stream responses
+	toolTimeout     time.Duration     // Timeout for individual tool calls
 
 	outputSchema core.Opt[core.OutputSchema] // Expected output schema for responses
 	outputKey    string                      // Key for saving responses to session state
