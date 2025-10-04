@@ -26,14 +26,14 @@ type Options struct {
 	EventBufferSize int
 	// AgentExecutor to use for running agents.
 	AgentExecutor core.AgentExecutor
+	// Plugins to use for extending the runner's capabilities.
+	Plugins []core.Plugin
 	// Session management services.
 	SessionStore core.SessionStore
 	// Artifact management services.
 	ArtifactStore core.ArtifactStore
 	// Memory management services.
 	MemoryStore core.MemoryStore
-	// Plugin management services.
-	PluginManager core.PluginManager
 	// Logging services.
 	Logger logging.Logger
 	// Metrics services.
@@ -54,7 +54,7 @@ var DefaultOptions = Options{
 	SessionStore:    session.NewInMemoryStore(),
 	ArtifactStore:   artifact.NewInMemoryStore(),
 	MemoryStore:     memory.NewInMemoryStore(),
-	PluginManager:   core.NewPluginManager(),
+	Plugins:         []core.Plugin{},
 	Logger:          logging.NoopLogger{},
 	Metrics:         metrics.Noop(),
 	Tracer:          trace.Noop(),
@@ -111,7 +111,7 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 			sessionStore:  opts.SessionStore,
 			artifactStore: opts.ArtifactStore,
 			memoryStore:   opts.MemoryStore,
-			pluginManager: opts.PluginManager,
+			pluginManager: core.NewPluginManager(opts.Plugins...),
 			logger:        opts.Logger,
 			metrics:       opts.Metrics,
 			tracer:        opts.Tracer,

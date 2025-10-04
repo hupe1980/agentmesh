@@ -72,7 +72,7 @@ func (t *AgentTool) Call(
 		o.RunIDKey = "tool_run_id"
 		o.Logger = log
 		o.ArtifactStore = &artifactStoreAdapter{toolCtx: toolCtx}
-		o.PluginManager = toolCtx.PluginManager()
+		o.Plugins = toolCtx.PluginManager().Plugins()
 	})
 	defer func() {
 		_ = r.Close()

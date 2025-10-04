@@ -107,6 +107,8 @@ type Plugin interface {
 
 // PluginManager coordinates execution of Plugin hooks across a set of plugins.
 type PluginManager interface {
+	// Plugins returns the registered plugins in their original registration order.
+	Plugins() []Plugin
 	// RunOnUserParts runs the OnUserParts hook across all plugins and returns the first non-nil replacement.
 	RunOnUserParts(ctx context.Context, reqCtx RequestContext, userParts []Part) ([]Part, error)
 
@@ -160,6 +162,11 @@ func NewPluginManager(plugins ...Plugin) PluginManager {
 	return &pluginManager{
 		plugins: plugins,
 	}
+}
+
+// Plugins returns the registered plugins in their original registration order.
+func (m *pluginManager) Plugins() []Plugin {
+	return m.plugins
 }
 
 // RunOnUserParts runs the OnUserParts hook across all plugins and returns the first non-nil replacement.
