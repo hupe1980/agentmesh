@@ -12,9 +12,6 @@ type RunOptions struct {
 
 	// StateDelta holds optional state updates to merge into the session state.
 	StateDelta map[string]any
-
-	// SaveInputBlobsAsArtifacts determines whether to save input blobs as artifacts.
-	SaveInputBlobsAsArtifacts bool
 }
 
 // RunResult represents an event or an error produced while executing a run.

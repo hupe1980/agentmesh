@@ -123,8 +123,7 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 
 // DefaultRunOptions provides the default configuration for Run invocations.
 var DefaultRunOptions = core.RunOptions{
-	MaxModelCalls:             100,
-	SaveInputBlobsAsArtifacts: false,
+	MaxModelCalls: 100,
 }
 
 // Run starts an asynchronous invocation. (Refactored wiring + small helpers)
@@ -228,17 +227,6 @@ func (r *Runner) Run(
 		return "", nil, err
 	} else if replaced != nil {
 		userParts = replaced
-		reqCtx = r.buildRequestContext(runID, session, userParts, opts)
-	}
-
-	// Save blobs as artifacts if requested
-	if opts.SaveInputBlobsAsArtifacts {
-		updated, err := r.rewriteBlobsAsArtifacts(ctx, r.appName, userID, sessionID, userParts)
-		if err != nil {
-			r.unregisterRunAndCancel(runID)
-			return "", nil, err
-		}
-		userParts = updated
 		reqCtx = r.buildRequestContext(runID, session, userParts, opts)
 	}
 
@@ -356,68 +344,6 @@ func (r *Runner) buildRequestContext(
 
 // rewriteBlobsAsArtifacts scans user content for blob-like parts, saves them as
 // artifacts, and replaces them with FileURI references.
-func (r *Runner) rewriteBlobsAsArtifacts(
-	ctx context.Context,
-	appName, userID, sessionID string,
-	parts []core.Part,
-) ([]core.Part, error) {
-	filtered := make([]core.Part, 0, len(parts))
-
-	for i, p := range parts {
-		if fp, ok := p.(*core.FilePart); ok {
-			updated, err := r.handleFilePart(ctx, fp, appName, userID, sessionID, i)
-			if err != nil {
-				return nil, err
-			}
-			filtered = append(filtered, updated...)
-			continue
-		}
-		filtered = append(filtered, p)
-	}
-
-	return filtered, nil
-}
-
-// handleFilePart decides whether to store a blob as an artifact or keep as-is.
-func (r *Runner) handleFilePart(
-	ctx context.Context,
-	fp *core.FilePart,
-	appName, userID, sessionID string,
-	index int,
-) ([]core.Part, error) {
-	switch fp.File.(type) {
-	case *core.FileRawBytes, *core.FileBase64:
-		return r.saveBlobAsArtifact(ctx, fp, appName, userID, sessionID, index)
-	default:
-		return []core.Part{fp}, nil
-	}
-}
-
-// saveBlobAsArtifact persists a blob into the ArtifactStore and returns a FileURI reference.
-func (r *Runner) saveBlobAsArtifact(
-	ctx context.Context,
-	fp *core.FilePart,
-	appName, userID, sessionID string,
-	index int,
-) ([]core.Part, error) {
-	name := fp.Name
-	if name == "" {
-		name = fmt.Sprintf("upload-%s-%d", uuid.NewString(), index)
-	}
-
-	if err := r.svc.artifactStore.Save(ctx, appName, userID, sessionID, name, fp); err != nil {
-		return nil, fmt.Errorf("artifact: failed to save input blob '%s': %w", name, err)
-	}
-
-	return []core.Part{
-		&core.FilePart{
-			File:     &core.FileURI{URI: "artifact:" + name},
-			MimeType: fp.MimeType,
-			Name:     fp.Name,
-		},
-	}, nil
-}
-
 // prepareRunContext wires logger/metrics/tracer into ctx and returns ctx, cancel,
 // the run-scoped logger, the span and the start time.
 func (r *Runner) prepareRunContext(
