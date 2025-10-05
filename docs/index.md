@@ -59,6 +59,7 @@ Key ideas:
 - **[Agents guide →](/agents/)** – Learn how Sequential, Parallel, Loop, Model, and Func agents compose orchestration graphs.
 - **[Tools guide →](/tools/)** – Build function tools, the AgentTool wrapper, and MCP-backed toolsets with confidence.
 - **[Plugins guide →](/plugins/)** – Hook into runner, agent, model, and tool lifecycles with reusable interceptors.
+- **[Observability →](/observability/)** – Configure logging, metrics, and tracing providers and read them from context.
 - **[Architecture →](/architecture/)** – Understand the flow engine, runner lifecycle, and how the core packages fit together.
 - **[Resources →](/resources/)** – Jump to examples, issues, and contribution guides.
 
