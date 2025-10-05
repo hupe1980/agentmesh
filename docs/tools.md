@@ -4,12 +4,12 @@ title: Tools
 permalink: /tools/
 hero:
   title: Give agents reliable capabilities
-  description: Build function tools, wrap sub-agents, or plug in MCP providers with consistent validation and observability.
+  description: Build function tools, wrap sub-agents, or ship production retrievers with consistent validation and observability.
   primary_cta:
     label: Publish a tool
     href: "#function-tools"
   secondary_cta:
-    label: Tool API reference →
+    label: Tool & retrieval API reference →
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/tool"
     external: true
 sidebar:
@@ -24,11 +24,20 @@ sidebar:
     url: "#agenttool"
   - title: LangChainGo tool
     url: "#langchaingo-tool"
+  - title: Retrieval tools
+    url: "#retrieval-tools"
+    children:
+      - title: Wrap retrievers
+        url: "#retrieval-wrapper"
+      - title: Merger retriever
+        url: "#merger-retriever"
+      - title: Built-in connectors
+        url: "#retrieval-connectors"
   - title: Tool execution
     url: "#tool-execution"
 ---
 
-Tools let models trigger deterministic side effects—API calls, computations, or even other agents—while respecting schema validation and observability. Everything lives under [`tool/`](https://github.com/hupe1980/agentmesh/tree/main/tool) and works with the shared [`core.Tool`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Tool) contract.
+Tools let models trigger deterministic side effects—API calls, computations, retrieval queries, or even other agents—while respecting schema validation and observability. Everything lives under [`tool/`](https://github.com/hupe1980/agentmesh/tree/main/tool) and works with the shared [`core.Tool`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Tool) contract, while [`tool/retrieval`](https://github.com/hupe1980/agentmesh/tree/main/tool/retrieval) adds convenience helpers for search-style capabilities.
 
 ---
 
@@ -159,6 +168,57 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 ```
 
 Need additional metadata or custom validation? Pass option functions to `NewTool` to override the generated name and description or wrap the result with your own schema enforcement.
+
+---
+
+## Retrieval tools {#retrieval-tools}
+
+The `tool/retrieval` helpers make it easy to expose search connectors as strongly typed tools and to compose multiple retrievers together.
+
+### Wrap retrievers as tools {#retrieval-wrapper}
+
+`retrieval.NewTool` converts any `retrieval.Retriever` into a regular `core.Tool` that accepts a `query` string. Returned documents use the shared `retrieval.Document` shape (`PageContent`, `Score`, `Metadata`) so downstream agents receive consistent payloads.
+
+```go
+retriever := retrieval.NewMergerRetriever([]retrieval.Retriever{bedrock, kendra})
+
+searchTool := retrieval.NewTool(
+  "knowledge_base_search",
+  "Search the enterprise knowledge sources and return the top documents.",
+  retriever,
+)
+
+planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
+  o.Tools = append(o.Tools, searchTool)
+})
+```
+
+### Merger retriever {#merger-retriever}
+
+`retrieval.NewMergerRetriever` fans out to multiple retrievers and merges their document lists. Use option functions to tune behavior:
+
+- `WithMergerMaxParallel(n)` bounds concurrent requests (default is `4`; pass `0` to force sequential execution).
+- `WithMergerStopOnFirstError(true)` cancels remaining calls after the first failure (default is `true`); otherwise errors are aggregated via `errors.Join` and successful documents are still returned.
+
+```go
+retriever := retrieval.NewMergerRetriever(
+  []retrieval.Retriever{bedrock, kendra, langchain},
+  retrieval.WithMergerMaxParallel(2),
+  retrieval.WithMergerStopOnFirstError(false),
+)
+```
+
+Documents preserve the order of the input retriever slice, and duplicate metadata is left untouched so you can attribute results to the right source.
+
+### Built-in connectors {#retrieval-connectors}
+
+AgentMesh ships ready-to-use retrievers that plug straight into the wrapper above:
+
+- `tool/retrieval/amazonbedrock` – call Amazon Bedrock Agent Runtime knowledge bases and translate their scores into `retrieval.Document` objects.
+- `tool/retrieval/amazonkendra` – query Amazon Kendra indexes with optional attribute filters and user context.
+- `tool/retrieval/langchaingo` – adapt any LangChainGo retriever or vector store into the AgentMesh interface.
+
+Each package uses the same `Options` pattern (`func(*Options)`) for advanced tuning and includes unit tests demonstrating expected behavior. Mix and match them with `MergerRetriever` to build hybrid search stacks.
 
 ---
 

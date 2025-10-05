@@ -163,6 +163,8 @@ If `Capabilities().SupportsStructuredOutput` is `false`, the flow injects the in
 
 Every model request bundles tool definitions in `ModelRequest.Tools`. Agents populate that registry automatically from registered tools and toolsets. During streaming, the adapters translate provider-specific tool call deltas into `core.FunctionCallPart` events and reconcile responses via `core.FunctionResponsePart`.
 
+Need to expose search results as tools? Use `retrieval.NewTool` to wrap `retrieval.Retriever` implementations (including Bedrock, Kendra, or LangChainGo vector stores) so planners can fetch documents with the same function-calling flow.
+
 Best practices:
 
 - Keep tool names globally unique per agent run to avoid collisions.

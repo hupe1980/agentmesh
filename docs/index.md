@@ -44,7 +44,7 @@ Key ideas:
 ## Core capabilities
 
 - **Agent patterns**: compose sequential, parallel, and looping agents to model complex workflows.
-- **Tool ecosystem**: register strongly typed tools with JSON Schema validation, cooldowns, and action propagation.
+- **Tool ecosystem**: register strongly typed tools with JSON Schema validation, plus ship retrievers and toolsets with shared observability.
 - **Streaming orchestration**: flows emit partial and final events in real time for responsive UX.
 - **Observability**: integrate structured logging, metrics, and tracing via pluggable providers.
 - **Stateful sessions**: manage history, artifacts, and memory through configurable stores.
