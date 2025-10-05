@@ -130,8 +130,8 @@ func (m *Model) Generate(ctx context.Context, req *core.ModelRequest) (<-chan *c
 // Capabilities reports the OpenAI chat model features exposed via this adapter.
 // The official API supports native structured output through response_format
 // when using compatible models (e.g., gpt-4o-mini), so we surface that here.
-func (m *Model) Capabilities() core.ModelCapabilities {
-	return core.ModelCapabilities{SupportsStructuredOutput: true}
+func (m *Model) Capabilities() *core.ModelCapabilities {
+	return &core.ModelCapabilities{SupportsStructuredOutput: true}
 }
 
 // collectToolResponses indexes tool (function) responses by id preserving first-seen order.

@@ -70,8 +70,8 @@ func (m *onceToolCallModel) Generate(
 	return rc, ec
 }
 
-func (m *onceToolCallModel) Capabilities() core.ModelCapabilities {
-	return core.ModelCapabilities{}
+func (m *onceToolCallModel) Capabilities() *core.ModelCapabilities {
+	return &core.ModelCapabilities{}
 }
 
 // model that emits a single plain text response
@@ -88,8 +88,8 @@ func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan 
 	return rc, ec
 }
 
-func (m *textModel) Capabilities() core.ModelCapabilities {
-	return core.ModelCapabilities{}
+func (m *textModel) Capabilities() *core.ModelCapabilities {
+	return &core.ModelCapabilities{}
 }
 
 func TestBaseFlow_Simple_NoTools(t *testing.T) {

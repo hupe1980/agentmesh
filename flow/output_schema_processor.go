@@ -42,7 +42,9 @@ func (p *OutputSchemaProcessor) ProcessRequest(
 		return nil
 	}
 
-	if agent.Model().Capabilities().SupportsStructuredOutput {
+	caps := agent.ModelCapabilities()
+
+	if caps != nil && caps.SupportsStructuredOutput {
 		req.OutputSchema = osOpt
 		return nil
 	}

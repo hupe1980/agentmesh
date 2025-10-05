@@ -33,8 +33,8 @@ func (m *partialStreamingModel) Generate(
 	return respCh, errCh
 }
 
-func (m *partialStreamingModel) Capabilities() core.ModelCapabilities {
-	return core.ModelCapabilities{}
+func (m *partialStreamingModel) Capabilities() *core.ModelCapabilities {
+	return &core.ModelCapabilities{}
 }
 
 // TestBaseFlow_PartialStreaming validates partial assistant events stream in order

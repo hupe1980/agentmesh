@@ -66,20 +66,18 @@ func TestNewFuncModel_PanicsOnNilFunc(t *testing.T) {
 }
 
 func TestFuncModel_Capabilities(t *testing.T) {
+	caps := &core.ModelCapabilities{SupportsStructuredOutput: true}
+
 	fm := NewFuncModel(func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 		out := make(chan *core.ModelResponse)
 		errCh := make(chan error)
 		close(out)
 		close(errCh)
 		return out, errCh
+	}, func(o *FuncModelOptions) {
+		o.Capabilities = caps
 	})
 
-	// Default is zero-value capabilities.
-	assert.False(t, fm.Capabilities().SupportsStructuredOutput)
-
-	// Update and verify getter reflects the change.
-	caps := core.ModelCapabilities{SupportsStructuredOutput: true}
-	fm.SetCapabilities(caps)
 	assert.Equal(t, caps, fm.Capabilities())
 }
 

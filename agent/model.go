@@ -171,6 +171,11 @@ func (a *ModelAgent) Model() core.Model {
 	return a.model
 }
 
+// ModelCapabilities returns the capabilities of the underlying model.
+func (a *ModelAgent) ModelCapabilities() *core.ModelCapabilities {
+	return a.model.Capabilities()
+}
+
 // IsStreamingEnabled returns whether streaming responses are enabled.
 func (a *ModelAgent) IsStreamingEnabled() bool {
 	return a.enableStreaming

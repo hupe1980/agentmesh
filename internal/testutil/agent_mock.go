@@ -96,6 +96,15 @@ func (m *MockAgent) Run(ctx context.Context, reqCtx core.RequestContext, writer 
 // Model returns the configured model (if any).
 func (m *MockAgent) Model() core.Model { return m.ModelVal }
 
+// ModelCapabilities returns the capabilities of the underlying model.
+func (m *MockAgent) ModelCapabilities() *core.ModelCapabilities {
+	if m.ModelVal != nil {
+		return m.ModelVal.Capabilities()
+	}
+
+	return &core.ModelCapabilities{}
+}
+
 // ResolveInstructions returns instructions using the hook when provided; otherwise InstructionsText.
 func (m *MockAgent) ResolveInstructions(ctx context.Context, roCtx core.ReadonlyContext) (string, error) {
 	if m.ResolveInstructionsFunc != nil {

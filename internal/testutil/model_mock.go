@@ -14,7 +14,7 @@ type MockModel struct {
 	// one-shot, non-streaming response is produced.
 	GenerateFunc func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error)
 	// CapabilitiesVal surfaces feature flags for tests.
-	CapabilitiesVal core.ModelCapabilities
+	CapabilitiesVal *core.ModelCapabilities
 }
 
 // Generate implements core.Model.
@@ -39,7 +39,7 @@ func (m *MockModel) Generate(ctx context.Context, req *core.ModelRequest) (<-cha
 }
 
 // Capabilities returns the configured capability flags (zero-value by default).
-func (m *MockModel) Capabilities() core.ModelCapabilities {
+func (m *MockModel) Capabilities() *core.ModelCapabilities {
 	return m.CapabilitiesVal
 }
 

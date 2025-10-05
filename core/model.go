@@ -254,7 +254,7 @@ type Model interface {
 	// Generate initiates a generation request to the model.
 	Generate(ctx context.Context, req *ModelRequest) (<-chan *ModelResponse, <-chan error)
 	// Capabilities returns the feature flags advertised by the model implementation.
-	Capabilities() ModelCapabilities
+	Capabilities() *ModelCapabilities
 }
 
 // ModelExecutor abstracts execution of a Model request, allowing decoration

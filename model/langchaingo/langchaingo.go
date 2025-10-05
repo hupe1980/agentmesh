@@ -116,8 +116,8 @@ func (m *Model) Generate(
 // Capabilities reports the supported feature set of the wrapped LangChainGo model.
 // The generic llms.Model interface does not currently expose native structured
 // output, so we return the zero-value capabilities (all false).
-func (m *Model) Capabilities() core.ModelCapabilities {
-	return core.ModelCapabilities{SupportsStructuredOutput: false}
+func (m *Model) Capabilities() *core.ModelCapabilities {
+	return &core.ModelCapabilities{SupportsStructuredOutput: false}
 }
 
 // buildChatMessages converts instructions and message history into llms.ChatMessage values.

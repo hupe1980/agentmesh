@@ -10,6 +10,12 @@ type RunOptions struct {
 	// MaxModelCalls limits the number of model calls per run.
 	MaxModelCalls int
 
+	// EventBufferSize controls the buffering for the run results channel.
+	EventBufferSize int
+
+	// RunIDKey controls the structured log key applied to the run identifier.
+	RunIDKey string
+
 	// StateDelta holds optional state updates to merge into the session state.
 	StateDelta map[string]any
 }

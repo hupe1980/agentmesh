@@ -99,7 +99,7 @@ The adapter mirrors LangChainGo's streaming model and surfaces partial/final res
 
 ### Functional model {#functional-model}
 
-Need a lightweight stub for tests or quick demos? `model.NewFuncModel` converts a plain Go function into a `core.Model`.
+Need a lightweight stub for tests or quick demos? `model.NewFuncModel` converts a plain Go function into a `core.Model`. Pass option functions to customize the advertised capabilities (they default to an empty `core.ModelCapabilities`).
 
 ```go
 import (
@@ -116,15 +116,20 @@ mock := amodel.NewFuncModel(func(ctx context.Context, req *core.ModelRequest) (<
     defer close(respCh)
     defer close(errCh)
     respCh <- &core.ModelResponse{
-      Parts: []core.Part{core.NewTextPart("stubbed reply")},
+      Parts: []core.Part{core.NewPartFromText("stubbed reply")},
       FinishReason: "stop",
     }
   }()
 
   return respCh, errCh
+}, func(o *amodel.FuncModelOptions) {
+  o.Capabilities = &core.ModelCapabilities{
+    SupportsStructuredOutput: false,
+  }
 })
 
-mock.SetCapabilities(core.ModelCapabilities{SupportsStructuredOutput: false})
+// Toggle features on the fly during tests.
+mock.Capabilities().SupportsStructuredOutput = true
 ```
 
 This is perfect for unit tests that exercise agents, flows, or tool plumbing without invoking an external provider.

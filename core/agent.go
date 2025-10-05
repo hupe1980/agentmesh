@@ -82,6 +82,8 @@ type FlowAgent interface {
 
 	// Model returns the underlying model used by the agent.
 	Model() Model
+	// ModelCapabilities returns the capabilities of the underlying model.
+	ModelCapabilities() *ModelCapabilities
 	// ResolveTools aggregates tools from tools and toolsets.
 	ResolveTools(ctx context.Context, roCtx ReadonlyContext) ([]Tool, error)
 

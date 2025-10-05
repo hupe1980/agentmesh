@@ -22,8 +22,6 @@ import (
 type Options struct {
 	// EnableStreaming toggles real-time event streaming vs buffered.
 	EnableStreaming bool
-	// EventBufferSize sets channel buffering for events.
-	EventBufferSize int
 	// AgentExecutor to use for running agents.
 	AgentExecutor core.AgentExecutor
 	// Session management services.
@@ -38,16 +36,11 @@ type Options struct {
 	Metrics metrics.Provider
 	// Tracing services.
 	Tracer trace.Provider
-
-	// RunIDKey controls the structured log key for the run identifier.
-	// Defaults to "run_id".
-	RunIDKey string
 }
 
 // DefaultOptions provides the default configuration for Runner.
 var DefaultOptions = Options{
 	EnableStreaming: true,
-	EventBufferSize: 100,
 	AgentExecutor:   agent.DefaultAgentExecutor,
 	SessionStore:    session.NewInMemoryStore(),
 	ArtifactStore:   artifact.NewInMemoryStore(),
@@ -55,7 +48,6 @@ var DefaultOptions = Options{
 	Logger:          logging.NoopLogger{},
 	Metrics:         metrics.Noop(),
 	Tracer:          trace.Noop(),
-	RunIDKey:        "run_id",
 }
 
 // services groups the various stores and services used by the runner.
@@ -77,12 +69,9 @@ type Runner struct {
 	agent core.Agent
 
 	enableStreaming bool
-	eventBufferSize int
 
 	agentExecutor core.AgentExecutor
 	svc           services
-
-	runIDKey string // <- add
 
 	activeRuns map[string]context.CancelFunc
 	mu         sync.RWMutex
@@ -105,7 +94,6 @@ func New(application core.App, optFns ...func(o *Options)) *Runner {
 		app:             application,
 		agent:           rootAgent,
 		enableStreaming: opts.EnableStreaming,
-		eventBufferSize: opts.EventBufferSize,
 		agentExecutor:   opts.AgentExecutor,
 		svc: services{
 			sessionStore:  opts.SessionStore,
@@ -116,14 +104,15 @@ func New(application core.App, optFns ...func(o *Options)) *Runner {
 			metrics:       opts.Metrics,
 			tracer:        opts.Tracer,
 		},
-		runIDKey:   opts.RunIDKey,
 		activeRuns: make(map[string]context.CancelFunc),
 	}
 }
 
 // DefaultRunOptions provides the default configuration for Run invocations.
 var DefaultRunOptions = core.RunOptions{
-	MaxModelCalls: 100,
+	MaxModelCalls:   100,
+	EventBufferSize: 100,
+	RunIDKey:        "run_id",
 }
 
 // Run starts an asynchronous invocation. (Refactored wiring + small helpers)
@@ -136,8 +125,14 @@ func (r *Runner) Run(
 	// Generate a new run ID.
 	runID := uuid.NewString()
 
+	opts := DefaultRunOptions
+
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
 	// Prepare context & observability (logger, metrics, tracing)
-	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, runID, sessionID)
+	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, opts.RunIDKey, runID, sessionID)
 
 	// Register active run cancel func
 	r.registerRun(runID, cancel)
@@ -151,12 +146,6 @@ func (r *Runner) Run(
 	// Increment metric for run count
 	r.svc.metrics.Counter("agentmesh_runs_total").
 		Add(ctx, 1, metrics.Attr{Key: "agent.name", Value: r.agent.Name()})
-
-	opts := DefaultRunOptions
-
-	for _, fn := range optFns {
-		fn(&opts)
-	}
 
 	// Load or create session
 	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.app.Name(), userID, sessionID)
@@ -241,7 +230,7 @@ func (r *Runner) Run(
 		userEvent.Actions.StateDelta = core.Map(opts.StateDelta)
 	}
 
-	results := make(chan core.RunResult, r.eventBufferSize)
+	results := make(chan core.RunResult, opts.EventBufferSize)
 	writer := &sessionWriter{
 		runID:   runID,
 		session: session,
@@ -348,7 +337,7 @@ func (r *Runner) buildRequestContext(
 // the run-scoped logger, the span and the start time.
 func (r *Runner) prepareRunContext(
 	ctx context.Context,
-	runID, sessionID string,
+	runIDKey, runID, sessionID string,
 ) (
 	context.Context,
 	context.CancelFunc,
@@ -358,8 +347,7 @@ func (r *Runner) prepareRunContext(
 ) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	// Use configurable run ID key.
-	runLogger := r.svc.logger.With(r.runIDKey, runID)
+	runLogger := r.svc.logger.With(runIDKey, runID)
 
 	// attach logger/metrics/tracer to context
 	ctx = logging.WithLogger(ctx, runLogger)

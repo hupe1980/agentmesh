@@ -13,7 +13,7 @@ import (
 func TestBasicProcessor_UsesNativeStructuredOutput(t *testing.T) {
 	agent := testutil.NewMockAgent("agent")
 	agent.ModelVal = &testutil.MockModel{
-		CapabilitiesVal: core.ModelCapabilities{SupportsStructuredOutput: true},
+		CapabilitiesVal: &core.ModelCapabilities{SupportsStructuredOutput: true},
 	}
 
 	agent.OutputSchemaVal = core.MustNewOutputSchema("answer", map[string]any{
