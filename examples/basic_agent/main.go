@@ -10,7 +10,6 @@ import (
 	am "github.com/hupe1980/agentmesh"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
-	"github.com/hupe1980/agentmesh/runner"
 )
 
 // basic_agent demonstrates the smallest useful LLM agent: a single model-backed agent
@@ -50,7 +49,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	runID, text, err := runner.RunFinalText(ctx, r, "user1", "sess1", userParts)
+	runID, text, err := r.RunFinalText(ctx, "user1", "sess1", userParts)
 	if err != nil {
 		log.Fatalf("invoke failed: %v", err)
 	}

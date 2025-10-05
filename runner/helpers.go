@@ -9,9 +9,8 @@ import (
 // RunFinal executes Runner.Run and blocks until completion, returning the final response event.
 // It returns the runID immediately and either the final event or an error.
 // If an error occurs during streaming, the run is canceled before returning.
-func RunFinal(
+func (r *Runner) RunFinal(
 	ctx context.Context,
-	r *Runner,
 	userID, sessionID string,
 	userParts []core.Part,
 	optFns ...func(o *core.RunOptions),
@@ -61,14 +60,13 @@ func RunFinal(
 }
 
 // RunFinalText is like RunFinal but returns only the concatenated text from the final event.
-func RunFinalText(
+func (r *Runner) RunFinalText(
 	ctx context.Context,
-	r *Runner,
 	userID, sessionID string,
 	userParts []core.Part,
 	optFns ...func(o *core.RunOptions),
 ) (string, string, error) {
-	runID, ev, err := RunFinal(ctx, r, userID, sessionID, userParts, optFns...)
+	runID, ev, err := r.RunFinal(ctx, userID, sessionID, userParts, optFns...)
 	if err != nil {
 		return runID, "", err
 	}

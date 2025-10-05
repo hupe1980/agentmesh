@@ -94,7 +94,7 @@ func main() {
   userParts := []am.Part{am.NewPartFromText("Hello! What can you do?")}
 
   // 5. Invoke the agent and get only the final text
-  runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
+  runID, text, err := r.RunFinalText(context.Background(), "user1", "sess1", userParts)
   if err != nil {
     log.Fatalf("run failed: %v", err)
   }
