@@ -9,7 +9,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	metricsotel "github.com/hupe1980/agentmesh/metrics/opentelemetry"
-	"github.com/hupe1980/agentmesh/runner"
 	"github.com/hupe1980/agentmesh/trace"
 	traceotel "github.com/hupe1980/agentmesh/trace/opentelemetry"
 
@@ -82,7 +81,9 @@ func main() {
 		return nil
 	})
 
-	r := runner.New("otel_demo_app", a, func(o *runner.Options) {
+	application := am.NewApp("otel_demo_app", a)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Tracer = tracerProv
 		o.Metrics = metricsProv
 		o.Logger = logger

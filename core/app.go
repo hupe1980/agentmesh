@@ -1,6 +1,6 @@
 package core
 
-// App represents a runnable application exposing its name and root agent.
+// App represents a runnable application exposing its name, root agent, and plugins.
 type App interface {
 	// Name returns the application's identifier.
 	Name() string

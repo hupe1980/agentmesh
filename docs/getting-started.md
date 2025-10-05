@@ -47,6 +47,30 @@ go run ./examples/basic_agent/main.go
 
 You should see partial and final responses printed to the terminal, demonstrating the default runner, flow selection, and event streaming.
 
+Prefer wiring the pieces manually? Use the façade constructors directly:
+
+```go
+import (
+  "log"
+
+  am "github.com/hupe1980/agentmesh"
+  "github.com/hupe1980/agentmesh/model/openai"
+)
+
+model := openai.NewModel()
+
+agent, err := am.NewModelAgent("basic_agent", model, func(o *am.ModelAgentOptions) {
+  o.Instructions = am.NewInstructionsFromText("You are a concise assistant.")
+})
+if err != nil {
+  log.Fatalf("failed to build agent: %v", err)
+}
+
+application := am.NewApp("basic_agent_app", agent)
+r := am.NewRunner(application)
+// ...
+```
+
 ---
 
 ## Explore examples

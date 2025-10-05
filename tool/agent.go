@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	meshapp "github.com/hupe1980/agentmesh/app"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/runner"
@@ -67,12 +68,15 @@ func (t *AgentTool) Call(
 		return nil, NewError(t.Name(), "missing required field '__arg1'", "VALIDATION_ERROR")
 	}
 
-	r := runner.New(t.Name(), t.agent, func(o *runner.Options) {
+	application := meshapp.New(t.Name(), t.agent, func(o *meshapp.Options) {
+		o.Plugins = toolCtx.PluginManager().Plugins()
+	})
+
+	r := runner.New(application, func(o *runner.Options) {
 		// Use a distinct key to avoid colliding with outer run_id.
 		o.RunIDKey = "tool_run_id"
 		o.Logger = log
 		o.ArtifactStore = &artifactStoreAdapter{toolCtx: toolCtx}
-		o.Plugins = toolCtx.PluginManager().Plugins()
 	})
 	defer func() {
 		_ = r.Close()

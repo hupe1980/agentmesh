@@ -10,7 +10,8 @@
 // Usage:
 //
 //	logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON, false)
-//	r := runner.New(sessionStore, artifactStore, memoryStore, func(o *runner.Options){ o.Logger = logger })
+//	app := app.New("demo", rootAgent)
+//	r := runner.New(app, func(o *runner.Options){ o.Logger = logger })
 //
 // The design intentionally keeps the interface minimal to avoid vendor lock-in
 // while supporting structured logging where available.

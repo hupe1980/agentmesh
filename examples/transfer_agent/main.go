@@ -11,7 +11,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
-	"github.com/hupe1980/agentmesh/runner"
 )
 
 // transfer_agent demonstrates dynamic delegation using the transfer_to_agent tool.
@@ -69,7 +68,9 @@ func main() {
 
 	// Application runner
 
-	r := runner.New("transfer_app", root, func(o *runner.Options) {
+	application := am.NewApp("transfer_app", root)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 	defer func() {

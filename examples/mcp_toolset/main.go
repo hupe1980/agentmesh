@@ -11,7 +11,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
-	"github.com/hupe1980/agentmesh/runner"
 	mcptool "github.com/hupe1980/agentmesh/tool/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,7 +76,9 @@ func main() {
 	}
 
 	// 4) Run a sample conversation where the agent should invoke the MCP tool
-	r := runner.New("mcp_example_app", llmAgent, func(o *runner.Options) {
+	application := am.NewApp("mcp_example_app", llmAgent)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 

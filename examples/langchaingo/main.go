@@ -11,7 +11,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	lcg "github.com/hupe1980/agentmesh/model/langchaingo"
-	"github.com/hupe1980/agentmesh/runner"
 	lcgtools "github.com/hupe1980/agentmesh/tool/langchaingo"
 	lcgopenai "github.com/tmc/langchaingo/llms/openai"
 	lctools "github.com/tmc/langchaingo/tools"
@@ -46,7 +45,9 @@ func main() {
 		log.Fatalf("failed creating agent: %v", err)
 	}
 
-	r := runner.New("langchaingo_example", ag, func(o *runner.Options) {
+	application := am.NewApp("langchaingo_example", ag)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 	defer func() { _ = r.Close() }()

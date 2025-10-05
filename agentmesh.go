@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hupe1980/agentmesh/agent"
+	"github.com/hupe1980/agentmesh/app"
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/flow"
 	"github.com/hupe1980/agentmesh/model"
@@ -32,6 +33,9 @@ type Model = core.Model
 // MemoryStore re-exports core.MemoryStore for convenience.
 type MemoryStore = core.MemoryStore
 
+// App re-exports core.App for convenience.
+type App = core.App
+
 // ArtifactStore re-exports core.ArtifactStore for convenience.
 type ArtifactStore = core.ArtifactStore
 
@@ -43,6 +47,9 @@ type CredentialStore = core.CredentialStore
 
 // Instructions re-exports core.Instructions for convenience.
 type Instructions = core.Instructions
+
+// RunOptions re-exports core.RunOptions for convenience.
+type RunOptions = core.RunOptions
 
 // InstructionsProvider re-exports core.InstructionsProvider for convenience.
 type InstructionsProvider = core.InstructionsProvider
@@ -182,6 +189,24 @@ func NewLoopAgent(name string, child Agent, optFns ...func(o *LoopAgentOptions))
 	})
 }
 
+// AppOptions configures application construction through the façade.
+type AppOptions struct {
+	app.Options
+}
+
+// NewApp constructs an App with optional overrides applied.
+func NewApp(appName string, ag Agent, optFns ...func(o *AppOptions)) App {
+	opts := AppOptions{Options: app.DefaultOptions}
+
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
+	return app.New(appName, ag, func(o *app.Options) {
+		*o = opts.Options
+	})
+}
+
 // RunnerOptions exposes runner configuration through the façade.
 type RunnerOptions struct {
 	runner.Options
@@ -189,7 +214,7 @@ type RunnerOptions struct {
 
 // NewRunner exposes runner.New so callers can override observability, stores,
 // and other runtime behaviour while staying within the façade.
-func NewRunner(appName string, ag Agent, optFns ...func(o *RunnerOptions)) *runner.Runner {
+func NewRunner(application App, optFns ...func(o *RunnerOptions)) *runner.Runner {
 	opts := RunnerOptions{
 		Options: runner.DefaultOptions,
 	}
@@ -198,88 +223,7 @@ func NewRunner(appName string, ag Agent, optFns ...func(o *RunnerOptions)) *runn
 		fn(&opts)
 	}
 
-	return runner.New(appName, ag, func(o *runner.Options) {
+	return runner.New(application, func(o *runner.Options) {
 		*o = opts.Options
-	})
-}
-
-// App wraps a runner and exposes convenience helpers for one-off invocations.
-type App struct {
-	runner *runner.Runner
-}
-
-// NewApp constructs an App with the given agent and runner options.
-func NewApp(appName string, ag Agent, optFns ...func(o *RunnerOptions)) *App {
-	return &App{runner: NewRunner(appName, ag, optFns...)}
-}
-
-// Runner returns the underlying runner for advanced scenarios.
-func (a *App) Runner() *runner.Runner { return a.runner }
-
-// Close releases resources owned by the underlying runner.
-func (a *App) Close() error { return a.runner.Close() }
-
-// RunOptions augments core.RunOptions with any App-specific settings.
-type RunOptions struct {
-	core.RunOptions
-}
-
-// Run executes the wrapped runner and returns the streaming channel.
-func (a *App) Run(
-	ctx context.Context,
-	userID, sessionID string,
-	parts []Part,
-	optFns ...func(o *RunOptions),
-) (string, <-chan RunResult, error) {
-	opts := RunOptions{
-		RunOptions: runner.DefaultRunOptions,
-	}
-
-	for _, fn := range optFns {
-		fn(&opts)
-	}
-
-	return a.runner.Run(ctx, userID, sessionID, parts, func(o *core.RunOptions) {
-		*o = opts.RunOptions
-	})
-}
-
-// RunFinal blocks until completion and returns the final assistant event.
-func (a *App) RunFinal(
-	ctx context.Context,
-	userID, sessionID string,
-	parts []Part,
-	optFns ...func(o *RunOptions),
-) (string, *Event, error) {
-	opts := RunOptions{
-		RunOptions: runner.DefaultRunOptions,
-	}
-
-	for _, fn := range optFns {
-		fn(&opts)
-	}
-
-	return runner.RunFinal(ctx, a.runner, userID, sessionID, parts, func(o *core.RunOptions) {
-		*o = opts.RunOptions
-	})
-}
-
-// RunFinalText blocks until completion and returns only the final assistant text.
-func (a *App) RunFinalText(
-	ctx context.Context,
-	userID, sessionID string,
-	parts []Part,
-	optFns ...func(o *RunOptions),
-) (string, string, error) {
-	opts := RunOptions{
-		RunOptions: runner.DefaultRunOptions,
-	}
-
-	for _, fn := range optFns {
-		fn(&opts)
-	}
-
-	return runner.RunFinalText(ctx, a.runner, userID, sessionID, parts, func(o *core.RunOptions) {
-		*o = opts.RunOptions
 	})
 }

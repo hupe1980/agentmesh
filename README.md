@@ -64,6 +64,8 @@ import (
   "time"
 
   am "github.com/hupe1980/agentmesh"
+  "github.com/hupe1980/agentmesh/model/openai"
+  "github.com/hupe1980/agentmesh/runner"
 )
   
 func main() {
@@ -79,16 +81,19 @@ func main() {
     log.Fatalf("failed to create agent: %v", err)
   }
 
-  // 2. Create the runner
-  r := runner.New("basic_agent_app", ag)
+  // 2. Wrap the agent in an application (plugins live here)
+  application := am.NewApp("basic_agent_app", ag)
+
+  // 3. Create the runner
+  r := am.NewRunner(application)
   defer func() {
     _ = r.Close()
   }()
 
-  // 3. Build user content
+  // 4. Build user content
   userParts := []am.Part{am.NewPartFromText("Hello! What can you do?")}
 
-  // 4. Invoke agent and get only the final text
+  // 5. Invoke the agent and get only the final text
   runID, text, err := runner.RunFinalText(context.Background(), r, "user1", "sess1", userParts)
   if err != nil {
     log.Fatalf("run failed: %v", err)
@@ -180,7 +185,9 @@ Example wiring (OpenTelemetry + slog logger):
 logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON, true)
 tp, mp, _ := initOTel() // see examples/opentelemetry
 
-r := runner.New("app", agent, func(o *runner.Options) {
+application := am.NewApp("example_app", agent)
+
+r := am.NewRunner(application, func(o *am.RunnerOptions) {
   o.Logger = logger
   o.Metrics = metricsotel.New(mp)
   o.Tracer = traceotel.New(tp)

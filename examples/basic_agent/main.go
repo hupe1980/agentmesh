@@ -34,7 +34,9 @@ func main() {
 	}
 
 	// 2. Create the runner with a standard logger
-	r := runner.New("basic_agent_app", llmAgent, func(o *runner.Options) {
+	application := am.NewApp("basic_agent_app", llmAgent)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 	defer func() {

@@ -26,8 +26,6 @@ type Options struct {
 	EventBufferSize int
 	// AgentExecutor to use for running agents.
 	AgentExecutor core.AgentExecutor
-	// Plugins to use for extending the runner's capabilities.
-	Plugins []core.Plugin
 	// Session management services.
 	SessionStore core.SessionStore
 	// Artifact management services.
@@ -54,7 +52,6 @@ var DefaultOptions = Options{
 	SessionStore:    session.NewInMemoryStore(),
 	ArtifactStore:   artifact.NewInMemoryStore(),
 	MemoryStore:     memory.NewInMemoryStore(),
-	Plugins:         []core.Plugin{},
 	Logger:          logging.NoopLogger{},
 	Metrics:         metrics.Noop(),
 	Tracer:          trace.Noop(),
@@ -76,8 +73,8 @@ type services struct {
 // invocation contexts, streams events, applies side-effects, and persists
 // history. Public methods are safe for concurrent use.
 type Runner struct {
-	appName string
-	agent   core.Agent
+	app   core.App
+	agent core.Agent
 
 	enableStreaming bool
 	eventBufferSize int
@@ -94,16 +91,19 @@ type Runner struct {
 }
 
 // New constructs a Runner with optional overrides.
-func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
+func New(application core.App, optFns ...func(o *Options)) *Runner {
 	opts := DefaultOptions
 
 	for _, fn := range optFns {
 		fn(&opts)
 	}
 
+	rootAgent := application.RootAgent()
+	plugins := application.Plugins()
+
 	return &Runner{
-		appName:         appName,
-		agent:           ag,
+		app:             application,
+		agent:           rootAgent,
 		enableStreaming: opts.EnableStreaming,
 		eventBufferSize: opts.EventBufferSize,
 		agentExecutor:   opts.AgentExecutor,
@@ -111,7 +111,7 @@ func New(appName string, ag core.Agent, optFns ...func(o *Options)) *Runner {
 			sessionStore:  opts.SessionStore,
 			artifactStore: opts.ArtifactStore,
 			memoryStore:   opts.MemoryStore,
-			pluginManager: core.NewPluginManager(opts.Plugins...),
+			pluginManager: core.NewPluginManager(plugins...),
 			logger:        opts.Logger,
 			metrics:       opts.Metrics,
 			tracer:        opts.Tracer,
@@ -159,7 +159,7 @@ func (r *Runner) Run(
 	}
 
 	// Load or create session
-	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.appName, userID, sessionID)
+	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.app.Name(), userID, sessionID)
 	if err != nil {
 		r.unregisterRunAndCancel(runID)
 		return "", nil, fmt.Errorf("failed to get session: %w", err)
@@ -308,7 +308,7 @@ func (r *Runner) Close() error {
 		if s.store != nil {
 			if err := s.store.Close(); err != nil {
 				// Log each failure for observability at shutdown.
-				r.svc.logger.Error("store close failed", "app", r.appName, "store", s.name, "error", err)
+				r.svc.logger.Error("store close failed", "app", r.app.Name(), "store", s.name, "error", err)
 
 				errs = append(errs, fmt.Errorf("%s: close: %w", s.name, err))
 			}

@@ -11,7 +11,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
-	"github.com/hupe1980/agentmesh/runner"
 )
 
 // multi_agent demonstrates a sequential workflow of specialized agents sharing state.
@@ -151,7 +150,9 @@ Output format (Markdown):
 	// Sequential workflow: Research → Analysis → Report
 	workflow := am.NewSequentialAgent("MultiAgent", []am.Agent{researchAgent, analysisAgent, reportAgent})
 
-	r := runner.New("multi_agent_app", workflow, func(o *runner.Options) {
+	application := am.NewApp("multi_agent_app", workflow)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 	defer func() {

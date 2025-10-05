@@ -12,7 +12,6 @@ import (
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
-	"github.com/hupe1980/agentmesh/runner"
 	"github.com/hupe1980/agentmesh/tool"
 )
 
@@ -109,7 +108,9 @@ func main() {
 		log.Fatalf("failed creating agent: %v", err)
 	}
 
-	r := runner.New("calculator_app", calcAgent, func(o *runner.Options) {
+	application := am.NewApp("calculator_app", calcAgent)
+
+	r := am.NewRunner(application, func(o *am.RunnerOptions) {
 		o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
 	})
 	defer func() {
