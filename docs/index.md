@@ -58,6 +58,7 @@ Key ideas:
 - **[Models guide →](/models/)** – Connect OpenAI, LangChainGo, or custom providers with structured outputs and tool calls.
 - **[Agents guide →](/agents/)** – Learn how Sequential, Parallel, Loop, Model, and Func agents compose orchestration graphs.
 - **[Tools guide →](/tools/)** – Build function tools, the AgentTool wrapper, and MCP-backed toolsets with confidence.
+- **[Plugins guide →](/plugins/)** – Hook into runner, agent, model, and tool lifecycles with reusable interceptors.
 - **[Architecture →](/architecture/)** – Understand the flow engine, runner lifecycle, and how the core packages fit together.
 - **[Resources →](/resources/)** – Jump to examples, issues, and contribution guides.
 
