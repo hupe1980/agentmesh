@@ -4,36 +4,14 @@
 [![Documentation](https://img.shields.io/badge/docs-online-success)](https://hupe1980.github.io/agentmesh/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 
-**Composable multi-agent orchestration for Go.**
+AgentMesh is a Go-first framework for orchestrating AI agents with predictable flows, typed tool calls, and built-in observability.
 
-AgentMesh helps you build production-grade AI systems in Go. It provides 
-composable agent patterns (sequential, parallel, looping), streaming event 
-delivery, plugin hooks, persistent session storage, and first-class 
-observability (logging, metrics, tracing). Everything is deterministic 
-and testable by design.
+## ✨ Highlights
 
-- 🧩 Composability: Sequential, Parallel, and Loop agents nest arbitrarily  
-- 📡 Streaming: Unified event stream with partial and final responses  
-- 🛠️ Tools: Strongly typed, schema-validated tool calls with bounded execution  
-- 🗂️ Pluggable stores: memory, artifacts, session; tools run with a scoped ToolContext  
-- 🔭 Observability: Structured logging, metrics, and tracing (OpenTelemetry providers included)  
-- 🔁 Determinism: Explicit control over ordering and side-effects for testability 
-
----
-
-## 📚 Table of Contents
-
-- [Install](#install)
-- [Quick Start](#quick-start)
-- [Examples](#examples)
-- [Core Concepts](#core-concepts)
-- [Multi-agent Patterns](#multi-agent-patterns)
-- [Observability](#observability)
-- [Backpressure](#backpressure)
-- [Development](#development)
-- [Production Considerations](#production-considerations)
-- [Contributing](#contributing)
-- [License](#license)
+- **Deterministic orchestration** – Compose sequential, parallel, or looping agents with explicit error handling.
+- **Typed tools & retrieval** – Wrap Go functions, sub-agents, or search connectors with JSON Schema validation.
+- **Streaming-first runtime** – Stream partial events, route transfers, and merge structured output deterministically.
+- **Pluggable observability** – Bring your own logging, tracing, metrics, and persistence layers.
 
 ---
 
@@ -44,14 +22,15 @@ go get github.com/hupe1980/agentmesh
 ```
 
 Requirements:
-- Go >= 1.24
-- For OpenAI examples: set OPENAI_API_KEY
+
+- Go 1.24+
+- Set `OPENAI_API_KEY` to run the OpenAI example adapters
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-Minimal single-agent run mirroring examples/basic_agent.
+The snippet below mirrors [`examples/basic_agent/main.go`](examples/basic_agent/main.go) and creates a model-backed agent with streaming output and logging:
 
 ```go
 package main
@@ -64,217 +43,148 @@ import (
   "time"
 
   am "github.com/hupe1980/agentmesh"
+  "github.com/hupe1980/agentmesh/logging"
   "github.com/hupe1980/agentmesh/model/openai"
-  "github.com/hupe1980/agentmesh/runner"
 )
-  
-func main() {
-  // 1. Create model + agent with an instruction prompt
-  model := openai.NewModel()
 
-  ag, err := am.NewModelAgent("basic_agent", model, func(o *am.ModelAgentOptions) {
-    o.Instructions = am.NewInstructionsFromText(
-      "You are a helpful assistant. Keep responses concise and friendly.",
-    )
-  })
-  if err != nil {
-    log.Fatalf("failed to create agent: %v", err)
+func main() {
+  if os.Getenv("OPENAI_API_KEY") == "" {
+    log.Fatal("OPENAI_API_KEY is required")
   }
 
-  // 2. Wrap the agent in an application (plugins live here)
-  application := am.NewApp("basic_agent_app", ag)
+  model := openai.NewModel()
 
-  // 3. Create the runner
-  r := am.NewRunner(application)
-  defer func() {
-    _ = r.Close()
-  }()
+  agent, err := am.NewModelAgent("basic", model, func(o *am.ModelAgentOptions) {
+    o.Instructions = am.NewInstructionsFromText("Keep responses short and helpful.")
+  })
+  if err != nil {
+    log.Fatalf("build agent: %v", err)
+  }
 
-  // 4. Build user content
-  userParts := []am.Part{am.NewPartFromText("Hello! What can you do?")}
+  app := am.NewApp("basic_app", agent)
 
-  // 5. Invoke the agent and get only the final text
-  runID, text, err := r.RunFinalText(context.Background(), "user1", "sess1", userParts)
+  runner := am.NewRunner(app, func(o *am.RunnerOptions) {
+    o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
+  })
+  defer runner.Close()
+
+  ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+  defer cancel()
+
+  parts := []am.Part{am.NewPartFromText("Hello! What can you help with?")}
+
+  runID, text, err := runner.RunFinalText(ctx, "user1", "session1", parts)
   if err != nil {
     log.Fatalf("run failed: %v", err)
   }
 
-  fmt.Printf("=== Basic Agent [runID=%s] ===\n%s\n", runID, text)
+  fmt.Printf("=== Run %s ===\n%s\n", runID, text)
 }
 ```
 
-Reference: [examples/basic_agent/main.go](examples/basic_agent/main.go)
+From here you can add tools, switch to sequential/parallel flows, or persist sessions. Check the [Getting Started guide](https://hupe1980.github.io/agentmesh/getting-started/) for a deeper walkthrough.
 
 ---
 
-## 📖 Examples
+## 🛠️ What you can build
 
-- Basic agent: [examples/basic_agent/main.go](examples/basic_agent/main.go)
-- Tool usage: [examples/tool_usage/main.go](examples/tool_usage/main.go)
-- Agent tool: [examples/agent_tool/main.go](examples/agent_tool/main.go)
-- Output schema: [examples/output_schema/main.go](examples/output_schema/main.go)
-- Multi-agent: [examples/multi_agent/main.go](examples/multi_agent/main.go)
-- Transfer between agents: [examples/transfer_agent/main.go](examples/transfer_agent/main.go)
-- OpenTelemetry (tracing & metrics): [examples/opentelemetry/main.go](examples/opentelemetry/main.go)
+### 🕸️ Orchestration patterns
 
-Run an example ▶️:
+- Compose [`Sequential`](agent/sequential.go), [`Parallel`](agent/parallel.go), and [`Loop`](agent/loop.go) agents for complex flows.
+- Use transfer events to hand off control across agents or escalate when necessary.
+- Rely on the event stream to interleave partial outputs with tool activity.
+
+### 🔧 Tools and retrieval
+
+- Create function tools with [`tool.NewFuncTool`](tool/func.go) or wrap an entire agent via [`tool.NewAgentTool`](tool/agent.go).
+- Promote search connectors into tools using [`retrieval.NewTool`](tool/retrieval/func.go) and merge multiple sources with [`retrieval.NewMergerRetriever`](tool/retrieval/merger.go).
+- Choose from built-in adapters for Amazon Bedrock, Amazon Kendra, and LangChainGo retrievers, or implement your own.
+
+### 🔭 Observability & state
+
+- Plug in custom loggers, metrics, and tracers using [`logging`](logging/), [`metrics`](metrics/), and [`trace`](trace/) packages.
+- Store artifacts, session data, and memories with pluggable backends under [`artifact`](artifact/) and [`session`](session/).
+- Control concurrency and buffering through runner options for predictable throughput.
+
+---
+
+## 🗺️ Documentation map
+
+- **[Getting Started](https://hupe1980.github.io/agentmesh/getting-started/)** – Install, run the basic agent, and learn the runner lifecycle.
+- **[Agents Guide](https://hupe1980.github.io/agentmesh/agents/)** – Build sequential, parallel, loop, and functional agents.
+- **[Models Guide](https://hupe1980.github.io/agentmesh/models/)** – Connect OpenAI, LangChainGo, gateway, or functional models with structured outputs.
+- **[Tools Guide](https://hupe1980.github.io/agentmesh/tools/)** – Author function tools, toolsets, retrieval mergers, and MCP adapters.
+- **[Observability](https://hupe1980.github.io/agentmesh/observability/)** – Wire logging, metrics, tracing, and inspect emitted events.
+- **[Architecture](https://hupe1980.github.io/agentmesh/architecture/)** – Understand flows, the runner, plugins, and execution context.
+
+---
+
+## 🧪 Examples
+
+Run any example locally with `go run`:
 
 ```sh
 go run ./examples/basic_agent/main.go
 ```
 
----
+Featured samples:
 
-## 🧠 Core Concepts
+- Basic model agent – [`examples/basic_agent`](examples/basic_agent/main.go)
+- Tooling bundle – [`examples/tool_usage`](examples/tool_usage/main.go)
+- Agent-as-a-tool – [`examples/agent_tool`](examples/agent_tool/main.go)
+- Structured output – [`examples/output_schema`](examples/output_schema/main.go)
+- Multi-agent fan-out – [`examples/multi_agent`](examples/multi_agent/main.go)
+- Agent transfer – [`examples/transfer_agent`](examples/transfer_agent/main.go)
+- OpenTelemetry wiring – [`examples/opentelemetry`](examples/opentelemetry/main.go)
 
-- Agent: anything that can Run with a scoped context. See [`core.Agent`](core/agent.go).
-- ModelAgent: LLM + tools + flow selection (streaming/function calling/transfer). See [`NewModelAgent`](agentmesh.go).
-- Model: provider-agnostic interface implemented by adapters. See [`model.Model`](model/model.go).
-- Runner: orchestrates invocations, streaming, persistence, lifecycle. See [runner/](runner/).
-- Events: streaming outputs (partial/final) carrying content and actions. See [core/](core/).
-
-Common event actions:
-- 🔧 StateDelta: merge session state
-- 🔁 TransferToAgent: request control transfer
-- ⚠️ Escalate: signal escalation
-- ⏭️ SkipSummarization: opt out of post-processing
+More integrations live under [`examples/`](examples/).
 
 ---
 
-## 🕸️ Multi-agent Patterns
+## 🧰 Development workflow
 
-- Sequential: run children in order, stop on first error
-- Parallel: run children concurrently with branch isolation
-- Loop: iterate a child with optional predicate/escalation
-
-Example (sequential + parallel composition):
-
-```go
-// Create leaf model agents
-a, _ := am.NewModelAgent("A", openai.NewModel())
-b, _ := am.NewModelAgent("B", openai.NewModel())
-
-// Parallel branch
-par := am.NewParallelAgent("FanOut", []am.Agent{a, b})
-
-// Sequential pipeline
-pipe := am.NewSequentialAgent("Pipeline", []am.Agent{par /* then more children... */})
-
-// Run with runner like in Quick Start
-```
-
-References:
-- [agent/sequential.go](agent/sequential.go)
-- [agent/parallel.go](agent/parallel.go)
-- [agent/loop.go](agent/loop.go)
-- Example: [examples/multi_agent/main.go](examples/multi_agent/main.go)
-
----
-
-## 🔭 Observability
-
-AgentMesh propagates observability via context.Context. Inject providers on the Runner, then use helpers inside your agents/tools.
-
-- Logging (structured): pass a logging.Logger to Runner; use logging.FromContext(ctx) in your code.
-- Metrics: pass a metrics.Provider; use metrics.FromContext(ctx) and record counters/histograms.
-- Tracing: pass a trace.Provider; get a tracer via trace.FromContext(ctx).
-
-Example wiring (OpenTelemetry + slog logger):
-
-```go
-logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON, true)
-tp, mp, _ := initOTel() // see examples/opentelemetry
-
-application := am.NewApp("example_app", agent)
-
-r := am.NewRunner(application, func(o *am.RunnerOptions) {
-  o.Logger = logger
-  o.Metrics = metricsotel.New(mp)
-  o.Tracer = traceotel.New(tp)
-})
-```
-
-Usage inside an agent/tool:
-
-```go
-func (a *MyAgent) Run(ctx context.Context, req core.RequestContext, q core.EventWriter) error {
-  // Logs
-  logging.FromContext(ctx).Info("start", "agent", a.Name())
-
-  // Tracing
-  tr := trace.FromContext(ctx).Tracer("agentmesh/myagent")
-  ctx, span := tr.Start(ctx, "MyAgent.Run")
-  defer span.End(nil)
-
-  // Metrics
-  metrics.FromContext(ctx).Counter("myagent_runs_total").Add(ctx, 1)
-  // ...
-  return nil
-}
-```
-
-See a complete example in [examples/opentelemetry/main.go](examples/opentelemetry/main.go).
-
-## 📦 Backpressure
-
-Streaming: read from the results channel until it closes; handle res.Err and res.Event distinctly.
-Tune Runner buffers and concurrency to match consumer speed.
-
----
-
-## 🛠️ Development
-
-Using just:
+Use the `just` recipes provided in the repo:
 
 ```sh
-just test         # go test ./...
-just test-race    # go test ./... -race
-just lint         # golangci-lint
-just cover        # HTML coverage
+just test        # go test ./...
+just test-race   # go test ./... -race
+just lint        # golangci-lint with project config
+just cover       # generate HTML coverage report
 ```
 
-Or plain Go:
+Prefer raw tools?
 
 ```sh
 go test ./... -race
 golangci-lint run --config .golangci.yml
 ```
 
-### Local docs preview
-
-The devcontainer includes Ruby, Bundler, and Jekyll so you can iterate on the site in `docs/`.
+To iterate on the docs locally:
 
 ```sh
 just docs-serve
 ```
 
-That runs Bundler (isolated in `docs/vendor`) and starts Jekyll with livereload on http://localhost:4000. Prefer manual control?
-
-```sh
-cd docs
-bundle config set --local path 'vendor/bundle'
-bundle install
-bundle exec jekyll serve --livereload --host 0.0.0.0 --config _config.yml,_config.dev.yml
-```
+This launches Jekyll with livereload at `http://localhost:4000` using the bundled `docs/_config.dev.yml`.
 
 ---
 
-## 🏭 Production Considerations
+## 🏭 Production checklist
 
-- Persistence: replace in-memory stores with durable implementations
-- Observability: structured logs, metrics/tracing wrappers
-- Backpressure: tune buffer sizes and concurrency
-- Security: sanitize tool outputs; restrict tool set
-- Cost: cache responses; prune session history
+- Swap the in-memory stores (session, memory, artifact) for your durable implementations.
+- Enforce tool allow-lists and sanitize tool responses before surfacing them to models.
+- Tune runner buffers, flow concurrency, and limiter settings to match downstream capacity.
+- Instrument with OpenTelemetry exporters or your preferred providers through runner options.
+- Cache model responses and trim session history to manage cost.
 
 ---
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for philosophy, style, and PR workflow.
+We welcome issues and pull requests! Review [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, coding style, and the release process.
 
 ---
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE)
+MIT © [AgentMesh contributors](LICENSE)
