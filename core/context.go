@@ -46,6 +46,9 @@ type ReadonlyContext interface {
 	RunID() string
 	AgentName() string
 
+	// UserParts returns the original user-provided parts from the request.
+	UserParts() []Part
+
 	// State access
 	StateSnapshotter
 }
@@ -192,6 +195,7 @@ func (rc *requestContext) UserID() string    { return rc.session.UserID() }
 func (rc *requestContext) SessionID() string { return rc.session.ID() }
 func (rc *requestContext) RunID() string     { return rc.runID }
 func (rc *requestContext) AgentName() string { return rc.agent.Name() }
+func (rc *requestContext) UserParts() []Part { return rc.userParts }
 
 // StateSnapshot returns a read-only copy of the session state map.
 func (rc *requestContext) StateSnapshot() map[string]any {
