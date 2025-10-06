@@ -122,22 +122,25 @@ func (r *Runner) Run(
 	userParts []core.Part,
 	optFns ...func(o *core.RunOptions),
 ) (string, <-chan core.RunResult, error) {
+	// Generate a new run ID.
+	runID := uuid.NewString()
+
 	opts := DefaultRunOptions
 
 	for _, fn := range optFns {
 		fn(&opts)
 	}
 
-	if opts.RunID != "" {
-		// Generate a new run ID.
-		opts.RunID = uuid.NewString()
+	// If an external run ID is provided, use it instead of the generated one.
+	if opts.ExternalRunID != "" {
+		runID = opts.ExternalRunID
 	}
 
 	// Prepare context & observability (logger, metrics, tracing)
-	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, opts.RunIDKey, opts.RunID, sessionID)
+	ctx, cancel, runLogger, sp, start := r.prepareRunContext(ctx, opts.RunIDKey, runID, sessionID)
 
 	// Register active run cancel func
-	r.registerRun(opts.RunID, cancel)
+	r.registerRun(runID, cancel)
 
 	// Ensure duration recorded & span ended when Run returns.
 	defer func() {
@@ -152,12 +155,12 @@ func (r *Runner) Run(
 	// Load or create session
 	session, err := r.svc.sessionStore.GetOrCreate(ctx, r.app.Name(), userID, sessionID)
 	if err != nil {
-		r.unregisterRunAndCancel(opts.RunID)
+		r.unregisterRunAndCancel(runID)
 		return "", nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
 	// Build initial request context
-	reqCtx := r.buildRequestContext(opts.RunID, session, userParts, opts)
+	reqCtx := r.buildRequestContext(runID, session, userParts, opts)
 
 	// BeforeRun hook: allows global setup / early short-circuit.
 	if resultsChan, err := func() (<-chan core.RunResult, error) {
@@ -176,7 +179,7 @@ func (r *Runner) Run(
 
 		results := make(chan core.RunResult, 1)
 		writer := &sessionWriter{
-			runID:   opts.RunID,
+			runID:   runID,
 			session: session,
 			store:   r.svc.sessionStore,
 			results: results,
@@ -187,7 +190,7 @@ func (r *Runner) Run(
 				return nil, nil
 			},
 		}
-		beforeEvent := core.NewFullAssistantEvent(opts.RunID, r.agent.Name(), parts...)
+		beforeEvent := core.NewFullAssistantEvent(runID, r.agent.Name(), parts...)
 		if err := writer.Write(ctx, beforeEvent); err != nil {
 			close(results)
 			return nil, fmt.Errorf("failed to write before_run event: %w", err)
@@ -201,41 +204,40 @@ func (r *Runner) Run(
 			}
 		}
 
-		results <- core.RunResult{RunID: opts.RunID, Event: beforeEvent}
+		results <- core.RunResult{RunID: runID, Event: beforeEvent}
 		close(results)
-
 		return results, nil
 	}(); err != nil {
-		r.unregisterRunAndCancel(opts.RunID)
+		r.unregisterRunAndCancel(runID)
 		return "", nil, err
 	} else if resultsChan != nil {
 		runLogger.Info("run finished (before_run short-circuit)", "session_id", sessionID)
-		return opts.RunID, resultsChan, nil
+		return runID, resultsChan, nil
 	}
 
 	// Allow plugins to observe/modify the incoming user parts.
 	if replaced, err := r.onUserParts(ctx, reqCtx, userParts); err != nil {
-		r.unregisterRunAndCancel(opts.RunID)
+		r.unregisterRunAndCancel(runID)
 		return "", nil, err
 	} else if replaced != nil {
 		userParts = replaced
-		reqCtx = r.buildRequestContext(opts.RunID, session, userParts, opts)
+		reqCtx = r.buildRequestContext(runID, session, userParts, opts)
 	}
 
 	if len(userParts) == 0 {
-		r.unregisterRunAndCancel(opts.RunID)
+		r.unregisterRunAndCancel(runID)
 		return "", nil, fmt.Errorf("no user parts provided")
 	}
 
 	// Record the initial user content
-	userEvent := core.NewUserContentEvent(opts.RunID, userParts...)
+	userEvent := core.NewUserContentEvent(runID, userParts...)
 	if opts.StateDelta != nil {
 		userEvent.Actions.StateDelta = core.Map(opts.StateDelta)
 	}
 
 	results := make(chan core.RunResult, opts.EventBufferSize)
 	writer := &sessionWriter{
-		runID:   opts.RunID,
+		runID:   runID,
 		session: session,
 		store:   r.svc.sessionStore,
 		results: results,
@@ -247,16 +249,16 @@ func (r *Runner) Run(
 		},
 	}
 	if err := writer.Write(ctx, userEvent); err != nil {
-		r.unregisterRunAndCancel(opts.RunID)
+		r.unregisterRunAndCancel(runID)
 		return "", nil, fmt.Errorf("failed to write user event: %w", err)
 	}
 
 	runLogger.Info("run started", "session_id", sessionID)
 
 	// Launch asynchronous execution goroutine (keeps same semantics as before).
-	r.launchRun(ctx, opts.RunID, reqCtx, writer, results, runLogger, sessionID)
+	r.launchRun(ctx, runID, reqCtx, writer, results, runLogger, sessionID)
 
-	return opts.RunID, results, nil
+	return runID, results, nil
 }
 
 // Cancel cancels a running run by ID.
@@ -420,14 +422,19 @@ func (r *Runner) onUserParts(
 	reqCtx core.RequestContext,
 	parts []core.Part,
 ) ([]core.Part, error) {
-	var replaced []core.Part
-	var err error
+	var (
+		replaced []core.Part
+		err      error
+	)
+
 	if pm := reqCtx.PluginManager(); pm != nil {
 		replaced, err = pm.RunOnUserParts(ctx, reqCtx, parts)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("plugin: on_user_parts: %w", err)
 	}
+
 	return replaced, nil
 }
 
@@ -435,6 +442,7 @@ func (r *Runner) onUserParts(
 func (r *Runner) registerRun(runID string, cancel context.CancelFunc) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	r.activeRuns[runID] = cancel
 }
 
@@ -442,6 +450,7 @@ func (r *Runner) registerRun(runID string, cancel context.CancelFunc) {
 func (r *Runner) unregisterRun(runID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	delete(r.activeRuns, runID)
 }
 

@@ -16,8 +16,8 @@ type RunOptions struct {
 	// RunIDKey controls the structured log key applied to the run identifier.
 	RunIDKey string
 
-	// RunID is the unique identifier for the run instance.
-	RunID string
+	// ExternalRunID is an optional external identifier for the run instance.
+	ExternalRunID string
 
 	// StateDelta holds optional state updates to merge into the session state.
 	StateDelta map[string]any
