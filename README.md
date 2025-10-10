@@ -26,7 +26,7 @@ go get github.com/hupe1980/agentmesh
 ## 🚀 Quick start
 
 Requirements:
-- Go 1.22 or newer
+- Go 1.24 or newer
 - `OPENAI_API_KEY` exported in your environment
 
 The snippet below mirrors [`examples/basic_agent/main.go`](examples/basic_agent/main.go) and creates a model-backed agent with streaming output and logging:
