@@ -28,7 +28,7 @@ func main() {
 
 	// Specialist child agents
 	mathAgent, err := am.NewModelAgent("MathAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a math expert.\n" +
 				"- Solve with clear, concise steps and provide a boxed final answer.\n" +
 				"- For calculus, apply the power rule/product rule/chain rule as appropriate.\n" +
@@ -42,7 +42,7 @@ func main() {
 	}
 
 	historyAgent, err := am.NewModelAgent("HistoryAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a history expert.\n" +
 				"- Provide concise, factual answers with dates and key names when available.\n" +
 				"- Avoid speculation; indicate uncertainty if sources conflict.",
@@ -56,7 +56,7 @@ func main() {
 
 	// Build hierarchy at construction: root -> (math, history)
 	root, err := am.NewModelAgent("RouterAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a routing assistant. Not a subject-matter expert. Prefer delegating to specialists; answer directly only if no specialist fits.",
 		)
 		o.Description = "Routing orchestrator. Not a subject-matter expert. Prefer delegating to specialists; answer directly only if no specialist fits."
@@ -77,7 +77,7 @@ func main() {
 		_ = r.Close()
 	}()
 
-	userParts := []am.Part{am.NewPartFromText("What is the derivative of x^2 + 3x + 5?")}
+	userParts := []core.Part{core.NewPartFromText("What is the derivative of x^2 + 3x + 5?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

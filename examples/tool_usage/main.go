@@ -92,7 +92,7 @@ func main() {
 	})
 
 	calcAgent, err := am.NewModelAgent("CalculatorAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a careful math assistant.\n" +
 				"- Use the calculator tool for each numeric step.\n" +
 				"- For squaring a value x, call operation 'power' with a=x and b=2 (always include b).\n" +
@@ -117,7 +117,7 @@ func main() {
 		_ = r.Close()
 	}()
 
-	userParts := []am.Part{am.NewPartFromText(
+	userParts := []core.Part{core.NewPartFromText(
 		"Calculate the area of a circle with radius 5.5, " +
 			"then what percent of a square of side 12 it is.",
 	)}

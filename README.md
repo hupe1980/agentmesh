@@ -54,14 +54,16 @@ func main() {
 
   model := openai.NewModel()
 
-  agent, err := am.NewModelAgent("basic", model, func(o *am.ModelAgentOptions) {
-    o.Instructions = am.NewInstructionsFromText("Keep responses short and helpful.")
-  })
-  if err != nil {
-    log.Fatalf("build agent: %v", err)
-  }
+  "context"
+  "fmt"
+  "log"
+  "os"
+  "time"
 
-  app := am.NewApp("basic_app", agent)
+  am "github.com/hupe1980/agentmesh"
+  "github.com/hupe1980/agentmesh/core"
+  "github.com/hupe1980/agentmesh/logging"
+  "github.com/hupe1980/agentmesh/model/openai"
 
   runner := am.NewRunner(app, func(o *am.RunnerOptions) {
     o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
@@ -71,7 +73,7 @@ func main() {
   ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
   defer cancel()
 
-  parts := []am.Part{am.NewPartFromText("Hello! What can you help with?")}
+  parts := []core.Part{core.NewPartFromText("Hello! What can you help with?")}
 
   runID, text, err := runner.RunFinalText(ctx, "user1", "session1", parts)
   if err != nil {
@@ -88,7 +90,7 @@ From here you can add tools, switch to sequential/parallel flows, or persist ses
 
 ## 🛠️ What you can build
 
-### 🕸️ Orchestration patterns
+  parts := []core.Part{core.NewPartFromText("Hello! What can you help with?")}
 
 - Compose [`Sequential`](agent/sequential.go), [`Parallel`](agent/parallel.go), and [`Loop`](agent/loop.go) agents for complex flows.
 - Use transfer events to hand off control across agents or escalate when necessary.

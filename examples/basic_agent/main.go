@@ -8,6 +8,7 @@ import (
 	"time"
 
 	am "github.com/hupe1980/agentmesh"
+	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/logging"
 	"github.com/hupe1980/agentmesh/model/openai"
 )
@@ -24,7 +25,7 @@ func main() {
 	model := openai.NewModel()
 
 	llmAgent, err := am.NewModelAgent("BasicAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a helpful assistant. Keep responses concise and friendly.",
 		)
 	})
@@ -43,7 +44,7 @@ func main() {
 	}()
 
 	// 3. Build user content (helper function style across examples)
-	userParts := []am.Part{am.NewPartFromText("Hello! What can you help me with?")}
+	userParts := []core.Part{core.NewPartFromText("Hello! What can you help me with?")}
 
 	// 4. Invoke agent with timeout context and get only the final text
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

@@ -66,7 +66,8 @@ The runner manages application-level concerns around an agent graph:
 Construct a runner via the facade to keep configuration terse:
 
 ```go
-app := am.NewRunner("support_assistant", agentGraph, func(o *am.RunnerOptions) {
+application := am.NewApp("support_assistant", agentGraph)
+runner := am.NewRunner(application, func(o *am.RunnerOptions) {
   o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON, true)
   o.PluginManager = myPlugins
   o.SessionStore = sessionStore

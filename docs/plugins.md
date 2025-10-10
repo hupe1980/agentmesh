@@ -89,7 +89,7 @@ import (
 
 model := openai.NewModel()
 agent, err := am.NewModelAgent("guarded", model, func(o *am.ModelAgentOptions) {
-  o.Instructions = am.NewInstructionsFromText("Answer the user's question succinctly.")
+  o.Instructions = core.NewInstructionsFromText("Answer the user's question succinctly.")
 })
 if err != nil {
   panic(err)

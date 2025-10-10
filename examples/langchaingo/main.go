@@ -35,7 +35,7 @@ func main() {
 	}
 
 	ag, err := am.NewModelAgent("LangChainGoAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			"You are a concise assistant. Use the calc tool when arithmetic is involved.",
 		)
 		// Wrap the langchaingo Calculator tool using our adapter
@@ -52,7 +52,7 @@ func main() {
 	})
 	defer func() { _ = r.Close() }()
 
-	userParts := []am.Part{am.NewPartFromText("What is (12.5 + 7.5) * 2?")}
+	userParts := []core.Part{core.NewPartFromText("What is (12.5 + 7.5) * 2?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

@@ -75,7 +75,7 @@ func main() {
 		ev := core.NewFullAssistantEvent(
 			reqCtx.RunID(),
 			agentName,
-			am.NewPartFromText("Hello from OTel example"),
+			core.NewPartFromText("Hello from OTel example"),
 		)
 		_ = q.Write(ctx, ev)
 		return nil
@@ -91,7 +91,7 @@ func main() {
 	defer r.Close()
 
 	// Run with a simple user message and print events
-	runID, results, err := r.Run(ctx, "user1", "sess1", []am.Part{am.NewPartFromText("ping")})
+	runID, results, err := r.Run(ctx, "user1", "sess1", []core.Part{core.NewPartFromText("ping")})
 	if err != nil {
 		panic(err)
 	}

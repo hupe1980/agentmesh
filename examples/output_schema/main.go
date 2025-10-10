@@ -54,7 +54,7 @@ func main() {
 	model := openai.NewModel()
 
 	agent, err := am.NewModelAgent("WeatherAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText("You are a weather assistant.")
+		o.Instructions = core.NewInstructionsFromText("You are a weather assistant.")
 		o.Tools = []core.Tool{newGetWeatherTool()}
 		o.OutputSchema = core.MustNewOutputSchema("weather_response", map[string]any{
 			"type": "object",
@@ -81,7 +81,7 @@ func main() {
 		_ = r.Close()
 	}()
 
-	userParts := []am.Part{am.NewPartFromText("What's the weather like in Berlin?")}
+	userParts := []core.Part{core.NewPartFromText("What's the weather like in Berlin?")}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()

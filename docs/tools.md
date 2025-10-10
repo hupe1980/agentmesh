@@ -39,6 +39,8 @@ sidebar:
 
 Tools let models trigger deterministic side effects—API calls, computations, retrieval queries, or even other agents—while respecting schema validation and observability. Everything lives under [`tool/`](https://github.com/hupe1980/agentmesh/tree/main/tool) and works with the shared [`core.Tool`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Tool) contract, while [`tool/retrieval`](https://github.com/hupe1980/agentmesh/tree/main/tool/retrieval) adds convenience helpers for search-style capabilities.
 
+_Examples assume `am := github.com/hupe1980/agentmesh` and `core := github.com/hupe1980/agentmesh/core`._
+
 ---
 
 ## Function tools {#function-tools}
@@ -134,7 +136,7 @@ Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFac
   - Works with any `core.Agent` (model-based or purely functional)
 
 ```go
-summarizer := am.NewSequentialAgent("summarizer", []am.Agent{writer, editor})
+summarizer := am.NewSequentialAgent("summarizer", []core.Agent{writer, editor})
 summarizerTool := tool.NewAgentTool(summarizer)
 
 planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {

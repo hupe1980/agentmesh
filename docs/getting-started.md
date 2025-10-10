@@ -60,14 +60,16 @@ import (
 model := openai.NewModel()
 
 agent, err := am.NewModelAgent("basic_agent", model, func(o *am.ModelAgentOptions) {
-  o.Instructions = am.NewInstructionsFromText("You are a concise assistant.")
+  o.Instructions = core.NewInstructionsFromText("You are a concise assistant.")
 })
 if err != nil {
   log.Fatalf("failed to build agent: %v", err)
 }
 
 application := am.NewApp("basic_agent_app", agent)
-r := am.NewRunner(application)
+r := am.NewRunner(application, func(o *am.RunnerOptions) {
+  // customize runner behaviour here (logger, stores, plugins, ...)
+})
 // ...
 ```
 

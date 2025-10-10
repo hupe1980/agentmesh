@@ -67,7 +67,7 @@ model := openaimodel.NewModel(func(o *openaimodel.Options) {
 })
 
 planner, _ := am.NewModelAgent("planner", model, func(o *am.ModelAgentOptions) {
-  o.Instructions = am.NewInstructionsFromText("Plan the task before calling tools.")
+  o.Instructions = core.NewInstructionsFromText("Plan the task before calling tools.")
   o.Tools = []core.Tool{todoListTool}
 })
 ```

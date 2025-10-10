@@ -6,6 +6,9 @@ import "maps"
 // implement the unexported isPart marker to form a closed set.
 type Part interface{ isPart() }
 
+// Parts is a slice of core.Part.
+type Parts = []Part
+
 // Role indicates the conversational role associated with a Content message.
 // It is a string-based type for seamless JSON serialization.
 type Role string

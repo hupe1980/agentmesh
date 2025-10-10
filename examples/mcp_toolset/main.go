@@ -68,7 +68,7 @@ func main() {
 	model := openai.NewModel(func(o *openai.Options) { o.Temperature = 0 })
 
 	llmAgent, err := am.NewModelAgent("MCPAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText("You can call the 'sum' tool to add two numbers. When asked to add, call the tool and return the numeric result.")
+		o.Instructions = core.NewInstructionsFromText("You can call the 'sum' tool to add two numbers. When asked to add, call the tool and return the numeric result.")
 		o.Toolsets = []core.Toolset{ts}
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	parts := []am.Part{am.NewPartFromText("Please add 3.5 and 4.25")}
+	parts := []core.Part{core.NewPartFromText("Please add 3.5 and 4.25")}
 	runID, results, err := r.Run(ctx, "user1", "sess1", parts)
 	if err != nil {
 		log.Fatalf("run failed: %v", err)

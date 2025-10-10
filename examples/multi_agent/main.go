@@ -26,7 +26,7 @@ func main() {
 
 	// Step 1: Research specialist
 	researchAgent, err := am.NewModelAgent("ResearchAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(fmt.Sprintf(
+		o.Instructions = core.NewInstructionsFromText(fmt.Sprintf(
 			`
 You are a senior research analyst focused on EU AI regulation. Your task is to research the latest news and official updates about Generative AI regulation in the EU as of %s.
 
@@ -34,8 +34,6 @@ Requirements:
 - Prioritize EU AI Act, implementing acts, guidance, enforcement timelines, and national implementations since 2024.
 - Prefer credible sources: EU institutions (Commission, Parliament, Council), EDPB, ENISA, national DPAs, reputable outlets, and major think tanks.
 - Provide 3-5 key findings; each finding must include a 1-2 sentence summary and a citation with source name, URL, and date.
-- Include a concise timeline (3-6 dated milestones) and 3-5 open questions.
-- Avoid speculation. If unknown or conflicting, say "Unknown" or note the contradiction.
 
 Output format (use exactly these section headers):
 === RESEARCH ===
@@ -62,7 +60,7 @@ Sources:
 
 	// Step 2: Analysis specialist (consumes research_data)
 	analysisAgent, err := am.NewModelAgent("AnalysisAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			`
 You are a policy and risk analysis specialist. Analyze the following research to derive actionable insights:
 
@@ -70,8 +68,6 @@ You are a policy and risk analysis specialist. Analyze the following research to
 
 Requirements:
 - Extract 3-5 top themes with one-sentence takeaways; add [confidence: high|medium|low] to each.
-- Assess impacts for: Startups, Enterprises, Open-source, Regulators (1-2 bullets each).
-- List key risks/uncertainties and where evidence is weak or contradictory.
 - Provide 3-5 recommendations labeled Short-term (S), Medium-term (M), or Long-term (L).
 - Do not invent URLs; reference sources by name if needed, or say "Unknown".
 
@@ -108,7 +104,7 @@ Recommendations:
 
 	// Step 3: Report writer (consumes analysis_results)
 	reportAgent, err := am.NewModelAgent("ReportAgent", model, func(o *am.ModelAgentOptions) {
-		o.Instructions = am.NewInstructionsFromText(
+		o.Instructions = core.NewInstructionsFromText(
 			`
 You are a concise technical report writer. Using the analysis below, craft a clear, executive-ready report in Markdown.
 
@@ -116,8 +112,6 @@ You are a concise technical report writer. Using the analysis below, craft a cle
 
 Requirements:
 - Write a descriptive title and a 4-6 sentence summary.
-- Organize the body with headings: Background, Current State, Impacts, Recommendations.
-- Keep recommendations actionable (who/what/when). Avoid speculation.
 - Include a "Sources" section at the end; do not duplicate raw URLs in the body.
 
 Output format (Markdown):
@@ -148,7 +142,7 @@ Output format (Markdown):
 	}
 
 	// Sequential workflow: Research → Analysis → Report
-	workflow := am.NewSequentialAgent("MultiAgent", []am.Agent{researchAgent, analysisAgent, reportAgent})
+	workflow := am.NewSequentialAgent("MultiAgent", []core.Agent{researchAgent, analysisAgent, reportAgent})
 
 	application := am.NewApp("multi_agent_app", workflow)
 
@@ -159,7 +153,7 @@ Output format (Markdown):
 		_ = r.Close()
 	}()
 
-	userParts := []am.Part{am.NewPartFromText(
+	userParts := []core.Part{core.NewPartFromText(
 		"Research and summarize the latest news about Generative AI regulation in the EU.",
 	)}
 

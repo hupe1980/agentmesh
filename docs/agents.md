@@ -48,7 +48,7 @@ If you want to plug an LLM into a flow, start here. `ModelAgent` wraps any `core
 ```go
 llm := openai.NewModel() // github.com/hupe1980/agentmesh/model/openai
 planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
-  o.Instructions = am.NewInstructionsFromText("You plan tasks then call tools.")
+  o.Instructions = core.NewInstructionsFromText("You plan tasks then call tools.")
   o.Tools = []core.Tool{todoListTool}
 })
 ```
@@ -66,7 +66,7 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
   - Easy to nest—children can be `ModelAgent`, `ParallelAgent`, or other sequential pipelines
 
 ```go
-pipeline := am.NewSequentialAgent("research_pipe", []am.Agent{
+pipeline := am.NewSequentialAgent("research_pipe", []core.Agent{
   planner,
   researcher,
   summarizer,
@@ -86,7 +86,7 @@ pipeline := am.NewSequentialAgent("research_pipe", []am.Agent{
   - Branch context IDs include parent/child names for traceability
 
 ```go
-workers := []am.Agent{analystA, analystB, analystC}
+workers := []core.Agent{analystA, analystB, analystC}
 fanout := am.NewParallelAgent("analysis_fanout", workers, func(o *am.ParallelAgentOptions) {
   o.Timeout = 30 * time.Second
 })
@@ -134,7 +134,8 @@ healthCheck := am.NewFuncAgent("health_check", func(ctx context.Context, req cor
   o.Description = "Runs infrastructure health probes"
 })
 
-runner := am.NewRunner("ops", healthCheck, func(o *am.RunnerOptions) { o.Logger = logger })
+application := am.NewApp("ops", healthCheck)
+runner := am.NewRunner(application, func(o *am.RunnerOptions) { o.Logger = logger })
 ```
 
 ---
