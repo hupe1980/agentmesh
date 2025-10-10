@@ -21,14 +21,13 @@ AgentMesh is a Go-first framework for orchestrating AI agents with predictable f
 go get github.com/hupe1980/agentmesh
 ```
 
-Requirements:
-
-- Go 1.24+
-- Set `OPENAI_API_KEY` to run the OpenAI example adapters
-
 ---
 
 ## 🚀 Quick start
+
+Requirements:
+- Go 1.22 or newer
+- `OPENAI_API_KEY` exported in your environment
 
 The snippet below mirrors [`examples/basic_agent/main.go`](examples/basic_agent/main.go) and creates a model-backed agent with streaming output and logging:
 
@@ -43,6 +42,7 @@ import (
   "time"
 
   am "github.com/hupe1980/agentmesh"
+  "github.com/hupe1980/agentmesh/core"
   "github.com/hupe1980/agentmesh/logging"
   "github.com/hupe1980/agentmesh/model/openai"
 )
@@ -54,16 +54,14 @@ func main() {
 
   model := openai.NewModel()
 
-  "context"
-  "fmt"
-  "log"
-  "os"
-  "time"
+  agent, err := am.NewModelAgent("basic", model, func(o *am.ModelAgentOptions) {
+    o.Instructions = core.NewInstructionsFromText("Keep responses short and helpful.")
+  })
+  if err != nil {
+    log.Fatalf("build agent: %v", err)
+  }
 
-  am "github.com/hupe1980/agentmesh"
-  "github.com/hupe1980/agentmesh/core"
-  "github.com/hupe1980/agentmesh/logging"
-  "github.com/hupe1980/agentmesh/model/openai"
+  app := am.NewApp("basic_app", agent)
 
   runner := am.NewRunner(app, func(o *am.RunnerOptions) {
     o.Logger = logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
@@ -89,9 +87,6 @@ From here you can add tools, switch to sequential/parallel flows, or persist ses
 ---
 
 ## 🛠️ What you can build
-
-  parts := []core.Part{core.NewPartFromText("Hello! What can you help with?")}
-
 - Compose [`Sequential`](agent/sequential.go), [`Parallel`](agent/parallel.go), and [`Loop`](agent/loop.go) agents for complex flows.
 - Use transfer events to hand off control across agents or escalate when necessary.
 - Rely on the event stream to interleave partial outputs with tool activity.
