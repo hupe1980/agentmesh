@@ -27,6 +27,9 @@ type Part = core.Part
 // RunResult re-exports core.RunResult for convenience.
 type RunResult = core.RunResult
 
+// Runner re-exports core.Runner for convenience.
+type Runner = core.Runner
+
 // Model re-exports core.Model for convenience.
 type Model = core.Model
 
