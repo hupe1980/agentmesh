@@ -84,7 +84,8 @@ func (p *MessagesProcessor) ProcessRequest(
 	req *core.ModelRequest,
 	agent core.FlowAgent,
 ) error {
-	events := reqCtx.GetSessionHistory()
+	session := reqCtx.GetSession()
+	events := session.Events()
 	historyLimit := agent.MaxHistoryMessages()
 	mode := agent.HistoryMode()
 

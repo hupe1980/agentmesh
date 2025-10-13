@@ -32,9 +32,9 @@ type MemoryWriter interface {
 	AddSessionToMemory(ctx context.Context, session *Session) error
 }
 
-// SessionReader exposes access to the session's event history.
+// SessionReader exposes access to the session.
 type SessionReader interface {
-	GetSessionHistory() []*Event
+	GetSession() *Session
 }
 
 // ReadonlyContext aggregates read-only capabilities and identity.
@@ -238,9 +238,9 @@ func (rc *requestContext) AddSessionToMemory(ctx context.Context, session *Sessi
 	return rc.memoryStore.AddSession(ctx, session)
 }
 
-// GetSessionHistory returns all historical events for the session.
-func (rc *requestContext) GetSessionHistory() []*Event {
-	return rc.session.Events()
+// GetSession returns the current session.
+func (rc *requestContext) GetSession() *Session {
+	return rc.session
 }
 
 // NewBranchContextForSubAgent creates a branched RequestContext for a sub-agent.
