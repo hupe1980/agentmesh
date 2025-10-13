@@ -29,7 +29,7 @@ type MemoryReader interface {
 
 // MemoryWriter provides write access to the memory store.
 type MemoryWriter interface {
-	AddSessionToMemory(ctx context.Context, session Session) error
+	AddSessionToMemory(ctx context.Context, session *Session) error
 }
 
 // SessionReader exposes access to the session's event history.
@@ -234,8 +234,8 @@ func (rc *requestContext) SearchMemory(ctx context.Context, q string) (*SearchRe
 }
 
 // AddSessionToMemory stores the session information in the MemoryStore.
-func (rc *requestContext) AddSessionToMemory(ctx context.Context, session Session) error {
-	return rc.memoryStore.AddSession(ctx, &session)
+func (rc *requestContext) AddSessionToMemory(ctx context.Context, session *Session) error {
+	return rc.memoryStore.AddSession(ctx, session)
 }
 
 // GetSessionHistory returns all historical events for the session.
