@@ -1,6 +1,9 @@
 package core
 
-import "maps"
+import (
+	"fmt"
+	"maps"
+)
 
 // State maintains the current value and the pending-commit delta.
 type State struct {
@@ -97,4 +100,34 @@ func (s *State) ToMap() map[string]any {
 	maps.Copy(result, s.delta)
 
 	return result
+}
+
+// StateString returns the value for the given key as a string.
+func StateString(snap StateSnapshotter, key string) (string, error) {
+	val, ok := snap.StateSnapshot()[key]
+	if !ok {
+		return "", ErrKeyMissing{Key: key}
+	}
+	str, ok := val.(string)
+	if !ok {
+		return "", ErrTypeMismatch{Key: key, Expected: "string", ActualType: fmt.Sprintf("%T", val)}
+	}
+	return str, nil
+}
+
+// StateTyped returns the value for the given key as type T.
+func StateTyped[T any](snap StateSnapshotter, key string) (T, error) {
+	var zero T
+
+	val, ok := snap.StateSnapshot()[key]
+	if !ok {
+		return zero, ErrKeyMissing{Key: key}
+	}
+
+	typed, ok := val.(T)
+	if !ok {
+		return zero, ErrTypeMismatch{Key: key, Expected: fmt.Sprintf("%T", zero), ActualType: fmt.Sprintf("%T", val)}
+	}
+
+	return typed, nil
 }

@@ -1,6 +1,9 @@
 package core
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // Core and hierarchy errors (grouped for consistent style)
 var (
@@ -32,3 +35,23 @@ var (
 	ErrSubAgentSelf          = errors.New("agent: cannot add self as sub-agent")
 	ErrSubAgentAlreadyExists = errors.New("agent: sub-agent already exists")
 )
+
+// ErrKeyMissing is returned when a key does not exist in the state snapshot.
+type ErrKeyMissing struct {
+	Key string
+}
+
+func (e ErrKeyMissing) Error() string {
+	return fmt.Sprintf("state: key %q not found", e.Key)
+}
+
+// ErrTypeMismatch is returned when a value is of unexpected type.
+type ErrTypeMismatch struct {
+	Key        string
+	Expected   string
+	ActualType string
+}
+
+func (e ErrTypeMismatch) Error() string {
+	return fmt.Sprintf("state: key %q has type %s, expected %s", e.Key, e.ActualType, e.Expected)
+}
