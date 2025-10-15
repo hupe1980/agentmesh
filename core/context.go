@@ -320,8 +320,7 @@ func NewCallbackContext(reqCtx RequestContext, optFns ...func(o *CallbackContext
 		opts.EventActions = &EventActions{}
 	}
 
-	// Build a delta-aware State that overlays the session snapshot with the provided delta.
-	value := reqCtx.StateSnapshot()
+	value := reqCtx.GetSession().State()
 
 	// Ensure StateDelta is non-nil after options.
 	if opts.StateDelta == nil {
