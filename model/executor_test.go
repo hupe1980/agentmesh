@@ -38,7 +38,14 @@ func TestExecuteModel_ShortCircuit(t *testing.T) {
 	ag.ModelVal = &testutil.MockModel{}
 	rc := newModelReqCtx("run-short", ag, pm)
 
-	respCh, errCh := ExecuteModel(context.Background(), rc, ag.ModelVal, &core.ModelRequest{})
+	respCh, errCh := ExecuteModel(
+		context.Background(),
+		rc,
+		ag.BeforeModelCallbacks(),
+		ag.AfterModelCallbacks(),
+		ag.ModelVal,
+		&core.ModelRequest{},
+	)
 	var final *core.ModelResponse
 	for respCh != nil || errCh != nil {
 		select {
@@ -90,7 +97,14 @@ func TestExecuteModel_AfterReplacement(t *testing.T) {
 	}
 	rc := newModelReqCtx("run-after", ag, pm)
 
-	respCh, errCh := ExecuteModel(context.Background(), rc, ag.ModelVal, &core.ModelRequest{})
+	respCh, errCh := ExecuteModel(
+		context.Background(),
+		rc,
+		ag.BeforeModelCallbacks(),
+		ag.AfterModelCallbacks(),
+		ag.ModelVal,
+		&core.ModelRequest{},
+	)
 	var final *core.ModelResponse
 	for respCh != nil || errCh != nil {
 		select {
@@ -143,7 +157,14 @@ func TestExecuteModel_OnModelErrorRecovery(t *testing.T) {
 	}
 	rc := newModelReqCtx("run-err", ag, pm)
 
-	respCh, errCh := ExecuteModel(context.Background(), rc, ag.ModelVal, &core.ModelRequest{})
+	respCh, errCh := ExecuteModel(
+		context.Background(),
+		rc,
+		ag.BeforeModelCallbacks(),
+		ag.AfterModelCallbacks(),
+		ag.ModelVal,
+		&core.ModelRequest{},
+	)
 	var final *core.ModelResponse
 	for respCh != nil || errCh != nil {
 		select {
@@ -186,7 +207,14 @@ func TestExecuteModel_PartialStreaming(t *testing.T) {
 		},
 	}
 	rc := newModelReqCtx("run-stream", ag, pm)
-	respCh, errCh := ExecuteModel(context.Background(), rc, ag.ModelVal, &core.ModelRequest{})
+	respCh, errCh := ExecuteModel(
+		context.Background(),
+		rc,
+		ag.BeforeModelCallbacks(),
+		ag.AfterModelCallbacks(),
+		ag.ModelVal,
+		&core.ModelRequest{},
+	)
 	collected := []*core.ModelResponse{}
 	for respCh != nil || errCh != nil {
 		select {
@@ -210,4 +238,103 @@ func TestExecuteModel_PartialStreaming(t *testing.T) {
 	assert.True(t, collected[1].Partial)
 	assert.False(t, collected[2].Partial)
 	assert.Equal(t, "done", collected[2].Parts[0].(*core.TextPart).Text)
+}
+
+func TestExecuteModel_AgentCallbacksRunAfterPlugins(t *testing.T) {
+	var pluginBeforeRan bool
+	var pluginAfterRan bool
+	var agentBeforeObserved bool
+	var agentAfterObserved bool
+
+	pm := core.NewPluginManager(&testutil.PluginMock{
+		BeforeModelFunc: func(
+			context.Context,
+			core.CallbackContext,
+			*core.ModelRequest,
+		) (*core.ModelResponse, error) {
+			pluginBeforeRan = true
+			return nil, nil
+		},
+		AfterModelFunc: func(
+			context.Context,
+			core.CallbackContext,
+			*core.ModelResponse,
+		) (*core.ModelResponse, error) {
+			pluginAfterRan = true
+			return nil, nil
+		},
+	})
+
+	ag := testutil.NewMockAgent("A")
+	ag.ModelVal = &testutil.MockModel{
+		GenerateFunc: func(
+			ctx context.Context,
+			req *core.ModelRequest,
+		) (<-chan *core.ModelResponse, <-chan error) {
+			respCh := make(chan *core.ModelResponse, 1)
+			errCh := make(chan error, 1)
+			respCh <- &core.ModelResponse{Parts: []core.Part{core.NewPartFromText("orig")}}
+			close(respCh)
+			close(errCh)
+			return respCh, errCh
+		},
+	}
+
+	ag.BeforeModelCallbacksList = []core.BeforeModelCallback{
+		func(
+			context.Context,
+			core.CallbackContext,
+			*core.ModelRequest,
+		) (*core.ModelResponse, error) {
+			agentBeforeObserved = pluginBeforeRan
+			return nil, nil
+		},
+	}
+
+	ag.AfterModelCallbacksList = []core.AfterModelCallback{
+		func(
+			context.Context,
+			core.CallbackContext,
+			*core.ModelResponse,
+		) (*core.ModelResponse, error) {
+			agentAfterObserved = pluginAfterRan
+			return &core.ModelResponse{Parts: []core.Part{core.NewPartFromText("agent")}}, nil
+		},
+	}
+
+	rc := newModelReqCtx("run-order", ag, pm)
+
+	respCh, errCh := ExecuteModel(
+		context.Background(),
+		rc,
+		ag.BeforeModelCallbacks(),
+		ag.AfterModelCallbacks(),
+		ag.ModelVal,
+		&core.ModelRequest{},
+	)
+	var final *core.ModelResponse
+	for respCh != nil || errCh != nil {
+		select {
+		case r, ok := <-respCh:
+			if !ok {
+				respCh = nil
+				continue
+			}
+			if r != nil && !r.Partial {
+				final = r
+			}
+		case err, ok := <-errCh:
+			if ok {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			errCh = nil
+		}
+	}
+
+	require.NotNil(t, final)
+	assert.Equal(t, "agent", final.Parts[0].(*core.TextPart).Text)
+	assert.True(t, pluginBeforeRan)
+	assert.True(t, pluginAfterRan)
+	assert.True(t, agentBeforeObserved)
+	assert.True(t, agentAfterObserved)
 }

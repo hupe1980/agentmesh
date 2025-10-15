@@ -10,12 +10,13 @@
 //
 // Execution model:
 //
-//	ExecuteModel(ctx, reqCtx, mdl, req, writer) drives generation while invoking
+//	ExecuteModel(ctx, reqCtx, before, after, mdl, req) drives generation while invoking
 //	RequestContext hooks in a well-defined order:
 //	  1. RunBeforeModel: optional short‑circuit (returns final *ModelResponse).
 //	  2. Model.Generate: stream partial + final responses.
 //	  3. RunOnModelError: opportunity to recover with a replacement response.
 //	  4. RunAfterModel: final post‑processing / replacement.
+//	  5. Agent callbacks (before / after) run around plugin hooks when provided.
 //
 //	During generation each partial response produces a PartialAssistant event
 //	through the provided EventWriter; the final response (original, recovered or

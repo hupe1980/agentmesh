@@ -263,20 +263,31 @@ type ModelExecutor interface {
 	Execute(
 		ctx context.Context,
 		reqCtx RequestContext,
+		before []BeforeModelCallback,
+		after []AfterModelCallback,
 		model Model,
 		req *ModelRequest,
 	) (<-chan *ModelResponse, <-chan error)
 }
 
 // ModelExecutorFunc is an adapter to allow plain functions to satisfy ModelExecutor.
-type ModelExecutorFunc func(context.Context, RequestContext, Model, *ModelRequest) (<-chan *ModelResponse, <-chan error)
+type ModelExecutorFunc func(
+	context.Context,
+	RequestContext,
+	[]BeforeModelCallback,
+	[]AfterModelCallback,
+	Model,
+	*ModelRequest,
+) (<-chan *ModelResponse, <-chan error)
 
 // Execute calls the underlying function to execute the model request.
 func (f ModelExecutorFunc) Execute(
 	ctx context.Context,
 	reqCtx RequestContext,
+	before []BeforeModelCallback,
+	after []AfterModelCallback,
 	model Model,
 	req *ModelRequest,
 ) (<-chan *ModelResponse, <-chan error) {
-	return f(ctx, reqCtx, model, req)
+	return f(ctx, reqCtx, before, after, model, req)
 }

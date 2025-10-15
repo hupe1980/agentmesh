@@ -40,6 +40,10 @@ type ModelAgentOptions struct {
 	Toolsets []core.Toolset
 	// Sub-agents managed by this agent
 	SubAgents []core.Agent
+	// BeforeModelCallbacks run prior to invoking the model; first non-nil response short-circuits execution.
+	BeforeModelCallbacks []core.BeforeModelCallback
+	// AfterModelCallbacks run after receiving the final model response; non-nil response replaces the original.
+	AfterModelCallbacks []core.AfterModelCallback
 }
 
 // DefaultModelAgentOptions returns a fresh copy of the sensible defaults used by
@@ -77,13 +81,15 @@ func DefaultModelAgentOptions(name string) ModelAgentOptions {
 // It uses flow processors under the hood and logs via the RequestContext's
 // logging interface.
 type ModelAgent struct {
-	*BaseAgent                        // Embedded base agent functionality
-	model           core.Model        // Language model interface
-	instructions    core.Instructions // Instructions for the LLM
-	tools           []core.Tool       // Registered tools for function calling
-	toolsets        []core.Toolset    // Registered toolsets for function calling
-	enableStreaming bool              // Whether to stream responses
-	toolTimeout     time.Duration     // Timeout for individual tool calls
+	*BaseAgent                                      // Embedded base agent functionality
+	model                core.Model                 // Language model interface
+	instructions         core.Instructions          // Instructions for the LLM
+	tools                []core.Tool                // Registered tools for function calling
+	toolsets             []core.Toolset             // Registered toolsets for function calling
+	enableStreaming      bool                       // Whether to stream responses
+	toolTimeout          time.Duration              // Timeout for individual tool calls
+	beforeModelCallbacks []core.BeforeModelCallback // Agent-scoped callbacks before model invocation
+	afterModelCallbacks  []core.AfterModelCallback  // Agent-scoped callbacks after model invocation
 
 	outputSchema core.Opt[core.OutputSchema] // Expected output schema for responses
 	outputKey    string                      // Key for saving responses to session state
@@ -127,6 +133,8 @@ func NewModelAgent(
 		tools:                 opts.Tools,
 		toolsets:              opts.Toolsets,
 		flowSelector:          flowSelector,
+		beforeModelCallbacks:  opts.BeforeModelCallbacks,
+		afterModelCallbacks:   opts.AfterModelCallbacks,
 	}
 
 	a.BaseAgent = NewBaseAgent(a, name, opts.Description)
@@ -147,6 +155,16 @@ func (a *ModelAgent) Tools() []core.Tool {
 // Toolsets returns the registered toolsets for function calling.
 func (a *ModelAgent) Toolsets() []core.Toolset {
 	return a.toolsets
+}
+
+// BeforeModelCallbacks returns the registered agent-scoped before-model callbacks.
+func (a *ModelAgent) BeforeModelCallbacks() []core.BeforeModelCallback {
+	return a.beforeModelCallbacks
+}
+
+// AfterModelCallbacks returns the registered agent-scoped after-model callbacks.
+func (a *ModelAgent) AfterModelCallbacks() []core.AfterModelCallback {
+	return a.afterModelCallbacks
 }
 
 // ResolveTools aggregates tools from tools and toolsets.

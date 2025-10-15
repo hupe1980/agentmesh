@@ -158,6 +158,7 @@ func (f *BaseFlow) handleFunctionCalls(
 	// Build parts and merge actions in call order
 	parts := buildPartsInOrder(fnCalls, respByID)
 	stateDelta, artifactDelta, transferTo, escalate, skip := mergeActionsInOrder(fnCalls, actionsByID)
+
 	merged := assembleMergedFunctionResponseEvent(
 		reqCtx.RunID(), reqCtx.AgentName(), tmplResp, parts, stateDelta, artifactDelta, transferTo, escalate, skip,
 	)
@@ -219,7 +220,14 @@ func (f *BaseFlow) stepCall(
 	}
 
 	mdl := f.agent.Model()
-	respCh, errCh := f.executors.ModelExecutor.Execute(ctx, reqCtx, mdl, fr.req)
+	respCh, errCh := f.executors.ModelExecutor.Execute(
+		ctx,
+		reqCtx,
+		f.agent.BeforeModelCallbacks(),
+		f.agent.AfterModelCallbacks(),
+		mdl,
+		fr.req,
+	)
 
 	for respCh != nil || errCh != nil {
 		select {
@@ -232,28 +240,8 @@ func (f *BaseFlow) stepCall(
 				continue
 			}
 
-			// Apply response processors to each chunk (partial or final).
-			for _, processor := range f.responseProcessors {
-				if err := processor.ProcessResponse(ctx, reqCtx, r, f.agent); err != nil {
-					return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
-				}
-			}
-
-			// Convert model response into appropriate event type.
-			var ev *core.Event
-			if r.Partial {
-				ev = core.NewPartialAssistantEvent(reqCtx.RunID(), f.agent.Name(), r.Parts...)
-			} else {
-				ev = core.NewFullAssistantEvent(reqCtx.RunID(), f.agent.Name(), r.Parts...)
-			}
-
-			if err := queue.Write(ctx, ev); err != nil {
-				return fmt.Errorf("failed to write event: %w", err)
-			}
-
-			fr.lastEvent = ev
-			if !r.Partial {
-				fr.fnCalls = ev.GetFunctionCalls()
+			if err := f.handleModelResponse(ctx, reqCtx, queue, fr, r); err != nil {
+				return err
 			}
 		case err, ok := <-errCh:
 			if ok {
@@ -264,6 +252,38 @@ func (f *BaseFlow) stepCall(
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	}
+
+	return nil
+}
+
+func (f *BaseFlow) handleModelResponse(
+	ctx context.Context,
+	reqCtx core.RequestContext,
+	queue core.EventWriter,
+	fr *flowFrame,
+	resp *core.ModelResponse,
+) error {
+	for _, processor := range f.responseProcessors {
+		if err := processor.ProcessResponse(ctx, reqCtx, resp, f.agent); err != nil {
+			return fmt.Errorf("response processor %s failed: %w", processor.Name(), err)
+		}
+	}
+
+	var ev *core.Event
+	if resp.Partial {
+		ev = core.NewPartialAssistantEvent(reqCtx.RunID(), f.agent.Name(), resp.Parts...)
+	} else {
+		ev = core.NewFullAssistantEvent(reqCtx.RunID(), f.agent.Name(), resp.Parts...)
+	}
+
+	if err := queue.Write(ctx, ev); err != nil {
+		return fmt.Errorf("failed to write event: %w", err)
+	}
+
+	fr.lastEvent = ev
+	if !resp.Partial {
+		fr.fnCalls = ev.GetFunctionCalls()
 	}
 
 	return nil

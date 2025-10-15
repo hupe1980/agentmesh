@@ -18,6 +18,8 @@ import (
 func ExecuteModel(
 	ctx context.Context,
 	reqCtx core.RequestContext,
+	beforeCallbacks []core.BeforeModelCallback,
+	afterCallbacks []core.AfterModelCallback,
 	m core.Model,
 	req *core.ModelRequest,
 ) (<-chan *core.ModelResponse, <-chan error) {
@@ -28,18 +30,13 @@ func ExecuteModel(
 		defer close(outCh)
 		defer close(errCh)
 
-		var sc *core.ModelResponse
-		if pm := reqCtx.PluginManager(); pm != nil {
-			cbCtx := core.NewCallbackContext(reqCtx)
-			out, err := pm.RunBeforeModel(ctx, cbCtx, req)
-			if err != nil {
-				errCh <- fmt.Errorf("plugin: before_model: %w", err)
-				return
-			}
-			sc = out
+		resp, err := handleBeforeModelCallbacks(ctx, reqCtx, beforeCallbacks, req)
+		if err != nil {
+			errCh <- err
+			return
 		}
-		if sc != nil {
-			if _, err := emitFinal(ctx, reqCtx, sc, outCh); err != nil {
+		if resp != nil {
+			if _, err := emitFinal(ctx, reqCtx, resp, outCh); err != nil {
 				errCh <- err
 			}
 			return
@@ -98,14 +95,13 @@ func ExecuteModel(
 			return
 		}
 
-		if pm := reqCtx.PluginManager(); pm != nil {
-			cbCtx := core.NewCallbackContext(reqCtx)
-			if rep, err := pm.RunAfterModel(ctx, cbCtx, final); err != nil {
-				errCh <- fmt.Errorf("plugin: after_model: %w", err)
-				return
-			} else if rep != nil {
-				final = rep
-			}
+		altered, err := handleAfterModelCallbacks(ctx, reqCtx, afterCallbacks, final)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if altered != nil {
+			final = altered
 		}
 
 		if _, err := emitFinal(ctx, reqCtx, final, outCh); err != nil {
@@ -114,6 +110,80 @@ func ExecuteModel(
 	}()
 
 	return outCh, errCh
+}
+
+func handleBeforeModelCallbacks(
+	ctx context.Context,
+	reqCtx core.RequestContext,
+	beforeCallbacks []core.BeforeModelCallback,
+	req *core.ModelRequest,
+) (*core.ModelResponse, error) {
+	cbCtx := core.NewCallbackContext(reqCtx)
+
+	if pm := reqCtx.PluginManager(); pm != nil {
+		out, err := pm.RunBeforeModel(ctx, cbCtx, req)
+		if err != nil {
+			return nil, fmt.Errorf("plugin: before_model: %w", err)
+		}
+
+		if out != nil {
+			return out, nil
+		}
+	}
+
+	if len(beforeCallbacks) == 0 {
+		return nil, nil
+	}
+
+	for i, cb := range beforeCallbacks {
+		out, err := cb(ctx, cbCtx, req)
+		if err != nil {
+			return nil, fmt.Errorf("agent before_model callback %d failed: %w", i, err)
+		}
+
+		if out != nil {
+			return out, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func handleAfterModelCallbacks(
+	ctx context.Context,
+	reqCtx core.RequestContext,
+	afterCallbacks []core.AfterModelCallback,
+	resp *core.ModelResponse,
+) (*core.ModelResponse, error) {
+	cbCtx := core.NewCallbackContext(reqCtx)
+
+	if pm := reqCtx.PluginManager(); pm != nil {
+		out, err := pm.RunAfterModel(ctx, cbCtx, resp)
+		if err != nil {
+			return nil, fmt.Errorf("plugin: after_model: %w", err)
+		}
+
+		if out != nil {
+			return out, nil
+		}
+	}
+
+	if len(afterCallbacks) == 0 {
+		return nil, nil
+	}
+
+	for i, cb := range afterCallbacks {
+		out, err := cb(ctx, cbCtx, resp)
+		if err != nil {
+			return nil, fmt.Errorf("agent after_model callback %d failed: %w", i, err)
+		}
+
+		if out != nil {
+			return out, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // emitFinal runs AfterModel hook (allowing replacement) then emits the full response on outCh.

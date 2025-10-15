@@ -29,21 +29,23 @@ import (
 //nolint:revive // this is a test utility with many exported fields for convenience
 type MockAgent struct {
 	// Static fields (used when corresponding Func hook is nil)
-	NameVal                 string
-	DescriptionVal          string
-	ModelVal                core.Model
-	ToolsList               []core.Tool
-	ToolsetList             []core.Toolset
-	ParentAgent             core.Agent
-	SubAgentsList           []core.Agent
-	StreamingEnabled        bool
-	TransferToPeersEnabled  bool
-	TransferToParentEnabled bool
-	OutputSchemaVal         core.Opt[core.OutputSchema]
-	OutputKeyVal            string
-	MaxHistoryVal           int
-	HistoryModeVal          core.HistoryMode
-	InstructionsText        string
+	NameVal                  string
+	DescriptionVal           string
+	ModelVal                 core.Model
+	ToolsList                []core.Tool
+	ToolsetList              []core.Toolset
+	ParentAgent              core.Agent
+	SubAgentsList            []core.Agent
+	StreamingEnabled         bool
+	TransferToPeersEnabled   bool
+	TransferToParentEnabled  bool
+	OutputSchemaVal          core.Opt[core.OutputSchema]
+	OutputKeyVal             string
+	MaxHistoryVal            int
+	HistoryModeVal           core.HistoryMode
+	InstructionsText         string
+	BeforeModelCallbacksList []core.BeforeModelCallback
+	AfterModelCallbacksList  []core.AfterModelCallback
 
 	// Optional function hooks to override behaviors
 	// RunFunc, when set, will be invoked by Run; return its error.
@@ -127,6 +129,16 @@ func (m *MockAgent) ResolveTools(ctx context.Context, roCtx core.ReadonlyContext
 	}
 
 	return allTools, nil
+}
+
+// BeforeModelCallbacks returns the configured before-model callbacks.
+func (m *MockAgent) BeforeModelCallbacks() []core.BeforeModelCallback {
+	return m.BeforeModelCallbacksList
+}
+
+// AfterModelCallbacks returns the configured after-model callbacks.
+func (m *MockAgent) AfterModelCallbacks() []core.AfterModelCallback {
+	return m.AfterModelCallbacksList
 }
 
 // Parent returns the configured parent agent.

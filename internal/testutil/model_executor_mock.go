@@ -11,6 +11,8 @@ type ModelExecutorMock struct {
 	ExecuteFunc func(
 		ctx context.Context,
 		rc core.RequestContext,
+		before []core.BeforeModelCallback,
+		after []core.AfterModelCallback,
 		m core.Model,
 		req *core.ModelRequest,
 	) (<-chan *core.ModelResponse, <-chan error)
@@ -20,12 +22,14 @@ type ModelExecutorMock struct {
 func (m *ModelExecutorMock) Execute(
 	ctx context.Context,
 	rc core.RequestContext,
+	before []core.BeforeModelCallback,
+	after []core.AfterModelCallback,
 	mdl core.Model,
 	req *core.ModelRequest,
 ) (<-chan *core.ModelResponse, <-chan error) {
 	m.Calls++
 	if m.ExecuteFunc != nil {
-		return m.ExecuteFunc(ctx, rc, mdl, req)
+		return m.ExecuteFunc(ctx, rc, before, after, mdl, req)
 	}
 	// Default: immediate passthrough to model.Generate
 	return mdl.Generate(ctx, req)

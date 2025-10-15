@@ -8,6 +8,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/testutil"
+	"github.com/hupe1980/agentmesh/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,7 +76,10 @@ func (m *onceToolCallModel) Capabilities() *core.ModelCapabilities {
 }
 
 // model that emits a single plain text response
-type textModel struct{ text string }
+type textModel struct {
+	text  string
+	calls int
+}
 
 func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
 	rc := make(chan *core.ModelResponse, 1)
@@ -83,6 +87,7 @@ func (m *textModel) Generate(ctx context.Context, _ *core.ModelRequest) (<-chan 
 	go func() {
 		defer close(rc)
 		defer close(ec)
+		m.calls++
 		rc <- &core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText(m.text)}}
 	}()
 	return rc, ec
@@ -343,4 +348,96 @@ func TestBaseFlow_ResponseProcessorError(t *testing.T) {
 	q := &testutil.CollectingWriter{}
 	err := f.Execute(ctx, newTestRunContext(), q)
 	require.Error(t, err)
+}
+
+func TestBaseFlow_BeforeModelCallbackShortCircuit(t *testing.T) {
+	agent := testutil.NewMockAgent("A")
+	tm := &textModel{text: "unused"}
+	agent.ModelVal = tm
+	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
+		return "inst", nil
+	}
+	agent.BeforeModelCallbacksList = []core.BeforeModelCallback{
+		func(
+			ctx context.Context,
+			cbCtx core.CallbackContext,
+			req *core.ModelRequest,
+		) (*core.ModelResponse, error) {
+			return &core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText("cached")}}, nil
+		},
+	}
+
+	f := NewBaseFlow(agent, &Executors{
+		AgentExecutor: testutil.NewAgentExecutorMock(),
+		ModelExecutor: model.DefaultModelExecutor,
+		ToolExecutor:  testutil.NewToolExecutorMock(),
+	})
+
+	f.AddRequestProcessor(&mockReqProc{
+		name: "addUser",
+		fn: func(
+			ctx context.Context,
+			reqCtx core.RequestContext,
+			req *core.ModelRequest,
+			ag core.FlowAgent,
+		) error {
+			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
+			return nil
+		},
+	})
+
+	q := &testutil.CollectingWriter{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	require.NoError(t, f.Execute(ctx, newTestRunContext(), q))
+	require.Len(t, q.Events, 1)
+	assert.Equal(t, "cached", q.Events[0].Text())
+	assert.Equal(t, 0, tm.calls)
+}
+
+func TestBaseFlow_AfterModelCallbackReplacement(t *testing.T) {
+	agent := testutil.NewMockAgent("A")
+	tm := &textModel{text: "hello"}
+	agent.ModelVal = tm
+	agent.ResolveInstructionsFunc = func(ctx context.Context, _ core.ReadonlyContext) (string, error) {
+		return "inst", nil
+	}
+	agent.AfterModelCallbacksList = []core.AfterModelCallback{
+		func(
+			ctx context.Context,
+			cbCtx core.CallbackContext,
+			res *core.ModelResponse,
+		) (*core.ModelResponse, error) {
+			return &core.ModelResponse{Partial: false, Parts: []core.Part{core.NewPartFromText("modified")}}, nil
+		},
+	}
+
+	f := NewBaseFlow(agent, &Executors{
+		AgentExecutor: testutil.NewAgentExecutorMock(),
+		ModelExecutor: model.DefaultModelExecutor,
+		ToolExecutor:  testutil.NewToolExecutorMock(),
+	})
+
+	f.AddRequestProcessor(&mockReqProc{
+		name: "addUser",
+		fn: func(
+			ctx context.Context,
+			reqCtx core.RequestContext,
+			req *core.ModelRequest,
+			ag core.FlowAgent,
+		) error {
+			req.Messages = []*core.Message{{Role: core.RoleUser, Parts: []core.Part{core.NewPartFromText("hi")}}}
+			return nil
+		},
+	})
+
+	q := &testutil.CollectingWriter{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	require.NoError(t, f.Execute(ctx, newTestRunContext(), q))
+	require.NotEmpty(t, q.Events)
+	assert.Equal(t, "modified", q.Events[len(q.Events)-1].Text())
+	assert.Equal(t, 1, tm.calls)
 }

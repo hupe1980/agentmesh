@@ -102,6 +102,11 @@ type FlowAgent interface {
 	OutputSchema() Opt[OutputSchema]
 	// OutputKey specifies where the final output should be stored in session state.
 	OutputKey() string
+
+	// BeforeModelCallbacks returns per-agent callbacks that run before the model invocation.
+	BeforeModelCallbacks() []BeforeModelCallback
+	// AfterModelCallbacks returns per-agent callbacks that run after the model response is available.
+	AfterModelCallbacks() []AfterModelCallback
 }
 
 // AgentExecutor abstracts agent execution with lifecycle hooks.
