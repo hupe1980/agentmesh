@@ -1,6 +1,10 @@
 package core
 
-import "maps"
+import (
+	"fmt"
+	"maps"
+	"strings"
+)
 
 // Part is a polymorphic segment of role-based content. Concrete part types
 // implement the unexported isPart marker to form a closed set.
@@ -258,4 +262,21 @@ func clonePart(p Part) Part {
 // that need to defensively copy Parts without depending on Content.Clone.
 func ClonePart(p Part) Part {
 	return clonePart(p)
+}
+
+// ExtractTextFromParts concatenates all TextPart contents from the slice.
+// If strict is true, it returns an error if any non-TextPart is encountered.
+func ExtractTextFromParts(parts Parts, strict bool) (string, error) {
+	var b strings.Builder
+	for _, p := range parts {
+		tp, ok := p.(*TextPart)
+		if ok {
+			b.WriteString(tp.Text)
+			continue
+		}
+		if strict {
+			return "", fmt.Errorf("non-TextPart encountered: %T", p)
+		}
+	}
+	return b.String(), nil
 }
