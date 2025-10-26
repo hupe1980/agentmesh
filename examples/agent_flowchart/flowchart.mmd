@@ -1,0 +1,12 @@
+flowchart LR
+    QuarterlyReport["QuarterlyReport<br/>Coordinates research, writing, and review"]
+    ResearchAgent["ResearchAgent<br/>Gathers facts from internal knowledge base"]
+    ReviewAgent["ReviewAgent<br/>Ensures the final report meets quality expectations"]
+    WriterAgent["WriterAgent<br/>Drafts the report using gathered insights"]
+    ResearchAgent_tool_0[["Tool: search_docs<br/>Search the document index"]]
+    WriterAgent_tool_0[["Tool: compose_paragraph<br/>Draft a paragraph with given outline"]]
+    QuarterlyReport --> ResearchAgent
+    ResearchAgent --> ReviewAgent
+    ReviewAgent --> WriterAgent
+    ResearchAgent -.->|uses| ResearchAgent_tool_0
+    WriterAgent -.->|uses| WriterAgent_tool_0

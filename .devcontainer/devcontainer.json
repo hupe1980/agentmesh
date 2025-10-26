@@ -35,7 +35,8 @@
       },
       "extensions": [
         "golang.go",
-        "ms-vscode.makefile-tools"
+        "ms-vscode.makefile-tools",
+        "MermaidChart.vscode-mermaid-chart"
       ]
     }
   },

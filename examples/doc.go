@@ -4,10 +4,10 @@
 // These examples showcase different usage patterns and integration approaches:
 //
 //   - basic_agent: Simple conversational LLM agent with AgentMesh facade
-//   - weather_agent: Tool integration with custom weather lookup function
 //   - multi_agent: Sequential workflow with state sharing between agents
 //   - tool_usage: Mathematical calculations with step-by-step reasoning
 //   - transfer_agent: Dynamic delegation using transfer_to_agent tool
+//   - agent_flowchart: Visualize agent hierarchies as Mermaid flowcharts
 //
 // Each example is self-contained and includes:
 //   - Environment setup (API keys, dependencies)
