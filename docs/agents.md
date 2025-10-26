@@ -24,6 +24,8 @@ sidebar:
     url: "#loop-agent"
   - title: FuncAgent
     url: "#func-agent"
+  - title: Flowchart helper
+    url: "#flowchart-helper"
   - title: Composition tips
     url: "#composition-tips"
 ---
@@ -137,6 +139,37 @@ healthCheck := am.NewFuncAgent("health_check", func(ctx context.Context, req cor
 application := am.NewApp("ops", healthCheck)
 runner := am.NewRunner(application, func(o *am.RunnerOptions) { o.Logger = logger })
 ```
+
+---
+
+## Flowchart helper {#flowchart-helper}
+
+Need to visualize a complex agent tree? Call `agent.Flowchart` to render any hierarchy (including tool attachments) as a Mermaid diagram and drop it into docs or dashboards.
+
+- **When to use**: document execution order, review nested planners, or generate diagrams for runbooks.
+- **Behavior**:
+  - Parents link to their first child and siblings chain together so sequential execution order is obvious
+  - Tool edges render as dashed arrows (`-.->`) to distinguish them from control flow
+  - Supports direction (`WithDirection`), descriptions, and optional tool nodes through familiar option functions
+
+```go
+workflow := am.NewSequentialAgent("QuarterlyReport", []core.Agent{researcher, writer, reviewer})
+
+chart, err := agent.Flowchart(workflow,
+  agent.WithDirection("LR"),
+  agent.WithDescriptions(true),
+  agent.WithTools(true),
+)
+if err != nil {
+  log.Fatal(err)
+}
+
+fmt.Println(chart)
+// Persist beside the example for easy sharing
+_ = os.WriteFile("examples/agent_flowchart/flowchart.mmd", []byte(chart), 0o600)
+```
+
+Grab [`examples/agent_flowchart`](https://github.com/hupe1980/agentmesh/tree/main/examples/agent_flowchart) for a runnable end-to-end demo that prints and saves the diagram.
 
 ---
 
