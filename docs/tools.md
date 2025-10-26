@@ -15,6 +15,8 @@ hero:
 sidebar:
   - title: Function tools
     url: "#function-tools"
+  - title: ExampleTool
+    url: "#example-tool"
   - title: Toolsets
     url: "#toolsets"
     children:
@@ -69,6 +71,43 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 ```
 
 Prefer handwritten schemas? `NewFuncTool` accepts a `map[string]any` schema instead of deriving it from a struct.
+
+---
+
+## ExampleTool {#example-tool}
+
+`tool.NewExampleTool` injects few-shot examples into model requests right before the call is dispatched. It pulls examples from a `core.ExampleProvider`, renders them with a configurable template, and appends the result to the instructions so planners stay in sync with the latest conversational traces or curated demonstrations.
+
+- **When to use**: you want to prime a model with dynamic, context-aware exemplars without baking them into the static prompt.
+- **Behavior**:
+  - Calls the provider on every request, so examples can depend on user/session state
+  - Supports text and `core.FunctionCallPart` examples; unsupported parts fail fast
+  - Ships sensible defaults (`<examples>` wrapper, `[user]`/`[assistant]` prefixes) but accepts custom templates, prefixes, and separators
+
+```go
+examples := []core.Example{
+  {
+    Input:  []core.Part{core.NewPartFromText("What is the capital of France?")},
+    Output: []core.Part{core.NewPartFromText("Paris is the capital of France.")},
+  },
+}
+
+provider := core.ExampleProviderFunc(func(ctx context.Context, ro core.ReadonlyContext) ([]core.Example, error) {
+  return examples, nil
+})
+
+exampleTool := tool.NewExampleTool(provider, func(o *tool.ExampleToolOptions) {
+  o.ExamplesIntro = "# Few-shot examples"
+  o.UserPrefix = "User:"
+  o.AssistantPrefix = "Assistant:"
+})
+
+writer, _ := am.NewModelAgent("writer", llm, func(o *am.ModelAgentOptions) {
+  o.Tools = append(o.Tools, exampleTool)
+})
+```
+
+Need richer formatting? Set `ExampleToolOptions.Template` to a Go template that receives the resolved examples (`.Examples`) and options (`.Options`). `tool.RenderExamples` is also exported so you can preview or unit-test rendering without wiring the full tool.
 
 ---
 
