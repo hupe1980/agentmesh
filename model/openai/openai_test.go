@@ -32,11 +32,11 @@ func TestCollectToolResponses(t *testing.T) {
 	// Non-string response coerced via fmt.Sprintf("%v")
 	assert.Equal(t, "42", got["call-2"])
 
-	// Duplicate id keeps first value
+	// Duplicate id keeps the latest value so resumed long-running tools can update state.
 	dup := core.NewPartFromFunctionResponse("call-1", "calc", "changed")
 	r.Messages = append(r.Messages, &core.Message{Role: core.RoleTool, Parts: []core.Part{dup}})
 	got2 := collectToolResponses(r)
-	assert.Equal(t, "9.0", got2["call-1"]) // unchanged
+	assert.Equal(t, "changed", got2["call-1"]) // updated
 }
 
 func TestExtractToolCalls(t *testing.T) {

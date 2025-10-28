@@ -131,6 +131,7 @@ Featured samples:
 - Tooling bundle – [`examples/tool_usage`](examples/tool_usage/main.go)
 - Agent-as-a-tool – [`examples/agent_tool`](examples/agent_tool/main.go)
 - Structured output – [`examples/output_schema`](examples/output_schema/main.go)
+- Long-running approvals – [`examples/long_running_tool`](examples/long_running_tool/main.go)
 - Multi-agent fan-out – [`examples/multi_agent`](examples/multi_agent/main.go)
 - Agent transfer – [`examples/transfer_agent`](examples/transfer_agent/main.go)
 - OpenTelemetry wiring – [`examples/opentelemetry`](examples/opentelemetry/main.go)

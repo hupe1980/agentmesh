@@ -1,9 +1,11 @@
 package tool
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/hupe1980/agentmesh/core"
 	"github.com/hupe1980/agentmesh/internal/jsonschema"
 )
 
@@ -49,6 +51,16 @@ func (t *LongRunningTool[T]) Description() string {
 	}
 
 	return desc + longRunningInstruction
+}
+
+// ProcessModelRequest ensures the long-running wrapper is registered with the request.
+func (t *LongRunningTool[T]) ProcessModelRequest(
+	ctx context.Context,
+	toolCtx core.ToolContext,
+	req *core.ModelRequest,
+) error {
+	req.AddTool(t)
+	return nil
 }
 
 // IsLongRunning indicates that this tool may take a long time to complete.

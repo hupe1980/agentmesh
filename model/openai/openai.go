@@ -147,12 +147,6 @@ func collectToolResponses(req core.ModelRequest) map[string]string {
 				continue
 			}
 
-			// Preserve first-seen response for each id.
-			// Subsequent responses with same id are ignored.
-			if _, exists := responses[fr.FunctionResponse.ID]; exists {
-				continue
-			}
-
 			var text string
 			if s, ok := fr.FunctionResponse.Response.(string); ok {
 				text = s
