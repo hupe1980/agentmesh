@@ -1,6 +1,11 @@
 package tool
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/hupe1980/agentmesh/internal/jsonschema"
+)
 
 const longRunningInstruction = `
 
@@ -21,6 +26,19 @@ func NewLongRunningTool[T any](
 	return &LongRunningTool[T]{
 		FuncTool: NewFuncTool(name, description, parameters, fn),
 	}
+}
+
+// NewLongRunningToolFromType derives the parameter schema from a struct using the same helper as FuncTool.
+func NewLongRunningToolFromType[T any](
+	name, description string,
+	fn Func[T],
+) (*LongRunningTool[T], error) {
+	schema, err := jsonschema.MapFromStruct(*new(T))
+	if err != nil {
+		return nil, fmt.Errorf("NewLongRunningToolFromType: %w", err)
+	}
+
+	return NewLongRunningTool(name, description, schema, fn), nil
 }
 
 // Description returns the base description plus a long-running instruction hint.
