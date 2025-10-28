@@ -22,6 +22,7 @@ type sleepTool struct {
 func (t *sleepTool) Name() string               { return t.name }
 func (t *sleepTool) Description() string        { return "sleep tool for testing" }
 func (t *sleepTool) Parameters() map[string]any { return map[string]any{} }
+func (t *sleepTool) IsLongRunning() bool        { return true }
 func (t *sleepTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
@@ -39,6 +40,7 @@ type actionsTool struct{ name string }
 func (t *actionsTool) Name() string               { return t.name }
 func (t *actionsTool) Description() string        { return "actions tool" }
 func (t *actionsTool) Parameters() map[string]any { return map[string]any{} }
+func (t *actionsTool) IsLongRunning() bool        { return false }
 func (t *actionsTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
@@ -57,6 +59,7 @@ type panicTool struct{ name string }
 func (t *panicTool) Name() string               { return t.name }
 func (t *panicTool) Description() string        { return "panic tool" }
 func (t *panicTool) Parameters() map[string]any { return map[string]any{} }
+func (t *panicTool) IsLongRunning() bool        { return false }
 func (t *panicTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
@@ -74,6 +77,7 @@ type counterTool struct {
 func (t *counterTool) Name() string               { return t.name }
 func (t *counterTool) Description() string        { return "counter tool" }
 func (t *counterTool) Parameters() map[string]any { return map[string]any{} }
+func (t *counterTool) IsLongRunning() bool        { return true }
 func (t *counterTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
@@ -199,6 +203,7 @@ type valueTool struct{ name, value string }
 func (t *valueTool) Name() string               { return t.name }
 func (t *valueTool) Description() string        { return "value tool" }
 func (t *valueTool) Parameters() map[string]any { return map[string]any{} }
+func (t *valueTool) IsLongRunning() bool        { return false }
 func (t *valueTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }
@@ -365,6 +370,7 @@ type failingTool struct {
 func (t *failingTool) Name() string               { return t.name }
 func (t *failingTool) Description() string        { return "failing tool" }
 func (t *failingTool) Parameters() map[string]any { return map[string]any{} }
+func (t *failingTool) IsLongRunning() bool        { return false }
 func (t *failingTool) ProcessModelRequest(context.Context, core.ToolContext, *core.ModelRequest) error {
 	return nil
 }

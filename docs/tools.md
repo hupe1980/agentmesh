@@ -15,6 +15,8 @@ hero:
 sidebar:
   - title: Function tools
     url: "#function-tools"
+  - title: Long-running tools
+    url: "#long-running-tools"
   - title: ExampleTool
     url: "#example-tool"
   - title: Toolsets
@@ -71,6 +73,53 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 ```
 
 Prefer handwritten schemas? `NewFuncTool` accepts a `map[string]any` schema instead of deriving it from a struct.
+
+---
+
+## Long-running tools {#long-running-tools}
+
+Use `tool.NewLongRunningTool` when an operation may stream intermediate results or take minutes to complete. This tool is designed to help you start and manage tasks that happen outside the normal agent workflow and would otherwise block execution. It is a subclass of `FuncTool` that adds a prominent warning to the description and reports `IsLongRunning()` so planners can avoid spamming retries. The long-running work itself should execute in a separate service or worker—you use this tool to initiate and track it, not to run the heavy computation inline.
+
+- **When to use**: polling APIs, human-in-the-loop steps, long compute jobs.
+- **Behavior**:
+  - Appends a cautionary note to the tool description (or supplies one if you omit it).
+  - Lets the handler kick off the long-running operation and optionally return an initial result (for example, a job ID).
+  - Pauses the agent run so the client can decide whether to continue immediately or wait for completion.
+  - Allows the agent client to poll or push intermediate/final responses before the run resumes and other tasks continue.
+  - Keeps the same JSON schema and handler signature as `NewFuncTool`.
+
+```
+type ApprovalArgs struct {
+  Purpose string  `json:"purpose"`
+  Amount  float64 `json:"amount"`
+}
+
+approval := tool.NewLongRunningTool(
+  "ask_for_approval",
+  "Create an approval ticket and wait for a reviewer to respond.",
+  map[string]any{
+    "type": "object",
+    "properties": map[string]any{
+      "purpose": map[string]any{"type": "string"},
+      "amount":  map[string]any{"type": "number"},
+    },
+    "required": []string{"purpose", "amount"},
+  },
+  func(ctx context.Context, tc core.ToolContext, args ApprovalArgs) (any, error) {
+    ticketID, reviewer := approvalService.CreateTicket(ctx, args.Purpose, args.Amount)
+
+    return map[string]any{
+      "status":     "pending",
+      "approver":   reviewer,
+      "purpose":    args.Purpose,
+      "amount":     args.Amount,
+      "ticket_id":  ticketID,
+    }, nil
+  },
+)
+```
+
+Typical scenarios include human-in-the-loop approvals, large data exports, or ML training jobs where the agent should yield control until the external process finishes.
 
 ---
 

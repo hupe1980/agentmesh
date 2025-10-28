@@ -73,6 +73,11 @@ func (t *SetModelResponseTool) Parameters() map[string]any {
 	}
 }
 
+// IsLongRunning indicates whether the tool is a long-running operation.
+func (t *SetModelResponseTool) IsLongRunning() bool {
+	return false
+}
+
 // ProcessModelRequest implements core.Tool. It registers itself with the request.
 func (t *SetModelResponseTool) ProcessModelRequest(
 	ctx context.Context,

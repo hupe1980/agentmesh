@@ -94,6 +94,7 @@ From here you can add tools, switch to sequential/parallel flows, or persist ses
 ### 🔧 Tools and retrieval
 
 - Create function tools with [`tool.NewFuncTool`](tool/func.go) or wrap an entire agent via [`tool.NewAgentTool`](tool/agent.go).
+- Flag background or out-of-band work with [`tool.NewLongRunningTool`](tool/long_running.go) to start and track lengthy external tasks without blocking the agent.
 - Promote search connectors into tools using [`retrieval.NewTool`](tool/retrieval/func.go) and merge multiple sources with [`retrieval.NewMergerRetriever`](tool/retrieval/merger.go).
 - Choose from built-in adapters for Amazon Bedrock, Amazon Kendra, and LangChainGo retrievers, or implement your own.
 

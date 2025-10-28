@@ -35,12 +35,13 @@ type Event struct {
 	Parts     []Part       `json:"parts,omitempty"`
 	Actions   EventActions `json:"actions"`
 
-	Branch         Opt[string]            `json:"branch,omitempty"`
-	Partial        Opt[bool]              `json:"partial,omitempty"`
-	TurnComplete   Opt[bool]              `json:"turn_complete,omitempty"`
-	ErrorCode      Opt[string]            `json:"error_code,omitempty"`
-	ErrorMessage   Opt[string]            `json:"error_message,omitempty"`
-	CustomMetadata Opt[map[string]string] `json:"custom_metadata,omitempty"`
+	LongRunningToolIDs Opt[[]string]          `json:"long_running_tool_ids,omitempty"`
+	Branch             Opt[string]            `json:"branch,omitempty"`
+	Partial            Opt[bool]              `json:"partial,omitempty"`
+	TurnComplete       Opt[bool]              `json:"turn_complete,omitempty"`
+	ErrorCode          Opt[string]            `json:"error_code,omitempty"`
+	ErrorMessage       Opt[string]            `json:"error_message,omitempty"`
+	CustomMetadata     Opt[map[string]string] `json:"custom_metadata,omitempty"`
 }
 
 // NewFullAssistantEvent creates an assistant-authored event with the given parts.

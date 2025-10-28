@@ -17,7 +17,6 @@ func NewTransferToAgentTool() (core.Tool, error) {
 	return NewFuncToolFromType(
 		"transfer_to_agent",
 		"Request transfer of control to another sub-agent by name. Use when another agent is better suited.",
-		&TransferToAgentInput{},
 		func(ctx context.Context, tc core.ToolContext, args *TransferToAgentInput) (any, error) {
 			if args == nil || args.Agent == "" {
 				return nil, NewError("transfer_to_agent", "field 'agent' must be non-empty string", "VALIDATION_ERROR")

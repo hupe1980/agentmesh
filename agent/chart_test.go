@@ -25,6 +25,7 @@ type stubTool struct {
 func (t stubTool) Name() string               { return t.name }
 func (t stubTool) Description() string        { return t.desc }
 func (t stubTool) Parameters() map[string]any { return map[string]any{} }
+func (t stubTool) IsLongRunning() bool        { return false }
 func (t stubTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, req *core.ModelRequest) error {
 	return nil
 }

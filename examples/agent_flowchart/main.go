@@ -22,6 +22,7 @@ func (t staticTool) Description() string { return t.description }
 func (t staticTool) Parameters() map[string]any {
 	return map[string]any{"type": "object"}
 }
+func (t staticTool) IsLongRunning() bool { return false }
 func (t staticTool) ProcessModelRequest(ctx context.Context, toolCtx core.ToolContext, req *core.ModelRequest) error {
 	return nil
 }

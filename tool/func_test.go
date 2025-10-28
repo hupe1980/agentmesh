@@ -140,9 +140,8 @@ func TestFunctionToolFromStruct_SchemaAndCall(t *testing.T) {
 	tool, err := NewFuncToolFromType(
 		"sum_struct",
 		"sum using struct schema",
-		SumArgs{},
-		func(_ context.Context, _ core.ToolContext, args map[string]any) (any, error) {
-			return args["a"].(float64) + args["b"].(float64), nil
+		func(_ context.Context, _ core.ToolContext, args *SumArgs) (any, error) {
+			return args.A + args.B, nil
 		},
 	)
 	require.NoError(t, err)

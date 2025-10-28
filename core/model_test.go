@@ -17,6 +17,7 @@ type mockTool struct {
 func (m mockTool) Name() string               { return m.name }
 func (m mockTool) Description() string        { return m.desc }
 func (m mockTool) Parameters() map[string]any { return m.params }
+func (m mockTool) IsLongRunning() bool        { return false }
 func (m mockTool) ProcessModelRequest(_ context.Context, _ ToolContext, _ *ModelRequest) error {
 	return nil
 }

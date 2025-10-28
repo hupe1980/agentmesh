@@ -105,6 +105,11 @@ func (t *ExampleTool) Parameters() map[string]any {
 	return nil
 }
 
+// IsLongRunning indicates whether the tool is a long-running operation.
+func (t *ExampleTool) IsLongRunning() bool {
+	return false
+}
+
 // ProcessModelRequest fetches examples, renders them, and appends the rendered
 // string to the outgoing model request.
 func (t *ExampleTool) ProcessModelRequest(

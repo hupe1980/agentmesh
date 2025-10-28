@@ -26,6 +26,9 @@ type Tool interface {
 	// This schema is used for parameter validation and LLM function calling.
 	Parameters() map[string]any
 
+	// IsLongRunning indicates whether the tool is a long-running operation.
+	IsLongRunning() bool
+
 	// ProcessModelRequest allows the tool to modify the outgoing ModelRequest
 	ProcessModelRequest(ctx context.Context, toolCtx ToolContext, req *ModelRequest) error
 

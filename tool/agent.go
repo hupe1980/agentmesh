@@ -40,6 +40,11 @@ func (t *AgentTool) Parameters() map[string]any {
 	}
 }
 
+// IsLongRunning indicates whether the tool is a long-running operation.
+func (t *AgentTool) IsLongRunning() bool {
+	return false
+}
+
 // ProcessModelRequest adds this tool to the provided request.
 func (t *AgentTool) ProcessModelRequest(
 	ctx context.Context,

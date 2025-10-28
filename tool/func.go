@@ -79,7 +79,7 @@ type FuncTool[T any] struct {
 //
 // Example:
 //
-//	sumTool := NewFunctionTool(
+//	sumTool := NewFuncTool(
 //	  "calculate_sum",
 //	  "Calculate the sum of two numbers",
 //	  map[string]any{
@@ -100,7 +100,7 @@ func NewFuncTool[T any](
 	name, description string,
 	parameters map[string]any,
 	fn Func[T],
-) core.Tool {
+) *FuncTool[T] {
 	return &FuncTool[T]{
 		name:        name,
 		description: description,
@@ -133,10 +133,9 @@ func NewFuncTool[T any](
 //	)
 func NewFuncToolFromType[T any](
 	name, description string,
-	structType any,
 	fn Func[T],
-) (core.Tool, error) {
-	schema, err := jsonschema.MapFromStruct(structType)
+) (*FuncTool[T], error) {
+	schema, err := jsonschema.MapFromStruct(*new(T))
 	if err != nil {
 		return nil, fmt.Errorf("NewFuncToolFromType: %w", err)
 	}
@@ -152,6 +151,9 @@ func (t *FuncTool[T]) Description() string { return t.description }
 
 // Parameters returns the (minimal) JSON schema describing expected arguments.
 func (t *FuncTool[T]) Parameters() map[string]any { return t.parameters }
+
+// IsLongRunning indicates whether the tool is a long-running operation.
+func (t *FuncTool[T]) IsLongRunning() bool { return false }
 
 // ProcessModelRequest adds this tool to the provided request.
 func (t *FuncTool[T]) ProcessModelRequest(

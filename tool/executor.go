@@ -129,18 +129,18 @@ func (e *parallelToolExecutor) Execute(
 				return
 			}
 
-			Ev, err := e.buildToolEvent(ctx, reqCtx, toolRegistry, call)
+			ev, err := e.buildToolEvent(ctx, reqCtx, toolRegistry, call)
 			if err != nil {
 				addErr(err)
 				return
 			}
 
-			if Ev == nil {
+			if ev == nil {
 				return
 			}
 
 			evMu.Lock()
-			events = append(events, Ev)
+			events = append(events, ev)
 			evMu.Unlock()
 		}(i, fc)
 	}
@@ -203,6 +203,10 @@ func (e *parallelToolExecutor) buildToolEvent(
 
 	ev := core.NewFunctionResponseEvent(reqCtx.RunID(), reqCtx.AgentName(), fc.ID, fc.Name, result)
 	ev.ApplyActions(toolCtx.EventActions())
+
+	if tool.IsLongRunning() {
+		ev.LongRunningToolIDs.Set([]string{fc.ID})
+	}
 
 	return ev, nil
 }

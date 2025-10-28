@@ -61,6 +61,11 @@ func (t *tool) Parameters() map[string]any {
 	return t.parameters
 }
 
+// IsLongRunning indicates whether the tool is a long-running operation.
+func (t *tool) IsLongRunning() bool {
+	return false
+}
+
 // RawTool returns the underlying MCP tool descriptor.
 func (t *tool) RawTool() *mcp.Tool {
 	return t.mcpTool
