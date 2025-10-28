@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/core"
-	"github.com/hupe1980/agentmesh/flow/sm"
+	"github.com/hupe1980/agentmesh/internal/sm"
 	"github.com/hupe1980/agentmesh/logging"
 )
 
