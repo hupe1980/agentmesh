@@ -1,7 +1,7 @@
 ---
 layout: doc
 title: Agents
-description: Detailed guidance for Sequential, Parallel, Loop, Model, and Func agents.
+description: Detailed guidance for Model, Sequential, Parallel, Routing, Loop, and Func agents.
 permalink: /agents/
 hero:
   title: Compose orchestration with reusable agents
@@ -20,6 +20,8 @@ sidebar:
     url: "#sequential-agent"
   - title: ParallelAgent
     url: "#parallel-agent"
+  - title: RoutingAgent
+    url: "#routing-agent"
   - title: LoopAgent
     url: "#loop-agent"
   - title: FuncAgent
@@ -93,6 +95,34 @@ fanout := am.NewParallelAgent("analysis_fanout", workers, func(o *am.ParallelAge
   o.Timeout = 30 * time.Second
 })
 ```
+
+---
+
+## RoutingAgent {#routing-agent}
+
+`RoutingAgent` inspects the current context and chooses exactly one child agent to run. It is useful when you need a router or switch statement in the middle of an orchestration tree.
+
+- **When to use**: branch to specialized agents, enforce guardrails before heavy work, or build hierarchical planners.
+- **Behavior**:
+  - Selector (`RoutingFunc`) receives the Go `context.Context`, the invocation `core.ReadonlyContext`, and available children.
+  - Returns the target child's `Agent.Name()`, or an error to stop execution.
+  - Emits clear errors when no children are configured or the selector picks an unknown name.
+
+```go
+router := am.NewRoutingAgent("planner_router", []core.Agent{planner, executor}, func(ctx context.Context, roCtx core.ReadonlyContext, children []core.Agent) (string, error) {
+  if roCtx.SessionID() == "dry_run" {
+    return "planner", nil
+  }
+
+  if roCtx.StateSnapshot()["needs_execution"] == true {
+    return "executor", nil
+  }
+
+  return "planner", nil
+})
+```
+
+Pair `RoutingAgent` with `SequentialAgent` or `ParallelAgent` to build deterministic branching without scattering `if` statements across your orchestration code.
 
 ---
 

@@ -8,7 +8,7 @@ AgentMesh is a Go-first framework for orchestrating AI agents with predictable f
 
 ## ✨ Highlights
 
-- **Deterministic orchestration** – Compose sequential, parallel, or looping agents with explicit error handling.
+- **Deterministic orchestration** – Compose sequential, routing, parallel, or looping agents with explicit error handling.
 - **Typed tools & retrieval** – Wrap Go functions, sub-agents, or search connectors with JSON Schema validation.
 - **Streaming-first runtime** – Stream partial events, route transfers, and merge structured output deterministically.
 - **Pluggable observability** – Bring your own logging, tracing, metrics, and persistence layers.
@@ -87,7 +87,7 @@ From here you can add tools, switch to sequential/parallel flows, or persist ses
 ---
 
 ## 🛠️ What you can build
-- Compose [`Sequential`](agent/sequential.go), [`Parallel`](agent/parallel.go), and [`Loop`](agent/loop.go) agents for complex flows.
+- Compose [`Sequential`](agent/sequential.go), [`Routing`](agent/routing.go), [`Parallel`](agent/parallel.go), and [`Loop`](agent/loop.go) agents for complex flows.
 - Use transfer events to hand off control across agents or escalate when necessary.
 - Rely on the event stream to interleave partial outputs with tool activity.
 
