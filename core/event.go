@@ -28,20 +28,20 @@ type EventActions struct {
 // Event is the primary unit of communication between agents, the engine, and
 // external clients.
 type Event struct {
-	ID        string       `json:"id"`
-	RunID     string       `json:"run_id"`
-	Author    string       `json:"author"`
-	Timestamp time.Time    `json:"timestamp"`
-	Parts     []Part       `json:"parts,omitempty"`
-	Actions   EventActions `json:"actions"`
+	ID                 string       `json:"id"`
+	RunID              string       `json:"run_id"`
+	Author             string       `json:"author"`
+	Timestamp          time.Time    `json:"timestamp"`
+	Parts              []Part       `json:"parts,omitempty"`
+	Actions            EventActions `json:"actions"`
+	LongRunningToolIDs []string     `json:"long_running_tool_ids,omitempty"`
 
-	LongRunningToolIDs Opt[[]string]          `json:"long_running_tool_ids,omitempty"`
-	Branch             Opt[string]            `json:"branch,omitempty"`
-	Partial            Opt[bool]              `json:"partial,omitempty"`
-	TurnComplete       Opt[bool]              `json:"turn_complete,omitempty"`
-	ErrorCode          Opt[string]            `json:"error_code,omitempty"`
-	ErrorMessage       Opt[string]            `json:"error_message,omitempty"`
-	CustomMetadata     Opt[map[string]string] `json:"custom_metadata,omitempty"`
+	Branch         Opt[string]            `json:"branch,omitempty"`
+	Partial        Opt[bool]              `json:"partial,omitempty"`
+	TurnComplete   Opt[bool]              `json:"turn_complete,omitempty"`
+	ErrorCode      Opt[string]            `json:"error_code,omitempty"`
+	ErrorMessage   Opt[string]            `json:"error_message,omitempty"`
+	CustomMetadata Opt[map[string]string] `json:"custom_metadata,omitempty"`
 }
 
 // NewFullAssistantEvent creates an assistant-authored event with the given parts.
@@ -131,6 +131,27 @@ func (e *Event) GetFunctionResponses() []*FunctionResponse {
 	return responses
 }
 
+// GetFunctionResponseByID returns the first FunctionResponse whose ID matches the provided value.
+// The boolean result reports whether a matching response was found.
+func (e *Event) GetFunctionResponseByID(id string) (*FunctionResponse, bool) {
+	if id == "" {
+		return nil, false
+	}
+
+	for _, p := range e.Parts {
+		frPart, ok := p.(*FunctionResponsePart)
+		if !ok || frPart.FunctionResponse == nil {
+			continue
+		}
+
+		if frPart.FunctionResponse.ID == id {
+			return frPart.FunctionResponse, true
+		}
+	}
+
+	return nil, false
+}
+
 // IsFinalResponse implements heuristic used by higher layers to decide when an
 // assistant turn is complete (no pending tool calls/responses, not partial, not skipped summarization).
 func (e *Event) IsFinalResponse() bool {
@@ -170,6 +191,10 @@ func (e *Event) Clone() *Event {
 		SkipSummarization: e.Actions.SkipSummarization,
 		TransferToAgent:   e.Actions.TransferToAgent,
 		Escalate:          e.Actions.Escalate,
+	}
+
+	if len(e.LongRunningToolIDs) > 0 {
+		clone.LongRunningToolIDs = append([]string(nil), e.LongRunningToolIDs...)
 	}
 
 	// Clone StateDelta if set

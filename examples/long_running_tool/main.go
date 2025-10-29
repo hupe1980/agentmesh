@@ -158,8 +158,8 @@ func extractCallID(ev *core.Event) string {
 		return ""
 	}
 
-	if ids, ok := ev.LongRunningToolIDs.Get(); ok && len(ids) > 0 {
-		return ids[0]
+	if len(ev.LongRunningToolIDs) > 0 {
+		return ev.LongRunningToolIDs[0]
 	}
 
 	return ""
@@ -170,11 +170,9 @@ func extractPending(callID string, ev *core.Event) map[string]any {
 		return nil
 	}
 
-	for _, fr := range ev.GetFunctionResponses() {
-		if callID == fr.ID {
-			if payload, ok := fr.Response.(map[string]any); ok {
-				return payload
-			}
+	if fr, ok := ev.GetFunctionResponseByID(callID); ok {
+		if payload, ok := fr.Response.(map[string]any); ok {
+			return payload
 		}
 	}
 
@@ -228,7 +226,7 @@ func printEvent(ev *core.Event) {
 		}
 	}
 
-	if ids, ok := ev.LongRunningToolIDs.Get(); ok && len(ids) > 0 {
-		fmt.Printf("long_running_tool_ids: %v\n", ids)
+	if len(ev.LongRunningToolIDs) > 0 {
+		fmt.Printf("long_running_tool_ids: %v\n", ev.LongRunningToolIDs)
 	}
 }

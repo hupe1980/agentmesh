@@ -205,7 +205,7 @@ func (e *parallelToolExecutor) buildToolEvent(
 	ev.ApplyActions(toolCtx.EventActions())
 
 	if tool.IsLongRunning() {
-		ev.LongRunningToolIDs.Set([]string{fc.ID})
+		ev.LongRunningToolIDs = []string{fc.ID}
 	}
 
 	return ev, nil
