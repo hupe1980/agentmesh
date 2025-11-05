@@ -1,198 +1,271 @@
 ---
 layout: doc
 title: Models
-description: Connect language models and inject structured outputs, tool calls, and lifecycle hooks through a unified interface.
+description: Connect LLM providers through a unified interface with streaming and tool calling support.
 permalink: /models/
 hero:
-  title: Connect models with predictable orchestration
-  description: Wrap OpenAI, LangChainGo, or custom providers while reusing AgentMesh streaming, tooling, and plugin hooks.
+  title: Connect language models
+  description: Integrate OpenAI, Anthropic, LangChainGo, or custom providers with consistent streaming and tool calling.
   primary_cta:
     label: Choose an adapter
-    href: "#select-an-adapter"
+    href: "#available-models"
   secondary_cta:
     label: Model API reference →
-    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Model"
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model"
     external: true
 sidebar:
   - title: Overview
     url: "#overview"
-  - title: Select an adapter
-    url: "#select-an-adapter"
+  - title: Available models
+    url: "#available-models"
     children:
       - title: OpenAI
-        url: "#openai-adapter"
+        url: "#openai"
+      - title: Anthropic
+        url: "#anthropic"
       - title: LangChainGo
-        url: "#langchaingo-adapter"
-      - title: Functional model
-        url: "#functional-model"
-  - title: Structured output
-    url: "#structured-output"
-  - title: Tools and function calling
-    url: "#tools-and-function-calling"
-  - title: Hook lifecycle
-    url: "#hook-lifecycle"
-  - title: Custom integrations
-    url: "#custom-integrations"
+        url: "#langchaingo"
+  - title: Tool binding
+    url: "#tool-binding"
+  - title: Streaming
+    url: "#streaming"
+  - title: Custom models
+    url: "#custom-models"
 ---
 
 ## Overview {#overview}
 
-AgentMesh treats every language or reasoning backend as a `core.Model`. That interface exposes two methods:
+AgentMesh abstracts language models behind a common `model.Model` interface:
 
-- `Generate(ctx, *core.ModelRequest)` – streams partial and final `core.ModelResponse` objects.
-- `Capabilities()` – advertises feature flags (for example, structured output support).
+```go
+type Model interface {
+    Generate(ctx context.Context, messages []message.Message) (message.Message, error)
+    Stream(ctx context.Context, messages []message.Message) (*model.Stream, error)
+}
+```
 
-Model agents, flows, and runners use those two calls exclusively. As a result, your orchestration logic stays portable—even when you swap providers or layer in custom adapters.
+Models may also implement `model.ToolAware` to support function calling:
+
+```go
+type ToolAware interface {
+    BindTools(tools ...tool.Tool) Model
+}
+```
+
+This design keeps agent code portable across providers while supporting provider-specific features through optional interfaces.
 
 ---
 
-## Select an adapter {#select-an-adapter}
+## Available models {#available-models}
 
-AgentMesh ships adapters for popular ecosystems and provides a functional helper for tests. Each adapter already implements streaming, function calling, and schema propagation so you can focus on prompts and tools.
+### OpenAI {#openai}
 
-### OpenAI {#openai-adapter}
-
-[`model/openai`](https://github.com/hupe1980/agentmesh/tree/main/model/openai) wraps the official [`openai-go`](https://github.com/openai/openai-go) Chat Completions client. It converts AgentMesh requests into ChatCompletion payloads, streams deltas back into `core.ModelResponse`, and reconciles tool calls.
+The OpenAI adapter wraps the official [`openai-go`](https://github.com/openai/openai-go) SDK for Chat Completions:
 
 ```go
 import (
-  am "github.com/hupe1980/agentmesh"
-  "github.com/hupe1980/agentmesh/core"
-  openaimodel "github.com/hupe1980/agentmesh/model/openai"
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
 )
 
-model := openaimodel.NewModel(func(o *openaimodel.Options) {
-  o.Model = "gpt-4o-mini"
-  o.Temperature = 0.2
+model := openai.NewModel(func(o *openai.Options) {
+    o.Model = "gpt-4o"
+    o.Temperature = 0.7
+    o.MaxTokens = 1000
 })
 
-planner, _ := am.NewModelAgent("planner", model, func(o *am.ModelAgentOptions) {
-  o.Instructions = core.NewInstructionsFromText("Plan the task before calling tools.")
-  o.Tools = []core.Tool{todoListTool}
+compiled, err := agent.NewReActAgent(model, tools)
+```
+
+Configuration options:
+
+```go
+openai.NewModel(func(o *openai.Options) {
+    o.Model = "gpt-4o-mini"           // Model name
+    o.Temperature = 0.2               // Randomness (0-2)
+    o.MaxTokens = 500                 // Max output tokens
+    o.TopP = 1.0                      // Nucleus sampling
+    o.FrequencyPenalty = 0.0          // Penalize repetition
+    o.PresencePenalty = 0.0           // Encourage diversity
 })
 ```
 
-Highlights:
+The adapter supports:
+- ✅ Streaming responses
+- ✅ Function calling via `BindTools()`
+- ✅ Parallel tool calls
+- ✅ Vision models (pass `message.ImagePart`)
 
-- Native structured output through OpenAI's `response_format` (`Capabilities().SupportsStructuredOutput` == `true`).
-- Tool call reconstruction (handles streaming deltas, attaches tool responses automatically).
-- Works seamlessly with the default model executor hooks.
+### Anthropic {#anthropic}
 
-### LangChainGo {#langchaingo-adapter}
-
-[`model/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/model/langchaingo) adapts any [`tmc/langchaingo`](https://github.com/tmc/langchaingo) LLM. Use it when you already rely on LangChainGo primitives or want to reuse its toolset ecosystem. Pair it with the [`tool/langchaingo` wrapper](/tools/#langchaingo-tool) to surface existing LangChainGo tools.
+The Anthropic adapter integrates Claude models via the official SDK:
 
 ```go
-import (
-  am "github.com/hupe1980/agentmesh"
-  lcg "github.com/hupe1980/agentmesh/model/langchaingo"
-  lcopenaillm "github.com/tmc/langchaingo/llms/openai"
-)
+import "github.com/hupe1980/agentmesh/pkg/model/anthropic"
 
-llm, _ := lcopenaillm.New(lcopenaillm.WithModel("gpt-4o-mini"))
-model, _ := lcg.NewModel(llm)
+model := anthropic.NewModel(func(o *anthropic.Options) {
+    o.Model = "claude-3-5-sonnet-20241022"
+    o.MaxTokens = 1024
+    o.Temperature = 1.0
+})
 
-agent, _ := am.NewModelAgent("langchain", model, nil)
+compiled, err := agent.NewReActAgent(model, tools)
 ```
 
-The adapter mirrors LangChainGo's streaming model and surfaces partial/final responses as AgentMesh events. Capabilities reflect the underlying LLM—if the wrapped model cannot enforce structured output, orchestration falls back to tool-based enforcement automatically.
+Configuration options:
 
-### Functional model {#functional-model}
+```go
+anthropic.NewModel(func(o *anthropic.Options) {
+    o.Model = "claude-3-5-sonnet-20241022"
+    o.MaxTokens = 2048
+    o.Temperature = 0.5
+    o.TopP = 1.0
+    o.TopK = 250
+})
+```
 
-Need a lightweight stub for tests or quick demos? `model.NewFuncModel` converts a plain Go function into a `core.Model`. Pass option functions to customize the advertised capabilities (they default to an empty `core.ModelCapabilities`).
+The adapter supports:
+- ✅ Streaming responses  
+- ✅ Function calling via `BindTools()`
+- ✅ Vision models
+- ✅ System prompts
+
+### LangChainGo {#langchaingo}
+
+Wrap any LangChainGo LLM to reuse existing integrations:
 
 ```go
 import (
-  "context"
-  "github.com/hupe1980/agentmesh/core"
-  amodel "github.com/hupe1980/agentmesh/model"
+    "github.com/hupe1980/agentmesh/pkg/model/langchaingo"
+    "github.com/tmc/langchaingo/llms/openai"
 )
 
-mock := amodel.NewFuncModel(func(ctx context.Context, req *core.ModelRequest) (<-chan *core.ModelResponse, <-chan error) {
-  respCh := make(chan *core.ModelResponse, 1)
-  errCh := make(chan error, 1)
+llm, _ := openai.New(openai.WithModel("gpt-4"))
+model := langchaingo.NewModel(llm)
 
-  go func() {
-    defer close(respCh)
-    defer close(errCh)
-    respCh <- &core.ModelResponse{
-      Parts: []core.Part{core.NewPartFromText("stubbed reply")},
-      FinishReason: "stop",
+compiled, err := agent.NewReActAgent(model, tools)
+```
+
+This adapter enables:
+- Integration with LangChainGo's 50+ model providers
+- Reuse of existing LangChainGo configurations
+- Gradual migration from LangChainGo to AgentMesh
+
+---
+
+## Tool binding {#tool-binding}
+
+Models that support function calling implement `model.ToolAware`:
+
+```go
+// Create tools
+searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
+calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
+
+// Bind tools to model
+model := openai.NewModel()
+if toolAware, ok := model.(model.ToolAware); ok {
+    model = toolAware.BindTools(searchTool, calcTool)
+}
+```
+
+Agent constructors handle tool binding automatically:
+
+```go
+// Tools are bound automatically
+compiled, err := agent.NewReActAgent(
+    openai.NewModel(),
+    []tool.Tool{searchTool, calcTool},
+)
+```
+
+---
+
+## Streaming {#streaming}
+
+All models support streaming for real-time responses:
+
+```go
+// Using graph streaming
+stream := compiled.Stream(ctx, messages)
+for event := range stream {
+    if event.Err != nil {
+        log.Printf("Error: %v", event.Err)
+        continue
     }
-  }()
-
-  return respCh, errCh
-}, func(o *amodel.FuncModelOptions) {
-  o.Capabilities = &core.ModelCapabilities{
-    SupportsStructuredOutput: false,
-  }
-})
-
-// Toggle features on the fly during tests.
-mock.Capabilities().SupportsStructuredOutput = true
+    
+    if event.Node == "model" {
+        // Access partial response
+        for _, msg := range event.Messages {
+            fmt.Print(msg.Content())
+        }
+    }
+}
 ```
 
-This is perfect for unit tests that exercise agents, flows, or tool plumbing without invoking an external provider.
-
----
-
-## Structured output {#structured-output}
-
-AgentMesh can ask compatible models to produce JSON that matches a schema. Create an `core.OutputSchema` and attach it via `ModelRequest.OutputSchema`—ModelAgent does this automatically when you call `agent.RequireStructuredOutput(schema)`.
+Models can also be streamed directly:
 
 ```go
-type Plan struct {
-  Tasks []struct {
-    Name        string `json:"name"`
-    Description string `json:"description"`
-  } `json:"tasks"`
+stream, err := model.Stream(ctx, messages)
+if err != nil {
+    log.Fatal(err)
 }
 
-schema := core.MustNewOutputSchema("plan", Plan{}, func(o *core.OutputSchemaOptions) {
-  o.Description = "List concise steps to complete the task."
-})
-
-planner.RequireStructuredOutput(schema)
+for {
+    msg, err := stream.Receive()
+    if err == io.EOF {
+        break
+    }
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Print(msg.Content())
+}
 ```
 
-If `Capabilities().SupportsStructuredOutput` is `false`, the flow injects the internal `set_model_response` tool so the model must call a deterministic function that validates the schema before returning. Either path yields a consistent JSON payload downstream.
-
 ---
 
-## Tools and function calling {#tools-and-function-calling}
+## Custom models {#custom-models}
 
-Every model request bundles tool definitions in `ModelRequest.Tools`. Agents populate that registry automatically from registered tools and toolsets. During streaming, the adapters translate provider-specific tool call deltas into `core.FunctionCallPart` events and reconcile responses via `core.FunctionResponsePart`.
+Implement the `model.Model` interface to integrate custom providers:
 
-Need to expose search results as tools? Use `retrieval.NewTool` to wrap `retrieval.Retriever` implementations (including Bedrock, Kendra, or LangChainGo vector stores) so planners can fetch documents with the same function-calling flow.
+```go
+type CustomModel struct {
+    client *CustomClient
+}
 
-Best practices:
+func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) (message.Message, error) {
+    // Convert messages to provider format
+    req := convertMessages(messages)
+    
+    // Call provider API
+    resp, err := m.client.Complete(ctx, req)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Convert response to AgentMesh format
+    return message.NewAIMessage(message.NewTextPart(resp.Text)), nil
+}
 
-- Keep tool names globally unique per agent run to avoid collisions.
-- Add human-friendly descriptions—most providers surface them directly to the model.
-- When combining toolsets and inline tools, rely on the flow executor to dedupe by name.
+func (m *CustomModel) Stream(ctx context.Context, messages []message.Message) (*model.Stream, error) {
+    // Implement streaming logic
+    // Return *model.Stream for real-time updates
+}
 
----
+// Optional: Implement ToolAware for function calling
+func (m *CustomModel) BindTools(tools ...tool.Tool) model.Model {
+    return &CustomModel{
+        client: m.client,
+        tools:  tools,
+    }
+}
+```
 
-## Hook lifecycle {#hook-lifecycle}
+Use your custom model like any other:
 
-The shared [`model.ExecuteModel`](https://pkg.go.dev/github.com/hupe1980/agentmesh/model#ExecuteModel) function drives every invocation. It respects plugin hooks from the active `RequestContext`:
-
-1. `RunBeforeModel` – short-circuit execution with a synthetic response.
-2. `Model.Generate` – stream partial chunks and the final response.
-3. `RunOnModelError` – convert provider errors into fallback responses.
-4. `RunAfterModel` – mutate or replace the final response before downstream flows receive it.
-
-Use these hooks to add tracing spans, redact sensitive tokens, or collect completion metrics without changing adapter code.
-
----
-
-## Custom integrations {#custom-integrations}
-
-Implementing your own adapter is straightforward:
-
-1. Satisfy `core.Model` by translating `core.ModelRequest` into your provider's API call.
-2. Stream partial results through a channel of `*core.ModelResponse`; close the channel on completion.
-3. Populate `Capabilities()` with accurate feature flags so flows can toggle structured-output fallbacks.
-4. Optional: expose configuration through option functions similar to the OpenAI adapter.
-
-With that in place, a `ModelAgent` can reuse the same instructions, tools, structured-output contracts, and plugin hooks regardless of which backend powers the generation.
+```go
+model := &CustomModel{client: myClient}
+compiled, err := agent.NewReActAgent(model, tools)
+```

@@ -14,9 +14,9 @@ test:
 test-race:
     go test ./... -race -count=1
 
-# Run linter
+# Run linter (only core library - examples excluded)
 lint:
-    golangci-lint run --config .golangci.yml --timeout=2m
+    golangci-lint run ./pkg/... ./internal/... --config .golangci.yml --timeout=2m
 
 # Generate test coverage report
 cover:

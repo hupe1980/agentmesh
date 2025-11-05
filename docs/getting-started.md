@@ -4,7 +4,7 @@ title: Getting Started
 permalink: /getting-started/
 hero:
   title: Build with AgentMesh in minutes
-  description: Install the library, run the quick start, and keep building with production-ready tooling.
+  description: Install the library, create your first ReAct agent, and explore graph-based workflows.
   primary_cta:
     label: Install the module
     href: "#install"
@@ -15,8 +15,8 @@ hero:
 sidebar:
   - title: Install
     url: "#install"
-  - title: Run the quick start
-    url: "#run-the-quick-start"
+  - title: Quick start
+    url: "#quick-start"
   - title: Explore examples
     url: "#explore-examples"
   - title: Local docs preview
@@ -28,62 +28,115 @@ sidebar:
 ## Install {#install}
 
 ```bash
-go get github.com/hupe1980/agentmesh
+go get github.com/hupe1980/agentmesh@latest
 ```
 
 > Requires Go 1.24+ and appropriate model credentials (for example, `OPENAI_API_KEY`).
 
 ---
 
-## Run the quick start
+## Quick start {#quick-start}
 
-1. Export your model credential (OpenAI shown below).
-2. Execute the basic agent example to stream a response end-to-end.
+Create a simple ReAct agent that can call tools to answer questions:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/message"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+    "github.com/hupe1980/agentmesh/pkg/tool"
+)
+
+type WeatherArgs struct {
+    Location string `json:"location"`
+}
+
+func main() {
+    // Define a tool
+    weatherTool, err := tool.NewFuncTool(
+        "get_weather",
+        "Get current weather for a location",
+        func(ctx context.Context, args WeatherArgs) (map[string]any, error) {
+            return map[string]any{
+                "location":    args.Location,
+                "temperature": 22,
+                "conditions":  "Sunny",
+            }, nil
+        },
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Create a ReAct agent
+    compiled, err := agent.NewReActAgent(
+        openai.NewModel(),
+        []tool.Tool{weatherTool},
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Execute the agent
+    ctx := context.Background()
+    messages := []message.Message{
+        message.NewSystemMessageFromText("You are a helpful weather assistant."),
+        message.NewHumanMessageFromText("What's the weather in Paris?"),
+    }
+
+    results, err := compiled.Invoke(ctx, messages)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Print the final AI response
+    for _, msg := range results {
+        if aiMsg, ok := msg.(*message.AIMessage); ok {
+            for _, part := range aiMsg.Parts() {
+                if text, ok := part.(message.TextPart); ok {
+                    fmt.Println(text.Text)
+                }
+            }
+        }
+    }
+}
+```
+
+Run it:
 
 ```bash
 export OPENAI_API_KEY="your-key"
-go run ./examples/basic_agent/main.go
+go run main.go
 ```
 
-You should see partial and final responses printed to the terminal, demonstrating the default runner, flow selection, and event streaming.
-
-Prefer wiring the pieces manually? Use the façade constructors directly:
-
-```go
-import (
-  "log"
-
-  am "github.com/hupe1980/agentmesh"
-  "github.com/hupe1980/agentmesh/model/openai"
-)
-
-model := openai.NewModel()
-
-agent, err := am.NewModelAgent("basic_agent", model, func(o *am.ModelAgentOptions) {
-  o.Instructions = core.NewInstructionsFromText("You are a concise assistant.")
-})
-if err != nil {
-  log.Fatalf("failed to build agent: %v", err)
-}
-
-application := am.NewApp("basic_agent_app", agent)
-r := am.NewRunner(application, func(o *am.RunnerOptions) {
-  // customize runner behaviour here (logger, stores, plugins, ...)
-})
-// ...
-```
+The agent will automatically reason about the user's query, decide to call the weather tool, and generate a natural language response based on the tool's output.
 
 ---
 
-## Explore examples
+## Explore examples {#explore-examples}
 
-The repository ships multiple ready-to-run apps covering tools, transfers, multi-agent orchestration, and observability. A few highlights:
+The repository includes several ready-to-run examples demonstrating key features:
 
-- `examples/tool_usage` – model-driven tool calling with JSON Schema validation.
-- `examples/multi_agent` – sequential + parallel composition patterns.
-- `examples/opentelemetry` – structured logging, metrics, and tracing via OpenTelemetry.
+- **`examples/basic_agent`** – Simple ReAct agent with tool calling
+- **`examples/streaming`** – Real-time event streaming for responsive UIs
+- **`examples/conditional_flow`** – Dynamic routing based on agent outputs
+- **`examples/parallel_tasks`** – Parallel execution of independent graph nodes
+- **`examples/checkpointing`** – Automatic state persistence and recovery
+- **`examples/time_travel`** – Debug workflows by replaying from checkpoints
+- **`examples/observability`** – OpenTelemetry metrics and distributed tracing
+- **`examples/subgraph`** – Compose complex workflows from reusable graphs
 
-Use `go run ./examples/<dir>/main.go` to try any example.
+Run any example with:
+
+```bash
+go run ./examples/<dir>/main.go
+```
 
 ---
 
@@ -104,8 +157,9 @@ Once the server is running, open `http://localhost:4000` for the rendered docs w
 
 ---
 
-## Next steps
+## Next steps {#next-steps}
 
-- Learn how orchestration primitives compose in the [Agents guide](/agents/).
-- Wire up tools and toolsets (including MCP) in the [Tools guide](/tools/).
-- Understand the runtime internals in [Architecture](/architecture/).
+- **[Architecture](/architecture/)** – Understand the Pregel BSP execution model and graph builder pattern
+- **[Agents](/agents/)** – Learn about ReAct agents, RAG agents, and custom graph workflows
+- **[Tools](/tools/)** – Create function tools with automatic JSON schema generation
+- **[Models](/models/)** – Connect OpenAI, Anthropic, LangChainGo, or custom LLM providers

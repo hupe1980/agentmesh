@@ -8,8 +8,10 @@
   href: /agents/
 - label: Tools
   href: /tools/
-- label: Plugins
-  href: /plugins/
+- label: Streaming
+  href: /streaming/
+- label: Advanced
+  href: /advanced/
 - label: Observability
   href: /observability/
 - label: Architecture

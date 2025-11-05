@@ -1,0 +1,267 @@
+package graph
+
+import (
+	"context"
+
+	"github.com/hupe1980/agentmesh/pkg/message"
+)
+
+// Builder provides a fluent API for constructing graphs.
+// It wraps Graph and returns itself from most methods to enable method chaining.
+//
+// Example:
+//
+//	compiled, err := graph.NewBuilder().
+//	    WithState(state).
+//	    AddNode(&graph.Node{Name: "start", RunFunc: startFunc}).
+//	    AddNode(&graph.Node{Name: "process", RunFunc: processFunc}).
+//	    AddEdge(graph.StartNode, "start").
+//	    AddEdge("start", "process").
+//	    AddEdge("process", graph.EndNode).
+//	    Compile()
+type Builder struct {
+	graph *Graph
+	err   error // Accumulated error
+}
+
+// NewBuilder creates a new graph builder with default empty state.
+func NewBuilder() *Builder {
+	return &Builder{
+		graph: NewGraph(nil),
+	}
+}
+
+// WithState configures the graph state.
+// This should be called before adding nodes if you need custom state.
+func (b *Builder) WithState(state *GraphState) *Builder {
+	if b.err != nil {
+		return b
+	}
+	b.graph.State = ensureGraphState(state)
+	return b
+}
+
+// WithMaxMessages configures the maximum number of messages to retain.
+// Default is 0 (unlimited). This applies to the standard "messages" channel.
+func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
+	if b.err != nil {
+		return b
+	}
+	b.graph.State = NewGraphState(maxMessages)
+	return b
+}
+
+// WithInitialChannels initializes the state with custom channels and sets initial values.
+// This is for advanced use cases where you need LastValueChannel, BinaryOpChannel, etc.
+//
+// Example:
+//
+//	builder.WithInitialChannels(func(state *GraphState) {
+//	    state.AddChannel(channel.NewLastValueChannel("status"))
+//	    state.AddChannel(channel.NewBinaryOpChannel("counter", func(a, b any) any {
+//	        return a.(int) + b.(int)
+//	    }))
+//	})
+func (b *Builder) WithInitialChannels(configFn func(*GraphState)) *Builder {
+	if b.err != nil {
+		return b
+	}
+	if b.graph.State == nil {
+		b.graph.State = NewGraphState(0) // Unlimited messages by default
+	}
+	if configFn != nil {
+		configFn(b.graph.State)
+	}
+	return b
+}
+
+// AddNode adds a node to the graph.
+// Returns the builder for chaining.
+func (b *Builder) AddNode(node *Node) *Builder {
+	if b.err != nil {
+		return b
+	}
+	if err := b.graph.AddNode(node); err != nil {
+		b.err = err
+	}
+	return b
+}
+
+// Node creates and adds a node with the given name and run function.
+// Convenience method to avoid creating Node structs.
+//
+// Example:
+//
+//	builder.Node("process", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+//	    // process logic
+//	    return &NodeResult{Updates: map[string]any{"done": true}}, nil
+//	})
+func (b *Builder) Node(name string, runFunc func(context.Context, StateWriter) (*NodeResult, error)) *Builder {
+	return b.AddNode(&Node{Name: name, RunFunc: runFunc})
+}
+
+// AddEdge adds a directed edge from one node to another.
+func (b *Builder) AddEdge(from, to string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	b.graph.AddEdge(from, to)
+	return b
+}
+
+// AddEdges adds multiple edges from one source node to multiple targets.
+//
+// Example:
+//
+//	builder.AddEdges("router", []string{"path_a", "path_b", "path_c"})
+func (b *Builder) AddEdges(from string, targets []string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	for _, to := range targets {
+		b.graph.AddEdge(from, to)
+	}
+	return b
+}
+
+// AddConditionalEdges adds conditional branching from a node.
+func (b *Builder) AddConditionalEdges(from string, condition func(context.Context, StateReader) []string, targets []string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	b.graph.AddConditionalEdges(from, condition, targets)
+	return b
+}
+
+// ConditionalRoute adds a simpler conditional edge that returns a single target.
+// Automatically wraps the condition to return []string for the graph.
+//
+// Example:
+//
+//	builder.ConditionalRoute("router", func(ctx context.Context, s StateReader) (string, error) {
+//	    if s.Get("valid").(bool) {
+//	        return "success", nil
+//	    }
+//	    return "failure", nil
+//	}, []string{"success", "failure"})
+func (b *Builder) ConditionalRoute(from string, condition func(context.Context, StateReader) (string, error), targets []string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	wrappedCondition := func(ctx context.Context, s StateReader) []string {
+		target, err := condition(ctx, s)
+		if err != nil {
+			// Default to first target or empty
+			if len(targets) > 0 {
+				return []string{targets[0]}
+			}
+			return []string{}
+		}
+		return []string{target}
+	}
+	b.graph.AddConditionalEdges(from, wrappedCondition, targets)
+	return b
+}
+
+// StartTo creates an edge from the start node to the given target.
+// Convenience method for common pattern.
+func (b *Builder) StartTo(target string) *Builder {
+	return b.AddEdge(StartNode, target)
+}
+
+// ToEnd creates an edge from the given source to the end node.
+// Convenience method for common pattern.
+func (b *Builder) ToEnd(from string) *Builder {
+	return b.AddEdge(from, EndNode)
+}
+
+// Chain creates a linear sequence of nodes.
+// Automatically creates edges from start to each node in order to end.
+//
+// Example:
+//
+//	builder.Chain("fetch", "validate", "process", "store")
+//	// Creates: START -> fetch -> validate -> process -> store -> END
+func (b *Builder) Chain(nodeNames ...string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	if len(nodeNames) == 0 {
+		return b
+	}
+
+	// Start -> first node
+	b.AddEdge(StartNode, nodeNames[0])
+
+	// Chain nodes
+	for i := 0; i < len(nodeNames)-1; i++ {
+		b.AddEdge(nodeNames[i], nodeNames[i+1])
+	}
+
+	// Last node -> End
+	b.AddEdge(nodeNames[len(nodeNames)-1], EndNode)
+
+	return b
+}
+
+// Parallel creates edges from a source to multiple targets in parallel,
+// then converges all targets to a single destination.
+//
+// Example:
+//
+//	builder.Parallel("router", []string{"task_a", "task_b", "task_c"}, "aggregator")
+//	// Creates: router -> task_a -> aggregator
+//	//          router -> task_b -> aggregator
+//	//          router -> task_c -> aggregator
+func (b *Builder) Parallel(source string, tasks []string, destination string) *Builder {
+	if b.err != nil {
+		return b
+	}
+	for _, task := range tasks {
+		b.AddEdge(source, task)
+		b.AddEdge(task, destination)
+	}
+	return b
+}
+
+// AddSubgraph embeds a compiled subgraph as a node.
+// Convenience method wrapping CompiledGraph.AsNode().
+func (b *Builder) AddSubgraph(name string, subgraph *CompiledGraph) *Builder {
+	return b.AddNode(subgraph.AsNode(name))
+}
+
+// AddSubgraphWithMapping embeds a compiled subgraph with state mapping.
+// Convenience method wrapping CompiledGraph.AsNodeWithStateMapping().
+func (b *Builder) AddSubgraphWithMapping(
+	name string,
+	subgraph *CompiledGraph,
+	mapInput func(StateReader) (map[string]any, []message.Message),
+	mapOutput func(StateReader) (map[string]any, []message.Message),
+) *Builder {
+	return b.AddNode(subgraph.AsNodeWithStateMapping(name, mapInput, mapOutput))
+}
+
+// Graph returns the underlying graph being built.
+// Use this if you need direct access to graph methods not wrapped by the builder.
+func (b *Builder) Graph() *Graph {
+	return b.graph
+}
+
+// Compile validates and compiles the graph, returning a CompiledGraph.
+// Returns any accumulated error from previous builder operations.
+func (b *Builder) Compile() (*CompiledGraph, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
+	return b.graph.Compile()
+}
+
+// MustCompile is like Compile but panics on error.
+// Useful for static graph construction where errors indicate programmer mistakes.
+func (b *Builder) MustCompile() *CompiledGraph {
+	compiled, err := b.Compile()
+	if err != nil {
+		panic(err)
+	}
+	return compiled
+}

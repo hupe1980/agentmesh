@@ -1,103 +1,68 @@
 ---
 layout: doc
 title: Observability
-description: Wire structured logging, metrics, and tracing through the AgentMesh runner and use contextual helpers inside your agents and tools.
+description: Instrument graphs with OpenTelemetry metrics and distributed tracing.
 permalink: /observability/
 hero:
-  title: Instrument AgentMesh with your observability stack
-  description: Configure logging, metrics, and tracing providers once on the runner and consume them everywhere via context helpers.
+  title: Monitor graph execution
+  description: Track agent workflows with built-in OpenTelemetry metrics and distributed tracing support.
   primary_cta:
-    label: Wire observability
-    href: "#configure-the-runner"
+    label: Enable instrumentation
+    href: "#instrumentation"
   secondary_cta:
-    label: Examples →
-    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/opentelemetry"
+    label: View example →
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/observability"
     external: true
 sidebar:
-  - title: Configure the runner
-    url: "#configure-the-runner"
-  - title: Logging
-    url: "#logging"
+  - title: Instrumentation
+    url: "#instrumentation"
   - title: Metrics
     url: "#metrics"
   - title: Tracing
     url: "#tracing"
-  - title: Troubleshooting
-    url: "#troubleshooting"
+  - title: Integration example
+    url: "#integration-example"
 ---
 
-## Configure the runner {#configure-the-runner}
+## Instrumentation {#instrumentation}
 
-Observability flows from the runner. Provide your logging, metrics, and tracing implementations via the façade options so every run, agent, and tool invocation receives the same contextual providers.
+AgentMesh provides built-in instrumentation through the `graph.Instrumentation` type. Enable it when executing graphs to collect metrics and traces:
 
 ```go
 import (
-  am "github.com/hupe1980/agentmesh"
-  "github.com/hupe1980/agentmesh/logging"
-  metricsotel "github.com/hupe1980/agentmesh/metrics/opentelemetry"
-  "github.com/hupe1980/agentmesh/model/openai"
-  "github.com/hupe1980/agentmesh/tool"
-  traceotel "github.com/hupe1980/agentmesh/trace/opentelemetry"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/metrics"
+    "github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-model := openai.NewModel()
-agent, err := am.NewModelAgent("instrumented", model, func(o *am.ModelAgentOptions) {
-  o.Tools = []tool.Tool{tool.NewFuncTool(...)}
-})
-if err != nil {
-  panic(err)
-}
+// Create instrumentation with providers
+metricsProvider := metrics.Noop()  // or metrics/opentelemetry.New(meterProvider)
+traceProvider := trace.Noop()      // or trace/opentelemetry.New(tracerProvider)
 
-logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON, true)
-tp, mp, _ := initOTel() // set up OpenTelemetry exporters elsewhere
-
-application := am.NewApp("instrumented_app", agent)
-runner := am.NewRunner(application, func(o *am.RunnerOptions) {
-  o.Logger = logger
-  o.Metrics = metricsotel.New(mp)
-  o.Tracer = traceotel.New(tp)
-})
+inst := graph.NewInstrumentation(metricsProvider, traceProvider)
 ```
 
-Any agent or tool executed by this runner can retrieve the configured providers from the context. If you omit a provider, AgentMesh falls back to no-op implementations so instrumentation calls remain safe.
-
----
-
-## Logging {#logging}
-
-Use `logging.FromContext(ctx)` inside your agents and tools to retrieve the structured logger that the runner injected. The logger implements `logging.Logger` (slog-compatible) so you can emit JSON events enriched with run metadata.
+Use the instrumentation in your graph nodes:
 
 ```go
-import "github.com/hupe1980/agentmesh/logging"
-
-func (a *AuditAgent) Run(ctx context.Context, req core.RequestContext, q core.EventWriter) error {
-  log := logging.FromContext(ctx)
-  log.Info("agent.start", "agent", a.Name(), "session_id", req.SessionID())
-  // ... do work ...
-  log.Info("agent.finish", "agent", a.Name(), "run_id", req.RunID())
-  return nil
-}
+builder.Node("agent", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Start a trace span for this node
+    ctx, span := inst.TraceNodeExecution(ctx, "agent", superstep)
+    defer span.End()
+    
+    // Record metrics
+    inst.RecordNodeExecution(ctx, "agent", duration, err)
+    
+    // Your node logic...
+    return &graph.NodeResult{...}, nil
+})
 ```
-
-The logger automatically receives attributes such as `run_id` and `application` from the runner so downstream systems can correlate events.
 
 ---
 
 ## Metrics {#metrics}
 
-Metrics providers implement the `metrics.Provider` interface. Use the contextual helper to record counters, gauges, and histograms without managing exporter plumbing in business logic.
-
-```go
-import "github.com/hupe1980/agentmesh/metrics"
-
-func (a *BillingAgent) Run(ctx context.Context, req core.RequestContext, q core.EventWriter) error {
-  metrics.FromContext(ctx).Counter("agentmesh_runs_total").Add(ctx, 1,
-    metrics.Attr{Key: "agent", Value: a.Name()},
-  )
-  // ... do work ...
-  return nil
-}
-```
+The metrics package provides an abstraction over OpenTelemetry metrics:
 
 The OpenTelemetry adapter (`metrics/opentelemetry`) bridges AgentMesh metrics to any OTLP backend. Swap it with your own implementation if you prefer Prometheus, StatsD, or another collector.
 
@@ -107,27 +72,130 @@ The OpenTelemetry adapter (`metrics/opentelemetry`) bridges AgentMesh metrics to
 
 Tracing hooks connect spans around every run, agent, and tool invocation. Retrieve the provider via `trace.FromContext(ctx)` to start spans within your custom code.
 
+### Built-in metrics
+
+AgentMesh tracks:
+- **Node execution time** – Duration of each node execution
+- **Node errors** – Count of failed node executions
+- **Graph execution time** – Total time for graph invocations
+- **Superstep count** – Number of supersteps per execution
+
+### OpenTelemetry integration
+
 ```go
-import "github.com/hupe1980/agentmesh/trace"
+import (
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/exporters/prometheus"
+    "go.opentelemetry.io/otel/sdk/metric"
+)
 
-func (a *ChainAgent) Run(ctx context.Context, req core.RequestContext, q core.EventWriter) error {
-  tracer := trace.FromContext(ctx).Tracer("agentmesh/chain-agent")
-  ctx, span := tracer.Start(ctx, "ChainAgent.Run")
-  defer span.End(nil)
+// Create OpenTelemetry meter provider
+exporter, _ := prometheus.New()
+provider := metric.NewMeterProvider(
+    metric.WithReader(exporter),
+)
+otel.SetMeterProvider(provider)
 
-  // ... do work ...
-  return nil
-}
+// Use in AgentMesh
+metricsProvider := metrics.NewOpenTelemetry(provider)
+inst := graph.NewInstrumentation(metricsProvider, traceProvider)
 ```
-
-The default `trace.Noop()` provider avoids instrumentation errors when tracing is disabled. When you pass `traceotel.New(tp)` from OpenTelemetry, AgentMesh automatically wires parent/child spans so each run appears as a trace with nested agent/tool nodes.
 
 ---
 
-## Troubleshooting {#troubleshooting}
+## Tracing {#tracing}
 
-- **Seeing no logs/metrics/spans?** Verify the runner received non-nil providers and that your exporter flushes before shutdown. The OpenTelemetry example calls `ForceFlush` / `Shutdown` in `defer` blocks.
-- **Attributes missing?** Ensure you propagate the `ctx` returned from AgentMesh helpers into your subcalls. Dropping the context chain strips instrumentation metadata.
-- **Custom providers**: implement the relevant interfaces (`logging.Logger`, `metrics.Provider`, `trace.Provider`) and inject them through `am.RunnerOptions`—AgentMesh does not enforce OpenTelemetry.
+Distributed tracing helps you understand the execution flow of complex graphs:
 
-With observability configured, the `examples/opentelemetry` project shows a full end-to-end setup including stdout exporters and structured logging.
+### Built-in traces
+
+AgentMesh creates spans for:
+- **Graph execution** – Top-level span for entire graph invocation
+- **Node execution** – Individual spans for each node
+- **Supersteps** – Group nodes executed in parallel
+
+### OpenTelemetry integration
+
+```go
+import (
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/exporters/jaeger"
+    "go.opentelemetry.io/otel/sdk/trace"
+)
+
+// Create OpenTelemetry tracer provider
+exporter, _ := jaeger.New(jaeger.WithCollectorEndpoint())
+provider := trace.NewTracerProvider(
+    trace.WithBatcher(exporter),
+)
+otel.SetTracerProvider(provider)
+
+// Use in AgentMesh
+traceProvider := trace.NewOpenTelemetry(provider)
+inst := graph.NewInstrumentation(metricsProvider, traceProvider)
+```
+
+---
+
+## Integration example {#integration-example}
+
+Complete example with Prometheus metrics and Jaeger tracing:
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
+    "github.com/hupe1980/agentmesh/pkg/metrics"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+    "github.com/hupe1980/agentmesh/pkg/trace"
+    
+    "go.opentelemetry.io/otel"
+    "go.opentelemetry.io/otel/exporters/prometheus"
+    sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+    sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+func main() {
+    // Setup OpenTelemetry
+    promExporter, _ := prometheus.New()
+    meterProvider := sdkmetric.NewMeterProvider(
+        sdkmetric.WithReader(promExporter),
+    )
+    otel.SetMeterProvider(meterProvider)
+    
+    tracerProvider := sdktrace.NewTracerProvider()
+    otel.SetTracerProvider(tracerProvider)
+    
+    // Create instrumentation
+    metricsProvider := metrics.NewOpenTelemetry(meterProvider)
+    traceProvider := trace.NewOpenTelemetry(tracerProvider)
+    inst := graph.NewInstrumentation(metricsProvider, traceProvider)
+    
+    // Create agent with instrumentation
+    compiled, err := agent.NewReActAgent(openai.NewModel(), tools)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Execute with tracing
+    ctx := context.Background()
+    ctx, span := inst.TraceGraphExecution(ctx, "my-agent")
+    defer span.End()
+    
+    results, err := compiled.Invoke(ctx, messages)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Metrics are automatically exported to Prometheus
+    // Traces are sent to Jaeger (if configured)
+}
+```
+
+See `examples/observability` for a complete working example.

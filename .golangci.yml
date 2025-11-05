@@ -1,71 +1,177 @@
 version: "2"
 
-run:
-  timeout: 5m
-  issues-exit-code: 1
-  tests: true
-
 linters:
-  default: standard
   enable:
     - errcheck
     - govet
     - ineffassign
-    - revive
+    - staticcheck
+    - unused
+    - misspell
+    #- revive
+    - gosec
+    - unconvert
+    - goconst
     - gocyclo
     - dupl
-    - goconst
-    - unconvert
-    - nakedret
-    - misspell
-    - lll
+    - gocritic
     - prealloc
-    - gosec
-  disable:
-    - godot
-    - nlreturn
-    - wsl
-    - funlen
-    - gocognit
-    - nestif
-    - mnd
-    - unparam
-  exclusions:
+    - predeclared
+    - nolintlint
+    - whitespace
+    - errorlint
+    - durationcheck
+    - nilerr
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+  dupl:
+    threshold: 100
+
+  gocritic:
+    enabled-checks:
+      - appendAssign
+      - assignOp
+      - boolExprSimplify
+      - builtinShadow
+      - captLocal
+      - caseOrder
+      - deprecatedComment
+      - dupArg
+      - dupBranchBody
+      - dupCase
+      - dupSubExpr
+      - elseif
+      - emptyFallthrough
+      - emptyStringTest
+      - hexLiteral
+      - ifElseChain
+      - indexAlloc
+      - initClause
+      - methodExprCall
+      - nilValReturn
+      - rangeExprCopy
+      - rangeValCopy
+      - regexpMust
+      - singleCaseSwitch
+      - sloppyLen
+      - stringXbytes
+      - switchTrue
+      - typeAssertChain
+      - typeSwitchVar
+      - underef
+      - unlabelStmt
+      - unnecessaryBlock
+      - unslice
+      - valSwap
+      - weakCond
+      - wrapperFunc
+      - yodaStyleExpr
+
+  revive:
+    enable-all-rules: false
     rules:
-      # Internal utility functions 
-      - path: ^internal/util/
-        linters:
-          - revive
-        text: "avoid meaningless package names"
-      
-      # Internal test utilities
-      - path: internal/testutil/
-        linters:
-          - revive      # Test builders can have different patterns
-          - unparam     # Test utilities may have unused params by design
-      
-      # Exclude some linters from running on tests files
-      - path: _test\.go
-        linters:
-          - revive      # Tests can have different patterns
-          - gosec       # Security less critical in tests
-          - dupl        # Test code duplication is acceptable
-          - goconst     # Test constants can be inline
-      
-      # Examples can have relaxed rules
-      - path: ^examples/
-        linters:
-          - revive      # Examples can have different patterns
-          - errcheck    # Example code can ignore some errors
-          - gosec       # Examples may use simplified patterns
-          - goconst     # Examples can repeat strings for clarity
-          - lll         # Allow long lines in examples for readability
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: increment-decrement
+      - name: var-naming
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+      - name: empty-block
+      - name: superfluous-else
+      - name: unreachable-code
+      - name: redefines-builtin-id
 
-      # Globally ignore specific warning texts
-      - path: \.go$
-        linters:
-          - revive
-        text: "unused-parameter"
+  gosec:
+    excludes:
+      - G404  # Insecure random - not critical for this use case
 
-severity:
-  default: warning
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    # Exclude ALL linters from test files - tests are allowed to be simple
+    - path: _test\.go$
+      linters:
+        - errcheck
+        - gosec
+        - goconst
+        - gocyclo
+        - gocritic
+        - predeclared
+        - prealloc
+        - unused
+        - staticcheck
+        - revive
+        - dupl
+
+    # Examples can have relaxed rules - focus on readability
+    - path: examples/
+      linters:
+        - errcheck
+        - gosec
+        - goconst
+        - unused
+        - gocyclo
+        - gocritic
+        - predeclared
+        - revive
+
+    # Benchmark tests can ignore all performance linters
+    - path: benchmark_test/
+      linters:
+        - errcheck
+        - gosec
+        - goconst
+        - gocyclo
+        - gocritic
+        - predeclared
+
+    # Ignore variable shadow warnings for common short names
+    - linters:
+        - govet
+      text: 'shadow: declaration of "(err|ctx)"'
+
+    # Ignore all "unused parameter" warnings from revive globally
+    - linters:
+        - revive
+      text: "parameter '.*' seems to be unused"
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  timeout: 5m
+  tests: false  # Don't run linters on test files
+  skip-dirs:
+    - vendor
+    - examples
+    - benchmark_test
+    - docs
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*_test\\.go$"
+
+output:
+  sort-results: true

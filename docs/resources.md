@@ -3,54 +3,114 @@ layout: doc
 title: Resources
 permalink: /resources/
 hero:
-  title: Keep exploring AgentMesh
-  description: Find examples, roadmap discussions, and contributor guides.
+  title: Explore AgentMesh further
+  description: Find examples, API documentation, and contribution guidelines.
   primary_cta:
-    label: Browse the repository
-    href: "https://github.com/hupe1980/agentmesh"
+    label: Browse examples
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
     external: true
   secondary_cta:
-    label: Open an issue →
-    href: "https://github.com/hupe1980/agentmesh/issues"
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh"
     external: true
 sidebar:
-  - title: Essential links
-    url: "#essential-links"
-  - title: Community & feedback
-    url: "#community-feedback"
-  - title: Local development tips
-    url: "#local-development-tips"
-  - title: Related reading
-    url: "#related-reading"
+  - title: Examples
+    url: "#examples"
+  - title: API documentation
+    url: "#api-documentation"
+  - title: Community
+    url: "#community"
+  - title: Development
+    url: "#development"
 ---
 
-## Essential links
+## Examples {#examples}
 
-- **Repository** – [github.com/hupe1980/agentmesh](https://github.com/hupe1980/agentmesh)
-- **API reference** – [pkg.go.dev/github.com/hupe1980/agentmesh](https://pkg.go.dev/github.com/hupe1980/agentmesh)
-- **Examples** – [examples directory](https://github.com/hupe1980/agentmesh/tree/main/examples)
-- **Changelog** – [GitHub releases](https://github.com/hupe1980/agentmesh/releases)
+The repository includes **11 comprehensive examples** demonstrating core features and production patterns:
+
+### Getting started
+- **`basic_agent`** – Simple ReAct agent with tool calling and message handling
+- **`streaming`** – Real-time event streaming for responsive UIs and progress tracking
+
+### Advanced workflows
+- **`conditional_flow`** – Dynamic routing and branching based on state
+- **`parallel_tasks`** – Concurrent execution with fan-out/fan-in patterns
+- **`subgraph`** – Modular workflows with reusable graph components
+
+### State management
+- **`checkpointing`** – Automatic state persistence and fault recovery
+- **`time_travel`** – Debug workflows by replaying from any superstep
+- **`message_retention`** – Conversation history management and pruning strategies
+
+### Production features
+- **`observability`** – OpenTelemetry metrics, distributed tracing, and monitoring
+- **`human_pause`** – Human-in-the-loop workflows with interrupt/resume
+- **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
+
+Browse all examples: [github.com/hupe1980/agentmesh/tree/main/examples](https://github.com/hupe1980/agentmesh/tree/main/examples)
 
 ---
 
-## Community & feedback
+## API documentation {#api-documentation}
 
-- File issues, feature requests, or questions via [GitHub Issues](https://github.com/hupe1980/agentmesh/issues).
-- Join discussions and propose ideas through pull requests—start with [CONTRIBUTING.md](https://github.com/hupe1980/agentmesh/blob/main/CONTRIBUTING.md).
-- Track upcoming work or propose new items on the [project roadmap](https://github.com/hupe1980/agentmesh/issues?q=is%3Aopen+label%3Aroadmap).
+Complete API reference with examples:
 
----
-
-## Local development tips
-
-- Lint and test quickly using `just lint`, `just test`, or `just check`.
-- Run all Go tests with race detection using `go test ./... -race`.
-- Preview documentation updates locally with `just docs-serve`.
+- **Main package** – [pkg.go.dev/github.com/hupe1980/agentmesh](https://pkg.go.dev/github.com/hupe1980/agentmesh)
+- **Graph package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph)
+- **Agent package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/agent](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/agent)
+- **Model package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model)
+- **Tool package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/tool](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/tool)
 
 ---
 
-## Related reading
+## Community {#community}
 
-- [OpenTelemetry example](https://github.com/hupe1980/agentmesh/tree/main/examples/opentelemetry) – combine structured logging, metrics, and tracing.
-- [Tool usage example](https://github.com/hupe1980/agentmesh/tree/main/examples/tool_usage) – define strongly typed tools with JSON Schema validation.
-- [Transfer agent example](https://github.com/hupe1980/agentmesh/tree/main/examples/transfer_agent) – hand off control between agents.
+### Get help
+
+- **GitHub Issues** – [Report bugs or request features](https://github.com/hupe1980/agentmesh/issues)
+- **Discussions** – [Ask questions and share ideas](https://github.com/hupe1980/agentmesh/discussions)
+
+### Contributing
+
+Contributions are welcome! See:
+- **Contributing guide** – [CONTRIBUTING.md](https://github.com/hupe1980/agentmesh/blob/main/CONTRIBUTING.md)
+- **Code of conduct** – [CODE_OF_CONDUCT.md](https://github.com/hupe1980/agentmesh/blob/main/CODE_OF_CONDUCT.md)
+
+---
+
+## Development {#development}
+
+### Running tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with race detection
+go test ./... -race
+
+# Run with coverage
+go test ./... -cover
+```
+
+### Benchmarks
+
+```bash
+# Run all benchmarks
+go test ./... -bench=.
+
+# Run specific benchmark
+go test ./pkg/graph -bench=BenchmarkOptimized
+```
+
+### Local documentation
+
+Preview documentation locally:
+
+```bash
+cd docs
+bundle install
+bundle exec jekyll serve --livereload
+```
+
+Navigate to `http://localhost:4000`

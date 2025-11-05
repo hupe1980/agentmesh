@@ -1,211 +1,295 @@
 ---
 layout: doc
 title: Agents
-description: Detailed guidance for Model, Sequential, Parallel, Routing, Loop, and Func agents.
+description: Build ReAct agents, RAG agents, and custom graph-based workflows.
 permalink: /agents/
 hero:
-  title: Compose orchestration with reusable agents
-  description: Choose the right agent for each stage—model integration, coordination, iteration, or custom logic.
+  title: Build intelligent agent workflows
+  description: Create agents using pre-built patterns or compose custom graphs with nodes, edges, and conditional routing.
   primary_cta:
-    label: Create a model agent
-    href: "#model-agent"
+    label: Create a ReAct agent
+    href: "#react-agent"
   secondary_cta:
     label: API reference →
-    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/agent"
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/agent"
     external: true
 sidebar:
-  - title: ModelAgent
-    url: "#model-agent"
-  - title: SequentialAgent
-    url: "#sequential-agent"
-  - title: ParallelAgent
-    url: "#parallel-agent"
-  - title: RoutingAgent
-    url: "#routing-agent"
-  - title: LoopAgent
-    url: "#loop-agent"
-  - title: FuncAgent
-    url: "#func-agent"
-  - title: Flowchart helper
-    url: "#flowchart-helper"
-  - title: Composition tips
-    url: "#composition-tips"
+  - title: ReAct agent
+    url: "#react-agent"
+  - title: RAG agent
+    url: "#rag-agent"
+  - title: Custom graphs
+    url: "#custom-graphs"
+  - title: Conditional routing
+    url: "#conditional-routing"
+  - title: Parallel execution
+    url: "#parallel-execution"
+  - title: Subgraphs
+    url: "#subgraphs"
 ---
 
-AgentMesh ships a focused set of agent implementations in [`agent/`](https://github.com/hupe1980/agentmesh/tree/main/agent). They compose cleanly because each implements [`core.Agent`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Agent) and inherits shared lifecycle behavior from `BaseAgent`.
-
-_Examples below assume `am := github.com/hupe1980/agentmesh` and `core := github.com/hupe1980/agentmesh/core`._
+AgentMesh provides high-level agent constructors for common patterns like ReAct and RAG, while also exposing the underlying graph builder for custom workflows. All agents are compiled into executable graphs that run on the Pregel BSP engine.
 
 ---
 
-## ModelAgent {#model-agent}
+## ReAct agent {#react-agent}
 
-If you want to plug an LLM into a flow, start here. `ModelAgent` wraps any `core.Model` adapter, applies instructions, and optionally exposes structured tool calling.
+The **ReAct (Reasoning and Acting)** pattern creates an agent that iteratively:
+1. Reasons about the task
+2. Decides which tool to use
+3. Observes the result
+4. Repeats until the answer is found
 
-- **When to use**: chat-style interactions, tool orchestration, schema-constrained outputs.
-- **Highlights**:
-  - Streaming and non-streaming responses
-  - Function calling with registered tools/toolsets
-  - Attach final responses into session state via `OutputKey`
-  - Transfer control to peer/parent agents for escalation or delegation
+This is the most common pattern for multi-step problem solving with tool use.
 
 ```go
-llm := openai.NewModel() // github.com/hupe1980/agentmesh/model/openai
-planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
-  o.Instructions = core.NewInstructionsFromText("You plan tasks then call tools.")
-  o.Tools = []core.Tool{todoListTool}
-})
-```
-
----
-
-## SequentialAgent {#sequential-agent}
-
-`SequentialAgent` runs child agents one after another, propagating the same `RequestContext` and event stream through the pipeline. It is ideal for deterministic, stage-based workflows.
-
-- **When to use**: pipelines with clear ordering (plan → act → summarize).
-- **Behavior**:
-  - Stops on first error (unless children handle their own failures)
-  - Shares accumulated session state across stages
-  - Easy to nest—children can be `ModelAgent`, `ParallelAgent`, or other sequential pipelines
-
-```go
-pipeline := am.NewSequentialAgent("research_pipe", []core.Agent{
-  planner,
-  researcher,
-  summarizer,
-})
-```
-
----
-
-## ParallelAgent {#parallel-agent}
-
-`ParallelAgent` fans out work to children concurrently. Each child runs with an isolated branch context so state mutations stay scoped, while still inheriting the parent session.
-
-- **When to use**: gather multiple perspectives, run independent sub-tasks, or reduce latency.
-- **Behavior**:
-  - Optional global timeout for the entire fan-out
-  - First error terminates the run and surfaces upstream
-  - Branch context IDs include parent/child names for traceability
-
-```go
-workers := []core.Agent{analystA, analystB, analystC}
-fanout := am.NewParallelAgent("analysis_fanout", workers, func(o *am.ParallelAgentOptions) {
-  o.Timeout = 30 * time.Second
-})
-```
-
----
-
-## RoutingAgent {#routing-agent}
-
-`RoutingAgent` inspects the current context and chooses exactly one child agent to run. It is useful when you need a router or switch statement in the middle of an orchestration tree.
-
-- **When to use**: branch to specialized agents, enforce guardrails before heavy work, or build hierarchical planners.
-- **Behavior**:
-  - Selector (`RoutingFunc`) receives the Go `context.Context`, the invocation `core.ReadonlyContext`, and available children.
-  - Returns the target child's `Agent.Name()`, or an error to stop execution.
-  - Emits clear errors when no children are configured or the selector picks an unknown name.
-
-```go
-router := am.NewRoutingAgent("planner_router", []core.Agent{planner, executor}, func(ctx context.Context, roCtx core.ReadonlyContext, children []core.Agent) (string, error) {
-  if roCtx.SessionID() == "dry_run" {
-    return "planner", nil
-  }
-
-  if roCtx.StateSnapshot()["needs_execution"] == true {
-    return "executor", nil
-  }
-
-  return "planner", nil
-})
-```
-
-Pair `RoutingAgent` with `SequentialAgent` or `ParallelAgent` to build deterministic branching without scattering `if` statements across your orchestration code.
-
----
-
-## LoopAgent {#loop-agent}
-
-When you need to repeat an agent until a condition is met, wrap it with `LoopAgent`. It handles iteration limits, backoff intervals, and escalation signals out of the box.
-
-- **When to use**: iterative refinement, polling/external checks, convergence loops.
-- **Behavior**:
-  - Configurable max iterations, sleep between runs, and error handling
-  - Escalation events from the child bubble up immediately (`ErrEscalated`)
-  - Shares session state so successive runs can build on previous context
-
-```go
-refiner := am.NewLoopAgent("writer_loop", writerAgent, func(o *am.LoopAgentOptions) {
-  o.MaxIters = 5
-  o.Interval = 2 * time.Second
-  o.StopOnError = false
-})
-```
-
----
-
-## FuncAgent {#func-agent}
-
-When you already have imperative Go logic and just need to drop it into an orchestration graph, `am.NewFuncAgent` offers the lightest-weight option. Provide a `RunFunc` and AgentMesh handles lifecycle wiring, state propagation, and hierarchy.
-
-- **When to use**: glue code, deterministic adapters, or quick experiments before promoting to a full type.
-- **Behavior**:
-  - Runs whatever logic you supply and can emit events through the provided `core.EventWriter`
-  - Supports nested sub-agents via options, so you can still compose
-  - Honors the same RequestContext/Plugin infrastructure as other agents
-
-```go
-logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatText, false)
-
-healthCheck := am.NewFuncAgent("health_check", func(ctx context.Context, req core.RequestContext, q core.EventWriter) error {
-  // Write a final message into the stream
-  return q.Write(ctx, core.NewTextEvent(req.RunID(), "health_check", "All systems nominal."))
-}, func(o *am.FuncAgentOptions) {
-  o.Description = "Runs infrastructure health probes"
-})
-
-application := am.NewApp("ops", healthCheck)
-runner := am.NewRunner(application, func(o *am.RunnerOptions) { o.Logger = logger })
-```
-
----
-
-## Flowchart helper {#flowchart-helper}
-
-Need to visualize a complex agent tree? Call `agent.Flowchart` to render any hierarchy (including tool attachments) as a Mermaid diagram and drop it into docs or dashboards.
-
-- **When to use**: document execution order, review nested planners, or generate diagrams for runbooks.
-- **Behavior**:
-  - Parents link to their first child and siblings chain together so sequential execution order is obvious
-  - Tool edges render as dashed arrows (`-.->`) to distinguish them from control flow
-  - Supports direction (`WithDirection`), descriptions, and optional tool nodes through familiar option functions
-
-```go
-workflow := am.NewSequentialAgent("QuarterlyReport", []core.Agent{researcher, writer, reviewer})
-
-chart, err := agent.Flowchart(workflow,
-  agent.WithDirection("LR"),
-  agent.WithDescriptions(true),
-  agent.WithTools(true),
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+    "github.com/hupe1980/agentmesh/pkg/tool"
 )
-if err != nil {
-  log.Fatal(err)
-}
 
-fmt.Println(chart)
-// Persist beside the example for easy sharing
-_ = os.WriteFile("examples/agent_flowchart/flowchart.mmd", []byte(chart), 0o600)
+// Create tools
+searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
+calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
+
+// Create ReAct agent
+compiled, err := agent.NewReActAgent(
+    openai.NewModel(),
+    []tool.Tool{searchTool, calcTool},
+    agent.WithMaxIterations(5),
+)
+
+// Execute
+results, err := compiled.Invoke(ctx, messages)
 ```
 
-Grab [`examples/agent_flowchart`](https://github.com/hupe1980/agentmesh/tree/main/examples/agent_flowchart) for a runnable end-to-end demo that prints and saves the diagram.
+### Configuration options
+
+```go
+agent.NewReActAgent(model, tools,
+    agent.WithMaxIterations(10),          // Max reasoning-action cycles
+    agent.WithRetryPolicy(retryPolicy),   // Configure retry behavior
+)
+```
+
+### How it works
+
+The ReAct agent compiles into a graph with three nodes:
+
+```
+START → model → tools → model → END
+         ↓              ↑
+         └──────────────┘
+```
+
+1. **Model node**: Generates response or tool calls
+2. **Tool node**: Executes requested tools in parallel
+3. **Conditional routing**: Loops back to model if tools were called, otherwise proceeds to END
 
 ---
 
-## Composition tips
+## RAG agent {#rag-agent}
 
-- Mix and match agents freely—every agent implements the same `core.Agent` interface.
-- Consider pairing `SequentialAgent` + `ParallelAgent` to orchestrate plan/act cycles with fan-out work stages.
-- Use `LoopAgent` for convergence or polling loops, and emit escalation actions to exit early when needed.
-- Leverage plugins to intercept agent lifecycle events for audit logging, caching, or analytics.
+The **RAG (Retrieval-Augmented Generation)** pattern creates an agent that:
+1. Retrieves relevant context from a knowledge base
+2. Generates a response using both the query and retrieved context
+
+This is ideal for question-answering over large document collections.
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+    "github.com/hupe1980/agentmesh/pkg/retrieval/langchaingo"
+)
+
+// Create retriever from vector store
+retriever := langchaingo.NewRetrieverFromVectorStore(vectorStore, func(o *langchaingo.Options) {
+    o.NumDocuments = 5
+})
+
+// Create RAG agent
+compiled, err := agent.NewRAGAgent(
+    openai.NewModel(),
+    retriever,
+    agent.WithRAGPromptTemplate(customTemplate),
+)
+
+// Execute
+results, err := compiled.Invoke(ctx, messages)
+```
+
+### Configuration options
+
+```go
+agent.NewRAGAgent(model, retriever,
+    agent.WithRAGPromptTemplate(template),  // Custom prompt template
+)
+```
+
+### How it works
+
+The RAG agent compiles into a graph with three nodes:
+
+```
+START → retrieve → generate → END
+```
+
+1. **Retrieve node**: Fetches relevant documents based on the user's query
+2. **Generate node**: Creates a prompt with the query and retrieved context, then generates the response
+
+---
+
+## Custom graphs {#custom-graphs}
+
+For complete control over workflow logic, build custom graphs using the graph builder:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+builder := graph.NewBuilder()
+
+// Add nodes
+builder.Node("classify", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Classify the user's intent
+    msgs := s.MessagesSnapshot()
+    category := classifyIntent(msgs)
+    
+    return &graph.NodeResult{
+        Updates: map[string]any{"category": category},
+    }, nil
+})
+
+builder.Node("handle_support", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Handle support queries
+    response := message.NewAIMessage(message.NewTextPart("Support response..."))
+    return &graph.NodeResult{
+        Messages: []message.Message{response},
+    }, nil
+})
+
+builder.Node("handle_sales", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Handle sales queries
+    response := message.NewAIMessage(message.NewTextPart("Sales response..."))
+    return &graph.NodeResult{
+        Messages: []message.Message{response},
+    }, nil
+})
+
+// Define flow
+builder.AddEdge("START", "classify")
+builder.AddConditionalEdges("classify", func(result *graph.NodeResult) []string {
+    category := result.Updates["category"].(string)
+    if category == "support" {
+        return []string{"handle_support"}
+    }
+    return []string{"handle_sales"}
+})
+builder.AddEdge("handle_support", "END")
+builder.AddEdge("handle_sales", "END")
+
+// Compile and execute
+compiled, err := builder.Compile()
+results, err := compiled.Invoke(ctx, messages)
+```
+
+### Node functions
+
+Nodes receive a `StateWriter` and return a `NodeResult`:
+
+```go
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Read state
+    previousValue := s.Get("key")
+    messages := s.MessagesSnapshot()
+    
+    // Process...
+    
+    // Return updates
+    return &graph.NodeResult{
+        Messages: []message.Message{newMessage},
+        Updates: map[string]any{
+            "key": newValue,
+            "counter": 1,  // Will be summed if using BinaryOpChannel
+        },
+    }, nil
+}
+```
+
+---
+
+## Conditional routing {#conditional-routing}
+
+Direct execution flow dynamically based on node outputs:
+
+```go
+builder.AddConditionalEdges("router", func(result *graph.NodeResult) []string {
+    // Route based on node output
+    switch result.Updates["action"].(string) {
+    case "approve":
+        return []string{"approver"}
+    case "reject":
+        return []string{"rejector"}
+    case "escalate":
+        return []string{"human_review"}
+    default:
+        return []string{"default_handler"}
+    }
+})
+```
+
+Routes can return multiple node names for parallel execution:
+
+```go
+builder.AddConditionalEdges("fanout", func(result *graph.NodeResult) []string {
+    // Execute all three analysts in parallel
+    return []string{"analyst_a", "analyst_b", "analyst_c"}
+})
+```
+
+---
+
+## Parallel execution {#parallel-execution}
+
+Nodes with the same predecessors automatically execute in parallel:
+
+```go
+// These three nodes execute concurrently
+builder.AddEdge("START", "fetch_data_a")
+builder.AddEdge("START", "fetch_data_b")
+builder.AddEdge("START", "fetch_data_c")
+
+// All converge to aggregator
+builder.AddEdge("fetch_data_a", "aggregator")
+builder.AddEdge("fetch_data_b", "aggregator")
+builder.AddEdge("fetch_data_c", "aggregator")
+```
+
+The aggregator waits for all predecessors to complete before executing.
+
+---
+
+## Subgraphs {#subgraphs}
+
+Compose complex workflows from reusable graph components:
+
+```go
+// Create a research subgraph
+researchGraph := createResearchGraph()
+
+// Embed in parent graph
+builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Execute subgraph
+    messages, err := researchGraph.Invoke(ctx, s.MessagesSnapshot())
+    if err != nil {
+        return nil, err
+    }
+    
+    return &graph.NodeResult{
+        Messages: messages,
+    }, nil
+})
+```
+
+See `examples/subgraph` for a complete demonstration.

@@ -1,0 +1,560 @@
+package graph
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"sync"
+	"time"
+
+	ipregel "github.com/hupe1980/agentmesh/internal/pregel"
+	"github.com/hupe1980/agentmesh/pkg/message"
+)
+
+// =============================================================================
+// ChannelMessage - Data payload for Pregel BSP
+// =============================================================================
+
+// ChannelMessage is the data-carrying message payload for Pregel BSP execution.
+// It contains actual data to be communicated between nodes via channels.
+type ChannelMessage struct {
+	// Messages contains conversation messages to be passed between nodes
+	Messages []message.Message `json:"messages,omitempty"`
+
+	// Updates contains key-value state updates to be applied to channels
+	Updates map[string]any `json:"updates,omitempty"`
+
+	// Metadata contains additional routing or processing hints
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// NewChannelMessage creates a new channel message with the given messages and updates.
+func NewChannelMessage(messages []message.Message, updates map[string]any) ChannelMessage {
+	return ChannelMessage{
+		Messages: messages,
+		Updates:  updates,
+		Metadata: make(map[string]string),
+	}
+}
+
+// WithMetadata adds metadata to the channel message.
+func (cm ChannelMessage) WithMetadata(key, value string) ChannelMessage {
+	if cm.Metadata == nil {
+		cm.Metadata = make(map[string]string)
+	}
+	cm.Metadata[key] = value
+	return cm
+}
+
+// MarshalJSON implements json.Marshaler for serialization.
+func (cm ChannelMessage) MarshalJSON() ([]byte, error) {
+	type Alias ChannelMessage
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		Alias
+	}{
+		Type:  "channel_message",
+		Alias: (Alias)(cm),
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler for deserialization.
+func (cm *ChannelMessage) UnmarshalJSON(data []byte) error {
+	type Alias ChannelMessage
+	aux := &struct {
+		Type string `json:"type"`
+		*Alias
+	}{
+		Alias: (*Alias)(cm),
+	}
+	return json.Unmarshal(data, &aux)
+}
+
+// IsEmpty returns true if the message contains no data.
+func (cm ChannelMessage) IsEmpty() bool {
+	return len(cm.Messages) == 0 && len(cm.Updates) == 0 && len(cm.Metadata) == 0
+}
+
+// Clone creates a deep copy of the channel message.
+func (cm ChannelMessage) Clone() ChannelMessage {
+	clone := ChannelMessage{
+		Metadata: make(map[string]string, len(cm.Metadata)),
+	}
+
+	if len(cm.Messages) > 0 {
+		clone.Messages = make([]message.Message, len(cm.Messages))
+		copy(clone.Messages, cm.Messages)
+	}
+
+	if len(cm.Updates) > 0 {
+		clone.Updates = make(map[string]any, len(cm.Updates))
+		for k, v := range cm.Updates {
+			clone.Updates[k] = v
+		}
+	}
+
+	for k, v := range cm.Metadata {
+		clone.Metadata[k] = v
+	}
+
+	return clone
+}
+
+// =============================================================================
+// Pregel Runtime - BSP execution coordinator
+// =============================================================================
+
+// ChannelMessage replaces schedulingSignal as the data-carrying message payload.
+// Messages now transport actual data between nodes via the Pregel runtime.
+
+// graphRuntime coordinates graph execution by mediating between the scheduler
+// (topology + routing logic) and the Pregel BSP engine. It implements the
+// Coordinator pattern, owning both components and ensuring clean separation
+// of concerns. The scheduler determines WHAT to run, the engine determines HOW
+// to run it, and graphRuntime orchestrates the interaction.
+type graphRuntime struct {
+	cg      *CompiledGraph
+	ctx     context.Context
+	cancel  context.CancelFunc
+	options runOptions
+	stream  chan<- StreamEvent
+
+	scheduler *vertexScheduler                               // Graph topology & routing
+	engine    *ipregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
+
+	errOnce sync.Once
+}
+
+type compiledPregelGraph struct {
+	runtime *graphRuntime
+}
+
+type nodeAdapter struct {
+	runtime *graphRuntime
+	name    string
+	node    *Node
+}
+
+func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}) *graphRuntime {
+	scheduler := newVertexScheduler(cg)
+
+	gr := &graphRuntime{
+		cg:        cg,
+		ctx:       ctx,
+		cancel:    cancel,
+		options:   options,
+		stream:    stream,
+		scheduler: scheduler,
+	}
+
+	// Note: maxMessages is now configured at StateManager creation time via NewStateManager(maxMessages).
+	// The message limit cannot be changed after the state is created.
+
+	adapter := &compiledPregelGraph{runtime: gr}
+	maxWorkers := options.maxConcurrency
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	if cg != nil {
+		cg.setCurrentSuperstep(options.initialSuperstep)
+	}
+	runtimeOptions := []ipregel.RuntimeOption[StateManager, ChannelMessage]{
+		ipregel.WithMaxWorkers[StateManager, ChannelMessage](maxWorkers),
+		ipregel.WithInitialSuperstep[StateManager, ChannelMessage](options.initialSuperstep),
+	}
+	if options.maxIterations > 0 {
+		runtimeOptions = append(runtimeOptions, ipregel.WithMaxIterations[StateManager, ChannelMessage](options.maxIterations))
+	}
+	if len(options.aggregators) > 0 {
+		runtimeOptions = append(runtimeOptions, ipregel.WithAggregators[StateManager, ChannelMessage](adaptAggregators(options.aggregators)))
+	}
+	if options.combiner != nil {
+		runtimeOptions = append(runtimeOptions, ipregel.WithCombiner[StateManager, ChannelMessage](adaptCombiner(options.combiner)))
+	}
+	// Install checkpoint callback if configured
+	if options.checkpointer != nil && options.runID != "" && options.checkpointInterval > 0 {
+		runtimeOptions = append(runtimeOptions, ipregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(superstep int64) {
+			gr.saveCheckpoint(superstep)
+		}))
+	}
+	gr.engine = ipregel.NewRuntime(adapter, nil, runtimeOptions...)
+
+	// Configure the engine to respect early termination
+	if done != nil {
+		gr.engine.SetDoneChannel(done)
+	}
+
+	return gr
+}
+
+func (gr *graphRuntime) run() error {
+	if gr.cg != nil {
+		gr.cg.bootstrapScheduler(gr.ctx, gr.scheduler)
+	}
+
+	err := gr.engine.Run(gr.ctx)
+	if gr.cg != nil {
+		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
+		gr.fail(err)
+	}
+	return err
+}
+
+func (gr *graphRuntime) saveCheckpoint(superstep int64) {
+	// Skip checkpoint if not configured or interval not reached
+	if gr.options.checkpointer == nil || gr.options.runID == "" {
+		return
+	}
+	if gr.options.checkpointInterval > 0 && superstep%int64(gr.options.checkpointInterval) != 0 {
+		return
+	}
+
+	// Create checkpoint from current state
+	checkpoint := gr.cg.createCheckpoint(gr.options.runID, superstep, nil)
+	if checkpoint == nil {
+		return
+	}
+
+	// Save checkpoint (non-blocking to avoid slowing down execution)
+	if err := gr.options.checkpointer.Save(gr.ctx, checkpoint); err != nil {
+		// Emit error event but don't fail the execution
+		gr.emitError(fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err))
+	}
+}
+
+func (gr *graphRuntime) markExecuted(name string) {
+	if gr.scheduler != nil {
+		gr.scheduler.MarkExecuted(name)
+	}
+}
+
+func (gr *graphRuntime) setPaused(name string) {
+	if gr.scheduler != nil {
+		gr.scheduler.MarkPaused(name)
+	}
+	if gr.cg != nil && gr.engine != nil {
+		gr.cg.setCurrentSuperstep(gr.engine.CurrentSuperstep())
+	}
+}
+
+func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]string, error) {
+	return gr.scheduler.OnVertexCompleted(ctx, name)
+}
+
+func (gr *graphRuntime) emit(event StreamEvent) {
+	select {
+	case <-gr.ctx.Done():
+	case gr.stream <- event:
+	}
+}
+
+func (gr *graphRuntime) fail(err error) {
+	if err == nil {
+		return
+	}
+	gr.errOnce.Do(func() {
+		gr.emit(StreamEvent{Err: err})
+		if gr.cancel != nil {
+			gr.cancel()
+		}
+	})
+}
+
+func (gr *graphRuntime) emitError(err error) {
+	if err == nil {
+		return
+	}
+	gr.emit(StreamEvent{Err: err})
+}
+
+// compiledPregelGraph implements the internal pregel interfaces for CompiledGraph.
+
+func (g *compiledPregelGraph) RootNodes() []string {
+	return g.runtime.scheduler.Ready()
+}
+
+func (g *compiledPregelGraph) Outgoing(node string) []string {
+	if targets := g.runtime.cg.outgoing[node]; len(targets) > 0 {
+		return append([]string(nil), targets...)
+	}
+	return nil
+}
+
+func (g *compiledPregelGraph) NodeByName(name string) ipregel.PregelNode[StateManager, ChannelMessage] {
+	if node, ok := g.runtime.cg.nodes[name]; ok {
+		return &nodeAdapter{runtime: g.runtime, name: name, node: node}
+	}
+	return nil
+}
+
+func (g *compiledPregelGraph) State() StateManager {
+	if g.runtime.cg.stateManager == nil {
+		return nil
+	}
+	return g.runtime.cg.stateManager
+}
+
+func (g *compiledPregelGraph) Update(string, map[string]any, []ipregel.Message[ChannelMessage]) {
+	// No-op: channel messages are handled explicitly by node adapters.
+}
+
+// nodeAdapter executes both standard and command-style nodes within the Pregel runtime.
+
+func (n *nodeAdapter) Name() string { return n.name }
+
+func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[StateManager, ChannelMessage], incoming []ipregel.Message[ChannelMessage]) error {
+	writer := func(result *NodeResult) {
+		if result == nil {
+			return
+		}
+		n.runtime.emit(StreamEvent{Node: n.name, Result: cloneNodeResult(result)})
+	}
+	nodeCtx := withStreamWriter(ctx, writer)
+
+	// Create buffered state writer to prevent mutations from being visible
+	// within the same superstep (maintains BSP semantics)
+	var bufferedState StateWriter
+	if vertex.State != nil {
+		vertex.State.SetAggregates(vertex.Aggregates)
+		vertex.State.SetAggregateFn(vertex.Aggregate)
+		bufferedState = newBufferedStateWriter(vertex.State)
+	}
+
+	// Execute with retry policy if configured
+	result, err := n.executeWithRetry(nodeCtx, bufferedState)
+
+	if err != nil {
+		if errors.Is(err, ErrHumanInterrupt) {
+			n.runtime.cg.markPaused(n.name)
+			n.runtime.setPaused(n.name)
+			n.runtime.emit(StreamEvent{Node: n.name, Err: ErrHumanInterrupt})
+			return nil
+		}
+		n.runtime.emit(StreamEvent{Node: n.name, Err: err})
+		return &NodeExecutionError{
+			Node:      n.name,
+			Superstep: n.runtime.engine.CurrentSuperstep(),
+			Cause:     err,
+		}
+	}
+
+	var updates map[string]any
+	var messages []message.Message
+	if result != nil {
+		updates = result.Updates
+		messages = result.Messages
+	}
+
+	// Flush buffered aggregates from the node execution
+	if bufferedWriter, ok := bufferedState.(*bufferedStateWriter); ok {
+		pendingAggregates := bufferedWriter.flushAggregates()
+		if len(pendingAggregates) > 0 && vertex.State != nil {
+			// Apply buffered aggregates to the actual state
+			for name, value := range pendingAggregates {
+				if err := vertex.State.RecordAggregation(name, value); err != nil {
+					// Log error but don't fail the node
+					n.runtime.emit(StreamEvent{Node: n.name, Err: fmt.Errorf("aggregate %q failed: %w", name, err)})
+				}
+			}
+		}
+	}
+
+	event := StreamEvent{Node: n.name, Updates: updates, Messages: cloneMessages(messages)}
+	n.runtime.emit(event)
+
+	if n.runtime != nil && n.runtime.cg != nil && n.runtime.cg.stateManager != nil {
+		n.runtime.cg.stateManager.ApplyUpdates(updates, messages)
+	}
+
+	n.runtime.cg.clearPaused(n.name)
+	n.runtime.cg.markCompleted(n.name)
+	n.runtime.markExecuted(n.name)
+
+	if n.runtime != nil && n.runtime.scheduler != nil {
+		next, schedErr := n.runtime.onVertexCompleted(ctx, n.name)
+		if schedErr != nil {
+			return schedErr
+		}
+		if len(next) > 0 && n.runtime.engine != nil {
+			// Create channel messages with data from node execution
+			deliveries := make([]ipregel.Message[ChannelMessage], 0, len(next))
+			for _, target := range next {
+				// Send actual data in the message (not empty signal)
+				msg := NewChannelMessage(messages, updates)
+				deliveries = append(deliveries, ipregel.Message[ChannelMessage]{
+					From: n.name,
+					To:   target,
+					Data: msg,
+				})
+			}
+			// Deliver messages - if mailbox is full, emit error event but continue
+			if err := n.runtime.engine.Deliver(deliveries...); err != nil {
+				// Log delivery error but don't fail the node execution
+				n.runtime.emitError(fmt.Errorf("node %q: message delivery failed: %w", n.name, err))
+			}
+		}
+	}
+
+	if n.runtime != nil && n.runtime.engine != nil {
+		n.runtime.cg.setCurrentSuperstep(n.runtime.engine.CurrentSuperstep())
+	}
+
+	return nil
+}
+
+// executeWithRetry runs the node with retry logic if a RetryPolicy is configured.
+func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (*NodeResult, error) {
+	// Apply rate limiting if configured for this node
+	if n.runtime != nil && n.runtime.cg != nil {
+		n.runtime.cg.rateLimitersMu.RLock()
+		limiter, ok := n.runtime.cg.rateLimiters[n.name]
+		n.runtime.cg.rateLimitersMu.RUnlock()
+
+		if ok {
+			if err := limiter.Wait(ctx); err != nil {
+				return nil, fmt.Errorf("rate limit wait failed for node %s: %w", n.name, err)
+			}
+		}
+	}
+
+	policy := n.node.RetryPolicy
+	if policy == nil || policy.MaxAttempts <= 1 {
+		// No retry policy or only single attempt
+		return n.node.Run(ctx, state)
+	}
+
+	backoffFn := policy.Backoff
+	if backoffFn == nil {
+		backoffFn = DefaultBackoff
+	}
+
+	retryableFn := policy.Retryable
+	if retryableFn == nil {
+		// All errors are retryable by default
+		retryableFn = func(error) bool { return true }
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		result, err := n.node.Run(ctx, state)
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+
+		// Don't retry if error is not retryable or if we're out of attempts
+		if !retryableFn(err) || attempt >= policy.MaxAttempts {
+			break
+		}
+
+		// Call OnRetry hook before sleeping
+		// Check context before sleeping
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		// Wait before next attempt
+		backoff := backoffFn(attempt)
+		if backoff > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				// Continue to next attempt
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("node %s failed after %d attempts: %w", n.name, policy.MaxAttempts, lastErr)
+}
+
+func adaptAggregators(source map[string]Aggregator) map[string]ipregel.Aggregator {
+	if len(source) == 0 {
+		return nil
+	}
+	mapped := make(map[string]ipregel.Aggregator, len(source))
+	for name, agg := range source {
+		if name == "" || agg == nil {
+			continue
+		}
+		mapped[name] = aggregatorAdapter{agg: agg}
+	}
+	if len(mapped) == 0 {
+		return nil
+	}
+	return mapped
+}
+
+type aggregatorAdapter struct {
+	agg Aggregator
+}
+
+func (a aggregatorAdapter) Zero() any {
+	return a.agg.Zero()
+}
+
+func (a aggregatorAdapter) Aggregate(current, value any) any {
+	return a.agg.Aggregate(current, value)
+}
+
+func adaptCombiner(fn Combiner) ipregel.Combiner[ChannelMessage] {
+	if fn == nil {
+		return nil
+	}
+	return func(existing, incoming ipregel.Message[ChannelMessage]) ipregel.Message[ChannelMessage] {
+		// Combine using the user's combiner function on the routing metadata
+		combined := fn(
+			SchedulingMessage{From: existing.From, To: existing.To},
+			SchedulingMessage{From: incoming.From, To: incoming.To},
+		)
+
+		// Merge the channel message data
+		mergedMsg := existing.Data
+		mergedMsg.Messages = append(mergedMsg.Messages, incoming.Data.Messages...)
+		if mergedMsg.Updates == nil {
+			mergedMsg.Updates = make(map[string]any)
+		}
+		maps.Copy(mergedMsg.Updates, incoming.Data.Updates)
+
+		return ipregel.Message[ChannelMessage]{
+			From: combined.From,
+			To:   combined.To,
+			Data: mergedMsg,
+		}
+	}
+}
+
+type StreamWriter func(*NodeResult)
+
+var streamWriterContextKey = &struct{}{}
+
+func withStreamWriter(ctx context.Context, writer StreamWriter) context.Context {
+	return context.WithValue(ctx, streamWriterContextKey, writer)
+}
+
+func GetStreamWriter(ctx context.Context) StreamWriter {
+	writer, _ := ctx.Value(streamWriterContextKey).(StreamWriter)
+	return writer
+}
+
+func cloneNodeResult(result *NodeResult) *NodeResult {
+	if result == nil {
+		return nil
+	}
+	var updates map[string]any
+	if len(result.Updates) > 0 {
+		updates = make(map[string]any, len(result.Updates))
+		for k, v := range result.Updates {
+			updates[k] = v
+		}
+	}
+	return &NodeResult{
+		Updates:  updates,
+		Messages: cloneMessages(result.Messages),
+	}
+}

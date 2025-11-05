@@ -3,101 +3,379 @@ layout: doc
 title: Tools
 permalink: /tools/
 hero:
-  title: Give agents reliable capabilities
-  description: Build function tools, wrap sub-agents, or ship production retrievers with consistent validation and observability.
+  title: Give agents powerful capabilities
+  description: Create function tools with automatic JSON schema generation, integrate external APIs, and build retrieval systems.
   primary_cta:
-    label: Publish a tool
+    label: Create a tool
     href: "#function-tools"
   secondary_cta:
-    label: Tool & retrieval API reference →
-    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/tool"
+    label: Tool API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/tool"
     external: true
 sidebar:
   - title: Function tools
     url: "#function-tools"
-  - title: Long-running tools
-    url: "#long-running-tools"
-  - title: ExampleTool
-    url: "#example-tool"
-  - title: Toolsets
-    url: "#toolsets"
-    children:
-      - title: MCP toolset
-        url: "#mcp-toolset"
-  - title: AgentTool
-    url: "#agenttool"
-  - title: LangChainGo tool
-    url: "#langchaingo-tool"
-  - title: Retrieval tools
-    url: "#retrieval-tools"
-    children:
-      - title: Wrap retrievers
-        url: "#retrieval-wrapper"
-      - title: Merger retriever
-        url: "#merger-retriever"
-      - title: Built-in connectors
-        url: "#retrieval-connectors"
-  - title: Tool execution
-    url: "#tool-execution"
+  - title: Tool interface
+    url: "#tool-interface"
+  - title: Parameter types
+    url: "#parameter-types"
+  - title: Error handling
+    url: "#error-handling"
+  - title: Best practices
+    url: "#best-practices"
 ---
 
-Tools let models trigger deterministic side effects—API calls, computations, retrieval queries, or even other agents—while respecting schema validation and observability. Everything lives under [`tool/`](https://github.com/hupe1980/agentmesh/tree/main/tool) and works with the shared [`core.Tool`](https://pkg.go.dev/github.com/hupe1980/agentmesh/core#Tool) contract, while [`tool/retrieval`](https://github.com/hupe1980/agentmesh/tree/main/tool/retrieval) adds convenience helpers for search-style capabilities.
-
-_Examples assume `am := github.com/hupe1980/agentmesh` and `core := github.com/hupe1980/agentmesh/core`._
+Tools enable agents to perform actions, fetch data, and interact with external systems. AgentMesh provides automatic JSON schema generation from Go types, making tool creation straightforward and type-safe.
 
 ---
 
 ## Function tools {#function-tools}
 
-`tool.NewFuncTool` and `tool.NewFuncToolFromType` wrap pure Go functions with JSON Schema validation. They are perfect when you want quick utility functions or lightweight integrations.
-
-- **When to use**: simple RPC-like operations, deterministic calculations, thin wrappers over internal services.
-- **Behavior**:
-  - Validates incoming JSON arguments against your schema before calling the function
-  - Normalizes errors to `tool.Error` codes (`VALIDATION_ERROR`, `EXECUTION_ERROR`)
-  - Runs safely in parallel; no shared mutable state
+`tool.NewFuncTool` wraps a Go function with automatic JSON schema generation:
 
 ```go
-type SumArgs struct {
-  A float64 `json:"a"`
-  B float64 `json:"b"`
+import (
+    "context"
+    "github.com/hupe1980/agentmesh/pkg/tool"
+)
+
+type WeatherArgs struct {
+    Location string `json:"location" description:"City name or zip code"`
+    Units    string `json:"units,omitempty" description:"Temperature units: celsius or fahrenheit"`
 }
 
-sumTool, _ := tool.NewFuncToolFromType("calculate_sum", "Add two numbers", SumArgs{}, func(ctx context.Context, tc core.ToolContext, args SumArgs) (any, error) {
-  return args.A + args.B, nil
-})
-
-planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
-  o.Tools = []core.Tool{sumTool}
-})
+weatherTool, err := tool.NewFuncTool(
+    "get_weather",
+    "Get current weather for a location",
+    func(ctx context.Context, args WeatherArgs) (map[string]any, error) {
+        // Fetch weather data...
+        return map[string]any{
+            "temperature": 72,
+            "conditions":  "Sunny",
+            "location":    args.Location,
+            "units":       args.Units,
+        }, nil
+    },
+)
 ```
 
-Prefer handwritten schemas? `NewFuncTool` accepts a `map[string]any` schema instead of deriving it from a struct.
+### Generic return types
+
+Tools can return any type:
+
+```go
+type SearchResult struct {
+    Title   string `json:"title"`
+    Content string `json:"content"`
+    Score   float64 `json:"score"`
+}
+
+searchTool, _ := tool.NewFuncTool(
+    "search",
+    "Search the knowledge base",
+    func(ctx context.Context, args struct {
+        Query string `json:"query"`
+        Limit int    `json:"limit,omitempty"`
+    }) ([]SearchResult, error) {
+        // Perform search...
+        return results, nil
+    },
+)
+```
+
+### Simple functions
+
+For simple tools without complex parameters:
+
+```go
+timeTool, _ := tool.NewFuncTool(
+    "get_time",
+    "Get current time",
+    func(ctx context.Context, _ struct{}) (string, error) {
+        return time.Now().Format(time.RFC3339), nil
+    },
+)
+```
 
 ---
 
-## Long-running tools {#long-running-tools}
+## Tool interface {#tool-interface}
 
-Use `tool.NewLongRunningTool` when an operation may stream intermediate results or take minutes to complete. This tool is designed to help you start and manage tasks that happen outside the normal agent workflow and would otherwise block execution. It is a subclass of `FuncTool` that adds a prominent warning to the description and reports `IsLongRunning()` so planners can avoid spamming retries. The long-running work itself should execute in a separate service or worker—you use this tool to initiate and track it, not to run the heavy computation inline.
+For more control, implement the `tool.Tool` interface:
 
-- **When to use**: polling APIs, human-in-the-loop steps, long compute jobs.
-- **Behavior**:
-  - Appends a cautionary note to the tool description (or supplies one if you omit it).
-  - Lets the handler kick off the long-running operation and optionally return an initial result (for example, a job ID).
-  - Pauses the agent run so the client can decide whether to continue immediately or wait for completion.
-  - Allows the agent client to poll or push intermediate/final responses before the run resumes and other tasks continue.
-  - Keeps the same JSON schema and handler signature as `NewFuncTool`.
-
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    JSONSchema() (map[string]any, error)
+    Run(ctx context.Context, input string) (any, error)
+}
 ```
-type ApprovalArgs struct {
-  Purpose string  `json:"purpose"`
-  Amount  float64 `json:"amount"`
+
+Example custom tool:
+
+```go
+type DatabaseTool struct {
+    db *sql.DB
 }
 
-approval := tool.NewLongRunningTool(
-  "ask_for_approval",
-  "Create an approval ticket and wait for a reviewer to respond.",
-  map[string]any{
+func (t *DatabaseTool) Name() string {
+    return "query_database"
+}
+
+func (t *DatabaseTool) Description() string {
+    return "Execute SQL queries against the database"
+}
+
+func (t *DatabaseTool) JSONSchema() (map[string]any, error) {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "query": map[string]string{
+                "type":        "string",
+                "description": "SQL query to execute",
+            },
+        },
+        "required": []string{"query"},
+    }, nil
+}
+
+func (t *DatabaseTool) Run(ctx context.Context, input string) (any, error) {
+    var params struct {
+        Query string `json:"query"`
+    }
+    if err := json.Unmarshal([]byte(input), &params); err != nil {
+        return nil, err
+    }
+    
+    rows, err := t.db.QueryContext(ctx, params.Query)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+    
+    // Process results...
+    return results, nil
+}
+```
+
+---
+
+## Parameter types {#parameter-types}
+
+Function tools support various parameter types:
+
+### Primitives
+
+```go
+tool.NewFuncTool("example", "description",
+    func(ctx context.Context, args struct {
+        Text    string  `json:"text"`
+        Count   int     `json:"count"`
+        Score   float64 `json:"score"`
+        Enabled bool    `json:"enabled"`
+    }) (any, error) {
+        // ...
+    },
+)
+```
+
+### Nested structs
+
+```go
+type Address struct {
+    Street string `json:"street"`
+    City   string `json:"city"`
+    Zip    string `json:"zip"`
+}
+
+type ContactArgs struct {
+    Name    string  `json:"name"`
+    Address Address `json:"address"`
+}
+
+tool.NewFuncTool("update_contact", "Update contact information",
+    func(ctx context.Context, args ContactArgs) (any, error) {
+        // ...
+    },
+)
+```
+
+### Arrays and slices
+
+```go
+tool.NewFuncTool("batch_process", "Process multiple items",
+    func(ctx context.Context, args struct {
+        Items []string `json:"items"`
+        Tags  []string `json:"tags,omitempty"`
+    }) (any, error) {
+        // ...
+    },
+)
+```
+
+### Optional fields
+
+Use `omitempty` for optional parameters:
+
+```go
+tool.NewFuncTool("search", "Search with optional filters",
+    func(ctx context.Context, args struct {
+        Query   string   `json:"query"`
+        MaxResults int   `json:"max_results,omitempty"`
+        Categories []string `json:"categories,omitempty"`
+    }) (any, error) {
+        // ...
+    },
+)
+```
+
+---
+
+## Error handling {#error-handling}
+
+Tool errors are returned to the agent as tool results:
+
+```go
+tool.NewFuncTool("divide", "Divide two numbers",
+    func(ctx context.Context, args struct {
+        A float64 `json:"a"`
+        B float64 `json:"b"`
+    }) (float64, error) {
+        if args.B == 0 {
+            return 0, fmt.Errorf("division by zero")
+        }
+        return args.A / args.B, nil
+    },
+)
+```
+
+The agent receives:
+
+```json
+{
+    "role": "tool",
+    "name": "divide",
+    "content": "error: division by zero"
+}
+```
+
+And can reason about the error and try alternative approaches.
+
+### Context cancellation
+
+Tools should respect context cancellation:
+
+```go
+tool.NewFuncTool("long_operation", "Perform a long operation",
+    func(ctx context.Context, args Args) (any, error) {
+        for i := 0; i < 100; i++ {
+            select {
+            case <-ctx.Done():
+                return nil, ctx.Err()
+            default:
+                // Do work...
+            }
+        }
+        return result, nil
+    },
+)
+```
+
+---
+
+## Best practices {#best-practices}
+
+### Keep tools focused
+
+Each tool should have a single, clear purpose:
+
+```go
+// Good: Focused tool
+searchTool, _ := tool.NewFuncTool("search", "Search the knowledge base", searchFunc)
+filterTool, _ := tool.NewFuncTool("filter", "Filter search results", filterFunc)
+
+// Avoid: Tools that do too much
+multiTool, _ := tool.NewFuncTool("search_and_filter_and_rank", "...", complexFunc)
+```
+
+### Use descriptive names and descriptions
+
+Help the model understand when to use each tool:
+
+```go
+tool.NewFuncTool(
+    "calculate_mortgage_payment",
+    "Calculate monthly mortgage payment given principal, interest rate, and term in years. Returns payment amount in dollars.",
+    mortgageFunc,
+)
+```
+
+### Provide detailed schema descriptions
+
+Use struct tags to document parameters:
+
+```go
+type AnalyzeArgs struct {
+    Text   string `json:"text" description:"The text to analyze for sentiment and key entities"`
+    Lang   string `json:"language,omitempty" description:"ISO 639-1 language code (e.g., 'en', 'es'). Defaults to auto-detect."`
+    Depth  string `json:"depth,omitempty" description:"Analysis depth: 'quick' or 'thorough'. Default is 'quick'."`
+}
+```
+
+### Return structured data
+
+Return structured data that agents can reason about:
+
+```go
+// Good: Structured response
+return map[string]any{
+    "success": true,
+    "user_id": 12345,
+    "email":   "user@example.com",
+}, nil
+
+// Avoid: Unstructured text
+return "Successfully created user 12345 with email user@example.com", nil
+```
+
+### Handle edge cases gracefully
+
+```go
+func(ctx context.Context, args SearchArgs) ([]Result, error) {
+    if args.Query == "" {
+        return nil, fmt.Errorf("query cannot be empty")
+    }
+    
+    results, err := search(ctx, args.Query)
+    if err != nil {
+        return nil, fmt.Errorf("search failed: %w", err)
+    }
+    
+    if len(results) == 0 {
+        // Return empty slice, not error
+        return []Result{}, nil
+    }
+    
+    return results, nil
+}
+```
+
+### Use timeouts for external calls
+
+```go
+func(ctx context.Context, args APIArgs) (any, error) {
+    ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+    defer cancel()
+    
+    resp, err := httpClient.Get(ctx, args.URL)
+    if err != nil {
+        return nil, fmt.Errorf("API call failed: %w", err)
+    }
+    
+    return resp, nil
+}
+```
     "type": "object",
     "properties": map[string]any{
       "purpose": map[string]any{"type": "string"},
@@ -236,7 +514,7 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 
 ## LangChainGo tool {#langchaingo-tool}
 
-The [`tool/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/tool/langchaingo) adapter wraps any [`langchaingo`](https://github.com/tmc/langchaingo) `tools.Tool` so it can be used as an AgentMesh `core.Tool` without rewriting integrations. Try it with the built-in calculator from `github.com/tmc/langchaingo/tools`—the same one showcased in [`examples/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/examples/langchaingo).
+The [`tool/langchaingo`](https://github.com/hupe1980/agentmesh/tree/main/pkg/tool/langchaingo) adapter wraps any [`langchaingo`](https://github.com/tmc/langchaingo) `tools.Tool` so it can be used as an AgentMesh `tool.Tool` without rewriting integrations. Try it with the built-in calculator from `github.com/tmc/langchaingo/tools`.
 
 - **When to use**: reuse existing LangChainGo tool implementations alongside native AgentMesh tools.
 - **Behavior**:

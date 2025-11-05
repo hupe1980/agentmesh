@@ -1,0 +1,60 @@
+package pregel
+
+import "context"
+
+// PregelGraph defines the minimal contract the runtime needs to traverse a graph.
+// Generic over global state `S` and message payload `M`.
+type PregelGraph[S any, M any] interface {
+	RootNodes() []string
+	Outgoing(node string) []string
+	NodeByName(name string) PregelNode[S, M]
+	State() S
+	Update(node string, updates map[string]any, messages []Message[M])
+}
+
+// Aggregator combines per-vertex contributions into a single value that becomes
+// visible to all vertices at the start of the next superstep. Implementations
+// should be deterministic and treat Zero as an identity element for Aggregate.
+type Aggregator interface {
+	Zero() any
+	Aggregate(current, value any) any
+}
+
+// Combiner collapses multiple in-flight messages for the same recipient during a
+// superstep into a single value, reducing mailbox pressure. It is invoked
+// synchronously while messages are recorded and can safely mutate the returned
+// Message instance.
+type Combiner[M any] func(existing, incoming Message[M]) Message[M]
+
+// VertexContext exposes runtime services to a vertex implementation during Run.
+// Aggregate is nil when no aggregators are configured, and Aggregates contains
+// the completed reductions from the previous superstep. Send may be called zero
+// or more times to enqueue messages for the next superstep.
+type VertexContext[S any, M any] struct {
+	State      S
+	Send       func(Message[M])
+	Aggregate  func(name string, value any) error
+	Aggregates map[string]any
+}
+
+// PregelNode represents a unit of computation (vertex).
+type PregelNode[S any, M any] interface {
+	Name() string
+	Run(ctx context.Context, vertex VertexContext[S, M], incoming []Message[M]) error
+}
+
+// Message represents a typed, directed message sent between nodes.
+type Message[M any] struct {
+	From string
+	To   string
+	Data M
+}
+
+// StreamEvent can be used to observe runtime progress.
+type StreamEvent[M any] struct {
+	Node        string
+	Superstep   int64
+	Output      any
+	Diagnostics any
+	Error       error
+}

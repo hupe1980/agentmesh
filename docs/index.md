@@ -2,8 +2,8 @@
 layout: doc
 title: AgentMesh Documentation
 hero:
-  title: Composable multi-agent orchestration for Go
-  description: AgentMesh helps teams build production AI systems with streaming outputs, deterministic control, and pluggable observability.
+  title: Production-grade multi-agent orchestration for Go
+  description: AgentMesh leverages Pregel-style bulk-synchronous parallel graph processing to build sophisticated AI agent workflows with deterministic execution and enterprise observability.
   primary_cta:
     label: Get started
     href: "/getting-started/"
@@ -14,11 +14,11 @@ hero:
   highlights:
     title: Why AgentMesh?
     items:
-      - ✅ Deterministic flows (Sequential, Parallel, Loop)
+      - 🔄 Pregel-based BSP engine for parallel graph execution
       - ⚙️ Strongly typed tool integration with JSON Schema
-      - 📡 Streaming-first event pipeline with partial updates
-      - 🧩 Pluggable stores for session, memory, artifact data
-      - 🔭 Built-in logging, tracing, and metrics hooks
+      - 📡 Streaming-first event pipeline with real-time updates
+      - 💾 Versioned state store with checkpointing and time-travel
+      - 🔭 Built-in OpenTelemetry metrics and distributed tracing
 sidebar:
   - title: What is AgentMesh?
     url: "#what-is-agentmesh"
@@ -30,37 +30,36 @@ sidebar:
 
 ## What is AgentMesh?
 
-AgentMesh is a Go framework for composing reliable AI agents. It gives you deterministic orchestration patterns, streaming event pipelines, and pluggable observability so you can ship production-grade AI systems with confidence.
+AgentMesh is a Go framework for building sophisticated multi-agent AI systems powered by Pregel-style bulk-synchronous parallel (BSP) graph processing. It provides production-grade orchestration for LLM-powered workflows with deterministic execution and enterprise observability.
 
 Key ideas:
 
-- Compose agents as sequential pipelines, parallel fan-outs, or iterative loops.
-- Expose strongly typed tools (including MCP providers) to your models.
-- Stream partial and final results to downstream consumers.
-- Plug in your logging, metrics, tracing, and storage without forking the runtime.
+- **Graph-native architecture**: Build agents as directed graphs where nodes execute in parallel supersteps with deterministic ordering.
+- **Strongly typed tools**: Register functions as tools with automatic JSON Schema generation and validation.
+- **Streaming execution**: Monitor graph execution in real-time with event streams for responsive UX.
+- **Enterprise-ready**: Built-in checkpointing, time-travel debugging, OpenTelemetry integration, and production-tested reliability.
 
 ---
 
 ## Core capabilities
 
-- **Agent patterns**: compose sequential, parallel, and looping agents to model complex workflows.
-- **Tool ecosystem**: register strongly typed tools with JSON Schema validation, plus ship retrievers and toolsets with shared observability.
-- **Streaming orchestration**: flows emit partial and final events in real time for responsive UX.
-- **Observability**: integrate structured logging, metrics, and tracing via pluggable providers.
-- **Stateful sessions**: manage history, artifacts, and memory through configurable stores.
-- **Extensibility**: intercept model and agent lifecycles with plugins for custom behavior.
+- **Pregel graph execution**: Bulk-synchronous parallel processing enables efficient multi-agent coordination with deterministic superstep ordering.
+- **LLM integration**: First-class support for OpenAI, Anthropic (via AWS Bedrock), and extensible model interfaces with streaming and tool calling.
+- **Tool orchestration**: Type-safe function calling with automatic JSON schema generation, parallel execution, and robust error handling.
+- **State management**: Versioned state store with channel-based updates, automatic checkpointing, and time-travel debugging capabilities.
+- **Conditional routing**: Dynamic flow control based on agent outputs, enabling complex decision trees and multi-agent collaboration.
+- **Observability**: Built-in OpenTelemetry metrics, distributed tracing, and structured logging for production monitoring.
 
 ---
 
 ## Explore the documentation
 
-- **[Getting started →](/getting-started/)** – Install the module, run the quick start, and browse local tooling tips.
-- **[Models guide →](/models/)** – Connect OpenAI, LangChainGo, or custom providers with structured outputs and tool calls.
-- **[Agents guide →](/agents/)** – Learn how Sequential, Parallel, Loop, Model, and Func agents compose orchestration graphs.
-- **[Tools guide →](/tools/)** – Build function tools, the AgentTool wrapper, and MCP-backed toolsets with confidence.
-- **[Plugins guide →](/plugins/)** – Hook into runner, agent, model, and tool lifecycles with reusable interceptors.
-- **[Observability →](/observability/)** – Configure logging, metrics, and tracing providers and read them from context.
-- **[Architecture →](/architecture/)** – Understand the flow engine, runner lifecycle, and how the core packages fit together.
-- **[Resources →](/resources/)** – Jump to examples, issues, and contribution guides.
+- **[Getting started →](/getting-started/)** – Install the module, run your first agent, and explore example workflows.
+- **[Architecture →](/architecture/)** – Understand the Pregel BSP model, graph builder pattern, and state management.
+- **[Agents guide →](/agents/)** – Build ReAct agents, RAG agents, and custom graph-based workflows.
+- **[Tools guide →](/tools/)** – Create function tools with automatic schema generation and integrate external capabilities.
+- **[Models guide →](/models/)** – Connect OpenAI, Anthropic, LangChainGo, or custom LLM providers.
+- **[Observability →](/observability/)** – Configure OpenTelemetry metrics, tracing, and structured logging.
+- **[Resources →](/resources/)** – Explore examples, best practices, and contribution guidelines.
 
 ---
