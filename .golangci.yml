@@ -1,29 +1,6 @@
 version: "2"
 
-linters:
-  enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - misspell
-    #- revive
-    - gosec
-    - unconvert
-    - goconst
-    - gocyclo
-    - dupl
-    - gocritic
-    - prealloc
-    - predeclared
-    - nolintlint
-    - whitespace
-    - errorlint
-    - durationcheck
-    - nilerr
-
-linters-settings:
+linter-settings:
   gocyclo:
     min-complexity: 15
 
@@ -108,8 +85,29 @@ linters-settings:
     asserts: true
     comparison: true
 
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+    - unconvert
+    - goconst
+    - gocyclo
+    - dupl
+    - gocritic
+    - prealloc
+    - predeclared
+    - nolintlint
+    - whitespace
+    - errorlint
+    - durationcheck
+    - nilerr
+
 issues:
-  exclude-use-default: false
   exclude-rules:
     # Exclude ALL linters from test files - tests are allowed to be simple
     - path: _test\.go$
@@ -164,14 +162,3 @@ issues:
 run:
   timeout: 5m
   tests: false  # Don't run linters on test files
-  skip-dirs:
-    - vendor
-    - examples
-    - benchmark_test
-    - docs
-  skip-files:
-    - ".*\\.pb\\.go$"
-    - ".*_test\\.go$"
-
-output:
-  sort-results: true
