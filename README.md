@@ -1,4 +1,4 @@
-# 🕸️ AgentMesh
+# 🤖🕸️ AgentMesh
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
