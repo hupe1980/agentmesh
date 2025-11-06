@@ -36,6 +36,42 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
+	t.Parallel()
+
+	builder := NewBuilder().
+		WithInitialChannels(func(state *GraphState) {
+			state.Set("status", "pending")
+		}).
+		WithMaxMessages(5)
+
+	builder.Node("noop", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		return nil, nil
+	})
+
+	builder.StartTo("noop")
+	builder.ToEnd("noop")
+
+	compiled, err := builder.Compile()
+	require.NoError(t, err)
+
+	_, err = compiled.Invoke(context.Background(), nil)
+	require.NoError(t, err)
+
+	stateManager := compiled.State()
+	status := stateManager.Get("status")
+	require.Equal(t, "pending", status)
+
+	graphState, ok := stateManager.(*GraphState)
+	require.True(t, ok)
+
+	ch, ok := graphState.GetChannel("messages")
+	require.True(t, ok)
+	topic, ok := ch.(*channel.TopicChannel)
+	require.True(t, ok)
+	require.Equal(t, 5, topic.MaxValues())
+}
+
 func TestBuilder_Chain(t *testing.T) {
 	t.Parallel()
 

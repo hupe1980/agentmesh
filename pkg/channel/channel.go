@@ -1,5 +1,3 @@
-// Package channel provides abstractions for typed data flow between nodes in a graph.
-// Channels replace direct shared-state access with structured communication patterns.
 package channel
 
 import (
@@ -28,6 +26,13 @@ type Channel interface {
 
 	// Reset clears the channel to its initial state
 	Reset(ctx context.Context) error
+}
+
+// CloneableChannel can create a deep copy of itself.
+// Implementations should return a channel with independent state.
+type CloneableChannel interface {
+	Channel
+	CloneChannel() Channel
 }
 
 // TopicChannel accumulates values in append-only fashion.
@@ -104,6 +109,44 @@ func (tc *TopicChannel) Reset(ctx context.Context) error {
 	return nil
 }
 
+// MaxValues returns the current retention limit configured on the topic.
+func (tc *TopicChannel) MaxValues() int {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+	return tc.maxValues
+}
+
+// SetMaxValues updates the retention limit and truncates values if necessary.
+func (tc *TopicChannel) SetMaxValues(limit int) {
+	if limit < 0 {
+		limit = 0
+	}
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+
+	tc.maxValues = limit
+	if limit > 0 && len(tc.values) > limit {
+		tc.values = append([]any(nil), tc.values[len(tc.values)-limit:]...)
+		tc.version++
+	}
+}
+
+// CloneChannel returns a deep copy of the topic channel.
+func (tc *TopicChannel) CloneChannel() Channel {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+
+	cloneValues := make([]any, len(tc.values))
+	copy(cloneValues, tc.values)
+
+	return &TopicChannel{
+		name:      tc.name,
+		values:    cloneValues,
+		version:   tc.version,
+		maxValues: tc.maxValues,
+	}
+}
+
 // LastValueChannel stores only the most recent value (overwrite semantics).
 // Each update replaces the previous value completely.
 type LastValueChannel struct {
@@ -168,6 +211,19 @@ func (lvc *LastValueChannel) HasValue() bool {
 	return lvc.hasValue
 }
 
+// CloneChannel returns a deep copy of the last value channel.
+func (lvc *LastValueChannel) CloneChannel() Channel {
+	lvc.mu.RLock()
+	defer lvc.mu.RUnlock()
+
+	return &LastValueChannel{
+		name:     lvc.name,
+		value:    lvc.value,
+		version:  lvc.version,
+		hasValue: lvc.hasValue,
+	}
+}
+
 // BinaryOpChannel applies a binary operator to combine values.
 // Updates are merged with the current value using a custom operator function.
 type BinaryOpChannel struct {
@@ -224,6 +280,19 @@ func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 	boc.value = boc.operator(nil, nil)
 	boc.version = 0
 	return nil
+}
+
+// CloneChannel returns a deep copy of the binary op channel.
+func (boc *BinaryOpChannel) CloneChannel() Channel {
+	boc.mu.RLock()
+	defer boc.mu.RUnlock()
+
+	return &BinaryOpChannel{
+		name:     boc.name,
+		value:    boc.value,
+		operator: boc.operator,
+		version:  boc.version,
+	}
 }
 
 // ChannelSet manages a collection of named channels.

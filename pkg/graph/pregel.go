@@ -124,7 +124,9 @@ type graphRuntime struct {
 	scheduler *vertexScheduler                               // Graph topology & routing
 	engine    *ipregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
 
-	errOnce sync.Once
+	errOnce         sync.Once
+	checkpointQueue chan *Checkpoint
+	checkpointWG    sync.WaitGroup
 }
 
 type compiledPregelGraph struct {
@@ -186,10 +188,48 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 		gr.engine.SetDoneChannel(done)
 	}
 
+	gr.startCheckpointWorker()
+
 	return gr
 }
 
+func (gr *graphRuntime) startCheckpointWorker() {
+	if gr.options.checkpointer == nil || gr.options.runID == "" {
+		return
+	}
+	if gr.checkpointQueue != nil {
+		return
+	}
+
+	gr.checkpointQueue = make(chan *Checkpoint, 1)
+	saveCtx := context.WithoutCancel(gr.ctx)
+	gr.checkpointWG.Add(1)
+
+	go func() {
+		defer gr.checkpointWG.Done()
+		for checkpoint := range gr.checkpointQueue {
+			if checkpoint == nil {
+				continue
+			}
+			if err := gr.options.checkpointer.Save(saveCtx, checkpoint); err != nil {
+				gr.emitError(fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err))
+			}
+		}
+	}()
+}
+
+func (gr *graphRuntime) stopCheckpointWorker() {
+	if gr.checkpointQueue == nil {
+		return
+	}
+	close(gr.checkpointQueue)
+	gr.checkpointWG.Wait()
+	gr.checkpointQueue = nil
+}
+
 func (gr *graphRuntime) run() error {
+	defer gr.stopCheckpointWorker()
+
 	if gr.cg != nil {
 		gr.cg.bootstrapScheduler(gr.ctx, gr.scheduler)
 	}
@@ -219,9 +259,16 @@ func (gr *graphRuntime) saveCheckpoint(superstep int64) {
 		return
 	}
 
-	// Save checkpoint (non-blocking to avoid slowing down execution)
-	if err := gr.options.checkpointer.Save(gr.ctx, checkpoint); err != nil {
-		// Emit error event but don't fail the execution
+	if gr.checkpointQueue != nil {
+		select {
+		case gr.checkpointQueue <- checkpoint:
+		default:
+			gr.emitError(fmt.Errorf("checkpoint queue full at superstep %d: dropping checkpoint", superstep))
+		}
+		return
+	}
+
+	if err := gr.options.checkpointer.Save(context.WithoutCancel(gr.ctx), checkpoint); err != nil {
 		gr.emitError(fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err))
 	}
 }
@@ -355,10 +402,12 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 		pendingAggregates := bufferedWriter.flushAggregates()
 		if len(pendingAggregates) > 0 && vertex.State != nil {
 			// Apply buffered aggregates to the actual state
-			for name, value := range pendingAggregates {
-				if err := vertex.State.RecordAggregation(name, value); err != nil {
-					// Log error but don't fail the node
-					n.runtime.emit(StreamEvent{Node: n.name, Err: fmt.Errorf("aggregate %q failed: %w", name, err)})
+			for name, values := range pendingAggregates {
+				for _, value := range values {
+					if err := vertex.State.RecordAggregation(name, value); err != nil {
+						// Log error but don't fail the node
+						n.runtime.emit(StreamEvent{Node: n.name, Err: fmt.Errorf("aggregate %q failed: %w", name, err)})
+					}
 				}
 			}
 		}
@@ -442,7 +491,15 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	}
 
 	var lastErr error
+	var bufferedWriter *bufferedStateWriter
+	if bw, ok := state.(*bufferedStateWriter); ok {
+		bufferedWriter = bw
+	}
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		if bufferedWriter != nil {
+			bufferedWriter.resetAggregates()
+		}
+
 		result, err := n.node.Run(ctx, state)
 		if err == nil {
 			return result, nil

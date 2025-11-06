@@ -361,6 +361,41 @@ func (s *GraphState) AddMessages(messages []message.Message) {
 	_ = ch.Write(context.Background(), values) // Ignore error - internal initialization
 }
 
+// SetMaxMessages updates the retention limit of the "messages" channel without
+// discarding existing channel configuration.
+func (s *GraphState) SetMaxMessages(maxMessages int) {
+	if maxMessages < 0 {
+		maxMessages = 0
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ch, ok := s.channels.Get("messages")
+	if !ok {
+		s.channels.Add(channel.NewTopicChannel("messages", maxMessages))
+		return
+	}
+
+	if topic, ok := ch.(*channel.TopicChannel); ok {
+		topic.SetMaxValues(maxMessages)
+		return
+	}
+
+	// Fallback: replace with a new topic channel while attempting to preserve messages.
+	snapshot, err := ch.Read(context.Background())
+	if err != nil {
+		snapshot = nil
+	}
+
+	newTopic := channel.NewTopicChannel("messages", maxMessages)
+	if values, ok := snapshot.([]any); ok && len(values) > 0 {
+		_ = newTopic.Write(context.Background(), values)
+	}
+
+	s.channels.Add(newTopic)
+}
+
 func (s *GraphState) ApplyUpdates(values map[string]any, messages []message.Message) {
 	ctx := context.Background()
 
@@ -428,7 +463,11 @@ func (s *GraphState) Clone() StateManager {
 	// Clone all channels
 	for _, name := range s.channels.List() {
 		if ch, ok := s.channels.Get(name); ok {
-			cloned.channels.Add(ch) // Channels are immutable, safe to share
+			if cloneable, ok := ch.(channel.CloneableChannel); ok {
+				cloned.channels.Add(cloneable.CloneChannel())
+				continue
+			}
+			cloned.channels.Add(ch)
 		}
 	}
 
@@ -517,14 +556,14 @@ func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 // Pregel's BSP semantics where all updates become visible only after the barrier.
 type bufferedStateWriter struct {
 	reader            StateReader
-	pendingAggregates map[string]any
+	pendingAggregates map[string][]any
 	mu                sync.Mutex
 }
 
 func newBufferedStateWriter(reader StateReader) *bufferedStateWriter {
 	return &bufferedStateWriter{
 		reader:            reader,
-		pendingAggregates: make(map[string]any),
+		pendingAggregates: make(map[string][]any),
 	}
 }
 
@@ -552,11 +591,11 @@ func (bsw *bufferedStateWriter) Aggregate(name string, value any) error {
 		return fmt.Errorf("aggregate name cannot be empty")
 	}
 
-	bsw.pendingAggregates[name] = value
+	bsw.pendingAggregates[name] = append(bsw.pendingAggregates[name], value)
 	return nil
 }
 
-func (bsw *bufferedStateWriter) flushAggregates() map[string]any {
+func (bsw *bufferedStateWriter) flushAggregates() map[string][]any {
 	bsw.mu.Lock()
 	defer bsw.mu.Unlock()
 
@@ -564,13 +603,24 @@ func (bsw *bufferedStateWriter) flushAggregates() map[string]any {
 		return nil
 	}
 
-	flushed := make(map[string]any, len(bsw.pendingAggregates))
+	flushed := make(map[string][]any, len(bsw.pendingAggregates))
 	for k, v := range bsw.pendingAggregates {
-		flushed[k] = v
+		copied := make([]any, len(v))
+		copy(copied, v)
+		flushed[k] = copied
 	}
-	bsw.pendingAggregates = make(map[string]any)
+	bsw.pendingAggregates = make(map[string][]any)
 
 	return flushed
+}
+
+func (bsw *bufferedStateWriter) resetAggregates() {
+	bsw.mu.Lock()
+	defer bsw.mu.Unlock()
+	if len(bsw.pendingAggregates) == 0 {
+		return
+	}
+	bsw.pendingAggregates = make(map[string][]any)
 }
 
 // =============================================================================

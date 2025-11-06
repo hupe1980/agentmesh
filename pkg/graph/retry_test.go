@@ -281,4 +281,78 @@ func TestRetryPolicy(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("aggregates reset between retry attempts", func(t *testing.T) {
+		state := NewGraphState(0)
+		g := NewGraph(state)
+
+		attempts := 0
+		if err := g.AddNode(&Node{
+			Name: "retry-aggregate",
+			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+				attempts++
+				_ = s.Aggregate("total", 1)
+				if attempts == 1 {
+					return nil, ErrTransient
+				}
+				_ = s.Aggregate("total", 2)
+				return nil, nil
+			},
+			RetryPolicy: &RetryPolicy{
+				MaxAttempts: 3,
+				Backoff:     func(int) time.Duration { return time.Millisecond },
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := g.AddNode(&Node{
+			Name: "report",
+			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+				snap := s.AggregatesSnapshot()
+				var total float64
+				if snap != nil {
+					switch v := snap["total"].(type) {
+					case float64:
+						total = v
+					case int:
+						total = float64(v)
+					}
+				}
+				return &NodeResult{Updates: map[string]any{"observed": total}}, nil
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		g.AddEdge(StartNode, "retry-aggregate")
+		g.AddEdge("retry-aggregate", "report")
+		g.AddEdge("report", EndNode)
+		compiled, err := g.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = compiled.Invoke(context.Background(), nil, WithAggregators(map[string]Aggregator{"total": &SumAggregator{}}))
+		if err != nil {
+			t.Fatalf("expected success after retry, got %v", err)
+		}
+
+		if attempts != 2 {
+			t.Fatalf("expected 2 attempts, got %d", attempts)
+		}
+
+		observedValue := compiled.State().Get("observed")
+		value, ok := observedValue.(float64)
+		if !ok {
+			if intValue, ok := observedValue.(int); ok {
+				value = float64(intValue)
+			} else {
+				t.Fatalf("unexpected observed value type %T", observedValue)
+			}
+		}
+		if value != 3 {
+			t.Fatalf("expected aggregate sum 3, got %v", value)
+		}
+	})
 }

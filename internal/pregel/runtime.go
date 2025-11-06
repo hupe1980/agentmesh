@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"maps"
 	"runtime/debug"
 	"sort"
 	"sync"
@@ -172,9 +173,7 @@ func (r *Runtime[S, M]) snapshotAggregates() map[string]any {
 		return nil
 	}
 	snapshot := make(map[string]any, len(r.aggregates))
-	for name, value := range r.aggregates {
-		snapshot[name] = value
-	}
+	maps.Copy(snapshot, r.aggregates)
 	return snapshot
 }
 

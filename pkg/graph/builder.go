@@ -47,7 +47,9 @@ func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
 	if b.err != nil {
 		return b
 	}
-	b.graph.State = NewGraphState(maxMessages)
+	state := ensureGraphState(b.graph.State)
+	state.SetMaxMessages(maxMessages)
+	b.graph.State = state
 	return b
 }
 

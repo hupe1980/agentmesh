@@ -28,8 +28,15 @@ func TestBufferedStateWriter_IsolatesAggregates(t *testing.T) {
 	if flushed == nil {
 		t.Error("Expected flushed aggregates, got nil")
 	}
-	if flushed["counter"].(int) != 10 {
-		t.Errorf("Flushed value should be 10, got %v", flushed["counter"])
+	values, ok := flushed["counter"]
+	if !ok {
+		t.Fatalf("expected counter key in flushed aggregates")
+	}
+	if len(values) != 1 {
+		t.Fatalf("expected exactly one value, got %d", len(values))
+	}
+	if v, ok := values[0].(int); !ok || v != 10 {
+		t.Errorf("flushed value should be 10, got %v", values[0])
 	}
 
 	// After flush, buffer should be empty
@@ -80,10 +87,41 @@ func TestBufferedStateWriter_ConcurrentAccess(t *testing.T) {
 		<-done
 	}
 
-	// Should have one buffered value (last write wins for now)
+	// Should have buffered values for each concurrent write
 	flushed := buffered.flushAggregates()
-	if flushed == nil || flushed["counter"] == nil {
-		t.Error("Expected buffered aggregate after concurrent writes")
+	if flushed == nil {
+		t.Fatal("expected flushed aggregates")
+	}
+	values, ok := flushed["counter"]
+	if !ok {
+		t.Fatal("expected counter key in flushed aggregates")
+	}
+	if len(values) != 10 {
+		t.Errorf("expected 10 buffered values, got %d", len(values))
+	}
+}
+
+func TestBufferedStateWriter_MultipleAggregatesPerKey(t *testing.T) {
+	state := NewGraphState(0)
+	buffered := newBufferedStateWriter(state)
+
+	if err := buffered.Aggregate("counter", 1); err != nil {
+		t.Fatalf("aggregate failed: %v", err)
+	}
+	if err := buffered.Aggregate("counter", 2); err != nil {
+		t.Fatalf("aggregate failed: %v", err)
+	}
+
+	flushed := buffered.flushAggregates()
+	values, ok := flushed["counter"]
+	if !ok {
+		t.Fatal("expected counter key in flushed aggregates")
+	}
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values, got %d", len(values))
+	}
+	if values[0].(int) != 1 || values[1].(int) != 2 {
+		t.Fatalf("unexpected values: %v", values)
 	}
 }
 
