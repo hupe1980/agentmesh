@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +14,7 @@ func TestVectorMemory_StoreAndRecall(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	messages := []message.Message{
@@ -37,7 +38,7 @@ func TestVectorMemory_SemanticSearch(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(128)
+	embedder := embedding.NewSimpleEmbedder(128)
 	mem := NewVectorMemory(embedder)
 
 	messages := []message.Message{
@@ -63,7 +64,7 @@ func TestVectorMemory_MinScore(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	messages := []message.Message{
@@ -89,7 +90,7 @@ func TestVectorMemory_TypeFilter(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	messages := []message.Message{
@@ -118,7 +119,7 @@ func TestVectorMemory_TimeFilter(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	// Store first batch
@@ -152,7 +153,7 @@ func TestVectorMemory_Clear(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	messages := []message.Message{
@@ -176,7 +177,7 @@ func TestVectorMemory_MultipleSessions(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 	mem := NewVectorMemory(embedder)
 
 	// Store in session 1
@@ -278,7 +279,7 @@ func TestSimpleMemory_MostRecentFirst(t *testing.T) {
 func TestSimpleEmbedder_Dimensions(t *testing.T) {
 	t.Parallel()
 
-	embedder := NewSimpleEmbedder(256)
+	embedder := embedding.NewSimpleEmbedder(256)
 	require.Equal(t, 256, embedder.Dimensions())
 }
 
@@ -286,7 +287,7 @@ func TestSimpleEmbedder_Embed(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(128)
+	embedder := embedding.NewSimpleEmbedder(128)
 
 	embedding, err := embedder.Embed(ctx, "test text")
 	require.NoError(t, err)
@@ -302,7 +303,7 @@ func TestSimpleEmbedder_EmbedBatch(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	embedder := NewSimpleEmbedder(64)
+	embedder := embedding.NewSimpleEmbedder(64)
 
 	texts := []string{"text 1", "text 2", "text 3"}
 	embeddings, err := embedder.EmbedBatch(ctx, texts)

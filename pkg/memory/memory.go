@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -67,17 +68,9 @@ func (f *RecallFilter) Normalize() {
 	}
 }
 
-// Embedder defines the interface for converting text to vector embeddings.
-type Embedder interface {
-	// Embed converts text into a vector embedding.
-	Embed(ctx context.Context, text string) ([]float64, error)
-
-	// EmbedBatch converts multiple texts into vector embeddings efficiently.
-	EmbedBatch(ctx context.Context, texts []string) ([][]float64, error)
-
-	// Dimensions returns the dimensionality of the embedding vectors.
-	Dimensions() int
-}
+// Embedder is an alias for embedding.Embedder for backward compatibility.
+// Deprecated: Use embedding.Embedder instead.
+type Embedder = embedding.Embedder
 
 // MessageEntry represents a stored message with metadata and embeddings.
 type MessageEntry struct {
