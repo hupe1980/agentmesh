@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,7 +91,7 @@ func TestGraphStream_CloseIsIdempotent(t *testing.T) {
 func TestGraphStream_CancelStopsExecution(t *testing.T) {
 	t.Parallel()
 
-	executionCount := 0
+	var executionCount atomic.Int32
 	builder := NewBuilder()
 
 	// Create a chain of nodes
@@ -100,7 +101,7 @@ func TestGraphStream_CancelStopsExecution(t *testing.T) {
 			name = name + string(rune('0'+i/26))
 		}
 		builder.Node(name, func(ctx context.Context, s StateWriter) (*NodeResult, error) {
-			executionCount++
+			executionCount.Add(1)
 			time.Sleep(5 * time.Millisecond)
 			return nil, nil
 		})
@@ -133,5 +134,5 @@ func TestGraphStream_CancelStopsExecution(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Should not have executed all 100 nodes
-	assert.Less(t, executionCount, 100, "execution should have been cancelled")
+	assert.Less(t, int(executionCount.Load()), 100, "execution should have been cancelled")
 }
