@@ -8,6 +8,10 @@
   href: /agents/
 - label: Tools
   href: /tools/
+- label: Embeddings
+  href: /embeddings/
+- label: Checkpointing
+  href: /checkpointing/
 - label: Streaming
   href: /streaming/
 - label: Advanced

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
@@ -87,29 +88,16 @@ func NewCheckpointer(ctx context.Context, db *sql.DB, opts ...Option) (*Checkpoi
 func detectDialect(driverName string) Dialect {
 	// Simple heuristic based on driver type name
 	switch {
-	case contains(driverName, "postgres"), contains(driverName, "pgx"):
+	case strings.Contains(driverName, "postgres"), strings.Contains(driverName, "pgx"):
 		return &PostgreSQLDialect{}
-	case contains(driverName, "mysql"), contains(driverName, "mariadb"):
+	case strings.Contains(driverName, "mysql"), strings.Contains(driverName, "mariadb"):
 		return &MySQLDialect{}
-	case contains(driverName, "sqlite"):
+	case strings.Contains(driverName, "sqlite"):
 		return &SQLiteDialect{}
 	default:
 		// Default to SQLite syntax (most compatible)
 		return &SQLiteDialect{}
 	}
-}
-
-func contains(s, substr string) bool {
-	return s != "" && substr != "" && stringContains(s, substr)
-}
-
-func stringContains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Checkpointer) createTable(ctx context.Context) error {

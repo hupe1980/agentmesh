@@ -15,120 +15,52 @@ hero:
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
     external: true
 sidebar:
-  - title: Checkpointing
-    url: "#checkpointing"
-  - title: Time travel
-    url: "#time-travel"
   - title: Human-in-the-loop
     url: "#human-in-the-loop"
   - title: Message retention
     url: "#message-retention"
   - title: Retry policies
     url: "#retry-policies"
+  - title: Subgraphs
+    url: "#subgraphs"
 ---
 
-## Checkpointing {#checkpointing}
+## Checkpointing & Time Travel
 
-AgentMesh automatically saves graph state at superstep boundaries, enabling recovery from failures.
+AgentMesh provides comprehensive state persistence and debugging capabilities. For complete documentation including:
 
-### Checkpoint Stores
+- Checkpoint lifecycle and automatic state saving
+- Storage backends (Memory, SQL, DynamoDB) with trade-off analysis
+- Time-travel debugging patterns
+- Production considerations and cleanup strategies
+- Recovery and resume workflows
 
-AgentMesh provides multiple checkpoint storage backends:
+See the **[Checkpointing Guide](/checkpointing/)** for detailed coverage.
 
-#### Memory Checkpointer (Development/Testing)
+**Quick Example**:
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 
+// Enable checkpointing
 store := checkpoint.NewMemory()
-```
-
-Best for: Development, testing, non-persistent workflows
-
-#### SQL Checkpointer (Production - Relational Databases)
-
-```go
-import (
-    "database/sql"
-    sqlcp "github.com/hupe1980/agentmesh/pkg/checkpoint/sql"
-    _ "github.com/mattn/go-sqlite3"  // or postgres, mysql
-)
-
-// SQLite
-db, _ := sql.Open("sqlite3", "checkpoints.db")
-store, _ := sqlcp.NewSQLiteCheckpointer(ctx, db)
-
-// PostgreSQL
-db, _ := sql.Open("postgres", "postgresql://...")
-store, _ := sqlcp.NewPostgreSQLCheckpointer(ctx, db)
-
-// MySQL/MariaDB
-db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/db")
-store, _ := sqlcp.NewMySQLCheckpointer(ctx, db)
-```
-
-Best for: Production deployments, on-premise, predictable workloads
-
-#### DynamoDB Checkpointer (Production - Serverless)
-
-```go
-import (
-    "github.com/aws/aws-sdk-go-v2/config"
-    "github.com/aws/aws-sdk-go-v2/service/dynamodb"
-    dyncp "github.com/hupe1980/agentmesh/pkg/checkpoint/dynamodb"
-)
-
-cfg, _ := config.LoadDefaultConfig(ctx)
-client := dynamodb.NewFromConfig(cfg)
-store := dyncp.NewCheckpointer(client)
-
-// Create table (one-time setup)
-_ = store.CreateTable(ctx)
-```
-
-Best for: AWS serverless deployments, auto-scaling, multi-region
-
-### Using Checkpoints
-
-```go
-// Create graph with checkpointing
-builder := graph.NewBuilder()
-// ... add nodes ...
-
 compiled, _ := builder.Compile(
     graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),  // Save every superstep
+    graph.WithCheckpointInterval(1),
 )
 
-// Execute - state is automatically saved
-results, _ := compiled.Invoke(ctx, messages)
+// Execute with automatic checkpointing
+results, _ := compiled.Invoke(ctx, messages,
+    graph.WithThreadID("workflow-123"),
+)
 
 // Resume from checkpoint after failure
-results, _ = compiled.InvokeFromCheckpoint(ctx, threadID, messages)
+results, _ = compiled.InvokeFromCheckpoint(ctx, "workflow-123")
 ```
 
-See `examples/checkpointing` for a complete example.
-
----
-
-## Time travel {#time-travel}
-
-Debug workflows by replaying execution from any superstep:
-
-```go
-// List available checkpoints
-checkpoints, _ := store.ListCheckpoints(ctx, threadID)
-
-// Resume from a specific superstep
-result, _ := compiled.InvokeFromSuperstep(ctx, threadID, superstep, messages)
-```
-
-This is invaluable for:
-- Debugging complex multi-agent workflows
-- A/B testing different node implementations
-- Recovering from partial failures
-
-See `examples/time_travel` for a demonstration.
+**Examples**: 
+- [Checkpointing example](https://github.com/hupe1980/agentmesh/tree/main/examples/checkpointing)
+- [Time-travel debugging example](https://github.com/hupe1980/agentmesh/tree/main/examples/time_travel)
 
 ---
 
