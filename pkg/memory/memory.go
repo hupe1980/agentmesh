@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -67,10 +66,6 @@ func (f *RecallFilter) Normalize() {
 		f.MinScore = 1
 	}
 }
-
-// Embedder is an alias for embedding.Embedder for backward compatibility.
-// Deprecated: Use embedding.Embedder instead.
-type Embedder = embedding.Embedder
 
 // MessageEntry represents a stored message with metadata and embeddings.
 type MessageEntry struct {

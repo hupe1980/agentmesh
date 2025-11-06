@@ -9,18 +9,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // VectorMemory implements semantic search over stored messages using vector embeddings.
 type VectorMemory struct {
-	embedder Embedder
+	embedder embedding.Embedder
 	store    map[string][]*MessageEntry // sessionID -> entries
 	mu       sync.RWMutex
 }
 
 // NewVectorMemory creates a new vector-based memory store.
-func NewVectorMemory(embedder Embedder) *VectorMemory {
+func NewVectorMemory(embedder embedding.Embedder) *VectorMemory {
 	return &VectorMemory{
 		embedder: embedder,
 		store:    make(map[string][]*MessageEntry),
