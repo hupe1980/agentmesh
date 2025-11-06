@@ -1,90 +1,5 @@
 version: "2"
 
-linter-settings:
-  gocyclo:
-    min-complexity: 15
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  dupl:
-    threshold: 100
-
-  gocritic:
-    enabled-checks:
-      - appendAssign
-      - assignOp
-      - boolExprSimplify
-      - builtinShadow
-      - captLocal
-      - caseOrder
-      - deprecatedComment
-      - dupArg
-      - dupBranchBody
-      - dupCase
-      - dupSubExpr
-      - elseif
-      - emptyFallthrough
-      - emptyStringTest
-      - hexLiteral
-      - ifElseChain
-      - indexAlloc
-      - initClause
-      - methodExprCall
-      - nilValReturn
-      - rangeExprCopy
-      - rangeValCopy
-      - regexpMust
-      - singleCaseSwitch
-      - sloppyLen
-      - stringXbytes
-      - switchTrue
-      - typeAssertChain
-      - typeSwitchVar
-      - underef
-      - unlabelStmt
-      - unnecessaryBlock
-      - unslice
-      - valSwap
-      - weakCond
-      - wrapperFunc
-      - yodaStyleExpr
-
-  revive:
-    enable-all-rules: false
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: increment-decrement
-      - name: var-naming
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-      - name: empty-block
-      - name: superfluous-else
-      - name: unreachable-code
-      - name: redefines-builtin-id
-
-  gosec:
-    excludes:
-      - G404  # Insecure random - not critical for this use case
-
-  errorlint:
-    errorf: true
-    asserts: true
-    comparison: true
-
 linters:
   enable:
     - errcheck
@@ -107,58 +22,118 @@ linters:
     - durationcheck
     - nilerr
 
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    dupl:
+      threshold: 100
+
+    gocritic:
+      enabled-checks:
+        - boolExprSimplify
+        - builtinShadow
+        - emptyFallthrough
+        - emptyStringTest
+        - hexLiteral
+        - indexAlloc
+        - initClause
+        - methodExprCall
+        - nilValReturn
+        - rangeExprCopy
+        - rangeValCopy
+        - stringXbytes
+        - typeAssertChain
+        - unnecessaryBlock
+        - weakCond
+        - yodaStyleExpr
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    gosec:
+      excludes:
+        - G404
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - gosec
+          - goconst
+          - gocyclo
+          - gocritic
+          - predeclared
+          - prealloc
+          - unused
+          - staticcheck
+          - revive
+          - dupl
+
+      - path: examples/
+        linters:
+          - errcheck
+          - gosec
+          - goconst
+          - unused
+          - gocyclo
+          - gocritic
+          - predeclared
+          - revive
+
+      - path: benchmark_test/
+        linters:
+          - errcheck
+          - gosec
+          - goconst
+          - gocyclo
+          - gocritic
+          - predeclared
+
+      - linters:
+          - govet
+        text: 'shadow: declaration of "(err|ctx)"'
+
+      - linters:
+          - revive
+        text: "parameter '.*' seems to be unused"
+
 issues:
-  exclude-rules:
-    # Exclude ALL linters from test files - tests are allowed to be simple
-    - path: _test\.go$
-      linters:
-        - errcheck
-        - gosec
-        - goconst
-        - gocyclo
-        - gocritic
-        - predeclared
-        - prealloc
-        - unused
-        - staticcheck
-        - revive
-        - dupl
-
-    # Examples can have relaxed rules - focus on readability
-    - path: examples/
-      linters:
-        - errcheck
-        - gosec
-        - goconst
-        - unused
-        - gocyclo
-        - gocritic
-        - predeclared
-        - revive
-
-    # Benchmark tests can ignore all performance linters
-    - path: benchmark_test/
-      linters:
-        - errcheck
-        - gosec
-        - goconst
-        - gocyclo
-        - gocritic
-        - predeclared
-
-    # Ignore variable shadow warnings for common short names
-    - linters:
-        - govet
-      text: 'shadow: declaration of "(err|ctx)"'
-
-    # Ignore all "unused parameter" warnings from revive globally
-    - linters:
-        - revive
-      text: "parameter '.*' seems to be unused"
-
   max-issues-per-linter: 0
   max-same-issues: 0
 
 run:
   timeout: 5m
-  tests: false  # Don't run linters on test files
+  tests: false

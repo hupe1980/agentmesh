@@ -306,6 +306,7 @@ func (g *compiledPregelGraph) Update(string, map[string]any, []ipregel.Message[C
 
 func (n *nodeAdapter) Name() string { return n.name }
 
+//nolint:gocyclo // Node execution requires handling many runtime conditions
 func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[StateManager, ChannelMessage], incoming []ipregel.Message[ChannelMessage]) error {
 	writer := func(result *NodeResult) {
 		if result == nil {
@@ -407,6 +408,8 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 }
 
 // executeWithRetry runs the node with retry logic if a RetryPolicy is configured.
+//
+//nolint:gocyclo // Retry logic with error handling requires multiple conditions
 func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (*NodeResult, error) {
 	// Apply rate limiting if configured for this node
 	if n.runtime != nil && n.runtime.cg != nil {

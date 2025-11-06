@@ -52,6 +52,8 @@ func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
 //	    WithToolNodeName("tools"),
 //	    WithToolErrorPrefix("my agent"),
 //	    WithContinueOnToolError(true)))
+//
+//nolint:gocyclo // Tool node requires handling many event types and configurations
 func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.Node {
 	config := toolNodeOptions{
 		nodeName:        "tool",

@@ -37,10 +37,10 @@ func NewAgentTool(ctx context.Context, agentCardURL string, skillID string, opts
 
 	// Find the skill in the card to get name and description
 	var skillName, skillDescription string
-	for _, skill := range card.Skills {
-		if skill.ID == skillID {
-			skillName = skill.Name
-			skillDescription = skill.Description
+	for i := range card.Skills {
+		if card.Skills[i].ID == skillID {
+			skillName = card.Skills[i].Name
+			skillDescription = card.Skills[i].Description
 			break
 		}
 	}

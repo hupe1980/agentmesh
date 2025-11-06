@@ -72,9 +72,7 @@ func NewSlogLoggerWithWriter(level LogLevel, format LogFormat, addSource bool, w
 	switch format {
 	case LogFormatText:
 		handler = slog.NewTextHandler(w, opts)
-	case LogFormatJSON:
-		fallthrough
-	default:
+	default: // LogFormatJSON
 		handler = slog.NewJSONHandler(w, opts)
 	}
 

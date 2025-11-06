@@ -287,6 +287,7 @@ func (r *Runtime[S, M]) consumeNextFrontier() map[string]struct{} {
 	return next
 }
 
+//nolint:gocyclo // Superstep execution requires coordinating many runtime conditions
 func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]struct{}, superstep int64) error {
 	if len(frontier) == 0 {
 		return nil

@@ -382,6 +382,7 @@ func cloneParts(parts Parts) Parts {
 	return out
 }
 
+//nolint:gocyclo // Part cloning requires handling many part types
 func clonePart(part Part) Part {
 	switch v := part.(type) {
 	case TextPart:

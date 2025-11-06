@@ -130,6 +130,8 @@ func (m *Model) Name() string {
 }
 
 // Generate executes a chat completion request against the OpenAI API.
+//
+//nolint:gocyclo // Generation requires handling many message and response types
 func (m *Model) Generate(ctx context.Context, msgs []message.Message) (message.Message, error) {
 	if len(msgs) == 0 {
 		return nil, fmt.Errorf("generate requires at least one message")
@@ -172,11 +174,11 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) (message.M
 
 	if len(choice.Message.ToolCalls) > 0 {
 		toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
-		for idx, call := range choice.Message.ToolCalls {
-			if call.Type != "function" {
+		for idx := range choice.Message.ToolCalls {
+			if choice.Message.ToolCalls[idx].Type != "function" {
 				continue
 			}
-			fn := call.AsFunction()
+			fn := choice.Message.ToolCalls[idx].AsFunction()
 			var args map[string]any
 			if fn.Function.Arguments != "" {
 				if err := json.Unmarshal([]byte(fn.Function.Arguments), &args); err != nil {
@@ -203,6 +205,8 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) (message.M
 }
 
 // Stream implements incremental streaming for chat completions.
+//
+//nolint:gocyclo // Streaming requires handling many delta types and states
 func (m *Model) Stream(ctx context.Context, msgs []message.Message) (*model.Stream, error) {
 	if len(msgs) == 0 {
 		return nil, fmt.Errorf("stream requires at least one message")
@@ -272,7 +276,8 @@ func (m *Model) Stream(ctx context.Context, msgs []message.Message) (*model.Stre
 			}
 
 			if len(delta.ToolCalls) > 0 {
-				for _, tc := range delta.ToolCalls {
+				for i := range delta.ToolCalls {
+					tc := &delta.ToolCalls[i]
 					acc, ok := toolCalls[tc.Index]
 					if !ok {
 						acc = &toolCallAccumulator{}

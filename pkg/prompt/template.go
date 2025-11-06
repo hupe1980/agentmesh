@@ -54,7 +54,7 @@ func New(templateStr string) *Template {
 		"upper": strings.ToUpper,
 		"lower": strings.ToLower,
 		"title": func(s string) string {
-			if len(s) == 0 {
+			if s == "" {
 				return s
 			}
 			return strings.ToUpper(string(s[0])) + strings.ToLower(s[1:])

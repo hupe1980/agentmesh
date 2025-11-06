@@ -11,6 +11,8 @@ import (
 const roleAgent = "agent"
 
 // ConvertToA2AMessage converts an AgentMesh message to an A2A message.
+//
+//nolint:gocyclo // Message conversion requires handling many part types
 func ConvertToA2AMessage(msg message.Message) (*a2atypes.Message, error) {
 	var role a2atypes.MessageRole
 	var parts []a2atypes.Part
@@ -100,6 +102,8 @@ func ConvertToA2AMessage(msg message.Message) (*a2atypes.Message, error) {
 }
 
 // ConvertFromA2AMessage converts an A2A message to AgentMesh messages.
+//
+//nolint:gocyclo // Message conversion requires handling many part types
 func ConvertFromA2AMessage(a2aMsg *a2atypes.Message) ([]message.Message, error) {
 	var messages []message.Message
 

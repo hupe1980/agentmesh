@@ -284,6 +284,7 @@ func (cg *CompiledGraph) invokeWithOptions(ctx context.Context, messages []messa
 	return cg.stateManager.MessagesSnapshot(), nil
 }
 
+//nolint:gocyclo // Streaming requires handling many configuration options and error cases
 func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []message.Message, options runOptions) (*GraphStream, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w", ErrNilContext)

@@ -61,6 +61,8 @@ func NewMergerRetriever(retrievers []Retriever, optFns ...func(o *MergerRetrieve
 }
 
 // Retrieve fetches documents from the retrievers in parallel and merges the results.
+//
+//nolint:gocyclo // Parallel retrieval and merging requires handling multiple strategies
 func (r *MergerRetriever) Retrieve(ctx context.Context, query string) ([]Document, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

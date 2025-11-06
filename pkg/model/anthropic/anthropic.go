@@ -195,6 +195,7 @@ func normalizeTools(tools []tool.Tool) []tool.Tool {
 	return result
 }
 
+//nolint:gocyclo // Message conversion requires handling many part types
 func convertMessagesToAnthropic(msgs []message.Message) ([]anthropic.MessageParam, string, error) {
 	var apiMessages []anthropic.MessageParam
 	var systemPrompt string
@@ -302,8 +303,8 @@ func convertAnthropicResponseToMessage(resp *anthropic.Message) (message.Message
 	var textParts []message.Part
 	var toolCalls []message.ToolCall
 
-	for _, block := range resp.Content {
-		switch b := block.AsAny().(type) {
+	for i := range resp.Content {
+		switch b := resp.Content[i].AsAny().(type) {
 		case anthropic.TextBlock:
 			textParts = append(textParts, message.TextPart{Text: b.Text})
 
@@ -354,14 +355,15 @@ func newStreamFromAnthropic(stream *ssestream.Stream[anthropic.MessageStreamEven
 
 			event := stream.Current()
 
-			if deltaEvent, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-				if delta, ok := deltaEvent.Delta.AsAny().(anthropic.TextDelta); ok {
+			switch e := event.AsAny().(type) {
+			case anthropic.ContentBlockDeltaEvent:
+				if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
 					textBuffer.WriteString(delta.Text)
 					chunks <- model.StreamChunk{
 						Text: delta.Text,
 					}
 				}
-			} else if _, ok := event.AsAny().(anthropic.MessageStopEvent); ok {
+			case anthropic.MessageStopEvent:
 				if textBuffer.Len() > 0 {
 					chunks <- model.StreamChunk{
 						Text:  textBuffer.String(),

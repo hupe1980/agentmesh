@@ -82,10 +82,10 @@ func NewTool(ctx context.Context, agentCardURL string, skillID string, opts ...a
 
 	// Find the skill in the card to get default name and description
 	var skillName, skillDescription string
-	for _, skill := range card.Skills {
-		if skill.ID == skillID {
-			skillName = skill.Name
-			skillDescription = skill.Description
+	for i := range card.Skills {
+		if card.Skills[i].ID == skillID {
+			skillName = card.Skills[i].Name
+			skillDescription = card.Skills[i].Description
 			break
 		}
 	}
@@ -138,10 +138,10 @@ func (t *Tool) Definition() *tool.ToolDefinition {
 	}
 
 	// Try to get more specific parameters from the skill
-	for _, skill := range t.card.Skills {
-		if skill.ID == t.skillID {
-			if len(skill.Examples) > 0 {
-				params["properties"].(map[string]any)["input"].(map[string]any)["examples"] = skill.Examples
+	for i := range t.card.Skills {
+		if t.card.Skills[i].ID == t.skillID {
+			if len(t.card.Skills[i].Examples) > 0 {
+				params["properties"].(map[string]any)["input"].(map[string]any)["examples"] = t.card.Skills[i].Examples
 			}
 			break
 		}

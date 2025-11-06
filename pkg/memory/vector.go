@@ -68,6 +68,8 @@ func (vm *VectorMemory) Store(ctx context.Context, sessionID string, messages []
 }
 
 // Recall retrieves messages using semantic search or filters.
+//
+//nolint:gocyclo // Message filtering and retrieval requires multiple conditions
 func (vm *VectorMemory) Recall(ctx context.Context, sessionID string, filter RecallFilter) ([]message.Message, error) {
 	filter.Normalize()
 

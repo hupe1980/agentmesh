@@ -155,6 +155,7 @@ func (g *Graph) Compile() (*CompiledGraph, error) {
 	return cg, nil
 }
 
+//nolint:gocyclo // Graph validation requires checking many conditions
 func (g *Graph) Validate() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -224,6 +225,7 @@ type graphTopology struct {
 	nodeNames         []string
 }
 
+//nolint:gocyclo // Topology computation requires handling various edge cases
 func computeTopology(nodes map[string]*Node, edges []Edge, branches []ConditionalEdges) graphTopology {
 	topo := graphTopology{
 		incoming:          make(map[string]int, len(nodes)),

@@ -268,26 +268,20 @@ func (cs *ChannelSet) List() []string {
 
 // ReadAll returns a snapshot of all channel values.
 func (cs *ChannelSet) ReadAll(ctx context.Context) (map[string]any, error) {
-	cs.mu.RLock()
-	channels := make([]Channel, 0, len(cs.channels))
-	for _, ch := range cs.channels {
-		channels = append(channels, ch)
-	}
-	cs.mu.RUnlock()
-
-	result := make(map[string]any, len(channels))
-	for _, ch := range channels {
-		value, err := ch.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result[ch.Name()] = value
-	}
-	return result, nil
+	return cs.processAll(ctx, func(ch Channel) (any, error) {
+		return ch.Read(ctx)
+	})
 }
 
 // SnapshotAll returns a consistent snapshot of all channel values.
 func (cs *ChannelSet) SnapshotAll(ctx context.Context) (map[string]any, error) {
+	return cs.processAll(ctx, func(ch Channel) (any, error) {
+		return ch.Snapshot(ctx)
+	})
+}
+
+// processAll is a helper that processes all channels with the given function.
+func (cs *ChannelSet) processAll(ctx context.Context, fn func(Channel) (any, error)) (map[string]any, error) {
 	cs.mu.RLock()
 	channels := make([]Channel, 0, len(cs.channels))
 	for _, ch := range cs.channels {
@@ -297,7 +291,7 @@ func (cs *ChannelSet) SnapshotAll(ctx context.Context) (map[string]any, error) {
 
 	result := make(map[string]any, len(channels))
 	for _, ch := range channels {
-		value, err := ch.Snapshot(ctx)
+		value, err := fn(ch)
 		if err != nil {
 			return nil, err
 		}

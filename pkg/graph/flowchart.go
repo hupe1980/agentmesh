@@ -10,6 +10,8 @@ import (
 )
 
 // Flowchart generates a Mermaid flowchart representation of the compiled graph.
+//
+//nolint:gocyclo // Flowchart generation requires handling many node and edge types
 func (cg *CompiledGraph) Flowchart() string {
 	chart := &mermaid.Flowchart{}
 
