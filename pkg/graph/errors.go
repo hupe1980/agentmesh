@@ -42,6 +42,12 @@ var (
 
 	// ErrMaxIterationsExceeded indicates the graph execution exceeded the maximum allowed iterations
 	ErrMaxIterationsExceeded = errors.New("max iterations exceeded")
+
+	// ErrUnreachableNode indicates a node cannot be reached from START
+	ErrUnreachableNode = errors.New("unreachable node")
+
+	// ErrSelfLoop indicates a node has an edge to itself
+	ErrSelfLoop = errors.New("self-loop detected")
 )
 
 // NodeExecutionError wraps errors that occur during node execution,
@@ -85,4 +91,39 @@ type MessageLimitError struct {
 
 func (e *MessageLimitError) Error() string {
 	return fmt.Sprintf("message limit exceeded: limit=%d, attempted=%d", e.Limit, e.Attempted)
+}
+
+// NodeTimeoutError indicates a node execution exceeded its timeout.
+type NodeTimeoutError struct {
+	Node    string // Name of the node that timed out
+	Timeout int64  // Timeout duration in milliseconds
+	Cause   error  // Underlying error (usually context.DeadlineExceeded)
+}
+
+func (e *NodeTimeoutError) Error() string {
+	return fmt.Sprintf("node %s exceeded timeout of %dms: %v", e.Node, e.Timeout, e.Cause)
+}
+
+func (e *NodeTimeoutError) Unwrap() error {
+	return e.Cause
+}
+
+// RetryExhaustedError indicates all retry attempts for a node failed.
+type RetryExhaustedError struct {
+	Node     string  // Name of the node that exhausted retries
+	Attempts []error // All errors from each retry attempt
+}
+
+func (e *RetryExhaustedError) Error() string {
+	if len(e.Attempts) == 0 {
+		return fmt.Sprintf("node %s: all retry attempts exhausted", e.Node)
+	}
+	return fmt.Sprintf("node %s: all %d retry attempts exhausted: %v", e.Node, len(e.Attempts), e.Attempts[len(e.Attempts)-1])
+}
+
+func (e *RetryExhaustedError) Unwrap() error {
+	if len(e.Attempts) > 0 {
+		return e.Attempts[len(e.Attempts)-1]
+	}
+	return nil
 }

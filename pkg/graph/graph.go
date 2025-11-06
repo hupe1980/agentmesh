@@ -213,7 +213,55 @@ func (g *Graph) Validate() error {
 		}
 	}
 
+	// Check for unreachable nodes (nodes not reachable from START)
+	reachable := g.computeReachableNodes()
+	for name := range g.Nodes {
+		if !reachable[name] {
+			return fmt.Errorf("%w: node %q cannot be reached from START", ErrUnreachableNode, name)
+		}
+	}
+
 	return nil
+}
+
+// computeReachableNodes returns the set of nodes reachable from START via BFS
+func (g *Graph) computeReachableNodes() map[string]bool {
+	reachable := make(map[string]bool)
+	queue := []string{StartNode}
+	reachable[StartNode] = true
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// Follow static edges
+		for _, edge := range g.Edges {
+			if edge.From == current {
+				if !reachable[edge.To] {
+					reachable[edge.To] = true
+					if edge.To != EndNode {
+						queue = append(queue, edge.To)
+					}
+				}
+			}
+		}
+
+		// Follow conditional edges
+		for _, ce := range g.Branches {
+			if ce.From == current {
+				for _, target := range ce.Targets {
+					if !reachable[target] {
+						reachable[target] = true
+						if target != EndNode {
+							queue = append(queue, target)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return reachable
 }
 
 type graphTopology struct {

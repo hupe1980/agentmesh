@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,4 +151,68 @@ func TestErrorWrapping(t *testing.T) {
 	// Should still be able to check for base error through the chain
 	assert.Contains(t, wrappedErr.Error(), "connection timeout")
 	assert.Contains(t, wrappedErr.Error(), "api_client")
+}
+
+func TestNodeTimeoutError(t *testing.T) {
+	t.Run("enforces_context_deadline", func(t *testing.T) {
+		state := NewGraphState(0)
+		g := NewGraph(state)
+
+		err := g.AddNode(&Node{
+			Name: "slow-node",
+			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+				// Simulate work that takes longer than timeout
+				select {
+				case <-time.After(2 * time.Second):
+					return &NodeResult{}, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			},
+		})
+		require.NoError(t, err)
+
+		g.AddEdge(StartNode, "slow-node")
+		g.AddEdge("slow-node", EndNode)
+
+		compiled, err := g.Compile()
+		require.NoError(t, err)
+
+		// Set a short timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		_, err = compiled.Invoke(ctx, nil)
+		duration := time.Since(start)
+
+		// Should timeout quickly
+		require.Error(t, err)
+
+		// Check for timeout-related error
+		var timeoutErr *NodeTimeoutError
+		require.ErrorAs(t, err, &timeoutErr, "expected NodeTimeoutError")
+		assert.Equal(t, "slow-node", timeoutErr.Node)
+		assert.Contains(t, timeoutErr.Error(), "slow-node")
+		assert.Contains(t, timeoutErr.Error(), "timeout")
+		assert.ErrorIs(t, timeoutErr, context.DeadlineExceeded)
+
+		// Should complete quickly due to context cancellation
+		assert.Less(t, duration, 500*time.Millisecond,
+			"timeout enforcement should complete in < 500ms")
+	})
+
+	t.Run("timeout_error_unwraps", func(t *testing.T) {
+		baseErr := context.DeadlineExceeded
+		timeoutErr := &NodeTimeoutError{
+			Node:    "processor",
+			Timeout: 5000,
+			Cause:   baseErr,
+		}
+
+		assert.Contains(t, timeoutErr.Error(), "processor")
+		assert.Contains(t, timeoutErr.Error(), "timeout")
+		assert.ErrorIs(t, timeoutErr, context.DeadlineExceeded)
+		assert.Equal(t, baseErr, errors.Unwrap(timeoutErr))
+	})
 }

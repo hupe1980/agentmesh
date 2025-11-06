@@ -460,6 +460,18 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 //
 //nolint:gocyclo // Retry logic with error handling requires multiple conditions
 func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (*NodeResult, error) {
+	// Check if context has a deadline and enforce timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout := time.Until(deadline)
+		if timeout <= 0 {
+			return nil, &NodeTimeoutError{
+				Node:    n.name,
+				Timeout: 0,
+				Cause:   context.DeadlineExceeded,
+			}
+		}
+	}
+
 	// Apply rate limiting if configured for this node
 	if n.runtime != nil && n.runtime.cg != nil {
 		n.runtime.cg.rateLimitersMu.RLock()
@@ -476,7 +488,20 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	policy := n.node.RetryPolicy
 	if policy == nil || policy.MaxAttempts <= 1 {
 		// No retry policy or only single attempt
-		return n.node.Run(ctx, state)
+		result, err := n.node.Run(ctx, state)
+
+		// Check if timeout occurred
+		if err != nil && errors.Is(err, context.DeadlineExceeded) {
+			if deadline, ok := ctx.Deadline(); ok {
+				return nil, &NodeTimeoutError{
+					Node:    n.name,
+					Timeout: int64(time.Since(deadline.Add(-time.Until(deadline))) / time.Millisecond),
+					Cause:   err,
+				}
+			}
+		}
+
+		return result, err
 	}
 
 	backoffFn := policy.Backoff
@@ -490,7 +515,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		retryableFn = func(error) bool { return true }
 	}
 
-	var lastErr error
+	var attempts []error
 	var bufferedWriter *bufferedStateWriter
 	if bw, ok := state.(*bufferedStateWriter); ok {
 		bufferedWriter = bw
@@ -501,11 +526,24 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		}
 
 		result, err := n.node.Run(ctx, state)
+
+		// Check if timeout occurred
+		if err != nil && errors.Is(err, context.DeadlineExceeded) {
+			if deadline, ok := ctx.Deadline(); ok {
+				return nil, &NodeTimeoutError{
+					Node:    n.name,
+					Timeout: int64(time.Since(deadline.Add(-time.Until(deadline))) / time.Millisecond),
+					Cause:   err,
+				}
+			}
+		}
+
 		if err == nil {
 			return result, nil
 		}
 
-		lastErr = err
+		// Track all attempts with their errors
+		attempts = append(attempts, fmt.Errorf("attempt %d: %w", attempt, err))
 
 		// Don't retry if error is not retryable or if we're out of attempts
 		if !retryableFn(err) || attempt >= policy.MaxAttempts {
@@ -521,6 +559,17 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		// Wait before next attempt
 		backoff := backoffFn(attempt)
 		if backoff > 0 {
+			// Cap backoff at 60 seconds to prevent excessive delays
+			const MaxRetryBackoff = 60 * time.Second
+			if backoff > MaxRetryBackoff {
+				requestedBackoff := backoff
+				backoff = MaxRetryBackoff
+				n.runtime.emit(StreamEvent{
+					Node: n.name,
+					Err:  fmt.Errorf("retry backoff capped at %v (requested %v)", MaxRetryBackoff, requestedBackoff),
+				})
+			}
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -530,7 +579,10 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		}
 	}
 
-	return nil, fmt.Errorf("node %s failed after %d attempts: %w", n.name, policy.MaxAttempts, lastErr)
+	return nil, &RetryExhaustedError{
+		Node:     n.name,
+		Attempts: attempts,
+	}
 }
 
 func adaptAggregators(source map[string]Aggregator) map[string]ipregel.Aggregator {
