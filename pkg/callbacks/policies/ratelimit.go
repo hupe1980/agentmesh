@@ -62,9 +62,12 @@ func RateLimit(maxRequests int, window time.Duration) callbacks.BeforeModelCallb
 		// Check limit
 		if len(state.requests) >= maxRequests {
 			// Calculate when next request will be allowed
-			oldestRequest := state.requests[0]
-			nextAllowed := oldestRequest.Add(window)
-			waitTime := nextAllowed.Sub(now)
+			var waitTime time.Duration
+			if len(state.requests) > 0 {
+				oldestRequest := state.requests[0]
+				nextAllowed := oldestRequest.Add(window)
+				waitTime = nextAllowed.Sub(now)
+			}
 
 			return message.NewAIMessageFromText(
 				fmt.Sprintf("Rate limit exceeded: %d requests per %v. Try again in %v.",
@@ -115,9 +118,12 @@ func PerNodeRateLimit(nodeName string, maxRequests int, window time.Duration) ca
 
 		// Check limit
 		if len(state.requests) >= maxRequests {
-			oldestRequest := state.requests[0]
-			nextAllowed := oldestRequest.Add(window)
-			waitTime := nextAllowed.Sub(now)
+			var waitTime time.Duration
+			if len(state.requests) > 0 {
+				oldestRequest := state.requests[0]
+				nextAllowed := oldestRequest.Add(window)
+				waitTime = nextAllowed.Sub(now)
+			}
 
 			return message.NewAIMessageFromText(
 				fmt.Sprintf("Rate limit exceeded for node '%s': %d requests per %v. Try again in %v.",

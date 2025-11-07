@@ -62,8 +62,8 @@ type ExecuteOptions struct {
 
 	// Checkpointer enables checkpoint persistence
 	Checkpointer interface {
-		Save(ctx context.Context, checkpoint interface{}) error
-		Load(ctx context.Context, runID string) (interface{}, error)
+		Save(ctx context.Context, checkpoint any) error
+		Load(ctx context.Context, runID string) (any, error)
 	}
 
 	// CheckpointInterval determines how often to checkpoint (every N supersteps)
@@ -72,17 +72,11 @@ type ExecuteOptions struct {
 	// RunID identifies this execution for checkpointing
 	RunID string
 
-	// RetryPolicy defines node-level retry behavior
-	RetryPolicy interface {
-		ShouldRetry(err error, attempt int) bool
-		Delay(attempt int) interface{} // time.Duration
-	}
-
 	// RateLimiters per-node rate limiting configuration
-	RateLimiters map[string]interface{} // map[string]*rate.Limiter
+	RateLimiters map[string]any // map[string]*rate.Limiter
 
 	// Combiner merges multiple messages for the same recipient
-	Combiner interface{} // Combiner function
+	Combiner any // Combiner function
 }
 
 // ExecutionStats provides runtime execution metrics.
