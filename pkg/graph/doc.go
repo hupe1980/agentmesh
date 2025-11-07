@@ -134,34 +134,44 @@ Available channel types:
   - LastValueChannel: Stores only most recent value (overwrite semantics)
   - BinaryOpChannel: Merges values using custom operator (e.g., sum, max)
 
-# State Management v2.0
+# Architecture Overview
 
-The v2.0 architecture introduces StateManager interface for clean separation:
+The graph package uses an Adapter pattern to bridge high-level graph concepts
+to the generic Pregel BSP engine:
 
-	// StateManager owns all state concerns
-	type StateManager interface {
-		Get(key string) any
-		GetAll() map[string]any
-		UpdateChannel(ctx context.Context, name string, value any) error
-		SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error
-		// ... more methods
-	}
+	User Code
+	    ↓
+	Builder API (graph construction)
+	    ↓
+	CompiledGraph (execution orchestrator)
+	    ↓
+	Pregel Adapter (pregel.go)
+	    ↓
+	Pregel Runtime (internal/pregel)
 
-GraphState remains available for backward compatibility but new code should prefer StateManager.
+The adapter layer (pregel.go) translates between:
+  - Graph nodes → Pregel vertices
+  - Channel messages → BSP message payloads
+  - Graph state → Pregel global state
+  - Graph aggregators → Pregel aggregators
 
-# Architecture Files
+This separation allows the Pregel engine to remain pure and domain-agnostic
+while the graph package provides agent-specific features like channels,
+checkpoints, retry policies, and conditional routing.
+
+# Core Files
 
 Core files in pkg/graph:
   - graph.go: Graph builder and compilation
   - builder.go: Fluent builder API
   - node.go: Node definitions and execution
   - state_manager.go: State management (StateManager, GraphState, bufferedStateWriter)
-  - pregel.go: BSP execution engine (ChannelMessage, graphRuntime)
+  - pregel.go: BSP execution adapter (ChannelMessage, graphRuntime, nodeAdapter)
   - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, StreamEvent)
   - executor.go: Execution abstractions (Executor, ExecutionTracker, executionState)
+  - scheduler.go: Topology-based node scheduling (vertexScheduler, TopologyScheduler)
   - options.go: Run options (checkpoint, retry, rate-limit configuration)
-  - scheduler.go: Topology-based node scheduling
-  - aggregators.go: Cross-node aggregations (sum, max, min, etc.)
+  - aggregators.go: Cross-node aggregations (sum, max, min, avg, variance)
 
 # Performance
 
@@ -184,8 +194,13 @@ Retries can be configured per-node:
 
 	node.RetryPolicy = &graph.RetryPolicy{
 		MaxAttempts: 3,
-		InitialBackoff: 100 * time.Millisecond,
-		MaxBackoff: 1 * time.Second,
+		Backoff: func(attempt int) time.Duration {
+			return time.Duration(attempt) * 100 * time.Millisecond
+		},
+		Retryable: func(err error) bool {
+			// Only retry transient errors
+			return errors.Is(err, ErrTemporaryFailure)
+		},
 	}
 
 # Observability
@@ -207,8 +222,10 @@ Events can be streamed for monitoring:
 
   - Subgraphs: Nest graphs within nodes for composition
   - Human-in-the-loop: Pause execution for human input
-  - Time travel: Resume from any superstep
-  - Aggregators: Compute global values across nodes
-  - Message retention: Limit conversation history size
+  - Time travel: Resume from any superstep via checkpointing
+  - Aggregators: Compute global values across nodes (sum, count, convergence)
+  - Message retention: Limit conversation history size to prevent memory issues
+  - Circuit breakers: Prevent cascading failures with automatic recovery
+  - Rate limiting: Control execution rate per node
 */
 package graph

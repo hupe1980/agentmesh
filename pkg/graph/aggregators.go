@@ -2,10 +2,30 @@ package graph
 
 // This file provides built-in aggregator implementations for common use cases.
 // Aggregators enable distributed computation patterns like global counters,
-// max/min tracking, and convergence detection.
+// max/min tracking, convergence detection, and statistical analysis.
+//
+// All aggregators follow the BSP (Bulk Synchronous Parallel) model:
+//   - Values contributed in superstep N are aggregated
+//   - The final aggregated value becomes visible in superstep N+1
+//   - Aggregates are accessible via state.AggregatesSnapshot()
+//
+// Thread Safety:
+// All aggregator implementations are stateless (zero-cost structs) and
+// thread-safe. The runtime handles synchronization of aggregate values.
+//
+// Custom Aggregators:
+// Implement the Aggregator interface to create custom aggregation logic:
+//
+//	type Aggregator interface {
+//	    Zero() any                        // Initial/identity value
+//	    Aggregate(current, value any) any // Combine current with new value
+//	}
 
 // SumAggregator sums numeric values across all nodes.
-// Useful for counting events, computing totals, etc.
+// Useful for counting events, computing totals, tracking metrics.
+//
+// Supports: int, int64, float32, float64
+// Returns: float64
 //
 // Example:
 //
@@ -15,6 +35,9 @@ package graph
 //
 //	// In node:
 //	s.Aggregate("total_processed", 1)  // Increment counter
+//
+//	// After superstep:
+//	total := s.AggregatesSnapshot()["total_processed"].(float64)
 type SumAggregator struct{}
 
 func (a *SumAggregator) Zero() any {
@@ -22,7 +45,7 @@ func (a *SumAggregator) Zero() any {
 }
 
 func (a *SumAggregator) Aggregate(current, value any) any {
-	// Convert to float64 for flexibility
+	// Convert to float64 for numerical flexibility and to avoid overflow
 	var curVal, newVal float64
 	switch v := current.(type) {
 	case int:
@@ -54,7 +77,11 @@ func (a *SumAggregator) Aggregate(current, value any) any {
 }
 
 // MaxAggregator tracks the maximum value across all nodes.
-// Useful for finding highest priority, largest cost, etc.
+// Useful for finding highest priority, largest cost, peak values.
+//
+// Supports: int, int64, float32, float64
+// Returns: float64
+// Zero value: -1e308 (smallest float64)
 //
 // Example:
 //
@@ -64,10 +91,13 @@ func (a *SumAggregator) Aggregate(current, value any) any {
 //
 //	// In node:
 //	s.Aggregate("max_priority", taskPriority)
+//
+//	// After superstep:
+//	maxPriority := s.AggregatesSnapshot()["max_priority"].(float64)
 type MaxAggregator struct{}
 
 func (a *MaxAggregator) Zero() any {
-	return float64(-1e308) // Min float64
+	return float64(-1e308) // Smallest possible float64
 }
 
 func (a *MaxAggregator) Aggregate(current, value any) any {

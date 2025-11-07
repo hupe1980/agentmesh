@@ -106,14 +106,20 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // Pregel Runtime - BSP execution coordinator
 // =============================================================================
 
-// ChannelMessage replaces schedulingSignal as the data-carrying message payload.
-// Messages now transport actual data between nodes via the Pregel runtime.
-
 // graphRuntime coordinates graph execution by mediating between the scheduler
 // (topology + routing logic) and the Pregel BSP engine. It implements the
 // Coordinator pattern, owning both components and ensuring clean separation
 // of concerns. The scheduler determines WHAT to run, the engine determines HOW
 // to run it, and graphRuntime orchestrates the interaction.
+//
+// Architecture:
+//   - Scheduler: Manages graph topology, conditional edges, and execution order
+//   - Pregel Engine: Executes nodes in parallel BSP supersteps
+//   - graphRuntime: Coordinates interaction and manages lifecycle
+//
+// This separation allows the pure BSP engine (internal/pregel) to remain
+// domain-agnostic while graph-specific concerns (channels, checkpoints,
+// conditional routing) are handled at the graph layer.
 type graphRuntime struct {
 	cg      *CompiledGraph
 	ctx     context.Context
@@ -129,10 +135,29 @@ type graphRuntime struct {
 	checkpointWG    sync.WaitGroup
 }
 
+// compiledPregelGraph adapts CompiledGraph to the pregel.PregelGraph interface.
+// This allows the Pregel runtime to execute graph nodes without knowing about
+// agent-specific concepts like channels, checkpoints, or conditional routing.
+//
+// The adapter pattern is used here to bridge between:
+//   - Graph domain (StateManager, ChannelMessage, Node)
+//   - Pregel domain (PregelGraph[S, M], PregelNode[S, M], Message[M])
 type compiledPregelGraph struct {
 	runtime *graphRuntime
 }
 
+// nodeAdapter wraps a graph.Node as a pregel.PregelNode.
+// It handles the translation between graph-level execution (with retry policies,
+// rate limiting, timeout wrapping, and state buffering) and Pregel-level
+// vertex execution (pure computation with message passing).
+//
+// Responsibilities:
+//   - Execute node with retry policy if configured
+//   - Apply rate limiting if configured for this node
+//   - Wrap timeout errors in NodeTimeoutError for better diagnostics
+//   - Buffer aggregation calls during execution
+//   - Route outgoing messages via scheduler
+//   - Update graph state and emit events
 type nodeAdapter struct {
 	runtime *graphRuntime
 	name    string
@@ -624,6 +649,10 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	}
 
 	// Check if we exited the loop due to timeout
+	// This handles the case where the context times out between retry attempts
+	// (e.g., during backoff sleep or between iterations) rather than during
+	// node execution. Without this check, we would return RetryExhaustedError
+	// instead of the more accurate NodeTimeoutError.
 	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		timeout := int64(0)
 		if deadline, ok := ctx.Deadline(); ok {
@@ -645,6 +674,13 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	}
 }
 
+// adaptAggregators converts graph.Aggregator to pregel.Aggregator.
+// This adapter allows graph-level aggregators (with domain-specific
+// implementations like SumAggregator, AvgAggregator) to work with the
+// generic Pregel runtime.
+//
+// The interfaces are identical but defined in separate packages to maintain
+// package independence. This adapter is zero-cost (interface wrapper only).
 func adaptAggregators(source map[string]Aggregator) map[string]ipregel.Aggregator {
 	if len(source) == 0 {
 		return nil
@@ -662,6 +698,9 @@ func adaptAggregators(source map[string]Aggregator) map[string]ipregel.Aggregato
 	return mapped
 }
 
+// aggregatorAdapter implements pregel.Aggregator by delegating to graph.Aggregator.
+// This is a simple wrapper that enables graph-level aggregators to work with
+// the Pregel runtime without any modifications.
 type aggregatorAdapter struct {
 	agg Aggregator
 }
@@ -674,6 +713,15 @@ func (a aggregatorAdapter) Aggregate(current, value any) any {
 	return a.agg.Aggregate(current, value)
 }
 
+// adaptCombiner converts a graph.Combiner to a pregel.Combiner[ChannelMessage].
+// The combiner handles both routing metadata (From/To) and actual data payloads
+// (Messages, Updates). This allows reducing mailbox pressure by merging multiple
+// messages destined for the same node.
+//
+// The adapter:
+// 1. Calls the user's combiner function on routing metadata
+// 2. Merges the ChannelMessage data (messages and updates)
+// 3. Returns a combined Pregel message
 func adaptCombiner(fn Combiner) ipregel.Combiner[ChannelMessage] {
 	if fn == nil {
 		return nil
@@ -701,14 +749,22 @@ func adaptCombiner(fn Combiner) ipregel.Combiner[ChannelMessage] {
 	}
 }
 
+// StreamWriter is a function that can emit node results during execution.
+// This is used for streaming node outputs in real-time rather than
+// waiting for the entire graph execution to complete.
 type StreamWriter func(*NodeResult)
 
 var streamWriterContextKey = &struct{}{}
 
+// withStreamWriter attaches a StreamWriter to a context.
+// This allows nodes to emit results during execution via GetStreamWriter.
 func withStreamWriter(ctx context.Context, writer StreamWriter) context.Context {
 	return context.WithValue(ctx, streamWriterContextKey, writer)
 }
 
+// GetStreamWriter retrieves the StreamWriter from a context if present.
+// Nodes can use this to emit results in real-time during execution.
+// Returns nil if no StreamWriter is attached to the context.
 func GetStreamWriter(ctx context.Context) StreamWriter {
 	writer, _ := ctx.Value(streamWriterContextKey).(StreamWriter)
 	return writer

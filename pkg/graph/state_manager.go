@@ -499,11 +499,15 @@ var _ StateManager = (*GraphState)(nil)
 // =============================================================================
 
 // StateReaderAdapter adapts StateManager to StateReader interface.
+// This provides a read-only view of the state, preventing nodes from
+// directly mutating state outside of the BSP model (updates must go
+// through NodeResult).
 type StateReaderAdapter struct {
 	manager StateManager
 }
 
 // NewStateReaderAdapter creates a read-only view of a StateManager.
+// Nodes receive this interface to prevent direct state mutations.
 func NewStateReaderAdapter(manager StateManager) *StateReaderAdapter {
 	return &StateReaderAdapter{manager: manager}
 }
@@ -525,12 +529,16 @@ func (sr *StateReaderAdapter) AggregatesSnapshot() map[string]any {
 }
 
 // StateWriterAdapter adapts StateManager to StateWriter interface.
+// This extends StateReader with aggregation capabilities, allowing
+// nodes to contribute to global aggregators during execution.
 type StateWriterAdapter struct {
 	*StateReaderAdapter
 	manager StateManager
 }
 
 // NewStateWriterAdapter creates a read-write view of a StateManager.
+// This is the interface that nodes receive during execution, providing
+// read access to state and write access to aggregators.
 func NewStateWriterAdapter(manager StateManager) *StateWriterAdapter {
 	return &StateWriterAdapter{
 		StateReaderAdapter: NewStateReaderAdapter(manager),
@@ -548,7 +556,15 @@ func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 
 // bufferedStateWriter wraps a StateReader and buffers all Aggregate() calls.
 // This ensures mutations are not visible within the same superstep, maintaining
-// Pregel's BSP semantics where all updates become visible only after the barrier.
+// Pregel's BSP (Bulk Synchronous Parallel) semantics where all updates become
+// visible only after the superstep barrier.
+//
+// Without buffering, aggregates would be immediately visible to other vertices
+// in the same superstep, breaking the BSP model's guarantee of deterministic
+// execution order independence.
+//
+// The buffered aggregates are flushed at the end of node execution and applied
+// to the runtime's aggregator state for the next superstep.
 type bufferedStateWriter struct {
 	reader            StateReader
 	pendingAggregates map[string][]any
