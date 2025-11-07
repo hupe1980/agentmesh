@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 func TestNewStateBuilder(t *testing.T) {
@@ -351,5 +352,39 @@ func TestStateBuilder_ComplexWorkflow(t *testing.T) {
 	score := state.Get("score_sum").(float64)
 	if score != 1.87 {
 		t.Errorf("Expected score 1.87, got %f", score)
+	}
+}
+
+func TestStateBuilder_WithInitialMessages(t *testing.T) {
+	systemMsg := message.NewSystemMessageFromText("You are a helpful assistant")
+	humanMsg := message.NewHumanMessageFromText("Hello")
+
+	state := NewStateBuilder().
+		WithUnlimitedMessages().
+		WithInitialMessages(systemMsg, humanMsg).
+		Build()
+
+	messages := state.MessagesSnapshot()
+	if len(messages) != 2 {
+		t.Fatalf("Expected 2 initial messages, got %d", len(messages))
+	}
+
+	// Verify first message is system message
+	if _, ok := messages[0].(*message.SystemMessage); !ok {
+		t.Error("First message should be SystemMessage")
+	}
+
+	// Verify second message is human message
+	if _, ok := messages[1].(*message.HumanMessage); !ok {
+		t.Error("Second message should be HumanMessage")
+	}
+
+	// Verify message content
+	if text := getMessageText(messages[0]); text != "You are a helpful assistant" {
+		t.Errorf("Expected system message text 'You are a helpful assistant', got %q", text)
+	}
+
+	if text := getMessageText(messages[1]); text != "Hello" {
+		t.Errorf("Expected human message text 'Hello', got %q", text)
 	}
 }

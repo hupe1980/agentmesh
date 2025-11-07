@@ -121,9 +121,10 @@ The agent will automatically reason about the user's query, decide to call the w
 
 ## Explore examples {#explore-examples}
 
-The repository includes **17 comprehensive examples** demonstrating key features:
+The repository includes **18 comprehensive examples** demonstrating key features:
 
 - **`examples/basic_agent`** – Simple ReAct agent with tool calling
+- **`examples/supervisor_agent`** – Multi-agent coordination with supervisor pattern
 - **`examples/state_builder`** – Simplified state initialization with fluent API
 - **`examples/mcp_tools`** – Model Context Protocol integration
 - **`examples/streaming`** – Real-time event streaming for responsive UIs

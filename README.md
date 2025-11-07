@@ -201,6 +201,63 @@ The weather in Paris is currently sunny with a temperature of 22°C.
 
 ---
 
+### Supervisor Multi-Agent Pattern
+
+Create a supervisor agent that routes tasks to specialized worker agents:
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/message"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+func main() {
+    model := openai.NewModel()
+
+    // Create specialized worker agents
+    mathAgent, _ := agent.NewReActAgent(model,
+        agent.WithSystemPrompt("You are a math expert."))
+    
+    codeAgent, _ := agent.NewReActAgent(model,
+        agent.WithSystemPrompt("You are a programming expert."))
+
+    // Create supervisor that routes to specialists
+    supervisor, err := agent.NewSupervisorAgent(
+        model,
+        agent.WithWorker("math", "Expert in mathematics", mathAgent),
+        agent.WithWorker("code", "Expert in programming", codeAgent),
+        agent.WithSupervisorMaxIterations(10),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Execute - supervisor automatically routes to the right specialist
+    ctx := context.Background()
+    messages := []message.Message{
+        message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
+    }
+
+    results, _ := supervisor.Invoke(ctx, messages)
+    // Supervisor routes to math agent → returns answer
+}
+```
+
+**Key Benefits:**
+- 🎯 **Automatic routing** to appropriate specialists
+- 🔧 **Tool-based handoffs** using `HandoffToAgent` pattern
+- 🔄 **Fresh context** per task (configurable)
+- ♻️ **Retry logic** for robust execution
+- ✨ **Clean API** with functional options
+
+---
+
 ## 📚 Core Concepts
 
 ### 🕸️ Graph Architecture
@@ -263,6 +320,7 @@ Explore **17 comprehensive examples** demonstrating different use cases and patt
 | Example | Description | Key Features |
 |---------|-------------|--------------|
 | 🎯 [basic_agent](examples/basic_agent) | Simple ReAct agent with tools | Agent creation, tool calling, message handling |
+| 👥 [supervisor_agent](examples/supervisor_agent) | Multi-agent coordination pattern | Supervisor routing, worker specialists, handoff tools |
 | 🏗️ [state_builder](examples/state_builder) | Simplified state initialization | Fluent API, channel patterns, reduced boilerplate |
 | 🔌 [mcp_tools](examples/mcp_tools) | Model Context Protocol integration | Dynamic tool discovery, MCP toolsets, runtime tools |
 | 🌊 [streaming](examples/streaming) | Real-time event streaming | Live updates, partial results, progress tracking |
@@ -271,10 +329,10 @@ Explore **17 comprehensive examples** demonstrating different use cases and patt
 | ⏸️ [human_pause](examples/human_pause) | Human-in-the-loop workflows | Interrupt, resume, user approval |
 | ⏰ [time_travel](examples/time_travel) | Debug with state versioning | Checkpointing, state replay, time-travel debugging |
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
-| � [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
+| 📞 [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
 | 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
 | 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |
-| �📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
+| 📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
 | 🔗 [subgraph](examples/subgraph) | Composable graph components | Reusable workflows, modular design |
 | 📝 [message_retention](examples/message_retention) | Conversation history management | Message limits, pruning strategies |
 | 🔢 [openai_embedder](examples/openai_embedder) | Text embeddings | Semantic search, RAG workflows, vector operations |

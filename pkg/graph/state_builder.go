@@ -2,6 +2,7 @@ package graph
 
 import (
 	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // StateBuilder provides a fluent API for constructing GraphState with common channel patterns.
@@ -29,6 +30,7 @@ type StateBuilder struct {
 	maxMessages int
 	channels    []channel.Channel
 	initialVals map[string]any
+	initialMsgs []message.Message
 }
 
 // NewStateBuilder creates a new state builder with sensible defaults.
@@ -38,6 +40,7 @@ func NewStateBuilder() *StateBuilder {
 		maxMessages: 100, // Sensible default to prevent unbounded growth
 		channels:    make([]channel.Channel, 0),
 		initialVals: make(map[string]any),
+		initialMsgs: nil,
 	}
 }
 
@@ -60,6 +63,18 @@ func (b *StateBuilder) WithMessages(maxMessages int) *StateBuilder {
 //	builder.WithUnlimitedMessages()  // No message limit
 func (b *StateBuilder) WithUnlimitedMessages() *StateBuilder {
 	b.maxMessages = 0
+	return b
+}
+
+// WithInitialMessages sets initial messages to be added to the state when built.
+// This is useful for pre-populating system prompts, context, or conversation history.
+//
+// Example:
+//
+//	systemMsg := message.NewSystemMessageFromText("You are a helpful assistant")
+//	builder.WithInitialMessages(systemMsg)
+func (b *StateBuilder) WithInitialMessages(messages ...message.Message) *StateBuilder {
+	b.initialMsgs = append(b.initialMsgs, messages...)
 	return b
 }
 
@@ -205,6 +220,11 @@ func (b *StateBuilder) Build() *GraphState {
 	// Set initial values
 	for name, value := range b.initialVals {
 		_ = state.Set(name, value) // Ignore error - channel just created, won't fail
+	}
+
+	// Add initial messages if configured
+	if len(b.initialMsgs) > 0 {
+		state.AddMessages(b.initialMsgs)
 	}
 
 	return state

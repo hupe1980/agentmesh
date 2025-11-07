@@ -16,6 +16,8 @@ hero:
 sidebar:
   - title: ReAct agent
     url: "#react-agent"
+  - title: Supervisor agent
+    url: "#supervisor-agent"
   - title: RAG agent
     url: "#rag-agent"
   - title: Custom graphs
@@ -28,7 +30,7 @@ sidebar:
     url: "#subgraphs"
 ---
 
-AgentMesh provides high-level agent constructors for common patterns like ReAct and RAG, while also exposing the underlying graph builder for custom workflows. All agents are compiled into executable graphs that run on the Pregel BSP engine.
+AgentMesh provides high-level agent constructors for common patterns like ReAct, RAG, and Supervisor multi-agent coordination, while also exposing the underlying graph builder for custom workflows. All agents are compiled into executable graphs that run on the Pregel BSP engine.
 
 ---
 
@@ -86,6 +88,106 @@ START → model → tools → model → END
 1. **Model node**: Generates response or tool calls
 2. **Tool node**: Executes requested tools in parallel
 3. **Conditional routing**: Loops back to model if tools were called, otherwise proceeds to END
+
+---
+
+## Supervisor agent {#supervisor-agent}
+
+The **Supervisor Agent Pattern** creates a coordinator that routes tasks to specialized worker agents based on the user's query. This enables building complex multi-agent systems with clean separation of concerns.
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+model := openai.NewModel()
+
+// Create specialized worker agents
+mathAgent, _ := agent.NewReActAgent(
+    model,
+    agent.WithSystemPrompt("You are a math expert. Solve problems with clear steps."),
+    agent.WithMaxIterations(5),
+)
+
+codeAgent, _ := agent.NewReActAgent(
+    model,
+    agent.WithSystemPrompt("You are a programming expert. Write clean, documented code."),
+    agent.WithMaxIterations(5),
+)
+
+historyAgent, _ := agent.NewReActAgent(
+    model,
+    agent.WithSystemPrompt("You are a history expert. Provide factual answers with dates."),
+    agent.WithMaxIterations(5),
+)
+
+// Create supervisor that routes to specialists
+supervisor, err := agent.NewSupervisorAgent(
+    model,
+    agent.WithWorker("math", "Expert in mathematics and calculations", mathAgent),
+    agent.WithWorker("code", "Expert in programming and software development", codeAgent),
+    agent.WithWorker("history", "Expert in historical facts and events", historyAgent),
+    agent.WithSupervisorSystemPrompt("Route queries to the appropriate specialist"),
+    agent.WithSupervisorMaxIterations(10),
+    agent.WithWorkerContext(false),  // Fresh context for each task
+    agent.WithWorkerRetries(2),
+)
+
+// Execute
+results, err := supervisor.Invoke(ctx, []message.Message{
+    message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
+})
+```
+
+### Configuration options
+
+```go
+agent.NewSupervisorAgent(model,
+    agent.WithWorker(name, description, agent),  // Add worker agents
+    agent.WithSupervisorSystemPrompt(prompt),    // Custom routing instructions
+    agent.WithSupervisorMaxIterations(n),        // Max routing iterations
+    agent.WithWorkerContext(bool),               // Pass conversation history to workers
+    agent.WithWorkerRetries(n),                  // Retry failed worker invocations
+    agent.WithWorkerValidation(bool),            // Validate worker results
+)
+```
+
+### How it works
+
+The supervisor agent uses **tool-based handoffs** to delegate work:
+
+1. **Supervisor receives query**: Analyzes the user's request
+2. **Routes to specialist**: Uses `HandoffToAgent` tool to delegate
+3. **Worker processes task**: Specialist agent handles the specific domain
+4. **Returns result**: Supervisor receives worker output and returns to user
+
+```
+User Query → Supervisor (routing logic)
+                ↓
+            HandoffToAgent tool
+                ↓
+        Specialist Worker Agent
+                ↓
+            Result → User
+```
+
+**Key benefits**:
+
+- 🎯 **Automatic routing**: Supervisor intelligently routes to the right specialist
+- 🔧 **Automatic tool creation**: Each worker gets a `handoff_to_<name>` tool
+- 🔄 **Fresh context**: Workers can receive only the task, not full conversation (configurable)
+- ♻️ **Retry logic**: Configurable retries for robust execution
+- ✨ **Clean API**: Functional options pattern for configuration
+
+### Use cases
+
+- **Customer support**: Route to billing, technical, or sales specialists
+- **Research teams**: Delegate to data analyst, researcher, or summarizer
+- **Code review**: Route to security, performance, or style reviewers
+- **Multi-domain Q&A**: Math, history, science specialists
+
+See `examples/supervisor_agent` for a complete demonstration.
 
 ---
 

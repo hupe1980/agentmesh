@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
@@ -85,8 +86,17 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, 
 		return nil, fmt.Errorf("react agent: model does not support tool configuration (%d tools provided but model doesn't implement ToolAware)", len(acceptedTools))
 	}
 
-	// Create state with unlimited messages (0 = unlimited)
-	state := graph.NewGraphState(0)
+	// Create state using StateBuilder for cleaner initialization
+	stateBuilder := graph.NewStateBuilder().
+		WithUnlimitedMessages()
+
+	// If system prompt configured, add it as initial message
+	if config.systemPrompt != "" {
+		systemMsg := message.NewSystemMessageFromText(config.systemPrompt)
+		stateBuilder.WithInitialMessages(systemMsg)
+	}
+
+	state := stateBuilder.Build()
 
 	g := graph.NewGraph(state)
 
@@ -111,6 +121,7 @@ type reActOptions struct {
 	maxIterations int
 	tools         []tool.Tool  // Optional static tools via WithTools option
 	toolset       tool.Toolset // Optional dynamic toolset for runtime tool discovery
+	systemPrompt  string       // Optional system prompt prepended to all invocations
 }
 
 func defaultReActOptions() reActOptions {
@@ -118,6 +129,7 @@ func defaultReActOptions() reActOptions {
 		maxIterations: 10,
 		tools:         nil,
 		toolset:       nil,
+		systemPrompt:  "",
 	}
 }
 
@@ -151,5 +163,23 @@ func WithTools(tools ...tool.Tool) ReActOption {
 func WithToolset(ts tool.Toolset) ReActOption {
 	return func(c *reActOptions) {
 		c.toolset = ts
+	}
+}
+
+// WithSystemPrompt sets a system prompt that will be prepended to all agent invocations.
+// The system prompt provides instructions and context to guide the agent's behavior.
+// If a system message is also provided in the Invoke() call, the configured system
+// prompt will appear first, followed by any additional system messages.
+//
+// Example:
+//
+//	agent, err := agent.NewReActAgent(
+//	    model,
+//	    agent.WithSystemPrompt("You are a helpful math tutor. Always show your work."),
+//	    agent.WithMaxIterations(5),
+//	)
+func WithSystemPrompt(prompt string) ReActOption {
+	return func(c *reActOptions) {
+		c.systemPrompt = prompt
 	}
 }

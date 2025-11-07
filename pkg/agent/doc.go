@@ -139,5 +139,32 @@ Combine multiple agents into larger workflows using graph:
 	builder.AddNode(&graph.Node{Name: "writer", RunFunc: writerAgent})
 	builder.AddConditionalEdges("classifier", routeByCategory)
 	// ...
+
+# Supervisor Pattern
+
+Create a supervisor agent that routes tasks to specialized workers:
+
+	// Create specialist agents
+	mathAgent, _ := agent.NewReActAgent(model,
+		agent.WithSystemPrompt("You are a math expert"),
+		agent.WithMaxIterations(5))
+
+	codeAgent, _ := agent.NewReActAgent(model,
+		agent.WithSystemPrompt("You are a programming expert"),
+		agent.WithMaxIterations(5))
+
+	// Create supervisor with functional options
+	supervisor, err := agent.NewSupervisorAgent(model,
+		agent.WithWorker("math", "Math expert", mathAgent),
+		agent.WithWorker("code", "Programming expert", codeAgent),
+		agent.WithSupervisorSystemPrompt("Route to specialists"),
+		agent.WithSupervisorMaxIterations(10),
+		agent.WithWorkerContext(false), // Fresh context for each task
+		agent.WithWorkerRetries(2))
+
+The supervisor automatically creates handoff tools for each worker and routes
+tasks to the most appropriate specialist based on the query.
+
+See examples/supervisor_simple for a complete example.
 */
 package agent
