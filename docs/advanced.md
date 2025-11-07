@@ -21,6 +21,8 @@ sidebar:
     url: "#message-retention"
   - title: Retry policies
     url: "#retry-policies"
+  - title: Circuit Breaker
+    url: "#circuit-breaker"
   - title: Subgraphs
     url: "#subgraphs"
 ---
@@ -130,49 +132,405 @@ builder.Node("unreliable_api", func(ctx context.Context, s graph.StateWriter) (*
 The node will be retried with exponential backoff until it succeeds or reaches max attempts.
 
 See `examples/retry` for various retry scenarios.
-  o.Plugins = []core.Plugin{
-    plugin.NewGlobalInstructions(&global),
-    plugin.NewInputArtifactSaver(),
-  }
-})
-
-runner := am.NewRunner(application)
-defer runner.Close()
-```
-
-`plugin.NewGlobalInstructions` accepts any `*core.Instructions`, so you can construct provider-backed instructions (for example, from a database) and rely on the plugin to resolve and template them against the current session snapshot.
 
 ---
 
-## Write your own plugin {#write-your-own-plugin}
+## Circuit Breaker {#circuit-breaker}
 
-Creating a plugin is as simple as implementing the `core.Plugin` interface. You can embed `plugin.Noop` to inherit default behaviors and override only the hooks you care about.
+AgentMesh includes a built-in circuit breaker to prevent cascading failures when calling external services. The circuit breaker implements three states:
+
+- **Closed**: Requests flow normally, failures are tracked
+- **Open**: Requests fail fast without calling the protected function
+- **HalfOpen**: Limited test requests check if the service has recovered
+
+### Basic Usage
 
 ```go
 import (
-  "context"
-
-  am "github.com/hupe1980/agentmesh"
-  "github.com/hupe1980/agentmesh/core"
-  "github.com/hupe1980/agentmesh/plugin"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "time"
 )
 
-type auditPlugin struct {
-  plugin.Noop
-}
+// Create a circuit breaker
+cb := graph.NewCircuitBreaker(
+    5,              // failureThreshold: open after 5 failures
+    2,              // successThreshold: close after 2 successes in half-open
+    10*time.Second, // timeout: wait 10s before transitioning to half-open
+)
 
-func (p *auditPlugin) OnEvent(ctx context.Context, req core.RequestContext, ev *core.Event) (*core.Event, error) {
-  // Forward a copy to your telemetry pipeline here.
-  // Returning nil keeps the original event untouched.
-  return nil, nil
-}
-
-// assume `agent` was created as shown above
-application := am.NewApp("audited_app", agent, func(o *am.AppOptions) {
-  o.Plugins = []core.Plugin{&auditPlugin{}}
+// Protect service calls
+err := cb.Call(ctx, func(ctx context.Context) error {
+    return externalService.DoWork(ctx)
 })
 ```
 
-You can override any combination of hooks—AgentMesh calls them at the appropriate lifecycle moments.
+### Integration with Retry Policy
+
+Combine circuit breakers with retry policies for robust error handling:
+
+```go
+cb := graph.NewCircuitBreaker(3, 2, 5*time.Second)
+
+builder.Node("protected-service", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    err := cb.Call(ctx, func(ctx context.Context) error {
+        return externalAPI.Call(ctx)
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    return &graph.NodeResult{
+        Updates: map[string]any{"status": "success"},
+    }, nil
+}, graph.WithRetryPolicy(&graph.RetryPolicy{
+    MaxAttempts: 10,
+    Backoff: func(attempt int) time.Duration {
+        // Wait longer when circuit is open
+        if cb.State() == graph.StateOpen {
+            return 6 * time.Second
+        }
+        return 500 * time.Millisecond
+    },
+    Retryable: func(err error) bool {
+        // Don't retry circuit breaker open errors immediately
+        return !errors.Is(err, graph.ErrCircuitBreakerOpen)
+    },
+}))
+```
+
+### State Transitions
+
+```
+CLOSED ──[failure threshold reached]──> OPEN
+  ↑                                       │
+  │                                       │
+  └─[success threshold reached]─ HALF_OPEN ←[timeout elapsed]
+           │
+           └─[any failure]──> OPEN
+```
+
+### Manual Control
+
+```go
+// Check current state
+state := cb.State() // Returns CircuitBreakerState (CLOSED, OPEN, HALF_OPEN)
+
+// Manually reset to closed state
+cb.Reset()
+```
+
+### Thread Safety
+
+CircuitBreaker is safe for concurrent use across multiple goroutines using atomic operations.
+
+**See**: `examples/circuit_breaker` for a complete working example.
+
+---
+
+## Aggregators & BSP Coordination
+
+### What are Aggregators?
+
+Aggregators are a core concept in the Bulk Synchronous Parallel (BSP) model that AgentMesh implements. They provide a mechanism for **global coordination** across all nodes in a graph by accumulating values during superstep execution.
+
+**Key characteristics**:
+- **Global visibility**: All nodes can read the aggregated value
+- **Read-only in nodes**: Nodes contribute values but read the result from the previous superstep
+- **BSP-aligned**: Updated after each superstep barrier
+- **Type-safe**: Strongly typed aggregate values
+
+### Built-in Aggregators
+
+#### SumAggregator
+
+Accumulates numeric values across all node contributions:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Create graph with sum aggregator
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "total_processed": &graph.SumAggregator{},
+    }),
+)
+
+// In nodes: contribute to the aggregate
+node := &graph.Node{
+    Name: "processor",
+    RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+        // Process some items
+        itemsProcessed := 42
+        
+        // Contribute to global sum
+        if err := s.Aggregate("total_processed", itemsProcessed); err != nil {
+            return nil, err
+        }
+        
+        // Read aggregate from previous superstep
+        snap := s.AggregatesSnapshot()
+        if snap != nil {
+            if total, ok := snap["total_processed"].(float64); ok {
+                log.Printf("Total items processed so far: %.0f", total)
+            }
+        }
+        
+        return &graph.NodeResult{}, nil
+    },
+}
+```
+
+**Use cases**:
+- Count total messages processed
+- Track cumulative errors
+- Calculate global metrics (sum, average via custom aggregator)
+
+### Custom Aggregators
+
+Implement the `Aggregator` interface for custom reduction logic:
+
+```go
+type Aggregator interface {
+    // Aggregate combines multiple contributions into a single value
+    // Called with accumulated value and slice of new contributions
+    Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error)
+}
+```
+
+#### Example: Max Aggregator
+
+Track the maximum value across all nodes:
+
+```go
+type MaxAggregator struct{}
+
+func (a *MaxAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
+    var max float64
+    if accumulated != nil {
+        max = accumulated.(float64)
+    }
+    
+    for _, contrib := range contributions {
+        if val, ok := contrib.(float64); ok && val > max {
+            max = val
+        } else if val, ok := contrib.(int); ok && float64(val) > max {
+            max = float64(val)
+        }
+    }
+    
+    return max, nil
+}
+
+// Usage
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "max_confidence": &MaxAggregator{},
+    }),
+)
+```
+
+#### Example: List Aggregator
+
+Collect all contributions into a list:
+
+```go
+type ListAggregator struct{}
+
+func (a *ListAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
+    var list []string
+    if accumulated != nil {
+        list = accumulated.([]string)
+    }
+    
+    for _, contrib := range contributions {
+        if val, ok := contrib.(string); ok {
+            list = append(list, val)
+        }
+    }
+    
+    return list, nil
+}
+```
+
+### Advanced Patterns
+
+#### Convergence Detection
+
+Use aggregators to detect when a graph has converged:
+
+```go
+type ErrorAggregator struct{}
+
+func (a *ErrorAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
+    var totalError float64
+    for _, contrib := range contributions {
+        if err, ok := contrib.(float64); ok {
+            totalError += err
+        }
+    }
+    return totalError, nil
+}
+
+// In node: check for convergence
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    // Calculate local error
+    localError := computeLocalError()
+    s.Aggregate("global_error", localError)
+    
+    // Check previous superstep's global error
+    snap := s.AggregatesSnapshot()
+    if snap != nil {
+        if globalError, ok := snap["global_error"].(float64); ok {
+            if globalError < 0.001 {
+                // Converged! Route to END
+                return &graph.NodeResult{
+                    Updates: map[string]any{"converged": true},
+                }, nil
+            }
+        }
+    }
+    
+    // Continue processing
+    return &graph.NodeResult{}, nil
+}
+```
+
+#### Distributed Counting
+
+Track statistics across parallel branches:
+
+```go
+// Set up counters
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "success_count": &graph.SumAggregator{},
+        "failure_count": &graph.SumAggregator{},
+        "total_latency": &graph.SumAggregator{},
+    }),
+)
+
+// In each parallel node
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    start := time.Now()
+    
+    result, err := doWork()
+    latency := time.Since(start).Milliseconds()
+    
+    s.Aggregate("total_latency", latency)
+    if err != nil {
+        s.Aggregate("failure_count", 1)
+        return nil, err
+    }
+    
+    s.Aggregate("success_count", 1)
+    return result, nil
+}
+
+// In final reporting node
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    snap := s.AggregatesSnapshot()
+    
+    successCount := snap["success_count"].(float64)
+    failureCount := snap["failure_count"].(float64)
+    totalLatency := snap["total_latency"].(float64)
+    avgLatency := totalLatency / (successCount + failureCount)
+    
+    log.Printf("Success: %.0f, Failures: %.0f, Avg Latency: %.2fms",
+        successCount, failureCount, avgLatency)
+    
+    return &graph.NodeResult{
+        Updates: map[string]any{
+            "success_rate": successCount / (successCount + failureCount),
+            "avg_latency_ms": avgLatency,
+        },
+    }, nil
+}
+```
+
+### BSP Semantics & Aggregators
+
+Understanding the BSP (Bulk Synchronous Parallel) model is key to using aggregators effectively:
+
+#### Superstep Execution Model
+
+```
+Superstep N:
+1. All nodes execute in parallel
+2. Nodes contribute to aggregators via Aggregate()
+3. Barrier: wait for all nodes to complete
+4. Aggregate values computed by combining contributions
+5. New aggregate values become visible
+
+Superstep N+1:
+1. Nodes read aggregates from superstep N via AggregatesSnapshot()
+2. Nodes contribute to aggregators for superstep N+1
+3. ... repeat
+```
+
+#### Important Rules
+
+1. **Contributions are isolated**: Values aggregated in superstep N are NOT visible until superstep N+1
+2. **Thread-safe by design**: Aggregation happens after the barrier, no need for locks
+3. **Multiple contributions**: Same node can call `Aggregate()` multiple times in one superstep
+4. **Reset between retries**: If a node fails and retries, its aggregate contributions are cleared
+
+#### Example: Multi-Superstep Coordination
+
+```go
+// Node A contributes in superstep 0
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    s.Aggregate("counter", 10)  // Contributed in superstep 0
+    
+    snap := s.AggregatesSnapshot()
+    // snap["counter"] is NOT 10 yet - it's the value from superstep -1 (initial value)
+    
+    return &graph.NodeResult{}, nil
+}
+
+// Node B reads in superstep 1
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    snap := s.AggregatesSnapshot()
+    if snap != nil {
+        counter := snap["counter"].(float64)
+        // Now counter is 10 (from superstep 0)
+    }
+    
+    s.Aggregate("counter", 5)  // Add 5 more for superstep 1
+    return &graph.NodeResult{}, nil
+}
+
+// Node C reads in superstep 2
+RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    snap := s.AggregatesSnapshot()
+    counter := snap["counter"].(float64)
+    // Now counter is 15 (10 + 5 from supersteps 0 and 1)
+    
+    return &graph.NodeResult{}, nil
+}
+```
+
+### Performance Considerations
+
+**When to use aggregators**:
+- ✅ Global coordination needed (convergence, voting)
+- ✅ Statistics across parallel branches
+- ✅ Read-mostly workloads (read aggregate, contribute occasionally)
+
+**When NOT to use aggregators**:
+- ❌ High-frequency updates (use channels instead)
+- ❌ Need immediate visibility (aggregates lag by one superstep)
+- ❌ Complex data structures (keep aggregates simple)
+
+**Best practices**:
+- Keep aggregate values small (primitives or small structs)
+- Minimize contributions per node (one or two per superstep)
+- Use for coordination, not data passing (use channels for data flow)
+
+### See Also
+
+- [Architecture: Pregel BSP Model](architecture.md#pregel-bsp-model)
+- [Examples: Parallel tasks with aggregators](https://github.com/hupe1980/agentmesh/tree/main/examples/parallel_tasks)
+- [API Reference: Aggregator interface](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Aggregator)
 
 ---

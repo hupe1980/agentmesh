@@ -7,6 +7,8 @@ import (
 
 // Channel is the core abstraction for data flow between nodes.
 // Each channel has specific update semantics (append, replace, merge, etc.)
+//
+// All channels must be cloneable to support graph state snapshots and time travel.
 type Channel interface {
 	// Name returns the unique identifier for this channel
 	Name() string
@@ -26,13 +28,9 @@ type Channel interface {
 
 	// Reset clears the channel to its initial state
 	Reset(ctx context.Context) error
-}
 
-// CloneableChannel can create a deep copy of itself.
-// Implementations should return a channel with independent state.
-type CloneableChannel interface {
-	Channel
-	CloneChannel() Channel
+	// Clone creates a deep copy of this channel with independent state
+	Clone() Channel
 }
 
 // TopicChannel accumulates values in append-only fashion.
@@ -131,8 +129,8 @@ func (tc *TopicChannel) SetMaxValues(limit int) {
 	}
 }
 
-// CloneChannel returns a deep copy of the topic channel.
-func (tc *TopicChannel) CloneChannel() Channel {
+// Clone returns a deep copy of the topic channel.
+func (tc *TopicChannel) Clone() Channel {
 	tc.mu.RLock()
 	defer tc.mu.RUnlock()
 
@@ -211,8 +209,8 @@ func (lvc *LastValueChannel) HasValue() bool {
 	return lvc.hasValue
 }
 
-// CloneChannel returns a deep copy of the last value channel.
-func (lvc *LastValueChannel) CloneChannel() Channel {
+// Clone returns a deep copy of the last value channel.
+func (lvc *LastValueChannel) Clone() Channel {
 	lvc.mu.RLock()
 	defer lvc.mu.RUnlock()
 
@@ -282,8 +280,8 @@ func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 	return nil
 }
 
-// CloneChannel returns a deep copy of the binary op channel.
-func (boc *BinaryOpChannel) CloneChannel() Channel {
+// Clone returns a deep copy of the binary op channel.
+func (boc *BinaryOpChannel) Clone() Channel {
 	boc.mu.RLock()
 	defer boc.mu.RUnlock()
 

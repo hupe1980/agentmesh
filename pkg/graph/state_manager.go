@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
@@ -463,19 +464,13 @@ func (s *GraphState) Clone() StateManager {
 	// Clone all channels
 	for _, name := range s.channels.List() {
 		if ch, ok := s.channels.Get(name); ok {
-			if cloneable, ok := ch.(channel.CloneableChannel); ok {
-				cloned.channels.Add(cloneable.CloneChannel())
-				continue
-			}
-			cloned.channels.Add(ch)
+			cloned.channels.Add(ch.Clone())
 		}
 	}
 
 	// Copy aggregates
 	s.aggregatesMu.RLock()
-	for k, v := range s.aggregates {
-		cloned.aggregates[k] = v
-	}
+	maps.Copy(cloned.aggregates, s.aggregates)
 	cloned.aggregateFn = s.aggregateFn
 	s.aggregatesMu.RUnlock()
 
