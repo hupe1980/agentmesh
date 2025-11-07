@@ -2,6 +2,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"runtime/debug"
@@ -54,16 +55,12 @@ type Runtime[S any, M any] struct {
 	events chan StreamEvent[M]
 	opts   RuntimeOptions[S, M]
 
-	mu           sync.Mutex              // Protects mailbox and nextFrontier (see concurrency model above)
-	mailbox      map[string][]Message[M] // Per-vertex message queues (bounded by MaxMailboxSize)
-	nextFrontier map[string]struct{}     // Vertices active in next superstep
+	messageBus MessageBus[M] // Pluggable message delivery backend
 
 	aggMu          sync.Mutex // Protects aggregator state (see concurrency model above)
 	aggregators    map[string]Aggregator
 	aggregates     map[string]any // Current superstep aggregates (read-only for vertices)
 	nextAggregates map[string]any // Next superstep aggregates (write-only during execution)
-
-	combiner Combiner[M]
 
 	supersteps atomic.Int64
 	vertices   atomic.Int64
@@ -114,16 +111,22 @@ func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M
 		}
 	}
 
+	// Create message bus (use provided bus or default to in-memory)
+	var messageBus MessageBus[M]
+	if opts.MessageBus != nil {
+		messageBus = opts.MessageBus
+	} else {
+		messageBus = NewInMemoryMessageBus[M](opts.MaxMailboxSize, opts.Combiner)
+	}
+
 	runtime := &Runtime[S, M]{
 		graph:          graph,
 		events:         events,
 		opts:           opts,
-		mailbox:        make(map[string][]Message[M]),
-		nextFrontier:   make(map[string]struct{}),
+		messageBus:     messageBus,
 		aggregators:    aggregators,
 		aggregates:     aggregates,
 		nextAggregates: nextAggregates,
-		combiner:       opts.Combiner,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
 	return runtime
@@ -268,31 +271,35 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 
 func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 	frontier := make(map[string]struct{})
+
+	// Add root nodes
 	for _, name := range r.graph.RootNodes() {
 		frontier[name] = struct{}{}
 	}
-	r.mu.Lock()
-	for name, msgs := range r.mailbox {
-		if len(msgs) > 0 {
+
+	// Add nodes with pending messages
+	pending, err := r.messageBus.Pending()
+	if err == nil {
+		for _, name := range pending {
 			frontier[name] = struct{}{}
 		}
 	}
-	r.mu.Unlock()
+
 	return frontier
 }
 
 func (r *Runtime[S, M]) consumeNextFrontier() map[string]struct{} {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.nextFrontier) == 0 {
+	// Get vertices with pending messages from message bus
+	pending, err := r.messageBus.Pending()
+	if err != nil || len(pending) == 0 {
 		return nil
 	}
-	next := make(map[string]struct{}, len(r.nextFrontier))
-	for name := range r.nextFrontier {
-		next[name] = struct{}{}
+
+	frontier := make(map[string]struct{}, len(pending))
+	for _, name := range pending {
+		frontier[name] = struct{}{}
 	}
-	r.nextFrontier = make(map[string]struct{})
-	return next
+	return frontier
 }
 
 //nolint:gocyclo // Superstep execution requires coordinating many runtime conditions
@@ -438,65 +445,34 @@ func (r *Runtime[S, M]) recordDeliveries(msgs []Message[M]) error {
 	if len(msgs) == 0 {
 		return nil
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
+	// Process messages individually to emit proper error events
 	var firstError error
 	for _, msg := range msgs {
-		// Check mailbox size limit before adding
-		if r.opts.MaxMailboxSize > 0 {
-			currentSize := len(r.mailbox[msg.To])
-			if currentSize >= r.opts.MaxMailboxSize {
-				// Mailbox full - return error for backpressure
-				err := fmt.Errorf("%w: node %q has %d messages (limit: %d)",
-					ErrMailboxFull, msg.To, currentSize, r.opts.MaxMailboxSize)
-
-				// Record first error to return
-				if firstError == nil {
-					firstError = err
-				}
-
-				// Emit warning event (unlock first to avoid deadlock)
-				r.mu.Unlock()
+		err := r.messageBus.Send([]Message[M]{msg})
+		if err != nil {
+			if firstError == nil {
+				firstError = err
+			}
+			// Emit individual error event for this message
+			if errors.Is(err, ErrMailboxFull) {
 				r.emitEvent(StreamEvent[M]{
 					Node:  msg.To,
 					Error: err,
 				})
-				r.mu.Lock()
-
-				// Skip this message - don't deliver when mailbox is full
-				continue
 			}
 		}
-
-		if r.combiner != nil {
-			if existing, ok := r.mailbox[msg.To]; ok && len(existing) > 0 {
-				combined := r.combiner(existing[0], msg)
-				r.mailbox[msg.To] = []Message[M]{combined}
-				r.nextFrontier[msg.To] = struct{}{}
-				continue
-			}
-		}
-
-		r.mailbox[msg.To] = append(r.mailbox[msg.To], msg)
-		r.nextFrontier[msg.To] = struct{}{}
 	}
 
 	return firstError
 }
 
 func (r *Runtime[S, M]) drainMailbox(node string) []Message[M] {
-	r.mu.Lock()
-	msgs := r.mailbox[node]
-	if len(msgs) > 0 {
-		r.mailbox[node] = nil
-		delete(r.mailbox, node)
-	}
-	r.mu.Unlock()
-	if len(msgs) == 0 {
+	msgs, err := r.messageBus.Receive(node)
+	if err != nil || len(msgs) == 0 {
 		return nil
 	}
-	return append([]Message[M](nil), msgs...)
+	return msgs
 }
 
 func (r *Runtime[S, M]) emitEvent(event StreamEvent[M]) {

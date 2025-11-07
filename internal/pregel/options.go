@@ -32,6 +32,11 @@ type RuntimeOptions[S any, M any] struct {
 	// Recommended: Set this to prevent memory exhaustion in high-throughput scenarios.
 	MaxMailboxSize int
 
+	// MessageBus provides pluggable message delivery backend. If nil, defaults
+	// to InMemoryMessageBus with MaxMailboxSize and Combiner settings.
+	// Use this to enable distributed execution (Redis, gRPC, etc.)
+	MessageBus MessageBus[M]
+
 	// OnSuperstepComplete is called after each superstep completes successfully.
 	// The callback receives the superstep number. Useful for checkpointing.
 	OnSuperstepComplete func(superstep int64)
@@ -112,6 +117,21 @@ func WithMaxMailboxSize[S any, M any](size int) RuntimeOption[S, M] {
 func WithOnSuperstepComplete[S any, M any](callback func(superstep int64)) RuntimeOption[S, M] {
 	return func(o *RuntimeOptions[S, M]) {
 		o.OnSuperstepComplete = callback
+	}
+}
+
+// WithMessageBus sets a custom message delivery backend, enabling distributed
+// execution or alternative storage strategies.
+//
+// Examples:
+//   - Redis-backed bus for multi-node deployments
+//   - Persisted bus for replay debugging
+//   - gRPC bus for cross-process coordination
+//
+// If not provided, defaults to InMemoryMessageBus.
+func WithMessageBus[S any, M any](bus MessageBus[M]) RuntimeOption[S, M] {
+	return func(o *RuntimeOptions[S, M]) {
+		o.MessageBus = bus
 	}
 }
 
