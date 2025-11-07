@@ -51,7 +51,7 @@ The repository includes **17 comprehensive examples** demonstrating core feature
 - **`human_pause`** – Human-in-the-loop workflows with interrupt/resume
 - **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
 - **`callback_integration`** – Callback system with BeforeModel, AfterModel handlers
-- **`circuit_breaker`** – Fault tolerance patterns with circuit breaker states
+- **`circuit_breaker`** – Circuit breaker callback policy for fault tolerance
 - **`guardrails`** – Content filtering, PII protection, and safety constraints
 
 ### Embeddings & RAG

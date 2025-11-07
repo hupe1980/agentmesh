@@ -1,11 +1,11 @@
 ---
 layout: doc
-title: Advanced Features
-description: Explore checkpointing, time travel, human-in-the-loop, and other advanced graph capabilities.
+title: Advanced Patterns
+description: Advanced AgentMesh patterns including retry policies, circuit breakers, aggregators, and subgraphs.
 permalink: /advanced/
 hero:
-  title: Advanced graph features
-  description: Leverage checkpointing, time travel debugging, human-in-the-loop workflows, and more.
+  title: Advanced Patterns
+  description: Leverage retry policies, circuit breakers, BSP aggregators, and subgraph composition.
   primary_cta:
     label: Explore examples
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
@@ -15,135 +15,28 @@ hero:
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
     external: true
 sidebar:
-  - title: Human-in-the-loop
-    url: "#human-in-the-loop"
-  - title: Message retention
-    url: "#message-retention"
   - title: Retry policies
     url: "#retry-policies"
   - title: Circuit Breaker
     url: "#circuit-breaker"
+  - title: Aggregators
+    url: "#aggregators"
   - title: Subgraphs
     url: "#subgraphs"
 ---
 
-## Checkpointing & Time Travel
+# Advanced Patterns
 
-AgentMesh provides comprehensive state persistence and debugging capabilities. For complete documentation including:
+This guide covers advanced patterns for building robust, scalable AgentMesh applications.
 
-- Checkpoint lifecycle and automatic state saving
-- Storage backends (Memory, SQL, DynamoDB) with trade-off analysis
-- Time-travel debugging patterns
-- Production considerations and cleanup strategies
-- Recovery and resume workflows
-
-See the **[Checkpointing Guide](/checkpointing/)** for detailed coverage.
-
-**Quick Example**:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/checkpoint"
-
-// Enable checkpointing
-store := checkpoint.NewMemory()
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),
-)
-
-// Execute with automatic checkpointing
-results, _ := compiled.Invoke(ctx, messages,
-    graph.WithThreadID("workflow-123"),
-)
-
-// Resume from checkpoint after failure
-results, _ = compiled.InvokeFromCheckpoint(ctx, "workflow-123")
-```
-
-**Examples**: 
-- [Checkpointing example](https://github.com/hupe1980/agentmesh/tree/main/examples/checkpointing)
-- [Time-travel debugging example](https://github.com/hupe1980/agentmesh/tree/main/examples/time_travel)
+{: .note }
+> For state management patterns (checkpointing, time travel, message retention, human-in-loop), see **[State Management](/state-management/)**.
 
 ---
 
-## Human-in-the-loop {#human-in-the-loop}
+## Retry Policies {#retry-policies}
 
-Pause execution for human approval or input:
-
-```go
-builder.Node("request_approval", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    // Request human input
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "status": "awaiting_approval",
-        },
-        Interrupt: true,  // Pause execution
-    }, nil
-})
-
-// Execution pauses here
-results, _ := compiled.Invoke(ctx, messages)
-
-// After human provides input, resume
-results, _ = compiled.Resume(ctx, threadID, map[string]any{
-    "approved": true,
-})
-```
-
-See `examples/human_pause` for a complete workflow.
-
----
-
-## Message retention {#message-retention}
-
-Limit conversation history to prevent context overflow:
-
-```go
-// Keep only the last 10 messages
-state := graph.NewGraphState(10)
-
-builder := graph.NewBuilder()
-builder.SetState(state)
-```
-
-Older messages are automatically pruned as new ones are added.
-
-See `examples/message_retention` for details.
-
----
-
-## Retry policies {#retry-policies}
-
-Configure automatic retries for transient failures:
-
-```go
-import "time"
-
-builder.Node("unreliable_api", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    // ... call external API ...
-}, graph.WithRetryPolicy(&graph.RetryPolicy{
-    MaxAttempts:    3,
-    InitialBackoff: 100 * time.Millisecond,
-    MaxBackoff:     1 * time.Second,
-    Multiplier:     2.0,
-}))
-```
-
-The node will be retried with exponential backoff until it succeeds or reaches max attempts.
-
-See `examples/retry` for various retry scenarios.
-
----
-
-## Circuit Breaker {#circuit-breaker}
-
-AgentMesh includes a built-in circuit breaker to prevent cascading failures when calling external services. The circuit breaker implements three states:
-
-- **Closed**: Requests flow normally, failures are tracked
-- **Open**: Requests fail fast without calling the protected function
-- **HalfOpen**: Limited test requests check if the service has recovered
-
-### Basic Usage
+Configure automatic retries with exponential backoff for transient failures:
 
 ```go
 import (
@@ -151,17 +44,90 @@ import (
     "time"
 )
 
-// Create a circuit breaker
-cb := graph.NewCircuitBreaker(
-    5,              // failureThreshold: open after 5 failures
-    2,              // successThreshold: close after 2 successes in half-open
-    10*time.Second, // timeout: wait 10s before transitioning to half-open
+// Configure retry on individual nodes
+builder.Node("unreliable_api", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    result, err := callExternalAPI()
+    if err != nil {
+        return nil, err
+    }
+    return &graph.NodeResult{
+        Updates: map[string]any{"api_result": result},
+    }, nil
+}, graph.WithRetryPolicy(&graph.RetryPolicy{
+    MaxAttempts: 3,
+    Backoff: func(attempt int) time.Duration {
+        return time.Duration(math.Pow(2, float64(attempt))) * time.Second
+    },
+    Retryable: func(err error) bool {
+        // Only retry specific error types
+        return isTransientError(err)
+    },
+}))
+```
+
+**Key Features**:
+- **Exponential backoff**: Default 2^n seconds delay between attempts
+- **Custom backoff**: Provide your own `Backoff` function
+- **Selective retry**: Use `Retryable` to decide which errors warrant retry
+- **Max attempts**: Limit total attempts (including initial execution)
+
+**Default Backoff**:
+```go
+// Built-in: 2^attempt seconds (1s, 2s, 4s, 8s, ...)
+RetryPolicy: &graph.RetryPolicy{
+    MaxAttempts: 5,
+    Backoff: graph.DefaultBackoff,  // Uses 2^attempt
+}
+```
+
+**See Also**: Check graph retry tests in `pkg/graph/retry_test.go` for comprehensive examples.
+
+---
+
+## Circuit Breaker {#circuit-breaker}
+
+The circuit breaker pattern prevents cascading failures when calling external services. AgentMesh implements this as a **callback policy** in the `pkg/callbacks/policies` package, allowing you to wrap model or tool calls with automatic failure detection.
+
+### How It Works
+
+The circuit breaker implements three states:
+
+- **CLOSED** - Normal operation, requests flow through
+- **OPEN** - Too many failures detected, reject requests immediately with error
+- **HALF_OPEN** - Testing recovery after timeout, allow limited requests
+
+### Basic Usage
+
+Circuit breakers are registered as callbacks on the callback manager:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/callbacks"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/policies"
+    "github.com/hupe1980/agentmesh/pkg/agent"
 )
 
-// Protect service calls
-err := cb.Call(ctx, func(ctx context.Context) error {
-    return externalService.DoWork(ctx)
-})
+// Create callback manager
+manager := callbacks.NewManager()
+
+// Configure circuit breaker
+config := policies.DefaultCircuitBreakerConfig()
+config.MaxFailures = 3              // Open after 3 failures
+config.Timeout = 5 * time.Second    // Wait 5s before half-open
+config.FailureWindow = 1 * time.Minute  // Track failures over 1 minute
+
+// Register circuit breaker callbacks
+before, after, onError := policies.CircuitBreaker(config)
+manager.RegisterBeforeModel(before)
+manager.RegisterAfterModel(after)
+manager.RegisterOnModelError(onError)
+
+// Use with agent (circuit breaker protects model calls)
+compiled, err := agent.NewReActAgent(
+    model,
+    tools,
+    agent.WithModelCallbacks(manager),
+)
 ```
 
 ### Integration with Retry Policy
@@ -169,34 +135,29 @@ err := cb.Call(ctx, func(ctx context.Context) error {
 Combine circuit breakers with retry policies for robust error handling:
 
 ```go
-cb := graph.NewCircuitBreaker(3, 2, 5*time.Second)
+manager := callbacks.NewManager()
 
-builder.Node("protected-service", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    err := cb.Call(ctx, func(ctx context.Context) error {
-        return externalAPI.Call(ctx)
-    })
-    
-    if err != nil {
-        return nil, err
+// Add circuit breaker
+cbConfig := policies.DefaultCircuitBreakerConfig()
+cbConfig.MaxFailures = 3
+cbConfig.Timeout = 5 * time.Second
+cbBefore, cbAfter, cbError := policies.CircuitBreaker(cbConfig)
+manager.RegisterBeforeModel(cbBefore)
+manager.RegisterAfterModel(cbAfter)
+manager.RegisterOnModelError(cbError)
+
+// Add retry policy with circuit breaker awareness
+retryConfig := policies.DefaultRetryConfig()
+retryConfig.MaxAttempts = 3
+retryConfig.Retryable = func(err error) bool {
+    // Don't retry if circuit is open (will fail immediately anyway)
+    if strings.Contains(err.Error(), "circuit breaker open") {
+        return false
     }
-    
-    return &graph.NodeResult{
-        Updates: map[string]any{"status": "success"},
-    }, nil
-}, graph.WithRetryPolicy(&graph.RetryPolicy{
-    MaxAttempts: 10,
-    Backoff: func(attempt int) time.Duration {
-        // Wait longer when circuit is open
-        if cb.State() == graph.StateOpen {
-            return 6 * time.Second
-        }
-        return 500 * time.Millisecond
-    },
-    Retryable: func(err error) bool {
-        // Don't retry circuit breaker open errors immediately
-        return !errors.Is(err, graph.ErrCircuitBreakerOpen)
-    },
-}))
+    // Retry other transient errors
+    return isTransientError(err)
+}
+manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
 ```
 
 ### State Transitions
@@ -205,30 +166,23 @@ builder.Node("protected-service", func(ctx context.Context, s graph.StateWriter)
 CLOSED ──[failure threshold reached]──> OPEN
   ↑                                       │
   │                                       │
-  └─[success threshold reached]─ HALF_OPEN ←[timeout elapsed]
+  └─[success]─────────────── HALF_OPEN ←─[timeout elapsed]
            │
            └─[any failure]──> OPEN
 ```
 
-### Manual Control
-
-```go
-// Check current state
-state := cb.State() // Returns CircuitBreakerState (CLOSED, OPEN, HALF_OPEN)
-
-// Manually reset to closed state
-cb.Reset()
-```
-
 ### Thread Safety
 
-CircuitBreaker is safe for concurrent use across multiple goroutines using atomic operations.
+The circuit breaker policy is safe for concurrent use across multiple goroutines using atomic operations.
 
-**See**: `examples/circuit_breaker` for a complete working example.
+**See Also**:
+- `examples/circuit_breaker` - Complete working example with flaky service
+- [Callbacks Guide](/callbacks/) - Callback system overview
+- `pkg/callbacks/policies` - Policy implementations (circuit breaker, retry, etc.)
 
 ---
 
-## Aggregators & BSP Coordination
+## Aggregators & BSP Coordination {#aggregators}
 
 ### What are Aggregators?
 
@@ -679,5 +633,122 @@ RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, erro
 - [Architecture: Pregel BSP Model](architecture.md#pregel-bsp-model)
 - [Examples: Parallel tasks with aggregators](https://github.com/hupe1980/agentmesh/tree/main/examples/parallel_tasks)
 - [API Reference: Aggregator interface](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Aggregator)
+
+---
+
+## Subgraphs {#subgraphs}
+
+Subgraphs enable **hierarchical composition** by embedding compiled graphs as nodes within parent graphs. This pattern helps organize complex workflows into modular, reusable components.
+
+### Basic Usage
+
+```go
+// Create a subgraph
+subState := graph.NewGraphState(0)
+subGraph := graph.NewGraph(subState)
+
+subGraph.AddNode(&graph.Node{
+    Name: "process",
+    RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+        value := s.Get("value").(int)
+        doubled := value * 2
+        return &graph.NodeResult{
+            Updates: map[string]any{"result": doubled},
+        }, nil
+    },
+})
+
+subGraph.AddEdge(graph.StartNode, "process")
+subGraph.AddEdge("process", graph.EndNode)
+
+// Compile the subgraph
+compiledSub, err := subGraph.Compile()
+
+// Use as a node in parent graph
+parentState := graph.NewGraphState(0)
+parent := graph.NewGraph(parentState)
+
+parent.AddNode(&graph.Node{
+    Name: "prepare",
+    RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+        return &graph.NodeResult{
+            Updates: map[string]any{"value": 21},
+        }, nil
+    },
+})
+
+// Embed subgraph as a node
+parent.AddSubgraph("doubler", compiledSub)
+
+parent.AddEdge(graph.StartNode, "prepare")
+parent.AddEdge("prepare", "doubler")
+parent.AddEdge("doubler", graph.EndNode)
+```
+
+### State Mapping
+
+Map parent state to subgraph state and back using `AddSubgraphWithMapping`:
+
+```go
+parent.AddSubgraphWithMapping(
+    "processor",
+    compiledSub,
+    // Map parent state -> subgraph state
+    func(parentState graph.State) map[string]any {
+        return map[string]any{
+            "input": parentState.Get("data"),
+        }
+    },
+    // Map subgraph state -> parent state updates
+    func(subState graph.State) map[string]any {
+        return map[string]any{
+            "processed_data": subState.Get("output"),
+        }
+    },
+)
+```
+
+### Use Cases
+
+**Multi-stage pipelines**:
+```go
+// Validation -> Enrichment -> Analysis
+validationSub, _ := createValidationGraph().Compile()
+enrichmentSub, _ := createEnrichmentGraph().Compile()
+analysisSub, _ := createAnalysisGraph().Compile()
+
+pipeline := graph.NewGraph(state)
+pipeline.AddSubgraph("validate", validationSub)
+pipeline.AddSubgraph("enrich", enrichmentSub)
+pipeline.AddSubgraph("analyze", analysisSub)
+
+pipeline.AddEdge(graph.StartNode, "validate")
+pipeline.AddEdge("validate", "enrich")
+pipeline.AddEdge("enrich", "analyze")
+pipeline.AddEdge("analyze", graph.EndNode)
+```
+
+**Reusable components**:
+```go
+// Create reusable authentication subgraph
+authSub, _ := createAuthGraph().Compile()
+
+// Use in multiple parent graphs
+apiGraph.AddSubgraph("auth", authSub)
+adminGraph.AddSubgraph("auth", authSub)
+publicGraph.AddSubgraph("auth", authSub)
+```
+
+### Best Practices
+
+- **Modular design**: Keep subgraphs focused on single responsibilities
+- **State isolation**: Use state mapping to explicitly define data flow
+- **Testing**: Test subgraphs independently before embedding
+- **Avoid deep nesting**: Limit to 2-3 levels for maintainability
+
+**See Also**:
+- `examples/subgraph` - Complete multi-stage pipeline example
+- [Core Concepts: Graphs](/core-concepts/#graphs-and-nodes) - Graph fundamentals
+- API Reference: [`AddSubgraph`](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Builder.AddSubgraph)
 
 ---

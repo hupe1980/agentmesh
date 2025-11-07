@@ -2,22 +2,28 @@
   href: /
 - label: Getting Started
   href: /getting-started/
-- label: Models
-  href: /models/
+- label: Core Concepts
+  href: /core-concepts/
 - label: Agents
   href: /agents/
+- label: Models
+  href: /models/
 - label: Tools
   href: /tools/
-- label: Embeddings
-  href: /embeddings/
-- label: Checkpointing
-  href: /checkpointing/
+- label: State Management
+  href: /state-management/
+- label: Memory & Embeddings
+  href: /memory/
+- label: Agent-to-Agent (A2A)
+  href: /a2a/
 - label: Streaming
   href: /streaming/
-- label: Advanced
-  href: /advanced/
+- label: Callbacks
+  href: /callbacks/
 - label: Observability
   href: /observability/
+- label: Advanced Patterns
+  href: /advanced/
 - label: Architecture
   href: /architecture/
 - label: Resources

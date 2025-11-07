@@ -20,6 +20,8 @@ sidebar:
     url: "#callback-types"
   - title: Basic usage
     url: "#basic-usage"
+  - title: Built-in policies
+    url: "#built-in-policies"
   - title: Use cases
     url: "#use-cases"
   - title: Best practices
@@ -190,6 +192,88 @@ func main() {
     results, _ := compiled.Invoke(ctx, messages)
 }
 ```
+
+---
+
+## Built-in Policies {#built-in-policies}
+
+AgentMesh provides pre-built callback policies in `pkg/callbacks/policies` for common patterns:
+
+### Retry Policy
+
+Automatic retry with exponential backoff for transient failures:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/callbacks/policies"
+
+manager := callbacks.NewManager()
+
+// Configure retry policy
+config := policies.DefaultRetryConfig()
+config.MaxAttempts = 3
+config.InitialDelay = 100 * time.Millisecond
+config.MaxDelay = 5 * time.Second
+config.Retryable = func(err error) bool {
+    // Only retry specific error types
+    return isTransientError(err)
+}
+
+// Register as error callback
+manager.RegisterOnModelError(policies.ExponentialBackoffRetry(config))
+```
+
+### Circuit Breaker Policy
+
+Prevent cascading failures with automatic circuit breaking:
+
+```go
+manager := callbacks.NewManager()
+
+// Configure circuit breaker
+config := policies.DefaultCircuitBreakerConfig()
+config.MaxFailures = 3              // Open after 3 failures
+config.Timeout = 5 * time.Second    // Half-open after 5s
+config.FailureWindow = 1 * time.Minute
+
+// Register all three circuit breaker callbacks
+before, after, onError := policies.CircuitBreaker(config)
+manager.RegisterBeforeModel(before)
+manager.RegisterAfterModel(after)
+manager.RegisterOnModelError(onError)
+```
+
+**Circuit breaker states**:
+- **CLOSED**: Normal operation, requests pass through
+- **OPEN**: Failures threshold reached, reject requests immediately
+- **HALF_OPEN**: Testing recovery, allow limited requests
+
+### Combining Policies
+
+Stack retry and circuit breaker for robust error handling:
+
+```go
+manager := callbacks.NewManager()
+
+// Circuit breaker (registers before/after/error)
+cbConfig := policies.DefaultCircuitBreakerConfig()
+cbBefore, cbAfter, cbError := policies.CircuitBreaker(cbConfig)
+manager.RegisterBeforeModel(cbBefore)
+manager.RegisterAfterModel(cbAfter)
+manager.RegisterOnModelError(cbError)
+
+// Retry policy (registers only error)
+retryConfig := policies.DefaultRetryConfig()
+retryConfig.Retryable = func(err error) bool {
+    // Don't retry if circuit is open
+    if strings.Contains(err.Error(), "circuit breaker open") {
+        return false
+    }
+    return isTransientError(err)
+}
+manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
+```
+
+**Execution order**: BeforeModel → Model → AfterModel → OnModelError (if error occurs)
 
 ---
 
