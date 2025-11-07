@@ -30,6 +30,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
 )
 
@@ -94,7 +95,7 @@ func main() {
 		msgs := s.MessagesSnapshot()
 
 		// Call the model
-		response, err := model.Generate(ctx, msgs)
+		response, err := pkgmodel.Last(model.Generate(ctx, msgs))
 		if err != nil {
 			return nil, err
 		}

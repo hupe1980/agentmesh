@@ -83,7 +83,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			messages := s.MessagesSnapshot()
 
 			// Call the model
-			msg, err := mdl.Generate(ctx, messages)
+			msg, err := model.Last(mdl.Generate(ctx, messages))
 			if err != nil {
 				// Execute OnModelError callbacks
 				if config.callbacks != nil && config.callbacks.HasOnModelErrorCallbacks() {

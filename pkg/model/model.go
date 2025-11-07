@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"iter"
 
 	streamutil "github.com/hupe1980/agentmesh/internal/stream"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -70,15 +71,137 @@ func (s *Stream) Err() error {
 	return s.inner.Err()
 }
 
-// Model defines the contract for language model backends.
+// Model defines the contract for language model backends using Go 1.23+ iterators.
+// The unified Generate method supports both streaming and blocking consumption patterns.
 type Model interface {
-	// Generate performs a blocking request returning the full response message.
-	Generate(ctx context.Context, messages []message.Message) (message.Message, error)
+	// Generate performs a request that yields message chunks as an iterator.
+	// For streaming, iterate over all chunks to get incremental updates.
+	// For blocking, consume only the final message using Last() or similar helpers.
+	//
+	// Streaming usage:
+	//   for msg, err := range model.Generate(ctx, messages) {
+	//       if err != nil { return err }
+	//       fmt.Print(msg.Content) // Process each chunk
+	//   }
+	//
+	// Blocking usage (helper required):
+	//   msg, err := Last(model.Generate(ctx, messages))
+	//   if err != nil { return err }
+	//   fmt.Println(msg.Content) // Process final message only
+	//
+	// The iterator will yield:
+	// - Multiple messages with incremental content (streaming mode)
+	// - A single final message (blocking mode)
+	// - The last yield will contain any error encountered
+	//
+	// Context cancellation is respected and will stop iteration.
+	Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error]
+}
 
-	// Stream performs a streaming request, delivering incremental chunks until
-	// completion or error. Implementations should emit a final chunk with Final
-	// set to true, populate Err when failures occur, and then close the channel.
-	Stream(ctx context.Context, messages []message.Message) (*Stream, error)
+// Last consumes an iterator and returns only the final message and error.
+// This is the standard way to use Generate() in blocking/non-streaming mode.
+//
+// Example:
+//
+//	msg, err := model.Last(model.Generate(ctx, messages))
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Println(msg.Content)
+func Last(seq iter.Seq2[message.Message, error]) (message.Message, error) {
+	var lastMsg message.Message
+	var lastErr error
+
+	for msg, err := range seq {
+		lastMsg = msg
+		if err != nil {
+			lastErr = err
+			break
+		}
+	}
+
+	return lastMsg, lastErr
+}
+
+// Collect gathers all messages from an iterator into a slice.
+// The final error (if any) is returned separately.
+//
+// Example:
+//
+//	messages, err := model.Collect(model.Generate(ctx, messages))
+//	if err != nil {
+//	    return err
+//	}
+//	for _, msg := range messages {
+//	    fmt.Println(msg.Content)
+//	}
+func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
+	var messages []message.Message
+	var lastErr error
+
+	for msg, err := range seq {
+		if err != nil {
+			lastErr = err
+			break
+		}
+		messages = append(messages, msg)
+	}
+
+	return messages, lastErr
+}
+
+// Stream wraps an iterator in the legacy Stream type for backward compatibility.
+// This allows gradual migration from the old Stream API to the new iterator-based API.
+//
+// Deprecated: Use the iterator directly with for-range instead.
+func ToStream(ctx context.Context, seq iter.Seq2[message.Message, error]) *Stream {
+	chunks := make(chan StreamChunk, 1)
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		defer close(chunks)
+		defer cancel()
+
+		var lastErr error
+	loop:
+		for msg, err := range seq {
+			if err != nil {
+				lastErr = err
+				break
+			}
+
+			// Check context
+			select {
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				break loop
+			default:
+			}
+
+			// Extract text from message parts
+			var text string
+			for _, part := range msg.Parts() {
+				if textPart, ok := part.(message.TextPart); ok {
+					text += textPart.Text
+				}
+			}
+
+			chunks <- StreamChunk{
+				Text:    text,
+				Message: msg,
+				Err:     nil,
+				Final:   false,
+			}
+		}
+
+		// Send final chunk
+		chunks <- StreamChunk{
+			Err:   lastErr,
+			Final: true,
+		}
+	}()
+
+	return NewStream(chunks, cancel)
 }
 
 // ToolAware defines models that support tool/function calling.

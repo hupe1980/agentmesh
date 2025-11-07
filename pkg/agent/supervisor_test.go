@@ -14,9 +14,9 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 	worker2, _ := createMockWorker("code expert")
 
 	mockModel := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) (message.Message, error) {
+		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("supervisor response"), nil
-		},
+		}),
 	}
 
 	supervisor, err := NewSupervisorAgent(
@@ -56,9 +56,9 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 
 func TestNewSupervisorAgent_NoWorkers(t *testing.T) {
 	mockModel := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) (message.Message, error) {
+		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
-		},
+		}),
 	}
 
 	_, err := NewSupervisorAgent(mockModel)
@@ -70,9 +70,9 @@ func TestNewSupervisorAgent_NoWorkers(t *testing.T) {
 
 func TestNewSupervisorAgent_NilWorkerAgent(t *testing.T) {
 	mockModel := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) (message.Message, error) {
+		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
-		},
+		}),
 	}
 
 	_, err := NewSupervisorAgent(
@@ -90,9 +90,9 @@ func TestNewSupervisorAgent(t *testing.T) {
 	worker2, _ := createMockWorker("code expert")
 
 	mockModel := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) (message.Message, error) {
+		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("supervisor response"), nil
-		},
+		}),
 	}
 
 	supervisor, err := NewSupervisorAgent(
@@ -148,9 +148,9 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 // createMockWorker creates a simple mock worker agent for testing
 func createMockWorker(expertise string) (*graph.CompiledGraph, error) {
 	mockModel := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) (message.Message, error) {
+		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("worker response: " + expertise), nil
-		},
+		}),
 	}
 
 	return NewReActAgent(mockModel, WithMaxIterations(1))

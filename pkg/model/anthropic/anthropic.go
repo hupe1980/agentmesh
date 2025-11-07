@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -37,25 +38,25 @@ func (c *ClientWrapper) Messages() *anthropic.MessageService {
 
 // Options configures the Anthropic model.
 type Options struct {
-	Model       string
-	MaxTokens   int64
-	Temperature float64
-	APIKey      string
+	model       string
+	maxTokens   int64
+	temperature float64
+	apiKey      string
+	tools       []tool.Tool
 }
 
 // Model implements the model.Model interface for Anthropic Claude.
 type Model struct {
 	client Client
 	opts   Options
-	tools  []tool.Tool
 }
 
 // NewModel creates a new Anthropic model with the given options.
 func NewModel(optFns ...func(o *Options)) *Model {
 	opts := Options{
-		Model:       string(anthropic.ModelClaudeSonnet4_0),
-		MaxTokens:   4096,
-		Temperature: 0.7,
+		model:       string(anthropic.ModelClaudeSonnet4_0),
+		maxTokens:   4096,
+		temperature: 0.7,
 	}
 
 	for _, fn := range optFns {
@@ -63,8 +64,8 @@ func NewModel(optFns ...func(o *Options)) *Model {
 	}
 
 	clientOpts := []option.RequestOption{}
-	if opts.APIKey != "" {
-		clientOpts = append(clientOpts, option.WithAPIKey(opts.APIKey))
+	if opts.apiKey != "" {
+		clientOpts = append(clientOpts, option.WithAPIKey(opts.apiKey))
 	}
 
 	client := anthropic.NewClient(clientOpts...)
@@ -78,9 +79,9 @@ func NewModel(optFns ...func(o *Options)) *Model {
 // NewModelFromClient creates a model from a custom client (for testing).
 func NewModelFromClient(client Client, optFns ...func(o *Options)) *Model {
 	opts := Options{
-		Model:       string(anthropic.ModelClaudeSonnet4_0),
-		MaxTokens:   4096,
-		Temperature: 0.7,
+		model:       string(anthropic.ModelClaudeSonnet4_0),
+		maxTokens:   4096,
+		temperature: 0.7,
 	}
 
 	for _, fn := range optFns {
@@ -93,91 +94,163 @@ func NewModelFromClient(client Client, optFns ...func(o *Options)) *Model {
 	}
 }
 
-// BindTools returns a copy of the model configured with the provided tools.
-func (m *Model) BindTools(tools ...tool.Tool) model.Model {
-	if m == nil {
-		return nil
+// WithModel returns an option function to set the model name.
+func WithModel(modelName string) func(o *Options) {
+	return func(o *Options) {
+		o.model = modelName
 	}
+}
 
-	clone := *m
-	clone.tools = normalizeTools(tools)
+// WithTemperature returns an option function to set the temperature.
+// Temperature controls randomness in the output (0.0 to 1.0).
+func WithTemperature(temperature float64) func(o *Options) {
+	return func(o *Options) {
+		o.temperature = temperature
+	}
+}
 
-	return &clone
+// WithMaxTokens returns an option function to set the maximum output tokens.
+func WithMaxTokens(maxTokens int64) func(o *Options) {
+	return func(o *Options) {
+		o.maxTokens = maxTokens
+	}
+}
+
+// WithAPIKey returns an option function to set the API key.
+func WithAPIKey(apiKey string) func(o *Options) {
+	return func(o *Options) {
+		o.apiKey = apiKey
+	}
+}
+
+// BindTools returns a new model configured with the provided tools.
+func (m *Model) BindTools(tools ...tool.Tool) model.Model {
+	return NewModelFromClient(m.client, func(o *Options) {
+		*o = m.opts
+		o.tools = normalizeTools(tools)
+	})
 }
 
 // Generate executes a message request against the Anthropic API.
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) (message.Message, error) {
-	if len(msgs) == 0 {
-		return nil, fmt.Errorf("generate requires at least one message")
-	}
-
-	converted, systemText, err := convertMessagesToAnthropic(msgs)
-	if err != nil {
-		return nil, err
-	}
-
-	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(m.opts.Model),
-		Messages:  converted,
-		MaxTokens: m.opts.MaxTokens,
-	}
-
-	if systemText != "" {
-		params.System = []anthropic.TextBlockParam{
-			{Text: systemText},
+// Returns an iterator that yields messages as they are received.
+// For streaming, multiple intermediate messages are yielded followed by the final complete message.
+// For non-streaming (blocking), only the final message is yielded.
+func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
+		if len(msgs) == 0 {
+			yield(nil, fmt.Errorf("generate requires at least one message"))
+			return
 		}
-	}
 
-	if m.opts.Temperature > 0 {
-		params.Temperature = param.NewOpt(m.opts.Temperature)
-	}
+		converted, systemText, err := convertMessagesToAnthropic(msgs)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 
-	if len(m.tools) > 0 {
-		params.Tools = convertToolsToAnthropic(m.tools)
-	}
+		params := anthropic.MessageNewParams{
+			Model:     anthropic.Model(m.opts.model),
+			Messages:  converted,
+			MaxTokens: m.opts.maxTokens,
+		}
 
-	response, err := m.client.Messages().New(ctx, params)
-	if err != nil {
-		return nil, err
-	}
+		if systemText != "" {
+			params.System = []anthropic.TextBlockParam{
+				{Text: systemText},
+			}
+		}
 
-	return convertAnthropicResponseToMessage(response)
+		if m.opts.temperature > 0 {
+			params.Temperature = param.NewOpt(m.opts.temperature)
+		}
+
+		if len(m.opts.tools) > 0 {
+			params.Tools = convertToolsToAnthropic(m.opts.tools)
+		}
+
+		// Try streaming first
+		stream := m.client.Messages().NewStreaming(ctx, params)
+		if stream.Err() == nil {
+			// Streaming successful
+			m.streamGenerate(stream, yield)
+			return
+		}
+
+		// Fall back to non-streaming
+		response, err := m.client.Messages().New(ctx, params)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		msg, err := convertAnthropicResponseToMessage(response)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		yield(msg, nil)
+	}
 }
 
-// Stream implements incremental streaming for message generation.
-func (m *Model) Stream(ctx context.Context, msgs []message.Message) (*model.Stream, error) {
-	if len(msgs) == 0 {
-		return nil, fmt.Errorf("stream requires at least one message")
-	}
+// streamGenerate handles streaming responses from Anthropic API
+func (m *Model) streamGenerate(
+	stream *ssestream.Stream[anthropic.MessageStreamEventUnion],
+	yield func(message.Message, error) bool,
+) {
+	defer func() { _ = stream.Close() }() // Best effort close
 
-	converted, systemText, err := convertMessagesToAnthropic(msgs)
-	if err != nil {
-		return nil, err
-	}
+	var textBuffer strings.Builder
+	var toolCalls []message.ToolCall
 
-	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(m.opts.Model),
-		Messages:  converted,
-		MaxTokens: m.opts.MaxTokens,
-	}
+	for stream.Next() {
+		event := stream.Current()
 
-	if systemText != "" {
-		params.System = []anthropic.TextBlockParam{
-			{Text: systemText},
+		switch e := event.AsAny().(type) {
+		case anthropic.ContentBlockDeltaEvent:
+			if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
+				textBuffer.WriteString(delta.Text)
+				aiMsg := message.NewAIMessageFromText(delta.Text)
+				if !yield(aiMsg, nil) {
+					return
+				}
+			}
+
+		case anthropic.ContentBlockStartEvent:
+			if toolUse, ok := e.ContentBlock.AsAny().(anthropic.ToolUseBlock); ok {
+				var inputMap map[string]any
+				if err := json.Unmarshal([]byte(toolUse.JSON.Input.Raw()), &inputMap); err == nil {
+					toolCalls = append(toolCalls, message.ToolCall{
+						ID:        toolUse.ID,
+						Name:      toolUse.Name,
+						Type:      "function",
+						Arguments: inputMap,
+					})
+				}
+			}
+
+		case anthropic.MessageStopEvent:
+			// Send final message with accumulated content
+			var parts message.Parts
+			if textBuffer.Len() > 0 {
+				parts = message.Parts{message.NewTextPart(textBuffer.String())}
+			}
+
+			finalMsg := message.NewAIMessage(parts)
+			if len(toolCalls) > 0 {
+				finalMsg.ToolCalls = toolCalls
+			}
+
+			if len(parts) > 0 || len(toolCalls) > 0 {
+				yield(finalMsg, nil)
+			}
+			return
 		}
 	}
 
-	if m.opts.Temperature > 0 {
-		params.Temperature = param.NewOpt(m.opts.Temperature)
+	if err := stream.Err(); err != nil {
+		yield(nil, err)
 	}
-
-	if len(m.tools) > 0 {
-		params.Tools = convertToolsToAnthropic(m.tools)
-	}
-
-	stream := m.client.Messages().NewStreaming(ctx, params)
-
-	return newStreamFromAnthropic(stream), nil
 }
 
 // Helper functions
@@ -333,56 +406,6 @@ func convertAnthropicResponseToMessage(resp *anthropic.Message) (message.Message
 	}
 
 	return aiMsg, nil
-}
-
-func newStreamFromAnthropic(stream *ssestream.Stream[anthropic.MessageStreamEventUnion]) *model.Stream {
-	chunks := make(chan model.StreamChunk)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		defer close(chunks)
-		defer func() { _ = stream.Close() }() // Best effort close
-
-		var textBuffer strings.Builder
-
-		for stream.Next() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			event := stream.Current()
-
-			switch e := event.AsAny().(type) {
-			case anthropic.ContentBlockDeltaEvent:
-				if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
-					textBuffer.WriteString(delta.Text)
-					chunks <- model.StreamChunk{
-						Text: delta.Text,
-					}
-				}
-			case anthropic.MessageStopEvent:
-				if textBuffer.Len() > 0 {
-					chunks <- model.StreamChunk{
-						Text:  textBuffer.String(),
-						Final: true,
-					}
-				}
-				return
-			}
-		}
-
-		if err := stream.Err(); err != nil {
-			chunks <- model.StreamChunk{
-				Err:   err,
-				Final: true,
-			}
-		}
-	}()
-
-	return model.NewStream(chunks, cancel)
 }
 
 // Compile-time interface checks

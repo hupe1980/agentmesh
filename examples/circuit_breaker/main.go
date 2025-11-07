@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"iter"
 	"log"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/callbacks/policies"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
 // FlakyModel simulates an unreliable external service
@@ -19,33 +19,22 @@ type FlakyModel struct {
 	callCount int
 }
 
-func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) (message.Message, error) {
-	m.callCount++
+func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
+		m.callCount++
 
-	// Simulate service behavior:
-	// Calls 1-5: Fail (circuit opens after 3)
-	// Calls 6+: Success (circuit recovers)
-	if m.callCount <= 5 {
-		log.Printf("[Call %d] ❌ Service failing", m.callCount)
-		return nil, fmt.Errorf("service unavailable (call %d)", m.callCount)
+		// Simulate service behavior:
+		// Calls 1-5: Fail (circuit opens after 3)
+		// Calls 6+: Success (circuit recovers)
+		if m.callCount <= 5 {
+			log.Printf("[Call %d] ❌ Service failing", m.callCount)
+			yield(nil, fmt.Errorf("service unavailable (call %d)", m.callCount))
+			return
+		}
+
+		log.Printf("[Call %d] ✓ Service success", m.callCount)
+		yield(message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)), nil)
 	}
-
-	log.Printf("[Call %d] ✓ Service success", m.callCount)
-	return message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)), nil
-}
-
-func (m *FlakyModel) Stream(ctx context.Context, messages []message.Message) (*model.Stream, error) {
-	// Streaming not implemented for this example - just return message as single chunk
-	msg, err := m.Generate(ctx, messages)
-	if err != nil {
-		return nil, err
-	}
-
-	chunks := make(chan model.StreamChunk, 1)
-	chunks <- model.StreamChunk{Message: msg}
-	close(chunks)
-
-	return model.NewStream(chunks, nil), nil
 }
 
 func main() {

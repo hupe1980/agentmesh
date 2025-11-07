@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"sort"
 	"strings"
 
@@ -55,17 +56,17 @@ func (c *ClientWrapper) ChatCompletionsStreaming(ctx context.Context, req openai
 }
 
 type Options struct {
-	Model               string
-	Temperature         float64
-	MaxCompletionTokens int64
+	model               string
+	temperature         float64
+	maxCompletionTokens int64
+	tools               []tool.Tool
+	responseFormat      map[string]any // JSON schema for structured output
 }
 
 type Model struct {
-	client         Client
-	model          string
-	opts           Options
-	tools          []tool.Tool
-	responseFormat map[string]any // JSON schema for structured output
+	client Client
+	model  string
+	opts   Options
 }
 
 func NewModel(optFns ...func(o *Options)) *Model {
@@ -79,16 +80,16 @@ func NewModelFromClient(client *openai.Client, optFns ...func(o *Options)) *Mode
 
 func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options)) *Model {
 	opts := Options{
-		Model:               openai.ChatModelGPT4oMini,
-		Temperature:         0.7,
-		MaxCompletionTokens: 4096,
+		model:               openai.ChatModelGPT4oMini,
+		temperature:         0.7,
+		maxCompletionTokens: 4096,
 	}
 
 	for _, fn := range optFns {
 		fn(&opts)
 	}
 
-	modelName := opts.Model
+	modelName := opts.model
 	if modelName == "" {
 		modelName = openai.ChatModelGPT4oMini
 	}
@@ -96,32 +97,43 @@ func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options
 	return &Model{client: wrapper, model: modelName, opts: opts}
 }
 
-// BindTools returns a copy of the model configured with the provided tools.
-func (m *Model) BindTools(tools ...tool.Tool) model.Model {
-	if m == nil {
-		return nil
+// WithModel returns a new model configured to use the specified model name.
+func WithModel(modelName string) func(o *Options) {
+	return func(o *Options) {
+		o.model = modelName
 	}
-
-	clone := *m
-	clone.opts = m.opts
-	clone.tools = normalizeTools(tools)
-
-	return &clone
 }
 
-// WithStructuredOutput returns a copy of the model configured to generate
+// WithTemperature returns a new model with the specified temperature.
+// Temperature controls randomness in the output (0.0 to 2.0).
+func WithTemperature(temperature float64) func(o *Options) {
+	return func(o *Options) {
+		o.temperature = temperature
+	}
+}
+
+// WithMaxCompletionTokens returns a new model with the specified maximum completion tokens.
+func WithMaxCompletionTokens(maxTokens int64) func(o *Options) {
+	return func(o *Options) {
+		o.maxCompletionTokens = maxTokens
+	}
+}
+
+// BindTools returns a new model configured with the provided tools.
+func (m *Model) BindTools(tools ...tool.Tool) model.Model {
+	return NewModelFromClientWrapper(m.client.(*ClientWrapper), func(o *Options) {
+		*o = m.opts
+		o.tools = normalizeTools(tools)
+	})
+}
+
+// WithStructuredOutput returns a new model configured to generate
 // structured JSON output conforming to the provided schema.
 func (m *Model) WithStructuredOutput(schema map[string]any) model.Model {
-	if m == nil {
-		return nil
-	}
-
-	clone := *m
-	clone.opts = m.opts
-	clone.tools = m.tools
-	clone.responseFormat = schema
-
-	return &clone
+	return NewModelFromClientWrapper(m.client.(*ClientWrapper), func(o *Options) {
+		*o = m.opts
+		o.responseFormat = schema
+	})
 }
 
 // Name returns the configured OpenAI model identifier.
@@ -130,223 +142,218 @@ func (m *Model) Name() string {
 }
 
 // Generate executes a chat completion request against the OpenAI API.
+// Returns an iterator that yields messages as they are received.
+// For streaming, multiple intermediate messages are yielded followed by the final complete message.
+// For non-streaming (blocking), only the final message is yielded.
 //
 //nolint:gocyclo // Generation requires handling many message and response types
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) (message.Message, error) {
-	if len(msgs) == 0 {
-		return nil, fmt.Errorf("generate requires at least one message")
-	}
-
-	converted, err := convertMessagesToOpenAI(msgs)
-	if err != nil {
-		return nil, err
-	}
-
-	params := openai.ChatCompletionNewParams{
-		Model:    m.model,
-		Messages: converted,
-	}
-
-	if err := m.applyOptions(&params); err != nil {
-		return nil, err
-	}
-
-	completion, err := m.client.ChatCompletions(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	if completion == nil || len(completion.Choices) == 0 {
-		return nil, fmt.Errorf("openai chat completion returned no choices")
-	}
-
-	choice := completion.Choices[0]
-	text := strings.TrimSpace(choice.Message.Content)
-	if text == "" {
-		text = strings.TrimSpace(choice.Message.Refusal)
-	}
-
-	var parts message.Parts
-	if text != "" {
-		parts = message.Parts{message.NewTextPart(text)}
-	}
-
-	aiMessage := message.NewAIMessage(parts)
-
-	if len(choice.Message.ToolCalls) > 0 {
-		toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
-		for idx := range choice.Message.ToolCalls {
-			if choice.Message.ToolCalls[idx].Type != "function" {
-				continue
-			}
-			fn := choice.Message.ToolCalls[idx].AsFunction()
-			var args map[string]any
-			if fn.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(fn.Function.Arguments), &args); err != nil {
-					return nil, fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err)
-				}
-			}
-			toolCalls = append(toolCalls, message.ToolCall{
-				ID:        fn.ID,
-				Name:      fn.Function.Name,
-				Type:      string(fn.Type),
-				Arguments: args,
-			})
-		}
-		if len(toolCalls) > 0 {
-			aiMessage.ToolCalls = toolCalls
-		}
-	}
-
-	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-		return nil, fmt.Errorf("openai chat completion returned empty message")
-	}
-
-	return aiMessage, nil
-}
-
-// Stream implements incremental streaming for chat completions.
-//
-//nolint:gocyclo // Streaming requires handling many delta types and states
-func (m *Model) Stream(ctx context.Context, msgs []message.Message) (*model.Stream, error) {
-	if len(msgs) == 0 {
-		return nil, fmt.Errorf("stream requires at least one message")
-	}
-
-	converted, err := convertMessagesToOpenAI(msgs)
-	if err != nil {
-		return nil, err
-	}
-
-	params := openai.ChatCompletionNewParams{
-		Model:    m.model,
-		Messages: converted,
-	}
-
-	if err := m.applyOptions(&params); err != nil {
-		return nil, err
-	}
-
-	streamCtx, cancel := context.WithCancel(ctx)
-
-	apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
-	if err := apiStream.Err(); err != nil {
-		cancel()
-		return nil, err
-	}
-
-	chunkCh := make(chan model.StreamChunk)
-
-	go func() {
-		defer close(chunkCh)
-		defer cancel()
-		defer func() { _ = apiStream.Close() }() // Best effort close
-
-		type toolCallAccumulator struct {
-			id        string
-			typ       string
-			name      strings.Builder
-			arguments strings.Builder
-		}
-
-		textBuilder := &strings.Builder{}
-		toolCalls := make(map[int64]*toolCallAccumulator)
-
-		flushError := func(err error) {
-			chunkCh <- model.StreamChunk{Err: err, Final: true}
-		}
-
-		for apiStream.Next() {
-			chunk := apiStream.Current()
-			if len(chunk.Choices) == 0 {
-				continue
-			}
-			choice := chunk.Choices[0]
-			delta := choice.Delta
-
-			if delta.Content != "" {
-				textBuilder.WriteString(delta.Content)
-				aiMessage := message.NewAIMessageFromText(delta.Content)
-				chunkCh <- model.StreamChunk{Text: delta.Content, Message: aiMessage}
-			}
-
-			if delta.Refusal != "" {
-				textBuilder.WriteString(delta.Refusal)
-				aiMessage := message.NewAIMessageFromText(delta.Refusal)
-				chunkCh <- model.StreamChunk{Text: delta.Refusal, Message: aiMessage}
-			}
-
-			if len(delta.ToolCalls) > 0 {
-				for i := range delta.ToolCalls {
-					tc := &delta.ToolCalls[i]
-					acc, ok := toolCalls[tc.Index]
-					if !ok {
-						acc = &toolCallAccumulator{}
-						toolCalls[tc.Index] = acc
-					}
-					if tc.ID != "" {
-						acc.id = tc.ID
-					}
-					if tc.Type != "" {
-						acc.typ = tc.Type
-					}
-					if name := tc.Function.Name; name != "" {
-						acc.name.WriteString(name)
-					}
-					if args := tc.Function.Arguments; args != "" {
-						acc.arguments.WriteString(args)
-					}
-				}
-			}
-		}
-
-		if err := apiStream.Err(); err != nil {
-			flushError(err)
+func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
+		if len(msgs) == 0 {
+			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
 		}
 
-		finalText := strings.TrimSpace(textBuilder.String())
+		converted, err := convertMessagesToOpenAI(msgs)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		params := openai.ChatCompletionNewParams{
+			Model:    m.model,
+			Messages: converted,
+		}
+
+		if err := m.applyOptions(&params); err != nil {
+			yield(nil, err)
+			return
+		}
+
+		// Try streaming first
+		streamCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
+		if apiStream.Err() == nil {
+			// Streaming successful
+			m.streamGenerate(apiStream, yield, cancel)
+			return
+		}
+
+		// Fall back to non-streaming
+		completion, err := m.client.ChatCompletions(ctx, params)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if completion == nil || len(completion.Choices) == 0 {
+			yield(nil, fmt.Errorf("openai chat completion returned no choices"))
+			return
+		}
+
+		choice := completion.Choices[0]
+		text := strings.TrimSpace(choice.Message.Content)
+		if text == "" {
+			text = strings.TrimSpace(choice.Message.Refusal)
+		}
+
 		var parts message.Parts
-		if finalText != "" {
-			parts = message.Parts{message.NewTextPart(finalText)}
+		if text != "" {
+			parts = message.Parts{message.NewTextPart(text)}
 		}
 
 		aiMessage := message.NewAIMessage(parts)
 
-		if len(toolCalls) > 0 {
-			indices := make([]int, 0, len(toolCalls))
-			for idx := range toolCalls {
-				indices = append(indices, int(idx))
-			}
-			sort.Ints(indices)
-
-			for _, idx := range indices {
-				acc := toolCalls[int64(idx)]
-				argsRaw := strings.TrimSpace(acc.arguments.String())
+		if len(choice.Message.ToolCalls) > 0 {
+			toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
+			for idx := range choice.Message.ToolCalls {
+				if choice.Message.ToolCalls[idx].Type != "function" {
+					continue
+				}
+				fn := choice.Message.ToolCalls[idx].AsFunction()
 				var args map[string]any
-				if argsRaw != "" {
-					if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
-						flushError(fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err))
+				if fn.Function.Arguments != "" {
+					if err := json.Unmarshal([]byte(fn.Function.Arguments), &args); err != nil {
+						yield(nil, fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err))
 						return
 					}
 				}
-				aiMessage.ToolCalls = append(aiMessage.ToolCalls, message.ToolCall{
-					ID:        acc.id,
-					Name:      acc.name.String(),
-					Type:      acc.typ,
+				toolCalls = append(toolCalls, message.ToolCall{
+					ID:        fn.ID,
+					Name:      fn.Function.Name,
+					Type:      string(fn.Type),
 					Arguments: args,
 				})
+			}
+			if len(toolCalls) > 0 {
+				aiMessage.ToolCalls = toolCalls
 			}
 		}
 
 		if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-			flushError(fmt.Errorf("openai chat completion returned empty message"))
+			yield(nil, fmt.Errorf("openai chat completion returned empty message"))
 			return
 		}
 
-		chunkCh <- model.StreamChunk{Message: aiMessage, Final: true}
-	}()
+		yield(aiMessage, nil)
+	}
+}
 
-	return model.NewStream(chunkCh, cancel), nil
+// streamGenerate handles streaming responses from OpenAI API
+//
+//nolint:gocyclo // Streaming requires handling many delta types and states
+func (m *Model) streamGenerate(
+	apiStream Stream,
+	yield func(message.Message, error) bool,
+	cancel context.CancelFunc,
+) {
+	defer cancel()
+	defer func() { _ = apiStream.Close() }() // Best effort close
+
+	type toolCallAccumulator struct {
+		id        string
+		typ       string
+		name      strings.Builder
+		arguments strings.Builder
+	}
+
+	textBuilder := &strings.Builder{}
+	toolCalls := make(map[int64]*toolCallAccumulator)
+
+	for apiStream.Next() {
+		chunk := apiStream.Current()
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		choice := chunk.Choices[0]
+		delta := choice.Delta
+
+		if delta.Content != "" {
+			textBuilder.WriteString(delta.Content)
+			aiMessage := message.NewAIMessageFromText(delta.Content)
+			if !yield(aiMessage, nil) {
+				return
+			}
+		}
+
+		if delta.Refusal != "" {
+			textBuilder.WriteString(delta.Refusal)
+			aiMessage := message.NewAIMessageFromText(delta.Refusal)
+			if !yield(aiMessage, nil) {
+				return
+			}
+		}
+
+		if len(delta.ToolCalls) > 0 {
+			for i := range delta.ToolCalls {
+				tc := &delta.ToolCalls[i]
+				acc, ok := toolCalls[tc.Index]
+				if !ok {
+					acc = &toolCallAccumulator{}
+					toolCalls[tc.Index] = acc
+				}
+				if tc.ID != "" {
+					acc.id = tc.ID
+				}
+				if tc.Type != "" {
+					acc.typ = tc.Type
+				}
+				if name := tc.Function.Name; name != "" {
+					acc.name.WriteString(name)
+				}
+				if args := tc.Function.Arguments; args != "" {
+					acc.arguments.WriteString(args)
+				}
+			}
+		}
+	}
+
+	if err := apiStream.Err(); err != nil {
+		yield(nil, err)
+		return
+	}
+
+	finalText := strings.TrimSpace(textBuilder.String())
+	var parts message.Parts
+	if finalText != "" {
+		parts = message.Parts{message.NewTextPart(finalText)}
+	}
+
+	aiMessage := message.NewAIMessage(parts)
+
+	if len(toolCalls) > 0 {
+		indices := make([]int, 0, len(toolCalls))
+		for idx := range toolCalls {
+			indices = append(indices, int(idx))
+		}
+		sort.Ints(indices)
+
+		for _, idx := range indices {
+			acc := toolCalls[int64(idx)]
+			argsRaw := strings.TrimSpace(acc.arguments.String())
+			var args map[string]any
+			if argsRaw != "" {
+				if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+					yield(nil, fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err))
+					return
+				}
+			}
+			aiMessage.ToolCalls = append(aiMessage.ToolCalls, message.ToolCall{
+				ID:        acc.id,
+				Name:      acc.name.String(),
+				Type:      acc.typ,
+				Arguments: args,
+			})
+		}
+	}
+
+	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
+		yield(nil, fmt.Errorf("openai chat completion returned empty message"))
+		return
+	}
+
+	yield(aiMessage, nil)
 }
 
 func (m *Model) applyOptions(params *openai.ChatCompletionNewParams) error {
@@ -354,28 +361,28 @@ func (m *Model) applyOptions(params *openai.ChatCompletionNewParams) error {
 		return nil
 	}
 
-	params.Temperature = param.NewOpt(m.opts.Temperature)
-	params.MaxCompletionTokens = param.NewOpt(m.opts.MaxCompletionTokens)
+	params.Temperature = param.NewOpt(m.opts.temperature)
+	params.MaxCompletionTokens = param.NewOpt(m.opts.maxCompletionTokens)
 
 	// Apply structured output if configured
-	if m.responseFormat != nil {
+	if m.opts.responseFormat != nil {
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
 				Type: "json_schema",
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
 					Name:   "response",
-					Schema: m.responseFormat,
+					Schema: m.opts.responseFormat,
 					Strict: param.NewOpt(true),
 				},
 			},
 		}
 	}
 
-	if len(m.tools) == 0 {
+	if len(m.opts.tools) == 0 {
 		return nil
 	}
 
-	converted, err := convertTools(m.tools)
+	converted, err := convertTools(m.opts.tools)
 	if err != nil {
 		return err
 	}

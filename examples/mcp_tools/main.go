@@ -83,9 +83,9 @@ func main() {
 
 	// 3. Create a ReAct agent with the MCP toolset
 	//    The toolset will dynamically discover the "sum" tool from the MCP server
-	model := openai.NewModel(func(o *openai.Options) {
-		o.Temperature = 0
-	})
+	model := openai.NewModel(
+		openai.WithTemperature(0),
+	)
 
 	reactAgent, err := agent.NewReActAgent(
 		model,
