@@ -238,6 +238,14 @@ func (gr *graphRuntime) run() error {
 	if gr.cg != nil {
 		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
 	}
+
+	// Transfer final aggregates to graph state
+	if err == nil || errors.Is(err, context.Canceled) {
+		if aggregates := gr.engine.Aggregates(); len(aggregates) > 0 {
+			gr.cg.stateManager.SetAggregates(aggregates)
+		}
+	}
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		gr.fail(err)
 	}
@@ -490,14 +498,19 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		// No retry policy or only single attempt
 		result, err := n.node.Run(ctx, state)
 
-		// Check if timeout occurred
+		// Check if timeout occurred - always wrap DeadlineExceeded
 		if err != nil && errors.Is(err, context.DeadlineExceeded) {
+			timeout := int64(0)
 			if deadline, ok := ctx.Deadline(); ok {
-				return nil, &NodeTimeoutError{
-					Node:    n.name,
-					Timeout: int64(time.Since(deadline.Add(-time.Until(deadline))) / time.Millisecond),
-					Cause:   err,
+				elapsed := time.Since(deadline)
+				if elapsed > 0 {
+					timeout = int64(elapsed / time.Millisecond)
 				}
+			}
+			return nil, &NodeTimeoutError{
+				Node:    n.name,
+				Timeout: timeout,
+				Cause:   err,
 			}
 		}
 
@@ -552,8 +565,23 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 
 		// Call OnRetry hook before sleeping
 		// Check context before sleeping
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		if err := ctx.Err(); err != nil {
+			// Wrap timeout errors
+			if errors.Is(err, context.DeadlineExceeded) {
+				timeout := int64(0)
+				if deadline, ok := ctx.Deadline(); ok {
+					elapsed := time.Since(deadline)
+					if elapsed > 0 {
+						timeout = int64(elapsed / time.Millisecond)
+					}
+				}
+				return nil, &NodeTimeoutError{
+					Node:    n.name,
+					Timeout: timeout,
+					Cause:   err,
+				}
+			}
+			return nil, err
 		}
 
 		// Wait before next attempt
@@ -572,10 +600,42 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				err := ctx.Err()
+				// Wrap timeout errors
+				if errors.Is(err, context.DeadlineExceeded) {
+					timeout := int64(0)
+					if deadline, ok := ctx.Deadline(); ok {
+						elapsed := time.Since(deadline)
+						if elapsed > 0 {
+							timeout = int64(elapsed / time.Millisecond)
+						}
+					}
+					return nil, &NodeTimeoutError{
+						Node:    n.name,
+						Timeout: timeout,
+						Cause:   err,
+					}
+				}
+				return nil, err
 			case <-time.After(backoff):
 				// Continue to next attempt
 			}
+		}
+	}
+
+	// Check if we exited the loop due to timeout
+	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		timeout := int64(0)
+		if deadline, ok := ctx.Deadline(); ok {
+			elapsed := time.Since(deadline)
+			if elapsed > 0 {
+				timeout = int64(elapsed / time.Millisecond)
+			}
+		}
+		return nil, &NodeTimeoutError{
+			Node:    n.name,
+			Timeout: timeout,
+			Cause:   ctx.Err(),
 		}
 	}
 

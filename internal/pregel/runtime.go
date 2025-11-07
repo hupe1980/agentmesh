@@ -177,6 +177,12 @@ func (r *Runtime[S, M]) snapshotAggregates() map[string]any {
 	return snapshot
 }
 
+// Aggregates returns a snapshot of the current aggregated values.
+// This is typically called after Run() completes to retrieve final aggregates.
+func (r *Runtime[S, M]) Aggregates() map[string]any {
+	return r.snapshotAggregates()
+}
+
 func (r *Runtime[S, M]) recordAggregation(name string, value any) error {
 	if len(r.aggregators) == 0 {
 		return fmt.Errorf("%w", ErrAggregatorsNotConfigured)
@@ -213,10 +219,14 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 	for name, agg := range r.aggregators {
 		next := r.nextAggregates[name]
 		if next == nil {
-			next = agg.Zero()
+			// No aggregation in this superstep - preserve previous value
+			next = r.aggregates[name]
+			if next == nil {
+				next = agg.Zero()
+			}
 		}
 		r.aggregates[name] = next
-		r.nextAggregates[name] = agg.Zero()
+		r.nextAggregates[name] = nil // Reset for next superstep
 	}
 }
 
@@ -252,9 +262,8 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 		frontier = r.consumeNextFrontier()
 	}
 
-	// Always check context error at the end, even if graph completed normally.
-	// This ensures we return the context error if it was cancelled during the last superstep.
-	return ctx.Err()
+	// Return nil on successful completion (don't return ctx.Err() which might be non-nil)
+	return nil
 }
 
 func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
@@ -373,9 +382,7 @@ schedule:
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	// Don't check ctx.Err() here - let the node handle it and wrap appropriately
 	node := r.graph.NodeByName(name)
 	if node == nil {
 		err := fmt.Errorf("superstep %d: node %q: %w", superstep, name, ErrUnknownNode)

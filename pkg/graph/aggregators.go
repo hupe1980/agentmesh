@@ -289,3 +289,120 @@ func (a *StringConcatAggregator) Aggregate(current, value any) any {
 
 	return curStr + sep + newStr
 }
+
+// AvgAggregator computes the average (mean) of numeric values across all nodes.
+// Uses Welford's online algorithm for numerical stability.
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	    "avg_latency": &AvgAggregator{},
+//	}))
+//
+//	// In node:
+//	s.Aggregate("avg_latency", responseTime)
+//
+//	// Check after superstep:
+//	avgLatency := s.AggregatesSnapshot()["avg_latency"].(float64)
+type AvgAggregator struct{}
+
+// avgState tracks running mean and count
+type avgState struct {
+	Mean  float64
+	Count int64
+}
+
+func (a *AvgAggregator) Zero() any {
+	return avgState{Mean: 0, Count: 0}
+}
+
+func (a *AvgAggregator) Aggregate(current, value any) any {
+	state, ok := current.(avgState)
+	if !ok {
+		state = avgState{Mean: 0, Count: 0}
+	}
+
+	// Convert value to float64
+	var val float64
+	switch v := value.(type) {
+	case int:
+		val = float64(v)
+	case int32:
+		val = float64(v)
+	case int64:
+		val = float64(v)
+	case float64:
+		val = v
+	case float32:
+		val = float64(v)
+	default:
+		return state // Ignore invalid values
+	}
+
+	// Welford's online algorithm for numerical stability
+	state.Count++
+	delta := val - state.Mean
+	state.Mean += delta / float64(state.Count)
+
+	return state
+}
+
+// VarianceAggregator computes the variance of numeric values across all nodes.
+// Uses Welford's online algorithm for numerical stability.
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	    "variance_latency": &VarianceAggregator{},
+//	}))
+//
+//	// In node:
+//	s.Aggregate("variance_latency", responseTime)
+//
+//	// Check after superstep:
+//	variance := s.AggregatesSnapshot()["variance_latency"].(float64)
+type VarianceAggregator struct{}
+
+// varianceState tracks running variance calculation
+type varianceState struct {
+	Mean  float64
+	M2    float64 // Sum of squared differences from mean
+	Count int64
+}
+
+func (a *VarianceAggregator) Zero() any {
+	return varianceState{Mean: 0, M2: 0, Count: 0}
+}
+
+func (a *VarianceAggregator) Aggregate(current, value any) any {
+	state, ok := current.(varianceState)
+	if !ok {
+		state = varianceState{Mean: 0, M2: 0, Count: 0}
+	}
+
+	// Convert value to float64
+	var val float64
+	switch v := value.(type) {
+	case int:
+		val = float64(v)
+	case int32:
+		val = float64(v)
+	case int64:
+		val = float64(v)
+	case float64:
+		val = v
+	case float32:
+		val = float64(v)
+	default:
+		return state // Ignore invalid values
+	}
+
+	// Welford's online algorithm
+	state.Count++
+	delta := val - state.Mean
+	state.Mean += delta / float64(state.Count)
+	delta2 := val - state.Mean
+	state.M2 += delta * delta2
+
+	return state
+}

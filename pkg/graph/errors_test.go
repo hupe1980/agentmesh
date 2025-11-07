@@ -161,13 +161,17 @@ func TestNodeTimeoutError(t *testing.T) {
 		err := g.AddNode(&Node{
 			Name: "slow-node",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
-				// Simulate work that takes longer than timeout
-				select {
-				case <-time.After(2 * time.Second):
-					return &NodeResult{}, nil
-				case <-ctx.Done():
-					return nil, ctx.Err()
+				// Do work that takes longer than the timeout (100ms)
+				// Sleep for 500ms total, checking context every 50ms
+				for i := 0; i < 10; i++ { // 10 * 50ms = 500ms total
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(50 * time.Millisecond):
+						// Continue working
+					}
 				}
+				return &NodeResult{}, nil
 			},
 		})
 		require.NoError(t, err)
@@ -178,7 +182,7 @@ func TestNodeTimeoutError(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		// Set a short timeout
+		// Set timeout shorter than node execution time (100ms < 300ms)
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
@@ -186,20 +190,20 @@ func TestNodeTimeoutError(t *testing.T) {
 		_, err = compiled.Invoke(ctx, nil)
 		duration := time.Since(start)
 
-		// Should timeout quickly
-		require.Error(t, err)
+		// Should timeout
+		require.Error(t, err, "node should timeout before completing")
 
-		// Check for timeout-related error
+		// Should timeout quickly (not wait for full 300ms)
+		assert.Less(t, duration, 200*time.Millisecond,
+			"should timeout quickly, not wait for full node execution")
+
+		// Check error is properly wrapped
 		var timeoutErr *NodeTimeoutError
-		require.ErrorAs(t, err, &timeoutErr, "expected NodeTimeoutError")
+		require.ErrorAs(t, err, &timeoutErr, "expected NodeTimeoutError, got: %v", err)
 		assert.Equal(t, "slow-node", timeoutErr.Node)
 		assert.Contains(t, timeoutErr.Error(), "slow-node")
 		assert.Contains(t, timeoutErr.Error(), "timeout")
 		assert.ErrorIs(t, timeoutErr, context.DeadlineExceeded)
-
-		// Should complete quickly due to context cancellation
-		assert.Less(t, duration, 500*time.Millisecond,
-			"timeout enforcement should complete in < 500ms")
 	})
 
 	t.Run("timeout_error_unwraps", func(t *testing.T) {

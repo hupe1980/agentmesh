@@ -242,6 +242,8 @@ Aggregators are a core concept in the Bulk Synchronous Parallel (BSP) model that
 
 ### Built-in Aggregators
 
+AgentMesh provides several built-in aggregators for common use cases:
+
 #### SumAggregator
 
 Accumulates numeric values across all node contributions:
@@ -249,30 +251,158 @@ Accumulates numeric values across all node contributions:
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Create graph with sum aggregator
 compiled, err := builder.Compile(
     graph.WithAggregators(map[string]graph.Aggregator{
         "total_processed": &graph.SumAggregator{},
     }),
 )
+```
 
-// In nodes: contribute to the aggregate
+**Returns**: `float64` - Sum of all contributed values
+
+#### MinAggregator
+
+Tracks the minimum value across all nodes:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "min_cost": &graph.MinAggregator{},
+    }),
+)
+```
+
+**Returns**: `float64` - Minimum value observed
+
+#### MaxAggregator
+
+Tracks the maximum value across all nodes:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "max_priority": &graph.MaxAggregator{},
+    }),
+)
+```
+
+**Returns**: `float64` - Maximum value observed
+
+#### AvgAggregator
+
+Computes the running average of numeric values using Welford's algorithm for numerical stability:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "avg_latency": &graph.AvgAggregator{},
+    }),
+)
+
+// In node
+s.Aggregate("avg_latency", responseTime)
+
+// Read result
+snap := s.AggregatesSnapshot()
+avgState := snap["avg_latency"].(graph.avgState)
+average := avgState.Mean
+count := avgState.Count
+```
+
+**Returns**: `avgState{Mean: float64, Count: int64}` - Running mean and sample count
+
+#### VarianceAggregator
+
+Computes the variance of numeric values using Welford's algorithm:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "latency_variance": &graph.VarianceAggregator{},
+    }),
+)
+
+// In node
+s.Aggregate("latency_variance", responseTime)
+
+// Read result
+snap := s.AggregatesSnapshot()
+varState := snap["latency_variance"].(graph.varianceState)
+variance := varState.M2 / float64(varState.Count)
+stdDev := math.Sqrt(variance)
+```
+
+**Returns**: `varianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
+
+#### CountAggregator
+
+Counts non-nil contributions:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "active_nodes": &graph.CountAggregator{},
+    }),
+)
+
+// In node
+s.Aggregate("active_nodes", true) // Any non-nil value increments
+```
+
+**Returns**: `int` - Total count
+
+#### AllTrueAggregator / AnyTrueAggregator
+
+Boolean aggregators for convergence detection and monitoring:
+
+```go
+compiled, err := builder.Compile(
+    graph.WithAggregators(map[string]graph.Aggregator{
+        "all_converged": &graph.AllTrueAggregator{},
+        "has_errors":    &graph.AnyTrueAggregator{},
+    }),
+)
+
+// Check after superstep
+if snap["all_converged"].(bool) {
+    // All nodes converged, can terminate early
+}
+```
+
+**Returns**: `bool` - Logical AND (AllTrue) or OR (AnyTrue)
+
+### Using Aggregators in Nodes
+
+Nodes contribute to aggregators and read results from previous supersteps:
+
+### Using Aggregators in Nodes
+
+Nodes contribute to aggregators and read results from previous supersteps:
+
+```go
 node := &graph.Node{
     Name: "processor",
     RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
         // Process some items
         itemsProcessed := 42
+        latency := 150.0
         
-        // Contribute to global sum
+        // Contribute to multiple aggregates
         if err := s.Aggregate("total_processed", itemsProcessed); err != nil {
             return nil, err
         }
+        if err := s.Aggregate("avg_latency", latency); err != nil {
+            return nil, err
+        }
         
-        // Read aggregate from previous superstep
+        // Read aggregates from previous superstep
         snap := s.AggregatesSnapshot()
         if snap != nil {
             if total, ok := snap["total_processed"].(float64); ok {
                 log.Printf("Total items processed so far: %.0f", total)
+            }
+            if avgState, ok := snap["avg_latency"].(graph.avgState); ok {
+                log.Printf("Average latency: %.2fms (n=%d)", avgState.Mean, avgState.Count)
             }
         }
         
@@ -283,8 +413,9 @@ node := &graph.Node{
 
 **Use cases**:
 - Count total messages processed
-- Track cumulative errors
-- Calculate global metrics (sum, average via custom aggregator)
+- Track cumulative errors  
+- Calculate global statistics (mean, variance, min/max)
+- Monitor convergence criteria
 
 ### Custom Aggregators
 
@@ -292,64 +423,80 @@ Implement the `Aggregator` interface for custom reduction logic:
 
 ```go
 type Aggregator interface {
-    // Aggregate combines multiple contributions into a single value
-    // Called with accumulated value and slice of new contributions
-    Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error)
+    Zero() any
+    Aggregate(current, value any) any
 }
 ```
 
-#### Example: Max Aggregator
+#### Example: Median Aggregator
 
-Track the maximum value across all nodes:
+Track values to compute median:
 
 ```go
-type MaxAggregator struct{}
+type MedianAggregator struct{}
 
-func (a *MaxAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
-    var max float64
-    if accumulated != nil {
-        max = accumulated.(float64)
+type medianState struct {
+    Values []float64
+}
+
+func (a *MedianAggregator) Zero() any {
+    return medianState{Values: []float64{}}
+}
+
+func (a *MedianAggregator) Aggregate(current, value any) any {
+    state := current.(medianState)
+    if val, ok := value.(float64); ok {
+        state.Values = append(state.Values, val)
+    } else if val, ok := value.(int); ok {
+        state.Values = append(state.Values, float64(val))
     }
-    
-    for _, contrib := range contributions {
-        if val, ok := contrib.(float64); ok && val > max {
-            max = val
-        } else if val, ok := contrib.(int); ok && float64(val) > max {
-            max = float64(val)
-        }
-    }
-    
-    return max, nil
+    return state
 }
 
 // Usage
 compiled, err := builder.Compile(
     graph.WithAggregators(map[string]graph.Aggregator{
-        "max_confidence": &MaxAggregator{},
+        "latency_median": &MedianAggregator{},
     }),
 )
 ```
 
-#### Example: List Aggregator
+#### Example: Histogram Aggregator
 
-Collect all contributions into a list:
+Build distribution of values:
 
 ```go
-type ListAggregator struct{}
+type HistogramAggregator struct {
+    Bins []float64 // Bin boundaries
+}
 
-func (a *ListAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
-    var list []string
-    if accumulated != nil {
-        list = accumulated.([]string)
+type histogramState struct {
+    Counts []int
+}
+
+func (a *HistogramAggregator) Zero() any {
+    return histogramState{Counts: make([]int, len(a.Bins)+1)}
+}
+
+func (a *HistogramAggregator) Aggregate(current, value any) any {
+    state := current.(histogramState)
+    val, ok := value.(float64)
+    if !ok {
+        return state
     }
     
-    for _, contrib := range contributions {
-        if val, ok := contrib.(string); ok {
-            list = append(list, val)
+    // Find appropriate bin
+    bin := 0
+    for i, boundary := range a.Bins {
+        if val >= boundary {
+            bin = i + 1
+        } else {
+            break
         }
     }
+    state.Counts[bin]++
     
-    return list, nil
+    return state
 }
 ```
 
