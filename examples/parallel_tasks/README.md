@@ -1,0 +1,218 @@
+# Example: Parallel Tasks
+
+## Overview
+Demonstrates parallel execution patterns in AgentMesh. Shows how to execute independent tasks concurrently for improved performance using BSP (Bulk Synchronous Parallel) execution model.
+
+## Key Concepts
+- **Parallel Execution**: Independent nodes run concurrently
+- **Fan-Out Pattern**: One node → multiple parallel nodes
+- **Fan-In Pattern**: Multiple nodes → one merge node
+- **BinaryOpChannel**: Custom reducer for merging results
+- **Concurrency Control**: WithMaxConcurrency option
+
+## Running
+```bash
+cd examples/parallel_tasks
+go run main.go
+```
+
+## Expected Output
+```
+=== Parallel Tasks Example ===
+
+[Superstep 1] Starting 3 parallel tasks...
+  task_a: Processing dataset A... (2s)
+  task_b: Processing dataset B... (2s)
+  task_c: Processing dataset C... (2s)
+→ All tasks running in parallel
+
+[Superstep 1 Complete] Duration: 2.1s
+  (Sequential would take: 6s)
+
+[Superstep 2] Merging results...
+  Combined: {a: 100, b: 200, c: 300}
+
+Total execution time: 2.5s
+Speedup: 2.4x
+```
+
+## Code Walkthrough
+
+### 1. Create Custom Reducer
+```go
+func mergeMapReducer(oldValue, newValue any) any {
+    oldMap, _ := oldValue.(map[string]any)
+    newMap, _ := newValue.(map[string]any)
+    
+    merged := make(map[string]any)
+    for k, v := range oldMap {
+        merged[k] = v
+    }
+    for k, v := range newMap {
+        merged[k] = v
+    }
+    return merged
+}
+```
+
+### 2. Configure State with Reducer
+```go
+state := graph.NewGraphState(0)
+state.AddChannel(channel.NewBinaryOpChannel(
+    "results",
+    mergeMapReducer,
+))
+```
+
+### 3. Create Parallel Nodes
+```go
+builder.Node("task_a", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    time.Sleep(2 * time.Second) // Simulate work
+    return &graph.NodeResult{
+        Updates: map[string]any{
+            "results": map[string]any{"a": 100},
+        },
+    }, nil
+})
+
+builder.Node("task_b", /* similar */)
+builder.Node("task_c", /* similar */)
+```
+
+### 4. Add Edges for Fan-Out
+```go
+builder.AddEdge("start", "task_a")
+builder.AddEdge("start", "task_b")
+builder.AddEdge("start", "task_c")
+```
+
+### 5. Add Merge Node for Fan-In
+```go
+builder.Node("merge", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    results, _ := s.Get("results").(map[string]any)
+    fmt.Printf("Merged results: %v\n", results)
+    return nil, nil
+})
+
+builder.AddEdge("task_a", "merge")
+builder.AddEdge("task_b", "merge")
+builder.AddEdge("task_c", "merge")
+```
+
+### 6. Control Concurrency
+```go
+compiled, _ := builder.Compile(
+    graph.WithMaxConcurrency(3), // Run 3 nodes in parallel
+)
+```
+
+## Execution Flow
+
+```
+         start
+        /  |  \
+      /    |    \
+  task_a task_b task_c  ← Superstep 1 (parallel)
+      \    |    /
+        \  |  /
+         merge            ← Superstep 2
+```
+
+## Pregel BSP Model
+
+### Superstep 1
+- All tasks with no pending dependencies execute in parallel
+- Each task updates shared state independently
+- BinaryOpChannel merges concurrent updates
+
+### Superstep 2
+- Merge node waits for all parallel tasks to complete
+- Processes combined results
+- Continues to next stage
+
+## Channel Types for Parallel Execution
+
+### TopicChannel (Accumulate)
+```go
+state.AddChannel(channel.NewTopicChannel("logs", 0))
+// All parallel writes are collected in a list
+```
+
+### BinaryOpChannel (Custom Merge)
+```go
+state.AddChannel(channel.NewBinaryOpChannel("results", mergeFunc))
+// Custom function merges concurrent updates
+```
+
+### LastValueChannel (Overwrite)
+```go
+state.AddChannel(channel.NewLastValueChannel("status"))
+// Last write wins (not recommended for parallel tasks)
+```
+
+## What This Example Teaches
+- ✅ Parallel task execution
+- ✅ BSP synchronization model
+- ✅ Custom result merging
+- ✅ Concurrency control
+- ✅ Performance optimization
+
+## Performance Comparison
+
+### Sequential Execution
+```
+task_a (2s) → task_b (2s) → task_c (2s) = 6s total
+```
+
+### Parallel Execution
+```
+task_a (2s) ┐
+task_b (2s) ├─ Run together = 2s total
+task_c (2s) ┘
+```
+
+## Production Considerations
+
+### Concurrency Limits
+```go
+// Limit concurrent tasks (prevent resource exhaustion)
+compiled, _ := builder.Compile(
+    graph.WithMaxConcurrency(10), // Max 10 parallel nodes
+)
+```
+
+### Error Handling
+```go
+// Parallel tasks with retry
+builder.Node("task_a", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    result, err := performWork()
+    if err != nil {
+        return nil, fmt.Errorf("task_a failed: %w", err)
+    }
+    return result, nil
+})
+```
+
+### Resource Management
+```go
+// Use semaphore for external resource limits
+sem := make(chan struct{}, 5) // Max 5 concurrent API calls
+
+builder.Node("api_call", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    sem <- struct{}{}        // Acquire
+    defer func() { <-sem }() // Release
+    
+    return callAPI()
+})
+```
+
+## Next Steps
+- Implement parallel data processing pipelines
+- Add error handling for parallel tasks
+- Optimize concurrency limits for your workload
+- See **examples/subgraph** for nested parallel execution
+
+## See Also
+- [pkg/graph](../../pkg/graph) - Graph execution model
+- [pkg/channel](../../pkg/channel) - Channel types
+- [examples/subgraph](../subgraph) - Complex workflows
