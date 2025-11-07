@@ -11,25 +11,22 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// rateLimitState tracks request timestamps for rate limiting
+// rateLimitState tracks request timestamps for rate limiting.
 type rateLimitState struct {
 	mu       sync.Mutex
 	requests []time.Time
 }
 
-// RateLimit returns a BeforeModelCallback that enforces request rate limits.
-// It maintains its own state using closures, independent of graph state.
+// RateLimit returns a BeforeModelCallback that enforces request rate limits using a sliding window.
+// It maintains closure-based state independent of graph state, tracking request timestamps to
+// ensure the request count stays within the specified limit over the time window.
+//
+// The callback short-circuits with an AI message when the rate limit is exceeded, informing the
+// caller when they can retry. Returns nil to continue normal execution when within limits.
 //
 // Parameters:
 //   - maxRequests: Maximum number of requests allowed within the time window
-//   - window: Time window for rate limiting
-//
-// The rate limiter uses a sliding window approach:
-//   - Removes requests older than the window
-//   - Checks if current request count is below max
-//   - Records the current request timestamp
-//
-// If the rate limit is exceeded, it returns a short-circuit response.
+//   - window: Duration of the sliding time window for rate limiting
 //
 // Example:
 //
@@ -83,14 +80,16 @@ func RateLimit(maxRequests int, window time.Duration) callbacks.BeforeModelCallb
 }
 
 // PerNodeRateLimit returns a BeforeModelCallback that enforces per-node rate limits.
-// Each node name gets its own independent rate limit counter.
+// Each node gets an independent rate limit counter, allowing different rate limit
+// requirements for different nodes in the graph.
 //
-// This is useful when different nodes have different rate limit requirements.
+// The callback short-circuits with a node-specific AI message when the rate limit
+// is exceeded. The nodeName is included in error messages for clarity.
 //
 // Parameters:
-//   - nodeName: The name of the node to rate limit (for logging only)
-//   - maxRequests: Maximum requests per window
-//   - window: Time window
+//   - nodeName: Name of the node being rate limited (included in error messages)
+//   - maxRequests: Maximum requests allowed within the time window
+//   - window: Duration of the sliding time window
 //
 // Example:
 //

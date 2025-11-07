@@ -8,18 +8,24 @@ import (
 )
 
 // Aggregator defines a global reduction applied across vertices each superstep.
+// Implementations combine values from multiple nodes into a single aggregate value.
+// See aggregators.go for built-in implementations (SumAggregator, MaxAggregator, etc.).
 type Aggregator interface {
+	// Zero returns the identity/initial value for the aggregation.
 	Zero() any
+	// Aggregate combines the current aggregate value with a new contribution.
 	Aggregate(current, value any) any
 }
 
 // SchedulingMessage describes an activation message between graph vertices.
+// Used in distributed scheduling to propagate computation across nodes.
 type SchedulingMessage struct {
 	From string
 	To   string
 }
 
 // Combiner merges multiple scheduling messages for the same target.
+// Used to optimize message passing by reducing redundant activations.
 type Combiner func(existing, incoming SchedulingMessage) SchedulingMessage
 
 type runOptions struct {
@@ -46,6 +52,13 @@ func defaultRunOptions() runOptions {
 	}
 }
 
+// WithMaxConcurrency sets the maximum number of nodes that can execute in parallel.
+// Defaults to runtime.NumCPU(). Higher values may improve throughput for I/O-bound
+// nodes but increase memory usage.
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, graph.WithMaxConcurrency(8))
 func WithMaxConcurrency(n int) RunOption {
 	return func(opts *runOptions) {
 		if n > 0 {
@@ -54,6 +67,13 @@ func WithMaxConcurrency(n int) RunOption {
 	}
 }
 
+// WithInitialSuperstep sets the starting superstep number for execution.
+// Primarily used for debugging or when resuming from a specific point.
+// Negative values are clamped to 0.
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, graph.WithInitialSuperstep(10))
 func WithInitialSuperstep(superstep int64) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {
@@ -66,6 +86,16 @@ func WithInitialSuperstep(superstep int64) RunOption {
 	}
 }
 
+// WithAggregators configures global aggregators for distributed reductions.
+// Aggregators collect values from all nodes in each superstep and make the
+// result available in the next superstep via state.AggregatesSnapshot().
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, graph.WithAggregators(map[string]Aggregator{
+//	    "total_cost": &SumAggregator{},
+//	    "max_priority": &MaxAggregator{},
+//	}))
 func WithAggregators(aggregators map[string]Aggregator) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {
@@ -86,6 +116,16 @@ func WithAggregators(aggregators map[string]Aggregator) RunOption {
 	}
 }
 
+// WithCombiner sets a function to merge multiple messages targeting the same node.
+// This optimization can reduce redundant activations in highly connected graphs.
+// The combiner receives existing and incoming messages and returns the merged result.
+//
+// Example:
+//
+//	compiled.Invoke(ctx, messages, graph.WithCombiner(func(existing, incoming SchedulingMessage) SchedulingMessage {
+//	    // Custom merge logic
+//	    return incoming  // Simple: last message wins
+//	}))
 func WithCombiner(combiner Combiner) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {

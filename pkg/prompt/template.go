@@ -82,14 +82,15 @@ func New(templateStr string) *Template {
 	}
 }
 
-// Render substitutes variables in the template with values from the data map.
-// Returns an error if any required variables are missing or template execution fails.
+// Render executes the template with the provided variables and returns the result.
+// Returns an error if the template is malformed or required variables are missing.
 //
 // Example:
 //
+//	tmpl := prompt.New("Hello, {{.Name}}! You have {{.Count}} messages.")
 //	result, err := tmpl.Render(map[string]any{
 //	    "Name": "Alice",
-//	    "Age": 30,
+//	    "Count": 5,
 //	})
 func (t *Template) Render(data map[string]any) (string, error) {
 	if t == nil {
@@ -113,8 +114,13 @@ func (t *Template) Render(data map[string]any) (string, error) {
 	return buf.String(), nil
 }
 
-// MustRender renders the template and panics on error.
-// Useful for templates that are known to be valid at compile time.
+// MustRender executes the template and panics if an error occurs.
+// Only use in contexts where template errors are programmer errors (e.g., hardcoded templates).
+//
+// Example:
+//
+//	tmpl := prompt.New("Status: {{.Status}}")
+//	result := tmpl.MustRender(map[string]any{"Status": "active"})
 func (t *Template) MustRender(data map[string]any) string {
 	result, err := t.Render(data)
 	if err != nil {

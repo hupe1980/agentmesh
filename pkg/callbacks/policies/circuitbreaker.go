@@ -36,7 +36,7 @@ func (s CircuitState) String() string {
 	}
 }
 
-// circuitBreakerState tracks circuit breaker state
+// circuitBreakerState tracks circuit breaker state.
 type circuitBreakerState struct {
 	mu sync.Mutex
 
@@ -46,17 +46,18 @@ type circuitBreakerState struct {
 	openedAt     time.Time
 }
 
-// CircuitBreakerConfig configures circuit breaker behavior
+// CircuitBreakerConfig configures circuit breaker behavior.
 type CircuitBreakerConfig struct {
-	// MaxFailures before opening the circuit
+	// MaxFailures is the number of consecutive failures before opening the circuit.
 	MaxFailures int
-	// Timeout to wait before transitioning from Open to Half-Open
+	// Timeout is the duration to wait in Open state before transitioning to Half-Open.
 	Timeout time.Duration
-	// FailureWindow tracks failures within this duration
+	// FailureWindow is the time window for tracking failures in Closed state.
 	FailureWindow time.Duration
 }
 
-// DefaultCircuitBreakerConfig returns sensible defaults
+// DefaultCircuitBreakerConfig returns a CircuitBreakerConfig with sensible defaults.
+// MaxFailures: 5, Timeout: 30s, FailureWindow: 1m
 func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	return CircuitBreakerConfig{
 		MaxFailures:   5,
@@ -65,15 +66,27 @@ func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	}
 }
 
-// CircuitBreaker returns callbacks that implement circuit breaker pattern.
-// It returns three callbacks: before (checks state), after (resets on success), error (tracks failures).
+// CircuitBreaker returns three callbacks that implement the circuit breaker pattern.
+// The circuit breaker prevents cascading failures by temporarily blocking requests
+// when error rates exceed thresholds.
 //
 // The circuit breaker has three states:
 //   - Closed: Normal operation, requests pass through
-//   - Open: Too many failures, requests are rejected
-//   - Half-Open: Testing if the system has recovered
+//   - Open: Too many failures detected, requests are short-circuited with error messages
+//   - Half-Open: Testing recovery by allowing one request through
 //
-// Usage:
+// State transitions:
+//   - Closed → Open: When failure count reaches MaxFailures
+//   - Open → Half-Open: After Timeout duration elapses
+//   - Half-Open → Closed: When a request succeeds
+//   - Half-Open → Open: When a request fails
+//
+// Returns:
+//   - before: BeforeModelCallback that checks circuit state and blocks if Open
+//   - after: AfterModelCallback that resets failure count on success in Half-Open state
+//   - onError: OnModelErrorCallback that tracks failures and opens circuit when threshold exceeded
+//
+// Example:
 //
 //	config := policies.DefaultCircuitBreakerConfig()
 //	before, after, onError := policies.CircuitBreaker(config)
@@ -172,9 +185,18 @@ func CircuitBreaker(config CircuitBreakerConfig) (
 }
 
 // PerNodeCircuitBreaker returns circuit breaker callbacks for a specific node.
-// This allows different nodes to have independent circuit breakers.
+// Each node gets an independent circuit breaker, allowing different failure thresholds
+// and recovery policies per node.
 //
-// Usage:
+// The nodeName is included in error messages to identify which circuit breaker opened.
+// See CircuitBreaker for details on states and behavior.
+//
+// Returns:
+//   - before: BeforeModelCallback that checks circuit state for this node
+//   - after: AfterModelCallback that resets failure count on success
+//   - onError: OnModelErrorCallback that tracks failures for this node
+//
+// Example:
 //
 //	config := policies.DefaultCircuitBreakerConfig()
 //	config.MaxFailures = 3

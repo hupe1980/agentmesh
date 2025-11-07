@@ -12,28 +12,29 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// retryState tracks retry attempts and backoff
+// retryState tracks retry attempts and backoff.
 type retryState struct {
 	mu            sync.Mutex
 	attempts      int
 	lastAttemptAt time.Time
 }
 
-// RetryConfig configures retry behavior
+// RetryConfig configures retry behavior with exponential backoff.
 type RetryConfig struct {
-	// MaxAttempts is the maximum number of retry attempts (0 = no retries)
+	// MaxAttempts is the maximum number of retry attempts (0 means no retries).
 	MaxAttempts int
-	// InitialDelay is the delay before the first retry
+	// InitialDelay is the delay before the first retry.
 	InitialDelay time.Duration
-	// MaxDelay is the maximum backoff delay
+	// MaxDelay is the maximum backoff delay (caps exponential growth).
 	MaxDelay time.Duration
-	// BackoffMultiplier for exponential backoff (typically 2.0)
+	// BackoffMultiplier is the factor for exponential backoff (typically 2.0).
 	BackoffMultiplier float64
-	// Jitter adds randomness to prevent thundering herd (0.0-1.0)
+	// Jitter adds randomness (0.0-1.0) to prevent thundering herd.
 	Jitter float64
 }
 
-// DefaultRetryConfig returns sensible retry defaults
+// DefaultRetryConfig returns a RetryConfig with sensible defaults for most use cases.
+// MaxAttempts: 3, InitialDelay: 1s, MaxDelay: 30s, BackoffMultiplier: 2.0, Jitter: 0.1
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:       3,
@@ -44,13 +45,17 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// ExponentialBackoffRetry returns an OnModelErrorCallback that implements exponential backoff retry.
-// It maintains retry state using closures and returns error messages when max attempts are exceeded.
+// ExponentialBackoffRetry returns an OnModelErrorCallback that retries failed requests with exponential backoff.
+// It uses closure-based state to track retry attempts and implements the backoff formula:
+// delay = min(InitialDelay × (BackoffMultiplier ^ attempt), MaxDelay), with optional jitter.
 //
-// The backoff formula is: delay = min(InitialDelay * (BackoffMultiplier ^ attempt), MaxDelay)
-// Jitter is applied to prevent synchronized retries across multiple instances.
+// When max attempts are exceeded, the callback short-circuits with an AI message containing
+// the failure details and resets the retry counter for the next error.
 //
-// Usage:
+// The callback sleeps for the calculated backoff duration before returning nil to trigger
+// a retry. Jitter is applied to prevent synchronized retries across multiple instances.
+//
+// Example:
 //
 //	config := policies.DefaultRetryConfig()
 //	config.MaxAttempts = 5
@@ -84,10 +89,14 @@ func ExponentialBackoffRetry(config RetryConfig) callbacks.OnModelErrorCallback 
 	}
 }
 
-// RetryWithTimeout returns an OnModelErrorCallback that retries with a timeout.
-// If the total time spent retrying exceeds the timeout, it gives up.
+// RetryWithTimeout returns an OnModelErrorCallback that retries with an overall timeout.
+// If the total time spent retrying exceeds the timeout duration, the callback gives up
+// and short-circuits with an AI message.
 //
-// Usage:
+// The timeout is measured from when the callback is first created, not from each retry attempt.
+// This ensures the total retry duration is bounded even if individual retries take time.
+//
+// Example:
 //
 //	config := policies.DefaultRetryConfig()
 //	manager.RegisterOnModelError(policies.RetryWithTimeout(config, 5*time.Minute))
@@ -126,10 +135,14 @@ func RetryWithTimeout(config RetryConfig, timeout time.Duration) callbacks.OnMod
 	}
 }
 
-// ConditionalRetry returns an OnModelErrorCallback that only retries for specific error types.
-// The shouldRetry function determines if the error is retryable.
+// ConditionalRetry returns an OnModelErrorCallback that only retries specific error types.
+// The shouldRetry predicate function determines whether each error is retryable.
+// Non-retryable errors are propagated immediately without retry attempts.
 //
-// Usage:
+// This is useful for distinguishing between transient errors (network timeouts, rate limits)
+// and permanent errors (invalid input, authentication failures).
+//
+// Example:
 //
 //	config := policies.DefaultRetryConfig()
 //	shouldRetry := func(err error) bool {
@@ -165,7 +178,12 @@ func ConditionalRetry(config RetryConfig, shouldRetry func(error) bool) callback
 	}
 }
 
-// calculateBackoff computes the backoff delay for a given attempt
+// calculateBackoff computes the exponential backoff delay for a given attempt number.
+// It applies the formula: delay = min(InitialDelay × (BackoffMultiplier ^ attempt), MaxDelay)
+// and then reduces the delay by a random jitter amount to prevent thundering herd effects.
+//
+// The jitter calculation uses nanosecond timestamp randomness to vary the delay by up to
+// config.Jitter percent of the calculated delay.
 func calculateBackoff(attempt int, config RetryConfig) time.Duration {
 	// Exponential backoff: delay = initialDelay * (multiplier ^ attempt)
 	delay := float64(config.InitialDelay) * math.Pow(config.BackoffMultiplier, float64(attempt))

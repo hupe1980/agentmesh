@@ -245,7 +245,7 @@ This enables:
 
 ## 🎨 Examples
 
-Explore **10 comprehensive examples** demonstrating different use cases and patterns:
+Explore **17 comprehensive examples** demonstrating different use cases and patterns:
 
 | Example | Description | Key Features |
 |---------|-------------|--------------|
@@ -447,7 +447,7 @@ We welcome contributions! Here's how to get started:
 ## 📖 Documentation
 
 - 📘 **[API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh)** - Complete godoc documentation
-- 📗 **[Examples](examples/)** - 10 comprehensive runnable examples
+- 📗 **[Examples](examples/)** - 17 comprehensive runnable examples
 - 📙 **[Getting Started Guide](docs/getting-started.md)** - Quick start tutorial
 - 📕 **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
 - 📊 **[Observability Guide](docs/observability.md)** - Metrics and tracing setup
