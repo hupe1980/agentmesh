@@ -335,7 +335,9 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 		rt := newPregelRuntime(cg, derivedCtx, cancel, options, events, done)
 		_ = rt.run() // Errors are emitted as events
 
-		if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		// Don't emit deadline exceeded errors here - they're already wrapped and emitted
+		// by the node adapter with the specific node name. Only emit unexpected context errors.
+		if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			rt.emitError(err)
 		}
 	}()

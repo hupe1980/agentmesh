@@ -271,6 +271,29 @@ func (gr *graphRuntime) run() error {
 		}
 	}
 
+	// The Pregel engine can return context.DeadlineExceeded directly from ctx.Err().
+	// Wrap it here to ensure consistent error types. Node-level timeouts are already
+	// wrapped by the node adapter, but runtime-level timeouts need wrapping here.
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		// Check if already wrapped (node-level timeout)
+		var nodeTimeoutErr *NodeTimeoutError
+		if !errors.As(err, &nodeTimeoutErr) {
+			// Not wrapped yet - this is a runtime-level timeout
+			timeout := int64(0)
+			if deadline, ok := gr.ctx.Deadline(); ok {
+				elapsed := time.Since(deadline)
+				if elapsed > 0 {
+					timeout = int64(elapsed / time.Millisecond)
+				}
+			}
+			err = &NodeTimeoutError{
+				Node:    "", // Runtime-level timeout (not node-specific)
+				Timeout: timeout,
+				Cause:   err,
+			}
+		}
+	}
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		gr.fail(err)
 	}
@@ -653,7 +676,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	// (e.g., during backoff sleep or between iterations) rather than during
 	// node execution. Without this check, we would return RetryExhaustedError
 	// instead of the more accurate NodeTimeoutError.
-	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	if err := ctx.Err(); err != nil && errors.Is(err, context.DeadlineExceeded) {
 		timeout := int64(0)
 		if deadline, ok := ctx.Deadline(); ok {
 			elapsed := time.Since(deadline)
@@ -664,7 +687,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		return nil, &NodeTimeoutError{
 			Node:    n.name,
 			Timeout: timeout,
-			Cause:   ctx.Err(),
+			Cause:   err,
 		}
 	}
 
