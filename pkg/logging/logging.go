@@ -1,6 +1,3 @@
-// Package logging provides a tiny abstraction over slog so downstream code can
-// depend on a minimal interface (Logger) while allowing users to plug any
-// structured logger.
 package logging
 
 import "context"
