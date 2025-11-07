@@ -3,6 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
+[![GoDoc](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
 
 > 🚀 **Production-grade multi-agent orchestration framework** powered by Pregel-style bulk-synchronous parallel (BSP) graph processing.
 
@@ -27,7 +28,19 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🔀 Conditional Routing** - Dynamic flow control based on node outputs
 - **🎨 Flowchart Generation** - Auto-generate Mermaid diagrams from graph topology
 - **⏸️ Human-in-the-Loop** - Pause workflows for human approval/input
+- **🔌 Callback System** - Intercept and transform model/tool requests with BeforeModel, AfterModel, OnError handlers
 - **🧪 Testing First** - Comprehensive test coverage across core features
+
+### 🧠 AI/ML Features
+- **🔢 Embeddings** - Text-to-vector conversion for semantic search and RAG workflows (OpenAI, SimpleEmbedder)
+- **🧠 Memory** - Long-term conversation storage with semantic vector search and session management
+- **📝 Prompt Templates** - Variable substitution with {{.Variable}} syntax for reusable prompt patterns
+- **🔍 Retrieval** - RAG integration with AWS Bedrock Knowledge Bases and Kendra
+
+### 🌐 Integration & Extensibility
+- **🤝 Agent-to-Agent (A2A) Protocol** - Expose agents as A2A services or connect to external A2A agents
+- **🔌 Model Context Protocol (MCP)** - Dynamic tool discovery from MCP servers
+- **🛠️ LangChainGo Tools** - Import and use LangChainGo tool ecosystem
 
 ---
 
@@ -46,63 +59,63 @@ go get github.com/hupe1980/agentmesh@latest
 AgentMesh follows a **layered architecture** that separates concerns and enables extensibility:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Application Layer                                          │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  pkg/agent (High-level agent patterns)               │  │
-│  │  • ReAct: Reasoning + Acting                         │  │
-│  │  • RAG: Retrieval-Augmented Generation               │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  Integration Layer                                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ pkg/model    │  │  pkg/tool    │  │  pkg/retrieval   │  │
-│  │ • OpenAI     │  │  • Functions │  │  • Bedrock       │  │
-│  │ • Anthropic  │  │  • A2A       │  │  • Kendra        │  │
-│  │ • Custom     │  │  • LangChain │  │  • Custom        │  │
-│  └──────────────┘  └──────────────┘  └──────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  Core Framework Layer                                       │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  pkg/graph (Graph orchestration & execution)        │   │
-│  │  • CompiledGraph: Immutable workflow                │   │
-│  │  • Builder: Fluent graph construction               │   │
-│  │  • Scheduler: Topology-based execution order        │   │
-│  │  • State: Channel-based data flow                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐    │
-│  │ pkg/channel│  │ pkg/checkpoint│  │  pkg/message    │    │
-│  │ • Topic    │  │ • Memory      │  │  • Human        │    │
-│  │ • LastValue│  │ • SQL         │  │  • AI           │    │
-│  │ • BinaryOp │  │ • DynamoDB    │  │  • Tool         │    │
-│  └────────────┘  └──────────────┘  └─────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  Infrastructure Layer                                       │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  internal/pregel (Bulk Synchronous Parallel Engine)  │  │
-│  │  • Generic BSP runtime                               │  │
-│  │  • Superstep coordination                            │  │
-│  │  • Message passing & aggregation                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐    │
-│  │ internal/  │  │ internal/    │  │  internal/      │    │
-│  │ jsonschema │  │  mermaid     │  │  stream         │    │
-│  └────────────┘  └──────────────┘  └─────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│  Observability Layer (Cross-cutting)                        │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐    │
-│  │ pkg/metrics│  │  pkg/trace   │  │  pkg/logging    │    │
-│  │ • OpenTelem│  │  • OpenTelem │  │  • slog         │    │
-│  └────────────┘  └──────────────┘  └─────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│  Application Layer                                            │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  pkg/agent (High-level agent patterns)                  │  │
+│  │  • ReAct: Reasoning + Acting                            │  │
+│  │  • RAG: Retrieval-Augmented Generation                  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│  Integration Layer                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────-─┐  │
+│  │ pkg/model    │  │  pkg/tool    │  │  pkg/retrieval      │  │
+│  │ • OpenAI     │  │  • Functions │  │  • Bedrock          │  │
+│  │ • Anthropic  │  │  • A2A       │  │  • Kendra           │  │
+│  │ • Custom     │  │  • ...       │  │  • Custom           │  │
+│  └──────────────┘  └──────────────┘  └────────────────────-┘  │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│  Core Framework Layer                                         │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  pkg/graph (Graph orchestration & execution)            │  │
+│  │  • CompiledGraph: Immutable workflow                    │  │
+│  │  • Builder: Fluent graph construction                   │  │
+│  │  • Scheduler: Topology-based execution order            │  │
+│  │  • State: Channel-based data flow                       │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│  ┌──────────────┐  ┌────────────────┐  ┌────────────────--─┐  │
+│  │ pkg/channel  │  │ pkg/checkpoint │  │  pkg/message      │  │
+│  │ • Topic      │  │ • Memory       │  │  • Human          │  │
+│  │ • LastValue  │  │ • SQL          │  │  • AI             │  │
+│  │ • BinaryOp   │  │ • DynamoDB     │  │  • Tool           │  │
+│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│  Infrastructure Layer                                         │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  internal/pregel (Bulk Synchronous Parallel Engine)     │  │
+│  │  • Generic BSP runtime                                  │  │
+│  │  • Superstep coordination                               │  │
+│  │  • Message passing & aggregation                        │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│  ┌──────────────┐  ┌────────────────┐  ┌──────────────--───┐  │
+│  │ internal/    │  │ internal/      │  │  internal/        │  │
+│  │ jsonschema   │  │  mermaid       │  │  stream           │  │
+│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│  Observability Layer (Cross-cutting)                          │
+│  ┌──────────────┐  ┌────────────────┐  ┌──────────────--───┐  │
+│  │ pkg/metrics  │  │  pkg/trace     │  │  pkg/logging      │  │
+│  │ • OpenTelem  │  │  • OpenTelem   │  │  • slog           │  │
+│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **Key Design Principles:**
@@ -258,9 +271,13 @@ Explore **17 comprehensive examples** demonstrating different use cases and patt
 | ⏸️ [human_pause](examples/human_pause) | Human-in-the-loop workflows | Interrupt, resume, user approval |
 | ⏰ [time_travel](examples/time_travel) | Debug with state versioning | Checkpointing, state replay, time-travel debugging |
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
-| 📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
+| � [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
+| 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
+| 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |
+| �📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
 | 🔗 [subgraph](examples/subgraph) | Composable graph components | Reusable workflows, modular design |
 | 📝 [message_retention](examples/message_retention) | Conversation history management | Message limits, pruning strategies |
+| 🔢 [openai_embedder](examples/openai_embedder) | Text embeddings | Semantic search, RAG workflows, vector operations |
 | 🌐 [a2a_integration](examples/a2a_integration) | Agent-to-Agent protocol | A2A server/client, multi-agent coordination |
 
 ### Running Examples
@@ -366,7 +383,51 @@ builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.
 })
 ```
 
-### 📊 Observability
+### � Callbacks
+
+Intercept and transform model/tool invocations with a composable callback system:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/callbacks"
+
+// Create callback manager
+cbManager := callbacks.NewManager()
+
+// Register model callbacks
+cbManager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
+    // Content filtering/guardrails
+    if containsUnsafeContent(req.Messages) {
+        return nil, errors.New("unsafe content detected")
+    }
+    return nil, nil  // Continue to model
+})
+
+cbManager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
+    // Post-process response, logging, metrics
+    log.Printf("Model latency: %v", resp.Metadata["latency"])
+    return resp, nil
+})
+
+cbManager.RegisterOnModelError(func(ctx context.Context, req *callbacks.ModelRequest, err error) (*callbacks.ModelResponse, error) {
+    // Fallback logic, retry, or error transformation
+    return getFallbackResponse(), nil
+})
+
+// Use with ReAct agent
+compiled, _ := agent.NewReActAgent(
+    model,
+    tools,
+    agent.WithModelCallbacks(cbManager),
+    agent.WithToolCallbacks(cbManager),
+)
+```
+
+**Callback Types:**
+- `BeforeModel/BeforeTool` - Pre-execution validation, caching, transformation
+- `AfterModel/AfterTool` - Post-processing, logging, metrics collection
+- `OnModelError/OnToolError` - Error handling, fallbacks, retry logic
+
+### �📊 Observability
 
 Built-in OpenTelemetry integration:
 
@@ -399,6 +460,101 @@ messages, _ := compiled.Invoke(ctx, initialMessages)
 - Nested spans for each node
 - Automatic context propagation
 - Error recording with stack traces
+
+### 🔢 Embeddings & Memory
+
+Convert text to vectors for semantic search and maintain conversation history:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
+    "github.com/hupe1980/agentmesh/pkg/memory"
+)
+
+// Create embedder for semantic search
+embedder := openai.NewEmbedder(client, openai.WithModel("text-embedding-3-small"))
+
+// Create vector memory for long-term storage
+mem := memory.NewVectorMemory(embedder)
+
+// Store conversation messages
+err := mem.Store(ctx, "session-123", messages)
+
+// Recall relevant messages by semantic similarity
+recalled, err := mem.Recall(ctx, "session-123", memory.RecallFilter{
+    Query: "What did we discuss about pricing?",
+    K:     5,  // Top 5 most relevant messages
+})
+```
+
+**Memory Features:**
+- Semantic vector search with embeddings
+- Session-based conversation storage
+- Relevance ranking and filtering
+- Time-based and metadata queries
+
+### 📝 Prompt Templates
+
+Reusable prompt templates with variable substitution:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/prompt"
+
+// Create template with {{.Variable}} syntax
+template := prompt.New(`You are a {{.Role}}.
+Answer the following question: {{.Question}}
+Use this context: {{.Context}}`)
+
+// Render with variables
+result, err := template.Render(map[string]any{
+    "Role":     "helpful assistant",
+    "Question": "What is AgentMesh?",
+    "Context":  "A Go framework for AI agents",
+})
+```
+
+**Template Features:**
+- Simple {{.Variable}} syntax
+- Missing variable detection
+- Type-safe variable replacement
+- No code execution (safe for untrusted templates)
+
+### 🤝 Agent-to-Agent (A2A) Protocol
+
+Enable multi-agent collaboration across different systems:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/a2a"
+    "github.com/a2aproject/a2a-go/a2agrpc"
+    "github.com/a2aproject/a2a-go/a2asrv"
+)
+
+// Server: Expose AgentMesh agent as A2A service
+compiled, _ := agent.NewReActAgent(model, tools)
+executor := a2a.NewExecutor(compiled)
+requestHandler := a2asrv.NewHandler(executor)
+grpcHandler := a2agrpc.NewHandler(requestHandler)
+
+// Serve with gRPC
+server := grpc.NewServer()
+a2agrpc.RegisterAgentServer(server, grpcHandler)
+server.Serve(listener)
+
+// Client: Use external A2A agent as tool
+client := a2a.NewClient("localhost:50051")
+bridge := a2a.NewBridge(client)
+tools, _ := bridge.GetTools(ctx)
+
+// Use A2A tools in your agent
+compiled, _ := agent.NewReActAgent(model, tools)
+```
+
+**A2A Features:**
+- Multi-agent coordination across systems
+- gRPC and JSON-RPC transport support
+- Dynamic tool discovery from remote agents
+- Bidirectional agent communication
 
 ---
 
@@ -450,7 +606,12 @@ We welcome contributions! Here's how to get started:
 - 📗 **[Examples](examples/)** - 17 comprehensive runnable examples
 - 📙 **[Getting Started Guide](docs/getting-started.md)** - Quick start tutorial
 - 📕 **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
-- 📊 **[Observability Guide](docs/observability.md)** - Metrics and tracing setup
+- � **[Callbacks Guide](docs/callbacks.md)** - Intercepting model/tool invocations
+- 🧠 **[Memory Guide](docs/memory.md)** - Conversation storage with semantic search
+- 🔢 **[Embeddings Guide](docs/embeddings.md)** - Text-to-vector conversion for RAG
+- 🌐 **[A2A Protocol Guide](docs/a2a.md)** - Multi-agent collaboration
+- �📊 **[Observability Guide](docs/observability.md)** - Metrics and tracing setup
+- 🎯 **[Advanced Features](docs/advanced.md)** - Checkpointing, time travel, human-in-loop
 - 🤖 **[Agent Patterns](docs/agents.md)** - ReAct and RAG agent guides
 - 🔧 **[Tools Guide](docs/tools.md)** - Building and using tools
 - 🤖 **[Model Integration](docs/models.md)** - LLM provider setup

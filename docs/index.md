@@ -59,7 +59,12 @@ Key ideas:
 - **[Agents guide →](/agents/)** – Build ReAct agents, RAG agents, and custom graph-based workflows.
 - **[Tools guide →](/tools/)** – Create function tools with automatic schema generation and integrate external capabilities.
 - **[Models guide →](/models/)** – Connect OpenAI, Anthropic, LangChainGo, or custom LLM providers.
+- **[Callbacks →](/callbacks/)** – Intercept and transform model/tool invocations with composable callbacks.
+- **[Memory →](/memory/)** – Store and recall conversation history with semantic vector search.
+- **[Embeddings →](/embeddings/)** – Text-to-vector conversion for semantic search and RAG workflows.
+- **[A2A Protocol →](/a2a/)** – Enable multi-agent collaboration with the Agent-to-Agent protocol.
 - **[Observability →](/observability/)** – Configure OpenTelemetry metrics, tracing, and structured logging.
+- **[Advanced Features →](/advanced/)** – Checkpointing, time travel, human-in-the-loop, and more.
 - **[Resources →](/resources/)** – Explore examples, best practices, and contribution guidelines.
 
 ---

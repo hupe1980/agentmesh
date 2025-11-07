@@ -26,11 +26,15 @@ sidebar:
 
 ## Examples {#examples}
 
-The repository includes **11 comprehensive examples** demonstrating core features and production patterns:
+The repository includes **17 comprehensive examples** demonstrating core features and production patterns:
 
 ### Getting started
 - **`basic_agent`** – Simple ReAct agent with tool calling and message handling
+- **`state_builder`** – Simplified state initialization with fluent API
 - **`streaming`** – Real-time event streaming for responsive UIs and progress tracking
+
+### Tool integration
+- **`mcp_tools`** – Model Context Protocol integration with dynamic tool discovery
 
 ### Advanced workflows
 - **`conditional_flow`** – Dynamic routing and branching based on state
@@ -46,6 +50,12 @@ The repository includes **11 comprehensive examples** demonstrating core feature
 - **`observability`** – OpenTelemetry metrics, distributed tracing, and monitoring
 - **`human_pause`** – Human-in-the-loop workflows with interrupt/resume
 - **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
+- **`callback_integration`** – Callback system with BeforeModel, AfterModel handlers
+- **`circuit_breaker`** – Fault tolerance patterns with circuit breaker states
+- **`guardrails`** – Content filtering, PII protection, and safety constraints
+
+### Embeddings & RAG
+- **`openai_embedder`** – Text embeddings for semantic search and RAG workflows
 
 Browse all examples: [github.com/hupe1980/agentmesh/tree/main/examples](https://github.com/hupe1980/agentmesh/tree/main/examples)
 

@@ -121,16 +121,27 @@ The agent will automatically reason about the user's query, decide to call the w
 
 ## Explore examples {#explore-examples}
 
-The repository includes several ready-to-run examples demonstrating key features:
+The repository includes **17 comprehensive examples** demonstrating key features:
 
 - **`examples/basic_agent`** – Simple ReAct agent with tool calling
+- **`examples/state_builder`** – Simplified state initialization with fluent API
+- **`examples/mcp_tools`** – Model Context Protocol integration
 - **`examples/streaming`** – Real-time event streaming for responsive UIs
 - **`examples/conditional_flow`** – Dynamic routing based on agent outputs
 - **`examples/parallel_tasks`** – Parallel execution of independent graph nodes
-- **`examples/checkpointing`** – Automatic state persistence and recovery
+- **`examples/human_pause`** – Human-in-the-loop workflows
 - **`examples/time_travel`** – Debug workflows by replaying from checkpoints
+- **`examples/checkpointing`** – Automatic state persistence and recovery
+- **`examples/callback_integration`** – Callback system demonstration
+- **`examples/circuit_breaker`** – Fault tolerance patterns
+- **`examples/guardrails`** – Content filtering and PII protection
 - **`examples/observability`** – OpenTelemetry metrics and distributed tracing
 - **`examples/subgraph`** – Compose complex workflows from reusable graphs
+- **`examples/message_retention`** – Conversation history management
+- **`examples/openai_embedder`** – Text embeddings for semantic search
+- **`examples/a2a_integration`** – Agent-to-Agent protocol
+
+Browse all examples: [github.com/hupe1980/agentmesh/tree/main/examples](https://github.com/hupe1980/agentmesh/tree/main/examples)
 
 Run any example with:
 
