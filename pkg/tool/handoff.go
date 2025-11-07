@@ -202,5 +202,5 @@ func extractTextFromMessage(msg message.Message) string {
 
 // isValidResult checks if the agent returned a meaningful result.
 func isValidResult(result string) bool {
-	return len(result) > 0 && result != "error" && result != "failed"
+	return result != "" && result != "error" && result != "failed"
 }
