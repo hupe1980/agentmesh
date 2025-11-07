@@ -9,7 +9,6 @@ import (
 
 	streamutil "github.com/hupe1980/agentmesh/internal/stream"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"golang.org/x/time/rate"
 )
 
 // CompiledGraph is an immutable, validated graph ready for execution.
@@ -20,7 +19,6 @@ import (
 //   - Multiple concurrent Stream() calls are allowed (each gets independent state)
 //   - Invoke() serializes execution via invokeMu (one invocation at a time)
 //   - Runtime state access is protected by runtimeMu (RWMutex for read-heavy workload)
-//   - Rate limiters are protected by rateLimitersMu (RWMutex for read-heavy workload)
 //
 // Mutex Usage & Lock Ordering:
 //
@@ -35,14 +33,8 @@ import (
 //     - Lock ordering: Always acquire BEFORE calling runtime methods
 //     - Read-heavy: Most operations use RLock()
 //
-//  3. rateLimitersMu (RWMutex): Fine-grained lock for rate limiter map
-//     - Acquired: When accessing per-node rate limiters
-//     - Purpose: Protects concurrent rate limiter access
-//     - Lock ordering: Independent, can be acquired in any order
-//     - Read-heavy: Most operations use RLock()
-//
 // Deadlock Prevention:
-//   - Never acquire invokeMu while holding runtimeMu or rateLimitersMu
+//   - Never acquire invokeMu while holding runtimeMu
 //   - Never call external callbacks while holding any mutex
 //   - Always release mutex before emitting stream events
 //
@@ -54,10 +46,8 @@ import (
 type CompiledGraph struct {
 	stateManager      StateManager
 	runtime           *executionState
-	runtimeMu         sync.RWMutex             // Protects runtime state pointer (see concurrency model above)
-	invokeMu          sync.Mutex               // Serializes Invoke/Stream calls (see concurrency model above)
-	rateLimitersMu    sync.RWMutex             // Protects rate limiter map (see concurrency model above)
-	rateLimiters      map[string]*rate.Limiter // Per-node rate limiters
+	runtimeMu         sync.RWMutex // Protects runtime state pointer
+	invokeMu          sync.Mutex   // Serializes Invoke/Stream calls
 	nodes             map[string]*Node
 	edges             []Edge
 	conditionals      []ConditionalEdges
@@ -147,20 +137,6 @@ func (cg *CompiledGraph) Invoke(ctx context.Context, messages []message.Message,
 	options := defaultRunOptions()
 	for _, optFn := range optFns {
 		optFn(&options)
-	}
-
-	// Merge rate limiters into graph (persists across invocations)
-	if len(options.rateLimiters) > 0 {
-		cg.rateLimitersMu.Lock()
-		if cg.rateLimiters == nil {
-			cg.rateLimiters = make(map[string]*rate.Limiter)
-		}
-		for nodeName, limiter := range options.rateLimiters {
-			if _, exists := cg.rateLimiters[nodeName]; !exists {
-				cg.rateLimiters[nodeName] = limiter
-			}
-		}
-		cg.rateLimitersMu.Unlock()
 	}
 
 	return cg.invokeWithOptions(ctx, messages, options)

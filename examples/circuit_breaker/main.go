@@ -6,67 +6,94 @@ import (
 	"log"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/callbacks/policies"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
-func main() {
-	// Create a circuit breaker:
-	// - Opens after 3 consecutive failures
-	// - Requires 2 successes in half-open state to close
-	// - Waits 5 seconds before transitioning to half-open
-	cb := graph.NewCircuitBreaker(3, 2, 5*time.Second)
+// FlakyModel simulates an unreliable external service
+type FlakyModel struct {
+	callCount int
+}
 
+func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) (message.Message, error) {
+	m.callCount++
+
+	// Simulate service behavior:
+	// Calls 1-5: Fail (circuit opens after 3)
+	// Calls 6+: Success (circuit recovers)
+	if m.callCount <= 5 {
+		log.Printf("[Call %d] ❌ Service failing", m.callCount)
+		return nil, fmt.Errorf("service unavailable (call %d)", m.callCount)
+	}
+
+	log.Printf("[Call %d] ✓ Service success", m.callCount)
+	return message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)), nil
+}
+
+func (m *FlakyModel) Stream(ctx context.Context, messages []message.Message) (*model.Stream, error) {
+	// Streaming not implemented for this example - just return message as single chunk
+	msg, err := m.Generate(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+
+	chunks := make(chan model.StreamChunk, 1)
+	chunks <- model.StreamChunk{Message: msg}
+	close(chunks)
+
+	return model.NewStream(chunks, nil), nil
+}
+
+func main() {
+	fmt.Println("=== Circuit Breaker Pattern Example ===")
+	fmt.Println()
+	fmt.Println("Demonstrating callback-based circuit breaker:")
+	fmt.Println("- First 3 failures → Circuit opens")
+	fmt.Println("- While open, callbacks reject requests")
+	fmt.Println("- After 5s timeout → Circuit transitions to half-open")
+	fmt.Println("- Successful call → Circuit closes")
+	fmt.Println()
+
+	// Create a flaky model
+	flakyModel := &FlakyModel{}
+
+	// Create callback manager with circuit breaker
+	manager := callbacks.NewManager()
+
+	// Configure circuit breaker:
+	// - Opens after 3 failures
+	// - Waits 5 seconds before transitioning to half-open
+	// - Tracks failures within a 1 minute window
+	config := policies.DefaultCircuitBreakerConfig()
+	config.MaxFailures = 3
+	config.Timeout = 5 * time.Second
+	config.FailureWindow = 1 * time.Minute
+
+	before, after, onError := policies.CircuitBreaker(config)
+	manager.RegisterBeforeModel(before)
+	manager.RegisterAfterModel(after)
+	manager.RegisterOnModelError(onError)
+
+	// Add retry policy with short delays to see circuit breaker in action
+	retryConfig := policies.DefaultRetryConfig()
+	retryConfig.MaxAttempts = 20
+	retryConfig.InitialDelay = 200 * time.Millisecond
+	retryConfig.MaxDelay = 1 * time.Second
+	manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
+
+	// Build the graph using agent
 	state := graph.NewGraphState(10)
 	g := graph.NewGraph(state)
 
-	// Simulate a flaky external service
-	callCount := 0
-	err := g.AddNode(&graph.Node{
-		Name: "flaky-service",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			callCount++
-
-			// Use circuit breaker to protect the service call
-			err := cb.Call(ctx, func(ctx context.Context) error {
-				// Simulate service behavior:
-				// Calls 1-3: Fail (circuit opens)
-				// Calls 4-5: Circuit is open, don't call service
-				// Call 6+: Circuit half-open, then succeeds and closes
-				if callCount <= 3 {
-					return fmt.Errorf("service unavailable (call %d)", callCount)
-				}
-				return nil
-			})
-
-			if err != nil {
-				log.Printf("[Call %d] Circuit State: %s, Error: %v", callCount, cb.State(), err)
-				return nil, err
-			}
-
-			log.Printf("[Call %d] Circuit State: %s, Success!", callCount, cb.State())
-			return &graph.NodeResult{
-				Updates: map[string]any{
-					"status": "success",
-					"call":   callCount,
-				},
-			}, nil
-		},
-		RetryPolicy: &graph.RetryPolicy{
-			MaxAttempts: 15,
-			Backoff: func(attempt int) time.Duration {
-				// When circuit is open, wait longer to allow it to transition to half-open
-				if cb.State() == graph.StateOpen && attempt >= 4 {
-					return 6 * time.Second // Wait for circuit to transition to half-open
-				}
-				return 500 * time.Millisecond
-			},
-			Retryable: func(err error) bool {
-				// Always retry - let the circuit breaker handle failures
-				return true
-			},
-		},
-	})
+	err := g.AddNode(agent.ModelNode(
+		flakyModel,
+		agent.WithModelNodeName("flaky-service"),
+		agent.WithModelCallbacks(manager),
+	))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,27 +106,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("=== Circuit Breaker Pattern Example ===")
-	fmt.Println()
-	fmt.Println("Demonstrating circuit breaker protecting a flaky service:")
-	fmt.Println("- First 3 calls fail → Circuit opens")
-	fmt.Println("- While open, requests fail fast without calling service")
-	fmt.Println("- After 5s timeout → Circuit transitions to half-open")
-	fmt.Println("- Successful calls in half-open → Circuit closes")
-	fmt.Println()
-
-	_, err = compiled.Invoke(context.Background(), []message.Message{
+	result, err := compiled.Invoke(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Test circuit breaker"),
 	})
 
 	fmt.Println("\n=== Results ===")
 	if err != nil {
-		fmt.Printf("Final error: %v\n", err)
-		fmt.Printf("Circuit state: %s\n", cb.State())
+		fmt.Printf("❌ Final error: %v\n", err)
+		fmt.Printf("Total calls attempted: %d\n", flakyModel.callCount)
 	} else {
 		fmt.Println("✓ Service recovered successfully!")
-		fmt.Printf("Circuit state: %s\n", cb.State())
-		fmt.Printf("Total calls made: %d\n", callCount)
-		fmt.Printf("Status: %v\n", compiled.State().Get("status"))
+		fmt.Printf("Total calls made: %d\n", flakyModel.callCount)
+		if len(result) > 0 {
+			lastMsg := result[len(result)-1]
+			parts := lastMsg.Parts()
+			if len(parts) > 0 {
+				if textPart, ok := parts[0].(message.TextPart); ok {
+					fmt.Printf("Final response: %s\n", textPart.Text)
+				}
+			}
+		}
 	}
 }

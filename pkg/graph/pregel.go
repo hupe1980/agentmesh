@@ -528,19 +528,6 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		}
 	}
 
-	// Apply rate limiting if configured for this node
-	if n.runtime != nil && n.runtime.cg != nil {
-		n.runtime.cg.rateLimitersMu.RLock()
-		limiter, ok := n.runtime.cg.rateLimiters[n.name]
-		n.runtime.cg.rateLimitersMu.RUnlock()
-
-		if ok {
-			if err := limiter.Wait(ctx); err != nil {
-				return nil, fmt.Errorf("rate limit wait failed for node %s: %w", n.name, err)
-			}
-		}
-	}
-
 	policy := n.node.RetryPolicy
 	if policy == nil || policy.MaxAttempts <= 1 {
 		// No retry policy or only single attempt

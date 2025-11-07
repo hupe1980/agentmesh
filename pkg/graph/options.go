@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"golang.org/x/time/rate"
 )
 
 // Aggregator defines a global reduction applied across vertices each superstep.
@@ -30,13 +29,12 @@ type runOptions struct {
 	maxMessages        int // Maximum number of messages to retain (0 = unlimited)
 	aggregators        map[string]Aggregator
 	combiner           Combiner
-	rateLimiters       map[string]*rate.Limiter // Per-node rate limiters
-	checkpointer       Checkpointer             // Checkpoint storage backend
-	checkpointInterval int                      // Save every N supersteps (0 = every superstep)
-	autoRestore        bool                     // Automatically restore from last checkpoint
-	runID              string                   // Unique identifier for this execution run
-	resume             bool                     // Resume from checkpoint
-	resumeFrom         int64                    // Superstep to resume from (0 = most recent)
+	checkpointer       Checkpointer // Checkpoint storage backend
+	checkpointInterval int          // Save every N supersteps (0 = every superstep)
+	autoRestore        bool         // Automatically restore from last checkpoint
+	runID              string       // Unique identifier for this execution run
+	resume             bool         // Resume from checkpoint
+	resumeFrom         int64        // Superstep to resume from (0 = most recent)
 }
 
 type RunOption func(*runOptions)
@@ -123,31 +121,9 @@ func WithMaxMessages(n int) RunOption {
 	}
 }
 
-// WithRateLimit adds a rate limiter to specific nodes to prevent API quota exhaustion.
-// The limiter uses a token bucket algorithm with the specified rate and burst size.
-//
-// Example: Limit "model" node to 10 requests/second with burst of 20:
-//
-//	compiled.Invoke(ctx, msgs, WithRateLimit("model", rate.Limit(10), 20))
-//
-// Use Cases:
-//   - LLM API rate limiting (OpenAI: 60 req/min tier 1)
-//   - External service throttling
-//   - Cost control for expensive operations
-func WithRateLimit(nodeName string, r rate.Limit, burst int) RunOption {
-	return func(opts *runOptions) {
-		if opts == nil {
-			return
-		}
-		if nodeName == "" || r <= 0 || burst <= 0 {
-			return
-		}
-		if opts.rateLimiters == nil {
-			opts.rateLimiters = make(map[string]*rate.Limiter)
-		}
-		opts.rateLimiters[nodeName] = rate.NewLimiter(r, burst)
-	}
-}
+// =============================================================================
+// Checkpoint Options
+// =============================================================================
 
 // =============================================================================
 // Checkpoint Options
