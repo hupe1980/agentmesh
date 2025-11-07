@@ -52,6 +52,35 @@ type BeforeModelCallback func(ctx context.Context, messages []message.Message) (
 //	}
 type AfterModelCallback func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error)
 
+// OnModelErrorCallback handles model invocation failures.
+// It may return a fallback message or propagate the error.
+//
+// Use this to log failures, implement retries, fallback models, or synthesize
+// a graceful degradation response. Returning a non-nil message.Message (with
+// nil error) replaces the failed call's output and suppresses the original
+// error. Returning nil with a nil error leaves the error as-is.
+// Returning a non-nil error propagates or transforms the failure.
+//
+// Use cases:
+//   - Graceful degradation (return fallback response)
+//   - Fallback to alternative models
+//   - Error transformation and wrapping
+//   - Retry coordination
+//   - Alert triggering
+//   - Circuit breaker integration
+//   - Error logging and metrics
+//
+// Example - Fallback model:
+//
+//	func FallbackModel(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+//	    if errors.Is(err, ErrRateLimited) {
+//	        // Use a simpler fallback model
+//	        return fallbackModel.Generate(ctx, messages)
+//	    }
+//	    return nil, err  // Propagate error
+//	}
+type OnModelErrorCallback func(ctx context.Context, messages []message.Message, err error) (message.Message, error)
+
 // BeforeToolCallback intercepts tool invocations prior to execution.
 // Returning a non-nil result skips the actual tool call and uses
 // the returned value instead. The result should match the tool's expected output type.

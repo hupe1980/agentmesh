@@ -33,6 +33,19 @@ func safeExecuteAfterModel(ctx context.Context, cb AfterModelCallback, messages 
 	return cb(ctx, messages, response)
 }
 
+// safeExecuteOnModelError wraps an OnModelErrorCallback with panic recovery.
+// If the callback panics, it returns an error describing the panic.
+func safeExecuteOnModelError(ctx context.Context, cb OnModelErrorCallback, messages []message.Message, modelErr error) (result message.Message, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("OnModelErrorCallback panicked: %v", r)
+			result = nil
+		}
+	}()
+
+	return cb(ctx, messages, modelErr)
+}
+
 // safeExecuteBeforeTool wraps a BeforeToolCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
 func safeExecuteBeforeTool(ctx context.Context, cb BeforeToolCallback, call message.ToolCall) (result any, err error) {

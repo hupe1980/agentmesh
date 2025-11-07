@@ -171,6 +171,65 @@ func TestBeforeModelCallback_Panic(t *testing.T) {
 	}
 }
 
+// OnModelError Callback Tests
+
+func TestOnModelErrorCallback_Propagate(t *testing.T) {
+	manager := NewManager()
+	originalErr := errors.New("model failed")
+
+	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+		return nil, err // Propagate
+	})
+
+	messages := createTestMessages()
+	result, err := manager.ExecuteOnModelError(context.Background(), messages, originalErr)
+
+	if err != originalErr {
+		t.Fatalf("expected original error, got: %v", err)
+	}
+	if result != nil {
+		t.Fatal("expected nil result")
+	}
+}
+
+func TestOnModelErrorCallback_Fallback(t *testing.T) {
+	manager := NewManager()
+	fallback := message.NewAIMessageFromText("fallback response")
+
+	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+		return fallback, nil
+	})
+
+	messages := createTestMessages()
+	result, err := manager.ExecuteOnModelError(context.Background(), messages, errors.New("model failed"))
+
+	if err != nil {
+		t.Fatalf("expected no error with fallback, got: %v", err)
+	}
+	if result != fallback {
+		t.Fatal("expected fallback result")
+	}
+}
+
+func TestOnModelErrorCallback_TransformError(t *testing.T) {
+	manager := NewManager()
+	wrappedErr := fmt.Errorf("wrapped error")
+
+	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+		return nil, wrappedErr
+	})
+
+	messages := createTestMessages()
+	result, err := manager.ExecuteOnModelError(context.Background(), messages, errors.New("original"))
+
+	if err != wrappedErr {
+		t.Fatalf("expected wrapped error, got: %v", err)
+	}
+	if result != nil {
+		t.Fatal("expected nil result")
+	}
+}
+
 // AfterModel Callback Tests
 
 func TestAfterModelCallback_NoTransform(t *testing.T) {

@@ -16,8 +16,9 @@ import (
 type Manager struct {
 	mu sync.RWMutex
 
-	beforeModel []BeforeModelCallback
-	afterModel  []AfterModelCallback
+	beforeModel  []BeforeModelCallback
+	afterModel   []AfterModelCallback
+	onModelError []OnModelErrorCallback
 
 	beforeTool  []BeforeToolCallback
 	afterTool   []AfterToolCallback
@@ -27,11 +28,12 @@ type Manager struct {
 // NewManager creates a new callback manager with no registered callbacks.
 func NewManager() *Manager {
 	return &Manager{
-		beforeModel: []BeforeModelCallback{},
-		afterModel:  []AfterModelCallback{},
-		beforeTool:  []BeforeToolCallback{},
-		afterTool:   []AfterToolCallback{},
-		onToolError: []OnToolErrorCallback{},
+		beforeModel:  []BeforeModelCallback{},
+		afterModel:   []AfterModelCallback{},
+		onModelError: []OnModelErrorCallback{},
+		beforeTool:   []BeforeToolCallback{},
+		afterTool:    []AfterToolCallback{},
+		onToolError:  []OnToolErrorCallback{},
 	}
 }
 
@@ -49,6 +51,14 @@ func (m *Manager) RegisterAfterModel(cb AfterModelCallback) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.afterModel = append(m.afterModel, cb)
+}
+
+// RegisterOnModelError adds a callback to be invoked when a model execution fails.
+// Callbacks are executed in registration order.
+func (m *Manager) RegisterOnModelError(cb OnModelErrorCallback) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onModelError = append(m.onModelError, cb)
 }
 
 // RegisterBeforeTool adds a callback to be invoked before tool execution.
@@ -124,6 +134,33 @@ func (m *Manager) ExecuteAfterModel(ctx context.Context, messages []message.Mess
 	}
 
 	return current, nil
+}
+
+// ExecuteOnModelError runs all registered OnModelError callbacks in order.
+// Callbacks can provide fallback responses or transform errors.
+// If a callback returns a non-nil message, that becomes the final response and execution stops.
+// If a callback returns a non-nil error, that becomes the final error and execution stops.
+//
+// Returns:
+//   - message.Message: non-nil if a callback provided a fallback response
+//   - error: the final error (original or transformed)
+func (m *Manager) ExecuteOnModelError(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+	m.mu.RLock()
+	callbacks := m.onModelError
+	m.mu.RUnlock()
+
+	currentErr := err
+	for _, cb := range callbacks {
+		result, newErr := safeExecuteOnModelError(ctx, cb, messages, currentErr)
+		if result != nil {
+			return result, nil // Fallback provided
+		}
+		if newErr != nil {
+			currentErr = newErr
+		}
+	}
+
+	return nil, currentErr
 }
 
 // ExecuteBeforeTool runs all registered BeforeTool callbacks in order.
@@ -216,6 +253,13 @@ func (m *Manager) HasAfterModelCallbacks() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.afterModel) > 0
+}
+
+// HasOnModelErrorCallbacks returns true if any OnModelError callbacks are registered.
+func (m *Manager) HasOnModelErrorCallbacks() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.onModelError) > 0
 }
 
 // HasBeforeToolCallbacks returns true if any BeforeTool callbacks are registered.

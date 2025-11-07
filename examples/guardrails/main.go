@@ -156,6 +156,15 @@ func StoreInCache(cache map[string]message.Message) callbacks.AfterModelCallback
 	}
 }
 
+// HandleModelErrors provides fallback responses when model calls fail
+func HandleModelErrors(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+	// Log the error
+	fmt.Printf("⚠ Model error: %v\n", err)
+
+	// Provide graceful fallback response
+	return message.NewAIMessageFromText("I apologize, but I'm experiencing technical difficulties. Please try again in a moment."), nil
+}
+
 func main() {
 	// Create callback manager
 	manager := callbacks.NewManager()
@@ -163,6 +172,7 @@ func main() {
 	// Register safety guardrails
 	manager.RegisterBeforeModel(BlockUnsafeContent)
 	manager.RegisterAfterModel(FilterPII)
+	manager.RegisterOnModelError(HandleModelErrors)
 
 	// Set up caching
 	cache := make(map[string]message.Message)

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 
+	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -10,7 +11,8 @@ import (
 
 // modelNodeOptions holds configuration for a model node.
 type modelNodeOptions struct {
-	nodeName string
+	nodeName  string
+	callbacks *callbacks.Manager
 }
 
 // ModelNodeOption configures a model node.
@@ -20,6 +22,15 @@ type ModelNodeOption func(*modelNodeOptions)
 func WithModelNodeName(name string) ModelNodeOption {
 	return func(c *modelNodeOptions) {
 		c.nodeName = name
+	}
+}
+
+// WithModelCallbacks sets the callback manager for the model node.
+// Callbacks enable intercepting and modifying model invocations for guardrails,
+// caching, metrics, and other cross-cutting concerns.
+func WithModelCallbacks(cb *callbacks.Manager) ModelNodeOption {
+	return func(c *modelNodeOptions) {
+		c.callbacks = cb
 	}
 }
 
@@ -33,9 +44,17 @@ func WithModelNodeName(name string) ModelNodeOption {
 //
 //	g.AddNode(ModelNode(myModel))
 //	g.AddNode(ModelNode(myModel, WithModelNodeName("generator")))
+//
+// With callbacks:
+//
+//	cb := callbacks.NewManager()
+//	cb.RegisterBeforeModel(guardrails.BlockUnsafeContent)
+//	cb.RegisterAfterModel(guardrails.FilterPII)
+//	g.AddNode(ModelNode(myModel, WithModelCallbacks(cb)))
 func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 	config := modelNodeOptions{
-		nodeName: "model",
+		nodeName:  "model",
+		callbacks: nil,
 	}
 
 	for _, opt := range opts {
@@ -45,9 +64,52 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 	return &graph.Node{
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			msg, err := mdl.Generate(ctx, s.MessagesSnapshot())
+			messages := s.MessagesSnapshot()
+
+			// Execute BeforeModel callbacks
+			if config.callbacks != nil && config.callbacks.HasBeforeModelCallbacks() {
+				result, err := config.callbacks.ExecuteBeforeModel(ctx, messages)
+				if err != nil {
+					return nil, err
+				}
+				if result != nil {
+					// Short-circuit: use callback response instead of calling model
+					return &graph.NodeResult{
+						Messages: []message.Message{result},
+						Updates:  map[string]any{},
+					}, nil
+				}
+			}
+
+			// Call the model
+			msg, err := mdl.Generate(ctx, messages)
 			if err != nil {
+				// Execute OnModelError callbacks
+				if config.callbacks != nil && config.callbacks.HasOnModelErrorCallbacks() {
+					fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, messages, err)
+					if cbErr != nil {
+						err = cbErr // Use transformed error
+					}
+					if fallback != nil {
+						// Callback provided fallback response
+						return &graph.NodeResult{
+							Messages: []message.Message{fallback},
+							Updates:  map[string]any{},
+						}, nil
+					}
+				}
 				return nil, err
+			}
+
+			// Execute AfterModel callbacks
+			if config.callbacks != nil && config.callbacks.HasAfterModelCallbacks() {
+				transformed, err := config.callbacks.ExecuteAfterModel(ctx, messages, msg)
+				if err != nil {
+					return nil, err
+				}
+				if transformed != nil {
+					msg = transformed
+				}
 			}
 
 			return &graph.NodeResult{

@@ -13,6 +13,7 @@
 // Model Callbacks:
 //   - BeforeModelCallback: Intercepts model requests before execution
 //   - AfterModelCallback: Post-processes model responses
+//   - OnModelErrorCallback: Handles model execution errors with fallback support
 //
 // Tool Callbacks:
 //   - BeforeToolCallback: Intercepts tool invocations before execution
