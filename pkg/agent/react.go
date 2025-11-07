@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -51,7 +51,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, 
 
 		toolsetTools, err := config.toolset.ListTools(ctx, emptyState)
 		if err != nil {
-			return nil, errors.Join(errors.New("react agent: failed to list tools from toolset"), err)
+			return nil, fmt.Errorf("react agent: failed to list tools from toolset: %w", err)
 		}
 
 		allTools = append(allTools, toolsetTools...)
@@ -78,11 +78,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, 
 	if toolAware, ok := mdl.(model.ToolAware); ok {
 		configured := toolAware.BindTools(acceptedTools...)
 		if configured == nil {
-			return nil, errors.New("react agent: model returned nil from BindTools")
+			return nil, fmt.Errorf("react agent: model returned nil from BindTools (expected configured model)")
 		}
 		mdl = configured
 	} else if len(acceptedTools) > 0 {
-		return nil, errors.New("react agent: model does not support tool configuration")
+		return nil, fmt.Errorf("react agent: model does not support tool configuration (%d tools provided but model doesn't implement ToolAware)", len(acceptedTools))
 	}
 
 	// Create state with unlimited messages (0 = unlimited)

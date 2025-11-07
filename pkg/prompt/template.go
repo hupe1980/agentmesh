@@ -94,7 +94,7 @@ func New(templateStr string) *Template {
 //	})
 func (t *Template) Render(data map[string]any) (string, error) {
 	if t == nil {
-		return "", errors.New("nil template")
+		return "", fmt.Errorf("template: cannot render nil template")
 	}
 
 	// Fast path: no template

@@ -2,7 +2,7 @@ package langchaingo
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
@@ -46,7 +46,7 @@ func NewRetriever(retriever schema.Retriever) *Retriever {
 func (r *Retriever) Retrieve(ctx context.Context, query string) ([]retrieval.Document, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return nil, errors.New("empty langchaingo query string")
+		return nil, fmt.Errorf("langchaingo retriever: query cannot be empty")
 	}
 
 	lcDocs, err := r.retriever.GetRelevantDocuments(ctx, query)

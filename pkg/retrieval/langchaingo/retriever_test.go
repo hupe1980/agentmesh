@@ -107,7 +107,7 @@ func TestRetriever_RetrieveEmptyQuery(t *testing.T) {
 	retr := NewRetriever(&stubRetriever{})
 
 	docs, err := retr.Retrieve(context.Background(), "   ")
-	require.EqualError(t, err, "empty langchaingo query string")
+	require.EqualError(t, err, "langchaingo retriever: query cannot be empty")
 	require.Nil(t, docs)
 }
 
