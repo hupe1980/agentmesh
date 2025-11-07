@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // safeExecuteBeforeModel wraps a BeforeModelCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteBeforeModel(ctx context.Context, cb BeforeModelCallback, messages []message.Message) (result message.Message, err error) {
+func safeExecuteBeforeModel(ctx context.Context, cb BeforeModelCallback, s graph.StateWriter) (result message.Message, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("BeforeModelCallback panicked: %v", r)
@@ -17,12 +18,12 @@ func safeExecuteBeforeModel(ctx context.Context, cb BeforeModelCallback, message
 		}
 	}()
 
-	return cb(ctx, messages)
+	return cb(ctx, s)
 }
 
 // safeExecuteAfterModel wraps an AfterModelCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteAfterModel(ctx context.Context, cb AfterModelCallback, messages []message.Message, response message.Message) (result message.Message, err error) {
+func safeExecuteAfterModel(ctx context.Context, cb AfterModelCallback, s graph.StateWriter, response message.Message) (result message.Message, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("AfterModelCallback panicked: %v", r)
@@ -30,12 +31,12 @@ func safeExecuteAfterModel(ctx context.Context, cb AfterModelCallback, messages 
 		}
 	}()
 
-	return cb(ctx, messages, response)
+	return cb(ctx, s, response)
 }
 
 // safeExecuteOnModelError wraps an OnModelErrorCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteOnModelError(ctx context.Context, cb OnModelErrorCallback, messages []message.Message, modelErr error) (result message.Message, err error) {
+func safeExecuteOnModelError(ctx context.Context, cb OnModelErrorCallback, s graph.StateWriter, modelErr error) (result message.Message, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("OnModelErrorCallback panicked: %v", r)
@@ -43,12 +44,12 @@ func safeExecuteOnModelError(ctx context.Context, cb OnModelErrorCallback, messa
 		}
 	}()
 
-	return cb(ctx, messages, modelErr)
+	return cb(ctx, s, modelErr)
 }
 
 // safeExecuteBeforeTool wraps a BeforeToolCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteBeforeTool(ctx context.Context, cb BeforeToolCallback, call message.ToolCall) (result any, err error) {
+func safeExecuteBeforeTool(ctx context.Context, cb BeforeToolCallback, s graph.StateWriter, call message.ToolCall) (result any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("BeforeToolCallback panicked: %v", r)
@@ -56,12 +57,12 @@ func safeExecuteBeforeTool(ctx context.Context, cb BeforeToolCallback, call mess
 		}
 	}()
 
-	return cb(ctx, call)
+	return cb(ctx, s, call)
 }
 
 // safeExecuteAfterTool wraps an AfterToolCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteAfterTool(ctx context.Context, cb AfterToolCallback, call message.ToolCall, toolResult any) (result any, err error) {
+func safeExecuteAfterTool(ctx context.Context, cb AfterToolCallback, s graph.StateWriter, call message.ToolCall, toolResult any) (result any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("AfterToolCallback panicked: %v", r)
@@ -69,12 +70,12 @@ func safeExecuteAfterTool(ctx context.Context, cb AfterToolCallback, call messag
 		}
 	}()
 
-	return cb(ctx, call, toolResult)
+	return cb(ctx, s, call, toolResult)
 }
 
 // safeExecuteOnToolError wraps an OnToolErrorCallback with panic recovery.
 // If the callback panics, it returns an error describing the panic.
-func safeExecuteOnToolError(ctx context.Context, cb OnToolErrorCallback, call message.ToolCall, toolErr error) (result any, err error) {
+func safeExecuteOnToolError(ctx context.Context, cb OnToolErrorCallback, s graph.StateWriter, call message.ToolCall, toolErr error) (result any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("OnToolErrorCallback panicked: %v", r)
@@ -82,5 +83,5 @@ func safeExecuteOnToolError(ctx context.Context, cb OnToolErrorCallback, call me
 		}
 	}()
 
-	return cb(ctx, call, toolErr)
+	return cb(ctx, s, call, toolErr)
 }

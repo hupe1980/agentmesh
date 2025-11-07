@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -75,7 +76,8 @@ func main() {
 }
 
 // validateRequest is a BeforeModel callback that validates requests before calling the model
-func validateRequest(ctx context.Context, messages []message.Message) (message.Message, error) {
+func validateRequest(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+	messages := s.MessagesSnapshot()
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("empty message list")
 	}
@@ -95,7 +97,7 @@ func validateRequest(ctx context.Context, messages []message.Message) (message.M
 }
 
 // sanitizeResponse is an AfterModel callback that sanitizes model responses
-func sanitizeResponse(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+func sanitizeResponse(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 	// Example: redact sensitive information
 	// In production, use proper PII detection
 
@@ -129,7 +131,7 @@ func sanitizeResponse(ctx context.Context, messages []message.Message, response 
 }
 
 // validateToolAccess is a BeforeTool callback that validates tool access
-func validateToolAccess(ctx context.Context, call message.ToolCall) (any, error) {
+func validateToolAccess(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
 	// Example: check if user has permission to use this tool
 	// In production, check actual user permissions from context
 
@@ -144,7 +146,7 @@ func validateToolAccess(ctx context.Context, call message.ToolCall) (any, error)
 }
 
 // transformToolResult is an AfterTool callback that transforms tool results
-func transformToolResult(ctx context.Context, call message.ToolCall, result any) (any, error) {
+func transformToolResult(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
 	// Example: format results consistently
 	// In production, apply proper transformation logic
 
@@ -161,7 +163,7 @@ func transformToolResult(ctx context.Context, call message.ToolCall, result any)
 }
 
 // handleToolError is an OnToolError callback that handles tool execution failures
-func handleToolError(ctx context.Context, call message.ToolCall, err error) (any, error) {
+func handleToolError(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
 	// Example: provide fallback for certain errors
 	// In production, implement proper error handling strategy
 

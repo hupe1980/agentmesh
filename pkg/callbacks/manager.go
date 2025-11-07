@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -92,13 +93,13 @@ func (m *Manager) RegisterOnToolError(cb OnToolErrorCallback) {
 // Returns:
 //   - message.Message: non-nil if a callback short-circuited with a response
 //   - error: non-nil if a callback failed
-func (m *Manager) ExecuteBeforeModel(ctx context.Context, messages []message.Message) (message.Message, error) {
+func (m *Manager) ExecuteBeforeModel(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 	m.mu.RLock()
 	callbacks := m.beforeModel
 	m.mu.RUnlock()
 
 	for _, cb := range callbacks {
-		result, err := safeExecuteBeforeModel(ctx, cb, messages)
+		result, err := safeExecuteBeforeModel(ctx, cb, s)
 		if err != nil {
 			return nil, err
 		}
@@ -117,14 +118,14 @@ func (m *Manager) ExecuteBeforeModel(ctx context.Context, messages []message.Mes
 // Returns:
 //   - message.Message: the final response (original or transformed)
 //   - error: non-nil if a callback failed
-func (m *Manager) ExecuteAfterModel(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+func (m *Manager) ExecuteAfterModel(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 	m.mu.RLock()
 	callbacks := m.afterModel
 	m.mu.RUnlock()
 
 	current := response
 	for _, cb := range callbacks {
-		transformed, err := safeExecuteAfterModel(ctx, cb, messages, current)
+		transformed, err := safeExecuteAfterModel(ctx, cb, s, current)
 		if err != nil {
 			return nil, err
 		}
@@ -144,14 +145,14 @@ func (m *Manager) ExecuteAfterModel(ctx context.Context, messages []message.Mess
 // Returns:
 //   - message.Message: non-nil if a callback provided a fallback response
 //   - error: the final error (original or transformed)
-func (m *Manager) ExecuteOnModelError(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+func (m *Manager) ExecuteOnModelError(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
 	m.mu.RLock()
 	callbacks := m.onModelError
 	m.mu.RUnlock()
 
 	currentErr := err
 	for _, cb := range callbacks {
-		result, newErr := safeExecuteOnModelError(ctx, cb, messages, currentErr)
+		result, newErr := safeExecuteOnModelError(ctx, cb, s, currentErr)
 		if result != nil {
 			return result, nil // Fallback provided
 		}
@@ -170,13 +171,13 @@ func (m *Manager) ExecuteOnModelError(ctx context.Context, messages []message.Me
 // Returns:
 //   - any: non-nil if a callback short-circuited with a result
 //   - error: non-nil if a callback failed
-func (m *Manager) ExecuteBeforeTool(ctx context.Context, call message.ToolCall) (any, error) {
+func (m *Manager) ExecuteBeforeTool(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
 	m.mu.RLock()
 	callbacks := m.beforeTool
 	m.mu.RUnlock()
 
 	for _, cb := range callbacks {
-		result, err := safeExecuteBeforeTool(ctx, cb, call)
+		result, err := safeExecuteBeforeTool(ctx, cb, s, call)
 		if err != nil {
 			return nil, err
 		}
@@ -195,14 +196,14 @@ func (m *Manager) ExecuteBeforeTool(ctx context.Context, call message.ToolCall) 
 // Returns:
 //   - any: the final result (original or transformed)
 //   - error: non-nil if a callback failed
-func (m *Manager) ExecuteAfterTool(ctx context.Context, call message.ToolCall, result any) (any, error) {
+func (m *Manager) ExecuteAfterTool(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
 	m.mu.RLock()
 	callbacks := m.afterTool
 	m.mu.RUnlock()
 
 	current := result
 	for _, cb := range callbacks {
-		transformed, err := safeExecuteAfterTool(ctx, cb, call, current)
+		transformed, err := safeExecuteAfterTool(ctx, cb, s, call, current)
 		if err != nil {
 			return nil, err
 		}
@@ -222,14 +223,14 @@ func (m *Manager) ExecuteAfterTool(ctx context.Context, call message.ToolCall, r
 // Returns:
 //   - any: non-nil if a callback provided a fallback result
 //   - error: the final error (original or transformed)
-func (m *Manager) ExecuteOnToolError(ctx context.Context, call message.ToolCall, err error) (any, error) {
+func (m *Manager) ExecuteOnToolError(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
 	m.mu.RLock()
 	callbacks := m.onToolError
 	m.mu.RUnlock()
 
 	currentErr := err
 	for _, cb := range callbacks {
-		result, newErr := safeExecuteOnToolError(ctx, cb, call, currentErr)
+		result, newErr := safeExecuteOnToolError(ctx, cb, s, call, currentErr)
 		if result != nil {
 			return result, nil // Fallback provided
 		}

@@ -64,11 +64,9 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 	return &graph.Node{
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			messages := s.MessagesSnapshot()
-
 			// Execute BeforeModel callbacks
 			if config.callbacks != nil && config.callbacks.HasBeforeModelCallbacks() {
-				result, err := config.callbacks.ExecuteBeforeModel(ctx, messages)
+				result, err := config.callbacks.ExecuteBeforeModel(ctx, s)
 				if err != nil {
 					return nil, err
 				}
@@ -81,12 +79,15 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 				}
 			}
 
+			// Get messages for model invocation
+			messages := s.MessagesSnapshot()
+
 			// Call the model
 			msg, err := mdl.Generate(ctx, messages)
 			if err != nil {
 				// Execute OnModelError callbacks
 				if config.callbacks != nil && config.callbacks.HasOnModelErrorCallbacks() {
-					fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, messages, err)
+					fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, s, err)
 					if cbErr != nil {
 						err = cbErr // Use transformed error
 					}
@@ -103,7 +104,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 
 			// Execute AfterModel callbacks
 			if config.callbacks != nil && config.callbacks.HasAfterModelCallbacks() {
-				transformed, err := config.callbacks.ExecuteAfterModel(ctx, messages, msg)
+				transformed, err := config.callbacks.ExecuteAfterModel(ctx, s, msg)
 				if err != nil {
 					return nil, err
 				}

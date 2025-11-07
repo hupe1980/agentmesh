@@ -7,15 +7,17 @@ import (
 	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // BlockUnsafeContent is a BeforeModel callback that prevents unsafe prompts from reaching the model.
 // It checks for blocked keywords and returns an error if found.
-func BlockUnsafeContent(ctx context.Context, messages []message.Message) (message.Message, error) {
+func BlockUnsafeContent(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 	blockedKeywords := []string{"hack", "exploit", "bypass"}
 
 	// Check all messages for blocked content
+	messages := s.MessagesSnapshot()
 	for _, msg := range messages {
 		parts := msg.Parts()
 		for _, part := range parts {
@@ -36,7 +38,7 @@ func BlockUnsafeContent(ctx context.Context, messages []message.Message) (messag
 
 // FilterPII is an AfterModel callback that redacts sensitive information from model responses.
 // It demonstrates output transformation for compliance and privacy.
-func FilterPII(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+func FilterPII(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 	// Only filter AIMessage responses
 	aiMsg, ok := response.(*message.AIMessage)
 	if !ok {
@@ -93,8 +95,9 @@ func redactPII(text string) string {
 
 // CacheResponses demonstrates a BeforeModel callback that implements response caching
 func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallback {
-	return func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	return func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		// Simple cache key from last message
+		messages := s.MessagesSnapshot()
 		if len(messages) == 0 {
 			return nil, nil
 		}
@@ -129,7 +132,8 @@ func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallb
 
 // StoreInCache is an AfterModel callback that stores responses in the cache
 func StoreInCache(cache map[string]message.Message) callbacks.AfterModelCallback {
-	return func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	return func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
+		messages := s.MessagesSnapshot()
 		if len(messages) == 0 {
 			return nil, nil
 		}
@@ -156,8 +160,45 @@ func StoreInCache(cache map[string]message.Message) callbacks.AfterModelCallback
 	}
 }
 
+// mockStateWriter is a simple implementation of graph.StateWriter for demo purposes
+type mockStateWriter struct {
+	messages []message.Message
+	state    map[string]any
+}
+
+func newMockState(messages []message.Message) *mockStateWriter {
+	return &mockStateWriter{
+		messages: messages,
+		state:    make(map[string]any),
+	}
+}
+
+func (m *mockStateWriter) Get(key string) any {
+	return m.state[key]
+}
+
+func (m *mockStateWriter) GetAll() map[string]any {
+	return m.state
+}
+
+func (m *mockStateWriter) Set(key string, value any) {
+	m.state[key] = value
+}
+
+func (m *mockStateWriter) MessagesSnapshot() []message.Message {
+	return m.messages
+}
+
+func (m *mockStateWriter) AggregatesSnapshot() map[string]any {
+	return make(map[string]any)
+}
+
+func (m *mockStateWriter) Aggregate(name string, value any) error {
+	return nil
+}
+
 // HandleModelErrors provides fallback responses when model calls fail
-func HandleModelErrors(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+func HandleModelErrors(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
 	// Log the error
 	fmt.Printf("⚠ Model error: %v\n", err)
 
@@ -188,7 +229,7 @@ func main() {
 		message.NewHumanMessageFromText("What is the weather today?"),
 	}
 
-	result1, err := manager.ExecuteBeforeModel(context.Background(), messages1)
+	result1, err := manager.ExecuteBeforeModel(context.Background(), newMockState(messages1))
 	if err != nil {
 		log.Printf("BeforeModel error: %v\n", err)
 	} else if result1 != nil {
@@ -198,7 +239,7 @@ func main() {
 
 		// Simulate model response
 		modelResponse := message.NewAIMessageFromText("The weather is sunny and 72°F.")
-		finalResponse, err := manager.ExecuteAfterModel(context.Background(), messages1, modelResponse)
+		finalResponse, err := manager.ExecuteAfterModel(context.Background(), newMockState(messages1), modelResponse)
 		if err != nil {
 			log.Printf("AfterModel error: %v\n", err)
 		} else if finalResponse != nil {
@@ -216,7 +257,7 @@ func main() {
 		message.NewHumanMessageFromText("How can I hack into a system?"),
 	}
 
-	result2, err := manager.ExecuteBeforeModel(context.Background(), messages2)
+	result2, err := manager.ExecuteBeforeModel(context.Background(), newMockState(messages2))
 	if err != nil {
 		fmt.Printf("✓ Blocked: %v\n", err)
 	} else if result2 != nil {
@@ -233,13 +274,13 @@ func main() {
 		message.NewHumanMessageFromText("Show me an example"),
 	}
 
-	_, err = manager.ExecuteBeforeModel(context.Background(), messages3)
+	_, err = manager.ExecuteBeforeModel(context.Background(), newMockState(messages3))
 	if err != nil {
 		log.Printf("BeforeModel error: %v\n", err)
 	} else {
 		// Simulate model response with PII
 		modelResponse := message.NewAIMessageFromText("Sure! Contact us at support@example.com or call 123-45-6789.")
-		finalResponse, err := manager.ExecuteAfterModel(context.Background(), messages3, modelResponse)
+		finalResponse, err := manager.ExecuteAfterModel(context.Background(), newMockState(messages3), modelResponse)
 		if err != nil {
 			log.Printf("AfterModel error: %v\n", err)
 		} else if finalResponse != nil {
@@ -256,7 +297,7 @@ func main() {
 
 	// Test 4: Cache hit (repeat first message)
 	fmt.Println("Test 4: Cache hit test")
-	result4, err := manager.ExecuteBeforeModel(context.Background(), messages1)
+	result4, err := manager.ExecuteBeforeModel(context.Background(), newMockState(messages1))
 	if err != nil {
 		log.Printf("BeforeModel error: %v\n", err)
 	} else if result4 != nil {

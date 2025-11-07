@@ -115,7 +115,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 			for idx, call := range ai.ToolCalls {
 				// Execute BeforeTool callbacks
 				if config.callbacks != nil && config.callbacks.HasBeforeToolCallbacks() {
-					callbackResult, err := config.callbacks.ExecuteBeforeTool(ctx, call)
+					callbackResult, err := config.callbacks.ExecuteBeforeTool(ctx, s, call)
 					if err != nil {
 						if config.continueOnError {
 							toolCallID := call.ID
@@ -176,7 +176,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 				if err != nil {
 					// Execute OnToolError callbacks
 					if config.callbacks != nil && config.callbacks.HasOnToolErrorCallbacks() {
-						fallback, cbErr := config.callbacks.ExecuteOnToolError(ctx, call, err)
+						fallback, cbErr := config.callbacks.ExecuteOnToolError(ctx, s, call, err)
 						if cbErr != nil {
 							err = cbErr // Use transformed error
 						}
@@ -204,7 +204,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 				// Execute AfterTool callbacks
 				if config.callbacks != nil && config.callbacks.HasAfterToolCallbacks() {
-					transformed, err := config.callbacks.ExecuteAfterTool(ctx, call, result)
+					transformed, err := config.callbacks.ExecuteAfterTool(ctx, s, call, result)
 					if err != nil {
 						if config.continueOnError {
 							toolCallID := call.ID

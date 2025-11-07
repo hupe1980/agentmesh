@@ -7,10 +7,55 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Test helpers
+
+// mockStateWriter is a simple mock implementation of graph.StateWriter for testing
+type mockStateWriter struct {
+	messages   []message.Message
+	state      map[string]any
+	aggregates map[string]any
+}
+
+func newMockStateWriter() *mockStateWriter {
+	return &mockStateWriter{
+		messages:   []message.Message{message.NewHumanMessageFromText("test message")},
+		state:      make(map[string]any),
+		aggregates: make(map[string]any),
+	}
+}
+
+func (m *mockStateWriter) Get(key string) any {
+	return m.state[key]
+}
+
+func (m *mockStateWriter) GetAll() map[string]any {
+	return m.state
+}
+
+func (m *mockStateWriter) Set(key string, value any) {
+	m.state[key] = value
+}
+
+func (m *mockStateWriter) MessagesSnapshot() []message.Message {
+	return m.messages
+}
+
+func (m *mockStateWriter) AggregatesSnapshot() map[string]any {
+	return m.aggregates
+}
+
+func (m *mockStateWriter) Aggregate(name string, value any) error {
+	m.aggregates[name] = value
+	return nil
+}
+
+func createTestStateWriter() graph.StateWriter {
+	return newMockStateWriter()
+}
 
 func createTestMessages() []message.Message {
 	return []message.Message{
@@ -35,13 +80,12 @@ func TestBeforeModelCallback_NoShortCircuit(t *testing.T) {
 	manager := NewManager()
 	called := false
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		called = true
 		return nil, nil // Continue to model
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	result, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -58,12 +102,11 @@ func TestBeforeModelCallback_ShortCircuit(t *testing.T) {
 	manager := NewManager()
 	cachedMsg := message.NewAIMessageFromText("cached response")
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		return cachedMsg, nil // Short-circuit with cached response
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	result, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -80,12 +123,11 @@ func TestBeforeModelCallback_Error(t *testing.T) {
 	manager := NewManager()
 	expectedErr := errors.New("validation failed")
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		return nil, expectedErr
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	result, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err != expectedErr {
 		t.Fatalf("expected error %v, got: %v", expectedErr, err)
@@ -100,22 +142,21 @@ func TestBeforeModelCallback_Multiple(t *testing.T) {
 	callOrder := []int{}
 	mu := sync.Mutex{}
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		mu.Lock()
 		callOrder = append(callOrder, 1)
 		mu.Unlock()
 		return nil, nil
 	})
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		mu.Lock()
 		callOrder = append(callOrder, 2)
 		mu.Unlock()
 		return nil, nil
 	})
 
-	messages := createTestMessages()
-	_, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	_, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -130,17 +171,16 @@ func TestBeforeModelCallback_StopsOnFirstShortCircuit(t *testing.T) {
 	manager := NewManager()
 	secondCalled := false
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		return message.NewAIMessageFromText("short-circuit"), nil
 	})
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		secondCalled = true
 		return nil, nil
 	})
 
-	messages := createTestMessages()
-	_, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	_, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -153,12 +193,11 @@ func TestBeforeModelCallback_StopsOnFirstShortCircuit(t *testing.T) {
 func TestBeforeModelCallback_Panic(t *testing.T) {
 	manager := NewManager()
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		panic("something went wrong")
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteBeforeModel(context.Background(), messages)
+	result, err := manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 
 	if err == nil {
 		t.Fatal("expected panic to be converted to error")
@@ -177,12 +216,11 @@ func TestOnModelErrorCallback_Propagate(t *testing.T) {
 	manager := NewManager()
 	originalErr := errors.New("model failed")
 
-	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+	manager.RegisterOnModelError(func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
 		return nil, err // Propagate
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteOnModelError(context.Background(), messages, originalErr)
+	result, err := manager.ExecuteOnModelError(context.Background(), createTestStateWriter(), originalErr)
 
 	if err != originalErr {
 		t.Fatalf("expected original error, got: %v", err)
@@ -196,12 +234,11 @@ func TestOnModelErrorCallback_Fallback(t *testing.T) {
 	manager := NewManager()
 	fallback := message.NewAIMessageFromText("fallback response")
 
-	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+	manager.RegisterOnModelError(func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
 		return fallback, nil
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteOnModelError(context.Background(), messages, errors.New("model failed"))
+	result, err := manager.ExecuteOnModelError(context.Background(), createTestStateWriter(), errors.New("model failed"))
 
 	if err != nil {
 		t.Fatalf("expected no error with fallback, got: %v", err)
@@ -215,12 +252,11 @@ func TestOnModelErrorCallback_TransformError(t *testing.T) {
 	manager := NewManager()
 	wrappedErr := fmt.Errorf("wrapped error")
 
-	manager.RegisterOnModelError(func(ctx context.Context, messages []message.Message, err error) (message.Message, error) {
+	manager.RegisterOnModelError(func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
 		return nil, wrappedErr
 	})
 
-	messages := createTestMessages()
-	result, err := manager.ExecuteOnModelError(context.Background(), messages, errors.New("original"))
+	result, err := manager.ExecuteOnModelError(context.Background(), createTestStateWriter(), errors.New("original"))
 
 	if err != wrappedErr {
 		t.Fatalf("expected wrapped error, got: %v", err)
@@ -236,14 +272,13 @@ func TestAfterModelCallback_NoTransform(t *testing.T) {
 	manager := NewManager()
 	called := false
 
-	manager.RegisterAfterModel(func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	manager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 		called = true
 		return nil, nil // Keep original
 	})
 
-	messages := createTestMessages()
 	original := message.NewAIMessageFromText("original response")
-	result, err := manager.ExecuteAfterModel(context.Background(), messages, original)
+	result, err := manager.ExecuteAfterModel(context.Background(), createTestStateWriter(), original)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -260,13 +295,12 @@ func TestAfterModelCallback_Transform(t *testing.T) {
 	manager := NewManager()
 	transformed := message.NewAIMessageFromText("filtered response")
 
-	manager.RegisterAfterModel(func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	manager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 		return transformed, nil
 	})
 
-	messages := createTestMessages()
 	original := message.NewAIMessageFromText("toxic content")
-	result, err := manager.ExecuteAfterModel(context.Background(), messages, original)
+	result, err := manager.ExecuteAfterModel(context.Background(), createTestStateWriter(), original)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -279,11 +313,11 @@ func TestAfterModelCallback_Transform(t *testing.T) {
 func TestAfterModelCallback_ChainedTransforms(t *testing.T) {
 	manager := NewManager()
 
-	manager.RegisterAfterModel(func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	manager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 		return message.NewAIMessageFromText("step1"), nil
 	})
 
-	manager.RegisterAfterModel(func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	manager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 		// Verify we receive the transformed message from step 1
 		if ai, ok := response.(*message.AIMessage); ok {
 			parts := ai.Parts()
@@ -296,9 +330,8 @@ func TestAfterModelCallback_ChainedTransforms(t *testing.T) {
 		return nil, errors.New("unexpected response")
 	})
 
-	messages := createTestMessages()
 	original := message.NewAIMessageFromText("original")
-	result, err := manager.ExecuteAfterModel(context.Background(), messages, original)
+	result, err := manager.ExecuteAfterModel(context.Background(), createTestStateWriter(), original)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -324,13 +357,13 @@ func TestBeforeToolCallback_NoShortCircuit(t *testing.T) {
 	manager := NewManager()
 	called := false
 
-	manager.RegisterBeforeTool(func(ctx context.Context, call message.ToolCall) (any, error) {
+	manager.RegisterBeforeTool(func(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
 		called = true
 		return nil, nil
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteBeforeTool(context.Background(), call)
+	result, err := manager.ExecuteBeforeTool(context.Background(), createTestStateWriter(), call)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -347,12 +380,12 @@ func TestBeforeToolCallback_ShortCircuit(t *testing.T) {
 	manager := NewManager()
 	mockResult := "cached result"
 
-	manager.RegisterBeforeTool(func(ctx context.Context, call message.ToolCall) (any, error) {
+	manager.RegisterBeforeTool(func(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
 		return mockResult, nil
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteBeforeTool(context.Background(), call)
+	result, err := manager.ExecuteBeforeTool(context.Background(), createTestStateWriter(), call)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -369,12 +402,12 @@ func TestBeforeToolCallback_Error(t *testing.T) {
 	manager := NewManager()
 	expectedErr := errors.New("permission denied")
 
-	manager.RegisterBeforeTool(func(ctx context.Context, call message.ToolCall) (any, error) {
+	manager.RegisterBeforeTool(func(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
 		return nil, expectedErr
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteBeforeTool(context.Background(), call)
+	result, err := manager.ExecuteBeforeTool(context.Background(), createTestStateWriter(), call)
 
 	if err != expectedErr {
 		t.Fatalf("expected error %v, got: %v", expectedErr, err)
@@ -390,14 +423,14 @@ func TestAfterToolCallback_NoTransform(t *testing.T) {
 	manager := NewManager()
 	called := false
 
-	manager.RegisterAfterTool(func(ctx context.Context, call message.ToolCall, result any) (any, error) {
+	manager.RegisterAfterTool(func(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
 		called = true
 		return nil, nil
 	})
 
 	call := createTestToolCall()
 	original := "original result"
-	result, err := manager.ExecuteAfterTool(context.Background(), call, original)
+	result, err := manager.ExecuteAfterTool(context.Background(), createTestStateWriter(), call, original)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -414,13 +447,13 @@ func TestAfterToolCallback_Transform(t *testing.T) {
 	manager := NewManager()
 	transformed := "transformed result"
 
-	manager.RegisterAfterTool(func(ctx context.Context, call message.ToolCall, result any) (any, error) {
+	manager.RegisterAfterTool(func(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
 		return transformed, nil
 	})
 
 	call := createTestToolCall()
 	original := "original result"
-	result, err := manager.ExecuteAfterTool(context.Background(), call, original)
+	result, err := manager.ExecuteAfterTool(context.Background(), createTestStateWriter(), call, original)
 
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -436,12 +469,12 @@ func TestOnToolErrorCallback_Propagate(t *testing.T) {
 	manager := NewManager()
 	originalErr := errors.New("tool failed")
 
-	manager.RegisterOnToolError(func(ctx context.Context, call message.ToolCall, err error) (any, error) {
+	manager.RegisterOnToolError(func(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
 		return nil, err // Propagate
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteOnToolError(context.Background(), call, originalErr)
+	result, err := manager.ExecuteOnToolError(context.Background(), createTestStateWriter(), call, originalErr)
 
 	if err != originalErr {
 		t.Fatalf("expected original error, got: %v", err)
@@ -455,12 +488,12 @@ func TestOnToolErrorCallback_Fallback(t *testing.T) {
 	manager := NewManager()
 	fallback := "fallback value"
 
-	manager.RegisterOnToolError(func(ctx context.Context, call message.ToolCall, err error) (any, error) {
+	manager.RegisterOnToolError(func(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
 		return fallback, nil
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteOnToolError(context.Background(), call, errors.New("timeout"))
+	result, err := manager.ExecuteOnToolError(context.Background(), createTestStateWriter(), call, errors.New("timeout"))
 
 	if err != nil {
 		t.Fatalf("expected no error with fallback, got: %v", err)
@@ -474,12 +507,12 @@ func TestOnToolErrorCallback_TransformError(t *testing.T) {
 	manager := NewManager()
 	wrappedErr := fmt.Errorf("wrapped error")
 
-	manager.RegisterOnToolError(func(ctx context.Context, call message.ToolCall, err error) (any, error) {
+	manager.RegisterOnToolError(func(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
 		return nil, wrappedErr
 	})
 
 	call := createTestToolCall()
-	result, err := manager.ExecuteOnToolError(context.Background(), call, errors.New("original"))
+	result, err := manager.ExecuteOnToolError(context.Background(), createTestStateWriter(), call, errors.New("original"))
 
 	if err != wrappedErr {
 		t.Fatalf("expected wrapped error, got: %v", err)
@@ -501,7 +534,7 @@ func TestHasCallbacks(t *testing.T) {
 		t.Fatal("expected no AfterModel callbacks")
 	}
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		return nil, nil
 	})
 
@@ -509,7 +542,7 @@ func TestHasCallbacks(t *testing.T) {
 		t.Fatal("expected BeforeModel callbacks")
 	}
 
-	manager.RegisterAfterModel(func(ctx context.Context, messages []message.Message, response message.Message) (message.Message, error) {
+	manager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
 		return nil, nil
 	})
 
@@ -529,7 +562,7 @@ func TestConcurrentRegistration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+			manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 				return nil, nil
 			})
 		}()
@@ -547,7 +580,7 @@ func TestConcurrentExecution(t *testing.T) {
 	counter := 0
 	mu := sync.Mutex{}
 
-	manager.RegisterBeforeModel(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	manager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		mu.Lock()
 		counter++
 		mu.Unlock()
@@ -555,14 +588,13 @@ func TestConcurrentExecution(t *testing.T) {
 	})
 
 	var wg sync.WaitGroup
-	messages := createTestMessages()
 
 	// Execute callbacks concurrently
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = manager.ExecuteBeforeModel(context.Background(), messages)
+			_, _ = manager.ExecuteBeforeModel(context.Background(), createTestStateWriter())
 		}()
 	}
 
