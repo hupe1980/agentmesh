@@ -72,7 +72,7 @@ func main() {
 
 // createValidationSubgraph validates input data
 func createValidationSubgraph() *graph.Graph {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	g.AddNode(&graph.Node{
@@ -142,7 +142,7 @@ func createValidationSubgraph() *graph.Graph {
 
 // createEnrichmentSubgraph adds computed fields to data
 func createEnrichmentSubgraph() *graph.Graph {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	g.AddNode(&graph.Node{
@@ -185,7 +185,7 @@ func createEnrichmentSubgraph() *graph.Graph {
 
 // createAnalysisSubgraph performs analysis on enriched data
 func createAnalysisSubgraph() *graph.Graph {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	g.AddNode(&graph.Node{
@@ -226,7 +226,7 @@ func createAnalysisSubgraph() *graph.Graph {
 
 // createPipeline assembles subgraphs into a processing pipeline
 func createPipeline(validation, enrichment, analysis *graph.CompiledGraph) *graph.Graph {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	// Add validation subgraph (direct embedding)

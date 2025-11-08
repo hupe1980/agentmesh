@@ -18,7 +18,7 @@ var (
 
 func TestRetryPolicy(t *testing.T) {
 	t.Run("succeeds on first attempt", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -50,7 +50,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("retries and eventually succeeds", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -85,7 +85,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("exhausts retries and fails", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -114,7 +114,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("custom retryable function skips non-retryable errors", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -146,7 +146,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("respects context cancellation during backoff", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -191,7 +191,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("no retry policy executes once", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -236,7 +236,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("aggregates reset between retry attempts", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0
@@ -301,7 +301,7 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("preserves all retry attempt errors", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		attempts := 0

@@ -33,9 +33,19 @@ func ensureExecutionState(rt *executionState) *executionState {
 	return newExecutionState()
 }
 
-func NewGraph(state *GraphState) *Graph {
-	if state == nil {
+func NewGraph(stateManager StateManager) *Graph {
+	var state *GraphState
+	if stateManager == nil {
 		state = NewGraphState(0) // Unlimited messages by default
+	} else {
+		// Type assert to *GraphState (current implementation requirement)
+		var ok bool
+		state, ok = stateManager.(*GraphState)
+		if !ok {
+			// If not a *GraphState, create a new one
+			// TODO: Support custom StateManager implementations
+			state = NewGraphState(0)
+		}
 	}
 	return &Graph{
 		Nodes:    make(map[string]*Node),

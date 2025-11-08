@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	state := graph.NewGraphState(0) // Unlimited messages
+	state := graph.NewStateManager(0) // Unlimited messages
 
 	// Initialize state values using LastValueChannel (auto-created by Set)
 	state.Set("current_task", "Impact of AI on climate change")

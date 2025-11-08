@@ -67,80 +67,88 @@ go get github.com/hupe1980/agentmesh@latest
 
 ## 📐 Architecture
 
-AgentMesh follows a **layered architecture** that separates concerns and enables extensibility:
+AgentMesh follows a **component-based architecture** with clean separation of concerns:
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│  Application Layer                                            │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │  pkg/agent (High-level agent patterns)                  │  │
-│  │  • ReAct: Reasoning + Acting                            │  │
-│  │  • RAG: Retrieval-Augmented Generation                  │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────┘
-                              ↓
-┌───────────────────────────────────────────────────────────────┐
-│  Integration Layer                                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────-─┐  │
-│  │ pkg/model    │  │  pkg/tool    │  │  pkg/retrieval      │  │
-│  │ • OpenAI     │  │  • Functions │  │  • Bedrock          │  │
-│  │ • Anthropic  │  │  • A2A       │  │  • Kendra           │  │
-│  │ • Custom     │  │  • ...       │  │  • Custom           │  │
-│  └──────────────┘  └──────────────┘  └────────────────────-┘  │
-└───────────────────────────────────────────────────────────────┘
-                              ↓
-┌───────────────────────────────────────────────────────────────┐
-│  Core Framework Layer                                         │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │  pkg/graph (Graph orchestration & execution)            │  │
-│  │  • CompiledGraph: Immutable workflow                    │  │
-│  │  • Builder: Fluent graph construction                   │  │
-│  │  • Scheduler: Topology-based execution order            │  │
-│  │  • State: Channel-based data flow                       │  │
-│  └─────────────────────────────────────────────────────────┘  │
-│  ┌──────────────┐  ┌────────────────┐  ┌────────────────--─┐  │
-│  │ pkg/channel  │  │ pkg/checkpoint │  │  pkg/message      │  │
-│  │ • Topic      │  │ • Memory       │  │  • Human          │  │
-│  │ • LastValue  │  │ • SQL          │  │  • AI             │  │
-│  │ • BinaryOp   │  │ • DynamoDB     │  │  • Tool           │  │
-│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
-└───────────────────────────────────────────────────────────────┘
-                              ↓
-┌───────────────────────────────────────────────────────────────┐
-│  Execution Engine Layer (PUBLIC API)                         │
-│  ┌─────────────────────────────────────────────────────────┐  │
-│  │  pkg/pregel (Bulk Synchronous Parallel Engine)         │  │
-│  │  • Generic BSP runtime (public API for extensions)     │  │
-│  │  • Superstep coordination                               │  │
-│  │  • Message passing & aggregation                        │  │
-│  │  • Pluggable MessageBus (in-memory, Redis, Kafka, etc) │  │
-│  │  • Custom Scheduler support                             │  │
-│  └─────────────────────────────────────────────────────────┘  │
-└───────────────────────────────────────────────────────────────┘
-                              ↓
-┌───────────────────────────────────────────────────────────────┐
-│  Infrastructure Layer (Internal Utilities)                    │
-│  ┌──────────────┐  ┌────────────────┐  ┌──────────────--───┐  │
-│  │ internal/    │  │ internal/      │  │  internal/        │  │
-│  │ jsonschema   │  │  mermaid       │  │  stream           │  │
-│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
-└───────────────────────────────────────────────────────────────┘
-                              ↓
-┌───────────────────────────────────────────────────────────────┐
-│  Observability Layer (Cross-cutting)                          │
-│  ┌──────────────┐  ┌────────────────┐  ┌──────────────--───┐  │
-│  │ pkg/metrics  │  │  pkg/trace     │  │  pkg/logging      │  │
-│  │ • OpenTelem  │  │  • OpenTelem   │  │  • slog           │  │
-│  └──────────────┘  └────────────────┘  └────────────────--─┘  │
-└───────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│              Application Layer (pkg/agent)                    │
+│  • ReActAgent: Reasoning + Acting pattern                    │
+│  • SupervisorAgent: Multi-agent coordination                 │
+│  • RAGAgent: Retrieval-Augmented Generation                  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ builds on
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    CompiledGraph (Coordinator)                │
+│  • Immutable graph topology (nodes, edges, conditionals)      │
+│  • Public API (Invoke, Stream, Pause, Resume)                │
+│  • Coordinates StateManager ↔ Executor                        │
+│  • Rate limiting & retry policies                             │
+└────────────────┬─────────────────────────┬───────────────────┘
+                 │                         │
+                 │ delegates to            │ delegates to
+                 ▼                         ▼
+    ┌────────────────────────┐  ┌────────────────────────────┐
+    │    StateManager        │  │       Executor             │
+    │    (Interface)         │  │       (Interface)          │
+    │                        │  │                            │
+    │  • Channels            │  │  • Execution Strategy      │
+    │  • Checkpoints         │  │  • Superstep Coordination  │
+    │  • Aggregates          │  │  • Event Streaming         │
+    │  • Thread-safe access  │  │  • Pause/Resume Control    │
+    │  • State versioning    │  │  • Execution Statistics    │
+    └────────────────────────┘  └──────────┬─────────────────┘
+                                           │
+                                           │ implements
+                                           ▼
+                                  ┌──────────────────┐
+                                  │ PregelExecutor   │
+                                  │                  │
+                                  │ • BSP Model      │
+                                  │ • Worker Pool    │
+                                  │ • Mailbox System │
+                                  │ • pkg/pregel     │
+                                  └──────────────────┘
 ```
+
+### Component Layers
+
+**Application Layer** (`pkg/agent`)
+- High-level agent patterns: ReAct, RAG, Supervisor
+- Built on top of CompiledGraph
+
+**Integration Layer** (`pkg/model`, `pkg/tool`, `pkg/retrieval`)
+- LLM providers: OpenAI, Anthropic, Gemini
+- Tool integrations: Functions, A2A, MCP
+- Retrieval: Bedrock Knowledge Bases, Kendra
+
+**Core Framework** (`pkg/graph`)
+- **CompiledGraph**: Orchestrates execution via StateManager + Executor
+- **Builder**: Fluent API for graph construction
+- **StateManager**: Manages channels, checkpoints, aggregates (interface)
+- **Executor**: Abstracts execution strategy (interface)
+- **PregelExecutor**: Default Pregel BSP implementation
+
+**Supporting Packages**
+- `pkg/channel`: Topic, LastValue, BinaryOp channels
+- `pkg/checkpoint`: Memory, SQL, DynamoDB persistence
+- `pkg/message`: Human, AI, Tool message types
+
+**Execution Engine** (`pkg/pregel` - PUBLIC API)
+- Generic BSP runtime for custom extensions
+- Pluggable MessageBus (Redis, Kafka, etc.)
+- Custom Scheduler support
+
+**Observability** (`pkg/metrics`, `pkg/trace`, `pkg/callbacks`)
+- OpenTelemetry metrics and tracing
+- Callback system for interception
 
 **Key Design Principles:**
-- **Bottom-Up Dependencies**: Higher layers depend on lower layers only
-- **Interface-Based**: Each layer exposes clear interfaces for extension
-- **Pregel BSP Core**: Public `pkg/pregel` API enables parallel execution, custom backends, and distributed processing
-- **Channel-Based State**: Typed data flow with versioning, snapshots, and checkpoint integrity
-- **Extensible by Design**: Custom MessageBus, Scheduler, and execution strategies supported
+- **Separation of Concerns**: State, execution, and topology are independent
+- **Interface-Based**: StateManager and Executor are interfaces
+- **Composition**: PregelExecutor wraps CompiledGraph without modification
+- **Extensibility**: Public `pkg/pregel` API for custom backends
+- **Testability**: Mock StateManager/Executor for unit tests
 
 ---
 

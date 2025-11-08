@@ -81,7 +81,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	g := graph.NewGraph(graph.NewGraphState(0))
+	g := graph.NewGraph(graph.NewStateManager(0))
 	g.AddNode(&graph.Node{
 		Name: "worker",
 		RunFunc: func(ctx context.Context, w graph.StateWriter) (*graph.NodeResult, error) {
@@ -171,7 +171,7 @@ func TestIsValidResult(t *testing.T) {
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
 func createMockWorkerGraph(t *testing.T, response string) *graph.CompiledGraph {
-	g := graph.NewGraph(graph.NewGraphState(0))
+	g := graph.NewGraph(graph.NewStateManager(0))
 
 	g.AddNode(&graph.Node{
 		Name: "worker",

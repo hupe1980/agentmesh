@@ -48,16 +48,16 @@ Test 3: Dynamic Retention
 ### 1. Create State with Message Limit
 ```go
 // Unlimited messages
-state := graph.NewGraphState(0)
+state := graph.NewStateManager(0)
 
 // Limited to 50 messages
-state := graph.NewGraphState(50)
+state := graph.NewStateManager(50)
 ```
 
 ### 2. Automatic Pruning
 ```go
 // When limit exceeded, oldest messages are automatically removed
-state := graph.NewGraphState(10)
+state := graph.NewStateManager(10)
 
 // After adding 15 messages:
 //  - Messages 1-5 are pruned
@@ -96,23 +96,28 @@ Message 91-100: Retained
 
 ### Chat Applications
 ```go
-// Keep last 50 turns
-state := graph.NewGraphState(100) // 100 messages = ~50 turns
+### Long-term storage with selective memory
+```go
+// Store 100 messages total
+state := graph.NewStateManager(100) // 100 messages = ~50 turns
+state.AddChannel(channel.NewTopicChannel("messages", 100))
 ```
 
 ### Production Agents
 ```go
-// Limit memory usage
-state := graph.NewGraphState(200)
+```go
+// Short context for summarization
+state := graph.NewStateManager(200)
+state.AddChannel(channel.NewTopicChannel("messages", 200))
 ```
 
 ### LLM Context Management
 ```go
 // GPT-4: ~8K tokens ≈ 40-50 messages
-state := graph.NewGraphState(50)
+state := graph.NewStateManager(50)
 
 // GPT-3.5: ~4K tokens ≈ 20-30 messages
-state := graph.NewGraphState(30)
+state := graph.NewStateManager(30)
 ```
 
 ## Production Considerations

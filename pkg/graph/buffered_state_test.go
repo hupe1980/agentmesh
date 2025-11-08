@@ -10,7 +10,7 @@ import (
 // TestBufferedStateWriter_IsolatesAggregates verifies that Aggregate() calls
 // are buffered and not visible within the same superstep.
 func TestBufferedStateWriter_IsolatesAggregates(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 
 	// Create buffered writer
 	buffered := newBufferedStateWriter(state)
@@ -49,7 +49,7 @@ func TestBufferedStateWriter_IsolatesAggregates(t *testing.T) {
 // TestBufferedStateWriter_ReadsUnderlyingState verifies that reads go through
 // to the underlying committed state, not the buffered changes.
 func TestBufferedStateWriter_ReadsUnderlyingState(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	state.Set("key1", "value1")
 	state.Set("key2", "value2")
 
@@ -68,7 +68,7 @@ func TestBufferedStateWriter_ReadsUnderlyingState(t *testing.T) {
 
 // TestBufferedStateWriter_ConcurrentAccess verifies thread safety of buffered writer.
 func TestBufferedStateWriter_ConcurrentAccess(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	buffered := newBufferedStateWriter(state)
 
 	// Concurrent aggregates
@@ -102,7 +102,7 @@ func TestBufferedStateWriter_ConcurrentAccess(t *testing.T) {
 }
 
 func TestBufferedStateWriter_MultipleAggregatesPerKey(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	buffered := newBufferedStateWriter(state)
 
 	if err := buffered.Aggregate("counter", 1); err != nil {
@@ -132,10 +132,10 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 	// With buffering, they should both see the initial value
 
 	runTest := func() string {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		state.Set("value", "initial")
 
-		builder := NewBuilder().WithState(state)
+		builder := NewBuilder().SetStateManager(state)
 
 		node1 := &Node{
 			Name: "node1",

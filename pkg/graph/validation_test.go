@@ -10,7 +10,7 @@ import (
 
 func TestGraphValidation(t *testing.T) {
 	t.Run("detects unreachable node", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		err := g.AddNode(&Node{
@@ -40,7 +40,7 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("allows valid graph", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		err := g.AddNode(&Node{
@@ -68,7 +68,7 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("unreachable node via conditional branch is reachable", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		err := g.AddNode(&Node{
@@ -108,7 +108,7 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("detects missing edge target", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		err := g.AddNode(&Node{

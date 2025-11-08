@@ -155,7 +155,7 @@ func TestErrorWrapping(t *testing.T) {
 
 func TestNodeTimeoutError(t *testing.T) {
 	t.Run("enforces_context_deadline", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		err := g.AddNode(&Node{

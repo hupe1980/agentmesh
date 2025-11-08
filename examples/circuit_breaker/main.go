@@ -75,7 +75,7 @@ func main() {
 	manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
 
 	// Build the graph using agent
-	state := graph.NewGraphState(10)
+	state := graph.NewStateManager(10)
 	g := graph.NewGraph(state)
 
 	err := g.AddNode(agent.ModelNode(

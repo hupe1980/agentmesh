@@ -20,7 +20,7 @@ func (sumAggregator) Aggregate(current, value any) any {
 }
 
 func TestGraphAggregatorsAccessible(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 
 	require.NoError(t, g.AddNode(&Node{
@@ -202,7 +202,7 @@ func TestVarianceAggregator_InvalidValues(t *testing.T) {
 }
 
 func TestAvgAggregator_Integration(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 
 	// Three nodes each reporting a value
@@ -240,7 +240,7 @@ func TestAvgAggregator_Integration(t *testing.T) {
 }
 
 func TestVarianceAggregator_Integration(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 
 	values := []int{10, 20, 30}

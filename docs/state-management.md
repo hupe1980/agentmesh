@@ -221,7 +221,7 @@ Control conversation history to prevent context overflow and manage costs.
 
 ```go
 // Limit to 100 messages
-state := graph.NewGraphState(100)
+state := graph.NewStateManager(100)
 
 // Or use StateBuilder
 stateBuilder := graph.NewStateBuilder().

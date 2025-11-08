@@ -9,7 +9,7 @@ import (
 )
 
 func TestGraphStateCloneDeepCopy(t *testing.T) {
-	state := NewGraphState(5)
+	state := NewStateManager(5)
 	if err := state.Set("status", "pending"); err != nil {
 		t.Fatalf("set status failed: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestGraphStateCloneDeepCopy(t *testing.T) {
 }
 
 func TestGraphStateSetMaxMessages(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0).(*GraphState) // Type assert to access SetMaxMessages
 	if err := state.Set("flag", true); err != nil {
 		t.Fatalf("set flag failed: %v", err)
 	}

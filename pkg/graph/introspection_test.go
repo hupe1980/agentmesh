@@ -70,7 +70,7 @@ func TestGetNodeInfo(t *testing.T) {
 }
 
 func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 
 	err := g.AddNode(&Node{

@@ -36,7 +36,7 @@ func runScenario(choice string) {
 	fmt.Printf("=== Conditional Flow Example: %s ===\n", choice)
 
 	// Initialize graph state with unlimited message history
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	state.Set("choice", choice)
 	state.Set("next_path", "")
 

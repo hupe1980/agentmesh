@@ -22,7 +22,7 @@ func TestPageRank(t *testing.T) {
 
 	// Create a simple graph: A -> B, A -> C, B -> C, C -> A
 	// This creates a cycle that PageRank can analyze
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	vertices := []string{"A", "B", "C"}
@@ -126,7 +126,7 @@ func TestPageRank(t *testing.T) {
 func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	// Create graph: A -1-> B -1-> C
@@ -209,7 +209,7 @@ func TestShortestPath(t *testing.T) {
 func TestGraphConvergence(t *testing.T) {
 	t.Parallel()
 
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	// Create nodes that increment a counter until reaching a target

@@ -644,7 +644,7 @@ Subgraphs enable **hierarchical composition** by embedding compiled graphs as no
 
 ```go
 // Create a subgraph
-subState := graph.NewGraphState(0)
+subState := graph.NewStateManager(0)
 subGraph := graph.NewGraph(subState)
 
 subGraph.AddNode(&graph.Node{
@@ -665,7 +665,7 @@ subGraph.AddEdge("process", graph.EndNode)
 compiledSub, err := subGraph.Compile()
 
 // Use as a node in parent graph
-parentState := graph.NewGraphState(0)
+parentState := graph.NewStateManager(0)
 parent := graph.NewGraph(parentState)
 
 parent.AddNode(&graph.Node{

@@ -299,9 +299,9 @@ func TestManyMessages(t *testing.T) {
 		t.Skip("Skipping stress test in short mode")
 	}
 
-	state := NewGraphState(10000) // Allow 10K messages
+	state := NewStateManager(10000) // Allow 10K messages
 	builder := NewBuilder()
-	builder.graph.State = state
+	builder.graph.State = state.(*GraphState) // Type assert for internal use
 
 	builder.Node("producer", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		messages := make([]message.Message, 1000)

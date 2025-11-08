@@ -22,7 +22,7 @@ func getMessageText(msg message.Message) string {
 
 func TestGraphState_MessageRetention_Default(t *testing.T) {
 	// Default behavior: unlimited retention
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 
 	messages := []message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -38,8 +38,8 @@ func TestGraphState_MessageRetention_Default(t *testing.T) {
 
 func TestGraphState_SetMaxMessages_Zero(t *testing.T) {
 	// Zero means unlimited
-	state := NewGraphState(0)
-	// MaxMessages now set at creation: NewGraphState(0)
+	state := NewStateManager(0)
+	// MaxMessages now set at creation: NewStateManager(0)
 
 	messages := make([]message.Message, 150)
 	for i := range messages {
@@ -54,7 +54,7 @@ func TestGraphState_SetMaxMessages_Zero(t *testing.T) {
 
 func TestGraphState_SetMaxMessages_EnforceLimit(t *testing.T) {
 	// Set limit at construction
-	state := NewGraphState(5)
+	state := NewStateManager(5)
 
 	messages := make([]message.Message, 10)
 	for i := range messages {
@@ -69,7 +69,7 @@ func TestGraphState_SetMaxMessages_EnforceLimit(t *testing.T) {
 
 func TestGraphState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 	// Verify oldest messages are discarded, newest are kept
-	state := NewGraphState(3)
+	state := NewStateManager(3)
 
 	state.AddMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "old1"}}),
@@ -90,7 +90,7 @@ func TestGraphState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 
 func TestGraphState_SetMaxMessages_MultipleAdds(t *testing.T) {
 	// Multiple AddMessages calls should still respect limit
-	state := NewGraphState(4)
+	state := NewStateManager(4)
 
 	state.AddMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -118,7 +118,7 @@ func TestGraphState_SetMaxMessages_MultipleAdds(t *testing.T) {
 
 func TestGraphState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 	// Setting limit at construction should immediately enforce it
-	state := NewGraphState(2)
+	state := NewStateManager(2)
 
 	state.AddMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -138,7 +138,7 @@ func TestGraphState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 func TestGraphState_SetMaxMessages_Negative(t *testing.T) {
 	// Negative values should be treated as zero (unlimited)
 	// Note: maxMessages is now set at construction, so we test with 0
-	state := NewGraphState(0) // 0 means unlimited
+	state := NewStateManager(0) // 0 means unlimited
 
 	messages := make([]message.Message, 20)
 	for i := range messages {
@@ -153,7 +153,7 @@ func TestGraphState_SetMaxMessages_Negative(t *testing.T) {
 
 func TestGraphState_ApplyUpdates_RespectsLimit(t *testing.T) {
 	// ApplyUpdates should also respect message limits
-	state := NewGraphState(3)
+	state := NewStateManager(3)
 
 	state.AddMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -175,8 +175,8 @@ func TestGraphState_ApplyUpdates_RespectsLimit(t *testing.T) {
 }
 
 func TestGraphState_MessageRetention_EmptyMessages(t *testing.T) {
-	state := NewGraphState(0)
-	// MaxMessages now set at creation: NewGraphState(5)
+	state := NewStateManager(0)
+	// MaxMessages now set at creation: NewStateManager(5)
 
 	// Adding empty slice should not panic
 	state.AddMessages([]message.Message{})

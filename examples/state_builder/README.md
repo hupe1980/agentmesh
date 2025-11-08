@@ -146,25 +146,11 @@ Updates: map[string]any{
 - ✅ Type-safe state building
 - ✅ Convenience methods
 
-## Equivalent Manual Setup
+### Before: Manual Channel Setup
 
-### Without Builder
 ```go
-state := graph.NewGraphState(50)
-state.AddChannel(channel.NewLastValueChannel("phase"))
-state.Set("phase", "initialization")
-state.AddChannel(channel.NewTopicChannel("action_log", 0))
-// ... more setup
-```
-
-### With Builder
-```go
-state := graph.NewStateBuilder().
-    WithMessages(50).
-    WithLastValue("phase", "initialization").
-    WithList("action_log").
-    Build()
-```
+state := graph.NewStateManager(50)
+state.AddChannel(channel.NewTopicChannel("messages", 50))
 
 ## Next Steps
 - Use builder in your workflows

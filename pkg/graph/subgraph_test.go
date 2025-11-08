@@ -10,7 +10,7 @@ import (
 func TestSubgraphSupport(t *testing.T) {
 	t.Run("basic subgraph as node", func(t *testing.T) {
 		// Create subgraph that doubles a counter
-		subState := NewGraphState(0)
+		subState := NewStateManager(0)
 		subGraph := NewGraph(subState)
 
 		if err := subGraph.AddNode(&Node{
@@ -32,7 +32,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Create parent graph that uses subgraph
-		parentState := NewGraphState(0)
+		parentState := NewStateManager(0)
 		parentState.Set("count", 5) // Initialize count
 		parentGraph := NewGraph(parentState)
 
@@ -76,7 +76,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph with state mapping", func(t *testing.T) {
 		// Create subgraph that processes "input" and produces "output"
-		subState := NewGraphState(0)
+		subState := NewStateManager(0)
 		subGraph := NewGraph(subState)
 
 		if err := subGraph.AddNode(&Node{
@@ -98,7 +98,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Create parent graph with different state keys
-		parentState := NewGraphState(0)
+		parentState := NewStateManager(0)
 		parentState.Set("data", "hello") // Initialize data
 		parentGraph := NewGraph(parentState)
 
@@ -142,7 +142,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("nested subgraphs", func(t *testing.T) {
 		// Inner subgraph: adds 10
-		innerState := NewGraphState(0)
+		innerState := NewStateManager(0)
 		innerGraph := NewGraph(innerState)
 
 		if err := innerGraph.AddNode(&Node{
@@ -161,7 +161,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Middle subgraph: contains inner subgraph, then multiplies by 2
-		middleState := NewGraphState(0)
+		middleState := NewStateManager(0)
 		middleGraph := NewGraph(middleState)
 
 		if err := middleGraph.AddNode(compiledInner.AsNode("inner")); err != nil {
@@ -186,7 +186,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Outer graph: initializes n=5, then runs middle subgraph
-		outerState := NewGraphState(0)
+		outerState := NewStateManager(0)
 		outerState.Set("n", 5) // Initialize n
 		outerGraph := NewGraph(outerState)
 
@@ -214,7 +214,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph handles errors", func(t *testing.T) {
 		// Create subgraph that fails
-		subState := NewGraphState(0)
+		subState := NewStateManager(0)
 		subGraph := NewGraph(subState)
 
 		if err := subGraph.AddNode(&Node{
@@ -233,7 +233,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Parent graph using failing subgraph
-		parentState := NewGraphState(0)
+		parentState := NewStateManager(0)
 		parentGraph := NewGraph(parentState)
 
 		if err := parentGraph.AddNode(compiledSub.AsNode("failing-sub")); err != nil {
@@ -259,7 +259,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph with message passing", func(t *testing.T) {
 		// Subgraph that produces messages
-		subState := NewGraphState(0)
+		subState := NewStateManager(0)
 		subGraph := NewGraph(subState)
 
 		if err := subGraph.AddNode(&Node{
@@ -283,7 +283,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Parent graph
-		parentState := NewGraphState(0)
+		parentState := NewStateManager(0)
 		parentGraph := NewGraph(parentState)
 
 		if err := parentGraph.AddNode(compiledSub.AsNode("sub-with-messages")); err != nil {

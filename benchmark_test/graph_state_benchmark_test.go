@@ -14,7 +14,7 @@ func BenchmarkGraphExecution(b *testing.B) {
 
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("nodes_%d", size), func(b *testing.B) {
-			state := graph.NewGraphState(0)
+			state := graph.NewStateManager(0)
 			g := graph.NewGraph(state)
 
 			// Create a chain of nodes
@@ -69,7 +69,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 
 	for _, size := range parallelSizes {
 		b.Run(fmt.Sprintf("parallel_%d", size), func(b *testing.B) {
-			state := graph.NewGraphState(0)
+			state := graph.NewStateManager(0)
 			g := graph.NewGraph(state)
 
 			// Create parallel nodes (all from START)
@@ -115,7 +115,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 // BenchmarkStateOperations measures state access performance
 func BenchmarkStateOperations(b *testing.B) {
 	b.Run("Set", func(b *testing.B) {
-		state := graph.NewGraphState(0)
+		state := graph.NewStateManager(0)
 		b.ResetTimer()
 		for b.Loop() {
 			state.Set(fmt.Sprintf("key_%d", b.N%100), b.N)
@@ -123,7 +123,7 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		state := graph.NewGraphState(0)
+		state := graph.NewStateManager(0)
 		for i := range 100 {
 			state.Set(fmt.Sprintf("key_%d", i), i)
 		}
@@ -134,7 +134,7 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("GetAll", func(b *testing.B) {
-		state := graph.NewGraphState(0)
+		state := graph.NewStateManager(0)
 		for i := range 100 {
 			state.Set(fmt.Sprintf("key_%d", i), i)
 		}
@@ -147,7 +147,7 @@ func BenchmarkStateOperations(b *testing.B) {
 
 // BenchmarkScheduler measures scheduler performance
 func BenchmarkScheduler(b *testing.B) {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	// Create a moderately complex graph

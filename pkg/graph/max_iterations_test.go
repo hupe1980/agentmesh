@@ -10,7 +10,7 @@ import (
 
 func TestMaxIterations(t *testing.T) {
 	t.Run("terminates cyclic graph at max iterations", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		// Create a self-loop that increments counter
@@ -55,7 +55,7 @@ func TestMaxIterations(t *testing.T) {
 	})
 
 	t.Run("unlimited iterations when not specified", func(t *testing.T) {
-		state := NewGraphState(0); state.Set("count", 0)
+		state := NewStateManager(0); state.Set("count", 0)
 		g := NewGraph(state)
 
 		if err := g.AddNode(&Node{
@@ -92,7 +92,7 @@ func TestMaxIterations(t *testing.T) {
 	})
 
 	t.Run("terminates before max iterations if quiesced", func(t *testing.T) {
-		state := NewGraphState(0)
+		state := NewStateManager(0)
 		g := NewGraph(state)
 
 		if err := g.AddNode(&Node{

@@ -53,7 +53,7 @@ func main() {
 	fmt.Println()
 
 	// Initialize state with unlimited message history
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 
 	// TopicChannel: Accumulates action history (like appending to a list)
 	// Each node's updates are collected without overwriting previous entries

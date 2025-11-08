@@ -304,7 +304,7 @@ Channels control how state updates are applied.
 Accumulates values in a list (append-only):
 
 ```go
-state := graph.NewGraphState(100)
+state := graph.NewStateManager(100)
 state.AddChannel(channel.NewTopicChannel("messages", 100))
 
 // Updates append to the list

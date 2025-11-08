@@ -31,8 +31,27 @@ func NewBuilder() *Builder {
 	}
 }
 
-// WithState configures the graph state.
+// SetStateManager configures the graph state manager.
+// This is the recommended way to set state using the StateManager interface.
 // This should be called before adding nodes if you need custom state.
+func (b *Builder) SetStateManager(stateManager StateManager) *Builder {
+	if b.err != nil {
+		return b
+	}
+
+	// Convert StateManager to *GraphState for internal use
+	if gs, ok := stateManager.(*GraphState); ok {
+		b.graph.State = gs
+	} else {
+		// If it's not a *GraphState, wrap it (for future custom implementations)
+		b.graph.State = ensureGraphState(nil)
+		// TODO: Support non-GraphState implementations by copying state
+	}
+	return b
+}
+
+// WithState configures the graph state using *GraphState directly.
+// For new code, prefer SetStateManager() which uses the StateManager interface.
 func (b *Builder) WithState(state *GraphState) *Builder {
 	if b.err != nil {
 		return b

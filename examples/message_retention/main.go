@@ -33,7 +33,7 @@ import (
 )
 
 func main() {
-	state := graph.NewGraphState(0)
+	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 
 	// Create a simple echo node

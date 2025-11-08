@@ -13,6 +13,8 @@ hero:
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
     external: true
 sidebar:
+  - title: Component overview
+    url: "#component-overview"
   - title: Pregel BSP model
     url: "#pregel-bsp-model"
   - title: Scheduler architecture
@@ -30,6 +32,63 @@ sidebar:
 ---
 
 AgentMesh is built on a Pregel-inspired bulk-synchronous parallel (BSP) graph execution engine. This architecture enables deterministic, scalable multi-agent workflows with parallel execution and efficient state management.
+
+---
+
+## Component Architecture Overview {#component-overview}
+
+AgentMesh follows a **component-based architecture** with clean separation of concerns:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              Application Layer (pkg/agent)                    │
+│  • ReActAgent: Reasoning + Acting pattern                    │
+│  • SupervisorAgent: Multi-agent coordination                 │
+│  • RAGAgent: Retrieval-Augmented Generation                  │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ builds on
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    CompiledGraph (Coordinator)                │
+│  • Immutable graph topology (nodes, edges, conditionals)      │
+│  • Public API (Invoke, Stream, Pause, Resume)                │
+│  • Coordinates StateManager ↔ Executor                        │
+│  • Rate limiting & retry policies                             │
+└────────────────┬─────────────────────────┬───────────────────┘
+                 │                         │
+                 │ delegates to            │ delegates to
+                 ▼                         ▼
+    ┌────────────────────────┐  ┌────────────────────────────┐
+    │    StateManager        │  │       Executor             │
+    │    (Interface)         │  │       (Interface)          │
+    │                        │  │                            │
+    │  • Channels            │  │  • Execution Strategy      │
+    │  • Checkpoints         │  │  • Superstep Coordination  │
+    │  • Aggregates          │  │  • Event Streaming         │
+    │  • Thread-safe access  │  │  • Pause/Resume Control    │
+    │  • State versioning    │  │  • Execution Statistics    │
+    └────────────────────────┘  └──────────┬─────────────────┘
+                                           │
+                                           │ implements
+                                           ▼
+                                  ┌──────────────────┐
+                                  │ PregelExecutor   │
+                                  │                  │
+                                  │ • BSP Model      │
+                                  │ • Worker Pool    │
+                                  │ • Mailbox System │
+                                  │ • pkg/pregel     │
+                                  └──────────────────┘
+```
+
+**Key Design Principles:**
+- **Separation of Concerns**: State, execution, and topology are independent
+- **Interface-Based**: StateManager and Executor are interfaces for testability
+- **Composition**: PregelExecutor wraps CompiledGraph without modification
+- **Extensibility**: Public `pkg/pregel` API for custom backends
+- **Layered Abstraction**: High-level agents build on low-level graph primitives
+
+The rest of this document explores the **Pregel BSP execution engine** that powers the framework.
 
 ---
 
@@ -933,9 +992,75 @@ builder.AddEdge("analyst_c", "aggregator")
 
 ---
 
+## Executor pattern {#executor-pattern}
+
+AgentMesh uses the **Executor interface** to abstract execution strategies:
+
+```go
+type Executor interface {
+    Execute(ctx context.Context, initialMessages []Message, opts ExecuteOptions) (*InvokeResult, error)
+    Stream(ctx context.Context, initialMessages []Message, opts StreamOptions) <-chan StreamEvent
+    Pause(nodeName string) error
+    Resume(nodeName string) error
+    IsPaused(nodeName string) bool
+    CurrentSuperstep() int64
+    Stats() ExecutionStats
+}
+```
+
+### PregelExecutor Implementation
+
+The default implementation uses **composition over inheritance**:
+
+```go
+type PregelExecutor struct {
+    cg *CompiledGraph  // Wraps CompiledGraph
+}
+
+// Delegates to proven CompiledGraph methods
+func (e *PregelExecutor) Execute(ctx context.Context, messages []Message, opts ExecuteOptions) (*InvokeResult, error) {
+    return e.cg.invokeWithOptions(ctx, messages, convertOptions(opts))
+}
+```
+
+**Architecture Benefits**:
+- ✅ **Clean Separation**: Executor doesn't modify CompiledGraph internals
+- ✅ **No Circular Dependencies**: Composition pattern prevents cycles
+- ✅ **Extensibility**: Can implement custom execution strategies
+- ✅ **Testability**: Mock executors for unit tests
+
+This pattern allows for future execution strategies (e.g., distributed executor, streaming executor) without changing the core graph engine.
+
+---
+
 ## State management {#state-management}
 
 AgentMesh uses a **channel-based state system** for deterministic data flow. State is shared across all nodes with thread-safe access patterns.
+
+### StateManager Interface Pattern
+
+AgentMesh uses the **StateManager interface** to provide clean abstraction for state management:
+
+```go
+// Create state using the interface
+state := graph.NewStateManager(maxMessages)
+
+// Builder accepts StateManager interface
+builder := graph.NewBuilder()
+builder.SetStateManager(state)
+
+// CompiledGraph.State() returns StateManager interface
+compiled, _ := builder.Compile()
+stateReader := compiled.State()
+```
+
+**Benefits**:
+- ✅ **Testability**: Easy to mock state for unit tests
+- ✅ **Extensibility**: Can implement custom state backends
+- ✅ **Clean API**: Interface over concrete implementation
+- ✅ **Type Safety**: Go interfaces with compile-time checking
+
+The default implementation (`GraphState`) provides channel-based state with versioning and checkpoint support.
 
 ### Hybrid State Propagation
 
@@ -1026,7 +1151,7 @@ func (s *GraphState) GetAggregatesSnapshot() map[string]any {
 3. **BinaryOpChannel** – Merges values using custom operators (sum, max, concat, etc.)
 
 ```go
-state := graph.NewGraphState(maxMessages)
+state := graph.NewStateManager(maxMessages)
 
 // Topic channel for conversation history
 state.AddChannel(channel.NewTopicChannel("messages", 100))

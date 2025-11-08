@@ -49,7 +49,7 @@ func main() {
 	inst := graph.NewInstrumentation(metricsProvider, traceProvider)
 
 	// Create a simple graph
-	state := graph.NewGraphState(0) // Unlimited messages
+	state := graph.NewStateManager(0) // Unlimited messages
 	state.Set("counter", 0)
 	g := graph.NewGraph(state)
 

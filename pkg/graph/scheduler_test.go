@@ -31,7 +31,7 @@ func mustAddNode(t testing.TB, g *Graph, n *Node) {
 func TestVertexSchedulerReadyInitial(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
@@ -50,7 +50,7 @@ func TestVertexSchedulerReadyInitial(t *testing.T) {
 func TestVertexSchedulerOnCompletion(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
@@ -73,7 +73,7 @@ func TestVertexSchedulerOnCompletion(t *testing.T) {
 func TestVertexSchedulerBootstrapResume(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
@@ -94,7 +94,7 @@ func TestVertexSchedulerBootstrapResume(t *testing.T) {
 func TestVertexSchedulerStartConditionals(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	state.Set("branch", "taskB") // Initialize branch value
 	g := NewGraph(state)
 	mustAddNode(t, g, noopNode("taskA"))
@@ -124,7 +124,7 @@ func TestVertexSchedulerStartConditionals(t *testing.T) {
 func TestVertexSchedulerSnapshot(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 	mustAddNode(t, g, noopNode("a"))
 	mustAddNode(t, g, noopNode("b"))
@@ -149,7 +149,7 @@ func TestVertexSchedulerSnapshot(t *testing.T) {
 func TestVertexSchedulerReset(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 	mustAddNode(t, g, noopNode("a"))
 	g.AddEdge(StartNode, "a")
@@ -167,7 +167,7 @@ func TestVertexSchedulerReset(t *testing.T) {
 func TestVertexSchedulerConditionalSelectionDedup(t *testing.T) {
 	t.Parallel()
 
-	state := NewGraphState(0)
+	state := NewStateManager(0)
 	g := NewGraph(state)
 
 	mustAddNode(t, g, noopNode("next"))

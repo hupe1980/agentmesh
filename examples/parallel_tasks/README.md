@@ -56,13 +56,11 @@ func mergeMapReducer(oldValue, newValue any) any {
 ```
 
 ### 2. Configure State with Reducer
+## Usage
+
 ```go
-state := graph.NewGraphState(0)
-state.AddChannel(channel.NewBinaryOpChannel(
-    "results",
-    mergeMapReducer,
-))
-```
+state := graph.NewStateManager(0)
+state.AddChannel(channel.NewTopicChannel("messages", 100))
 
 ### 3. Create Parallel Nodes
 ```go

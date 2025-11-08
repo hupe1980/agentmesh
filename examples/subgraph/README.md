@@ -47,7 +47,7 @@ Final report: {...}
 ### 1. Create Validation Subgraph
 ```go
 func createValidationSubgraph() *graph.Graph {
-    state := graph.NewGraphState(0)
+    state := graph.NewStateManager(0)
     g := graph.NewGraph(state)
     
     g.AddNode(&graph.Node{
@@ -91,7 +91,7 @@ compiledAnalysis, _ := analysisSub.Compile()
 ### 3. Create Main Pipeline
 ```go
 func createPipeline(validation, enrichment, analysis *graph.CompiledGraph) *graph.Graph {
-    state := graph.NewGraphState(0)
+    state := graph.NewStateManager(0)
     pipeline := graph.NewGraph(state)
     
     // Stage 1: Validation subgraph

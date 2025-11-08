@@ -137,8 +137,21 @@ type GraphState struct {
 	cachedVersion    uint64         // Version of current cache
 }
 
-// NewGraphState creates a new channel-based graph state.
+// NewStateManager creates a new StateManager with the default GraphState implementation.
 // It automatically creates a standard "messages" channel (Topic with maxMessages limit).
+// This is the recommended way to create a state manager for graph execution.
+func NewStateManager(maxMessages int) StateManager {
+	channels := channel.NewChannelSet()
+	channels.Add(channel.NewTopicChannel("messages", maxMessages))
+	return &GraphState{
+		channels:   channels,
+		aggregates: make(map[string]any),
+	}
+}
+
+// NewGraphState creates a new channel-based graph state.
+// This is kept for internal use and direct *GraphState access.
+// For normal usage, prefer NewStateManager() which returns the StateManager interface.
 func NewGraphState(maxMessages int) *GraphState {
 	channels := channel.NewChannelSet()
 	channels.Add(channel.NewTopicChannel("messages", maxMessages))
