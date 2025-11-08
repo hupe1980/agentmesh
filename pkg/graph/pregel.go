@@ -481,8 +481,14 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 			for name, values := range pendingAggregates {
 				for _, value := range values {
 					if err := vertex.State.RecordAggregation(name, value); err != nil {
-						// Log error but don't fail the node
-						n.runtime.emit(StreamEvent{Node: n.name, Err: fmt.Errorf("aggregate %q failed: %w", name, err)})
+						// Aggregator failures are terminal - they indicate state corruption
+						aggErr := fmt.Errorf("node %q: aggregation %q failed: %w", n.name, name, err)
+						n.runtime.emit(StreamEvent{Node: n.name, Err: aggErr})
+						return &NodeExecutionError{
+							Node:      n.name,
+							Superstep: n.runtime.engine.CurrentSuperstep(),
+							Cause:     aggErr,
+						}
 					}
 				}
 			}
