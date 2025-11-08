@@ -42,12 +42,32 @@ func NewFuncTool[T any, R any](
 	name, description string,
 	fn Func[T, R],
 ) (*FuncTool[T, R], error) {
+	if name == "" {
+		return nil, fmt.Errorf("tool name must not be empty")
+	}
+	if fn == nil {
+		return nil, fmt.Errorf("tool function must not be nil")
+	}
+
 	schema, err := jsonschema.MapFromStruct(*new(T))
 	if err != nil {
 		return nil, fmt.Errorf("NewFuncToolFromType: %w", err)
 	}
 
 	return NewFuncToolFromMap(name, description, schema, fn), nil
+}
+
+// MustNewFuncTool is like NewFuncTool but panics on error.
+// Use this in tests or when you're certain inputs are valid.
+func MustNewFuncTool[T any, R any](
+	name, description string,
+	fn Func[T, R],
+) *FuncTool[T, R] {
+	tool, err := NewFuncTool(name, description, fn)
+	if err != nil {
+		panic(err)
+	}
+	return tool
 }
 
 // NewFuncToolFromMap creates a FuncTool with an explicit JSON Schema provided as a map.

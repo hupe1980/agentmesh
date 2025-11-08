@@ -1,7 +1,5 @@
 package graph
 
-import "github.com/hupe1980/agentmesh/pkg/message"
-
 // StateStore defines the interface for persisting and retrieving graph state.
 // This abstraction enables checkpointing, state snapshots, and distributed execution.
 type StateStore interface {
@@ -16,22 +14,6 @@ type StateStore interface {
 
 	// List returns all available checkpoint IDs.
 	List() ([]string, error)
-}
-
-// MessageBus defines the interface for message passing between vertices.
-// This abstraction enables distributed message delivery and buffering strategies.
-type MessageBus interface {
-	// Send delivers messages to a target vertex.
-	Send(target string, msgs []message.Message) error
-
-	// Receive retrieves all pending messages for a vertex.
-	Receive(vertex string) ([]message.Message, error)
-
-	// Clear removes all pending messages for a vertex.
-	Clear(vertex string) error
-
-	// Flush ensures all buffered messages are delivered.
-	Flush() error
 }
 
 // InMemoryStateStore provides a simple in-memory implementation of StateStore.
@@ -114,49 +96,4 @@ func (s *InMemoryStateStore) List() ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
-}
-
-// InMemoryMessageBus provides a simple in-memory message buffer.
-type InMemoryMessageBus struct {
-	mailboxes map[string][]message.Message
-}
-
-// NewInMemoryMessageBus creates a new in-memory message bus.
-func NewInMemoryMessageBus() *InMemoryMessageBus {
-	return &InMemoryMessageBus{
-		mailboxes: make(map[string][]message.Message),
-	}
-}
-
-// Send appends messages to the target vertex's mailbox.
-func (b *InMemoryMessageBus) Send(target string, msgs []message.Message) error {
-	if len(msgs) == 0 {
-		return nil
-	}
-	b.mailboxes[target] = append(b.mailboxes[target], cloneMessages(msgs)...)
-	return nil
-}
-
-// Receive returns all messages for a vertex and clears its mailbox.
-func (b *InMemoryMessageBus) Receive(vertex string) ([]message.Message, error) {
-	msgs := b.mailboxes[vertex]
-	if len(msgs) == 0 {
-		return nil, nil
-	}
-
-	// Return copy and clear mailbox
-	result := cloneMessages(msgs)
-	delete(b.mailboxes, vertex)
-	return result, nil
-}
-
-// Clear removes all pending messages for a vertex.
-func (b *InMemoryMessageBus) Clear(vertex string) error {
-	delete(b.mailboxes, vertex)
-	return nil
-}
-
-// Flush is a no-op for in-memory implementation.
-func (b *InMemoryMessageBus) Flush() error {
-	return nil
 }

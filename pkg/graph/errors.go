@@ -16,6 +16,12 @@ var (
 	// ErrInvalidNodeName indicates an empty or invalid node name
 	ErrInvalidNodeName = errors.New("invalid node name")
 
+	// ErrNilNode indicates a nil node was provided
+	ErrNilNode = errors.New("node must not be nil")
+
+	// ErrNilRunFunc indicates a node has a nil RunFunc
+	ErrNilRunFunc = errors.New("node RunFunc must not be nil")
+
 	// ErrCyclicGraph indicates the graph contains a cycle
 	ErrCyclicGraph = errors.New("cyclic graph detected")
 

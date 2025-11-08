@@ -2,7 +2,6 @@ package pregel
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"runtime/debug"
@@ -70,9 +69,10 @@ type Runtime[S any, M any] struct {
 }
 
 // NewRuntime creates a new runtime for the given graph.
-func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
+// Returns an error if graph is nil or invalid.
+func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
 	if graph == nil {
-		panic(ErrGraphRequired)
+		return nil, ErrGraphRequired
 	}
 
 	opts := defaultRuntimeOptions[S, M]()
@@ -129,21 +129,29 @@ func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M
 		nextAggregates: nextAggregates,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
+	return runtime, nil
+}
+
+// MustNewRuntime creates a new runtime for the given graph.
+// Panics if graph is nil or invalid. Use this in tests or when you're certain inputs are valid.
+func MustNewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
+	runtime, err := NewRuntime(graph, events, optFns...)
+	if err != nil {
+		panic(err)
+	}
 	return runtime
 }
 
 // Deliver injects messages into the mailbox and schedules their targets for execution.
 // It is safe to call concurrently with Run.
 //
-// Returns an error if any message cannot be delivered (e.g., mailbox full).
-// When MaxMailboxSize is configured, Deliver will return ErrMailboxFull if a
-// target vertex's mailbox has reached its capacity. The caller should handle
-// this by implementing backpressure (retry, rate limiting, etc).
-func (r *Runtime[S, M]) Deliver(messages ...Message[M]) error {
+// Blocks if mailbox is full (backpressure) until space is available or context deadline exceeded.
+// Pass context.Background() for unlimited wait or context.WithTimeout() for bounded wait.
+func (r *Runtime[S, M]) Deliver(ctx context.Context, messages ...Message[M]) error {
 	if len(messages) == 0 {
 		return nil
 	}
-	return r.recordDeliveries(messages)
+	return r.recordDeliveries(ctx, messages)
 }
 
 // Stats snapshots the current runtime metrics.
@@ -433,7 +441,13 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 
 	if len(sent) > 0 {
 		r.messages.Add(int64(len(sent)))
-		_ = r.recordDeliveries(sent) // Errors already emitted as events
+		// Use context from executeVertex to support backpressure
+		if deliverErr := r.recordDeliveries(ctx, sent); deliverErr != nil {
+			// If message delivery fails due to backpressure/timeout, treat as error
+			err = fmt.Errorf("superstep %d: node %q: failed to deliver messages: %w", superstep, name, deliverErr)
+			r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Error: err})
+			return err
+		}
 		r.graph.Update(name, nil, sent)
 	}
 
@@ -441,30 +455,22 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	return nil
 }
 
-func (r *Runtime[S, M]) recordDeliveries(msgs []Message[M]) error {
+func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M]) error {
 	if len(msgs) == 0 {
 		return nil
 	}
 
-	// Process messages individually to emit proper error events
-	var firstError error
-	for _, msg := range msgs {
-		err := r.messageBus.Send([]Message[M]{msg})
-		if err != nil {
-			if firstError == nil {
-				firstError = err
-			}
-			// Emit individual error event for this message
-			if errors.Is(err, ErrMailboxFull) {
-				r.emitEvent(StreamEvent[M]{
-					Node:  msg.To,
-					Error: err,
-				})
-			}
-		}
+	// Send all messages at once with context for backpressure
+	err := r.messageBus.Send(ctx, msgs)
+	if err != nil {
+		// Emit error event
+		r.emitEvent(StreamEvent[M]{
+			Error: fmt.Errorf("failed to deliver messages: %w", err),
+		})
+		return err
 	}
 
-	return firstError
+	return nil
 }
 
 func (r *Runtime[S, M]) drainMailbox(node string) []Message[M] {

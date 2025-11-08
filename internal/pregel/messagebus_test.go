@@ -1,9 +1,10 @@
 package pregel
 
 import (
-	"errors"
+	"context"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestInMemoryMessageBus_Basic(t *testing.T) {
@@ -16,7 +17,7 @@ func TestInMemoryMessageBus_Basic(t *testing.T) {
 		{From: "a", To: "c", Data: "msg2"},
 	}
 
-	err := bus.Send(messages)
+	err := bus.Send(t.Context(), messages)
 	if err != nil {
 		t.Fatalf("Send failed: %v", err)
 	}
@@ -52,8 +53,10 @@ func TestInMemoryMessageBus_MaxSize(t *testing.T) {
 	bus := NewInMemoryMessageBus[string](2, nil)
 	defer bus.Close()
 
-	// Send 2 messages - should succeed
-	err := bus.Send([]Message[string]{
+	ctx := t.Context()
+
+	// Send 2 messages - should succeed (fills the channel buffer)
+	err := bus.Send(ctx, []Message[string]{
 		{To: "a", Data: "msg1"},
 		{To: "a", Data: "msg2"},
 	})
@@ -61,21 +64,57 @@ func TestInMemoryMessageBus_MaxSize(t *testing.T) {
 		t.Fatalf("Send of 2 messages failed: %v", err)
 	}
 
-	// Send 3rd message - should fail with ErrMailboxFull
-	err = bus.Send([]Message[string]{
-		{To: "a", Data: "msg3"},
-	})
-	if err == nil {
-		t.Fatal("Expected ErrMailboxFull, got nil")
-	}
-	if !errors.Is(err, ErrMailboxFull) {
-		t.Errorf("Expected ErrMailboxFull, got %v", err)
+	// With backpressure, send 3rd message in goroutine - it should block since mailbox is full
+	done := make(chan error, 1)
+	go func() {
+		done <- bus.Send(ctx, []Message[string]{
+			{To: "a", Data: "msg3"},
+		})
+	}()
+
+	// Verify send is blocked (give it a moment)
+	select {
+	case <-done:
+		t.Error("Expected send to block when mailbox full")
+	case <-time.After(50 * time.Millisecond):
+		// Good - send is blocked
 	}
 
-	// Mailbox should still have 2 messages
+	// Now receive messages - this drains the channel creating space
 	msgs, _ := bus.Receive("a")
-	if len(msgs) != 2 {
-		t.Errorf("Expected 2 messages, got %d", len(msgs))
+	// After draining, the blocked send completes, so we get all 3 messages
+	if len(msgs) < 2 {
+		t.Errorf("Expected at least 2 messages, got %d", len(msgs))
+	}
+
+	// The blocked send should now complete
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Send should succeed after receive, got error: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Send should have unblocked after receive")
+	}
+
+	// If msg3 wasn't in the first receive, it should be available now
+	if len(msgs) == 2 {
+		msgs, _ = bus.Receive("a")
+		if len(msgs) != 1 || msgs[0].Data != "msg3" {
+			t.Errorf("Expected msg3 to be delivered after unblocking, got %d messages", len(msgs))
+		}
+	} else if len(msgs) == 3 {
+		// All messages received in one go - verify msg3 is present
+		found := false
+		for _, m := range msgs {
+			if m.Data == "msg3" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Expected msg3 to be in the received messages")
+		}
 	}
 }
 
@@ -93,7 +132,7 @@ func TestInMemoryMessageBus_Combiner(t *testing.T) {
 	defer bus.Close()
 
 	// Send multiple messages to same target
-	err := bus.Send([]Message[string]{
+	err := bus.Send(context.Background(), []Message[string]{
 		{To: "a", Data: "msg1"},
 		{To: "a", Data: "msg2"},
 		{To: "a", Data: "msg3"},
@@ -120,7 +159,7 @@ func TestInMemoryMessageBus_Pending(t *testing.T) {
 	defer bus.Close()
 
 	// Send messages to multiple targets
-	err := bus.Send([]Message[string]{
+	err := bus.Send(context.Background(), []Message[string]{
 		{To: "a", Data: "msg1"},
 		{To: "b", Data: "msg2"},
 		{To: "c", Data: "msg3"},
@@ -153,7 +192,7 @@ func TestInMemoryMessageBus_Clear(t *testing.T) {
 	defer bus.Close()
 
 	// Send messages
-	err := bus.Send([]Message[string]{
+	err := bus.Send(context.Background(), []Message[string]{
 		{To: "a", Data: "msg1"},
 	})
 	if err != nil {
@@ -195,7 +234,7 @@ func TestInMemoryMessageBus_Concurrent(t *testing.T) {
 					To:   "target",
 					Data: id*1000 + j,
 				}
-				_ = bus.Send([]Message[int]{msg})
+				_ = bus.Send(context.Background(), []Message[int]{msg})
 			}
 		}(i)
 	}
@@ -219,7 +258,7 @@ func TestInMemoryMessageBus_Stats(t *testing.T) {
 	defer bus.Close()
 
 	// Send messages to multiple targets
-	err := bus.Send([]Message[string]{
+	err := bus.Send(context.Background(), []Message[string]{
 		{To: "a", Data: "msg1"},
 		{To: "a", Data: "msg2"},
 		{To: "b", Data: "msg3"},
@@ -245,7 +284,7 @@ func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
 	defer bus.Close()
 
 	// Send message with empty target - should be ignored
-	err := bus.Send([]Message[string]{
+	err := bus.Send(context.Background(), []Message[string]{
 		{To: "", Data: "msg1"},
 		{To: "a", Data: "msg2"},
 	})

@@ -57,16 +57,19 @@
 //	}
 //
 //	// Create runtime with options
-//	runtime := pregel.NewRuntime(graph, nil,
+//	runtime, err := pregel.NewRuntime(graph, nil,
 //	    pregel.WithMaxWorkers[MyState, MyMessage](4),
 //	    pregel.WithMaxIterations[MyState, MyMessage](100),
 //	    pregel.WithAggregators[MyState, MyMessage](map[string]Aggregator{
 //	        "sum": &SumAggregator{},
 //	    }),
 //	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 //	// Execute computation
-//	err := runtime.Run(ctx)
+//	err = runtime.Run(ctx)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}

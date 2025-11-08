@@ -206,7 +206,9 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 			gr.saveCheckpoint(superstep)
 		}))
 	}
-	gr.engine = ipregel.NewRuntime(adapter, nil, runtimeOptions...)
+
+	// Create the Pregel runtime (use MustNewRuntime since inputs are already validated)
+	gr.engine = ipregel.MustNewRuntime(adapter, nil, runtimeOptions...)
 
 	// Configure the engine to respect early termination
 	if done != nil {
@@ -497,10 +499,10 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 					Data: msg,
 				})
 			}
-			// Deliver messages - if mailbox is full, emit error event but continue
-			if err := n.runtime.engine.Deliver(deliveries...); err != nil {
-				// Log delivery error but don't fail the node execution
-				n.runtime.emitError(fmt.Errorf("node %q: message delivery failed: %w", n.name, err))
+			// Deliver messages with backpressure - blocks if mailbox full
+			if err := n.runtime.engine.Deliver(ctx, deliveries...); err != nil {
+				// Delivery error (e.g., context cancelled) - this is a real error now
+				return fmt.Errorf("node %q: message delivery failed: %w", n.name, err)
 			}
 		}
 	}

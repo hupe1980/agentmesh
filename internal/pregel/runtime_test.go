@@ -121,7 +121,7 @@ func TestRuntime_Run_SequentialGraph(t *testing.T) {
 		},
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil)
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
 	require.NoError(t, rt.Run(context.Background()))
 
 	assert.Equal(t, 3, callCount)
@@ -168,7 +168,7 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 		},
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil)
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
 	require.NoError(t, rt.Run(context.Background()))
 
 	assert.Equal(t, 3, callCount)
@@ -214,7 +214,7 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 		},
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil)
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
 	require.NoError(t, rt.Run(context.Background()))
 
 	assert.Equal(t, 3, callCount)
@@ -252,7 +252,7 @@ func TestRuntime_CancelDuringExecution(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	rt := NewRuntime[mockState, mockMessage](graph, nil)
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
 
 	go func() {
 		time.Sleep(5 * time.Millisecond)
@@ -290,7 +290,7 @@ func (g *errorGraph) Update(node string, updates map[string]any, messages []Mess
 
 func TestRuntime_NodeErrorPropagation(t *testing.T) {
 	events := make(chan StreamEvent[mockMessage], 1)
-	rt := NewRuntime[mockState, mockMessage](&errorGraph{}, events)
+	rt := MustNewRuntime[mockState, mockMessage](&errorGraph{}, events)
 
 	err := rt.Run(context.Background())
 	assert.Error(t, err)
@@ -326,7 +326,7 @@ func (g *panicGraph) Update(node string, updates map[string]any, messages []Mess
 
 func TestRuntime_NodePanicRecovery(t *testing.T) {
 	events := make(chan StreamEvent[mockMessage], 1)
-	rt := NewRuntime[mockState, mockMessage](&panicGraph{}, events)
+	rt := MustNewRuntime[mockState, mockMessage](&panicGraph{}, events)
 
 	err := rt.Run(context.Background())
 	assert.Error(t, err)
@@ -364,7 +364,7 @@ func TestRuntime_InitialSuperstep(t *testing.T) {
 		},
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil, WithInitialSuperstep[mockState, mockMessage](5))
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithInitialSuperstep[mockState, mockMessage](5))
 	require.NoError(t, rt.Run(context.Background()))
 
 	stats := rt.Stats()
@@ -437,7 +437,7 @@ func TestRuntime_AggregatorsVisibleNextSuperstep(t *testing.T) {
 	graph := &singleNodeGraph{name: "agg", node: node}
 
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
-	rt := NewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
 	require.NoError(t, rt.Run(context.Background()))
 
 	require.Len(t, observed, 2)
@@ -515,7 +515,7 @@ func TestRuntime_CombinerMergesMessages(t *testing.T) {
 		return combined
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil, WithCombiner[mockState, mockMessage](combiner))
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithCombiner[mockState, mockMessage](combiner))
 	require.NoError(t, rt.Run(context.Background()))
 
 	require.Len(t, received, 1)
@@ -571,8 +571,8 @@ func (g *deliverGraph) Update(string, map[string]any, []Message[mockMessage]) {}
 
 func TestRuntime_DeliverSeedsExecution(t *testing.T) {
 	graph := newDeliverGraph()
-	rt := NewRuntime[*deliverState, mockMessage](graph, nil)
-	require.NoError(t, rt.Deliver(Message[mockMessage]{From: "external", To: "inbox", Data: mockMessage{Value: 1}}))
+	rt := MustNewRuntime[*deliverState, mockMessage](graph, nil)
+	require.NoError(t, rt.Deliver(context.Background(), Message[mockMessage]{From: "external", To: "inbox", Data: mockMessage{Value: 1}}))
 	require.NoError(t, rt.Run(context.Background()))
 
 	graph.state.mu.Lock()
@@ -621,7 +621,7 @@ func TestRuntime_StatsReflectExecution(t *testing.T) {
 		},
 	}
 
-	rt := NewRuntime[mockState, mockMessage](graph, nil)
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
 	require.NoError(t, rt.Run(context.Background()))
 
 	stats := rt.Stats()
@@ -641,7 +641,7 @@ func (aggregatorErrorNode) Run(_ context.Context, vertex VertexContext[mockState
 func TestRuntime_AggregatorUnknownName(t *testing.T) {
 	graph := &singleNodeGraph{name: "agg", node: aggregatorErrorNode{}}
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
-	rt := NewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
+	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
 	err := rt.Run(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown aggregator")
@@ -658,7 +658,7 @@ func (noopGraph) State() noopState                                      { return
 func (noopGraph) Update(string, map[string]any, []Message[mockMessage]) {}
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
-	rt := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
 	rt.SetSuperstep(-5)
 	assert.Equal(t, int64(0), rt.CurrentSuperstep())
 	rt.SetSuperstep(7)

@@ -48,7 +48,7 @@ func NewGraph(state *GraphState) *Graph {
 
 func (g *Graph) AddNode(n *Node) error {
 	if n == nil {
-		return nil
+		return ErrNilNode
 	}
 
 	g.mu.Lock()
@@ -59,6 +59,9 @@ func (g *Graph) AddNode(n *Node) error {
 			Field:   "Name",
 			Message: "node name must not be empty",
 		}
+	}
+	if n.RunFunc == nil {
+		return ErrNilRunFunc
 	}
 	if g.Nodes == nil {
 		g.Nodes = make(map[string]*Node)
@@ -153,6 +156,16 @@ func (g *Graph) Compile() (*CompiledGraph, error) {
 	}
 
 	return cg, nil
+}
+
+// MustCompile compiles the graph into an immutable executable form.
+// Panics if validation fails. Use this in tests or when you're certain the graph is valid.
+func (g *Graph) MustCompile() *CompiledGraph {
+	cg, err := g.Compile()
+	if err != nil {
+		panic(fmt.Errorf("graph compilation failed: %w", err))
+	}
+	return cg
 }
 
 //nolint:gocyclo // Graph validation requires checking many conditions

@@ -25,6 +25,13 @@ import (
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
 func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.CompiledGraph, error) {
+	if mdl == nil {
+		return nil, fmt.Errorf("model must not be nil")
+	}
+	if retriever == nil {
+		return nil, fmt.Errorf("retriever must not be nil")
+	}
+
 	config := defaultRAGOptions()
 	for _, opt := range opts {
 		opt(&config)
@@ -103,6 +110,16 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	builder.AddEdge("generate", graph.EndNode)
 
 	return builder.Compile()
+}
+
+// MustNewRAGAgent is like NewRAGAgent but panics on error.
+// Use this in tests or when you're certain inputs are valid.
+func MustNewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) *graph.CompiledGraph {
+	agent, err := NewRAGAgent(mdl, retriever, opts...)
+	if err != nil {
+		panic(fmt.Errorf("failed to create RAG agent: %w", err))
+	}
+	return agent
 }
 
 // ragOptions holds configuration for RAG agents.

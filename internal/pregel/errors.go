@@ -7,6 +7,9 @@ var (
 	// ErrGraphRequired indicates a nil graph was provided to the runtime
 	ErrGraphRequired = errors.New("pregel: graph must not be nil")
 
+	// ErrNilNode indicates a nil node was provided
+	ErrNilNode = errors.New("pregel: node must not be nil")
+
 	// ErrUnknownNode indicates a vertex name has no corresponding node implementation
 	ErrUnknownNode = errors.New("pregel: unknown node")
 

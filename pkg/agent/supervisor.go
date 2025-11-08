@@ -106,6 +106,10 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerRetries(2),
 //	)
 func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.CompiledGraph, error) {
+	if mdl == nil {
+		return nil, fmt.Errorf("model must not be nil")
+	}
+
 	config := supervisorOptions{
 		workers:        make([]WorkerAgent, 0),
 		maxIterations:  10,
@@ -161,4 +165,14 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.Compi
 	}
 
 	return NewReActAgent(mdl, reactOpts...)
+}
+
+// MustNewSupervisorAgent is like NewSupervisorAgent but panics on error.
+// Use this in tests or when you're certain inputs are valid.
+func MustNewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) *graph.CompiledGraph {
+	agent, err := NewSupervisorAgent(mdl, opts...)
+	if err != nil {
+		panic(fmt.Errorf("failed to create supervisor agent: %w", err))
+	}
+	return agent
 }
