@@ -74,9 +74,9 @@ func (FileURI) isFilePartContent()      {}
 
 // FunctionCall describes a tool/function invocation request.
 type FunctionCall struct {
-	ID        string `json:"id,omitempty"`
+	ID        string `json:"id,omitzero"`
 	Name      string `json:"name"`
-	Arguments string `json:"arguments,omitempty"`
+	Arguments string `json:"arguments,omitzero"`
 }
 
 // FunctionCallPart wraps a FunctionCall as a content part.
@@ -88,9 +88,9 @@ func (FunctionCallPart) isPart() {}
 
 // FunctionResponse describes the outcome of a function call.
 type FunctionResponse struct {
-	ID       string `json:"id,omitempty"`
+	ID       string `json:"id,omitzero"`
 	Name     string `json:"name"`
-	Response any    `json:"response,omitempty"`
+	Response any    `json:"response,omitzero"`
 }
 
 // FunctionResponsePart wraps a FunctionResponse as a content part.

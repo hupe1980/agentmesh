@@ -16,7 +16,7 @@ type NodeInfo struct {
 	IsConditional     bool   `json:"is_conditional"`
 	IsConditionalGate bool   `json:"is_conditional_gate"`
 	HasRetryPolicy    bool   `json:"has_retry_policy"`
-	RetryMaxAttempts  int    `json:"retry_max_attempts,omitempty"`
+	RetryMaxAttempts  int    `json:"retry_max_attempts,omitzero"`
 }
 
 // EdgeInfo contains metadata about an edge in the graph.
@@ -24,7 +24,7 @@ type EdgeInfo struct {
 	From               string   `json:"from"`
 	To                 string   `json:"to"`
 	Type               string   `json:"type"` // "direct", "conditional"
-	ConditionalTargets []string `json:"conditional_targets,omitempty"`
+	ConditionalTargets []string `json:"conditional_targets,omitzero"`
 }
 
 // GraphTopology provides a complete view of the graph structure.

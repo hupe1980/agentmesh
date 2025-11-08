@@ -21,13 +21,13 @@ import (
 // It contains actual data to be communicated between nodes via channels.
 type ChannelMessage struct {
 	// Messages contains conversation messages to be passed between nodes
-	Messages []message.Message `json:"messages,omitempty"`
+	Messages []message.Message `json:"messages,omitzero"`
 
 	// Updates contains key-value state updates to be applied to channels
-	Updates map[string]any `json:"updates,omitempty"`
+	Updates map[string]any `json:"updates,omitzero"`
 
 	// Metadata contains additional routing or processing hints
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Metadata map[string]string `json:"metadata,omitzero"`
 }
 
 // NewChannelMessage creates a new channel message with the given messages and updates.
