@@ -25,19 +25,20 @@ type SchedulingMessage struct {
 type Combiner func(existing, incoming SchedulingMessage) SchedulingMessage
 
 type runOptions struct {
-	maxConcurrency     int
-	initialSuperstep   int64
-	maxIterations      int
-	maxMessages        int // Maximum number of messages to retain (0 = unlimited)
-	eventBufferSize    int // Size of event channel for streaming (default = 100)
-	aggregators        map[string]pregel.Aggregator
-	combiner           Combiner
-	checkpointer       Checkpointer // Checkpoint storage backend
-	checkpointInterval int          // Save every N supersteps (0 = every superstep)
-	autoRestore        bool         // Automatically restore from last checkpoint
-	runID              string       // Unique identifier for this execution run
-	resume             bool         // Resume from checkpoint
-	resumeFrom         int64        // Superstep to resume from (0 = most recent)
+	maxConcurrency        int
+	initialSuperstep      int64
+	maxIterations         int
+	maxMessages           int // Maximum number of messages to retain (0 = unlimited)
+	eventBufferSize       int // Size of event channel for streaming (default = 100)
+	aggregators           map[string]pregel.Aggregator
+	combiner              Combiner
+	checkpointer          Checkpointer // Checkpoint storage backend
+	checkpointInterval    int          // Save every N supersteps (0 = every superstep)
+	autoRestore           bool         // Automatically restore from last checkpoint
+	failOnCheckpointError bool         // Fail execution on checkpoint errors (default: false, just log)
+	runID                 string       // Unique identifier for this execution run
+	resume                bool         // Resume from checkpoint
+	resumeFrom            int64        // Superstep to resume from (0 = most recent)
 }
 
 type RunOption func(*runOptions)
@@ -284,6 +285,30 @@ func WithResumeFromSuperstep(superstep int64) RunOption {
 		}
 		opts.resumeFrom = superstep
 		opts.resume = true
+	}
+}
+
+// WithFailOnCheckpointError configures whether checkpoint save errors should
+// fail the entire graph execution or just be logged as warnings.
+//
+// By default (false), checkpoint errors are logged but don't stop execution.
+// This allows the workflow to continue even if checkpoint storage is temporarily
+// unavailable. Set to true for critical workflows where checkpoint integrity
+// is required.
+//
+// Example:
+//
+//	// Fail immediately if checkpoints can't be saved
+//	graph.WithFailOnCheckpointError(true)
+//
+//	// Log checkpoint errors but continue execution (default)
+//	graph.WithFailOnCheckpointError(false)
+func WithFailOnCheckpointError(fail bool) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		opts.failOnCheckpointError = fail
 	}
 }
 

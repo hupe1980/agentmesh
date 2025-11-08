@@ -668,6 +668,35 @@ func executeWithCheckpointing(
 }
 ```
 
+#### Configuring Checkpoint Save Error Behavior
+
+By default, checkpoint save errors are logged but don't stop execution. This allows workflows to continue even if storage is temporarily unavailable:
+
+```go
+// Default: Log checkpoint errors but continue execution
+_, err := compiled.Invoke(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID("user-session-123"),
+)
+
+// For critical workflows: Fail immediately if checkpoints can't be saved
+_, err := compiled.Invoke(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID("user-session-123"),
+    graph.WithFailOnCheckpointError(true),  // Stop execution on checkpoint errors
+)
+```
+
+**When to use `WithFailOnCheckpointError(true)`:**
+- Financial transactions requiring audit trail
+- Compliance workflows that must preserve state
+- Critical systems where checkpoint integrity is mandatory
+
+**When to keep default (false):**
+- Development and testing
+- Non-critical workflows where availability > durability
+- Systems with unreliable storage backends
+
 ### 4. Concurrent Execution
 
 Handle multiple concurrent runs safely:

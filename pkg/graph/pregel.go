@@ -243,7 +243,12 @@ func (gr *graphRuntime) startCheckpointWorker() {
 				continue
 			}
 			if err := gr.options.checkpointer.Save(saveCtx, checkpoint); err != nil {
-				gr.emitError(fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err))
+				checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err)
+				if gr.options.failOnCheckpointError {
+					gr.fail(checkpointErr)
+				} else {
+					gr.emitError(checkpointErr)
+				}
 			}
 		}
 	}()
@@ -325,13 +330,23 @@ func (gr *graphRuntime) saveCheckpoint(superstep int64) {
 		select {
 		case gr.checkpointQueue <- checkpoint:
 		default:
-			gr.emitError(fmt.Errorf("checkpoint queue full at superstep %d: dropping checkpoint", superstep))
+			queueErr := fmt.Errorf("checkpoint queue full at superstep %d: dropping checkpoint", superstep)
+			if gr.options.failOnCheckpointError {
+				gr.fail(queueErr)
+			} else {
+				gr.emitError(queueErr)
+			}
 		}
 		return
 	}
 
 	if err := gr.options.checkpointer.Save(context.WithoutCancel(gr.ctx), checkpoint); err != nil {
-		gr.emitError(fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err))
+		checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err)
+		if gr.options.failOnCheckpointError {
+			gr.fail(checkpointErr)
+		} else {
+			gr.emitError(checkpointErr)
+		}
 	}
 }
 
