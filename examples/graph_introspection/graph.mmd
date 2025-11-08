@@ -1,0 +1,15 @@
+flowchart TD
+    __end__([__end__])
+    __start__([__start__])
+    aggregator[aggregator]
+    high_priority_handler[high_priority_handler]
+    input_validator[input_validator]
+    normal_handler[normal_handler]
+    router{router}
+    __start__ --> input_validator
+    input_validator --> router
+    high_priority_handler --> aggregator
+    normal_handler --> aggregator
+    aggregator --> __end__
+    router -.->|high_priority_handler| high_priority_handler
+    router -.->|normal_handler| normal_handler

@@ -5,6 +5,32 @@ import (
 	"sync"
 )
 
+// readCached implements the double-checked locking pattern for cached reads.
+// This helper reduces code duplication between LastValueChannel and BinaryOpChannel.
+func readCached(mu *sync.RWMutex, cachedValue *any, cachedVersion *int64, currentVersion int64, actualValue any) (any, error) {
+	// Fast path: return cached value if version matches
+	mu.RLock()
+	if *cachedVersion == currentVersion {
+		value := *cachedValue
+		mu.RUnlock()
+		return value, nil
+	}
+	mu.RUnlock()
+
+	// Slow path: update cache
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if *cachedVersion == currentVersion {
+		return *cachedValue, nil
+	}
+
+	*cachedValue = actualValue
+	*cachedVersion = currentVersion
+	return actualValue, nil
+}
+
 // Channel is the core abstraction for data flow between nodes.
 // Each channel has specific update semantics (append, replace, merge, etc.)
 //
@@ -207,27 +233,7 @@ func (lvc *LastValueChannel) Name() string {
 }
 
 func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
-	// Fast path: return cached value if version matches
-	lvc.mu.RLock()
-	if lvc.cachedVersion == lvc.version {
-		value := lvc.cachedValue
-		lvc.mu.RUnlock()
-		return value, nil
-	}
-	lvc.mu.RUnlock()
-
-	// Slow path: update cache
-	lvc.mu.Lock()
-	defer lvc.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if lvc.cachedVersion == lvc.version {
-		return lvc.cachedValue, nil
-	}
-
-	lvc.cachedValue = lvc.value
-	lvc.cachedVersion = lvc.version
-	return lvc.value, nil
+	return readCached(&lvc.mu, &lvc.cachedValue, &lvc.cachedVersion, lvc.version, lvc.value)
 }
 
 func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
@@ -319,27 +325,7 @@ func (boc *BinaryOpChannel) Name() string {
 }
 
 func (boc *BinaryOpChannel) Read(ctx context.Context) (any, error) {
-	// Fast path: return cached value if version matches
-	boc.mu.RLock()
-	if boc.cachedVersion == boc.version {
-		value := boc.cachedValue
-		boc.mu.RUnlock()
-		return value, nil
-	}
-	boc.mu.RUnlock()
-
-	// Slow path: update cache
-	boc.mu.Lock()
-	defer boc.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if boc.cachedVersion == boc.version {
-		return boc.cachedValue, nil
-	}
-
-	boc.cachedValue = boc.value
-	boc.cachedVersion = boc.version
-	return boc.value, nil
+	return readCached(&boc.mu, &boc.cachedValue, &boc.cachedVersion, boc.version, boc.value)
 }
 
 func (boc *BinaryOpChannel) Write(ctx context.Context, value any) error {
