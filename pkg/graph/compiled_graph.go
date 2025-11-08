@@ -299,8 +299,13 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 	}
 
 	derivedCtx, cancel := context.WithCancel(ctx)
-	events := make(chan StreamEvent, 100) // Buffered to reduce blocking
-	done := make(chan struct{})           // Signal for early termination
+	// Use configurable event buffer size
+	bufferSize := options.eventBufferSize
+	if bufferSize <= 0 {
+		bufferSize = 100 // Fallback to default
+	}
+	events := make(chan StreamEvent, bufferSize) // Buffered to reduce blocking
+	done := make(chan struct{})                  // Signal for early termination
 
 	go func() {
 		defer close(events)

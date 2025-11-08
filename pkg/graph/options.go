@@ -33,6 +33,7 @@ type runOptions struct {
 	initialSuperstep   int64
 	maxIterations      int
 	maxMessages        int // Maximum number of messages to retain (0 = unlimited)
+	eventBufferSize    int // Size of event channel for streaming (default = 100)
 	aggregators        map[string]Aggregator
 	combiner           Combiner
 	checkpointer       Checkpointer // Checkpoint storage backend
@@ -47,8 +48,9 @@ type RunOption func(*runOptions)
 
 func defaultRunOptions() runOptions {
 	return runOptions{
-		maxConcurrency: runtime.NumCPU(),
-		maxMessages:    0, // Unlimited by default
+		maxConcurrency:  runtime.NumCPU(),
+		maxMessages:     0,   // Unlimited by default
+		eventBufferSize: 100, // Default buffer size for event channel
 	}
 }
 
@@ -157,6 +159,28 @@ func WithMaxMessages(n int) RunOption {
 		}
 		if n >= 0 {
 			opts.maxMessages = n
+		}
+	}
+}
+
+// WithEventBufferSize sets the size of the event channel buffer for streaming.
+// A larger buffer reduces backpressure when consumers are slow but uses more memory.
+// Default is 100. Recommended: 10-1000 depending on event frequency and consumer speed.
+//
+// Use this option to tune for different workload characteristics:
+//   - Fast consumers with limited memory: smaller buffer (10-50)
+//   - Slow consumers or high event rate: larger buffer (200-1000)
+//
+// Example:
+//
+//	stream, _ := compiled.Stream(ctx, messages, graph.WithEventBufferSize(500))
+func WithEventBufferSize(size int) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		if size > 0 {
+			opts.eventBufferSize = size
 		}
 	}
 }

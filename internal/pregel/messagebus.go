@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"sync"
 )
 
@@ -48,18 +49,27 @@ type MessageBus[M any] interface {
 // InMemoryMessageBus is the default implementation using buffered channels.
 // It provides fast, single-process message delivery with backpressure support.
 //
-// Thread-safety: All methods are thread-safe using mutex and channels.
+// Thread-safety: All methods are thread-safe using sharded locks (32 shards).
 // Backpressure: Send blocks when channel is full until space is available or context cancelled.
 // Memory bounds: Each vertex mailbox has a bounded channel (maxSize > 0) or unbounded buffer (maxSize = 0).
 // Combiner support: Merges messages for the same target if configured.
+//
+// Performance: Uses 32-shard map with per-shard mutex to reduce lock contention
+// in high-throughput scenarios with many concurrent senders.
 type InMemoryMessageBus[M any] struct {
+	shards   [32]messageShard[M]
+	maxSize  int
+	combiner Combiner[M]
+	globalMu sync.Mutex // Only for Close() and global operations
+	closed   bool
+}
+
+// messageShard represents a single shard with its own lock
+type messageShard[M any] struct {
 	mu           sync.Mutex
 	mailbox      map[string]chan Message[M]
-	buffer       map[string][]Message[M] // For unlimited mailboxes (maxSize=0)
-	maxSize      int
-	combiner     Combiner[M]
+	buffer       map[string][]Message[M]
 	nextFrontier map[string]struct{}
-	closed       bool
 }
 
 // NewInMemoryMessageBus creates an in-memory message bus with backpressure.
@@ -68,14 +78,31 @@ type InMemoryMessageBus[M any] struct {
 //   - maxSize = 0: Uses unbounded buffer, Send never blocks (legacy behavior)
 //
 // combiner, if provided, merges messages for the same target.
+//
+// Implementation: Uses 32 shards to reduce lock contention.
 func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMessageBus[M] {
-	return &InMemoryMessageBus[M]{
-		mailbox:      make(map[string]chan Message[M]),
-		buffer:       make(map[string][]Message[M]),
-		maxSize:      maxSize,
-		combiner:     combiner,
-		nextFrontier: make(map[string]struct{}),
+	bus := &InMemoryMessageBus[M]{
+		maxSize:  maxSize,
+		combiner: combiner,
 	}
+
+	// Initialize all shards
+	for i := range bus.shards {
+		bus.shards[i] = messageShard[M]{
+			mailbox:      make(map[string]chan Message[M]),
+			buffer:       make(map[string][]Message[M]),
+			nextFrontier: make(map[string]struct{}),
+		}
+	}
+
+	return bus
+}
+
+// shardIndex returns the shard index for a given vertex name using FNV-1a hash
+func (bus *InMemoryMessageBus[M]) shardIndex(vertex string) int {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(vertex)) // hash.Hash.Write never returns an error
+	return int(h.Sum32() % 32)
 }
 
 // Send delivers messages to their target vertices with backpressure.
@@ -101,44 +128,77 @@ func (bus *InMemoryMessageBus[M]) Send(ctx context.Context, messages []Message[M
 }
 
 // sendOne delivers a single message with backpressure handling.
+// Uses sharded locks for reduced contention.
 func (bus *InMemoryMessageBus[M]) sendOne(ctx context.Context, msg Message[M]) error {
-	bus.mu.Lock()
-
+	// Check if bus is closed (global check without shard lock)
+	bus.globalMu.Lock()
 	if bus.closed {
-		bus.mu.Unlock()
+		bus.globalMu.Unlock()
 		return fmt.Errorf("message bus is closed")
 	}
+	bus.globalMu.Unlock()
+
+	// Get shard for this vertex
+	shardIdx := bus.shardIndex(msg.To)
+	shard := &bus.shards[shardIdx]
+
+	shard.mu.Lock()
 
 	// Mark vertex for next frontier
-	bus.nextFrontier[msg.To] = struct{}{}
+	shard.nextFrontier[msg.To] = struct{}{}
 
 	// Handle unbounded mailboxes (maxSize = 0)
 	if bus.maxSize == 0 {
 		// Apply combiner if configured
 		if bus.combiner != nil {
-			if existing := bus.buffer[msg.To]; len(existing) > 0 {
+			if existing := shard.buffer[msg.To]; len(existing) > 0 {
 				combined := bus.combiner(existing[0], msg)
-				bus.buffer[msg.To] = []Message[M]{combined}
-				bus.mu.Unlock()
+				shard.buffer[msg.To] = []Message[M]{combined}
+				shard.mu.Unlock()
 				return nil
 			}
 		}
 
 		// Append to unbounded buffer
-		bus.buffer[msg.To] = append(bus.buffer[msg.To], msg)
-		bus.mu.Unlock()
+		shard.buffer[msg.To] = append(shard.buffer[msg.To], msg)
+		shard.mu.Unlock()
 		return nil
 	}
 
 	// Handle bounded mailboxes with backpressure
-	ch, exists := bus.mailbox[msg.To]
+	ch, exists := shard.mailbox[msg.To]
 	if !exists {
 		// Create new bounded channel
 		ch = make(chan Message[M], bus.maxSize)
-		bus.mailbox[msg.To] = ch
+		shard.mailbox[msg.To] = ch
 	}
 
-	bus.mu.Unlock()
+	// Apply combiner when channel is approaching capacity
+	// This reduces backpressure by merging messages instead of blocking
+	if bus.combiner != nil && len(ch) > 0 {
+		threshold := (bus.maxSize * 3) / 4 // 75% capacity
+		if len(ch) >= threshold {
+			// Try to drain last message and combine with incoming
+			select {
+			case lastMsg := <-ch:
+				// Combine messages
+				combined := bus.combiner(lastMsg, msg)
+				shard.mu.Unlock()
+
+				// Send combined message (non-blocking, space guaranteed)
+				select {
+				case ch <- combined:
+					return nil
+				case <-ctx.Done():
+					return fmt.Errorf("failed to send combined message to %q: %w", msg.To, ctx.Err())
+				}
+			default:
+				// Another goroutine drained it, continue with normal send
+			}
+		}
+	}
+
+	shard.mu.Unlock()
 
 	// Blocking send with context support
 	select {
@@ -152,19 +212,24 @@ func (bus *InMemoryMessageBus[M]) sendOne(ctx context.Context, msg Message[M]) e
 // Receive retrieves and removes all messages for the given vertex.
 // For unbounded mailboxes, returns buffered messages.
 // For bounded mailboxes, drains the channel.
+// Uses sharded locks for reduced contention.
 func (bus *InMemoryMessageBus[M]) Receive(vertex string) ([]Message[M], error) {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
+	// Get shard for this vertex
+	shardIdx := bus.shardIndex(vertex)
+	shard := &bus.shards[shardIdx]
+
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
 	// Handle unbounded mailboxes
 	if bus.maxSize == 0 {
-		msgs := bus.buffer[vertex]
+		msgs := shard.buffer[vertex]
 		if len(msgs) == 0 {
 			return nil, nil
 		}
 
 		// Remove from buffer
-		delete(bus.buffer, vertex)
+		delete(shard.buffer, vertex)
 
 		// Return a copy to prevent external mutation
 		result := make([]Message[M], len(msgs))
@@ -173,7 +238,7 @@ func (bus *InMemoryMessageBus[M]) Receive(vertex string) ([]Message[M], error) {
 	}
 
 	// Handle bounded mailboxes - drain channel WITHOUT removing it
-	ch, exists := bus.mailbox[vertex]
+	ch, exists := shard.mailbox[vertex]
 	if !exists {
 		return nil, nil
 	}
@@ -198,15 +263,20 @@ drainLoop:
 }
 
 // Clear removes all messages for the given vertex.
+// Uses sharded locks for reduced contention.
 func (bus *InMemoryMessageBus[M]) Clear(vertex string) error {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
+	// Get shard for this vertex
+	shardIdx := bus.shardIndex(vertex)
+	shard := &bus.shards[shardIdx]
+
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
 	// Clear unbounded buffer
-	delete(bus.buffer, vertex)
+	delete(shard.buffer, vertex)
 
 	// For bounded channels, just drain them (don't close since sends may be in flight)
-	if ch, exists := bus.mailbox[vertex]; exists {
+	if ch, exists := shard.mailbox[vertex]; exists {
 		// Drain channel
 	drainLoop:
 		for {
@@ -219,34 +289,41 @@ func (bus *InMemoryMessageBus[M]) Clear(vertex string) error {
 		}
 	}
 
-	delete(bus.nextFrontier, vertex)
+	delete(shard.nextFrontier, vertex)
 	return nil
 }
 
 // Pending returns vertices with pending messages.
+// Iterates all shards to collect frontier vertices.
 func (bus *InMemoryMessageBus[M]) Pending() ([]string, error) {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
+	var vertices []string
 
-	if len(bus.nextFrontier) == 0 {
+	// Collect from all shards
+	for i := range bus.shards {
+		shard := &bus.shards[i]
+		shard.mu.Lock()
+
+		for name := range shard.nextFrontier {
+			vertices = append(vertices, name)
+		}
+
+		// Clear frontier after reading
+		shard.nextFrontier = make(map[string]struct{})
+		shard.mu.Unlock()
+	}
+
+	if len(vertices) == 0 {
 		return nil, nil
 	}
-
-	vertices := make([]string, 0, len(bus.nextFrontier))
-	for name := range bus.nextFrontier {
-		vertices = append(vertices, name)
-	}
-
-	// Clear frontier after reading
-	bus.nextFrontier = make(map[string]struct{})
 
 	return vertices, nil
 }
 
 // Close releases resources and closes all channels.
+// Closes all shards and their associated mailboxes.
 func (bus *InMemoryMessageBus[M]) Close() error {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
+	bus.globalMu.Lock()
+	defer bus.globalMu.Unlock()
 
 	if bus.closed {
 		return nil
@@ -254,14 +331,22 @@ func (bus *InMemoryMessageBus[M]) Close() error {
 
 	bus.closed = true
 
-	// Close all bounded mailbox channels
-	for _, ch := range bus.mailbox {
-		close(ch)
+	// Close all shards
+	for i := range bus.shards {
+		shard := &bus.shards[i]
+		shard.mu.Lock()
+
+		// Close all bounded mailbox channels in this shard
+		for _, ch := range shard.mailbox {
+			close(ch)
+		}
+
+		shard.mailbox = nil
+		shard.buffer = nil
+		shard.nextFrontier = nil
+		shard.mu.Unlock()
 	}
 
-	bus.mailbox = nil
-	bus.buffer = nil
-	bus.nextFrontier = nil
 	return nil
 }
 
@@ -279,32 +364,38 @@ type MessageBusStats struct {
 
 // Stats returns statistics about the message bus state.
 // Only available for InMemoryMessageBus.
+// Aggregates stats from all shards.
 func (bus *InMemoryMessageBus[M]) Stats() MessageBusStats {
-	bus.mu.Lock()
-	defer bus.mu.Unlock()
-
 	stats := MessageBusStats{}
 
-	// Count unbounded buffer messages
-	for _, msgs := range bus.buffer {
-		count := len(msgs)
-		stats.TotalMessages += count
-		stats.VerticesWithMessages++
-		if count > stats.LargestMailbox {
-			stats.LargestMailbox = count
-		}
-	}
+	// Aggregate stats from all shards
+	for i := range bus.shards {
+		shard := &bus.shards[i]
+		shard.mu.Lock()
 
-	// Count bounded channel messages
-	for _, ch := range bus.mailbox {
-		count := len(ch)
-		stats.TotalMessages += count
-		if count > 0 {
+		// Count unbounded buffer messages
+		for _, msgs := range shard.buffer {
+			count := len(msgs)
+			stats.TotalMessages += count
 			stats.VerticesWithMessages++
+			if count > stats.LargestMailbox {
+				stats.LargestMailbox = count
+			}
 		}
-		if count > stats.LargestMailbox {
-			stats.LargestMailbox = count
+
+		// Count bounded channel messages
+		for _, ch := range shard.mailbox {
+			count := len(ch)
+			stats.TotalMessages += count
+			if count > 0 {
+				stats.VerticesWithMessages++
+			}
+			if count > stats.LargestMailbox {
+				stats.LargestMailbox = count
+			}
 		}
+
+		shard.mu.Unlock()
 	}
 
 	return stats
