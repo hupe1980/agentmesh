@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
-	"net/http"
 	"runtime"
 	"strings"
 
@@ -286,12 +285,6 @@ func (m *Model) buildConfig(systemInstruction string) *genai.GenerateContentConf
 		MaxOutputTokens: m.opts.maxOutputTokens,
 		TopP:            &m.opts.topP,
 		TopK:            &m.opts.topK,
-		HTTPOptions: &genai.HTTPOptions{
-			Headers: http.Header{
-				"x-goog-api-client": []string{m.opts.versionHeaderValue},
-				"user-agent":        []string{m.opts.versionHeaderValue},
-			},
-		},
 	}
 
 	if systemInstruction != "" {
