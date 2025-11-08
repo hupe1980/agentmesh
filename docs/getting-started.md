@@ -169,6 +169,29 @@ Once the server is running, open `http://localhost:4000` for the rendered docs w
 
 ---
 
+## Graph Introspection {#introspection}
+
+Debug and visualize your graphs with the introspection API:
+
+```go
+// Inspect graph structure
+nodes := compiled.GetNodes()
+topo := compiled.GetTopology()
+fmt.Printf("Entry points: %v\n", topo.EntryPoints)
+fmt.Printf("Max depth: %d\n", topo.MaxDepth)
+
+// Get execution paths
+paths := compiled.GetExecutionPath(10)
+
+// Generate Mermaid flowchart
+flowchart := compiled.GenerateMermaidFlowchart("TD")
+os.WriteFile("graph.mmd", []byte(flowchart), 0644)
+```
+
+See the [graph_introspection example](https://github.com/hupe1980/agentmesh/tree/main/examples/graph_introspection) for complete usage.
+
+---
+
 ## Next steps {#next-steps}
 
 - **[Architecture](/architecture/)** – Understand the Pregel BSP execution model and graph builder pattern

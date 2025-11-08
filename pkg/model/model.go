@@ -150,10 +150,10 @@ func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
 	return messages, lastErr
 }
 
-// Stream wraps an iterator in the legacy Stream type for backward compatibility.
-// This allows gradual migration from the old Stream API to the new iterator-based API.
+// ToStream wraps an iterator in the Stream type for compatibility with non-iterator APIs.
+// This allows using iterator-based model responses with APIs that expect the Stream type.
 //
-// Deprecated: Use the iterator directly with for-range instead.
+// Note: Prefer using the iterator directly with for-range when possible.
 func ToStream(ctx context.Context, seq iter.Seq2[message.Message, error]) *Stream {
 	chunks := make(chan StreamChunk, 1)
 	ctx, cancel := context.WithCancel(ctx)

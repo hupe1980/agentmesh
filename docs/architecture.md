@@ -222,6 +222,58 @@ compiled, _ := builder.Compile()
 
 ---
 
+## Graph Introspection {#graph-introspection}
+
+AgentMesh provides a comprehensive introspection API for debugging, monitoring, and visualizing compiled graphs:
+
+### Introspection Methods
+
+```go
+// Basic inspection
+nodes := compiled.GetNodes()                    // List all node names
+info, _ := compiled.GetNodeInfo("my_node")     // Node metadata
+
+// Topology analysis
+topo := compiled.GetTopology()
+fmt.Printf("Entry points: %v\n", topo.EntryPoints)
+fmt.Printf("Exit points: %v\n", topo.ExitPoints)
+fmt.Printf("Max depth: %d\n", topo.MaxDepth)
+
+// Graph metrics
+metrics := compiled.GetMetrics()
+fmt.Printf("Cyclomatic complexity: %d\n", metrics.CyclomaticComplexity)
+fmt.Printf("Completed nodes: %v\n", metrics.CompletedNodes)
+
+// Execution paths
+paths := compiled.GetExecutionPath(100)
+for i, path := range paths {
+    fmt.Printf("Path %d: %v\n", i+1, path)
+}
+```
+
+### Mermaid Flowchart Generation
+
+Generate visual diagrams of your graph structure:
+
+```go
+// Generate flowchart with top-down layout
+flowchart := compiled.GenerateMermaidFlowchart("TD")
+os.WriteFile("graph.mmd", []byte(flowchart), 0644)
+
+// Supported directions: TD (top-down), LR (left-right), BT, RL
+```
+
+The generated Mermaid syntax includes:
+- **Stadium shapes** for START/END nodes
+- **Diamond shapes** for conditional nodes
+- **Rectangle shapes** for standard nodes
+- **Solid arrows** for direct edges
+- **Dashed arrows** for conditional branches
+
+See the [graph_introspection example](https://github.com/hupe1980/agentmesh/tree/main/examples/graph_introspection) for complete usage.
+
+---
+
 ## Scheduler architecture {#scheduler-architecture}
 
 The scheduler is the brain of the execution engine, determining which nodes can execute in each superstep. It's composed of **four specialized components** that work together:

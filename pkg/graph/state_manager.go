@@ -467,7 +467,7 @@ func (s *GraphState) Clone() StateManager {
 }
 
 // =============================================================================
-// GraphState - Legacy Methods (for v1.x compatibility)
+// GraphState - Convenience Methods
 // =============================================================================
 
 func (s *GraphState) SnapshotAll() map[string]any {

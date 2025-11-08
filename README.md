@@ -28,6 +28,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities
 - **⏱️ Execution Control** - Max iterations, timeouts, and graceful termination
 - **🔀 Conditional Routing** - Dynamic flow control based on node outputs
+- **🔍 Graph Introspection** - Debug and visualize graphs with topology analysis and Mermaid flowcharts
 - **🎨 Flowchart Generation** - Auto-generate Mermaid diagrams from graph topology
 - **⏸️ Human-in-the-Loop** - Pause workflows for human approval/input
 - **🔌 Callback System** - Intercept and transform model/tool requests with BeforeModel, AfterModel, OnError handlers
@@ -447,6 +448,28 @@ builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.
         Messages: msgs,
     }, nil
 })
+```
+
+### 🔍 Graph Introspection
+
+Debug and visualize your graphs:
+
+```go
+// Inspect topology
+topo := compiled.GetTopology()
+fmt.Printf("Entry points: %v\n", topo.EntryPoints)
+fmt.Printf("Max depth: %d\n", topo.MaxDepth)
+
+// Get execution paths
+paths := compiled.GetExecutionPath(10)
+
+// Generate Mermaid flowchart
+flowchart := compiled.GenerateMermaidFlowchart("TD")
+os.WriteFile("graph.mmd", []byte(flowchart), 0644)
+
+// Track runtime metrics
+metrics := compiled.GetMetrics()
+fmt.Printf("Complexity: %d\n", metrics.CyclomaticComplexity)
 ```
 
 ### � Callbacks
