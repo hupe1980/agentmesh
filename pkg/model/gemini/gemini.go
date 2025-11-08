@@ -183,8 +183,6 @@ func (m *Model) Name() string {
 // Returns an iterator that yields messages as they are received.
 // For streaming, multiple intermediate messages are yielded followed by the final complete message.
 // For non-streaming (blocking), only the final message is yielded.
-//
-//nolint:gocyclo // Generation requires handling many message and response types
 func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
 	return func(yield func(message.Message, error) bool) {
 		if len(msgs) == 0 {

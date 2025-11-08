@@ -1,6 +1,6 @@
 # 🤖🕸️ AgentMesh
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 [![GoDoc](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
@@ -8,6 +8,8 @@
 > 🚀 **Production-grade multi-agent orchestration framework** powered by Pregel-style bulk-synchronous parallel (BSP) graph processing.
 
 AgentMesh enables you to build sophisticated AI agent workflows with parallel execution, state management, and enterprise-grade observability. Built natively in Go for performance and type safety.
+
+**Requires Go 1.23+** for iterator support (`iter.Seq2`).
 
 ---
 
@@ -36,15 +38,21 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🧠 Memory** - Long-term conversation storage with semantic vector search and session management
 - **📝 Prompt Templates** - Variable substitution with {{.Variable}} syntax for reusable prompt patterns
 - **🔍 Retrieval** - RAG integration with AWS Bedrock Knowledge Bases and Kendra
+- **🔄 Unified Streaming** - Iterator-based model API (Go 1.23+ `iter.Seq2`) for consistent streaming/blocking modes
 
 ### 🌐 Integration & Extensibility
 - **🤝 Agent-to-Agent (A2A) Protocol** - Expose agents as A2A services or connect to external A2A agents
 - **🔌 Model Context Protocol (MCP)** - Dynamic tool discovery from MCP servers
 - **🛠️ LangChainGo Tools** - Import and use LangChainGo tool ecosystem
+- **🤖 Multi-Provider LLMs** - OpenAI, Anthropic, Gemini with functional options pattern
 
 ---
 
 ## 🚀 Quick Start
+
+### Requirements
+
+- **Go 1.23+** (required for `iter.Seq2` support)
 
 ### Installation
 

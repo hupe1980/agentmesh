@@ -35,14 +35,18 @@ sidebar:
 
 ## Overview {#overview}
 
-AgentMesh abstracts language models behind a common `model.Model` interface:
+AgentMesh abstracts language models behind a common `model.Model` interface that uses Go 1.23+ iterators for unified streaming:
 
 ```go
 type Model interface {
-    Generate(ctx context.Context, messages []message.Message) (message.Message, error)
-    Stream(ctx context.Context, messages []message.Message) (*model.Stream, error)
+    Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error]
 }
 ```
+
+The iterator-based API unifies streaming and blocking modes:
+- **Streaming**: Iterate over partial messages as they arrive
+- **Blocking**: Use `model.Last()` to get only the final response
+- **Batch collection**: Use `model.Collect()` to gather all messages
 
 Models may also implement `model.ToolAware` to support function calling:
 
@@ -68,11 +72,11 @@ import (
     "github.com/hupe1980/agentmesh/pkg/model/openai"
 )
 
-model := openai.NewModel(func(o *openai.Options) {
-    o.Model = "gpt-4o"
-    o.Temperature = 0.7
-    o.MaxTokens = 1000
-})
+model := openai.NewModel(
+    openai.WithModel("gpt-4o"),
+    openai.WithTemperature(0.7),
+    openai.WithMaxCompletionTokens(1000),
+)
 
 compiled, err := agent.NewReActAgent(model, tools)
 ```
@@ -80,14 +84,11 @@ compiled, err := agent.NewReActAgent(model, tools)
 Configuration options:
 
 ```go
-openai.NewModel(func(o *openai.Options) {
-    o.Model = "gpt-4o-mini"           // Model name
-    o.Temperature = 0.2               // Randomness (0-2)
-    o.MaxTokens = 500                 // Max output tokens
-    o.TopP = 1.0                      // Nucleus sampling
-    o.FrequencyPenalty = 0.0          // Penalize repetition
-    o.PresencePenalty = 0.0           // Encourage diversity
-})
+openai.NewModel(
+    openai.WithModel("gpt-4o-mini"),           // Model name
+    openai.WithTemperature(0.2),               // Randomness (0-2)
+    openai.WithMaxCompletionTokens(500),       // Max output tokens
+)
 ```
 
 The adapter supports:
@@ -103,11 +104,11 @@ The Anthropic adapter integrates Claude models via the official SDK:
 ```go
 import "github.com/hupe1980/agentmesh/pkg/model/anthropic"
 
-model := anthropic.NewModel(func(o *anthropic.Options) {
-    o.Model = "claude-3-5-sonnet-20241022"
-    o.MaxTokens = 1024
-    o.Temperature = 1.0
-})
+model := anthropic.NewModel(
+    anthropic.WithModel("claude-3-5-sonnet-20241022"),
+    anthropic.WithMaxTokens(1024),
+    anthropic.WithTemperature(1.0),
+)
 
 compiled, err := agent.NewReActAgent(model, tools)
 ```
@@ -115,13 +116,12 @@ compiled, err := agent.NewReActAgent(model, tools)
 Configuration options:
 
 ```go
-anthropic.NewModel(func(o *anthropic.Options) {
-    o.Model = "claude-3-5-sonnet-20241022"
-    o.MaxTokens = 2048
-    o.Temperature = 0.5
-    o.TopP = 1.0
-    o.TopK = 250
-})
+anthropic.NewModel(
+    anthropic.WithModel("claude-3-5-sonnet-20241022"),
+    anthropic.WithMaxTokens(2048),
+    anthropic.WithTemperature(0.5),
+    anthropic.WithAPIKey("your-api-key"), // Optional if set in env
+)
 ```
 
 The adapter supports:
@@ -183,10 +183,53 @@ compiled, err := agent.NewReActAgent(
 
 ## Streaming {#streaming}
 
-All models support streaming for real-time responses:
+All models support streaming through the unified iterator API:
 
 ```go
-// Using graph streaming
+// Stream model responses directly
+for msg, err := range model.Generate(ctx, messages) {
+    if err != nil {
+        log.Printf("Error: %v", err)
+        break
+    }
+    
+    // Print partial responses as they arrive
+    for _, part := range msg.Parts() {
+        if text, ok := part.(message.TextPart); ok {
+            fmt.Print(text.Text)
+        }
+    }
+}
+```
+
+For blocking (non-streaming) mode, use `model.Last()`:
+
+```go
+// Get only the final response
+finalMsg, err := model.Last(model.Generate(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(finalMsg.Content())
+```
+
+Collect all intermediate messages:
+
+```go
+// Gather all messages (useful for debugging)
+messages, err := model.Collect(model.Generate(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, msg := range messages {
+    fmt.Printf("Message: %s\n", msg.Content())
+}
+```
+
+When using graph streaming, agents automatically handle the iterator:
+
+```go
 stream := compiled.Stream(ctx, messages)
 for event := range stream {
     if event.Err != nil {
@@ -195,7 +238,7 @@ for event := range stream {
     }
     
     if event.Node == "model" {
-        // Access partial response
+        // Access partial response from iterator
         for _, msg := range event.Messages {
             fmt.Print(msg.Content())
         }
@@ -203,55 +246,47 @@ for event := range stream {
 }
 ```
 
-Models can also be streamed directly:
-
-```go
-stream, err := model.Stream(ctx, messages)
-if err != nil {
-    log.Fatal(err)
-}
-
-for {
-    msg, err := stream.Receive()
-    if err == io.EOF {
-        break
-    }
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    fmt.Print(msg.Content())
-}
-```
-
 ---
 
 ## Custom models {#custom-models}
 
-Implement the `model.Model` interface to integrate custom providers:
+Implement the `model.Model` interface to integrate custom providers using the iterator pattern:
 
 ```go
 type CustomModel struct {
     client *CustomClient
 }
 
-func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) (message.Message, error) {
-    // Convert messages to provider format
-    req := convertMessages(messages)
-    
-    // Call provider API
-    resp, err := m.client.Complete(ctx, req)
-    if err != nil {
-        return nil, err
+func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
+    return func(yield func(message.Message, error) bool) {
+        // Convert messages to provider format
+        req := convertMessages(messages)
+        
+        // For streaming providers, yield partial responses
+        stream, err := m.client.CompleteStream(ctx, req)
+        if err != nil {
+            yield(nil, err)
+            return
+        }
+        
+        for chunk := range stream {
+            // Convert chunk to AgentMesh format
+            msg := message.NewAIMessageFromText(chunk.Text)
+            
+            // Yield partial message; if false returned, stop streaming
+            if !yield(msg, nil) {
+                return
+            }
+        }
+        
+        // For non-streaming providers, yield single final message
+        // resp, err := m.client.Complete(ctx, req)
+        // if err != nil {
+        //     yield(nil, err)
+        //     return
+        // }
+        // yield(message.NewAIMessage(message.NewTextPart(resp.Text)), nil)
     }
-    
-    // Convert response to AgentMesh format
-    return message.NewAIMessage(message.NewTextPart(resp.Text)), nil
-}
-
-func (m *CustomModel) Stream(ctx context.Context, messages []message.Message) (*model.Stream, error) {
-    // Implement streaming logic
-    // Return *model.Stream for real-time updates
 }
 
 // Optional: Implement ToolAware for function calling
@@ -269,3 +304,5 @@ Use your custom model like any other:
 model := &CustomModel{client: myClient}
 compiled, err := agent.NewReActAgent(model, tools)
 ```
+
+The iterator pattern automatically supports both streaming and blocking modes through `model.Last()` and `model.Collect()` helpers.

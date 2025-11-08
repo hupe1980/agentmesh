@@ -136,7 +136,7 @@ func Last(seq iter.Seq2[message.Message, error]) (message.Message, error) {
 //	    fmt.Println(msg.Content)
 //	}
 func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
-	var messages []message.Message
+	messages := make([]message.Message, 0)
 	var lastErr error
 
 	for msg, err := range seq {
