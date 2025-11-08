@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	ipregel "github.com/hupe1980/agentmesh/internal/pregel"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/pregel"
 )
 
 // =============================================================================
@@ -117,9 +117,13 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 //   - Pregel Engine: Executes nodes in parallel BSP supersteps
 //   - graphRuntime: Coordinates interaction and manages lifecycle
 //
-// This separation allows the pure BSP engine (internal/pregel) to remain
+// This separation allows the pure BSP engine (pkg/pregel) to remain
 // domain-agnostic while graph-specific concerns (channels, checkpoints,
 // conditional routing) are handled at the graph layer.
+//
+// The pkg/pregel package is now public API, enabling advanced users to
+// implement custom MessageBus backends, schedulers, and fine-tune the
+// execution engine for specific use cases.
 type graphRuntime struct {
 	cg      *CompiledGraph
 	ctx     context.Context
@@ -127,8 +131,8 @@ type graphRuntime struct {
 	options runOptions
 	stream  chan<- StreamEvent
 
-	scheduler *vertexScheduler                               // Graph topology & routing
-	engine    *ipregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
+	scheduler *vertexScheduler                              // Graph topology & routing
+	engine    *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
 
 	errOnce         sync.Once
 	checkpointQueue chan *Checkpoint
@@ -187,28 +191,28 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 	if cg != nil {
 		cg.setCurrentSuperstep(options.initialSuperstep)
 	}
-	runtimeOptions := []ipregel.RuntimeOption[StateManager, ChannelMessage]{
-		ipregel.WithMaxWorkers[StateManager, ChannelMessage](maxWorkers),
-		ipregel.WithInitialSuperstep[StateManager, ChannelMessage](options.initialSuperstep),
+	runtimeOptions := []pregel.RuntimeOption[StateManager, ChannelMessage]{
+		pregel.WithMaxWorkers[StateManager, ChannelMessage](maxWorkers),
+		pregel.WithInitialSuperstep[StateManager, ChannelMessage](options.initialSuperstep),
 	}
 	if options.maxIterations > 0 {
-		runtimeOptions = append(runtimeOptions, ipregel.WithMaxIterations[StateManager, ChannelMessage](options.maxIterations))
+		runtimeOptions = append(runtimeOptions, pregel.WithMaxIterations[StateManager, ChannelMessage](options.maxIterations))
 	}
 	if len(options.aggregators) > 0 {
-		runtimeOptions = append(runtimeOptions, ipregel.WithAggregators[StateManager, ChannelMessage](adaptAggregators(options.aggregators)))
+		runtimeOptions = append(runtimeOptions, pregel.WithAggregators[StateManager, ChannelMessage](adaptAggregators(options.aggregators)))
 	}
 	if options.combiner != nil {
-		runtimeOptions = append(runtimeOptions, ipregel.WithCombiner[StateManager, ChannelMessage](adaptCombiner(options.combiner)))
+		runtimeOptions = append(runtimeOptions, pregel.WithCombiner[StateManager, ChannelMessage](adaptCombiner(options.combiner)))
 	}
 	// Install checkpoint callback if configured
 	if options.checkpointer != nil && options.runID != "" && options.checkpointInterval > 0 {
-		runtimeOptions = append(runtimeOptions, ipregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(superstep int64) {
+		runtimeOptions = append(runtimeOptions, pregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(superstep int64) {
 			gr.saveCheckpoint(superstep)
 		}))
 	}
 
 	// Create the Pregel runtime (use MustNewRuntime since inputs are already validated)
-	gr.engine = ipregel.MustNewRuntime(adapter, nil, runtimeOptions...)
+	gr.engine = pregel.MustNewRuntime(adapter, nil, runtimeOptions...)
 
 	// Configure the engine to respect early termination
 	if done != nil {
@@ -389,7 +393,7 @@ func (g *compiledPregelGraph) Outgoing(node string) []string {
 	return nil
 }
 
-func (g *compiledPregelGraph) NodeByName(name string) ipregel.PregelNode[StateManager, ChannelMessage] {
+func (g *compiledPregelGraph) NodeByName(name string) pregel.PregelNode[StateManager, ChannelMessage] {
 	if node, ok := g.runtime.cg.nodes[name]; ok {
 		return &nodeAdapter{runtime: g.runtime, name: name, node: node}
 	}
@@ -408,7 +412,7 @@ func (g *compiledPregelGraph) State() StateManager {
 func (n *nodeAdapter) Name() string { return n.name }
 
 //nolint:gocyclo // Node execution requires handling many runtime conditions
-func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[StateManager, ChannelMessage], incoming []ipregel.Message[ChannelMessage]) error {
+func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[StateManager, ChannelMessage], incoming []pregel.Message[ChannelMessage]) error {
 	writer := func(result *NodeResult) {
 		if result == nil {
 			return
@@ -517,11 +521,11 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 		}
 		if len(next) > 0 && n.runtime.engine != nil {
 			// Create channel messages with data from node execution
-			deliveries := make([]ipregel.Message[ChannelMessage], 0, len(next))
+			deliveries := make([]pregel.Message[ChannelMessage], 0, len(next))
 			for _, target := range next {
 				// Send actual data in the message (not empty signal)
 				msg := NewChannelMessage(messages, updates)
-				deliveries = append(deliveries, ipregel.Message[ChannelMessage]{
+				deliveries = append(deliveries, pregel.Message[ChannelMessage]{
 					From: n.name,
 					To:   target,
 					Data: msg,
@@ -695,11 +699,11 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 //
 // The interfaces are identical but defined in separate packages to maintain
 // package independence. This adapter is zero-cost (interface wrapper only).
-func adaptAggregators(source map[string]Aggregator) map[string]ipregel.Aggregator {
+func adaptAggregators(source map[string]Aggregator) map[string]pregel.Aggregator {
 	if len(source) == 0 {
 		return nil
 	}
-	mapped := make(map[string]ipregel.Aggregator, len(source))
+	mapped := make(map[string]pregel.Aggregator, len(source))
 	for name, agg := range source {
 		if name == "" || agg == nil {
 			continue
@@ -736,11 +740,11 @@ func (a aggregatorAdapter) Aggregate(current, value any) any {
 // 1. Calls the user's combiner function on routing metadata
 // 2. Merges the ChannelMessage data (messages and updates)
 // 3. Returns a combined Pregel message
-func adaptCombiner(fn Combiner) ipregel.Combiner[ChannelMessage] {
+func adaptCombiner(fn Combiner) pregel.Combiner[ChannelMessage] {
 	if fn == nil {
 		return nil
 	}
-	return func(existing, incoming ipregel.Message[ChannelMessage]) ipregel.Message[ChannelMessage] {
+	return func(existing, incoming pregel.Message[ChannelMessage]) pregel.Message[ChannelMessage] {
 		// Combine using the user's combiner function on the routing metadata
 		combined := fn(
 			SchedulingMessage{From: existing.From, To: existing.To},
@@ -755,7 +759,7 @@ func adaptCombiner(fn Combiner) ipregel.Combiner[ChannelMessage] {
 		}
 		maps.Copy(mergedMsg.Updates, incoming.Data.Updates)
 
-		return ipregel.Message[ChannelMessage]{
+		return pregel.Message[ChannelMessage]{
 			From: combined.From,
 			To:   combined.To,
 			Data: mergedMsg,

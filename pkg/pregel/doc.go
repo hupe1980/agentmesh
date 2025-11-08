@@ -3,11 +3,26 @@
 //
 // # Overview
 //
-// This package implements the Pregel model with the following features:
+// This package implements the core Pregel execution engine and is now part of the
+// public API, enabling advanced use cases like custom message buses, schedulers,
+// and distributed execution.
+//
+// Features:
 //   - Vertices execute in parallel supersteps
 //   - Communication via message passing between supersteps
 //   - Global coordination via aggregators
 //   - Computation quiesces when no messages remain
+//   - Pluggable MessageBus for distributed backends (Redis, Kafka, etc.)
+//   - Custom Scheduler support for domain-specific optimizations
+//
+// # Usage Levels
+//
+// Most users should use the higher-level pkg/graph API. This package is for
+// advanced users who need:
+//   - Custom distributed message bus implementations
+//   - Fine-grained control over execution lifecycle
+//   - Custom scheduling strategies
+//   - Research and experimentation
 //   - Configurable worker pools for parallel execution
 //   - Message combiners to reduce mailbox pressure
 //

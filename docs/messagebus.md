@@ -294,7 +294,7 @@ func TestCustomMessageBus(t *testing.T) {
 
 ### Integration Tests
 
-See `internal/pregel/messagebus_test.go` for comprehensive test suite including:
+See `pkg/pregel/messagebus_test.go` for comprehensive test suite including:
 - Basic send/receive
 - Mailbox size limits
 - Message combiners

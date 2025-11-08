@@ -1,8 +1,8 @@
 # Architecture Refactoring Plan: StateManager & Executor
 
-**Version**: 2.0  
-**Status**: Design Complete, Implementation In Progress  
-**Breaking Changes**: Yes  
+**Version**: Future (Post-Phase 3)  
+**Status**: StateManager ✅ Complete, Executor Interface ⏭️ Deferred  
+**Breaking Changes**: Yes (when implemented)  
 
 ---
 
@@ -148,7 +148,7 @@ type Executor interface {
 ```
 
 **Implementation**: `PregelExecutor`
-- Wraps existing `internal/pregel.Runtime`
+- Wraps existing `pkg/pregel.Runtime` (now public API)
 - Implements BSP execution model
 - Delegates state management to StateManager
 - Provides event streaming
@@ -324,7 +324,7 @@ compiled, err := builder.Compile()
 
 - **FINDINGS.md Section 7**: Original redesign recommendations
 - **docs/architecture.md**: Current architecture documentation
-- **internal/pregel/**: BSP execution engine
+- **pkg/pregel/**: BSP execution engine (public API for advanced users)
 - **pkg/graph/compiled_graph.go**: Current implementation
 
 ---

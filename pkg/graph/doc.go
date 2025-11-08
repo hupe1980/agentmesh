@@ -147,7 +147,7 @@ to the generic Pregel BSP engine:
 	    ↓
 	Pregel Adapter (pregel.go)
 	    ↓
-	Pregel Runtime (internal/pregel)
+	Pregel Runtime (pkg/pregel) - PUBLIC API
 
 The adapter layer (pregel.go) translates between:
   - Graph nodes → Pregel vertices
@@ -158,6 +158,12 @@ The adapter layer (pregel.go) translates between:
 This separation allows the Pregel engine to remain pure and domain-agnostic
 while the graph package provides agent-specific features like channels,
 checkpoints, retry policies, and conditional routing.
+
+The pkg/pregel package is now public API, enabling advanced users to:
+  - Implement custom MessageBus backends (Redis, Kafka, distributed)
+  - Create custom Scheduler implementations (priority-based, GPU-optimized)
+  - Fine-tune execution engine parameters for specific use cases
+  - Build research prototypes using the BSP model
 
 # Core Files
 

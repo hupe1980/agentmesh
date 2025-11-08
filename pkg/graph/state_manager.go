@@ -88,6 +88,9 @@ type StateManager interface {
 	ApplyUpdates(values map[string]any, messages []message.Message)
 	Set(key string, value any) error
 
+	// Version management
+	Version() uint64
+
 	// State snapshots
 	Snapshot() map[string]any
 	Clone() StateManager
@@ -124,7 +127,11 @@ type GraphState struct {
 	checkpointer   checkpoint.Checkpointer
 	checkpointerMu sync.RWMutex
 
-	// Aggregate snapshot caching (Phase 3 optimization)
+	// State versioning for checkpoint integrity
+	version   uint64     // Monotonic version counter, incremented on every state mutation
+	versionMu sync.Mutex // Protects version counter
+
+	// Aggregate snapshot caching
 	aggregateCache   map[string]any // Cached snapshot of aggregates
 	aggregateVersion uint64         // Version counter to invalidate cache
 	cachedVersion    uint64         // Version of current cache
@@ -231,6 +238,10 @@ func (s *GraphState) UpdateChannels(ctx context.Context, updates map[string]any)
 			return fmt.Errorf("failed to write to channel %q: %w", name, err)
 		}
 	}
+
+	// Increment version counter after successful mutations
+	s.incrementVersion()
+
 	return nil
 }
 
@@ -284,6 +295,37 @@ func (s *GraphState) AggregatesSnapshot() map[string]any {
 	return s.GetAggregatesSnapshot()
 }
 
+// =============================================================================
+// GraphState - Version Management
+// =============================================================================
+
+// incrementVersion atomically increments the state version counter.
+// Called after any state mutation to track state evolution for checkpoint integrity.
+func (s *GraphState) incrementVersion() {
+	s.versionMu.Lock()
+	s.version++
+	s.versionMu.Unlock()
+}
+
+// Version returns the current state version.
+// This monotonic counter increases with every state mutation.
+func (s *GraphState) Version() uint64 {
+	s.versionMu.Lock()
+	defer s.versionMu.Unlock()
+	return s.version
+}
+
+// setVersion explicitly sets the version (used during checkpoint restore).
+func (s *GraphState) setVersion(v uint64) {
+	s.versionMu.Lock()
+	s.version = v
+	s.versionMu.Unlock()
+}
+
+// =============================================================================
+// GraphState - Aggregate Management (continued)
+// =============================================================================
+
 func (s *GraphState) SetAggregates(aggregates map[string]any) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
@@ -293,6 +335,9 @@ func (s *GraphState) SetAggregates(aggregates map[string]any) {
 	// New implementation: O(1) pointer assignment + version increment
 	s.aggregates = aggregates
 	s.aggregateVersion++ // Invalidate cached snapshot
+
+	// Increment global version counter
+	s.incrementVersion()
 }
 
 func (s *GraphState) SetAggregateFn(fn func(string, any) error) {

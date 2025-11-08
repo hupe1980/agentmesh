@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"runtime"
 	"time"
 
@@ -316,6 +317,7 @@ func (cg *CompiledGraph) createCheckpoint(runID string, superstep int64, metadat
 	return &Checkpoint{
 		RunID:          runID,
 		Superstep:      superstep,
+		Version:        cg.stateManager.Version(),
 		Timestamp:      time.Now(),
 		State:          cg.stateManager.GetAll(),
 		Messages:       cg.stateManager.MessagesSnapshot(),
@@ -331,9 +333,21 @@ func (cg *CompiledGraph) restoreCheckpoint(checkpoint *Checkpoint) error {
 		return nil
 	}
 
+	// Validate checkpoint version (detect corruption or sequence errors)
+	if cg.stateManager != nil {
+		currentVersion := cg.stateManager.Version()
+		if checkpoint.Version > 0 && currentVersion > checkpoint.Version {
+			return fmt.Errorf("checkpoint version mismatch: current state version %d is ahead of checkpoint version %d (possible concurrent modification or restore out of sequence)", currentVersion, checkpoint.Version)
+		}
+	}
+
 	// Restore state
 	if cg.stateManager != nil {
 		cg.stateManager.ApplyUpdates(checkpoint.State, checkpoint.Messages)
+		// Restore version from checkpoint
+		if gs, ok := cg.stateManager.(*GraphState); ok {
+			gs.setVersion(checkpoint.Version)
+		}
 	}
 
 	// Restore runtime execution state

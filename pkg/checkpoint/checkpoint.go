@@ -16,6 +16,11 @@ type Checkpoint struct {
 	// Superstep is the BSP superstep number when this checkpoint was created
 	Superstep int64
 
+	// Version is a monotonically increasing counter for checkpoint validation.
+	// Each state mutation increments the version, enabling detection of checkpoint corruption,
+	// concurrent modifications, or incorrect restore sequences.
+	Version uint64
+
 	// Timestamp when the checkpoint was created
 	Timestamp time.Time
 

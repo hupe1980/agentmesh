@@ -46,6 +46,8 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🔌 Model Context Protocol (MCP)** - Dynamic tool discovery from MCP servers
 - **🛠️ LangChainGo Tools** - Import and use LangChainGo tool ecosystem
 - **🤖 Multi-Provider LLMs** - OpenAI, Anthropic, Gemini with functional options pattern
+- **⚙️ Custom Execution Backends** - Public `pkg/pregel` API for distributed MessageBus (Redis, Kafka) and custom schedulers
+- **🔒 Checkpoint Integrity** - State versioning detects corruption and concurrent modifications
 
 ---
 
@@ -105,13 +107,19 @@ AgentMesh follows a **layered architecture** that separates concerns and enables
 └───────────────────────────────────────────────────────────────┘
                               ↓
 ┌───────────────────────────────────────────────────────────────┐
-│  Infrastructure Layer                                         │
+│  Execution Engine Layer (PUBLIC API)                         │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  internal/pregel (Bulk Synchronous Parallel Engine)     │  │
-│  │  • Generic BSP runtime                                  │  │
+│  │  pkg/pregel (Bulk Synchronous Parallel Engine)         │  │
+│  │  • Generic BSP runtime (public API for extensions)     │  │
 │  │  • Superstep coordination                               │  │
 │  │  • Message passing & aggregation                        │  │
+│  │  • Pluggable MessageBus (in-memory, Redis, Kafka, etc) │  │
+│  │  • Custom Scheduler support                             │  │
 │  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────┐
+│  Infrastructure Layer (Internal Utilities)                    │
 │  ┌──────────────┐  ┌────────────────┐  ┌──────────────--───┐  │
 │  │ internal/    │  │ internal/      │  │  internal/        │  │
 │  │ jsonschema   │  │  mermaid       │  │  stream           │  │
@@ -130,8 +138,9 @@ AgentMesh follows a **layered architecture** that separates concerns and enables
 **Key Design Principles:**
 - **Bottom-Up Dependencies**: Higher layers depend on lower layers only
 - **Interface-Based**: Each layer exposes clear interfaces for extension
-- **Pregel BSP Core**: Enables parallel execution, cycles, and deterministic ordering
-- **Channel-Based State**: Typed data flow with versioning and snapshots
+- **Pregel BSP Core**: Public `pkg/pregel` API enables parallel execution, custom backends, and distributed processing
+- **Channel-Based State**: Typed data flow with versioning, snapshots, and checkpoint integrity
+- **Extensible by Design**: Custom MessageBus, Scheduler, and execution strategies supported
 
 ---
 
@@ -647,6 +656,112 @@ compiled, _ := agent.NewReActAgent(model, tools)
 
 ---
 
+## 🔌 Advanced Extensibility
+
+### Custom MessageBus for Distributed Execution
+
+The `pkg/pregel` package is now **public API**, enabling custom MessageBus implementations for distributed execution across Redis, Kafka, or custom backends:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/pregel"
+
+// Implement custom MessageBus interface
+type RedisMessageBus struct {
+    client *redis.Client
+}
+
+func (r *RedisMessageBus) Send(from, to string, data MyMessageType) error {
+    // Serialize and send via Redis pub/sub
+    payload, _ := json.Marshal(data)
+    return r.client.Publish(ctx, to, payload).Err()
+}
+
+func (r *RedisMessageBus) Pending(vertex string) ([]pregel.Message[MyMessageType], error) {
+    // Fetch pending messages from Redis queue
+    messages, _ := r.client.LRange(ctx, vertex, 0, -1).Result()
+    // Deserialize and return
+    return parseMessages(messages)
+}
+
+// Use with custom runtime
+runtime := pregel.NewRuntime(
+    graphAdapter,
+    state,
+    pregel.WithMessageBus[StateType, MessageType](redisMessageBus),
+    pregel.WithMaxWorkers[StateType, MessageType](100),
+)
+```
+
+### Custom Scheduler Strategies
+
+Implement domain-specific scheduling for priority-based or GPU-optimized execution:
+
+```go
+// Implement Scheduler interface
+type PriorityScheduler struct {
+    priorities map[string]int
+}
+
+func (s *PriorityScheduler) Ready() []string {
+    // Return vertices sorted by priority
+    return s.sortByPriority(s.readyQueue)
+}
+
+// Use with Pregel runtime
+runtime := pregel.NewRuntime(
+    graphAdapter,
+    state,
+    pregel.WithScheduler[StateType, MessageType](priorityScheduler),
+)
+```
+
+### Checkpoint Integrity with State Versioning
+
+State versioning ensures checkpoint integrity and detects corruption:
+
+```go
+// Checkpoint now includes Version field
+checkpoint := &checkpoint.Checkpoint{
+    RunID:     "run-123",
+    Superstep: 5,
+    Version:   42,  // Monotonic counter incremented on every state mutation
+    State:     stateSnapshot,
+}
+
+// On restore, version is validated
+err := compiled.RestoreFromCheckpoint(ctx, checkpoint)
+// Returns error if current version > checkpoint version (concurrent modification)
+```
+
+**State Versioning Benefits:**
+- Detects checkpoint file corruption
+- Prevents out-of-sequence checkpoint restores
+- Identifies concurrent state modifications
+- Enables debugging of non-deterministic execution
+
+### Public API: pkg/pregel
+
+Advanced users can now access the core Pregel BSP engine directly:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/pregel"
+
+// Available public interfaces:
+// - Runtime: Core BSP execution engine
+// - MessageBus: Pluggable message backend
+// - Scheduler: Custom vertex scheduling
+// - Aggregator: Global reductions across vertices
+// - PregelGraph/PregelNode: Vertex computation model
+```
+
+**Use Cases for pkg/pregel:**
+- Custom distributed execution backends (Redis, Kafka, gRPC)
+- Research and experimentation with BSP algorithms
+- Domain-specific scheduling strategies (GPU, priority-based)
+- Fine-grained control over execution lifecycle
+
+---
+
 ## 🧪 Testing
 
 Run the full test suite:
@@ -739,7 +854,7 @@ We welcome contributions! Here's how to get started:
 - 📘 **[API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh)** - Complete godoc documentation
 - 📗 **[Examples](examples/)** - 17 comprehensive runnable examples
 - 📙 **[Getting Started Guide](docs/getting-started.md)** - Quick start tutorial
-- 📕 **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
+- � **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
 - � **[Callbacks Guide](docs/callbacks.md)** - Intercepting model/tool invocations
 - 🧠 **[Memory Guide](docs/memory.md)** - Conversation storage with semantic search
 - 🔢 **[Embeddings Guide](docs/embeddings.md)** - Text-to-vector conversion for RAG

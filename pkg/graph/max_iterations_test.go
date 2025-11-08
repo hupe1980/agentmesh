@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	ipregel "github.com/hupe1980/agentmesh/internal/pregel"
+	"github.com/hupe1980/agentmesh/pkg/pregel"
 )
 
 func TestMaxIterations(t *testing.T) {
@@ -40,7 +40,7 @@ func TestMaxIterations(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected ErrMaxIterationsExceeded, got nil")
 		}
-		if !errors.Is(err, ErrMaxIterationsExceeded) && !errors.Is(err, ipregel.ErrMaxIterationsExceeded) {
+		if !errors.Is(err, ErrMaxIterationsExceeded) && !errors.Is(err, pregel.ErrMaxIterationsExceeded) {
 			t.Fatalf("expected ErrMaxIterationsExceeded, got %v", err)
 		}
 
