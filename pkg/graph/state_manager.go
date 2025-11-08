@@ -105,13 +105,19 @@ type StateManager interface {
 // - The runtime state during execution (no conversion needed)
 //
 // This is the ONLY StateManager implementation in v2.0+ (Option A architecture).
+//
+// Thread Safety:
+// - Channel operations use per-channel locks (via ChannelSet and individual channels)
+// - Aggregates use separate aggregatesMu lock
+// - Checkpointer uses checkpointerMu for safe concurrent access
+// This design eliminates global lock contention for better concurrent performance.
 type GraphState struct {
-	channels     *channel.ChannelSet
-	aggregates   map[string]any
-	aggregateFn  func(string, any) error
-	aggregatesMu sync.RWMutex
-	checkpointer checkpoint.Checkpointer
-	mu           sync.RWMutex // Protects channels and overall state
+	channels       *channel.ChannelSet
+	aggregates     map[string]any
+	aggregateFn    func(string, any) error
+	aggregatesMu   sync.RWMutex
+	checkpointer   checkpoint.Checkpointer
+	checkpointerMu sync.RWMutex
 }
 
 // NewGraphState creates a new channel-based graph state.
@@ -130,9 +136,7 @@ func NewGraphState(maxMessages int) *GraphState {
 // =============================================================================
 
 func (s *GraphState) Get(key string) any {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	// No lock needed - ChannelSet.Get() and Channel.Read() handle their own locking
 	ch, ok := s.channels.Get(key)
 	if !ok {
 		return nil
@@ -145,9 +149,7 @@ func (s *GraphState) Get(key string) any {
 }
 
 func (s *GraphState) GetAll() map[string]any {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	// No lock needed - ChannelSet.ReadAll() handles its own locking
 	values, err := s.channels.ReadAll(context.Background())
 	if err != nil {
 		return nil
@@ -186,21 +188,17 @@ func (s *GraphState) MessagesSnapshot() []message.Message {
 // =============================================================================
 
 func (s *GraphState) AddChannel(ch channel.Channel) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// No lock needed - ChannelSet.Add() handles its own locking
 	s.channels.Add(ch)
 }
 
 func (s *GraphState) GetChannel(name string) (channel.Channel, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// No lock needed - ChannelSet.Get() handles its own locking
 	return s.channels.Get(name)
 }
 
 func (s *GraphState) UpdateChannel(ctx context.Context, name string, value any) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// No lock needed - ChannelSet.Get() and Channel.Write() handle their own locking
 	ch, ok := s.channels.Get(name)
 	if !ok {
 		return nil // Silently ignore unknown channels
@@ -213,9 +211,7 @@ func (s *GraphState) UpdateChannels(ctx context.Context, updates map[string]any)
 		return nil
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// No lock needed - ChannelSet.Get() and Channel.Write() handle their own locking
 	for name, value := range updates {
 		ch, ok := s.channels.Get(name)
 		if !ok {
@@ -305,9 +301,9 @@ func (s *GraphState) Aggregate(name string, value any) error {
 // =============================================================================
 
 func (s *GraphState) SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error {
-	s.mu.RLock()
+	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
-	s.mu.RUnlock()
+	s.checkpointerMu.RUnlock()
 
 	if checkpointer == nil {
 		return nil // No checkpointer configured
@@ -323,9 +319,9 @@ func (s *GraphState) SaveCheckpoint(ctx context.Context, runID string, superstep
 }
 
 func (s *GraphState) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
-	s.mu.RLock()
+	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
-	s.mu.RUnlock()
+	s.checkpointerMu.RUnlock()
 
 	if checkpointer == nil {
 		return nil, fmt.Errorf("no checkpointer configured")
@@ -335,8 +331,8 @@ func (s *GraphState) LoadCheckpoint(ctx context.Context, runID string) (*checkpo
 }
 
 func (s *GraphState) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.checkpointerMu.Lock()
+	defer s.checkpointerMu.Unlock()
 	s.checkpointer = checkpointer
 }
 
@@ -369,9 +365,7 @@ func (s *GraphState) SetMaxMessages(maxMessages int) {
 		maxMessages = 0
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// No lock needed - ChannelSet.Get() and ChannelSet.Add() handle their own locking
 	ch, ok := s.channels.Get("messages")
 	if !ok {
 		s.channels.Add(channel.NewTopicChannel("messages", maxMessages))
@@ -400,9 +394,7 @@ func (s *GraphState) SetMaxMessages(maxMessages int) {
 func (s *GraphState) ApplyUpdates(values map[string]any, messages []message.Message) {
 	ctx := context.Background()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// No lock needed - ChannelSet methods handle their own locking
 	for key, value := range values {
 		ch, exists := s.channels.Get(key)
 		if !exists {
@@ -424,9 +416,7 @@ func (s *GraphState) ApplyUpdates(values map[string]any, messages []message.Mess
 }
 
 func (s *GraphState) Set(key string, value any) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// No lock needed - ChannelSet methods handle their own locking
 	ch, exists := s.channels.Get(key)
 	if !exists {
 		ch = channel.NewLastValueChannel(key)
@@ -440,9 +430,7 @@ func (s *GraphState) Set(key string, value any) error {
 // =============================================================================
 
 func (s *GraphState) Snapshot() map[string]any {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	// No lock needed - ChannelSet.SnapshotAll() handles its own locking
 	values, err := s.channels.SnapshotAll(context.Background())
 	if err != nil {
 		return nil
@@ -451,24 +439,25 @@ func (s *GraphState) Snapshot() map[string]any {
 }
 
 func (s *GraphState) Clone() StateManager {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	// Create new state with same channel configuration
 	cloned := &GraphState{
-		channels:     channel.NewChannelSet(),
-		aggregates:   make(map[string]any),
-		checkpointer: s.checkpointer,
+		channels:   channel.NewChannelSet(),
+		aggregates: make(map[string]any),
 	}
 
-	// Clone all channels
+	// Clone checkpointer (thread-safe read)
+	s.checkpointerMu.RLock()
+	cloned.checkpointer = s.checkpointer
+	s.checkpointerMu.RUnlock()
+
+	// Clone all channels (ChannelSet methods handle their own locking)
 	for _, name := range s.channels.List() {
 		if ch, ok := s.channels.Get(name); ok {
 			cloned.channels.Add(ch.Clone())
 		}
 	}
 
-	// Copy aggregates
+	// Copy aggregates (separate lock)
 	s.aggregatesMu.RLock()
 	maps.Copy(cloned.aggregates, s.aggregates)
 	cloned.aggregateFn = s.aggregateFn
@@ -486,8 +475,7 @@ func (s *GraphState) SnapshotAll() map[string]any {
 }
 
 func (s *GraphState) ListChannels() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// No lock needed - ChannelSet.List() handles its own locking
 	return s.channels.List()
 }
 
