@@ -70,16 +70,20 @@ Superstep 0:
   └──────────────┬──────────────────────┘
                  │
   ┌──────────────▼──────────────────────┐
-  │ 3. Apply state updates atomically   │
-  │    - Channel updates applied        │
-  │    - Messages added to state        │
+  │ 3. Apply state updates              │
+  │    - Immediate: Updates applied to  │
+  │      shared StateManager (in-memory)│
+  │    - Via messages: Updates sent to  │
+  │      downstream nodes (distributed) │
+  │    - Hybrid approach supports both  │
+  │      single-process and distributed │
   └──────────────┬──────────────────────┘
                  │
   ┌──────────────▼──────────────────────┐
   │ 4. Message delivery phase           │
   │    - Evaluate conditional routes    │
-  │    - Send messages to successor     │
-  │      node mailboxes                 │
+  │    - Send messages to downstream    │
+  │      node mailboxes via MessageBus  │
   │    - Messages available in NEXT     │
   │      superstep                      │
   └──────────────┬──────────────────────┘
@@ -894,6 +898,26 @@ builder.AddEdge("analyst_c", "aggregator")
 ## State management {#state-management}
 
 AgentMesh uses a **channel-based state system** for deterministic data flow. State is shared across all nodes with thread-safe access patterns.
+
+### Hybrid State Propagation
+
+AgentMesh uses a **hybrid approach** for state updates to support both single-process and distributed execution:
+
+1. **In-Memory Mode** (single process):
+   - State updates are applied **immediately** to the shared StateManager after node execution
+   - Efficient for local development and testing
+   - No serialization overhead
+
+2. **Distributed Mode** (multi-process):
+   - State updates flow through the **MessageBus** to downstream nodes
+   - Nodes receive and apply updates from incoming messages in the next superstep
+   - Enables scaling across multiple machines or containers
+
+3. **Automatic Detection**:
+   - Runtime detects execution mode based on StateManager references
+   - No configuration required - works seamlessly in both modes
+
+This architecture ensures correctness while optimizing for the common single-process case.
 
 ### Channel types
 

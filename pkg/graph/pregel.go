@@ -403,10 +403,6 @@ func (g *compiledPregelGraph) State() StateManager {
 	return g.runtime.cg.stateManager
 }
 
-func (g *compiledPregelGraph) Update(string, map[string]any, []ipregel.Message[ChannelMessage]) {
-	// No-op: channel messages are handled explicitly by node adapters.
-}
-
 // nodeAdapter executes both standard and command-style nodes within the Pregel runtime.
 
 func (n *nodeAdapter) Name() string { return n.name }
@@ -428,6 +424,28 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 		vertex.State.SetAggregates(vertex.Aggregates)
 		vertex.State.SetAggregateFn(vertex.Aggregate)
 		bufferedState = newBufferedStateWriter(vertex.State)
+	}
+
+	// Process incoming messages from previous superstep (distributed mode only).
+	// In BSP model, updates sent in superstep N are received in superstep N+1.
+	// This enables distributed execution by deserializing state updates from the message bus.
+	//
+	// IMPORTANT: In single-process execution with shared StateManager, updates are applied
+	// immediately after node execution (see below), so we skip incoming message processing
+	// to avoid double-application. We detect shared state by checking if vertex.State
+	// is the same reference as the global stateManager.
+	//
+	// TODO: Add explicit distributed mode flag instead of this heuristic
+	isDistributed := n.runtime != nil && n.runtime.cg != nil &&
+		n.runtime.cg.stateManager != nil && vertex.State != n.runtime.cg.stateManager
+
+	if isDistributed && len(incoming) > 0 && vertex.State != nil {
+		for _, msg := range incoming {
+			payload := msg.Data
+			if len(payload.Updates) > 0 || len(payload.Messages) > 0 {
+				vertex.State.ApplyUpdates(payload.Updates, payload.Messages)
+			}
+		}
 	}
 
 	// Execute with retry policy if configured
@@ -474,6 +492,10 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 	event := StreamEvent{Node: n.name, Updates: updates, Messages: cloneMessages(messages)}
 	n.runtime.emit(event)
 
+	// Hybrid approach for in-memory AND distributed execution:
+	// Apply updates immediately to local state (for in-memory efficiency)
+	// AND send them in messages (for distributed execution).
+	// Downstream nodes check if updates are already applied to avoid double-application.
 	if n.runtime != nil && n.runtime.cg != nil && n.runtime.cg.stateManager != nil {
 		n.runtime.cg.stateManager.ApplyUpdates(updates, messages)
 	}
@@ -518,16 +540,20 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex ipregel.VertexContext[Stat
 //
 //nolint:gocyclo // Retry logic with error handling requires multiple conditions
 func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (*NodeResult, error) {
-	// Check if context has a deadline and enforce timeout
+	// Capture configured timeout duration at the start.
+	// This ensures NodeTimeoutError.Timeout reflects the actual timeout budget,
+	// not the time elapsed since timeout (which could be negative or zero).
+	var timeoutMs int64
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout := time.Until(deadline)
-		if timeout <= 0 {
+		timeoutDuration := time.Until(deadline)
+		if timeoutDuration <= 0 {
 			return nil, &NodeTimeoutError{
 				Node:    n.name,
 				Timeout: 0,
 				Cause:   context.DeadlineExceeded,
 			}
 		}
+		timeoutMs = int64(timeoutDuration / time.Millisecond)
 	}
 
 	policy := n.node.RetryPolicy
@@ -537,16 +563,9 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 
 		// Check if timeout occurred - always wrap DeadlineExceeded
 		if err != nil && errors.Is(err, context.DeadlineExceeded) {
-			timeout := int64(0)
-			if deadline, ok := ctx.Deadline(); ok {
-				elapsed := time.Since(deadline)
-				if elapsed > 0 {
-					timeout = int64(elapsed / time.Millisecond)
-				}
-			}
 			return nil, &NodeTimeoutError{
 				Node:    n.name,
-				Timeout: timeout,
+				Timeout: timeoutMs,
 				Cause:   err,
 			}
 		}
@@ -579,12 +598,10 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 
 		// Check if timeout occurred
 		if err != nil && errors.Is(err, context.DeadlineExceeded) {
-			if deadline, ok := ctx.Deadline(); ok {
-				return nil, &NodeTimeoutError{
-					Node:    n.name,
-					Timeout: int64(time.Since(deadline.Add(-time.Until(deadline))) / time.Millisecond),
-					Cause:   err,
-				}
+			return nil, &NodeTimeoutError{
+				Node:    n.name,
+				Timeout: timeoutMs,
+				Cause:   err,
 			}
 		}
 
@@ -605,16 +622,9 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		if err := ctx.Err(); err != nil {
 			// Wrap timeout errors
 			if errors.Is(err, context.DeadlineExceeded) {
-				timeout := int64(0)
-				if deadline, ok := ctx.Deadline(); ok {
-					elapsed := time.Since(deadline)
-					if elapsed > 0 {
-						timeout = int64(elapsed / time.Millisecond)
-					}
-				}
 				return nil, &NodeTimeoutError{
 					Node:    n.name,
-					Timeout: timeout,
+					Timeout: timeoutMs,
 					Cause:   err,
 				}
 			}
@@ -640,16 +650,9 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 				err := ctx.Err()
 				// Wrap timeout errors
 				if errors.Is(err, context.DeadlineExceeded) {
-					timeout := int64(0)
-					if deadline, ok := ctx.Deadline(); ok {
-						elapsed := time.Since(deadline)
-						if elapsed > 0 {
-							timeout = int64(elapsed / time.Millisecond)
-						}
-					}
 					return nil, &NodeTimeoutError{
 						Node:    n.name,
-						Timeout: timeout,
+						Timeout: timeoutMs,
 						Cause:   err,
 					}
 				}
@@ -666,16 +669,9 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 	// node execution. Without this check, we would return RetryExhaustedError
 	// instead of the more accurate NodeTimeoutError.
 	if err := ctx.Err(); err != nil && errors.Is(err, context.DeadlineExceeded) {
-		timeout := int64(0)
-		if deadline, ok := ctx.Deadline(); ok {
-			elapsed := time.Since(deadline)
-			if elapsed > 0 {
-				timeout = int64(elapsed / time.Millisecond)
-			}
-		}
 		return nil, &NodeTimeoutError{
 			Node:    n.name,
-			Timeout: timeout,
+			Timeout: timeoutMs,
 			Cause:   err,
 		}
 	}

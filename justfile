@@ -6,11 +6,15 @@
 default:
     @just --list
 
-# Run all tests
+# Run all tests with race detection (default)
 test:
+    go test ./... -race -count=1
+
+# Run tests without race detection (faster, for quick iterations)
+test-fast:
     go test ./...
 
-# Run tests with race detection
+# Run tests with race detection (explicit alias for CI)
 test-race:
     go test ./... -race -count=1
 
@@ -24,8 +28,8 @@ cover:
     go tool cover -html=coverage.out -o coverage.html
     @echo "Coverage report generated: coverage.html"
 
-# Run all quality checks
-check: test-race lint cover
+# Run all quality checks (CI-ready)
+check: test lint cover
     @echo "All quality checks completed"
 
 # Clean generated files
@@ -36,9 +40,13 @@ clean:
 install-deps:
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
-# Quick development cycle - test and lint
+# Quick development cycle - test and lint with race detector
 dev: test lint
     @echo "Development checks completed"
+
+# Fast development cycle - skip race detector for speed
+dev-fast: test-fast lint
+    @echo "Fast development checks completed"
 
 # Run tests with verbose output
 test-verbose:

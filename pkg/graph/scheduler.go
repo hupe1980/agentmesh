@@ -119,48 +119,25 @@ func (s *vertexScheduler) OnVertexCompleted(ctx context.Context, name string) ([
 		candidates[target] = struct{}{}
 	}
 
-	// Filter to only ready vertices
-	toSchedule := make(map[string]struct{})
-	for target := range candidates {
-		if s.shouldScheduleLocked(target) {
-			toSchedule[target] = struct{}{}
-		}
-	}
+	// In BSP model with message-based propagation, we return ALL downstream nodes
+	// so messages are sent to them. The Pregel runtime's frontier logic will handle
+	// scheduling nodes that have pending messages in the next superstep. This ensures
+	// parallel nodes completing at different times don't prevent message delivery.
 
-	if len(toSchedule) == 0 {
+	if len(candidates) == 0 {
 		return nil, nil
 	}
 
-	next := make([]string, 0, len(toSchedule))
-	for candidate := range toSchedule {
+	next := make([]string, 0, len(candidates))
+	for candidate := range candidates {
+		// Skip END node - it's a sentinel, not an actual vertex
+		if candidate == EndNode {
+			continue
+		}
 		next = append(next, candidate)
 	}
 	sort.Strings(next)
 	return next, nil
-}
-
-// shouldScheduleLocked checks if a vertex is ready to schedule.
-func (s *vertexScheduler) shouldScheduleLocked(vertex string) bool {
-	// Check if topology allows (dependencies satisfied)
-	readyList := s.topology.Ready()
-	topologyReady := false
-	for _, name := range readyList {
-		if name == vertex {
-			topologyReady = true
-			break
-		}
-	}
-	if !topologyReady {
-		return false
-	}
-
-	if s.tracker.IsPaused(vertex) {
-		return false
-	}
-	if !s.evaluator.IsGateOpen(vertex) {
-		return false
-	}
-	return true
 }
 
 // Snapshot returns diagnostic information about scheduler state.

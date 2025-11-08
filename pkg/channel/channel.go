@@ -3,31 +3,8 @@ package channel
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
-
-// readCached implements the double-checked locking pattern for cached reads.
-// Version and value pointers are dereferenced only while the mutex is held to
-// avoid data races when writers update the underlying fields.
-func readCached(mu *sync.RWMutex, cachedValue *any, cachedVersion *int64, version *int64, value *any) (any, error) {
-	mu.RLock()
-	if *cachedVersion == *version {
-		v := *cachedValue
-		mu.RUnlock()
-		return v, nil
-	}
-	mu.RUnlock()
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if *cachedVersion == *version {
-		return *cachedValue, nil
-	}
-
-	*cachedValue = *value
-	*cachedVersion = *version
-	return *cachedValue, nil
-}
 
 // Channel is the core abstraction for data flow between nodes.
 // Each channel has specific update semantics (append, replace, merge, etc.)
@@ -205,18 +182,14 @@ func (tc *TopicChannel) Clone() Channel {
 // LastValueChannel stores only the most recent value (overwrite semantics).
 // Each update replaces the previous value completely.
 //
-// Note: LastValueChannel stores single values (not slices), so copy-on-write
-// provides minimal benefit. However, it's implemented for API consistency.
+// Thread-safety: Uses atomic.Value for lock-free reads and atomic operations
+// for version tracking. This eliminates the data race that occurred with the
+// previous readCached implementation.
 type LastValueChannel struct {
 	name     string
-	value    any
-	version  int64
-	mu       sync.RWMutex
-	hasValue bool
-
-	// Copy-on-write cache (less beneficial for scalar values)
-	cachedValue   any
-	cachedVersion int64
+	value    atomic.Value // Stores the actual value
+	version  atomic.Int64 // Version counter
+	hasValue atomic.Bool  // Tracks if value has been set
 }
 
 // NewLastValueChannel creates a new last-value channel with overwrite semantics.
@@ -231,17 +204,16 @@ func (lvc *LastValueChannel) Name() string {
 }
 
 func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
-	return readCached(&lvc.mu, &lvc.cachedValue, &lvc.cachedVersion, &lvc.version, &lvc.value)
+	if !lvc.hasValue.Load() {
+		return nil, nil
+	}
+	return lvc.value.Load(), nil
 }
 
 func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
-	lvc.mu.Lock()
-	defer lvc.mu.Unlock()
-
-	lvc.value = value
-	lvc.hasValue = true
-	lvc.version++
-	// Cache will be updated lazily on next Read()
+	lvc.value.Store(value)
+	lvc.hasValue.Store(true)
+	lvc.version.Add(1)
 	return nil
 }
 
@@ -250,72 +222,57 @@ func (lvc *LastValueChannel) Snapshot(ctx context.Context) (any, error) {
 }
 
 func (lvc *LastValueChannel) Version() int64 {
-	lvc.mu.RLock()
-	defer lvc.mu.RUnlock()
-	return lvc.version
+	return lvc.version.Load()
 }
 
 func (lvc *LastValueChannel) Reset(ctx context.Context) error {
-	lvc.mu.Lock()
-	defer lvc.mu.Unlock()
-
-	lvc.value = nil
-	lvc.hasValue = false
-	lvc.version = 0
-	lvc.cachedValue = nil
-	lvc.cachedVersion = 0
+	// atomic.Value doesn't allow storing nil, so we just mark as not having a value
+	// The old value remains in memory but is inaccessible via Read()
+	lvc.hasValue.Store(false)
+	lvc.version.Store(0)
 	return nil
 }
 
 // HasValue returns true if the channel has been written to at least once.
 func (lvc *LastValueChannel) HasValue() bool {
-	lvc.mu.RLock()
-	defer lvc.mu.RUnlock()
-	return lvc.hasValue
+	return lvc.hasValue.Load()
 }
 
 // Clone returns a deep copy of the last value channel.
 func (lvc *LastValueChannel) Clone() Channel {
-	lvc.mu.RLock()
-	defer lvc.mu.RUnlock()
-
-	return &LastValueChannel{
-		name:     lvc.name,
-		value:    lvc.value,
-		version:  lvc.version,
-		hasValue: lvc.hasValue,
-		// Don't copy cache - let clone build its own
-		cachedValue:   nil,
-		cachedVersion: 0,
+	clone := &LastValueChannel{
+		name: lvc.name,
 	}
+	if lvc.hasValue.Load() {
+		clone.value.Store(lvc.value.Load())
+		clone.hasValue.Store(true)
+		clone.version.Store(lvc.version.Load())
+	}
+	return clone
 }
 
 // BinaryOpChannel applies a binary operator to combine values.
 // Updates are merged with the current value using a custom operator function.
 //
-// Note: Similar to LastValueChannel, copy-on-write provides minimal benefit
-// for scalar values, but is implemented for API consistency.
+// Thread-safety: Uses atomic.Value for the current value and a mutex only
+// for the write operation (since we need to read-modify-write atomically).
+// Reads are lock-free.
 type BinaryOpChannel struct {
 	name     string
-	value    any
+	value    atomic.Value // Stores the current combined value
 	operator func(current, incoming any) any
-	version  int64
-	mu       sync.RWMutex
-
-	// Copy-on-write cache
-	cachedValue   any
-	cachedVersion int64
+	version  atomic.Int64
+	mu       sync.Mutex // Only for write operations (read-modify-write)
 }
 
 // NewBinaryOpChannel creates a channel that combines values using the given operator.
 func NewBinaryOpChannel(name string, initialValue any, op func(current, incoming any) any) *BinaryOpChannel {
-	return &BinaryOpChannel{
-		name:          name,
-		value:         initialValue,
-		operator:      op,
-		cachedValue:   initialValue, // Initialize cache with initial value
-		cachedVersion: 0,            // Version 0 matches initial state
+	boc := &BinaryOpChannel{
+		name:     name,
+		operator: op,
 	}
+	boc.value.Store(initialValue)
+	return boc
 }
 
 func (boc *BinaryOpChannel) Name() string {
@@ -323,16 +280,18 @@ func (boc *BinaryOpChannel) Name() string {
 }
 
 func (boc *BinaryOpChannel) Read(ctx context.Context) (any, error) {
-	return readCached(&boc.mu, &boc.cachedValue, &boc.cachedVersion, &boc.version, &boc.value)
+	return boc.value.Load(), nil
 }
 
 func (boc *BinaryOpChannel) Write(ctx context.Context, value any) error {
+	// Need mutex for read-modify-write atomicity
 	boc.mu.Lock()
 	defer boc.mu.Unlock()
 
-	boc.value = boc.operator(boc.value, value)
-	boc.version++
-	// Cache will be updated lazily on next Read()
+	current := boc.value.Load()
+	newValue := boc.operator(current, value)
+	boc.value.Store(newValue)
+	boc.version.Add(1)
 	return nil
 }
 
@@ -341,9 +300,7 @@ func (boc *BinaryOpChannel) Snapshot(ctx context.Context) (any, error) {
 }
 
 func (boc *BinaryOpChannel) Version() int64 {
-	boc.mu.RLock()
-	defer boc.mu.RUnlock()
-	return boc.version
+	return boc.version.Load()
 }
 
 func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
@@ -351,27 +308,21 @@ func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 	defer boc.mu.Unlock()
 
 	// Reset to operator's zero value by applying to nil
-	boc.value = boc.operator(nil, nil)
-	boc.version = 0
-	boc.cachedValue = nil
-	boc.cachedVersion = 0
+	resetValue := boc.operator(nil, nil)
+	boc.value.Store(resetValue)
+	boc.version.Store(0)
 	return nil
 }
 
 // Clone returns a deep copy of the binary op channel.
 func (boc *BinaryOpChannel) Clone() Channel {
-	boc.mu.RLock()
-	defer boc.mu.RUnlock()
-
-	return &BinaryOpChannel{
+	clone := &BinaryOpChannel{
 		name:     boc.name,
-		value:    boc.value,
 		operator: boc.operator,
-		version:  boc.version,
-		// Don't copy cache - let clone build its own
-		cachedValue:   nil,
-		cachedVersion: 0,
 	}
+	clone.value.Store(boc.value.Load())
+	clone.version.Store(boc.version.Load())
+	return clone
 }
 
 // ChannelSet manages a collection of named channels.

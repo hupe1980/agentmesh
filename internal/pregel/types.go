@@ -9,7 +9,6 @@ type PregelGraph[S any, M any] interface {
 	Outgoing(node string) []string
 	NodeByName(name string) PregelNode[S, M]
 	State() S
-	Update(node string, updates map[string]any, messages []Message[M])
 }
 
 // Aggregator combines per-vertex contributions into a single value that becomes

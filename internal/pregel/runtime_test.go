@@ -75,13 +75,6 @@ func (g *mockGraph) State() mockState {
 	defer g.mu.Unlock()
 	return g.state
 }
-func (g *mockGraph) Update(node string, _ map[string]any, messages []Message[mockMessage]) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	for range messages {
-		g.state.Counter++
-	}
-}
 
 func TestRuntime_Run_SequentialGraph(t *testing.T) {
 	var callCount int
@@ -173,7 +166,6 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
-	assert.Equal(t, 2, graph.state.Counter)
 }
 
 func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
@@ -219,7 +211,6 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
-	assert.Equal(t, 2, graph.state.Counter)
 }
 
 func TestRuntime_CancelDuringExecution(t *testing.T) {
@@ -279,14 +270,6 @@ func (g *errorGraph) NodeByName(name string) PregelNode[mockState, mockMessage] 
 	return &errorNode{name}
 }
 func (g *errorGraph) State() mockState { return g.state }
-func (g *errorGraph) Update(node string, updates map[string]any, messages []Message[mockMessage]) {
-	if updates == nil {
-		return
-	}
-	if c, ok := updates["Counter"].(int); ok {
-		g.state.Counter += c
-	}
-}
 
 func TestRuntime_NodeErrorPropagation(t *testing.T) {
 	events := make(chan StreamEvent[mockMessage], 1)
@@ -321,8 +304,7 @@ func (g *panicGraph) Outgoing(node string) []string { return nil }
 func (g *panicGraph) NodeByName(name string) PregelNode[mockState, mockMessage] {
 	return &panicNode{name: name}
 }
-func (g *panicGraph) State() mockState                                                            { return g.state }
-func (g *panicGraph) Update(node string, updates map[string]any, messages []Message[mockMessage]) {}
+func (g *panicGraph) State() mockState { return g.state }
 
 func TestRuntime_NodePanicRecovery(t *testing.T) {
 	events := make(chan StreamEvent[mockMessage], 1)
@@ -429,8 +411,6 @@ func (g *singleNodeGraph) NodeByName(name string) PregelNode[mockState, mockMess
 
 func (g *singleNodeGraph) State() mockState { return mockState{} }
 
-func (g *singleNodeGraph) Update(string, map[string]any, []Message[mockMessage]) {}
-
 func TestRuntime_AggregatorsVisibleNextSuperstep(t *testing.T) {
 	var observed []int
 	node := &aggregatorProbe{observed: &observed}
@@ -500,8 +480,6 @@ func (g *combinerGraph) NodeByName(name string) PregelNode[mockState, mockMessag
 
 func (g *combinerGraph) State() mockState { return mockState{} }
 
-func (g *combinerGraph) Update(string, map[string]any, []Message[mockMessage]) {}
-
 func TestRuntime_CombinerMergesMessages(t *testing.T) {
 	var received []Message[mockMessage]
 	graph := &combinerGraph{
@@ -566,8 +544,6 @@ func (g *deliverGraph) NodeByName(name string) PregelNode[*deliverState, mockMes
 }
 
 func (g *deliverGraph) State() *deliverState { return g.state }
-
-func (g *deliverGraph) Update(string, map[string]any, []Message[mockMessage]) {}
 
 func TestRuntime_DeliverSeedsExecution(t *testing.T) {
 	graph := newDeliverGraph()
@@ -651,11 +627,10 @@ type noopState struct{}
 
 type noopGraph struct{}
 
-func (noopGraph) RootNodes() []string                                   { return nil }
-func (noopGraph) Outgoing(string) []string                              { return nil }
-func (noopGraph) NodeByName(string) PregelNode[noopState, mockMessage]  { return nil }
-func (noopGraph) State() noopState                                      { return noopState{} }
-func (noopGraph) Update(string, map[string]any, []Message[mockMessage]) {}
+func (noopGraph) RootNodes() []string                                  { return nil }
+func (noopGraph) Outgoing(string) []string                             { return nil }
+func (noopGraph) NodeByName(string) PregelNode[noopState, mockMessage] { return nil }
+func (noopGraph) State() noopState                                     { return noopState{} }
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
 	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)

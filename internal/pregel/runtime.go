@@ -247,6 +247,7 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 	superstep := r.supersteps.Load()
 	iterationCount := int64(0)
 
+	var err error
 	for len(frontier) > 0 {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -270,7 +271,10 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 			r.opts.OnSuperstepComplete(superstep)
 		}
 
-		frontier = r.consumeNextFrontier()
+		frontier, err = r.consumeNextFrontier()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Return nil on successful completion (don't return ctx.Err() which might be non-nil)
@@ -296,18 +300,24 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 	return frontier
 }
 
-func (r *Runtime[S, M]) consumeNextFrontier() map[string]struct{} {
+func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
 	// Get vertices with pending messages from message bus
 	pending, err := r.messageBus.Pending()
-	if err != nil || len(pending) == 0 {
-		return nil
+	if err != nil {
+		// Propagate message bus errors instead of swallowing them
+		r.emitEvent(StreamEvent[M]{Error: fmt.Errorf("message bus pending failed: %w", err)})
+		return nil, fmt.Errorf("consume next frontier: %w", err)
+	}
+
+	if len(pending) == 0 {
+		return nil, nil // No error, just no work
 	}
 
 	frontier := make(map[string]struct{}, len(pending))
 	for _, name := range pending {
 		frontier[name] = struct{}{}
 	}
-	return frontier
+	return frontier, nil
 }
 
 //nolint:gocyclo // Superstep execution requires coordinating many runtime conditions
@@ -327,7 +337,11 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 
 	incoming := make(map[string][]Message[M], len(names))
 	for _, name := range names {
-		incoming[name] = r.drainMailbox(name)
+		msgs, err := r.drainMailbox(name)
+		if err != nil {
+			return err
+		}
+		incoming[name] = msgs
 	}
 
 	workers := r.opts.MaxWorkers
@@ -448,7 +462,6 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 			r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Error: err})
 			return err
 		}
-		r.graph.Update(name, nil, sent)
 	}
 
 	r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep})
@@ -473,12 +486,16 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 	return nil
 }
 
-func (r *Runtime[S, M]) drainMailbox(node string) []Message[M] {
+func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 	msgs, err := r.messageBus.Receive(node)
-	if err != nil || len(msgs) == 0 {
-		return nil
+	if err != nil {
+		r.emitEvent(StreamEvent[M]{Error: fmt.Errorf("message bus receive failed for node %s: %w", node, err)})
+		return nil, fmt.Errorf("drain mailbox for %s: %w", node, err)
 	}
-	return msgs
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	return msgs, nil
 }
 
 func (r *Runtime[S, M]) emitEvent(event StreamEvent[M]) {
