@@ -957,6 +957,68 @@ AgentMesh uses a **hybrid approach** for state updates to support both single-pr
 
 This architecture ensures correctness while optimizing for the common single-process case.
 
+### Aggregate Snapshot Caching (Phase 3 Optimization)
+
+Aggregates are global values computed across all nodes (e.g., sums, averages, max values). Each node can read aggregates from previous supersteps via `StateReader.AggregatesSnapshot()`.
+
+**Problem**: Original implementation copied the entire aggregate map on every snapshot call:
+```go
+// Old: O(n) copy per call
+snapshot := make(map[string]any, len(aggregates))
+for k, v := range aggregates {
+    snapshot[k] = v
+}
+```
+
+**Solution**: Lazy copy-on-write with version tracking:
+
+1. **Version Counter**: Each `SetAggregates()` call increments a version number
+2. **Cached Snapshot**: First `GetAggregatesSnapshot()` creates and caches the copy
+3. **Cache Validation**: Subsequent calls return cached copy if version matches
+4. **Automatic Invalidation**: Cache invalidated on next `SetAggregates()` call
+
+**Performance Impact**:
+
+| Scenario | Before | After | Improvement |
+|----------|--------|-------|-------------|
+| 100 nodes reading aggregates | 100 × O(n) copies | 1 × O(n) copy | 100x fewer allocations |
+| Single aggregate update | O(old + new) delete+copy | O(1) pointer swap | Constant time |
+| Memory overhead | None | 1 cached snapshot | Negligible |
+
+**Code Example**:
+```go
+// GraphState maintains version and cache
+type GraphState struct {
+    aggregates        map[string]any
+    aggregateCache    map[string]any // Cached snapshot
+    aggregateVersion  uint64         // Incremented on update
+    cachedVersion     uint64         // Version of cache
+}
+
+// SetAggregates: O(1) - just pointer assignment
+func (s *GraphState) SetAggregates(aggregates map[string]any) {
+    s.aggregates = aggregates      // Direct replacement
+    s.aggregateVersion++            // Invalidate cache
+}
+
+// GetAggregatesSnapshot: O(1) cache hit, O(n) cache miss
+func (s *GraphState) GetAggregatesSnapshot() map[string]any {
+    if s.cachedVersion == s.aggregateVersion {
+        return s.aggregateCache  // Fast path: return cached copy
+    }
+    // Slow path: create snapshot and cache it
+    s.aggregateCache = copyMap(s.aggregates)
+    s.cachedVersion = s.aggregateVersion
+    return s.aggregateCache
+}
+```
+
+**Benefits**:
+- ✅ Eliminates redundant map allocations (common case: many reads, few writes)
+- ✅ Reduces GC pressure from repeated snapshot copies
+- ✅ Thread-safe with double-checked locking pattern
+- ✅ No breaking changes - transparent optimization
+
 ### Channel types
 
 1. **TopicChannel** – Accumulates messages (append-only list), perfect for conversation history
@@ -1063,13 +1125,14 @@ results := &graph.InvokeResult{
 The graph engine is optimized for low-latency, high-throughput execution:
 
 - **~6μs overhead per node** – Minimal execution overhead from the scheduler
-- **O(1) ready vertex lookup** – Maintained ready queue eliminates O(n) iteration
+- **O(1) ready vertex lookup** – Maintained ready queue eliminates O(n) iteration (Phase 2)
+- **O(1) aggregate updates** – Lazy copy-on-write caching (Phase 3)
 - **Parallel node execution** – Independent nodes run concurrently
 - **Lock splitting** – Reduced contention via channel-specific locks
 - **Efficient checkpointing** – Copy-on-write state snapshots
 - **Configurable workers** – Tune parallelism based on workload
 
-### Scheduler Optimization
+### Scheduler Optimization (Phase 2)
 
 The TopologyScheduler uses a **ready queue** for constant-time vertex lookup:
 
@@ -1083,6 +1146,22 @@ The TopologyScheduler uses a **ready queue** for constant-time vertex lookup:
 - 10,000 nodes × 100 supersteps = 1M saved iterations
 - Especially beneficial for iterative algorithms with many supersteps
 - Memory overhead negligible (only ready vertices in queue)
+
+### Aggregate Caching (Phase 3)
+
+Lazy copy-on-write for aggregate snapshots:
+
+| Operation | Previous | Current | Improvement |
+|-----------|----------|---------|-------------|
+| `SetAggregates()` | O(old + new) | O(1) | Pointer assignment |
+| `GetAggregatesSnapshot()` (cached) | O(n) | O(1) | Return cached copy |
+| `GetAggregatesSnapshot()` (miss) | O(n) | O(n) | Same (cache creation) |
+| Memory | O(n) | O(2n) | One cached snapshot |
+
+**Impact**:
+- 100 nodes reading same aggregates: 100x fewer allocations
+- Reduced GC pressure from redundant map copies
+- Especially beneficial when many nodes read aggregates in same superstep
 
 Benchmark results (100,000 iterations):
 

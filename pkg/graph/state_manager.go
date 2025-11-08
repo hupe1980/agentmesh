@@ -111,6 +111,11 @@ type StateManager interface {
 // - Aggregates use separate aggregatesMu lock
 // - Checkpointer uses checkpointerMu for safe concurrent access
 // This design eliminates global lock contention for better concurrent performance.
+//
+// Performance Optimization (Phase 3):
+// - Lazy copy-on-write for aggregate snapshots
+// - Version tracking to invalidate cached snapshots
+// - Avoids full map copy on every GetAggregatesSnapshot() call
 type GraphState struct {
 	channels       *channel.ChannelSet
 	aggregates     map[string]any
@@ -118,6 +123,11 @@ type GraphState struct {
 	aggregatesMu   sync.RWMutex
 	checkpointer   checkpoint.Checkpointer
 	checkpointerMu sync.RWMutex
+
+	// Aggregate snapshot caching (Phase 3 optimization)
+	aggregateCache   map[string]any // Cached snapshot of aggregates
+	aggregateVersion uint64         // Version counter to invalidate cache
+	cachedVersion    uint64         // Version of current cache
 }
 
 // NewGraphState creates a new channel-based graph state.
@@ -236,16 +246,37 @@ func (s *GraphState) GetAggregate(name string) any {
 
 func (s *GraphState) GetAggregatesSnapshot() map[string]any {
 	s.aggregatesMu.RLock()
-	defer s.aggregatesMu.RUnlock()
 
+	// Fast path: return cached snapshot if version matches
+	if s.cachedVersion == s.aggregateVersion && s.aggregateCache != nil {
+		s.aggregatesMu.RUnlock()
+		return s.aggregateCache
+	}
+
+	// Slow path: cache miss or version mismatch - need to create snapshot
 	if len(s.aggregates) == 0 {
+		s.aggregatesMu.RUnlock()
 		return nil
 	}
 
+	// Upgrade to write lock to update cache
+	s.aggregatesMu.RUnlock()
+	s.aggregatesMu.Lock()
+	defer s.aggregatesMu.Unlock()
+
+	// Double-check: another goroutine might have updated the cache
+	if s.cachedVersion == s.aggregateVersion && s.aggregateCache != nil {
+		return s.aggregateCache
+	}
+
+	// Create snapshot and cache it
 	snapshot := make(map[string]any, len(s.aggregates))
 	for k, v := range s.aggregates {
 		snapshot[k] = v
 	}
+	s.aggregateCache = snapshot
+	s.cachedVersion = s.aggregateVersion
+
 	return snapshot
 }
 
@@ -257,22 +288,11 @@ func (s *GraphState) SetAggregates(aggregates map[string]any) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
 
-	if len(aggregates) == 0 {
-		s.aggregates = nil
-		return
-	}
-
-	if s.aggregates == nil {
-		s.aggregates = make(map[string]any, len(aggregates))
-	} else {
-		for k := range s.aggregates {
-			delete(s.aggregates, k)
-		}
-	}
-
-	for k, v := range aggregates {
-		s.aggregates[k] = v
-	}
+	// Direct map replacement - much faster than delete + copy loop
+	// Old implementation: O(old_size + new_size) with lock held
+	// New implementation: O(1) pointer assignment + version increment
+	s.aggregates = aggregates
+	s.aggregateVersion++ // Invalidate cached snapshot
 }
 
 func (s *GraphState) SetAggregateFn(fn func(string, any) error) {
