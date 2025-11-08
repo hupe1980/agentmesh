@@ -7,16 +7,20 @@ import (
 )
 
 // vertexScheduler orchestrates scheduling by composing three specialized components:
-// - TopologyScheduler: DAG dependency tracking
-// - ConditionalEvaluator: Conditional edge routing
-// - ExecutionTracker: Execution history and paused state
+// - TopologyScheduler: DAG dependency tracking (immutable topology)
+// - ConditionalEvaluator: Conditional edge routing (state-based routing)
+// - ExecutionTracker: Execution history and paused state (mutable execution state)
+//
+// This separation follows the Single Responsibility Principle:
+// - Topology: Pure DAG structure and dependencies
+// - Evaluator: Stateful conditional logic
+// - Tracker: Execution progress and control flow
 type vertexScheduler struct {
 	cg        *CompiledGraph
 	mu        sync.RWMutex
 	topology  *TopologyScheduler
 	evaluator *ConditionalEvaluator
 	tracker   *ExecutionTracker
-	paused    map[string]bool
 }
 
 func newVertexScheduler(cg *CompiledGraph) *vertexScheduler {
@@ -25,12 +29,15 @@ func newVertexScheduler(cg *CompiledGraph) *vertexScheduler {
 		topology:  NewTopologyScheduler(cg.incoming),
 		evaluator: NewConditionalEvaluator(cg),
 		tracker:   NewExecutionTracker(),
-		paused:    make(map[string]bool),
 	}
 	return sched
 }
 
 // Ready reports the sorted list of vertices that can execute next.
+// A vertex is ready if:
+//  1. All topology dependencies are satisfied (TopologyScheduler)
+//  2. It is not paused (ExecutionTracker)
+//  3. Its conditional gate is open (ConditionalEvaluator)
 func (s *vertexScheduler) Ready() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -39,7 +46,7 @@ func (s *vertexScheduler) Ready() []string {
 	ready := make([]string, 0, len(candidates))
 
 	for _, name := range candidates {
-		if s.paused[name] {
+		if s.tracker.IsPaused(name) {
 			continue
 		}
 		if !s.evaluator.IsGateOpen(name) {
@@ -52,17 +59,17 @@ func (s *vertexScheduler) Ready() []string {
 }
 
 // Bootstrap seeds the scheduler with persisted execution state.
+// This is used for checkpoint resume scenarios.
 func (s *vertexScheduler) Bootstrap(ctx context.Context, completed, paused []string) {
-	s.mu.Lock()
-	for _, name := range paused {
-		s.paused[name] = true
-	}
-	s.mu.Unlock()
+	// Set paused state in tracker
+	s.tracker.SetPaused(paused)
 
+	// Set executed state in all components
 	s.tracker.SetExecuted(completed)
 	s.topology.SetExecuted(completed, s.cg.outgoing)
 	s.evaluator.BootstrapOpenGates(completed)
 
+	// Apply completion logic for bootstrap
 	for _, name := range completed {
 		s.applyCompletionForBootstrap(ctx, name)
 	}
@@ -70,21 +77,20 @@ func (s *vertexScheduler) Bootstrap(ctx context.Context, completed, paused []str
 }
 
 // MarkExecuted records that the vertex finished successfully.
+// This updates all three components: topology, tracker, and unpause.
 func (s *vertexScheduler) MarkExecuted(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.tracker.MarkExecuted(name)
 	s.topology.MarkExecuted(name, s.cg.outgoing[name])
-	delete(s.paused, name)
+	s.tracker.UnpauseVertex(name)
 }
 
 // MarkPaused records that a vertex yielded for external intervention.
+// This is used for human-in-the-loop workflows.
 func (s *vertexScheduler) MarkPaused(name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.paused[name] = true
+	s.tracker.MarkPaused(name)
 }
 
 // OnVertexCompleted updates dependent vertices and returns the next ready set.
@@ -148,7 +154,7 @@ func (s *vertexScheduler) shouldScheduleLocked(vertex string) bool {
 		return false
 	}
 
-	if s.paused[vertex] {
+	if s.tracker.IsPaused(vertex) {
 		return false
 	}
 	if !s.evaluator.IsGateOpen(vertex) {
@@ -174,7 +180,7 @@ func (s *vertexScheduler) Snapshot() map[string]SchedulerState {
 			TopologyReady: readySet[name],
 			GateOpen:      s.evaluator.IsGateOpen(name),
 			Executed:      s.tracker.WasExecuted(name),
-			Paused:        s.paused[name],
+			Paused:        s.tracker.IsPaused(name),
 		}
 	}
 	return snapshot
@@ -189,6 +195,7 @@ type SchedulerState struct {
 }
 
 // Reset reinitializes all vertex bookkeeping using the compiled graph metadata.
+// This resets all three components: topology, evaluator, and tracker.
 func (s *vertexScheduler) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -196,9 +203,6 @@ func (s *vertexScheduler) Reset() {
 	s.topology.Reset()
 	s.evaluator.Reset()
 	s.tracker.Reset()
-	for k := range s.paused {
-		delete(s.paused, k)
-	}
 
 	// Mark START node as executed to activate its downstream vertices
 	downstream := s.cg.outgoing[StartNode]
