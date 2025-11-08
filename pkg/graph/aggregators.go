@@ -14,9 +14,9 @@ package graph
 // thread-safe. The runtime handles synchronization of aggregate values.
 //
 // Custom Aggregators:
-// Implement the Aggregator interface to create custom aggregation logic:
+// Implement the pregel.Aggregator interface to create custom aggregation logic:
 //
-//	type Aggregator interface {
+//	type pregel.Aggregator interface {
 //	    Zero() any                        // Initial/identity value
 //	    Aggregate(current, value any) any // Combine current with new value
 //	}
@@ -29,7 +29,7 @@ package graph
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "total_processed": &SumAggregator{},
 //	}))
 //
@@ -85,7 +85,7 @@ func (a *SumAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "max_priority": &MaxAggregator{},
 //	}))
 //
@@ -140,7 +140,7 @@ func (a *MaxAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "min_cost": &MinAggregator{},
 //	}))
 type MinAggregator struct{}
@@ -189,7 +189,7 @@ func (a *MinAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "active_nodes": &CountAggregator{},
 //	}))
 //
@@ -217,7 +217,7 @@ func (a *CountAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "all_converged": &AllTrueAggregator{},
 //	}))
 //
@@ -254,7 +254,7 @@ func (a *AllTrueAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "has_errors": &AnyTrueAggregator{},
 //	}))
 //
@@ -287,7 +287,7 @@ func (a *AnyTrueAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "node_trace": &StringConcatAggregator{Separator: " -> "},
 //	}))
 type StringConcatAggregator struct {
@@ -325,7 +325,7 @@ func (a *StringConcatAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "avg_latency": &AvgAggregator{},
 //	}))
 //
@@ -382,7 +382,7 @@ func (a *AvgAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, WithAggregators(map[string]Aggregator{
+//	compiled.Invoke(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
 //	    "variance_latency": &VarianceAggregator{},
 //	}))
 //

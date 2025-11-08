@@ -206,7 +206,7 @@ Accumulates numeric values across all node contributions:
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "total_processed": &graph.SumAggregator{},
     }),
 )
@@ -220,7 +220,7 @@ Tracks the minimum value across all nodes:
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "min_cost": &graph.MinAggregator{},
     }),
 )
@@ -234,7 +234,7 @@ Tracks the maximum value across all nodes:
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "max_priority": &graph.MaxAggregator{},
     }),
 )
@@ -248,7 +248,7 @@ Computes the running average of numeric values using Welford's algorithm for num
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "avg_latency": &graph.AvgAggregator{},
     }),
 )
@@ -271,7 +271,7 @@ Computes the variance of numeric values using Welford's algorithm:
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "latency_variance": &graph.VarianceAggregator{},
     }),
 )
@@ -294,7 +294,7 @@ Counts non-nil contributions:
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "active_nodes": &graph.CountAggregator{},
     }),
 )
@@ -311,7 +311,7 @@ Boolean aggregators for convergence detection and monitoring:
 
 ```go
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "all_converged": &graph.AllTrueAggregator{},
         "has_errors":    &graph.AnyTrueAggregator{},
     }),
@@ -409,7 +409,7 @@ func (a *MedianAggregator) Aggregate(current, value any) any {
 
 // Usage
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "latency_median": &MedianAggregator{},
     }),
 )
@@ -504,7 +504,7 @@ Track statistics across parallel branches:
 ```go
 // Set up counters
 compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]graph.Aggregator{
+    graph.WithAggregators(map[string]pregel.Aggregator{
         "success_count": &graph.SumAggregator{},
         "failure_count": &graph.SumAggregator{},
         "total_latency": &graph.SumAggregator{},

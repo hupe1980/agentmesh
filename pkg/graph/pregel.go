@@ -199,7 +199,7 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 		runtimeOptions = append(runtimeOptions, pregel.WithMaxIterations[StateManager, ChannelMessage](options.maxIterations))
 	}
 	if len(options.aggregators) > 0 {
-		runtimeOptions = append(runtimeOptions, pregel.WithAggregators[StateManager, ChannelMessage](adaptAggregators(options.aggregators)))
+		runtimeOptions = append(runtimeOptions, pregel.WithAggregators[StateManager, ChannelMessage](options.aggregators))
 	}
 	if options.combiner != nil {
 		runtimeOptions = append(runtimeOptions, pregel.WithCombiner[StateManager, ChannelMessage](adaptCombiner(options.combiner)))
@@ -690,45 +690,6 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 		Node:     n.name,
 		Attempts: attempts,
 	}
-}
-
-// adaptAggregators converts graph.Aggregator to pregel.Aggregator.
-// This adapter allows graph-level aggregators (with domain-specific
-// implementations like SumAggregator, AvgAggregator) to work with the
-// generic Pregel runtime.
-//
-// The interfaces are identical but defined in separate packages to maintain
-// package independence. This adapter is zero-cost (interface wrapper only).
-func adaptAggregators(source map[string]Aggregator) map[string]pregel.Aggregator {
-	if len(source) == 0 {
-		return nil
-	}
-	mapped := make(map[string]pregel.Aggregator, len(source))
-	for name, agg := range source {
-		if name == "" || agg == nil {
-			continue
-		}
-		mapped[name] = aggregatorAdapter{agg: agg}
-	}
-	if len(mapped) == 0 {
-		return nil
-	}
-	return mapped
-}
-
-// aggregatorAdapter implements pregel.Aggregator by delegating to graph.Aggregator.
-// This is a simple wrapper that enables graph-level aggregators to work with
-// the Pregel runtime without any modifications.
-type aggregatorAdapter struct {
-	agg Aggregator
-}
-
-func (a aggregatorAdapter) Zero() any {
-	return a.agg.Zero()
-}
-
-func (a aggregatorAdapter) Aggregate(current, value any) any {
-	return a.agg.Aggregate(current, value)
 }
 
 // adaptCombiner converts a graph.Combiner to a pregel.Combiner[ChannelMessage].

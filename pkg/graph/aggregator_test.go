@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +51,7 @@ func TestGraphAggregatorsAccessible(t *testing.T) {
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]Aggregator{"total": sumAggregator{}}))
+	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{"total": sumAggregator{}}))
 	require.NoError(t, err)
 
 	// v2.0: Use cg.State() instead of original state variable
@@ -223,7 +224,7 @@ func TestAvgAggregator_Integration(t *testing.T) {
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]Aggregator{
+	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{
 		"avg_value": &AvgAggregator{},
 	}))
 	require.NoError(t, err)
@@ -260,7 +261,7 @@ func TestVarianceAggregator_Integration(t *testing.T) {
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]Aggregator{
+	_, err = cg.Invoke(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{
 		"variance": &VarianceAggregator{},
 	}))
 	require.NoError(t, err)

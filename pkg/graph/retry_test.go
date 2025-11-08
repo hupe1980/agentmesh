@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -283,7 +284,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil, WithAggregators(map[string]Aggregator{"total": &SumAggregator{}}))
+		_, err = compiled.Invoke(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}}))
 		require.NoError(t, err)
 
 		assert.Equal(t, 2, attempts)

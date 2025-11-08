@@ -6,17 +6,12 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/pregel"
 )
 
-// Aggregator defines a global reduction applied across vertices each superstep.
-// Implementations combine values from multiple nodes into a single aggregate value.
+// Aggregator is defined in pregel.Aggregator.
+// Import pregel.Aggregator directly to implement custom aggregators.
 // See aggregators.go for built-in implementations (SumAggregator, MaxAggregator, etc.).
-type Aggregator interface {
-	// Zero returns the identity/initial value for the aggregation.
-	Zero() any
-	// Aggregate combines the current aggregate value with a new contribution.
-	Aggregate(current, value any) any
-}
 
 // SchedulingMessage describes an activation message between graph vertices.
 // Used in distributed scheduling to propagate computation across nodes.
@@ -35,7 +30,7 @@ type runOptions struct {
 	maxIterations      int
 	maxMessages        int // Maximum number of messages to retain (0 = unlimited)
 	eventBufferSize    int // Size of event channel for streaming (default = 100)
-	aggregators        map[string]Aggregator
+	aggregators        map[string]pregel.Aggregator
 	combiner           Combiner
 	checkpointer       Checkpointer // Checkpoint storage backend
 	checkpointInterval int          // Save every N supersteps (0 = every superstep)
@@ -95,11 +90,11 @@ func WithInitialSuperstep(superstep int64) RunOption {
 //
 // Example:
 //
-//	compiled.Invoke(ctx, messages, graph.WithAggregators(map[string]Aggregator{
-//	    "total_cost": &SumAggregator{},
-//	    "max_priority": &MaxAggregator{},
+//	compiled.Invoke(ctx, messages, graph.WithAggregators(map[string]pregel.Aggregator{
+//	    "total_cost": &graph.SumAggregator{},
+//	    "max_priority": &graph.MaxAggregator{},
 //	}))
-func WithAggregators(aggregators map[string]Aggregator) RunOption {
+func WithAggregators(aggregators map[string]pregel.Aggregator) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {
 			return
@@ -108,7 +103,7 @@ func WithAggregators(aggregators map[string]Aggregator) RunOption {
 			opts.aggregators = nil
 			return
 		}
-		aggCopy := make(map[string]Aggregator, len(aggregators))
+		aggCopy := make(map[string]pregel.Aggregator, len(aggregators))
 		for name, agg := range aggregators {
 			if name == "" || agg == nil {
 				continue
