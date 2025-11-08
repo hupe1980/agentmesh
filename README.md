@@ -668,6 +668,51 @@ go test ./graph -bench=. -benchmem
 
 ---
 
+## 📝 API Naming Conventions
+
+AgentMesh follows a **consistent naming convention** across all components to improve code clarity and maintainability:
+
+| Method | Component | Purpose | When to Use |
+|--------|-----------|---------|-------------|
+| **`Call()`** | `Tool` | Execute a tool function | Invoking tool/function logic |
+| **`Run()`** | `Node`, `Runnable` | Execute node logic | Low-level synchronous node execution |
+| **`Invoke()`** | `CompiledGraph` | Execute graph (blocking) | High-level public API for complete execution |
+| **`Stream()`** | `CompiledGraph` | Execute graph (streaming) | High-level public API with real-time events |
+| **`Execute()`** | `Executor`, Adapters | Strategy implementation | Internal execution strategy pattern |
+
+### Rationale
+
+- **`Run`** - Used for internal, synchronous operations (nodes, services, goroutines)
+- **`Invoke`** - Used for high-level public APIs (RPC-style graph execution)
+- **`Execute`** - Used for strategy pattern implementations (executor interfaces, adapters)
+- **`Call`** - Used for function invocation semantics (tools, callbacks)
+
+### Examples
+
+```go
+// Tools use Call() - function invocation
+result, err := weatherTool.Call(ctx, `{"location": "Boston"}`)
+
+// Nodes use Run() - low-level execution
+result, err := node.Run(ctx, state)
+
+// Graphs use Invoke() - high-level blocking API
+messages, err := compiled.Invoke(ctx, initialMessages)
+
+// Graphs use Stream() - high-level streaming API
+stream, err := compiled.Stream(ctx, initialMessages)
+for stream.Next() {
+    event := stream.Current()
+}
+
+// Executors use Execute() - strategy implementation
+result, err := executor.Execute(ctx, messages, options)
+```
+
+This convention aligns with Go idioms and provides clear semantic meaning at different abstraction levels.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Here's how to get started:
