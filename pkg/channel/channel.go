@@ -6,29 +6,27 @@ import (
 )
 
 // readCached implements the double-checked locking pattern for cached reads.
-// This helper reduces code duplication between LastValueChannel and BinaryOpChannel.
-func readCached(mu *sync.RWMutex, cachedValue *any, cachedVersion *int64, currentVersion int64, actualValue any) (any, error) {
-	// Fast path: return cached value if version matches
+// Version and value pointers are dereferenced only while the mutex is held to
+// avoid data races when writers update the underlying fields.
+func readCached(mu *sync.RWMutex, cachedValue *any, cachedVersion *int64, version *int64, value *any) (any, error) {
 	mu.RLock()
-	if *cachedVersion == currentVersion {
-		value := *cachedValue
+	if *cachedVersion == *version {
+		v := *cachedValue
 		mu.RUnlock()
-		return value, nil
+		return v, nil
 	}
 	mu.RUnlock()
 
-	// Slow path: update cache
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Double-check after acquiring write lock
-	if *cachedVersion == currentVersion {
+	if *cachedVersion == *version {
 		return *cachedValue, nil
 	}
 
-	*cachedValue = actualValue
-	*cachedVersion = currentVersion
-	return actualValue, nil
+	*cachedValue = *value
+	*cachedVersion = *version
+	return *cachedValue, nil
 }
 
 // Channel is the core abstraction for data flow between nodes.
@@ -233,7 +231,7 @@ func (lvc *LastValueChannel) Name() string {
 }
 
 func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
-	return readCached(&lvc.mu, &lvc.cachedValue, &lvc.cachedVersion, lvc.version, lvc.value)
+	return readCached(&lvc.mu, &lvc.cachedValue, &lvc.cachedVersion, &lvc.version, &lvc.value)
 }
 
 func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
@@ -325,7 +323,7 @@ func (boc *BinaryOpChannel) Name() string {
 }
 
 func (boc *BinaryOpChannel) Read(ctx context.Context) (any, error) {
-	return readCached(&boc.mu, &boc.cachedValue, &boc.cachedVersion, boc.version, boc.value)
+	return readCached(&boc.mu, &boc.cachedValue, &boc.cachedVersion, &boc.version, &boc.value)
 }
 
 func (boc *BinaryOpChannel) Write(ctx context.Context, value any) error {
