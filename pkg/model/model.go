@@ -4,72 +4,9 @@ import (
 	"context"
 	"iter"
 
-	streamutil "github.com/hupe1980/agentmesh/internal/stream"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
-
-// StreamChunk represents a unit of streamed output from a model invocation.
-// Text contains the incremental delta. When Final is true the chunk carries the
-// fully assembled message in Message (if available) and signals stream completion.
-// Err is non-nil when the producer encountered an error; Final will still be true
-// so consumers can distinguish terminal errors from transient chunks.
-type StreamChunk struct {
-	Text    string
-	Message message.Message
-	Err     error
-	Final   bool
-}
-
-// Stream exposes a channel of StreamChunk values that closes automatically once
-// the model finishes producing output. Cancel aborts the underlying request if
-// the consumer stops early.
-type Stream struct {
-	inner *streamutil.Stream[StreamChunk]
-}
-
-// NewStream constructs a Stream from the provided chunk channel and optional
-// cancel function. Implementations should close the channel once a final chunk
-// has been sent.
-func NewStream(chunks <-chan StreamChunk, cancel context.CancelFunc) *Stream {
-	cfg := streamutil.Config[StreamChunk]{
-		ExtractErr: func(chunk StreamChunk) error { return chunk.Err },
-		IsFinal:    func(chunk StreamChunk) bool { return chunk.Final },
-	}
-	return &Stream{inner: streamutil.New(chunks, cancel, cfg)}
-}
-
-// Cancel aborts the streaming operation. It is safe to call multiple times.
-func (s *Stream) Cancel() {
-	if s == nil || s.inner == nil {
-		return
-	}
-	s.inner.Cancel()
-}
-
-// Next advances the stream and reports whether a chunk is available.
-func (s *Stream) Next() bool {
-	if s == nil || s.inner == nil {
-		return false
-	}
-	return s.inner.Next()
-}
-
-// Current returns the most recently observed chunk.
-func (s *Stream) Current() StreamChunk {
-	if s == nil || s.inner == nil {
-		return StreamChunk{}
-	}
-	return s.inner.Current()
-}
-
-// Err reports the terminal error, if any, encountered while streaming.
-func (s *Stream) Err() error {
-	if s == nil || s.inner == nil {
-		return nil
-	}
-	return s.inner.Err()
-}
 
 // Model defines the contract for language model backends using Go 1.23+ iterators.
 // The unified Generate method supports both streaming and blocking consumption patterns.
@@ -148,60 +85,6 @@ func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
 	}
 
 	return messages, lastErr
-}
-
-// ToStream wraps an iterator in the Stream type for compatibility with non-iterator APIs.
-// This allows using iterator-based model responses with APIs that expect the Stream type.
-//
-// Note: Prefer using the iterator directly with for-range when possible.
-func ToStream(ctx context.Context, seq iter.Seq2[message.Message, error]) *Stream {
-	chunks := make(chan StreamChunk, 1)
-	ctx, cancel := context.WithCancel(ctx)
-
-	go func() {
-		defer close(chunks)
-		defer cancel()
-
-		var lastErr error
-	loop:
-		for msg, err := range seq {
-			if err != nil {
-				lastErr = err
-				break
-			}
-
-			// Check context
-			select {
-			case <-ctx.Done():
-				lastErr = ctx.Err()
-				break loop
-			default:
-			}
-
-			// Extract text from message parts
-			var text string
-			for _, part := range msg.Parts() {
-				if textPart, ok := part.(message.TextPart); ok {
-					text += textPart.Text
-				}
-			}
-
-			chunks <- StreamChunk{
-				Text:    text,
-				Message: msg,
-				Err:     nil,
-				Final:   false,
-			}
-		}
-
-		// Send final chunk
-		chunks <- StreamChunk{
-			Err:   lastErr,
-			Final: true,
-		}
-	}()
-
-	return NewStream(chunks, cancel)
 }
 
 // ToolAware defines models that support tool/function calling.

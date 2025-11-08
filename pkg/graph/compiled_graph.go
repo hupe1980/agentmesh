@@ -7,7 +7,6 @@ import (
 	"sort"
 	"sync"
 
-	streamutil "github.com/hupe1980/agentmesh/internal/stream"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -335,56 +334,82 @@ type StreamEvent struct {
 // Use Next() to advance and Event() to retrieve the current event.
 // IMPORTANT: Always call Cancel() or Close() when done to prevent goroutine leaks.
 type GraphStream struct {
-	inner *streamutil.Stream[StreamEvent]
-	done  <-chan struct{} // Signals when background goroutine completes
+	events  <-chan StreamEvent
+	cancel  context.CancelFunc
+	done    <-chan struct{} // Signals when background goroutine completes
+	current StreamEvent
+	err     error
+	closed  bool
+	mu      sync.Mutex
 }
 
 func newGraphStream(events <-chan StreamEvent, cancel context.CancelFunc, done <-chan struct{}) *GraphStream {
-	cfg := streamutil.Config[StreamEvent]{
-		ExtractErr: func(event StreamEvent) error { return event.Err },
-		StopOnErr:  true,
-	}
 	return &GraphStream{
-		inner: streamutil.New(events, cancel, cfg),
-		done:  done,
+		events: events,
+		cancel: cancel,
+		done:   done,
 	}
 }
 
 func (s *GraphStream) Next() bool {
-	if s == nil || s.inner == nil {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
 		return false
 	}
-	return s.inner.Next()
+	s.mu.Unlock()
+
+	event, ok := <-s.events
+	if !ok {
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+		return false
+	}
+
+	s.mu.Lock()
+	s.current = event
+	if event.Err != nil {
+		if s.err == nil {
+			s.err = event.Err
+		}
+		s.closed = true
+	}
+	s.mu.Unlock()
+
+	return true
 }
 
 func (s *GraphStream) Current() StreamEvent {
-	if s == nil || s.inner == nil {
-		return StreamEvent{}
-	}
-	return s.inner.Current()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.current
 }
 
 func (s *GraphStream) Err() error {
-	if s == nil || s.inner == nil {
-		return nil
-	}
-	return s.inner.Err()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
 }
 
 func (s *GraphStream) Cancel() {
-	if s == nil || s.inner == nil {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
 		return
 	}
-	s.inner.Cancel()
+	s.closed = true
+	s.mu.Unlock()
+
+	if s.cancel != nil {
+		s.cancel()
+	}
 }
 
 // Close cancels the stream and waits for the background goroutine to finish.
 // This prevents goroutine leaks when the consumer stops reading events early.
 // Close is idempotent and safe to call multiple times.
 func (s *GraphStream) Close() error {
-	if s == nil || s.inner == nil {
-		return nil
-	}
 	s.Cancel()
 	// Wait for background goroutine to exit
 	if s.done != nil {

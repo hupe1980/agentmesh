@@ -9,7 +9,6 @@
 //
 // Key concepts:
 //   - GraphStream: Real-time event channel for graph execution
-//   - StreamChunk: Token-level updates from LLM model streaming
 //   - Event Types: NodeStart, NodeComplete, NodeError, GraphComplete
 //   - Proper cleanup: Always call stream.Close() or stream.Cancel()
 //

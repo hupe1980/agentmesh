@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -154,9 +155,7 @@ func createEnrichmentSubgraph() *graph.Graph {
 
 			// Create enriched copy with additional fields
 			enriched := make(map[string]any)
-			for k, v := range data {
-				enriched[k] = v
-			}
+			maps.Copy(enriched, data)
 
 			// Add computed fields
 			score := data["score"].(int)
