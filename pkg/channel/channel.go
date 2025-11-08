@@ -35,12 +35,19 @@ type Channel interface {
 
 // TopicChannel accumulates values in append-only fashion.
 // Values are never removed, only appended. Optional maxValues limit enforces retention policy.
+//
+// Optimization: Uses copy-on-write caching to avoid redundant slice copies when reading
+// the same data multiple times. The cached snapshot is invalidated on writes via version tracking.
 type TopicChannel struct {
 	name      string
 	values    []any
 	version   int64
 	mu        sync.RWMutex
 	maxValues int // 0 means unlimited
+
+	// Copy-on-write cache for Read() operations
+	cachedSnapshot []any
+	cachedVersion  int64
 }
 
 // NewTopicChannel creates a new topic channel that accumulates values.
@@ -57,13 +64,31 @@ func (tc *TopicChannel) Name() string {
 }
 
 func (tc *TopicChannel) Read(ctx context.Context) (any, error) {
+	// Fast path: check if cached snapshot is valid (read lock only)
 	tc.mu.RLock()
-	defer tc.mu.RUnlock()
+	if tc.cachedVersion == tc.version && tc.cachedSnapshot != nil {
+		snapshot := tc.cachedSnapshot
+		tc.mu.RUnlock()
+		return snapshot, nil
+	}
+	tc.mu.RUnlock()
 
-	// Return a copy to prevent external mutation
-	result := make([]any, len(tc.values))
-	copy(result, tc.values)
-	return result, nil
+	// Slow path: create new snapshot (write lock to update cache)
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have updated)
+	if tc.cachedVersion == tc.version && tc.cachedSnapshot != nil {
+		return tc.cachedSnapshot, nil
+	}
+
+	// Create snapshot and cache it
+	snapshot := make([]any, len(tc.values))
+	copy(snapshot, tc.values)
+	tc.cachedSnapshot = snapshot
+	tc.cachedVersion = tc.version
+
+	return snapshot, nil
 }
 
 func (tc *TopicChannel) Write(ctx context.Context, value any) error {
@@ -85,6 +110,8 @@ func (tc *TopicChannel) Write(ctx context.Context, value any) error {
 	}
 
 	tc.version++
+	// Invalidate cache on write (version mismatch will trigger new snapshot)
+	tc.cachedSnapshot = nil
 	return nil
 }
 
@@ -104,6 +131,8 @@ func (tc *TopicChannel) Reset(ctx context.Context) error {
 
 	tc.values = make([]any, 0)
 	tc.version = 0
+	tc.cachedSnapshot = nil
+	tc.cachedVersion = 0
 	return nil
 }
 
@@ -126,6 +155,7 @@ func (tc *TopicChannel) SetMaxValues(limit int) {
 	if limit > 0 && len(tc.values) > limit {
 		tc.values = append([]any(nil), tc.values[len(tc.values)-limit:]...)
 		tc.version++
+		tc.cachedSnapshot = nil // Invalidate cache
 	}
 }
 
@@ -142,17 +172,27 @@ func (tc *TopicChannel) Clone() Channel {
 		values:    cloneValues,
 		version:   tc.version,
 		maxValues: tc.maxValues,
+		// Don't copy cache - let clone build its own
+		cachedSnapshot: nil,
+		cachedVersion:  0,
 	}
 }
 
 // LastValueChannel stores only the most recent value (overwrite semantics).
 // Each update replaces the previous value completely.
+//
+// Note: LastValueChannel stores single values (not slices), so copy-on-write
+// provides minimal benefit. However, it's implemented for API consistency.
 type LastValueChannel struct {
 	name     string
 	value    any
 	version  int64
 	mu       sync.RWMutex
 	hasValue bool
+
+	// Copy-on-write cache (less beneficial for scalar values)
+	cachedValue   any
+	cachedVersion int64
 }
 
 // NewLastValueChannel creates a new last-value channel with overwrite semantics.
@@ -167,8 +207,26 @@ func (lvc *LastValueChannel) Name() string {
 }
 
 func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
+	// Fast path: return cached value if version matches
 	lvc.mu.RLock()
-	defer lvc.mu.RUnlock()
+	if lvc.cachedVersion == lvc.version {
+		value := lvc.cachedValue
+		lvc.mu.RUnlock()
+		return value, nil
+	}
+	lvc.mu.RUnlock()
+
+	// Slow path: update cache
+	lvc.mu.Lock()
+	defer lvc.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if lvc.cachedVersion == lvc.version {
+		return lvc.cachedValue, nil
+	}
+
+	lvc.cachedValue = lvc.value
+	lvc.cachedVersion = lvc.version
 	return lvc.value, nil
 }
 
@@ -179,6 +237,7 @@ func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
 	lvc.value = value
 	lvc.hasValue = true
 	lvc.version++
+	// Cache will be updated lazily on next Read()
 	return nil
 }
 
@@ -199,6 +258,8 @@ func (lvc *LastValueChannel) Reset(ctx context.Context) error {
 	lvc.value = nil
 	lvc.hasValue = false
 	lvc.version = 0
+	lvc.cachedValue = nil
+	lvc.cachedVersion = 0
 	return nil
 }
 
@@ -219,25 +280,37 @@ func (lvc *LastValueChannel) Clone() Channel {
 		value:    lvc.value,
 		version:  lvc.version,
 		hasValue: lvc.hasValue,
+		// Don't copy cache - let clone build its own
+		cachedValue:   nil,
+		cachedVersion: 0,
 	}
 }
 
 // BinaryOpChannel applies a binary operator to combine values.
 // Updates are merged with the current value using a custom operator function.
+//
+// Note: Similar to LastValueChannel, copy-on-write provides minimal benefit
+// for scalar values, but is implemented for API consistency.
 type BinaryOpChannel struct {
 	name     string
 	value    any
 	operator func(current, incoming any) any
 	version  int64
 	mu       sync.RWMutex
+
+	// Copy-on-write cache
+	cachedValue   any
+	cachedVersion int64
 }
 
 // NewBinaryOpChannel creates a channel that combines values using the given operator.
 func NewBinaryOpChannel(name string, initialValue any, op func(current, incoming any) any) *BinaryOpChannel {
 	return &BinaryOpChannel{
-		name:     name,
-		value:    initialValue,
-		operator: op,
+		name:          name,
+		value:         initialValue,
+		operator:      op,
+		cachedValue:   initialValue, // Initialize cache with initial value
+		cachedVersion: 0,            // Version 0 matches initial state
 	}
 }
 
@@ -246,8 +319,26 @@ func (boc *BinaryOpChannel) Name() string {
 }
 
 func (boc *BinaryOpChannel) Read(ctx context.Context) (any, error) {
+	// Fast path: return cached value if version matches
 	boc.mu.RLock()
-	defer boc.mu.RUnlock()
+	if boc.cachedVersion == boc.version {
+		value := boc.cachedValue
+		boc.mu.RUnlock()
+		return value, nil
+	}
+	boc.mu.RUnlock()
+
+	// Slow path: update cache
+	boc.mu.Lock()
+	defer boc.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if boc.cachedVersion == boc.version {
+		return boc.cachedValue, nil
+	}
+
+	boc.cachedValue = boc.value
+	boc.cachedVersion = boc.version
 	return boc.value, nil
 }
 
@@ -257,6 +348,7 @@ func (boc *BinaryOpChannel) Write(ctx context.Context, value any) error {
 
 	boc.value = boc.operator(boc.value, value)
 	boc.version++
+	// Cache will be updated lazily on next Read()
 	return nil
 }
 
@@ -277,6 +369,8 @@ func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 	// Reset to operator's zero value by applying to nil
 	boc.value = boc.operator(nil, nil)
 	boc.version = 0
+	boc.cachedValue = nil
+	boc.cachedVersion = 0
 	return nil
 }
 
@@ -290,6 +384,9 @@ func (boc *BinaryOpChannel) Clone() Channel {
 		value:    boc.value,
 		operator: boc.operator,
 		version:  boc.version,
+		// Don't copy cache - let clone build its own
+		cachedValue:   nil,
+		cachedVersion: 0,
 	}
 }
 
