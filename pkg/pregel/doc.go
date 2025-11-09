@@ -66,8 +66,8 @@
 //	    Value float64
 //	}
 //
-//	// Implement PregelGraph interface
-//	graph := &myPregelGraph{
+//	// Implement Graph interface
+//	graph := &myGraph{
 //	    state: MyState{Values: make(map[string]float64)},
 //	}
 //

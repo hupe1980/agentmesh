@@ -169,6 +169,6 @@ func preserveSystemMessages(messages []message.Message) []message.Message {
 - See **examples/basic_agent** for ReAct patterns
 
 ## See Also
-- [pkg/graph](../../pkg/graph) - GraphState API
+- [pkg/graph](../../pkg/graph) - State API
 - [pkg/message](../../pkg/message) - Message types
 - [examples/basic_agent](../basic_agent) - Agent basics

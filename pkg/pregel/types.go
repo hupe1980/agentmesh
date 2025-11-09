@@ -2,12 +2,12 @@ package pregel
 
 import "context"
 
-// PregelGraph defines the minimal contract the runtime needs to traverse a graph.
+// Graph defines the minimal contract the runtime needs to traverse a graph.
 // Generic over global state `S` and message payload `M`.
-type PregelGraph[S any, M any] interface {
+type Graph[S any, M any] interface {
 	RootNodes() []string
 	Outgoing(node string) []string
-	NodeByName(name string) PregelNode[S, M]
+	NodeByName(name string) Node[S, M]
 	State() S
 }
 
@@ -36,8 +36,8 @@ type VertexContext[S any, M any] struct {
 	Aggregates map[string]any
 }
 
-// PregelNode represents a unit of computation (vertex).
-type PregelNode[S any, M any] interface {
+// Node represents a unit of computation (vertex).
+type Node[S any, M any] interface {
 	Name() string
 	Run(ctx context.Context, vertex VertexContext[S, M], incoming []Message[M]) error
 }

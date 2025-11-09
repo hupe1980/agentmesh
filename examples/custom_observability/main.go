@@ -47,7 +47,7 @@ func main() {
 	// Step 2: Build Graph with Nodes that Use Context Providers
 	// ============================================================
 
-	state := graph.NewGraphState(0)
+	state := graph.NewState(0)
 	g := graph.NewGraph(state)
 
 	// Node 1: Data Ingestion - demonstrates logger usage

@@ -27,8 +27,8 @@ type EdgeInfo struct {
 	ConditionalTargets []string `json:"conditional_targets,omitzero"`
 }
 
-// GraphTopology provides a complete view of the graph structure.
-type GraphTopology struct {
+// Topology provides a complete view of the graph structure.
+type Topology struct {
 	Nodes            []NodeInfo `json:"nodes"`
 	Edges            []EdgeInfo `json:"edges"`
 	EntryPoints      []string   `json:"entry_points"`
@@ -39,8 +39,8 @@ type GraphTopology struct {
 	TotalPaths       int        `json:"total_paths"`
 }
 
-// GraphMetrics provides runtime execution metrics.
-type GraphMetrics struct {
+// Metrics provides runtime execution metrics.
+type Metrics struct {
 	TotalNodes           int            `json:"total_nodes"`
 	TotalEdges           int            `json:"total_edges"`
 	ConditionalEdges     int            `json:"conditional_edges"`
@@ -66,14 +66,14 @@ type NodeDependencies struct {
 }
 
 // GetNodes returns a list of all node names in the graph.
-func (cg *CompiledGraph) GetNodes() []string {
+func (cg *Compiled) GetNodes() []string {
 	result := make([]string, len(cg.nodeNames))
 	copy(result, cg.nodeNames)
 	return result
 }
 
 // GetNodeInfo returns detailed information about a specific node.
-func (cg *CompiledGraph) GetNodeInfo(name string) (*NodeInfo, error) {
+func (cg *Compiled) GetNodeInfo(name string) (*NodeInfo, error) {
 	node, exists := cg.nodes[name]
 	if !exists {
 		return nil, ErrNodeNotFound
@@ -104,7 +104,7 @@ func (cg *CompiledGraph) GetNodeInfo(name string) (*NodeInfo, error) {
 }
 
 // GetAllNodeInfo returns information about all nodes in the graph.
-func (cg *CompiledGraph) GetAllNodeInfo() []NodeInfo {
+func (cg *Compiled) GetAllNodeInfo() []NodeInfo {
 	infos := make([]NodeInfo, 0, len(cg.nodes))
 
 	for _, name := range cg.nodeNames {
@@ -117,7 +117,7 @@ func (cg *CompiledGraph) GetAllNodeInfo() []NodeInfo {
 }
 
 // GetEdges returns all edges in the graph.
-func (cg *CompiledGraph) GetEdges() []EdgeInfo {
+func (cg *Compiled) GetEdges() []EdgeInfo {
 	edges := make([]EdgeInfo, 0, len(cg.edges))
 
 	// Add direct edges
@@ -143,8 +143,8 @@ func (cg *CompiledGraph) GetEdges() []EdgeInfo {
 }
 
 // GetTopology returns a comprehensive view of the graph structure.
-func (cg *CompiledGraph) GetTopology() *GraphTopology {
-	topo := &GraphTopology{
+func (cg *Compiled) GetTopology() *Topology {
+	topo := &Topology{
 		Nodes:            cg.GetAllNodeInfo(),
 		Edges:            cg.GetEdges(),
 		EntryPoints:      make([]string, 0),
@@ -189,8 +189,8 @@ func (cg *CompiledGraph) GetTopology() *GraphTopology {
 }
 
 // GetMetrics returns runtime metrics about the graph.
-func (cg *CompiledGraph) GetMetrics() *GraphMetrics {
-	metrics := &GraphMetrics{
+func (cg *Compiled) GetMetrics() *Metrics {
+	metrics := &Metrics{
 		TotalNodes:       len(cg.nodes),
 		TotalEdges:       len(cg.edges),
 		ConditionalEdges: len(cg.conditionals),
@@ -250,7 +250,7 @@ func (cg *CompiledGraph) GetMetrics() *GraphMetrics {
 }
 
 // GetDependencies returns dependency information for a specific node.
-func (cg *CompiledGraph) GetDependencies(name string) (*NodeDependencies, error) {
+func (cg *Compiled) GetDependencies(name string) (*NodeDependencies, error) {
 	if _, exists := cg.nodes[name]; !exists {
 		return nil, ErrNodeNotFound
 	}
@@ -288,7 +288,7 @@ func (cg *CompiledGraph) GetDependencies(name string) (*NodeDependencies, error)
 
 // GetExecutionPath returns all possible execution paths from START to END.
 // Note: This can be expensive for graphs with many conditional branches.
-func (cg *CompiledGraph) GetExecutionPath(maxPaths int) [][]string {
+func (cg *Compiled) GetExecutionPath(maxPaths int) [][]string {
 	if maxPaths <= 0 {
 		maxPaths = 100 // Default limit
 	}
@@ -304,7 +304,7 @@ func (cg *CompiledGraph) GetExecutionPath(maxPaths int) [][]string {
 // GenerateMermaidFlowchart creates a Mermaid flowchart representation of the graph.
 // The direction parameter controls layout: "TD" (top-down), "LR" (left-right),
 // "BT" (bottom-top), "RL" (right-left). Default is "TD".
-func (cg *CompiledGraph) GenerateMermaidFlowchart(direction string) string {
+func (cg *Compiled) GenerateMermaidFlowchart(direction string) string {
 	if direction == "" {
 		direction = "TD"
 	}
@@ -328,7 +328,7 @@ func (cg *CompiledGraph) GenerateMermaidFlowchart(direction string) string {
 	return builder.String()
 }
 
-func (cg *CompiledGraph) collectAllNodes() []string {
+func (cg *Compiled) collectAllNodes() []string {
 	allNodes := make(map[string]bool)
 
 	for name := range cg.nodes {
@@ -362,7 +362,7 @@ func (cg *CompiledGraph) collectAllNodes() []string {
 	return nodeNames
 }
 
-func (cg *CompiledGraph) generateNodeIDs(nodeNames []string) map[string]string {
+func (cg *Compiled) generateNodeIDs(nodeNames []string) map[string]string {
 	reserved := make(map[string]struct{})
 	idMap := make(map[string]string)
 
@@ -374,7 +374,7 @@ func (cg *CompiledGraph) generateNodeIDs(nodeNames []string) map[string]string {
 	return idMap
 }
 
-func (cg *CompiledGraph) renderNodes(builder *strings.Builder, nodeNames []string, idMap map[string]string) {
+func (cg *Compiled) renderNodes(builder *strings.Builder, nodeNames []string, idMap map[string]string) {
 	for _, name := range nodeNames {
 		id := idMap[name]
 		label := escapeMermaidLabel(name)
@@ -392,7 +392,7 @@ func (cg *CompiledGraph) renderNodes(builder *strings.Builder, nodeNames []strin
 	}
 }
 
-func (cg *CompiledGraph) renderDirectEdges(builder *strings.Builder, idMap map[string]string) {
+func (cg *Compiled) renderDirectEdges(builder *strings.Builder, idMap map[string]string) {
 	seenEdges := make(map[string]bool)
 
 	for _, edge := range cg.edges {
@@ -412,7 +412,7 @@ func (cg *CompiledGraph) renderDirectEdges(builder *strings.Builder, idMap map[s
 	}
 }
 
-func (cg *CompiledGraph) renderConditionalEdges(builder *strings.Builder, idMap map[string]string) {
+func (cg *Compiled) renderConditionalEdges(builder *strings.Builder, idMap map[string]string) {
 	seenConditional := make(map[string]bool)
 
 	for _, ce := range cg.conditionals {
@@ -441,7 +441,7 @@ func (cg *CompiledGraph) renderConditionalEdges(builder *strings.Builder, idMap 
 
 // Helper methods
 
-func (cg *CompiledGraph) calculateMaxDepth() int {
+func (cg *Compiled) calculateMaxDepth() int {
 	depths := make(map[string]int)
 	depths[StartNode] = 0
 
@@ -472,7 +472,7 @@ func (cg *CompiledGraph) calculateMaxDepth() int {
 	return maxDepth
 }
 
-func (cg *CompiledGraph) calculateDepth(name string) int {
+func (cg *Compiled) calculateDepth(name string) int {
 	if name == StartNode {
 		return 0
 	}
@@ -503,7 +503,7 @@ func (cg *CompiledGraph) calculateDepth(name string) int {
 	return -1 // Not reachable from START
 }
 
-func (cg *CompiledGraph) estimateTotalPaths() int {
+func (cg *Compiled) estimateTotalPaths() int {
 	// Simple estimation: multiply branching factors
 	// For accurate count, would need full path enumeration (expensive)
 	paths := 1
@@ -517,7 +517,7 @@ func (cg *CompiledGraph) estimateTotalPaths() int {
 	return paths
 }
 
-func (cg *CompiledGraph) findAllPredecessors(name string) []string {
+func (cg *Compiled) findAllPredecessors(name string) []string {
 	visited := make(map[string]bool)
 	result := make([]string, 0)
 
@@ -541,7 +541,7 @@ func (cg *CompiledGraph) findAllPredecessors(name string) []string {
 	return result
 }
 
-func (cg *CompiledGraph) findAllSuccessors(name string) []string {
+func (cg *Compiled) findAllSuccessors(name string) []string {
 	visited := make(map[string]bool)
 	result := make([]string, 0)
 
@@ -567,7 +567,7 @@ func (cg *CompiledGraph) findAllSuccessors(name string) []string {
 	return result
 }
 
-func (cg *CompiledGraph) findPaths(current string, path []string, paths *[][]string, maxPaths int) {
+func (cg *Compiled) findPaths(current string, path []string, paths *[][]string, maxPaths int) {
 	if len(*paths) >= maxPaths {
 		return
 	}

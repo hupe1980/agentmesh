@@ -34,7 +34,7 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 	defer bus.Close()
 
 	// Create graph state with a counter and history channel
-	state := graph.NewGraphState(0)
+	state := graph.NewState(0)
 	state.Set("counter", 0)
 	state.AddChannel(channel.NewTopicChannel("history", 0))
 
@@ -134,7 +134,7 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 	})
 	defer bus.Close()
 
-	state := graph.NewGraphState(0)
+	state := graph.NewState(0)
 	state.AddChannel(channel.NewTopicChannel("completed", 0))
 
 	g := graph.NewGraph(state)
@@ -201,7 +201,7 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 	})
 	defer bus.Close()
 
-	state := graph.NewGraphState(0)
+	state := graph.NewState(0)
 	state.Set("value", 42)
 	state.Set("path", "start")
 

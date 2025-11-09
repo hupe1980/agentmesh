@@ -89,7 +89,7 @@ State is shared across all nodes with thread-safe access:
 The graph package uses a deterministic channel-based state system implemented in state_manager.go:
 
 	// Create state with message limit
-	state := graph.NewGraphState(maxMessages)
+	state := graph.NewState(maxMessages)
 
 	// Add custom channels for typed data flow
 	state.AddChannel(channel.NewLastValueChannel("status"))
@@ -103,7 +103,7 @@ The graph package uses a deterministic channel-based state system implemented in
 For common use cases, use StateBuilder instead of manual channel setup:
 
 	// Old way (verbose)
-	state := graph.NewGraphState(100)
+	state := graph.NewState(100)
 	state.AddChannel(channel.NewLastValueChannel("status"))
 	state.Set("status", "pending")
 	state.AddChannel(channel.NewBinaryOpChannel("counter", 0, addFunc))
@@ -143,7 +143,7 @@ to the generic Pregel BSP engine:
 	    ↓
 	Builder API (graph construction)
 	    ↓
-	CompiledGraph (execution orchestrator)
+	Compiled (execution orchestrator)
 	    ↓
 	Pregel Adapter (pregel.go)
 	    ↓
@@ -171,7 +171,7 @@ Core files in pkg/graph:
   - graph.go: Graph builder and compilation
   - builder.go: Fluent builder API
   - node.go: Node definitions and execution
-  - state_manager.go: State management (StateManager, GraphState, bufferedStateWriter)
+  - state_manager.go: State management (StateManager, State, bufferedStateWriter)
   - pregel.go: BSP execution adapter (ChannelMessage, graphRuntime, nodeAdapter)
   - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, StreamEvent)
   - executor.go: Execution abstractions (Executor, ExecutionTracker, executionState)

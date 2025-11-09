@@ -20,7 +20,7 @@ type ToolOptions struct {
 // mcpToolImpl is an implementation of tool.Tool that proxies calls to an MCP tool.
 type mcpToolImpl struct {
 	mcpTool        *mcp.Tool
-	definition     *tool.ToolDefinition
+	definition     *tool.Definition
 	sessionManager *SessionManager
 	opts           ToolOptions
 }
@@ -43,7 +43,7 @@ func NewTool(mcpToolDef *mcp.Tool, sessionManager *SessionManager, optFns ...fun
 		name = fmt.Sprintf("%s_%s", opts.NamePrefix, mcpToolDef.Name)
 	}
 
-	definition := &tool.ToolDefinition{
+	definition := &tool.Definition{
 		Type: "function",
 		Function: tool.FunctionDefinition{
 			Name:        name,
@@ -71,7 +71,7 @@ func (t *mcpToolImpl) Description() string {
 }
 
 // Definition returns the tool definition.
-func (t *mcpToolImpl) Definition() *tool.ToolDefinition {
+func (t *mcpToolImpl) Definition() *tool.Definition {
 	return t.definition
 }
 

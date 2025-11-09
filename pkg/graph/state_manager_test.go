@@ -8,7 +8,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-func TestGraphStateCloneDeepCopy(t *testing.T) {
+func TestStateCloneDeepCopy(t *testing.T) {
 	state := NewStateManager(5)
 	if err := state.Set("status", "pending"); err != nil {
 		t.Fatalf("set status failed: %v", err)
@@ -18,9 +18,9 @@ func TestGraphStateCloneDeepCopy(t *testing.T) {
 	state.AddMessages([]message.Message{msg1})
 
 	clonedAny := state.Clone()
-	cloned, ok := clonedAny.(*GraphState)
+	cloned, ok := clonedAny.(*State)
 	if !ok {
-		t.Fatalf("expected *GraphState clone, got %T", clonedAny)
+		t.Fatalf("expected *State clone, got %T", clonedAny)
 	}
 
 	if err := state.Set("status", "done"); err != nil {
@@ -51,8 +51,8 @@ func TestGraphStateCloneDeepCopy(t *testing.T) {
 	}
 }
 
-func TestGraphStateSetMaxMessages(t *testing.T) {
-	state := NewStateManager(0).(*GraphState) // Type assert to access SetMaxMessages
+func TestStateSetMaxMessages(t *testing.T) {
+	state := NewStateManager(0).(*State) // Type assert to access SetMaxMessages
 	if err := state.Set("flag", true); err != nil {
 		t.Fatalf("set flag failed: %v", err)
 	}

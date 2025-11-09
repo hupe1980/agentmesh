@@ -14,8 +14,8 @@ type FunctionDefinition struct {
 	Parameters  map[string]any `json:"parameters"` // JSON Schema
 }
 
-// ToolDefinition declaratively exposes a callable function to the model.
-type ToolDefinition struct {
+// Definition declaratively exposes a callable function to the model.
+type Definition struct {
 	Type     string             `json:"type"` // "function"
 	Function FunctionDefinition `json:"function"`
 }
@@ -24,7 +24,7 @@ type ToolDefinition struct {
 type Tool interface {
 	Name() string
 	Description() string
-	Definition() *ToolDefinition
+	Definition() *Definition
 	Call(ctx context.Context, args string) (any, error)
 }
 

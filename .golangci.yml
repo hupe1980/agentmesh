@@ -21,6 +21,15 @@ linters:
     - errorlint
     - durationcheck
     - nilerr
+    # Additional comprehensive linters for +0.3 code quality improvement
+    - revive         # Fast, configurable, extensible, flexible drop-in replacement for golint
+    - bodyclose      # Checks whether HTTP response body is closed successfully
+    - nakedret       # Finds naked returns in functions greater than a specified length
+    - nestif         # Reports deeply nested if statements
+    - unparam        # Reports unused function parameters
+    - wastedassign   # Finds wasted assignment statements
+    - makezero       # Finds slice declarations with non-zero initial length
+    - thelper        # Detects test helpers without t.Helper() call
 
   settings:
     gocyclo:
@@ -32,6 +41,12 @@ linters:
 
     dupl:
       threshold: 100
+
+    nakedret:
+      max-func-lines: 30
+
+    nestif:
+      min-complexity: 4
 
     gocritic:
       enabled-checks:
@@ -101,6 +116,10 @@ linters:
           - staticcheck
           - revive
           - dupl
+          - unparam
+          - nakedret
+          - nestif
+          - tparallel
 
       - path: examples/
         linters:
@@ -112,6 +131,12 @@ linters:
           - gocritic
           - predeclared
           - revive
+          - unparam
+          - nakedret
+          - nestif
+          - ineffassign
+          - staticcheck
+          - wastedassign
 
       - path: benchmark_test/
         linters:

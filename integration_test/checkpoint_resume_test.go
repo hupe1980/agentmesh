@@ -23,7 +23,7 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create a simple workflow that increments a counter through 5 nodes
-	buildWorkflow := func() *graph.CompiledGraph {
+	buildWorkflow := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		g := graph.NewGraph(state)
 
@@ -133,7 +133,7 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create workflow that fails on node 3 ONLY on first attempt
-	buildFailingWorkflow := func() *graph.CompiledGraph {
+	buildFailingWorkflow := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		g := graph.NewGraph(state)
 
@@ -249,7 +249,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	var logMu = &atomic.Value{}
 	logMu.Store(make([]string, 0))
 
-	buildWorkflow := func() *graph.CompiledGraph {
+	buildWorkflow := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		g := graph.NewGraph(state)
 

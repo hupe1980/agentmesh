@@ -5,7 +5,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// StateBuilder provides a fluent API for constructing GraphState with common channel patterns.
+// StateBuilder provides a fluent API for constructing State with common channel patterns.
 // It simplifies state initialization by providing high-level methods for typical use cases,
 // eliminating the need to understand low-level channel mechanics.
 //
@@ -21,7 +21,7 @@ import (
 //
 // This eliminates the verbose pattern of:
 //
-//	state := graph.NewGraphState(100)
+//	state := graph.NewState(100)
 //	state.AddChannel(channel.NewLastValueChannel("status"))
 //	state.Set("status", "pending")
 //	state.AddChannel(channel.NewBinaryOpChannel("iterations", 0, addFunc))
@@ -202,15 +202,15 @@ func (b *StateBuilder) WithChannel(ch channel.Channel) *StateBuilder {
 	return b
 }
 
-// Build constructs the final GraphState with all configured channels and initial values.
+// Build constructs the final State with all configured channels and initial values.
 // This creates the "messages" channel automatically with the configured limit.
 //
 // Example:
 //
 //	state := builder.Build()
-func (b *StateBuilder) Build() *GraphState {
+func (b *StateBuilder) Build() *State {
 	// Create state with configured message limit
-	state := NewGraphState(b.maxMessages)
+	state := NewState(b.maxMessages)
 
 	// Add all configured channels
 	for _, ch := range b.channels {

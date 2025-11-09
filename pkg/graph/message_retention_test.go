@@ -20,7 +20,7 @@ func getMessageText(msg message.Message) string {
 	return ""
 }
 
-func TestGraphState_MessageRetention_Default(t *testing.T) {
+func TestState_MessageRetention_Default(t *testing.T) {
 	// Default behavior: unlimited retention
 	state := NewStateManager(0)
 
@@ -36,7 +36,7 @@ func TestGraphState_MessageRetention_Default(t *testing.T) {
 	assert.Len(t, retrieved, 3, "All messages should be retained by default")
 }
 
-func TestGraphState_SetMaxMessages_Zero(t *testing.T) {
+func TestState_SetMaxMessages_Zero(t *testing.T) {
 	// Zero means unlimited
 	state := NewStateManager(0)
 	// MaxMessages now set at creation: NewStateManager(0)
@@ -52,7 +52,7 @@ func TestGraphState_SetMaxMessages_Zero(t *testing.T) {
 	assert.Len(t, retrieved, 150, "Zero limit should allow unlimited messages")
 }
 
-func TestGraphState_SetMaxMessages_EnforceLimit(t *testing.T) {
+func TestState_SetMaxMessages_EnforceLimit(t *testing.T) {
 	// Set limit at construction
 	state := NewStateManager(5)
 
@@ -67,7 +67,7 @@ func TestGraphState_SetMaxMessages_EnforceLimit(t *testing.T) {
 	require.Len(t, retrieved, 5, "Should retain only maxMessages")
 }
 
-func TestGraphState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
+func TestState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 	// Verify oldest messages are discarded, newest are kept
 	state := NewStateManager(3)
 
@@ -88,7 +88,7 @@ func TestGraphState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 	assert.Equal(t, "keep3", getMessageText(retrieved[2]))
 }
 
-func TestGraphState_SetMaxMessages_MultipleAdds(t *testing.T) {
+func TestState_SetMaxMessages_MultipleAdds(t *testing.T) {
 	// Multiple AddMessages calls should still respect limit
 	state := NewStateManager(4)
 
@@ -116,7 +116,7 @@ func TestGraphState_SetMaxMessages_MultipleAdds(t *testing.T) {
 	assert.Equal(t, "msg5", getMessageText(retrieved[3]))
 }
 
-func TestGraphState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
+func TestState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 	// Setting limit at construction should immediately enforce it
 	state := NewStateManager(2)
 
@@ -135,7 +135,7 @@ func TestGraphState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 	assert.Equal(t, "msg5", getMessageText(retrieved[1]))
 }
 
-func TestGraphState_SetMaxMessages_Negative(t *testing.T) {
+func TestState_SetMaxMessages_Negative(t *testing.T) {
 	// Negative values should be treated as zero (unlimited)
 	// Note: maxMessages is now set at construction, so we test with 0
 	state := NewStateManager(0) // 0 means unlimited
@@ -151,7 +151,7 @@ func TestGraphState_SetMaxMessages_Negative(t *testing.T) {
 	assert.Len(t, retrieved, 20, "Negative limit should be treated as unlimited")
 }
 
-func TestGraphState_ApplyUpdates_RespectsLimit(t *testing.T) {
+func TestState_ApplyUpdates_RespectsLimit(t *testing.T) {
 	// ApplyUpdates should also respect message limits
 	state := NewStateManager(3)
 
@@ -174,7 +174,7 @@ func TestGraphState_ApplyUpdates_RespectsLimit(t *testing.T) {
 	assert.Equal(t, "msg4", getMessageText(retrieved[2]))
 }
 
-func TestGraphState_MessageRetention_EmptyMessages(t *testing.T) {
+func TestState_MessageRetention_EmptyMessages(t *testing.T) {
 	state := NewStateManager(0)
 	// MaxMessages now set at creation: NewStateManager(5)
 

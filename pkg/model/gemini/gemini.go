@@ -189,15 +189,9 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			return
 		}
 
-		contents, systemInstruction, err := convertMessagesToGemini(msgs)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
+		contents, systemInstruction := convertMessagesToGemini(msgs)
 
-		cfg := m.buildConfig(systemInstruction)
-
-		// Try streaming first
+		cfg := m.buildConfig(systemInstruction) // Try streaming first
 		m.streamGenerate(ctx, &contents, cfg, yield)
 	}
 }
@@ -348,7 +342,7 @@ func normalizeTools(tools []tool.Tool) []tool.Tool {
 }
 
 //nolint:gocyclo // Message conversion requires handling many message types
-func convertMessagesToGemini(msgs []message.Message) ([]*genai.Content, string, error) {
+func convertMessagesToGemini(msgs []message.Message) ([]*genai.Content, string) {
 	var contents []*genai.Content
 	var systemInstruction string
 
@@ -441,7 +435,42 @@ func convertMessagesToGemini(msgs []message.Message) ([]*genai.Content, string, 
 		}
 	}
 
-	return contents, systemInstruction, nil
+	return contents, systemInstruction
+}
+
+// convertParametersToGeminiSchema converts tool parameters to Gemini schema format.
+func convertParametersToGeminiSchema(parameters map[string]any) *genai.Schema {
+	if len(parameters) == 0 {
+		return nil
+	}
+
+	schemaJSON, err := json.Marshal(parameters)
+	if err != nil {
+		return nil
+	}
+
+	var schemaMap map[string]any
+	if err := json.Unmarshal(schemaJSON, &schemaMap); err != nil {
+		return nil
+	}
+
+	schema := &genai.Schema{
+		Type:       genai.TypeObject,
+		Properties: convertPropertiesToGemini(schemaMap),
+	}
+
+	// Extract required fields
+	if required, ok := schemaMap["required"].([]any); ok {
+		requiredFields := make([]string, 0, len(required))
+		for _, r := range required {
+			if str, ok := r.(string); ok {
+				requiredFields = append(requiredFields, str)
+			}
+		}
+		schema.Required = requiredFields
+	}
+
+	return schema
 }
 
 func convertToolsToGemini(tools []tool.Tool) *genai.Tool {
@@ -460,34 +489,7 @@ func convertToolsToGemini(tools []tool.Tool) *genai.Tool {
 		fn := def.Function
 
 		// Convert parameters to Gemini schema format
-		var schema *genai.Schema
-		if len(fn.Parameters) > 0 {
-			schemaJSON, err := json.Marshal(fn.Parameters)
-			if err != nil {
-				continue
-			}
-
-			var schemaMap map[string]any
-			if err := json.Unmarshal(schemaJSON, &schemaMap); err != nil {
-				continue
-			}
-
-			schema = &genai.Schema{
-				Type:       genai.TypeObject,
-				Properties: convertPropertiesToGemini(schemaMap),
-			}
-
-			// Extract required fields
-			if required, ok := schemaMap["required"].([]any); ok {
-				requiredFields := make([]string, 0, len(required))
-				for _, r := range required {
-					if str, ok := r.(string); ok {
-						requiredFields = append(requiredFields, str)
-					}
-				}
-				schema.Required = requiredFields
-			}
-		}
+		schema := convertParametersToGeminiSchema(fn.Parameters)
 
 		declarations = append(declarations, &genai.FunctionDeclaration{
 			Name:        fn.Name,

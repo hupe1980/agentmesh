@@ -34,6 +34,21 @@ func WithModelCallbacks(cb *callbacks.Manager) ModelNodeOption {
 	}
 }
 
+// handleModelError handles model errors with callbacks and returns fallback message if provided.
+// Returns (fallbackMessage, transformedError).
+func handleModelError(ctx context.Context, s graph.StateWriter, err error, config *modelNodeOptions) (message.Message, error) {
+	if config.callbacks == nil || !config.callbacks.HasOnModelErrorCallbacks() {
+		return nil, err
+	}
+
+	fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, s, err)
+	if cbErr != nil {
+		return nil, cbErr
+	}
+
+	return fallback, err
+}
+
 // ModelNode creates a reusable graph node that generates responses using the provided model.
 // The node takes the current message history from the state and produces a new AI message.
 //
@@ -85,24 +100,19 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			// Call the model
 			msg, err := model.Last(mdl.Generate(ctx, messages))
 			if err != nil {
-				// Execute OnModelError callbacks
-				if config.callbacks != nil && config.callbacks.HasOnModelErrorCallbacks() {
-					fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, s, err)
-					if cbErr != nil {
-						err = cbErr // Use transformed error
-					}
-					if fallback != nil {
-						// Callback provided fallback response
-						return &graph.NodeResult{
-							Messages: []message.Message{fallback},
-							Updates:  map[string]any{},
-						}, nil
-					}
+				fallback, transformedErr := handleModelError(ctx, s, err, &config)
+				if transformedErr != nil {
+					return nil, transformedErr
+				}
+				if fallback != nil {
+					// Callback provided fallback response
+					return &graph.NodeResult{
+						Messages: []message.Message{fallback},
+						Updates:  map[string]any{},
+					}, nil
 				}
 				return nil, err
-			}
-
-			// Execute AfterModel callbacks
+			} // Execute AfterModel callbacks
 			if config.callbacks != nil && config.callbacks.HasAfterModelCallbacks() {
 				transformed, err := config.callbacks.ExecuteAfterModel(ctx, s, msg)
 				if err != nil {

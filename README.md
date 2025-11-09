@@ -71,7 +71,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│              Application Layer (pkg/agent)                    │
+│              Application Layer (pkg/agent)                   │
 │  • ReActAgent: Reasoning + Acting pattern                    │
 │  • SupervisorAgent: Multi-agent coordination                 │
 │  • RAGAgent: Retrieval-Augmented Generation                  │
@@ -79,11 +79,11 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                            │ builds on
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    CompiledGraph (Coordinator)                │
-│  • Immutable graph topology (nodes, edges, conditionals)      │
+│               CompiledGraph (Coordinator)                    │
+│  • Immutable graph topology (nodes, edges, conditionals)     │
 │  • Public API (Invoke, Stream, Pause, Resume)                │
-│  • Coordinates StateManager ↔ Executor                        │
-│  • Rate limiting & retry policies                             │
+│  • Coordinates StateManager ↔ Executor                       │
+│  • Rate limiting & retry policies                            │
 └────────────────┬─────────────────────────┬───────────────────┘
                  │                         │
                  │ delegates to            │ delegates to
@@ -115,7 +115,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Application Layer** (`pkg/agent`)
 - High-level agent patterns: ReAct, RAG, Supervisor
-- Built on top of CompiledGraph
+- Built on top of Compiled
 
 **Integration Layer** (`pkg/model`, `pkg/tool`, `pkg/retrieval`)
 - LLM providers: OpenAI, Anthropic, Gemini
@@ -123,7 +123,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 - Retrieval: Bedrock Knowledge Bases, Kendra
 
 **Core Framework** (`pkg/graph`)
-- **CompiledGraph**: Orchestrates execution via StateManager + Executor
+- **Compiled**: Orchestrates execution via StateManager + Executor
 - **Builder**: Fluent API for graph construction
 - **StateManager**: Manages channels, checkpoints, aggregates (interface)
 - **Executor**: Abstracts execution strategy (interface)
@@ -146,7 +146,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
 - **Interface-Based**: StateManager and Executor are interfaces
-- **Composition**: PregelExecutor wraps CompiledGraph without modification
+- **Composition**: PregelExecutor wraps Compiled without modification
 - **Extensibility**: Public `pkg/pregel` API for custom backends
 - **Testability**: Mock StateManager/Executor for unit tests
 
@@ -313,9 +313,9 @@ builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.Nod
 })
 
 // Define flow
-builder.AddEdge("START", "step1")
+builder.AddEdge(graph.StartNode, "step1")
 builder.AddEdge("step1", "step2")
-builder.AddEdge("step2", "END")
+builder.AddEdge("step2", graph.EndNode)
 
 // Compile and run
 compiled, _ := builder.Compile()
@@ -762,7 +762,7 @@ import "github.com/hupe1980/agentmesh/pkg/pregel"
 // - MessageBus: Pluggable message backend
 // - Scheduler: Custom vertex scheduling
 // - Aggregator: Global reductions across vertices
-// - PregelGraph/PregelNode: Vertex computation model
+// - Graph/Node: Vertex computation model
 ```
 
 **Use Cases for pkg/pregel:**
@@ -802,8 +802,8 @@ AgentMesh follows a **consistent naming convention** across all components to im
 |--------|-----------|---------|-------------|
 | **`Call()`** | `Tool` | Execute a tool function | Invoking tool/function logic |
 | **`Run()`** | `Node`, `Runnable` | Execute node logic | Low-level synchronous node execution |
-| **`Invoke()`** | `CompiledGraph` | Execute graph (blocking) | High-level public API for complete execution |
-| **`Stream()`** | `CompiledGraph` | Execute graph (streaming) | High-level public API with real-time events |
+| **`Invoke()`** | `Compiled` | Execute graph (blocking) | High-level public API for complete execution |
+| **`Stream()`** | `Compiled` | Execute graph (streaming) | High-level public API with real-time events |
 | **`Execute()`** | `Executor`, Adapters | Strategy implementation | Internal execution strategy pattern |
 
 ### Rationale

@@ -39,24 +39,24 @@ func (b *Builder) SetStateManager(stateManager StateManager) *Builder {
 		return b
 	}
 
-	// Convert StateManager to *GraphState for internal use
-	if gs, ok := stateManager.(*GraphState); ok {
+	// Convert StateManager to *State for internal use
+	if gs, ok := stateManager.(*State); ok {
 		b.graph.State = gs
 	} else {
-		// If it's not a *GraphState, wrap it (for future custom implementations)
-		b.graph.State = ensureGraphState(nil)
-		// TODO: Support non-GraphState implementations by copying state
+		// If it's not a *State, wrap it (for future custom implementations)
+		b.graph.State = ensureState(nil)
+		// TODO: Support non-State implementations by copying state
 	}
 	return b
 }
 
-// WithState configures the graph state using *GraphState directly.
+// WithState configures the graph state using *State directly.
 // For new code, prefer SetStateManager() which uses the StateManager interface.
-func (b *Builder) WithState(state *GraphState) *Builder {
+func (b *Builder) WithState(state *State) *Builder {
 	if b.err != nil {
 		return b
 	}
-	b.graph.State = ensureGraphState(state)
+	b.graph.State = ensureState(state)
 	return b
 }
 
@@ -66,7 +66,7 @@ func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
 	if b.err != nil {
 		return b
 	}
-	state := ensureGraphState(b.graph.State)
+	state := ensureState(b.graph.State)
 	state.SetMaxMessages(maxMessages)
 	b.graph.State = state
 	return b
@@ -77,18 +77,18 @@ func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
 //
 // Example:
 //
-//	builder.WithInitialChannels(func(state *GraphState) {
+//	builder.WithInitialChannels(func(state *State) {
 //	    state.AddChannel(channel.NewLastValueChannel("status"))
 //	    state.AddChannel(channel.NewBinaryOpChannel("counter", func(a, b any) any {
 //	        return a.(int) + b.(int)
 //	    }))
 //	})
-func (b *Builder) WithInitialChannels(configFn func(*GraphState)) *Builder {
+func (b *Builder) WithInitialChannels(configFn func(*State)) *Builder {
 	if b.err != nil {
 		return b
 	}
 	if b.graph.State == nil {
-		b.graph.State = NewGraphState(0) // Unlimited messages by default
+		b.graph.State = NewState(0) // Unlimited messages by default
 	}
 	if configFn != nil {
 		configFn(b.graph.State)
@@ -246,16 +246,16 @@ func (b *Builder) Parallel(source string, tasks []string, destination string) *B
 }
 
 // AddSubgraph embeds a compiled subgraph as a node.
-// Convenience method wrapping CompiledGraph.AsNode().
-func (b *Builder) AddSubgraph(name string, subgraph *CompiledGraph) *Builder {
+// Convenience method wrapping Compiled.AsNode().
+func (b *Builder) AddSubgraph(name string, subgraph *Compiled) *Builder {
 	return b.AddNode(subgraph.AsNode(name))
 }
 
 // AddSubgraphWithMapping embeds a compiled subgraph with state mapping.
-// Convenience method wrapping CompiledGraph.AsNodeWithStateMapping().
+// Convenience method wrapping Compiled.AsNodeWithStateMapping().
 func (b *Builder) AddSubgraphWithMapping(
 	name string,
-	subgraph *CompiledGraph,
+	subgraph *Compiled,
 	mapInput func(StateReader) (map[string]any, []message.Message),
 	mapOutput func(StateReader) (map[string]any, []message.Message),
 ) *Builder {
@@ -268,9 +268,9 @@ func (b *Builder) Graph() *Graph {
 	return b.graph
 }
 
-// Compile validates and compiles the graph, returning a CompiledGraph.
+// Compile validates and compiles the graph, returning a Compiled.
 // Returns any accumulated error from previous builder operations.
-func (b *Builder) Compile() (*CompiledGraph, error) {
+func (b *Builder) Compile() (*Compiled, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -279,7 +279,7 @@ func (b *Builder) Compile() (*CompiledGraph, error) {
 
 // MustCompile is like Compile but panics on error.
 // Useful for static graph construction where errors indicate programmer mistakes.
-func (b *Builder) MustCompile() *CompiledGraph {
+func (b *Builder) MustCompile() *Compiled {
 	compiled, err := b.Compile()
 	if err != nil {
 		panic(err)

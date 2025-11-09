@@ -13,7 +13,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 
 	compiled, err := NewBuilder().
 		WithMaxMessages(0).
-		WithInitialChannels(func(state *GraphState) {
+		WithInitialChannels(func(state *State) {
 			state.Set("count", 0)
 		}).
 		Node("increment", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
@@ -40,7 +40,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	t.Parallel()
 
 	builder := NewBuilder().
-		WithInitialChannels(func(state *GraphState) {
+		WithInitialChannels(func(state *State) {
 			state.Set("status", "pending")
 		}).
 		WithMaxMessages(5)
@@ -62,7 +62,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	status := stateManager.Get("status")
 	require.Equal(t, "pending", status)
 
-	graphState, ok := stateManager.(*GraphState)
+	graphState, ok := stateManager.(*State)
 	require.True(t, ok)
 
 	ch, ok := graphState.GetChannel("messages")
@@ -75,7 +75,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 func TestBuilder_Chain(t *testing.T) {
 	t.Parallel()
 
-	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *GraphState) {
+	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *State) {
 		state.Set("value", 1)
 	})
 
@@ -114,7 +114,7 @@ func TestBuilder_Parallel(t *testing.T) {
 
 	builder := NewBuilder().
 		WithMaxMessages(0).
-		WithInitialChannels(func(state *GraphState) {
+		WithInitialChannels(func(state *State) {
 			state.AddChannel(channel.NewBinaryOpChannel("results", []any{}, appendReducer))
 		})
 
@@ -159,7 +159,7 @@ func TestBuilder_Parallel(t *testing.T) {
 func TestBuilder_ConditionalRoute(t *testing.T) {
 	t.Parallel()
 
-	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *GraphState) {
+	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *State) {
 		state.Set("score", 75)
 	})
 

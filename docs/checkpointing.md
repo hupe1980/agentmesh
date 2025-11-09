@@ -636,7 +636,7 @@ Robust checkpoint error handling:
 ```go
 func executeWithCheckpointing(
     ctx context.Context,
-    compiled *graph.CompiledGraph,
+    compiled *graph.Compiled,
     threadID string,
     messages []message.Message,
 ) ([]message.Message, error) {
@@ -1111,7 +1111,7 @@ func main() {
 
 func executeWithRetry(
     ctx context.Context,
-    compiled *graph.CompiledGraph,
+    compiled *graph.Compiled,
     threadID string,
     messages []message.Message,
 ) ([]message.Message, error) {

@@ -36,7 +36,7 @@ type runOptions struct {
 	aggregators           map[string]pregel.Aggregator
 	combiner              Combiner
 	messageBus            pregel.MessageBus[ChannelMessage] // Custom message bus for distributed execution
-	checkpointer          Checkpointer                      // Checkpoint storage backend
+	checkpointer          checkpoint.Checkpointer           // Checkpoint storage backend
 	checkpointInterval    int                               // Save every N supersteps (0 = every superstep)
 	autoRestore           bool                              // Automatically restore from last checkpoint
 	failOnCheckpointError bool                              // Fail execution on checkpoint errors (default: false, just log)
@@ -48,6 +48,7 @@ type runOptions struct {
 	resumeFrom            int64                             // Superstep to resume from (0 = most recent)
 }
 
+// RunOption configures graph execution behavior.
 type RunOption func(*runOptions)
 
 func defaultRunOptions() runOptions {
@@ -217,15 +218,6 @@ func WithPregelMessageBus(bus pregel.MessageBus[ChannelMessage]) RunOption {
 // Checkpoint Options
 // =============================================================================
 
-// =============================================================================
-// Checkpoint Options
-// =============================================================================
-
-// Re-export checkpoint types for convenience
-type Checkpoint = checkpoint.Checkpoint
-type Checkpointer = checkpoint.Checkpointer
-type CheckpointConfig = checkpoint.Config
-
 // WithCheckpointer enables automatic checkpointing with the given storage backend.
 // Checkpoints are saved after each superstep by default.
 //
@@ -236,7 +228,7 @@ type CheckpointConfig = checkpoint.Config
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("user-123-session-456"),
 //	)
-func WithCheckpointer(checkpointer Checkpointer) RunOption {
+func WithCheckpointer(checkpointer checkpoint.Checkpointer) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil || checkpointer == nil {
 			return
@@ -250,14 +242,14 @@ func WithCheckpointer(checkpointer Checkpointer) RunOption {
 // Example:
 //
 //	compiled.Invoke(ctx, messages,
-//	    graph.WithCheckpointConfig(graph.CheckpointConfig{
+//	    graph.WithCheckpointConfig(checkpoint.Config{
 //	        Checkpointer:  checkpointer,
 //	        SaveInterval:  5,     // Save every 5 supersteps
 //	        AutoRestore:   true,  // Resume from last checkpoint
 //	    }),
 //	    graph.WithRunID("long-running-workflow"),
 //	)
-func WithCheckpointConfig(config CheckpointConfig) RunOption {
+func WithCheckpointConfig(config checkpoint.Config) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {
 			return
@@ -435,7 +427,7 @@ func WithMetrics(metricsProvider metrics.Provider) RunOption {
 // =============================================================================
 
 // createCheckpoint builds a checkpoint from current graph state
-func (cg *CompiledGraph) createCheckpoint(runID string, superstep int64, metadata map[string]any) *Checkpoint {
+func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
 	if cg == nil || cg.stateManager == nil {
 		return nil
 	}
@@ -452,7 +444,7 @@ func (cg *CompiledGraph) createCheckpoint(runID string, superstep int64, metadat
 		pausedNodes = runtime.pausedNames()
 	}
 
-	return &Checkpoint{
+	return &checkpoint.Checkpoint{
 		RunID:          runID,
 		Superstep:      superstep,
 		Version:        cg.stateManager.Version(),
@@ -466,40 +458,40 @@ func (cg *CompiledGraph) createCheckpoint(runID string, superstep int64, metadat
 }
 
 // restoreCheckpoint applies a checkpoint to the current graph state
-func (cg *CompiledGraph) restoreCheckpoint(checkpoint *Checkpoint) error {
-	if cg == nil || checkpoint == nil {
+func (cg *Compiled) restoreCheckpoint(chkpt *checkpoint.Checkpoint) error {
+	if cg == nil || chkpt == nil {
 		return nil
 	}
 
 	// Validate checkpoint version (detect corruption or sequence errors)
 	if cg.stateManager != nil {
 		currentVersion := cg.stateManager.Version()
-		if checkpoint.Version > 0 && currentVersion > checkpoint.Version {
-			return fmt.Errorf("checkpoint version mismatch: current state version %d is ahead of checkpoint version %d (possible concurrent modification or restore out of sequence)", currentVersion, checkpoint.Version)
+		if chkpt.Version > 0 && currentVersion > chkpt.Version {
+			return fmt.Errorf("checkpoint version mismatch: current state version %d is ahead of checkpoint version %d (possible concurrent modification or restore out of sequence)", currentVersion, chkpt.Version)
 		}
 	}
 
 	// Restore state
 	if cg.stateManager != nil {
-		cg.stateManager.ApplyUpdates(checkpoint.State, checkpoint.Messages)
+		cg.stateManager.ApplyUpdates(chkpt.State, chkpt.Messages)
 		// Restore version from checkpoint
-		if gs, ok := cg.stateManager.(*GraphState); ok {
-			gs.setVersion(checkpoint.Version)
+		if gs, ok := cg.stateManager.(*State); ok {
+			gs.setVersion(chkpt.Version)
 		}
 	}
 
 	// Restore runtime execution state
 	cg.runtimeMu.Lock()
 	cg.runtime = ensureExecutionState(cg.runtime)
-	cg.runtime.setSuperstep(checkpoint.Superstep)
+	cg.runtime.setSuperstep(chkpt.Superstep)
 
 	// Restore completed nodes
-	for _, nodeName := range checkpoint.CompletedNodes {
+	for _, nodeName := range chkpt.CompletedNodes {
 		cg.runtime.markCompleted(nodeName)
 	}
 
 	// Restore paused nodes
-	for _, nodeName := range checkpoint.PausedNodes {
+	for _, nodeName := range chkpt.PausedNodes {
 		cg.runtime.markPaused(nodeName)
 	}
 	cg.runtimeMu.Unlock()

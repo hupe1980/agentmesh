@@ -90,7 +90,7 @@ compiledAnalysis, _ := analysisSub.Compile()
 
 ### 3. Create Main Pipeline
 ```go
-func createPipeline(validation, enrichment, analysis *graph.CompiledGraph) *graph.Graph {
+func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
     state := graph.NewStateManager(0)
     pipeline := graph.NewGraph(state)
     

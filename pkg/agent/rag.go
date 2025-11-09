@@ -24,7 +24,7 @@ import (
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.CompiledGraph, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.Compiled, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
@@ -114,7 +114,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 
 // MustNewRAGAgent is like NewRAGAgent but panics on error.
 // Use this in tests or when you're certain inputs are valid.
-func MustNewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) *graph.CompiledGraph {
+func MustNewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) *graph.Compiled {
 	agent, err := NewRAGAgent(mdl, retriever, opts...)
 	if err != nil {
 		panic(fmt.Errorf("failed to create RAG agent: %w", err))

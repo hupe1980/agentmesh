@@ -60,8 +60,8 @@ func (t *mockTool) Description() string {
 	return t.description
 }
 
-func (t *mockTool) Definition() *tool.ToolDefinition {
-	return &tool.ToolDefinition{
+func (t *mockTool) Definition() *tool.Definition {
+	return &tool.Definition{
 		Type: "function",
 		Function: tool.FunctionDefinition{
 			Name:        t.name,

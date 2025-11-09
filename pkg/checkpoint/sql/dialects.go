@@ -5,6 +5,7 @@ import "fmt"
 // SQLiteDialect provides SQLite-specific SQL syntax.
 type SQLiteDialect struct{}
 
+// CreateTableSQL generates the CREATE TABLE statement for SQLite.
 func (d *SQLiteDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -22,6 +23,7 @@ func (d *SQLiteDialect) CreateTableSQL(tableName string) string {
 	`, tableName)
 }
 
+// PlaceholderForPosition returns the SQL placeholder for SQLite.
 func (d *SQLiteDialect) PlaceholderForPosition(position int) string {
 	return "?"
 }
@@ -29,6 +31,7 @@ func (d *SQLiteDialect) PlaceholderForPosition(position int) string {
 // PostgreSQLDialect provides PostgreSQL-specific SQL syntax.
 type PostgreSQLDialect struct{}
 
+// CreateTableSQL generates the CREATE TABLE statement for PostgreSQL.
 func (d *PostgreSQLDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -46,6 +49,7 @@ func (d *PostgreSQLDialect) CreateTableSQL(tableName string) string {
 	`, tableName)
 }
 
+// PlaceholderForPosition returns the SQL placeholder for PostgreSQL.
 func (d *PostgreSQLDialect) PlaceholderForPosition(position int) string {
 	return fmt.Sprintf("$%d", position)
 }
@@ -53,6 +57,7 @@ func (d *PostgreSQLDialect) PlaceholderForPosition(position int) string {
 // MySQLDialect provides MySQL/MariaDB-specific SQL syntax.
 type MySQLDialect struct{}
 
+// CreateTableSQL generates the CREATE TABLE statement for MySQL.
 func (d *MySQLDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -71,6 +76,7 @@ func (d *MySQLDialect) CreateTableSQL(tableName string) string {
 	`, tableName)
 }
 
+// PlaceholderForPosition returns the SQL placeholder for MySQL.
 func (d *MySQLDialect) PlaceholderForPosition(position int) string {
 	return "?"
 }

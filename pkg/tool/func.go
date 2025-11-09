@@ -97,9 +97,9 @@ func (t *FuncTool[T, R]) Name() string { return t.name }
 // Description returns the short natural language description exposed to models.
 func (t *FuncTool[T, R]) Description() string { return t.description }
 
-// Definition returns the tool definition including the JSON Schema for arguments.
-func (t *FuncTool[T, R]) Definition() *ToolDefinition {
-	return &ToolDefinition{
+// Definition returns the tool definition with schema.
+func (t *FuncTool[T, R]) Definition() *Definition {
+	return &Definition{
 		Type: "function",
 		Function: FunctionDefinition{
 			Name:        t.name,

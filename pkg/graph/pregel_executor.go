@@ -7,13 +7,13 @@ import (
 )
 
 // PregelExecutor implements the Executor interface using the Pregel BSP execution model.
-// It delegates to CompiledGraph's internal execution logic while providing a clean interface.
+// It delegates to Compiled's internal execution logic while providing a clean interface.
 type PregelExecutor struct {
-	cg *CompiledGraph
+	cg *Compiled
 }
 
-// NewPregelExecutor creates a new Pregel-based executor for the given CompiledGraph.
-func NewPregelExecutor(cg *CompiledGraph) *PregelExecutor {
+// NewPregelExecutor creates a new Pregel-based executor for the given Compiled.
+func NewPregelExecutor(cg *Compiled) *PregelExecutor {
 	return &PregelExecutor{
 		cg: cg,
 	}
@@ -89,19 +89,19 @@ func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.M
 
 // Pause pauses execution before the specified node.
 func (e *PregelExecutor) Pause(nodeName string) {
-	// Delegate to CompiledGraph's pause mechanism
+	// Delegate to Compiled's pause mechanism
 	e.cg.markPaused(nodeName)
 }
 
 // Resume resumes execution of a paused node.
 func (e *PregelExecutor) Resume(nodeName string) {
-	// Delegate to CompiledGraph's resume mechanism
+	// Delegate to Compiled's resume mechanism
 	e.cg.clearPaused(nodeName)
 }
 
 // IsPaused returns whether the specified node is currently paused.
 func (e *PregelExecutor) IsPaused(nodeName string) bool {
-	// Check if node is paused via CompiledGraph runtime state
+	// Check if node is paused via Compiled runtime state
 	e.cg.runtimeMu.RLock()
 	defer e.cg.runtimeMu.RUnlock()
 	if e.cg.runtime == nil {
@@ -124,7 +124,7 @@ func (e *PregelExecutor) CurrentSuperstep() int64 {
 
 // Stats returns execution statistics.
 func (e *PregelExecutor) Stats() ExecutionStats {
-	// Return basic stats based on CompiledGraph state
+	// Return basic stats based on Compiled state
 	return ExecutionStats{
 		Supersteps: e.cg.CurrentSuperstep(),
 	}

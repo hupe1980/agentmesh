@@ -23,7 +23,7 @@ func main() {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Build a simple mathematical workflow
-	buildWorkflow := func() *graph.CompiledGraph {
+	buildWorkflow := func() *graph.Compiled {
 		builder := graph.NewBuilder()
 
 		// Step 1: Double the value

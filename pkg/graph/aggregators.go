@@ -40,10 +40,12 @@ package graph
 //	total := s.AggregatesSnapshot()["total_processed"].(float64)
 type SumAggregator struct{}
 
+// Zero returns the identity value for summation.
 func (a *SumAggregator) Zero() any {
 	return 0
 }
 
+// Aggregate adds values together.
 func (a *SumAggregator) Aggregate(current, value any) any {
 	// Convert to float64 for numerical flexibility and to avoid overflow
 	var curVal, newVal float64
@@ -96,10 +98,12 @@ func (a *SumAggregator) Aggregate(current, value any) any {
 //	maxPriority := s.AggregatesSnapshot()["max_priority"].(float64)
 type MaxAggregator struct{}
 
+// Zero returns the minimum possible float64 value.
 func (a *MaxAggregator) Zero() any {
 	return float64(-1e308) // Smallest possible float64
 }
 
+// Aggregate returns the maximum of current and value.
 func (a *MaxAggregator) Aggregate(current, value any) any {
 	var curVal, newVal float64
 
@@ -145,10 +149,12 @@ func (a *MaxAggregator) Aggregate(current, value any) any {
 //	}))
 type MinAggregator struct{}
 
+// Zero returns the maximum possible float64 value.
 func (a *MinAggregator) Zero() any {
 	return float64(1e308) // Max float64
 }
 
+// Aggregate returns the minimum of current and value.
 func (a *MinAggregator) Aggregate(current, value any) any {
 	var curVal, newVal float64
 
@@ -197,10 +203,12 @@ func (a *MinAggregator) Aggregate(current, value any) any {
 //	s.Aggregate("active_nodes", true)  // Any non-nil value increments
 type CountAggregator struct{}
 
+// Zero returns the initial count of zero.
 func (a *CountAggregator) Zero() any {
 	return 0
 }
 
+// Aggregate increments the count.
 func (a *CountAggregator) Aggregate(current, value any) any {
 	curCount, ok := current.(int)
 	if !ok {
@@ -231,10 +239,12 @@ func (a *CountAggregator) Aggregate(current, value any) any {
 //	}
 type AllTrueAggregator struct{}
 
+// Zero returns true as the identity value.
 func (a *AllTrueAggregator) Zero() any {
 	return true
 }
 
+// Aggregate returns true only if both current and value are true.
 func (a *AllTrueAggregator) Aggregate(current, value any) any {
 	curVal, ok := current.(bool)
 	if !ok {
@@ -264,10 +274,12 @@ func (a *AllTrueAggregator) Aggregate(current, value any) any {
 //	}
 type AnyTrueAggregator struct{}
 
+// Zero returns false as the identity value.
 func (a *AnyTrueAggregator) Zero() any {
 	return false
 }
 
+// Aggregate returns true if either current or value is true.
 func (a *AnyTrueAggregator) Aggregate(current, value any) any {
 	curVal, ok := current.(bool)
 	if !ok {
@@ -294,10 +306,12 @@ type StringConcatAggregator struct {
 	Separator string
 }
 
+// Zero returns an empty string.
 func (a *StringConcatAggregator) Zero() any {
 	return ""
 }
 
+// Aggregate concatenates strings with the configured separator.
 func (a *StringConcatAggregator) Aggregate(current, value any) any {
 	curStr, _ := current.(string)
 	newStr, ok := value.(string)
@@ -342,10 +356,12 @@ type avgState struct {
 	Count int64
 }
 
+// Zero returns the initial average state.
 func (a *AvgAggregator) Zero() any {
 	return avgState{Mean: 0, Count: 0}
 }
 
+// Aggregate computes running average using Welford's online algorithm.
 func (a *AvgAggregator) Aggregate(current, value any) any {
 	state, ok := current.(avgState)
 	if !ok {
@@ -400,10 +416,12 @@ type varianceState struct {
 	Count int64
 }
 
+// Zero returns the initial variance state.
 func (a *VarianceAggregator) Zero() any {
 	return varianceState{Mean: 0, M2: 0, Count: 0}
 }
 
+// Aggregate computes running variance using Welford's online algorithm.
 func (a *VarianceAggregator) Aggregate(current, value any) any {
 	state, ok := current.(varianceState)
 	if !ok {

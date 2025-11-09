@@ -16,14 +16,14 @@ import (
 // - Evaluator: Stateful conditional logic
 // - Tracker: Execution progress and control flow
 type vertexScheduler struct {
-	cg        *CompiledGraph
+	cg        *Compiled
 	mu        sync.RWMutex
 	topology  *TopologyScheduler
 	evaluator *ConditionalEvaluator
 	tracker   *ExecutionTracker
 }
 
-func newVertexScheduler(cg *CompiledGraph) *vertexScheduler {
+func newVertexScheduler(cg *Compiled) *vertexScheduler {
 	sched := &vertexScheduler{
 		cg:        cg,
 		topology:  NewTopologyScheduler(cg.incoming),

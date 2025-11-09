@@ -186,7 +186,7 @@ func (g *testGraph) RootNodes() []string {
 	return g.roots
 }
 
-func (g *testGraph) NodeByName(name string) PregelNode[*testState, testMessage] {
+func (g *testGraph) NodeByName(name string) Node[*testState, testMessage] {
 	return g.nodes[name]
 }
 

@@ -13,7 +13,7 @@ func TestInMemoryStateStore(t *testing.T) {
 	store := NewInMemoryStateStore()
 
 	// Create test state
-	state := NewStateManager(0).(*GraphState) // Type assert for store.Save
+	state := NewStateManager(0).(*State) // Type assert for store.Save
 	state.Set("count", 42)
 	state.Set("name", "test")
 	state.AddMessages([]message.Message{

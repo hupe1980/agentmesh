@@ -146,7 +146,7 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 }
 
 // createMockWorker creates a simple mock worker agent for testing
-func createMockWorker(expertise string) (*graph.CompiledGraph, error) {
+func createMockWorker(expertise string) (*graph.Compiled, error) {
 	mockModel := &mockModel{
 		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("worker response: " + expertise), nil

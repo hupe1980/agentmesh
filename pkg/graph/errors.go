@@ -54,6 +54,9 @@ var (
 
 	// ErrSelfLoop indicates a node has an edge to itself
 	ErrSelfLoop = errors.New("self-loop detected")
+
+	// ErrHumanInterrupt indicates execution paused for human input
+	ErrHumanInterrupt = errors.New("waiting for human input")
 )
 
 // NodeExecutionError wraps errors that occur during node execution,

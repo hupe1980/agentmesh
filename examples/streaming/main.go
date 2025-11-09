@@ -1,14 +1,14 @@
 // Package main demonstrates real-time streaming execution in AgentMesh.
 //
 // This example shows how to:
-//   - Use GraphStream for live updates during graph execution
+//   - Use Stream for live updates during graph execution
 //   - Stream partial results as nodes complete
 //   - Track execution progress with real-time event handling
 //   - Stream LLM responses token-by-token for better UX
 //   - Handle cleanup with defer stream.Close() to prevent goroutine leaks
 //
 // Key concepts:
-//   - GraphStream: Real-time event channel for graph execution
+//   - Stream: Real-time event channel for graph execution
 //   - Event Types: NodeStart, NodeComplete, NodeError, GraphComplete
 //   - Proper cleanup: Always call stream.Close() or stream.Cancel()
 //

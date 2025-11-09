@@ -12,7 +12,8 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/logging"
 )
 
-// Runtime executes a Pregel-style computation over any graph.
+// Runtime orchestrates Pregel-style bulk-synchronous parallel (BSP) execution
+// of a graph. It maintains the mailbox, aggregators, and superstep counter.
 //
 // Concurrency Model:
 //   - Run() executes supersteps with configurable worker pool (MaxWorkers)
@@ -52,7 +53,7 @@ import (
 //     d. Finalize aggregators
 //  3. Repeat until frontier is empty or max iterations reached
 type Runtime[S any, M any] struct {
-	graph  PregelGraph[S, M]
+	graph  Graph[S, M]
 	events chan StreamEvent[M]
 	opts   RuntimeOptions[S, M]
 
@@ -72,7 +73,7 @@ type Runtime[S any, M any] struct {
 
 // NewRuntime creates a new runtime for the given graph.
 // Returns an error if graph is nil or invalid.
-func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
+func NewRuntime[S any, M any](graph Graph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
 	if graph == nil {
 		return nil, ErrGraphRequired
 	}
@@ -136,7 +137,7 @@ func NewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M
 
 // MustNewRuntime creates a new runtime for the given graph.
 // Panics if graph is nil or invalid. Use this in tests or when you're certain inputs are valid.
-func MustNewRuntime[S any, M any](graph PregelGraph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
+func MustNewRuntime[S any, M any](graph Graph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
 	runtime, err := NewRuntime(graph, events, optFns...)
 	if err != nil {
 		panic(err)

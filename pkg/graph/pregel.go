@@ -9,11 +9,40 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
+
+// wrapTimeoutError wraps context.DeadlineExceeded errors as NodeTimeoutError for consistency.
+func wrapTimeoutError(ctx context.Context, err error) error {
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	// Check if already wrapped (node-level timeout)
+	var nodeTimeoutErr *NodeTimeoutError
+	if errors.As(err, &nodeTimeoutErr) {
+		return err
+	}
+
+	// Not wrapped yet - this is a runtime-level timeout
+	timeout := int64(0)
+	if deadline, ok := ctx.Deadline(); ok {
+		elapsed := time.Since(deadline)
+		if elapsed > 0 {
+			timeout = int64(elapsed / time.Millisecond)
+		}
+	}
+
+	return &NodeTimeoutError{
+		Node:    "", // Runtime-level timeout (not node-specific)
+		Timeout: timeout,
+		Cause:   err,
+	}
+}
 
 // =============================================================================
 // ChannelMessage - Data payload for Pregel BSP
@@ -130,7 +159,7 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // The done field is used for cancellation checks in emit() where the method
 // signature doesn't include a context parameter (for performance reasons).
 type graphRuntime struct {
-	cg      *CompiledGraph
+	cg      *Compiled
 	cancel  context.CancelFunc
 	options runOptions
 	stream  chan<- StreamEvent
@@ -140,23 +169,23 @@ type graphRuntime struct {
 	instrumentation *Instrumentation                              // Observability instrumentation (passed from options)
 
 	errOnce         sync.Once
-	checkpointQueue chan *Checkpoint
+	checkpointQueue chan *checkpoint.Checkpoint
 	checkpointWG    sync.WaitGroup
 	done            <-chan struct{} // Done channel for cancellation checks (set during run)
 }
 
-// compiledPregelGraph adapts CompiledGraph to the pregel.PregelGraph interface.
+// compiledPregelGraph adapts Compiled to the pregel.Graph interface.
 // This allows the Pregel runtime to execute graph nodes without knowing about
 // agent-specific concepts like channels, checkpoints, or conditional routing.
 //
 // The adapter pattern is used here to bridge between:
 //   - Graph domain (StateManager, ChannelMessage, Node)
-//   - Pregel domain (PregelGraph[S, M], PregelNode[S, M], Message[M])
+//   - Pregel domain (Graph[S, M], Node[S, M], Message[M])
 type compiledPregelGraph struct {
 	runtime *graphRuntime
 }
 
-// nodeAdapter wraps a graph.Node as a pregel.PregelNode.
+// nodeAdapter wraps a graph.Node as a pregel.Node.
 // It handles the translation between graph-level execution (with retry policies,
 // rate limiting, timeout wrapping, and state buffering) and Pregel-level
 // vertex execution (pure computation with message passing).
@@ -174,7 +203,7 @@ type nodeAdapter struct {
 	node    *Node
 }
 
-func newPregelRuntime(cg *CompiledGraph, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}, instrumentation *Instrumentation) *graphRuntime {
+func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
 	gr := &graphRuntime{
@@ -249,7 +278,7 @@ func (gr *graphRuntime) startCheckpointWorker(ctx context.Context) {
 		"run_id", gr.options.runID,
 		"queue_size", 1)
 
-	gr.checkpointQueue = make(chan *Checkpoint, 1)
+	gr.checkpointQueue = make(chan *checkpoint.Checkpoint, 1)
 	// Create detached context for background saves (checkpoints must complete even if request canceled)
 	saveCtx := context.WithoutCancel(ctx)
 	gr.checkpointWG.Add(1)
@@ -342,25 +371,7 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 	// The Pregel engine can return context.DeadlineExceeded directly from ctx.Err().
 	// Wrap it here to ensure consistent error types. Node-level timeouts are already
 	// wrapped by the node adapter, but runtime-level timeouts need wrapping here.
-	if err != nil && errors.Is(err, context.DeadlineExceeded) {
-		// Check if already wrapped (node-level timeout)
-		var nodeTimeoutErr *NodeTimeoutError
-		if !errors.As(err, &nodeTimeoutErr) {
-			// Not wrapped yet - this is a runtime-level timeout
-			timeout := int64(0)
-			if deadline, ok := ctx.Deadline(); ok {
-				elapsed := time.Since(deadline)
-				if elapsed > 0 {
-					timeout = int64(elapsed / time.Millisecond)
-				}
-			}
-			err = &NodeTimeoutError{
-				Node:    "", // Runtime-level timeout (not node-specific)
-				Timeout: timeout,
-				Cause:   err,
-			}
-		}
-	}
+	err = wrapTimeoutError(ctx, err)
 
 	switch {
 	case err != nil && !errors.Is(err, context.Canceled):
@@ -423,15 +434,35 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 				"run_id", gr.options.runID,
 				"superstep", superstep)
 		default:
-			queueErr := fmt.Errorf("checkpoint queue full at superstep %d: dropping checkpoint", superstep)
-			logger.Error("checkpoint queue full, dropping checkpoint",
+			// Queue is full - checkpoint worker is busy processing previous save
+			// This is expected under high checkpoint frequency. Try again with timeout
+			// to avoid dropping important checkpoints while still respecting context cancellation.
+			logger.Warn("checkpoint queue full, waiting for worker",
 				"run_id", gr.options.runID,
-				"superstep", superstep,
-				"error", queueErr)
-			if gr.options.failOnCheckpointError {
-				gr.fail(queueErr)
-			} else {
-				gr.emitError(queueErr)
+				"superstep", superstep)
+
+			timer := time.NewTimer(5 * time.Second)
+			defer timer.Stop()
+
+			select {
+			case gr.checkpointQueue <- checkpoint:
+				logger.Debug("checkpoint queued after wait",
+					"run_id", gr.options.runID,
+					"superstep", superstep)
+			case <-timer.C:
+				queueErr := fmt.Errorf("checkpoint queue timeout at superstep %d after 5s: checkpoint dropped", superstep)
+				logger.Error("checkpoint queue timeout",
+					"run_id", gr.options.runID,
+					"superstep", superstep)
+				if gr.options.failOnCheckpointError {
+					gr.fail(queueErr)
+				} else {
+					gr.emitError(queueErr)
+				}
+			case <-ctx.Done():
+				logger.Warn("checkpoint save cancelled",
+					"run_id", gr.options.runID,
+					"superstep", superstep)
 			}
 		}
 		return
@@ -501,7 +532,7 @@ func (gr *graphRuntime) emitError(err error) {
 	gr.emit(StreamEvent{Err: err})
 }
 
-// compiledPregelGraph implements the internal pregel interfaces for CompiledGraph.
+// compiledPregelGraph implements the pregel interfaces for Compiled.
 
 func (g *compiledPregelGraph) RootNodes() []string {
 	return g.runtime.scheduler.Ready()
@@ -514,7 +545,7 @@ func (g *compiledPregelGraph) Outgoing(node string) []string {
 	return nil
 }
 
-func (g *compiledPregelGraph) NodeByName(name string) pregel.PregelNode[StateManager, ChannelMessage] {
+func (g *compiledPregelGraph) NodeByName(name string) pregel.Node[StateManager, ChannelMessage] {
 	if node, ok := g.runtime.cg.nodes[name]; ok {
 		return &nodeAdapter{runtime: g.runtime, name: name, node: node}
 	}
@@ -531,6 +562,42 @@ func (g *compiledPregelGraph) State() StateManager {
 // nodeAdapter executes both standard and command-style nodes within the Pregel runtime.
 
 func (n *nodeAdapter) Name() string { return n.name }
+
+// handleScheduledDelivery handles message delivery to scheduled next nodes.
+func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []message.Message, updates map[string]any) error {
+	if n.runtime == nil || n.runtime.scheduler == nil {
+		return nil
+	}
+
+	next, schedErr := n.runtime.onVertexCompleted(ctx, n.name)
+	if schedErr != nil {
+		return schedErr
+	}
+
+	if len(next) == 0 || n.runtime.engine == nil {
+		return nil
+	}
+
+	// Create channel messages with data from node execution
+	deliveries := make([]pregel.Message[ChannelMessage], 0, len(next))
+	for _, target := range next {
+		// Send actual data in the message (not empty signal)
+		msg := NewChannelMessage(messages, updates)
+		deliveries = append(deliveries, pregel.Message[ChannelMessage]{
+			From: n.name,
+			To:   target,
+			Data: msg,
+		})
+	}
+
+	// Deliver messages with backpressure - blocks if mailbox full
+	if err := n.runtime.engine.Deliver(ctx, deliveries...); err != nil {
+		// Delivery error (e.g., context cancelled) - this is a real error now
+		return fmt.Errorf("node %q: message delivery failed: %w", n.name, err)
+	}
+
+	return nil
+}
 
 //nolint:gocyclo // Node execution requires handling many runtime conditions
 func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[StateManager, ChannelMessage], incoming []pregel.Message[ChannelMessage]) error {
@@ -680,29 +747,8 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 	n.runtime.cg.markCompleted(n.name)
 	n.runtime.markExecuted(n.name)
 
-	if n.runtime != nil && n.runtime.scheduler != nil {
-		next, schedErr := n.runtime.onVertexCompleted(ctx, n.name)
-		if schedErr != nil {
-			return schedErr
-		}
-		if len(next) > 0 && n.runtime.engine != nil {
-			// Create channel messages with data from node execution
-			deliveries := make([]pregel.Message[ChannelMessage], 0, len(next))
-			for _, target := range next {
-				// Send actual data in the message (not empty signal)
-				msg := NewChannelMessage(messages, updates)
-				deliveries = append(deliveries, pregel.Message[ChannelMessage]{
-					From: n.name,
-					To:   target,
-					Data: msg,
-				})
-			}
-			// Deliver messages with backpressure - blocks if mailbox full
-			if err := n.runtime.engine.Deliver(ctx, deliveries...); err != nil {
-				// Delivery error (e.g., context cancelled) - this is a real error now
-				return fmt.Errorf("node %q: message delivery failed: %w", n.name, err)
-			}
-		}
+	if err := n.handleScheduledDelivery(ctx, messages, updates); err != nil {
+		return err
 	}
 
 	if n.runtime != nil && n.runtime.engine != nil {

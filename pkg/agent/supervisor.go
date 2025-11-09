@@ -12,7 +12,7 @@ import (
 type WorkerAgent struct {
 	Name        string               // Unique identifier for the worker
 	Description string               // Description of the worker's expertise
-	Agent       *graph.CompiledGraph // The actual agent graph
+	Agent       *graph.Compiled // The actual agent graph
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -29,7 +29,7 @@ type supervisorOptions struct {
 type SupervisorOption func(*supervisorOptions)
 
 // WithWorker adds a worker agent to the supervisor.
-func WithWorker(name, description string, agent *graph.CompiledGraph) SupervisorOption {
+func WithWorker(name, description string, agent *graph.Compiled) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -105,7 +105,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.CompiledGraph, error) {
+func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.Compiled, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
@@ -169,7 +169,7 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.Compi
 
 // MustNewSupervisorAgent is like NewSupervisorAgent but panics on error.
 // Use this in tests or when you're certain inputs are valid.
-func MustNewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) *graph.CompiledGraph {
+func MustNewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) *graph.Compiled {
 	agent, err := NewSupervisorAgent(mdl, opts...)
 	if err != nil {
 		panic(fmt.Errorf("failed to create supervisor agent: %w", err))

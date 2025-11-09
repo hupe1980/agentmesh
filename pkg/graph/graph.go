@@ -9,17 +9,18 @@ import (
 )
 
 const (
+	// StartNode is the reserved node name for graph entry points.
 	StartNode = "__start__"
-	EndNode   = "__end__"
+	// EndNode is the reserved node name for graph exit points.
+	EndNode = "__end__"
 )
 
-var ErrHumanInterrupt = fmt.Errorf("waiting for human input")
-
+// Graph represents a computational graph with nodes, edges, and conditional branches.
 type Graph struct {
 	Nodes    map[string]*Node
 	Edges    []Edge
 	Branches []ConditionalEdges
-	State    *GraphState
+	State    *State
 	runtime  *executionState
 
 	mu       sync.Mutex
@@ -33,18 +34,19 @@ func ensureExecutionState(rt *executionState) *executionState {
 	return newExecutionState()
 }
 
+// NewGraph creates a new graph with the given state manager.
 func NewGraph(stateManager StateManager) *Graph {
-	var state *GraphState
+	var state *State
 	if stateManager == nil {
-		state = NewGraphState(0) // Unlimited messages by default
+		state = NewState(0) // Unlimited messages by default
 	} else {
-		// Type assert to *GraphState (current implementation requirement)
+		// Type assert to *State (current implementation requirement)
 		var ok bool
-		state, ok = stateManager.(*GraphState)
+		state, ok = stateManager.(*State)
 		if !ok {
-			// If not a *GraphState, create a new one
+			// If not a *State, create a new one
 			// TODO: Support custom StateManager implementations
-			state = NewGraphState(0)
+			state = NewState(0)
 		}
 	}
 	return &Graph{
@@ -56,6 +58,7 @@ func NewGraph(stateManager StateManager) *Graph {
 	}
 }
 
+// AddNode registers a node in the graph.
 func (g *Graph) AddNode(n *Node) error {
 	if n == nil {
 		return ErrNilNode
@@ -87,12 +90,14 @@ func (g *Graph) AddNode(n *Node) error {
 	return nil
 }
 
+// AddEdge creates a directed edge from one node to another.
 func (g *Graph) AddEdge(from, to string) {
 	g.mu.Lock()
 	g.Edges = append(g.Edges, Edge{From: from, To: to})
 	g.mu.Unlock()
 }
 
+// AddConditionalEdges creates dynamic edges based on runtime conditions.
 func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, StateReader) []string, targets []string) {
 	if len(targets) == 0 {
 		return
@@ -103,7 +108,8 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 	g.mu.Unlock()
 }
 
-func (g *Graph) Compile() (*CompiledGraph, error) {
+// Compile validates and prepares the graph for execution.
+func (g *Graph) Compile() (*Compiled, error) {
 	if err := g.Validate(); err != nil {
 		return nil, err
 	}
@@ -111,10 +117,10 @@ func (g *Graph) Compile() (*CompiledGraph, error) {
 	g.mu.Lock()
 	g.compiled = true
 	g.runtime = ensureExecutionState(g.runtime)
-	g.State = ensureGraphState(g.State)
+	g.State = ensureState(g.State)
 	runtime := g.runtime
 
-	// Use GraphState directly as StateManager (no conversion needed)
+	// Use State directly as StateManager (no conversion needed)
 	var stateManager StateManager = g.State
 
 	nodes := make(map[string]*Node, len(g.Nodes))
@@ -152,7 +158,7 @@ func (g *Graph) Compile() (*CompiledGraph, error) {
 		conditionalByFrom[from] = copyEdges
 	}
 
-	cg := &CompiledGraph{
+	cg := &Compiled{
 		stateManager:      stateManager,
 		runtime:           runtime,
 		nodes:             nodes,
@@ -170,7 +176,7 @@ func (g *Graph) Compile() (*CompiledGraph, error) {
 
 // MustCompile compiles the graph into an immutable executable form.
 // Panics if validation fails. Use this in tests or when you're certain the graph is valid.
-func (g *Graph) MustCompile() *CompiledGraph {
+func (g *Graph) MustCompile() *Compiled {
 	cg, err := g.Compile()
 	if err != nil {
 		panic(fmt.Errorf("graph compilation failed: %w", err))
@@ -178,6 +184,8 @@ func (g *Graph) MustCompile() *CompiledGraph {
 	return cg
 }
 
+// Validate checks the graph for structural errors.
+//
 //nolint:gocyclo // Graph validation requires checking many conditions
 func (g *Graph) Validate() error {
 	g.mu.Lock()

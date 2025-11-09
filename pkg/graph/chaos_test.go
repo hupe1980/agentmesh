@@ -210,11 +210,11 @@ func TestContextCancellation(t *testing.T) {
 }
 
 // TestConcurrentInvoke verifies thread safety
-// Note: Concurrent Invoke() calls on same CompiledGraph share state between invocations
+// Note: Concurrent Invoke() calls on same Compiled share state between invocations
 func TestConcurrentInvoke(t *testing.T) {
-	// Create separate CompiledGraph instances for true concurrent execution
+	// Create separate Compiled instances for true concurrent execution
 	builders := make([]*Builder, 10)
-	compileds := make([]*CompiledGraph, 10)
+	compileds := make([]*Compiled, 10)
 
 	for i := 0; i < 10; i++ {
 		builders[i] = NewBuilder()
@@ -301,7 +301,7 @@ func TestManyMessages(t *testing.T) {
 
 	state := NewStateManager(10000) // Allow 10K messages
 	builder := NewBuilder()
-	builder.graph.State = state.(*GraphState) // Type assert for internal use
+	builder.graph.State = state.(*State) // Type assert for internal use
 
 	builder.Node("producer", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		messages := make([]message.Message, 1000)

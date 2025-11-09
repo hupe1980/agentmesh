@@ -92,8 +92,8 @@ func (t *AgentTool) Call(ctx context.Context, input string) (any, error) {
 }
 
 // Definition returns the tool definition for the LLM.
-func (t *AgentTool) Definition() *tool.ToolDefinition {
-	return &tool.ToolDefinition{
+func (t *AgentTool) Definition() *tool.Definition {
+	return &tool.Definition{
 		Type: "function",
 		Function: tool.FunctionDefinition{
 			Name:        t.name,

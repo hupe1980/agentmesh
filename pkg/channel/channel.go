@@ -60,6 +60,7 @@ func NewTopicChannel(name string, maxValues int) *TopicChannel {
 	}
 }
 
+// Name returns the channel's identifier.
 func (tc *TopicChannel) Name() string {
 	return tc.name
 }
@@ -116,16 +117,19 @@ func (tc *TopicChannel) Write(ctx context.Context, value any) error {
 	return nil
 }
 
+// Snapshot returns a copy of all accumulated values.
 func (tc *TopicChannel) Snapshot(ctx context.Context) (any, error) {
 	return tc.Read(ctx)
 }
 
+// Version returns the current version number for cache invalidation.
 func (tc *TopicChannel) Version() int64 {
 	tc.mu.RLock()
 	defer tc.mu.RUnlock()
 	return tc.version
 }
 
+// Reset clears all accumulated values and resets version.
 func (tc *TopicChannel) Reset(ctx context.Context) error {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
@@ -199,6 +203,7 @@ func NewLastValueChannel(name string) *LastValueChannel {
 	}
 }
 
+// Name returns the channel's identifier.
 func (lvc *LastValueChannel) Name() string {
 	return lvc.name
 }
@@ -217,14 +222,17 @@ func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
 	return nil
 }
 
+// Snapshot returns the current value.
 func (lvc *LastValueChannel) Snapshot(ctx context.Context) (any, error) {
 	return lvc.Read(ctx)
 }
 
+// Version returns the current version number.
 func (lvc *LastValueChannel) Version() int64 {
 	return lvc.version.Load()
 }
 
+// Reset marks the channel as having no value.
 func (lvc *LastValueChannel) Reset(ctx context.Context) error {
 	// atomic.Value doesn't allow storing nil, so we just mark as not having a value
 	// The old value remains in memory but is inaccessible via Read()
@@ -275,6 +283,7 @@ func NewBinaryOpChannel(name string, initialValue any, op func(current, incoming
 	return boc
 }
 
+// Name returns the channel's identifier.
 func (boc *BinaryOpChannel) Name() string {
 	return boc.name
 }
@@ -295,14 +304,17 @@ func (boc *BinaryOpChannel) Write(ctx context.Context, value any) error {
 	return nil
 }
 
+// Snapshot returns the current combined value.
 func (boc *BinaryOpChannel) Snapshot(ctx context.Context) (any, error) {
 	return boc.Read(ctx)
 }
 
+// Version returns the current version number.
 func (boc *BinaryOpChannel) Version() int64 {
 	return boc.version.Load()
 }
 
+// Reset clears the channel's state (implementation-specific behavior).
 func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 	boc.mu.Lock()
 	defer boc.mu.Unlock()
@@ -325,28 +337,28 @@ func (boc *BinaryOpChannel) Clone() Channel {
 	return clone
 }
 
-// ChannelSet manages a collection of named channels.
-type ChannelSet struct {
+// Set manages a collection of named channels for coordinated state management.
+type Set struct {
 	channels map[string]Channel
 	mu       sync.RWMutex
 }
 
-// NewChannelSet creates a new channel set.
-func NewChannelSet() *ChannelSet {
-	return &ChannelSet{
+// NewSet creates a new channel set.
+func NewSet() *Set {
+	return &Set{
 		channels: make(map[string]Channel),
 	}
 }
 
 // Add registers a channel in the set.
-func (cs *ChannelSet) Add(channel Channel) {
+func (cs *Set) Add(channel Channel) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.channels[channel.Name()] = channel
 }
 
 // Get retrieves a channel by name.
-func (cs *ChannelSet) Get(name string) (Channel, bool) {
+func (cs *Set) Get(name string) (Channel, bool) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	ch, ok := cs.channels[name]
@@ -354,7 +366,7 @@ func (cs *ChannelSet) Get(name string) (Channel, bool) {
 }
 
 // List returns all channel names.
-func (cs *ChannelSet) List() []string {
+func (cs *Set) List() []string {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 
@@ -366,21 +378,21 @@ func (cs *ChannelSet) List() []string {
 }
 
 // ReadAll returns a snapshot of all channel values.
-func (cs *ChannelSet) ReadAll(ctx context.Context) (map[string]any, error) {
-	return cs.processAll(ctx, func(ch Channel) (any, error) {
+func (cs *Set) ReadAll(ctx context.Context) (map[string]any, error) {
+	return cs.processAll(func(ch Channel) (any, error) {
 		return ch.Read(ctx)
 	})
 }
 
 // SnapshotAll returns a consistent snapshot of all channel values.
-func (cs *ChannelSet) SnapshotAll(ctx context.Context) (map[string]any, error) {
-	return cs.processAll(ctx, func(ch Channel) (any, error) {
+func (cs *Set) SnapshotAll(ctx context.Context) (map[string]any, error) {
+	return cs.processAll(func(ch Channel) (any, error) {
 		return ch.Snapshot(ctx)
 	})
 }
 
 // processAll is a helper that processes all channels with the given function.
-func (cs *ChannelSet) processAll(ctx context.Context, fn func(Channel) (any, error)) (map[string]any, error) {
+func (cs *Set) processAll(fn func(Channel) (any, error)) (map[string]any, error) {
 	cs.mu.RLock()
 	channels := make([]Channel, 0, len(cs.channels))
 	for _, ch := range cs.channels {
@@ -400,7 +412,7 @@ func (cs *ChannelSet) processAll(ctx context.Context, fn func(Channel) (any, err
 }
 
 // WriteAll writes values to multiple channels.
-func (cs *ChannelSet) WriteAll(ctx context.Context, updates map[string]any) error {
+func (cs *Set) WriteAll(ctx context.Context, updates map[string]any) error {
 	for name, value := range updates {
 		ch, ok := cs.Get(name)
 		if !ok {

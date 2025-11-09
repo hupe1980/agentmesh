@@ -97,20 +97,20 @@ type StateManager interface {
 }
 
 // =============================================================================
-// GraphState - Primary StateManager Implementation
+// State - Primary StateManager Implementation
 // =============================================================================
 
-// GraphState is the primary implementation of the StateManager interface.
+// State is the primary implementation of the StateManager interface.
 // It manages data flow through typed channels with thread-safe access.
 //
-// GraphState serves as both:
-// - The user-facing API for building graphs (via NewGraphState, Graph.State)
+// State serves as both:
+// - The user-facing API for building graphs (via NewState, Graph.State)
 // - The runtime state during execution (no conversion needed)
 //
 // This is the ONLY StateManager implementation in v2.0+ (Option A architecture).
 //
 // Thread Safety:
-// - Channel operations use per-channel locks (via ChannelSet and individual channels)
+// - Channel operations use per-channel locks (via Set and individual channels)
 // - Aggregates use separate aggregatesMu lock
 // - Checkpointer uses checkpointerMu for safe concurrent access
 // This design eliminates global lock contention for better concurrent performance.
@@ -119,8 +119,9 @@ type StateManager interface {
 // - Lazy copy-on-write for aggregate snapshots
 // - Version tracking to invalidate cached snapshots
 // - Avoids full map copy on every GetAggregatesSnapshot() call
-type GraphState struct {
-	channels       *channel.ChannelSet
+// State manages channel-based state for graph execution.
+type State struct {
+	channels       *channel.Set
 	aggregates     map[string]any
 	aggregateFn    func(string, any) error
 	aggregatesMu   sync.RWMutex
@@ -137,36 +138,37 @@ type GraphState struct {
 	cachedVersion    uint64         // Version of current cache
 }
 
-// NewStateManager creates a new StateManager with the default GraphState implementation.
+// NewStateManager creates a new StateManager with the default State implementation.
 // It automatically creates a standard "messages" channel (Topic with maxMessages limit).
 // This is the recommended way to create a state manager for graph execution.
 func NewStateManager(maxMessages int) StateManager {
-	channels := channel.NewChannelSet()
+	channels := channel.NewSet()
 	channels.Add(channel.NewTopicChannel("messages", maxMessages))
-	return &GraphState{
+	return &State{
 		channels:   channels,
 		aggregates: make(map[string]any),
 	}
 }
 
-// NewGraphState creates a new channel-based graph state.
-// This is kept for internal use and direct *GraphState access.
+// NewState creates a new channel-based graph state.
+// This is kept for internal use and direct *State access.
 // For normal usage, prefer NewStateManager() which returns the StateManager interface.
-func NewGraphState(maxMessages int) *GraphState {
-	channels := channel.NewChannelSet()
+func NewState(maxMessages int) *State {
+	channels := channel.NewSet()
 	channels.Add(channel.NewTopicChannel("messages", maxMessages))
-	return &GraphState{
+	return &State{
 		channels:   channels,
 		aggregates: make(map[string]any),
 	}
 }
 
 // =============================================================================
-// GraphState - State Read Methods
+// State - State Read Methods
 // =============================================================================
 
-func (s *GraphState) Get(key string) any {
-	// No lock needed - ChannelSet.Get() and Channel.Read() handle their own locking
+// Get retrieves a value from the state by key.
+func (s *State) Get(key string) any {
+	// No lock needed - Set.Get() and Channel.Read() handle their own locking
 	ch, ok := s.channels.Get(key)
 	if !ok {
 		return nil
@@ -178,8 +180,9 @@ func (s *GraphState) Get(key string) any {
 	return val
 }
 
-func (s *GraphState) GetAll() map[string]any {
-	// No lock needed - ChannelSet.ReadAll() handles its own locking
+// GetAll returns all state values as a map.
+func (s *State) GetAll() map[string]any {
+	// No lock needed - Set.ReadAll() handles its own locking
 	values, err := s.channels.ReadAll(context.Background())
 	if err != nil {
 		return nil
@@ -187,7 +190,8 @@ func (s *GraphState) GetAll() map[string]any {
 	return values
 }
 
-func (s *GraphState) MessagesSnapshot() []message.Message {
+// MessagesSnapshot returns a copy of current messages.
+func (s *State) MessagesSnapshot() []message.Message {
 	ch, ok := s.GetChannel("messages")
 	if !ok {
 		return nil
@@ -214,21 +218,24 @@ func (s *GraphState) MessagesSnapshot() []message.Message {
 }
 
 // =============================================================================
-// GraphState - Channel Management
+// State - Channel Management
 // =============================================================================
 
-func (s *GraphState) AddChannel(ch channel.Channel) {
-	// No lock needed - ChannelSet.Add() handles its own locking
+// AddChannel registers a new channel in the state.
+func (s *State) AddChannel(ch channel.Channel) {
+	// No lock needed - Set.Add() handles its own locking
 	s.channels.Add(ch)
 }
 
-func (s *GraphState) GetChannel(name string) (channel.Channel, bool) {
-	// No lock needed - ChannelSet.Get() handles its own locking
+// GetChannel retrieves a channel by name.
+func (s *State) GetChannel(name string) (channel.Channel, bool) {
+	// No lock needed - Set.Get() handles its own locking
 	return s.channels.Get(name)
 }
 
-func (s *GraphState) UpdateChannel(ctx context.Context, name string, value any) error {
-	// No lock needed - ChannelSet.Get() and Channel.Write() handle their own locking
+// UpdateChannel writes a value to a specific channel.
+func (s *State) UpdateChannel(ctx context.Context, name string, value any) error {
+	// No lock needed - Set.Get() and Channel.Write() handle their own locking
 	ch, ok := s.channels.Get(name)
 	if !ok {
 		return nil // Silently ignore unknown channels
@@ -236,12 +243,13 @@ func (s *GraphState) UpdateChannel(ctx context.Context, name string, value any) 
 	return ch.Write(ctx, value)
 }
 
-func (s *GraphState) UpdateChannels(ctx context.Context, updates map[string]any) error {
+// UpdateChannels batch-updates multiple channels.
+func (s *State) UpdateChannels(ctx context.Context, updates map[string]any) error {
 	if len(updates) == 0 {
 		return nil
 	}
 
-	// No lock needed - ChannelSet.Get() and Channel.Write() handle their own locking
+	// No lock needed - Set.Get() and Channel.Write() handle their own locking
 	for name, value := range updates {
 		ch, ok := s.channels.Get(name)
 		if !ok {
@@ -259,16 +267,18 @@ func (s *GraphState) UpdateChannels(ctx context.Context, updates map[string]any)
 }
 
 // =============================================================================
-// GraphState - Aggregate Management
+// State - Aggregate Management
 // =============================================================================
 
-func (s *GraphState) GetAggregate(name string) any {
+// GetAggregate retrieves the current value of a named aggregate.
+func (s *State) GetAggregate(name string) any {
 	s.aggregatesMu.RLock()
 	defer s.aggregatesMu.RUnlock()
 	return s.aggregates[name]
 }
 
-func (s *GraphState) GetAggregatesSnapshot() map[string]any {
+// GetAggregatesSnapshot returns a read-only snapshot of all aggregates.
+func (s *State) GetAggregatesSnapshot() map[string]any {
 	s.aggregatesMu.RLock()
 
 	// Fast path: return cached snapshot if version matches
@@ -304,17 +314,18 @@ func (s *GraphState) GetAggregatesSnapshot() map[string]any {
 	return snapshot
 }
 
-func (s *GraphState) AggregatesSnapshot() map[string]any {
+// AggregatesSnapshot is an alias for GetAggregatesSnapshot for backward compatibility.
+func (s *State) AggregatesSnapshot() map[string]any {
 	return s.GetAggregatesSnapshot()
 }
 
 // =============================================================================
-// GraphState - Version Management
+// State - Version Management
 // =============================================================================
 
 // incrementVersion atomically increments the state version counter.
 // Called after any state mutation to track state evolution for checkpoint integrity.
-func (s *GraphState) incrementVersion() {
+func (s *State) incrementVersion() {
 	s.versionMu.Lock()
 	s.version++
 	s.versionMu.Unlock()
@@ -322,24 +333,25 @@ func (s *GraphState) incrementVersion() {
 
 // Version returns the current state version.
 // This monotonic counter increases with every state mutation.
-func (s *GraphState) Version() uint64 {
+func (s *State) Version() uint64 {
 	s.versionMu.Lock()
 	defer s.versionMu.Unlock()
 	return s.version
 }
 
 // setVersion explicitly sets the version (used during checkpoint restore).
-func (s *GraphState) setVersion(v uint64) {
+func (s *State) setVersion(v uint64) {
 	s.versionMu.Lock()
 	s.version = v
 	s.versionMu.Unlock()
 }
 
 // =============================================================================
-// GraphState - Aggregate Management (continued)
+// State - Aggregate Management (continued)
 // =============================================================================
 
-func (s *GraphState) SetAggregates(aggregates map[string]any) {
+// SetAggregates replaces all aggregates with the provided map.
+func (s *State) SetAggregates(aggregates map[string]any) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
 
@@ -353,13 +365,15 @@ func (s *GraphState) SetAggregates(aggregates map[string]any) {
 	s.incrementVersion()
 }
 
-func (s *GraphState) SetAggregateFn(fn func(string, any) error) {
+// SetAggregateFn sets the aggregation function used to combine values.
+func (s *State) SetAggregateFn(fn func(string, any) error) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
 	s.aggregateFn = fn
 }
 
-func (s *GraphState) RecordAggregation(name string, value any) error {
+// RecordAggregation records a value for aggregation using the configured aggregation function.
+func (s *State) RecordAggregation(name string, value any) error {
 	s.aggregatesMu.RLock()
 	fn := s.aggregateFn
 	s.aggregatesMu.RUnlock()
@@ -370,15 +384,17 @@ func (s *GraphState) RecordAggregation(name string, value any) error {
 	return fn(name, value)
 }
 
-func (s *GraphState) Aggregate(name string, value any) error {
+// Aggregate is an alias for RecordAggregation for backward compatibility.
+func (s *State) Aggregate(name string, value any) error {
 	return s.RecordAggregation(name, value)
 }
 
 // =============================================================================
-// GraphState - Checkpoint Management
+// State - Checkpoint Management
 // =============================================================================
 
-func (s *GraphState) SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error {
+// SaveCheckpoint saves the current state to the configured checkpointer.
+func (s *State) SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error {
 	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
 	s.checkpointerMu.RUnlock()
@@ -396,7 +412,8 @@ func (s *GraphState) SaveCheckpoint(ctx context.Context, runID string, superstep
 	})
 }
 
-func (s *GraphState) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
+// LoadCheckpoint loads a checkpoint from the configured checkpointer.
+func (s *State) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
 	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
 	s.checkpointerMu.RUnlock()
@@ -408,17 +425,19 @@ func (s *GraphState) LoadCheckpoint(ctx context.Context, runID string) (*checkpo
 	return checkpointer.Load(ctx, runID)
 }
 
-func (s *GraphState) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
+// SetCheckpointer configures the checkpointer to use for state persistence.
+func (s *State) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 	s.checkpointerMu.Lock()
 	defer s.checkpointerMu.Unlock()
 	s.checkpointer = checkpointer
 }
 
 // =============================================================================
-// GraphState - Message Management
+// State - Message Management
 // =============================================================================
 
-func (s *GraphState) AddMessages(messages []message.Message) {
+// AddMessages appends messages to the state's message history.
+func (s *State) AddMessages(messages []message.Message) {
 	if len(messages) == 0 {
 		return
 	}
@@ -438,12 +457,12 @@ func (s *GraphState) AddMessages(messages []message.Message) {
 
 // SetMaxMessages updates the retention limit of the "messages" channel without
 // discarding existing channel configuration.
-func (s *GraphState) SetMaxMessages(maxMessages int) {
+func (s *State) SetMaxMessages(maxMessages int) {
 	if maxMessages < 0 {
 		maxMessages = 0
 	}
 
-	// No lock needed - ChannelSet.Get() and ChannelSet.Add() handle their own locking
+	// No lock needed - Set.Get() and Set.Add() handle their own locking
 	ch, ok := s.channels.Get("messages")
 	if !ok {
 		s.channels.Add(channel.NewTopicChannel("messages", maxMessages))
@@ -469,10 +488,11 @@ func (s *GraphState) SetMaxMessages(maxMessages int) {
 	s.channels.Add(newTopic)
 }
 
-func (s *GraphState) ApplyUpdates(values map[string]any, messages []message.Message) {
+// ApplyUpdates applies state updates and messages to the state manager.
+func (s *State) ApplyUpdates(values map[string]any, messages []message.Message) {
 	ctx := context.Background()
 
-	// No lock needed - ChannelSet methods handle their own locking
+	// No lock needed - Set methods handle their own locking
 	for key, value := range values {
 		ch, exists := s.channels.Get(key)
 		if !exists {
@@ -493,8 +513,9 @@ func (s *GraphState) ApplyUpdates(values map[string]any, messages []message.Mess
 	}
 }
 
-func (s *GraphState) Set(key string, value any) error {
-	// No lock needed - ChannelSet methods handle their own locking
+// Set sets a value in the state for the given key.
+func (s *State) Set(key string, value any) error {
+	// No lock needed - Set methods handle their own locking
 	ch, exists := s.channels.Get(key)
 	if !exists {
 		ch = channel.NewLastValueChannel(key)
@@ -504,11 +525,12 @@ func (s *GraphState) Set(key string, value any) error {
 }
 
 // =============================================================================
-// GraphState - State Snapshots
+// State - State Snapshots
 // =============================================================================
 
-func (s *GraphState) Snapshot() map[string]any {
-	// No lock needed - ChannelSet.SnapshotAll() handles its own locking
+// Snapshot returns a snapshot of all channel values.
+func (s *State) Snapshot() map[string]any {
+	// No lock needed - Set.SnapshotAll() handles its own locking
 	values, err := s.channels.SnapshotAll(context.Background())
 	if err != nil {
 		return nil
@@ -516,10 +538,11 @@ func (s *GraphState) Snapshot() map[string]any {
 	return values
 }
 
-func (s *GraphState) Clone() StateManager {
+// Clone creates a deep copy of the state manager.
+func (s *State) Clone() StateManager {
 	// Create new state with same channel configuration
-	cloned := &GraphState{
-		channels:   channel.NewChannelSet(),
+	cloned := &State{
+		channels:   channel.NewSet(),
 		aggregates: make(map[string]any),
 	}
 
@@ -528,7 +551,7 @@ func (s *GraphState) Clone() StateManager {
 	cloned.checkpointer = s.checkpointer
 	s.checkpointerMu.RUnlock()
 
-	// Clone all channels (ChannelSet methods handle their own locking)
+	// Clone all channels (Set methods handle their own locking)
 	for _, name := range s.channels.List() {
 		if ch, ok := s.channels.Get(name); ok {
 			cloned.channels.Add(ch.Clone())
@@ -545,20 +568,22 @@ func (s *GraphState) Clone() StateManager {
 }
 
 // =============================================================================
-// GraphState - Convenience Methods
+// State - Convenience Methods
 // =============================================================================
 
-func (s *GraphState) SnapshotAll() map[string]any {
+// SnapshotAll is an alias for Snapshot for backward compatibility.
+func (s *State) SnapshotAll() map[string]any {
 	return s.Snapshot() // Alias
 }
 
-func (s *GraphState) ListChannels() []string {
-	// No lock needed - ChannelSet.List() handles its own locking
+// ListChannels returns the names of all channels in the state.
+func (s *State) ListChannels() []string {
+	// No lock needed - Set.List() handles its own locking
 	return s.channels.List()
 }
 
-// Ensure GraphState implements StateManager interface
-var _ StateManager = (*GraphState)(nil)
+// Ensure State implements StateManager interface
+var _ StateManager = (*State)(nil)
 
 // =============================================================================
 // State Adapters
@@ -578,18 +603,22 @@ func NewStateReaderAdapter(manager StateManager) *StateReaderAdapter {
 	return &StateReaderAdapter{manager: manager}
 }
 
+// Get retrieves a value by key.
 func (sr *StateReaderAdapter) Get(key string) any {
 	return sr.manager.Get(key)
 }
 
+// GetAll returns all state values.
 func (sr *StateReaderAdapter) GetAll() map[string]any {
 	return sr.manager.GetAll()
 }
 
+// MessagesSnapshot returns current messages.
 func (sr *StateReaderAdapter) MessagesSnapshot() []message.Message {
 	return sr.manager.MessagesSnapshot()
 }
 
+// AggregatesSnapshot returns aggregate values.
 func (sr *StateReaderAdapter) AggregatesSnapshot() map[string]any {
 	return sr.manager.GetAggregatesSnapshot()
 }
@@ -612,6 +641,7 @@ func NewStateWriterAdapter(manager StateManager) *StateWriterAdapter {
 	}
 }
 
+// Aggregate performs an aggregation operation.
 func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 	return sw.manager.RecordAggregation(name, value)
 }
@@ -720,10 +750,10 @@ func cloneMessages(msgs []message.Message) []message.Message {
 	return out
 }
 
-// ensureGraphState creates a new GraphState if the provided state is nil.
-func ensureGraphState(state *GraphState) *GraphState {
+// ensureState creates a new State if the provided state is nil.
+func ensureState(state *State) *State {
 	if state == nil {
-		return NewGraphState(0) // Unlimited messages by default
+		return NewState(0) // Unlimited messages by default
 	}
 	return state
 }

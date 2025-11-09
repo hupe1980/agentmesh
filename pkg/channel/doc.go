@@ -19,7 +19,7 @@ Example usage:
 	})
 
 	// Create channel set
-	channels := channel.NewChannelSet()
+	channels := channel.NewSet()
 	channels.Add(messages)
 	channels.Add(context)
 	channels.Add(scores)

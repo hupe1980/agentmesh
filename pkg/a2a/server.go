@@ -10,15 +10,15 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// Executor wraps an AgentMesh CompiledGraph as an A2A AgentExecutor.
+// Executor wraps an AgentMesh Compiled as an A2A AgentExecutor.
 // It implements the a2asrv.AgentExecutor interface, allowing AgentMesh
 // graphs to be exposed as A2A-compliant services.
 type Executor struct {
-	compiled *graph.CompiledGraph
+	compiled *graph.Compiled
 }
 
 // NewExecutor creates a new A2A executor that wraps an AgentMesh compiled graph.
-func NewExecutor(compiled *graph.CompiledGraph) *Executor {
+func NewExecutor(compiled *graph.Compiled) *Executor {
 	return &Executor{compiled: compiled}
 }
 
@@ -63,13 +63,13 @@ func (e *Executor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q 
 	return nil
 }
 
-// StreamingExecutor wraps an AgentMesh CompiledGraph with streaming support.
+// StreamingExecutor wraps an AgentMesh Compiled with streaming support.
 type StreamingExecutor struct {
-	compiled *graph.CompiledGraph
+	compiled *graph.Compiled
 }
 
 // NewStreamingExecutor creates a new streaming A2A executor.
-func NewStreamingExecutor(compiled *graph.CompiledGraph) *StreamingExecutor {
+func NewStreamingExecutor(compiled *graph.Compiled) *StreamingExecutor {
 	return &StreamingExecutor{compiled: compiled}
 }
 

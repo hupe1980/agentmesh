@@ -161,7 +161,7 @@ func BenchmarkState_ParallelMixed(b *testing.B) {
 // Benchmark graph execution
 
 func BenchmarkGraph_SimpleExecution(b *testing.B) {
-	createSimpleGraph := func() *graph.CompiledGraph {
+	createSimpleGraph := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		state.Set("count", 0)
 		g := graph.NewGraph(state)
@@ -188,7 +188,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 }
 
 func BenchmarkGraph_LinearChain(b *testing.B) {
-	createChainGraph := func(length int) *graph.CompiledGraph {
+	createChainGraph := func(length int) *graph.Compiled {
 		state := graph.NewStateManager(0)
 		state.Set("value", 0) // Fixed
 		g := graph.NewGraph(state)
@@ -245,7 +245,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 }
 
 func BenchmarkGraph_ParallelNodes(b *testing.B) {
-	createParallelGraph := func(parallelism int) *graph.CompiledGraph {
+	createParallelGraph := func(parallelism int) *graph.Compiled {
 		appendReducer := func(oldValue, newValue any) any {
 			oldSlice, _ := oldValue.([]int)
 			newSlice, _ := newValue.([]int)
@@ -309,7 +309,7 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 }
 
 func BenchmarkGraph_ConditionalRouting(b *testing.B) {
-	createConditionalGraph := func() *graph.CompiledGraph {
+	createConditionalGraph := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		state.Set("route", "left") // Fixed
 		g := graph.NewGraph(state)

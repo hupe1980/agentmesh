@@ -16,7 +16,7 @@ func noopNode(name string) *Node {
 	}
 }
 
-func mustCompileGraph(t *testing.T, g *Graph) *CompiledGraph {
+func mustCompileGraph(t *testing.T, g *Graph) *Compiled {
 	t.Helper()
 	cg, err := g.Compile()
 	require.NoError(t, err)

@@ -183,7 +183,7 @@ func TestBinaryOpChannel_MapMerge(t *testing.T) {
 
 func TestChannelSet(t *testing.T) {
 	ctx := context.Background()
-	cs := NewChannelSet()
+	cs := NewSet()
 
 	// Add channels
 	tc := NewTopicChannel("messages", 0)

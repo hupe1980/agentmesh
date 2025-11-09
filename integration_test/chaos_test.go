@@ -458,7 +458,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	var partition1Active atomic.Bool
 	var partition2Active atomic.Bool
 
-	buildGraph := func() *graph.CompiledGraph {
+	buildGraph := func() *graph.Compiled {
 		state := graph.NewStateManager(0)
 		g := graph.NewGraph(state)
 

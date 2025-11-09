@@ -124,7 +124,7 @@ func (t *Tool) Description() string {
 }
 
 // Definition returns the tool definition for the LLM.
-func (t *Tool) Definition() *tool.ToolDefinition {
+func (t *Tool) Definition() *tool.Definition {
 	// Build parameters schema from the agent card skill if available
 	params := map[string]any{
 		"type": "object",
@@ -147,7 +147,7 @@ func (t *Tool) Definition() *tool.ToolDefinition {
 		}
 	}
 
-	return &tool.ToolDefinition{
+	return &tool.Definition{
 		Type: "function",
 		Function: tool.FunctionDefinition{
 			Name:        t.name,

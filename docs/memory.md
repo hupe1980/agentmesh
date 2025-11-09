@@ -174,7 +174,7 @@ Maintain separate conversation history per user:
 ```go
 type ChatBot struct {
     memory memory.Memory
-    agent  *graph.CompiledGraph
+    agent  *graph.Compiled
 }
 
 func (c *ChatBot) Chat(ctx context.Context, userID, message string) (string, error) {

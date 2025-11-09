@@ -142,11 +142,7 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			return
 		}
 
-		converted, systemText, err := convertMessagesToAnthropic(msgs)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
+		converted, systemText := convertMessagesToAnthropic(msgs)
 
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model(m.opts.model),
@@ -269,7 +265,7 @@ func normalizeTools(tools []tool.Tool) []tool.Tool {
 }
 
 //nolint:gocyclo // Message conversion requires handling many part types
-func convertMessagesToAnthropic(msgs []message.Message) ([]anthropic.MessageParam, string, error) {
+func convertMessagesToAnthropic(msgs []message.Message) ([]anthropic.MessageParam, string) {
 	var apiMessages []anthropic.MessageParam
 	var systemPrompt string
 
@@ -340,7 +336,7 @@ func convertMessagesToAnthropic(msgs []message.Message) ([]anthropic.MessagePara
 		}
 	}
 
-	return apiMessages, systemPrompt, nil
+	return apiMessages, systemPrompt
 }
 
 func convertToolsToAnthropic(tools []tool.Tool) []anthropic.ToolUnionParam {

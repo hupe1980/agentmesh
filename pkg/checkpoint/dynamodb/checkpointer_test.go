@@ -13,8 +13,8 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// mockDynamoDBClient is a mock implementation of DynamoDBClient for testing.
-type mockDynamoDBClient struct {
+// mockClient is a mock implementation of Client for testing.
+type mockClient struct {
 	mu    sync.RWMutex
 	items map[string]map[string]types.AttributeValue // map[runID+superstep]item
 
@@ -33,14 +33,14 @@ type mockDynamoDBClient struct {
 	DeleteItemError  error
 }
 
-// newMockDynamoDBClient creates a new mock DynamoDB client.
-func newMockDynamoDBClient() *mockDynamoDBClient {
-	return &mockDynamoDBClient{
+// newMockClient creates a new mock DynamoDB client.
+func newMockClient() *mockClient {
+	return &mockClient{
 		items: make(map[string]map[string]types.AttributeValue),
 	}
 }
 
-func (m *mockDynamoDBClient) CreateTable(ctx context.Context, params *dynamodb.CreateTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.CreateTableOutput, error) {
+func (m *mockClient) CreateTable(ctx context.Context, params *dynamodb.CreateTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.CreateTableOutput, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -53,7 +53,7 @@ func (m *mockDynamoDBClient) CreateTable(ctx context.Context, params *dynamodb.C
 	return &dynamodb.CreateTableOutput{}, nil
 }
 
-func (m *mockDynamoDBClient) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
+func (m *mockClient) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -74,7 +74,7 @@ func (m *mockDynamoDBClient) PutItem(ctx context.Context, params *dynamodb.PutIt
 	return &dynamodb.PutItemOutput{}, nil
 }
 
-func (m *mockDynamoDBClient) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+func (m *mockClient) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -97,7 +97,7 @@ func (m *mockDynamoDBClient) GetItem(ctx context.Context, params *dynamodb.GetIt
 	return &dynamodb.GetItemOutput{Item: item}, nil
 }
 
-func (m *mockDynamoDBClient) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+func (m *mockClient) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -144,7 +144,7 @@ func (m *mockDynamoDBClient) Query(ctx context.Context, params *dynamodb.QueryIn
 	}, nil
 }
 
-func (m *mockDynamoDBClient) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
+func (m *mockClient) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -167,7 +167,7 @@ func (m *mockDynamoDBClient) DeleteItem(ctx context.Context, params *dynamodb.De
 // Helper methods for testing
 
 // reset clears all stored items and counters.
-func (m *mockDynamoDBClient) reset() {
+func (m *mockClient) reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -180,14 +180,14 @@ func (m *mockDynamoDBClient) reset() {
 }
 
 // itemCount returns the number of stored items.
-func (m *mockDynamoDBClient) itemCount() int {
+func (m *mockClient) itemCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.items)
 }
 
 func TestCheckpointer_Save(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -219,7 +219,7 @@ func TestCheckpointer_Save(t *testing.T) {
 }
 
 func TestCheckpointer_Load(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -266,7 +266,7 @@ func TestCheckpointer_Load(t *testing.T) {
 }
 
 func TestCheckpointer_LoadNonExistent(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -281,7 +281,7 @@ func TestCheckpointer_LoadNonExistent(t *testing.T) {
 }
 
 func TestCheckpointer_List(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -325,7 +325,7 @@ func TestCheckpointer_List(t *testing.T) {
 }
 
 func TestCheckpointer_LoadAtSuperstep(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -369,7 +369,7 @@ func TestCheckpointer_LoadAtSuperstep(t *testing.T) {
 }
 
 func TestCheckpointer_Delete(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -413,7 +413,7 @@ func TestCheckpointer_Delete(t *testing.T) {
 }
 
 func TestCheckpointer_DeleteNonExistent(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -424,7 +424,7 @@ func TestCheckpointer_DeleteNonExistent(t *testing.T) {
 }
 
 func TestCheckpointer_SaveNilCheckpoint(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -435,7 +435,7 @@ func TestCheckpointer_SaveNilCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointer_SaveEmptyRunID(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -454,7 +454,7 @@ func TestCheckpointer_SaveEmptyRunID(t *testing.T) {
 }
 
 func TestCheckpointer_LoadMostRecent(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -492,7 +492,7 @@ func TestCheckpointer_LoadMostRecent(t *testing.T) {
 }
 
 func TestCheckpointer_CreateTable(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock)
 	ctx := context.Background()
 
@@ -507,7 +507,7 @@ func TestCheckpointer_CreateTable(t *testing.T) {
 }
 
 func TestCheckpointer_CustomTableName(t *testing.T) {
-	mock := newMockDynamoDBClient()
+	mock := newMockClient()
 	checkpointer := NewCheckpointer(mock, WithTableName("custom-checkpoints"))
 
 	if checkpointer.tableName != "custom-checkpoints" {

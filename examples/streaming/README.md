@@ -4,7 +4,7 @@
 Demonstrates real-time streaming execution in AgentMesh. Shows how to get live updates during graph execution and stream LLM responses token-by-token for better user experience.
 
 ## Key Concepts
-- **GraphStream**: Real-time event channel for graph execution
+- **Stream**: Real-time event channel for graph execution
 - **StreamChunk**: Token-level updates from LLM model streaming
 - **Event Types**: NodeStart, NodeComplete, NodeError, GraphComplete
 - **Proper Cleanup**: Always call stream.Close() or stream.Cancel()
@@ -212,6 +212,6 @@ for event := range stream.Events() {
 - See **examples/observability** for metrics integration
 
 ## See Also
-- [pkg/graph](../../pkg/graph) - GraphStream API
+- [pkg/graph](../../pkg/graph) - Stream API
 - [pkg/model](../../pkg/model) - Model streaming interface
 - [examples/observability](../observability) - Metrics and tracing

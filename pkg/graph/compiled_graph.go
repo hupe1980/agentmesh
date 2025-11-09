@@ -8,15 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-// CompiledGraph is an immutable, validated graph ready for execution.
+// Compiled is an immutable, validated graph ready for execution.
 // It contains the topology (nodes, edges, conditionals) and runtime execution state.
-// CompiledGraph is safe for concurrent use across multiple goroutines.
+// Compiled is safe for concurrent use across multiple goroutines.
 //
 // Concurrency Model:
 //   - Multiple concurrent Stream() calls are allowed (each gets independent state)
@@ -46,7 +47,7 @@ import (
 //   - Stream: Execute graph with real-time event streaming
 //
 // Created by Builder.Compile() after graph construction.
-type CompiledGraph struct {
+type Compiled struct {
 	stateManager      StateManager
 	runtime           *executionState
 	runtimeMu         sync.RWMutex // Protects runtime state pointer
@@ -61,7 +62,7 @@ type CompiledGraph struct {
 	nodeNames         []string
 }
 
-func (cg *CompiledGraph) hasExecutable(name string) bool {
+func (cg *Compiled) hasExecutable(name string) bool {
 	if name == "" {
 		return false
 	}
@@ -71,7 +72,7 @@ func (cg *CompiledGraph) hasExecutable(name string) bool {
 	return false
 }
 
-func (cg *CompiledGraph) markCompleted(name string) {
+func (cg *Compiled) markCompleted(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -80,7 +81,7 @@ func (cg *CompiledGraph) markCompleted(name string) {
 	}
 }
 
-func (cg *CompiledGraph) markPaused(name string) {
+func (cg *Compiled) markPaused(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -89,7 +90,7 @@ func (cg *CompiledGraph) markPaused(name string) {
 	}
 }
 
-func (cg *CompiledGraph) clearPaused(name string) {
+func (cg *Compiled) clearPaused(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -98,14 +99,15 @@ func (cg *CompiledGraph) clearPaused(name string) {
 	}
 }
 
-func (cg *CompiledGraph) setCurrentSuperstep(step int64) {
+func (cg *Compiled) setCurrentSuperstep(step int64) {
 	cg.runtimeMu.Lock()
 	defer cg.runtimeMu.Unlock()
 	cg.runtime = ensureExecutionState(cg.runtime)
 	cg.runtime.setSuperstep(step)
 }
 
-func (cg *CompiledGraph) CurrentSuperstep() int64 {
+// CurrentSuperstep returns the current execution superstep.
+func (cg *Compiled) CurrentSuperstep() int64 {
 	cg.runtimeMu.RLock()
 	defer cg.runtimeMu.RUnlock()
 	if cg.runtime == nil {
@@ -115,14 +117,14 @@ func (cg *CompiledGraph) CurrentSuperstep() int64 {
 }
 
 // State returns the current graph state (for testing and diagnostics).
-// In v2.0, this returns the StateManager interface instead of *GraphState.
-func (cg *CompiledGraph) State() StateManager {
+// In v2.0, this returns the StateManager interface instead of *State.
+func (cg *Compiled) State() StateManager {
 	return cg.stateManager
 }
 
 // attachProvidersToContext attaches observability providers from options to context.
 // This ensures providers are available to node RunFuncs via FromContext() helpers.
-func (cg *CompiledGraph) attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
+func (cg *Compiled) attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
 	// Attach logger if configured
 	if options.logger != nil {
 		ctx = logging.WithLogger(ctx, options.logger)
@@ -143,7 +145,7 @@ func (cg *CompiledGraph) attachProvidersToContext(ctx context.Context, options r
 
 // createInstrumentation builds an Instrumentation from the configured providers.
 // Returns nil if no providers configured (noop behavior).
-func (cg *CompiledGraph) createInstrumentation(options runOptions) *Instrumentation {
+func (cg *Compiled) createInstrumentation(options runOptions) *Instrumentation {
 	// Only create instrumentation if at least one provider is configured
 	if options.tracer == nil && options.metricsProvider == nil {
 		return nil
@@ -152,7 +154,7 @@ func (cg *CompiledGraph) createInstrumentation(options runOptions) *Instrumentat
 	return newInstrumentation(options.metricsProvider, options.tracer)
 }
 
-func (cg *CompiledGraph) bootstrapScheduler(ctx context.Context, s *vertexScheduler) {
+func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) {
 	cg.runtimeMu.Lock()
 	cg.runtime = ensureExecutionState(cg.runtime)
 	runtime := cg.runtime
@@ -165,7 +167,8 @@ func (cg *CompiledGraph) bootstrapScheduler(ctx context.Context, s *vertexSchedu
 	s.Bootstrap(ctx, completed, paused)
 }
 
-func (cg *CompiledGraph) Invoke(ctx context.Context, messages []message.Message, optFns ...RunOption) ([]message.Message, error) {
+// Invoke executes the graph synchronously and returns the final messages.
+func (cg *Compiled) Invoke(ctx context.Context, messages []message.Message, optFns ...RunOption) ([]message.Message, error) {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -177,7 +180,8 @@ func (cg *CompiledGraph) Invoke(ctx context.Context, messages []message.Message,
 	return cg.invokeWithOptions(ctx, messages, options)
 }
 
-func (cg *CompiledGraph) Stream(ctx context.Context, messages []message.Message, optFns ...RunOption) (*GraphStream, error) {
+// Stream executes the graph and streams intermediate results.
+func (cg *Compiled) Stream(ctx context.Context, messages []message.Message, optFns ...RunOption) (*Stream, error) {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -191,17 +195,17 @@ func (cg *CompiledGraph) Stream(ctx context.Context, messages []message.Message,
 // ApplyState synchronously merges values and messages into the committed graph state.
 // Intended for external systems (e.g., human-in-the-loop workflows) to inject
 // updates between supersteps without bypassing the staged execution pipeline.
-func (cg *CompiledGraph) ApplyState(values map[string]any, messages []message.Message) {
+func (cg *Compiled) ApplyState(values map[string]any, messages []message.Message) {
 	if cg == nil || cg.stateManager == nil {
 		return
 	}
 	cg.stateManager.ApplyUpdates(values, messages)
 }
 
-// AsNode wraps this CompiledGraph as a Node that can be embedded in another graph.
+// AsNode wraps this Compiled as a Node that can be embedded in another graph.
 // This enables subgraph composition and modular workflow construction.
 // The subgraph's state is synchronized with the parent state before execution.
-func (cg *CompiledGraph) AsNode(name string) *Node {
+func (cg *Compiled) AsNode(name string) *Node {
 	return &Node{
 		Name: name,
 		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
@@ -229,10 +233,10 @@ func (cg *CompiledGraph) AsNode(name string) *Node {
 	}
 }
 
-// AsNodeWithStateMapping wraps this CompiledGraph as a Node with custom state mapping.
+// AsNodeWithStateMapping wraps this Compiled as a Node with custom state mapping.
 // mapInput transforms parent state into subgraph input state.
 // mapOutput transforms subgraph output state into parent updates.
-func (cg *CompiledGraph) AsNodeWithStateMapping(
+func (cg *Compiled) AsNodeWithStateMapping(
 	name string,
 	mapInput func(StateReader) (map[string]any, []message.Message),
 	mapOutput func(StateReader) (map[string]any, []message.Message),
@@ -274,7 +278,7 @@ func (cg *CompiledGraph) AsNodeWithStateMapping(
 	}
 }
 
-func (cg *CompiledGraph) invokeWithOptions(ctx context.Context, messages []message.Message, options runOptions) ([]message.Message, error) {
+func (cg *Compiled) invokeWithOptions(ctx context.Context, messages []message.Message, options runOptions) ([]message.Message, error) {
 	// Attach observability providers to context if configured
 	ctx = cg.attachProvidersToContext(ctx, options)
 
@@ -330,8 +334,73 @@ func (cg *CompiledGraph) invokeWithOptions(ctx context.Context, messages []messa
 	return cg.stateManager.MessagesSnapshot(), nil
 }
 
-//nolint:gocyclo // Streaming requires handling many configuration options and error cases
-func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []message.Message, options runOptions) (*GraphStream, error) {
+// restoreFromCheckpoint loads and restores checkpoint if configured.
+// Returns the initial superstep to resume from, or 0 if no checkpoint was loaded.
+func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptions, instrumentation *Instrumentation) (int64, error) {
+	if options.checkpointer == nil || options.runID == "" || !options.autoRestore {
+		return 0, nil
+	}
+
+	logger := logging.FromContext(ctx)
+	var chkpt *checkpoint.Checkpoint
+	var err error
+
+	if options.resume && options.resumeFrom > 0 {
+		// Resume from specific superstep
+		logger.Info("loading checkpoint at specific superstep",
+			"run_id", options.runID,
+			"superstep", options.resumeFrom)
+		chkpt, err = options.checkpointer.LoadAtSuperstep(ctx, options.runID, options.resumeFrom)
+	} else {
+		// Resume from latest checkpoint
+		logger.Info("loading latest checkpoint",
+			"run_id", options.runID)
+		chkpt, err = options.checkpointer.Load(ctx, options.runID)
+	}
+
+	if err != nil {
+		logger.Error("failed to load checkpoint",
+			"run_id", options.runID,
+			"error", err)
+		return 0, fmt.Errorf("failed to load checkpoint: %w", err)
+	}
+
+	if chkpt == nil {
+		return 0, nil
+	}
+
+	logger.Info("restoring from checkpoint",
+		"run_id", options.runID,
+		"superstep", chkpt.Superstep,
+		"version", chkpt.Version)
+
+	// Trace checkpoint restore operation (if instrumentation configured)
+	if instrumentation != nil {
+		restoreCtx, restoreSpan := instrumentation.TraceCheckpoint(ctx, "restore", options.runID, chkpt.Superstep)
+		err = cg.restoreCheckpoint(chkpt)
+		restoreSpan.End(err)
+		_ = restoreCtx // Context not used further
+	} else {
+		err = cg.restoreCheckpoint(chkpt)
+	}
+
+	if err != nil {
+		logger.Error("failed to restore checkpoint",
+			"run_id", options.runID,
+			"superstep", chkpt.Superstep,
+			"error", err)
+		return 0, fmt.Errorf("failed to restore checkpoint: %w", err)
+	}
+
+	logger.Info("checkpoint restored successfully",
+		"run_id", options.runID,
+		"superstep", chkpt.Superstep,
+		"version", chkpt.Version)
+
+	return chkpt.Superstep, nil
+}
+
+func (cg *Compiled) streamWithOptions(ctx context.Context, messages []message.Message, options runOptions) (*Stream, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w", ErrNilContext)
 	}
@@ -346,63 +415,12 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 	instrumentation := cg.createInstrumentation(options)
 
 	// Attempt to restore from checkpoint if configured
-	if options.checkpointer != nil && options.runID != "" && options.autoRestore {
-		logger := logging.FromContext(ctx)
-		var checkpoint *Checkpoint
-		var err error
-
-		if options.resume && options.resumeFrom > 0 {
-			// Resume from specific superstep
-			logger.Info("loading checkpoint at specific superstep",
-				"run_id", options.runID,
-				"superstep", options.resumeFrom)
-			checkpoint, err = options.checkpointer.LoadAtSuperstep(ctx, options.runID, options.resumeFrom)
-		} else {
-			// Resume from latest checkpoint
-			logger.Info("loading latest checkpoint",
-				"run_id", options.runID)
-			checkpoint, err = options.checkpointer.Load(ctx, options.runID)
-		}
-
-		if err != nil {
-			logger.Error("failed to load checkpoint",
-				"run_id", options.runID,
-				"error", err)
-			return nil, fmt.Errorf("failed to load checkpoint: %w", err)
-		}
-
-		if checkpoint != nil {
-			logger.Info("restoring from checkpoint",
-				"run_id", options.runID,
-				"superstep", checkpoint.Superstep,
-				"version", checkpoint.Version)
-
-			// Trace checkpoint restore operation (if instrumentation configured)
-			if instrumentation != nil {
-				restoreCtx, restoreSpan := instrumentation.TraceCheckpoint(ctx, "restore", options.runID, checkpoint.Superstep)
-				err := cg.restoreCheckpoint(checkpoint)
-				restoreSpan.End(err)
-				_ = restoreCtx // Context not used further
-			} else {
-				err = cg.restoreCheckpoint(checkpoint)
-			}
-
-			if err != nil {
-				logger.Error("failed to restore checkpoint",
-					"run_id", options.runID,
-					"superstep", checkpoint.Superstep,
-					"error", err)
-				return nil, fmt.Errorf("failed to restore checkpoint: %w", err)
-			}
-
-			logger.Info("checkpoint restored successfully",
-				"run_id", options.runID,
-				"superstep", checkpoint.Superstep,
-				"version", checkpoint.Version)
-
-			// Set initial superstep to resume from
-			options.initialSuperstep = checkpoint.Superstep
-		}
+	initialSuperstep, err := cg.restoreFromCheckpoint(ctx, &options, instrumentation)
+	if err != nil {
+		return nil, err
+	}
+	if initialSuperstep > 0 {
+		options.initialSuperstep = initialSuperstep
 	}
 
 	if len(messages) > 0 && cg != nil && cg.stateManager != nil {
@@ -433,7 +451,7 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 		}
 	}()
 
-	return newGraphStream(events, cancel, done), nil
+	return newStream(events, cancel, done), nil
 }
 
 // StreamEvent represents a single event emitted during graph execution.
@@ -446,10 +464,10 @@ type StreamEvent struct {
 	Err      error             // Error if node execution failed
 }
 
-// GraphStream provides an iterator over graph execution events.
+// Stream provides an iterator over graph execution events.
 // Use Next() to advance and Event() to retrieve the current event.
 // IMPORTANT: Always call Cancel() or Close() when done to prevent goroutine leaks.
-type GraphStream struct {
+type Stream struct {
 	events  <-chan StreamEvent
 	cancel  context.CancelFunc
 	done    <-chan struct{} // Signals when background goroutine completes
@@ -459,15 +477,16 @@ type GraphStream struct {
 	mu      sync.Mutex
 }
 
-func newGraphStream(events <-chan StreamEvent, cancel context.CancelFunc, done <-chan struct{}) *GraphStream {
-	return &GraphStream{
+func newStream(events <-chan StreamEvent, cancel context.CancelFunc, done <-chan struct{}) *Stream {
+	return &Stream{
 		events: events,
 		cancel: cancel,
 		done:   done,
 	}
 }
 
-func (s *GraphStream) Next() bool {
+// Next advances to the next stream event.
+func (s *Stream) Next() bool {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -496,19 +515,22 @@ func (s *GraphStream) Next() bool {
 	return true
 }
 
-func (s *GraphStream) Current() StreamEvent {
+// Current returns the current stream event.
+func (s *Stream) Current() StreamEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.current
 }
 
-func (s *GraphStream) Err() error {
+// Err returns any error encountered during streaming.
+func (s *Stream) Err() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.err
 }
 
-func (s *GraphStream) Cancel() {
+// Cancel stops the stream and releases resources.
+func (s *Stream) Cancel() {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -525,7 +547,7 @@ func (s *GraphStream) Cancel() {
 // Close cancels the stream and waits for the background goroutine to finish.
 // This prevents goroutine leaks when the consumer stops reading events early.
 // Close is idempotent and safe to call multiple times.
-func (s *GraphStream) Close() error {
+func (s *Stream) Close() error {
 	s.Cancel()
 	// Wait for background goroutine to exit
 	if s.done != nil {
@@ -542,13 +564,13 @@ func (s *GraphStream) Close() error {
 // It evaluates condition functions and activates target vertices.
 type ConditionalEvaluator struct {
 	mu            sync.RWMutex
-	cg            *CompiledGraph
+	cg            *Compiled
 	gatedVertices map[string]bool // vertices behind conditional edges
 	openGates     map[string]bool // gates that have been opened
 }
 
 // NewConditionalEvaluator creates an evaluator for the given graph.
-func NewConditionalEvaluator(cg *CompiledGraph) *ConditionalEvaluator {
+func NewConditionalEvaluator(cg *Compiled) *ConditionalEvaluator {
 	gated := make(map[string]bool)
 	for name := range cg.conditionalGate {
 		if cg.conditionalGate[name] {

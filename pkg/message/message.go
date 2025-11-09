@@ -13,12 +13,18 @@ type Parts = []Part
 type Type string
 
 const (
-	TypeSystem   Type = "system"
-	TypeHuman    Type = "human"
-	TypeAI       Type = "ai"
-	TypeChat     Type = "chat"
+	// TypeSystem represents system-level instructions or metadata.
+	TypeSystem Type = "system"
+	// TypeHuman represents user input messages.
+	TypeHuman Type = "human"
+	// TypeAI represents AI-generated responses.
+	TypeAI Type = "ai"
+	// TypeChat represents generic chat messages.
+	TypeChat Type = "chat"
+	// TypeFunction represents function call results.
 	TypeFunction Type = "function"
-	TypeTool     Type = "tool"
+	// TypeTool represents tool execution results.
+	TypeTool Type = "tool"
 )
 
 // TextPart is a plain UTF-8 text content segment.
@@ -145,20 +151,25 @@ type SystemMessage struct {
 	base messageBase
 }
 
+// NewSystemMessage creates a system message from parts.
 func NewSystemMessage(parts Parts, opts ...Option) *SystemMessage {
 	return &SystemMessage{base: newMessageBase(parts, opts...)}
 }
 
+// NewSystemMessageFromText creates a system message from plain text.
 func NewSystemMessageFromText(text string, opts ...Option) *SystemMessage {
 	return NewSystemMessage(partsFromText(text), opts...)
 }
 
+// Type returns the message type.
 func (m *SystemMessage) Type() Type { return TypeSystem }
 
+// Parts returns the message content.
 func (m *SystemMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *SystemMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -170,20 +181,25 @@ type HumanMessage struct {
 	base messageBase
 }
 
+// NewHumanMessage creates a human message from parts.
 func NewHumanMessage(parts Parts, opts ...Option) *HumanMessage {
 	return &HumanMessage{base: newMessageBase(parts, opts...)}
 }
 
+// NewHumanMessageFromText creates a human message from plain text.
 func NewHumanMessageFromText(text string, opts ...Option) *HumanMessage {
 	return NewHumanMessage(partsFromText(text), opts...)
 }
 
+// Type returns the message type.
 func (m *HumanMessage) Type() Type { return TypeHuman }
 
+// Parts returns the message content.
 func (m *HumanMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *HumanMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -197,20 +213,25 @@ type AIMessage struct {
 	Name      string
 }
 
+// NewAIMessage creates an AI message from parts.
 func NewAIMessage(parts Parts, opts ...Option) *AIMessage {
 	return &AIMessage{base: newMessageBase(parts, opts...)}
 }
 
+// NewAIMessageFromText creates an AI message from plain text.
 func NewAIMessageFromText(text string, opts ...Option) *AIMessage {
 	return NewAIMessage(partsFromText(text), opts...)
 }
 
+// Type returns the message type.
 func (m *AIMessage) Type() Type { return TypeAI }
 
+// Parts returns the message content.
 func (m *AIMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *AIMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -224,10 +245,12 @@ type ChatMessage struct {
 	msgType Type
 }
 
+// NewChatMessage creates a chat message with a custom role.
 func NewChatMessage(role string, text string, opts ...Option) *ChatMessage {
 	return &ChatMessage{base: newMessageBase(partsFromText(text), opts...), msgType: Type(role)}
 }
 
+// Type returns the message type.
 func (m *ChatMessage) Type() Type {
 	if m.msgType != "" {
 		return m.msgType
@@ -235,10 +258,12 @@ func (m *ChatMessage) Type() Type {
 	return TypeChat
 }
 
+// Parts returns the message content.
 func (m *ChatMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *ChatMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -251,16 +276,20 @@ type FunctionMessage struct {
 	Name string
 }
 
+// NewFunctionMessage creates a function message with the given name and text.
 func NewFunctionMessage(name string, text string, opts ...Option) *FunctionMessage {
 	return &FunctionMessage{base: newMessageBase(partsFromText(text), opts...), Name: name}
 }
 
+// Type returns the message type.
 func (m *FunctionMessage) Type() Type { return TypeFunction }
 
+// Parts returns the message content.
 func (m *FunctionMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *FunctionMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -273,16 +302,20 @@ type ToolMessage struct {
 	ToolCallID string
 }
 
+// NewToolMessage creates a tool message linked to a specific tool call ID.
 func NewToolMessage(toolCallID string, text string, opts ...Option) *ToolMessage {
 	return &ToolMessage{base: newMessageBase(partsFromText(text), opts...), ToolCallID: toolCallID}
 }
 
+// Type returns the message type.
 func (m *ToolMessage) Type() Type { return TypeTool }
 
+// Parts returns the message content.
 func (m *ToolMessage) Parts() Parts {
 	return m.base.contentClone()
 }
 
+// Clone creates a deep copy of the message.
 func (m *ToolMessage) Clone() Message {
 	clone := *m
 	clone.base = m.base.clone()
@@ -295,10 +328,12 @@ type BaseMessageChunk struct {
 	base    messageBase
 }
 
+// NewBaseMessageChunk creates a new message chunk with the given type.
 func NewBaseMessageChunk(msgType Type, text string, opts ...Option) *BaseMessageChunk {
 	return &BaseMessageChunk{msgType: msgType, base: newMessageBase(partsFromText(text), opts...)}
 }
 
+// Type returns the message type.
 func (c *BaseMessageChunk) Type() Type {
 	if c == nil {
 		return ""
@@ -306,16 +341,19 @@ func (c *BaseMessageChunk) Type() Type {
 	return c.msgType
 }
 
+// Parts returns the message content.
 func (c *BaseMessageChunk) Parts() Parts {
 	return c.base.contentClone()
 }
 
+// Clone creates a deep copy of the chunk.
 func (c *BaseMessageChunk) Clone() *BaseMessageChunk {
 	clone := *c
 	clone.base = c.base.clone()
 	return &clone
 }
 
+// Merge combines this chunk with another chunk.
 func (c *BaseMessageChunk) Merge(other *BaseMessageChunk) (*BaseMessageChunk, error) {
 	if other == nil {
 		return c.Clone(), nil
@@ -334,10 +372,12 @@ type AIMessageChunk struct {
 	ToolCalls []ToolCall
 }
 
+// NewAIMessageChunk creates a new AI message chunk.
 func NewAIMessageChunk(text string, opts ...Option) *AIMessageChunk {
 	return &AIMessageChunk{BaseMessageChunk: *NewBaseMessageChunk(TypeAI, text, opts...)}
 }
 
+// Clone creates a deep copy of the AI message chunk.
 func (c *AIMessageChunk) Clone() *AIMessageChunk {
 	clone := *c
 	clone.BaseMessageChunk = *c.BaseMessageChunk.Clone()
@@ -345,6 +385,7 @@ func (c *AIMessageChunk) Clone() *AIMessageChunk {
 	return &clone
 }
 
+// Merge combines this AI message chunk with another.
 func (c *AIMessageChunk) Merge(other *AIMessageChunk) (*AIMessageChunk, error) {
 	if other == nil {
 		return c.Clone(), nil

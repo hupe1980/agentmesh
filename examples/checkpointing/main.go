@@ -195,7 +195,7 @@ func runDemo(ctx context.Context) {
 	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *graph.CompiledGraph {
+func buildWorkflow() *graph.Compiled {
 	builder := graph.NewBuilder()
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
@@ -234,7 +234,7 @@ func buildWorkflow() *graph.CompiledGraph {
 	return compiled
 }
 
-func buildFailingWorkflow() *graph.CompiledGraph {
+func buildFailingWorkflow() *graph.Compiled {
 	builder := graph.NewBuilder()
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
@@ -264,7 +264,7 @@ func buildFailingWorkflow() *graph.CompiledGraph {
 	return compiled
 }
 
-func buildFixedWorkflow() *graph.CompiledGraph {
+func buildFixedWorkflow() *graph.Compiled {
 	builder := graph.NewBuilder()
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {

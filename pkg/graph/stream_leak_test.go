@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGraphStream_NoLeakOnEarlyTermination verifies that closing a stream
+// TestStream_NoLeakOnEarlyTermination verifies that closing a stream
 // before consuming all events doesn't leak goroutines.
-func TestGraphStream_NoLeakOnEarlyTermination(t *testing.T) {
+func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 	t.Parallel()
 
 	// Record initial goroutine count
@@ -63,8 +63,8 @@ func TestGraphStream_NoLeakOnEarlyTermination(t *testing.T) {
 		initialGoroutines, finalGoroutines, diff)
 }
 
-// TestGraphStream_CloseIsIdempotent verifies Close can be called multiple times safely.
-func TestGraphStream_CloseIsIdempotent(t *testing.T) {
+// TestStream_CloseIsIdempotent verifies Close can be called multiple times safely.
+func TestStream_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	builder := NewBuilder()
@@ -87,8 +87,8 @@ func TestGraphStream_CloseIsIdempotent(t *testing.T) {
 	})
 }
 
-// TestGraphStream_CancelStopsExecution verifies that Cancel stops the graph execution.
-func TestGraphStream_CancelStopsExecution(t *testing.T) {
+// TestStream_CancelStopsExecution verifies that Cancel stops the graph execution.
+func TestStream_CancelStopsExecution(t *testing.T) {
 	t.Parallel()
 
 	var executionCount atomic.Int32

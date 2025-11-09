@@ -34,7 +34,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
@@ -52,7 +52,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, 
 		// Note: toolset.ListTools requires a context and StateReader
 		// We'll use an empty state snapshot for initialization
 		ctx := context.Background()
-		emptyState := graph.NewGraphState(0)
+		emptyState := graph.NewState(0)
 
 		toolsetTools, err := config.toolset.ListTools(ctx, emptyState)
 		if err != nil {
@@ -122,7 +122,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledGraph, 
 
 // MustNewReActAgent is like NewReActAgent but panics on error.
 // Use this in tests or when you're certain inputs are valid.
-func MustNewReActAgent(mdl model.Model, opts ...ReActOption) *graph.CompiledGraph {
+func MustNewReActAgent(mdl model.Model, opts ...ReActOption) *graph.Compiled {
 	agent, err := NewReActAgent(mdl, opts...)
 	if err != nil {
 		panic(fmt.Errorf("failed to create ReAct agent: %w", err))

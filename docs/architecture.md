@@ -49,7 +49,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                            │ builds on
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    CompiledGraph (Coordinator)                │
+│                    Compiled (Coordinator)                │
 │  • Immutable graph topology (nodes, edges, conditionals)      │
 │  • Public API (Invoke, Stream, Pause, Resume)                │
 │  • Coordinates StateManager ↔ Executor                        │
@@ -84,7 +84,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
 - **Interface-Based**: StateManager and Executor are interfaces for testability
-- **Composition**: PregelExecutor wraps CompiledGraph without modification
+- **Composition**: PregelExecutor wraps Compiled without modification
 - **Extensibility**: Public `pkg/pregel` API for custom backends
 - **Layered Abstraction**: High-level agents build on low-level graph primitives
 
@@ -177,7 +177,7 @@ return &graph.NodeResult{
 ```go
 // Configure mailbox size (default: unlimited)
 runtime := pregel.NewRuntime(graph, state,
-    pregel.WithMaxMailboxSize[*GraphState, ChannelMessage](1000),
+    pregel.WithMaxMailboxSize[*State, ChannelMessage](1000),
 )
 
 // Recommendations:
@@ -458,7 +458,7 @@ The **ConditionalEvaluator** handles conditional edges that determine routing at
 
 ```go
 type ConditionalEvaluator struct {
-    cg         *CompiledGraph
+    cg         *Compiled
     gateStatus map[string]bool  // Which conditional gates are open
 }
 ```
@@ -668,13 +668,13 @@ The runtime is parameterized over two types:
 
 ```go
 type Runtime[S any, M any] struct {
-    graph PregelGraph[S, M]  // Graph topology
-    state S                  // Shared state (e.g., *GraphState)
+    graph Graph[S, M]  // Graph topology
+    state S                  // Shared state (e.g., *State)
     // ...
 }
 ```
 
-- **S (State)**: The shared state type (e.g., `*GraphState` with channels)
+- **S (State)**: The shared state type (e.g., `*State` with channels)
 - **M (Message)**: The message type passed between vertices (e.g., `ChannelMessage`)
 
 This enables type-safe execution without `interface{}` pollution.
@@ -867,11 +867,11 @@ type Aggregator[S, M, A any] interface {
 ```go
 type ErrorAggregator struct{}
 
-func (a *ErrorAggregator) Init(ctx context.Context, state *GraphState) (float64, error) {
+func (a *ErrorAggregator) Init(ctx context.Context, state *State) (float64, error) {
     return 0.0, nil
 }
 
-func (a *ErrorAggregator) Aggregate(ctx context.Context, state *GraphState, prev float64) (float64, error) {
+func (a *ErrorAggregator) Aggregate(ctx context.Context, state *State, prev float64) (float64, error) {
     // Calculate global error metric
     currentError := computeError(state)
     return currentError, nil
@@ -1014,17 +1014,17 @@ The default implementation uses **composition over inheritance**:
 
 ```go
 type PregelExecutor struct {
-    cg *CompiledGraph  // Wraps CompiledGraph
+    cg *Compiled  // Wraps Compiled
 }
 
-// Delegates to proven CompiledGraph methods
+// Delegates to proven Compiled methods
 func (e *PregelExecutor) Execute(ctx context.Context, messages []Message, opts ExecuteOptions) (*InvokeResult, error) {
     return e.cg.invokeWithOptions(ctx, messages, convertOptions(opts))
 }
 ```
 
 **Architecture Benefits**:
-- ✅ **Clean Separation**: Executor doesn't modify CompiledGraph internals
+- ✅ **Clean Separation**: Executor doesn't modify Compiled internals
 - ✅ **No Circular Dependencies**: Composition pattern prevents cycles
 - ✅ **Extensibility**: Can implement custom execution strategies
 - ✅ **Testability**: Mock executors for unit tests
@@ -1049,7 +1049,7 @@ state := graph.NewStateManager(maxMessages)
 builder := graph.NewBuilder()
 builder.SetStateManager(state)
 
-// CompiledGraph.State() returns StateManager interface
+// Compiled.State() returns StateManager interface
 compiled, _ := builder.Compile()
 stateReader := compiled.State()
 ```
@@ -1060,7 +1060,7 @@ stateReader := compiled.State()
 - ✅ **Clean API**: Interface over concrete implementation
 - ✅ **Type Safety**: Go interfaces with compile-time checking
 
-The default implementation (`GraphState`) provides channel-based state with versioning and checkpoint support.
+The default implementation (`State`) provides channel-based state with versioning and checkpoint support.
 
 ### Hybrid State Propagation
 
@@ -1112,8 +1112,8 @@ for k, v := range aggregates {
 
 **Code Example**:
 ```go
-// GraphState maintains version and cache
-type GraphState struct {
+// State maintains version and cache
+type State struct {
     aggregates        map[string]any
     aggregateCache    map[string]any // Cached snapshot
     aggregateVersion  uint64         // Incremented on update
@@ -1121,13 +1121,13 @@ type GraphState struct {
 }
 
 // SetAggregates: O(1) - just pointer assignment
-func (s *GraphState) SetAggregates(aggregates map[string]any) {
+func (s *State) SetAggregates(aggregates map[string]any) {
     s.aggregates = aggregates      // Direct replacement
     s.aggregateVersion++            // Invalidate cache
 }
 
 // GetAggregatesSnapshot: O(1) cache hit, O(n) cache miss
-func (s *GraphState) GetAggregatesSnapshot() map[string]any {
+func (s *State) GetAggregatesSnapshot() map[string]any {
     if s.cachedVersion == s.aggregateVersion {
         return s.aggregateCache  // Fast path: return cached copy
     }

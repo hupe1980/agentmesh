@@ -68,6 +68,37 @@ func (vm *VectorMemory) Store(ctx context.Context, sessionID string, messages []
 	return nil
 }
 
+// applySemanticSearch performs semantic search on candidates using query embedding.
+func (vm *VectorMemory) applySemanticSearch(ctx context.Context, candidates []*MessageEntry, filter RecallFilter) ([]*MessageEntry, error) {
+	queryEmbedding, err := vm.embedder.Embed(ctx, filter.Query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed query: %w", err)
+	}
+
+	// Calculate similarity scores
+	for _, entry := range candidates {
+		entry.Score = cosineSimilarity(queryEmbedding, entry.Embedding)
+	}
+
+	// Filter by minimum score
+	if filter.MinScore > 0 {
+		filtered := make([]*MessageEntry, 0, len(candidates))
+		for _, entry := range candidates {
+			if entry.Score >= filter.MinScore {
+				filtered = append(filtered, entry)
+			}
+		}
+		candidates = filtered
+	}
+
+	// Sort by score descending
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	return candidates, nil
+}
+
 // Recall retrieves messages using semantic search or filters.
 //
 //nolint:gocyclo // Message filtering and retrieval requires multiple conditions
@@ -108,31 +139,11 @@ func (vm *VectorMemory) Recall(ctx context.Context, sessionID string, filter Rec
 
 	// If query provided, do semantic search
 	if filter.Query != "" {
-		queryEmbedding, err := vm.embedder.Embed(ctx, filter.Query)
+		var err error
+		candidates, err = vm.applySemanticSearch(ctx, candidates, filter)
 		if err != nil {
-			return nil, fmt.Errorf("failed to embed query: %w", err)
+			return nil, err
 		}
-
-		// Calculate similarity scores
-		for _, entry := range candidates {
-			entry.Score = cosineSimilarity(queryEmbedding, entry.Embedding)
-		}
-
-		// Filter by minimum score
-		if filter.MinScore > 0 {
-			filtered := make([]*MessageEntry, 0, len(candidates))
-			for _, entry := range candidates {
-				if entry.Score >= filter.MinScore {
-					filtered = append(filtered, entry)
-				}
-			}
-			candidates = filtered
-		}
-
-		// Sort by score descending
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].Score > candidates[j].Score
-		})
 	} else {
 		// No query: sort by timestamp descending (most recent first)
 		sort.Slice(candidates, func(i, j int) bool {

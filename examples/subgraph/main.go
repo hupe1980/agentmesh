@@ -225,7 +225,7 @@ func createAnalysisSubgraph() *graph.Graph {
 }
 
 // createPipeline assembles subgraphs into a processing pipeline
-func createPipeline(validation, enrichment, analysis *graph.CompiledGraph) *graph.Graph {
+func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
 	state := graph.NewStateManager(0)
 	g := graph.NewGraph(state)
 

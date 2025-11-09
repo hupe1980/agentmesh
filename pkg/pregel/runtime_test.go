@@ -69,7 +69,7 @@ func (g *mockGraph) Outgoing(node string) []string {
 	}
 	return nil
 }
-func (g *mockGraph) NodeByName(name string) PregelNode[mockState, mockMessage] { return g.nodes[name] }
+func (g *mockGraph) NodeByName(name string) Node[mockState, mockMessage] { return g.nodes[name] }
 func (g *mockGraph) State() mockState {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -266,7 +266,7 @@ type errorGraph struct{ state mockState }
 
 func (g *errorGraph) RootNodes() []string           { return []string{"X"} }
 func (g *errorGraph) Outgoing(node string) []string { return nil }
-func (g *errorGraph) NodeByName(name string) PregelNode[mockState, mockMessage] {
+func (g *errorGraph) NodeByName(name string) Node[mockState, mockMessage] {
 	return &errorNode{name}
 }
 func (g *errorGraph) State() mockState { return g.state }
@@ -301,7 +301,7 @@ type panicGraph struct{ state mockState }
 
 func (g *panicGraph) RootNodes() []string           { return []string{"P"} }
 func (g *panicGraph) Outgoing(node string) []string { return nil }
-func (g *panicGraph) NodeByName(name string) PregelNode[mockState, mockMessage] {
+func (g *panicGraph) NodeByName(name string) Node[mockState, mockMessage] {
 	return &panicNode{name: name}
 }
 func (g *panicGraph) State() mockState { return g.state }
@@ -390,7 +390,7 @@ func (n *aggregatorProbe) Run(_ context.Context, vertex VertexContext[mockState,
 
 type singleNodeGraph struct {
 	name string
-	node PregelNode[mockState, mockMessage]
+	node Node[mockState, mockMessage]
 }
 
 func (g *singleNodeGraph) RootNodes() []string { return []string{g.name} }
@@ -402,7 +402,7 @@ func (g *singleNodeGraph) Outgoing(node string) []string {
 	return nil
 }
 
-func (g *singleNodeGraph) NodeByName(name string) PregelNode[mockState, mockMessage] {
+func (g *singleNodeGraph) NodeByName(name string) Node[mockState, mockMessage] {
 	if name == g.name {
 		return g.node
 	}
@@ -467,7 +467,7 @@ func (g *combinerGraph) Outgoing(name string) []string {
 	}
 }
 
-func (g *combinerGraph) NodeByName(name string) PregelNode[mockState, mockMessage] {
+func (g *combinerGraph) NodeByName(name string) Node[mockState, mockMessage] {
 	switch name {
 	case g.producer.Name():
 		return g.producer
@@ -536,7 +536,7 @@ func (g *deliverGraph) RootNodes() []string { return nil }
 
 func (g *deliverGraph) Outgoing(string) []string { return nil }
 
-func (g *deliverGraph) NodeByName(name string) PregelNode[*deliverState, mockMessage] {
+func (g *deliverGraph) NodeByName(name string) Node[*deliverState, mockMessage] {
 	if name == g.node.Name() {
 		return g.node
 	}
@@ -629,7 +629,7 @@ type noopGraph struct{}
 
 func (noopGraph) RootNodes() []string                                  { return nil }
 func (noopGraph) Outgoing(string) []string                             { return nil }
-func (noopGraph) NodeByName(string) PregelNode[noopState, mockMessage] { return nil }
+func (noopGraph) NodeByName(string) Node[noopState, mockMessage] { return nil }
 func (noopGraph) State() noopState                                     { return noopState{} }
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {

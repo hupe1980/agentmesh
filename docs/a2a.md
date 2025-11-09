@@ -225,7 +225,7 @@ compiled, _ := agent.NewReActAgent(model, selectedTools)
 Coordinator agent that delegates to specialized A2A agents:
 
 ```go
-func createCoordinator() (*graph.CompiledGraph, error) {
+func createCoordinator() (*graph.Compiled, error) {
     // Connect to specialized agents
     researchTools, _ := a2a.NewBridge(
         a2a.NewClient("research-agent:50051"),
@@ -360,7 +360,7 @@ Mock external agents for testing:
 
 ```go
 // Production: use real A2A agent
-func createAgent(useMock bool) (*graph.CompiledGraph, error) {
+func createAgent(useMock bool) (*graph.Compiled, error) {
     var tools []tool.Tool
     
     if useMock {

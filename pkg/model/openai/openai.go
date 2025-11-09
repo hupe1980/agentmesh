@@ -55,6 +55,7 @@ func (c *ClientWrapper) ChatCompletionsStreaming(ctx context.Context, req openai
 	return c.inner.Chat.Completions.NewStreaming(ctx, req)
 }
 
+// Options configures OpenAI model behavior.
 type Options struct {
 	model               string
 	temperature         float64
@@ -63,21 +64,25 @@ type Options struct {
 	responseFormat      map[string]any // JSON schema for structured output
 }
 
+// Model wraps the OpenAI API client for chat completion.
 type Model struct {
 	client Client
 	model  string
 	opts   Options
 }
 
+// NewModel creates a new OpenAI model with default client.
 func NewModel(optFns ...func(o *Options)) *Model {
 	client := openai.NewClient()
 	return NewModelFromClient(&client, optFns...)
 }
 
+// NewModelFromClient creates a model from an existing OpenAI client.
 func NewModelFromClient(client *openai.Client, optFns ...func(o *Options)) *Model {
 	return NewModelFromClientWrapper(NewClientWrapper(client), optFns...)
 }
 
+// NewModelFromClientWrapper creates a model from a wrapped client.
 func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options)) *Model {
 	opts := Options{
 		model:               openai.ChatModelGPT4oMini,
@@ -205,6 +210,7 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 
 		aiMessage := message.NewAIMessage(parts)
 
+		//nolint:nestif // OpenAI SDK types make extraction complex, complexity is manageable
 		if len(choice.Message.ToolCalls) > 0 {
 			toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
 			for idx := range choice.Message.ToolCalls {
@@ -285,6 +291,7 @@ func (m *Model) streamGenerate(
 			}
 		}
 
+		//nolint:nestif // OpenAI SDK streaming delta handling, complexity is manageable
 		if len(delta.ToolCalls) > 0 {
 			for i := range delta.ToolCalls {
 				tc := &delta.ToolCalls[i]

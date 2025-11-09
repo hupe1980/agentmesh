@@ -13,9 +13,8 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
-// DynamoDBClient defines the interface for DynamoDB operations used by the checkpointer.
-// This interface allows for easy mocking in tests.
-type DynamoDBClient interface {
+// Client abstracts AWS DynamoDB operations for easier testing and flexibility.
+type Client interface {
 	CreateTable(ctx context.Context, params *dynamodb.CreateTableInput, optFns ...func(*dynamodb.Options)) (*dynamodb.CreateTableOutput, error)
 	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
@@ -23,12 +22,12 @@ type DynamoDBClient interface {
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 }
 
-// Ensure *dynamodb.Client implements DynamoDBClient
-var _ DynamoDBClient = (*dynamodb.Client)(nil)
+// Ensure *dynamodb.Client from AWS SDK implements our Client interface
+var _ Client = (*dynamodb.Client)(nil)
 
 // Checkpointer implements checkpoint.Checkpointer using AWS DynamoDB.
 type Checkpointer struct {
-	client    DynamoDBClient
+	client    Client
 	tableName string
 }
 
@@ -63,7 +62,7 @@ type checkpointItem struct {
 //	cfg, _ := config.LoadDefaultConfig(ctx)
 //	client := dynamodb.NewFromConfig(cfg)
 //	checkpointer := dynamodb.NewCheckpointer(client)
-func NewCheckpointer(client DynamoDBClient, opts ...Option) *Checkpointer {
+func NewCheckpointer(client Client, opts ...Option) *Checkpointer {
 	c := &Checkpointer{
 		client:    client,
 		tableName: "agentmesh-checkpoints",
