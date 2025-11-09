@@ -60,8 +60,6 @@ type Options struct {
 	model               string
 	temperature         float64
 	maxCompletionTokens int64
-	tools               []tool.Tool
-	responseFormat      map[string]any // JSON schema for structured output
 }
 
 // Model wraps the OpenAI API client for chat completion.
@@ -124,26 +122,73 @@ func WithMaxCompletionTokens(maxTokens int64) func(o *Options) {
 	}
 }
 
-// BindTools returns a new model configured with the provided tools.
-func (m *Model) BindTools(tools ...tool.Tool) model.Model {
-	return NewModelFromClientWrapper(m.client.(*ClientWrapper), func(o *Options) {
-		*o = m.opts
-		o.tools = normalizeTools(tools)
-	})
-}
-
-// WithStructuredOutput returns a new model configured to generate
-// structured JSON output conforming to the provided schema.
-func (m *Model) WithStructuredOutput(schema map[string]any) model.Model {
-	return NewModelFromClientWrapper(m.client.(*ClientWrapper), func(o *Options) {
-		*o = m.opts
-		o.responseFormat = schema
-	})
-}
-
 // Name returns the configured OpenAI model identifier.
 func (m *Model) Name() string {
 	return m.model
+}
+
+// Capabilities returns the features and limitations of this OpenAI model.
+func (m *Model) Capabilities() model.Capabilities {
+	modelName := strings.ToLower(m.model)
+
+	// Detect o1/o3 reasoning models
+	isReasoningModel := strings.HasPrefix(modelName, "o1-") || strings.HasPrefix(modelName, "o3-")
+
+	// Detect vision-capable models
+	hasVision := strings.Contains(modelName, "vision") ||
+		strings.Contains(modelName, "gpt-4o") ||
+		strings.Contains(modelName, "gpt-4-turbo") ||
+		(strings.HasPrefix(modelName, "gpt-4") && !strings.Contains(modelName, "gpt-4-"))
+
+	// Context windows by model family
+	contextWindow := m.getContextWindow(modelName)
+
+	caps := model.Capabilities{
+		Streaming:           true,
+		Tools:               !isReasoningModel, // o1 doesn't support tools yet
+		StructuredOutput:    true,
+		NativeReasoning:     isReasoningModel,
+		Logprobs:            !isReasoningModel, // o1 doesn't provide logprobs
+		Vision:              hasVision,
+		Audio:               false, // Not yet supported in this implementation
+		MaxContextTokens:    contextWindow,
+		MaxOutputTokens:     int(m.opts.maxCompletionTokens),
+		SupportedModalities: m.getSupportedModalities(hasVision),
+	}
+
+	return caps
+}
+
+// getContextWindow returns the context window size for a given model.
+func (m *Model) getContextWindow(modelName string) int {
+	switch {
+	case strings.HasPrefix(modelName, "gpt-4o"):
+		return 128000
+	case strings.HasPrefix(modelName, "gpt-4-turbo"), strings.HasPrefix(modelName, "gpt-4-1106"), strings.HasPrefix(modelName, "gpt-4-0125"):
+		return 128000
+	case strings.HasPrefix(modelName, "gpt-4-32k"):
+		return 32768
+	case strings.HasPrefix(modelName, "gpt-4"):
+		return 8192
+	case strings.HasPrefix(modelName, "gpt-3.5-turbo-16k"):
+		return 16384
+	case strings.HasPrefix(modelName, "gpt-3.5"):
+		return 4096
+	case strings.HasPrefix(modelName, "o1-"):
+		return 128000
+	case strings.HasPrefix(modelName, "o3-"):
+		return 128000
+	default:
+		return 4096 // Conservative default
+	}
+}
+
+// getSupportedModalities returns the list of input modalities.
+func (m *Model) getSupportedModalities(hasVision bool) []string {
+	if hasVision {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
 }
 
 // Generate executes a chat completion request against the OpenAI API.
@@ -152,14 +197,22 @@ func (m *Model) Name() string {
 // For non-streaming (blocking), only the final response is yielded.
 //
 //nolint:gocyclo // Generation requires handling many message and response types
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
-		if len(msgs) == 0 {
+		if req == nil || len(req.Messages) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
 		}
 
-		converted, err := convertMessagesToOpenAI(msgs)
+		messages := req.Messages
+
+		// Prepend system prompt if provided (per-request)
+		if req.SystemPrompt != "" {
+			systemMsg := message.NewSystemMessageFromText(req.SystemPrompt)
+			messages = append([]message.Message{systemMsg}, messages...)
+		}
+
+		converted, err := convertMessagesToOpenAI(messages)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -170,23 +223,26 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			Messages: converted,
 		}
 
-		if err := m.applyOptions(&params); err != nil {
+		if err := m.applyOptions(&params, req); err != nil {
 			yield(nil, err)
 			return
 		}
 
-		// Try streaming first
-		streamCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
+		// Choose streaming or non-streaming based on request
+		if req.Stream {
+			streamCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
 
-		apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
-		if apiStream.Err() == nil {
-			// Streaming successful
-			m.streamGenerate(apiStream, yield, cancel)
-			return
+			apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
+			if apiStream.Err() == nil {
+				// Streaming successful
+				m.streamGenerate(apiStream, yield, cancel)
+				return
+			}
+			// If streaming fails, fall through to non-streaming
 		}
 
-		// Fall back to non-streaming
+		// Non-streaming mode
 		completion, err := m.client.ChatCompletions(ctx, params)
 		if err != nil {
 			yield(nil, err)
@@ -251,6 +307,7 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 				CompletionTokens: int(completion.Usage.CompletionTokens),
 				TotalTokens:      int(completion.Usage.TotalTokens),
 			},
+			Partial: false, // Blocking mode: single complete response
 		}
 
 		// Populate logprobs if available
@@ -305,6 +362,7 @@ func (m *Model) streamGenerate(
 			aiMessage := message.NewAIMessageFromText(delta.Content)
 			response := &model.Response{
 				Message: aiMessage,
+				Partial: true, // Streaming chunk
 			}
 			if !yield(response, nil) {
 				return
@@ -316,6 +374,7 @@ func (m *Model) streamGenerate(
 			aiMessage := message.NewAIMessageFromText(delta.Refusal)
 			response := &model.Response{
 				Message: aiMessage,
+				Partial: true, // Streaming chunk
 			}
 			if !yield(response, nil) {
 				return
@@ -395,6 +454,7 @@ func (m *Model) streamGenerate(
 	response := &model.Response{
 		Message:      aiMessage,
 		FinishReason: finishReason,
+		Partial:      false, // Final complete response
 		// Note: Streaming doesn't provide usage information or logprobs in OpenAI API
 		// Usage and Logprobs will be nil for streaming responses
 	}
@@ -402,7 +462,7 @@ func (m *Model) streamGenerate(
 	yield(response, nil)
 }
 
-func (m *Model) applyOptions(params *openai.ChatCompletionNewParams) error {
+func (m *Model) applyOptions(params *openai.ChatCompletionNewParams, req *model.Request) error {
 	if m == nil || params == nil {
 		return nil
 	}
@@ -410,30 +470,29 @@ func (m *Model) applyOptions(params *openai.ChatCompletionNewParams) error {
 	params.Temperature = param.NewOpt(m.opts.temperature)
 	params.MaxCompletionTokens = param.NewOpt(m.opts.maxCompletionTokens)
 
-	// Apply structured output if configured
-	if m.opts.responseFormat != nil {
+	// Apply structured output from request if specified
+	if req != nil && req.Schema != nil {
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
 				Type: "json_schema",
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
 					Name:   "response",
-					Schema: m.opts.responseFormat,
+					Schema: req.Schema,
 					Strict: param.NewOpt(true),
 				},
 			},
 		}
 	}
 
-	if len(m.opts.tools) == 0 {
-		return nil
-	}
-
-	converted, err := convertTools(m.opts.tools)
-	if err != nil {
-		return err
-	}
-	if len(converted) > 0 {
-		params.Tools = converted
+	// Apply tools from request if specified
+	if req != nil && len(req.Tools) > 0 {
+		converted, err := convertTools(normalizeTools(req.Tools))
+		if err != nil {
+			return err
+		}
+		if len(converted) > 0 {
+			params.Tools = converted
+		}
 	}
 
 	return nil
@@ -677,8 +736,4 @@ func convertLogprobs(openaiLogprobs openai.ChatCompletionChoiceLogprobs) *model.
 }
 
 // Compile-time interface checks
-var (
-	_ model.Model            = (*Model)(nil)
-	_ model.ToolAware        = (*Model)(nil)
-	_ model.StructuredOutput = (*Model)(nil)
-)
+var _ model.Model = (*Model)(nil)

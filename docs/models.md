@@ -60,6 +60,7 @@ type Response struct {
     Logprobs     *Logprobs       // Token probabilities (OpenAI)
     Usage        *UsageInfo      // Token consumption tracking
     Metadata     map[string]any  // Provider-specific metadata
+    Partial      bool            // true for streaming chunks, false for final
 }
 
 type UsageInfo struct {
@@ -70,9 +71,41 @@ type UsageInfo struct {
 }
 ```
 
+### Model Capabilities
+
+All models expose their features via `Capabilities()`:
+
+```go
+caps := model.Capabilities()
+
+// Discover what the model supports
+if caps.Tools {
+    // Can use BindTools()
+}
+if caps.NativeReasoning {
+    // Response.Reasoning will be populated
+}
+if caps.Vision {
+    // Can send image.ImagePart
+}
+
+type Capabilities struct {
+    Streaming           bool     // Supports incremental responses
+    Tools               bool     // Supports function calling
+    StructuredOutput    bool     // Supports JSON schema
+    NativeReasoning     bool     // Exposes internal reasoning
+    Logprobs            bool     // Provides token probabilities
+    Vision              bool     // Accepts images
+    Audio               bool     // Accepts audio
+    MaxContextTokens    int      // Context window size
+    MaxOutputTokens     int      // Max generation length
+    SupportedModalities []string // Input types: "text", "image", "audio"
+}
+```
+
 ### Optional Interfaces
 
-Models may also implement additional capabilities:
+Models may implement additional interfaces for feature configuration:
 
 ```go
 // ToolAware enables function calling
@@ -86,7 +119,7 @@ type StructuredOutput interface {
 }
 ```
 
-This design keeps agent code portable across providers while supporting provider-specific features through optional interfaces.
+**Always check `Capabilities()` before using optional interfaces** to ensure the model supports the feature.
 
 ---
 

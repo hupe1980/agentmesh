@@ -159,7 +159,11 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 		msgs = append([]message.Message{contextMsg}, msgs...)
 	}
 
-	resp, err := model.Last(mdl.Generate(ctx, msgs))
+	req := &model.Request{
+		Messages: msgs,
+	}
+
+	resp, err := model.Last(mdl.Generate(ctx, req))
 	if err != nil {
 		return nil, err
 	}

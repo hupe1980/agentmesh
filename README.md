@@ -312,6 +312,62 @@ for resp, err := range mdl.Generate(ctx, messages) {
 - `Logprobs` - Token-level probabilities and alternatives (OpenAI only, requires opt-in)
 - `Usage` - Token consumption with separate prompt/completion/reasoning tracking
 - `Metadata` - Additional provider-specific information
+- `Partial` - true for streaming chunks, false for final complete response
+
+---
+
+### Discovering Model Capabilities
+
+Every model exposes its features and limitations via `Capabilities()`:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/model/openai"
+
+// Create a model
+mdl := openai.NewModel(openai.WithModel("gpt-4o"))
+
+// Discover what it can do
+caps := mdl.Capabilities()
+
+fmt.Printf("Model: %s\n", mdl.Name())
+fmt.Printf("Streaming: %v\n", caps.Streaming)
+fmt.Printf("Tools: %v\n", caps.Tools)
+fmt.Printf("Native Reasoning: %v\n", caps.NativeReasoning)
+fmt.Printf("Vision: %v\n", caps.Vision)
+fmt.Printf("Max Context: %d tokens\n", caps.MaxContextTokens)
+fmt.Printf("Supported inputs: %v\n", caps.SupportedModalities)
+
+// Conditionally use features based on capabilities
+if caps.Tools {
+    // Safe to bind tools
+    if toolAware, ok := mdl.(model.ToolAware); ok {
+        mdl = toolAware.BindTools(myTools...)
+    }
+}
+
+if caps.NativeReasoning {
+    fmt.Println("This model will populate Response.Reasoning automatically")
+}
+
+if caps.Vision {
+    // Can send images
+    messages = append(messages, message.NewHumanMessage(
+        message.NewImagePart(imageData, "image/jpeg"),
+    ))
+}
+```
+
+**Capability Fields:**
+- `Streaming` - Supports incremental response chunks
+- `Tools` - Supports function calling via `BindTools()`
+- `StructuredOutput` - Supports JSON schema validation
+- `NativeReasoning` - Exposes internal reasoning in `Response.Reasoning`
+- `Logprobs` - Can provide token-level probabilities
+- `Vision` - Can process image inputs
+- `Audio` - Can process audio inputs
+- `MaxContextTokens` - Total context window size
+- `MaxOutputTokens` - Maximum generation length
+- `SupportedModalities` - List of accepted input types
 
 ---
 

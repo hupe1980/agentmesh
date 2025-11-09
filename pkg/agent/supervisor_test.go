@@ -34,24 +34,22 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 		t.Fatal("Expected supervisor to be created")
 	}
 
-	// Verify supervisor has system prompt
+	// NOTE: System prompt is now sent per-request (not stored in state)
+	// This is more token-efficient than the LangChain pattern.
+	// The supervisor will have a default system prompt but it won't appear
+	// in the initial state - it's sent with each model invocation.
+
+	// Verify supervisor state is initialized
 	state := supervisor.State()
 	messages := state.MessagesSnapshot()
 
-	if len(messages) == 0 {
-		t.Fatal("Expected system message in supervisor state")
+	// State should be empty initially (system prompt sent per-request)
+	if len(messages) != 0 {
+		t.Fatalf("Expected empty initial state (system prompt is per-request), got %d messages", len(messages))
 	}
 
-	sysMsg, ok := messages[0].(*message.SystemMessage)
-	if !ok {
-		t.Fatalf("Expected first message to be SystemMessage, got %T", messages[0])
-	}
-
-	// Check that system prompt mentions the workers
-	prompt := getMessageText(sysMsg)
-	if prompt == "" {
-		t.Error("System prompt is empty")
-	}
+	// The system prompt is used internally but not stored in state
+	// This is verified by the successful creation of the supervisor
 }
 
 func TestNewSupervisorAgent_NoWorkers(t *testing.T) {

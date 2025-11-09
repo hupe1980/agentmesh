@@ -79,33 +79,49 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 		acceptedTools = append(acceptedTools, t)
 	}
 
-	// Bind tools to model if supported
-	if toolAware, ok := mdl.(model.ToolAware); ok {
-		configured := toolAware.BindTools(acceptedTools...)
-		if configured == nil {
-			return nil, fmt.Errorf("react agent: model returned nil from BindTools (expected configured model)")
+	// Check if model supports tools (via Capabilities)
+	if len(acceptedTools) > 0 {
+		caps := mdl.Capabilities()
+		if !caps.Tools {
+			return nil, fmt.Errorf("react agent: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(acceptedTools))
 		}
-		mdl = configured
-	} else if len(acceptedTools) > 0 {
-		return nil, fmt.Errorf("react agent: model does not support tool configuration (%d tools provided but model doesn't implement ToolAware)", len(acceptedTools))
 	}
 
 	// Create state using StateBuilder for cleaner initialization
 	stateBuilder := graph.NewStateBuilder().
 		WithUnlimitedMessages()
 
-	// If system prompt configured, add it as initial message
-	if config.systemPrompt != "" {
-		systemMsg := message.NewSystemMessageFromText(config.systemPrompt)
-		stateBuilder.WithInitialMessages(systemMsg)
-	}
-
 	state := stateBuilder.Build()
 
 	g := graph.NewGraph(state)
 
-	// Model node: generate response
-	_ = g.AddNode(ModelNode(mdl))
+	// Model node: generate response with tools and system prompt
+	// System prompt is sent per-request (Pydantic AI style) for token efficiency
+	modelNode := &graph.Node{
+		Name: "model",
+		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			messages := s.MessagesSnapshot()
+
+			// Create request with tools and system prompt
+			req := &model.Request{
+				Messages:     messages,
+				Tools:        acceptedTools,
+				SystemPrompt: config.systemPrompt, // Sent per-request, not stored in state
+			}
+
+			// Call the model
+			resp, err := model.Last(mdl.Generate(ctx, req))
+			if err != nil {
+				return nil, err
+			}
+
+			return &graph.NodeResult{
+				Messages: []message.Message{resp.Message},
+				Updates:  map[string]any{},
+			}, nil
+		},
+	}
+	_ = g.AddNode(modelNode)
 
 	// Tool node: execute tool calls
 	_ = g.AddNode(ToolNode(toolRegistry, WithToolErrorPrefix("react agent")))
@@ -180,18 +196,28 @@ func WithToolset(ts tool.Toolset) ReActOption {
 	}
 }
 
-// WithSystemPrompt sets a system prompt that will be prepended to all agent invocations.
+// WithSystemPrompt sets a system prompt sent with every model invocation.
 // The system prompt provides instructions and context to guide the agent's behavior.
-// If a system message is also provided in the Invoke() call, the configured system
-// prompt will appear first, followed by any additional system messages.
 //
-// Example:
+// IMPORTANT: The system prompt is sent per-request (not stored in conversation state).
+// This makes it more token-efficient for multi-turn conversations, as the prompt
+// is sent with each model call but doesn't accumulate in the message history.
 //
+// If you prefer the system prompt to be part of the conversation history (LangChain style),
+// add a system message when invoking the agent instead:
+//
+//	// Option 1: Per-request system prompt (Pydantic AI style - recommended)
 //	agent, err := agent.NewReActAgent(
 //	    model,
-//	    agent.WithSystemPrompt("You are a helpful math tutor. Always show your work."),
-//	    agent.WithMaxIterations(5),
+//	    agent.WithSystemPrompt("You are a helpful math tutor."),
 //	)
+//
+//	// Option 2: System message in history (LangChain style)
+//	agent, err := agent.NewReActAgent(model)
+//	result, err := agent.Invoke(ctx, graph.NewInput(
+//	    message.NewSystemMessageFromText("You are a helpful math tutor."),
+//	    message.NewHumanMessageFromText("What is 2+2?"),
+//	))
 func WithSystemPrompt(prompt string) ReActOption {
 	return func(c *reActOptions) {
 		c.systemPrompt = prompt

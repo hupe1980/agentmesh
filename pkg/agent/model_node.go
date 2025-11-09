@@ -11,8 +11,9 @@ import (
 
 // modelNodeOptions holds configuration for a model node.
 type modelNodeOptions struct {
-	nodeName  string
-	callbacks *callbacks.Manager
+	nodeName     string
+	callbacks    *callbacks.Manager
+	systemPrompt string
 }
 
 // ModelNodeOption configures a model node.
@@ -31,6 +32,14 @@ func WithModelNodeName(name string) ModelNodeOption {
 func WithModelCallbacks(cb *callbacks.Manager) ModelNodeOption {
 	return func(c *modelNodeOptions) {
 		c.callbacks = cb
+	}
+}
+
+// WithModelSystemPrompt sets a system prompt for this model node.
+// The system prompt is sent per-request and not stored in conversation state.
+func WithModelSystemPrompt(prompt string) ModelNodeOption {
+	return func(c *modelNodeOptions) {
+		c.systemPrompt = prompt
 	}
 }
 
@@ -97,8 +106,14 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			// Get messages for model invocation
 			messages := s.MessagesSnapshot()
 
+			// Create request
+			req := &model.Request{
+				Messages:     messages,
+				SystemPrompt: config.systemPrompt,
+			}
+
 			// Call the model
-			resp, err := model.Last(mdl.Generate(ctx, messages))
+			resp, err := model.Last(mdl.Generate(ctx, req))
 			if err != nil {
 				fallback, transformedErr := handleModelError(ctx, s, err, &config)
 				if transformedErr != nil {

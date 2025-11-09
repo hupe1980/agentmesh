@@ -20,7 +20,17 @@ type FlakyModel struct {
 	callCount int
 }
 
-func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+func (m *FlakyModel) Capabilities() model.Capabilities {
+	return model.Capabilities{
+		Streaming:           false,
+		Tools:               false,
+		MaxContextTokens:    4096,
+		MaxOutputTokens:     1024,
+		SupportedModalities: []string{"text"},
+	}
+}
+
+func (m *FlakyModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		m.callCount++
 
@@ -36,6 +46,7 @@ func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) i
 		log.Printf("[Call %d] ✓ Service success", m.callCount)
 		yield(&model.Response{
 			Message: message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)),
+			Partial: false, // Single complete response
 		}, nil)
 	}
 }

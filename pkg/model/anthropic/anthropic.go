@@ -42,7 +42,6 @@ type Options struct {
 	maxTokens   int64
 	temperature float64
 	apiKey      string
-	tools       []tool.Tool
 }
 
 // Model implements the model.Model interface for Anthropic Claude.
@@ -123,26 +122,79 @@ func WithAPIKey(apiKey string) func(o *Options) {
 	}
 }
 
-// BindTools returns a new model configured with the provided tools.
-func (m *Model) BindTools(tools ...tool.Tool) model.Model {
-	return NewModelFromClient(m.client, func(o *Options) {
-		*o = m.opts
-		o.tools = normalizeTools(tools)
-	})
+// Capabilities returns the features and limitations of this Anthropic model.
+func (m *Model) Capabilities() model.Capabilities {
+	modelName := strings.ToLower(m.opts.model)
+
+	// Claude 3.5+ supports extended thinking mode
+	hasExtendedThinking := strings.Contains(modelName, "claude-3-5") ||
+		strings.Contains(modelName, "claude-3.5") ||
+		strings.Contains(modelName, "sonnet-4")
+
+	// All recent Claude models support vision
+	hasVision := strings.Contains(modelName, "claude-3") ||
+		strings.Contains(modelName, "claude-3.5") ||
+		strings.Contains(modelName, "sonnet-4") ||
+		strings.Contains(modelName, "opus") ||
+		strings.Contains(modelName, "haiku")
+
+	// Context window varies by model
+	contextWindow := m.getContextWindow(modelName)
+
+	caps := model.Capabilities{
+		Streaming:           true,
+		Tools:               true,  // All Claude models support function calling
+		StructuredOutput:    false, // Anthropic doesn't have built-in JSON schema validation
+		NativeReasoning:     hasExtendedThinking,
+		Logprobs:            false, // Anthropic doesn't provide logprobs
+		Vision:              hasVision,
+		Audio:               false, // Audio support not yet available
+		MaxContextTokens:    contextWindow,
+		MaxOutputTokens:     int(m.opts.maxTokens),
+		SupportedModalities: m.getSupportedModalities(hasVision),
+	}
+
+	return caps
+}
+
+// getContextWindow returns the context window size for a given Claude model.
+func (m *Model) getContextWindow(modelName string) int {
+	switch {
+	case strings.Contains(modelName, "sonnet-4"):
+		return 200000 // Claude Sonnet 4
+	case strings.Contains(modelName, "claude-3-5"):
+		return 200000 // Claude 3.5 Sonnet/Haiku
+	case strings.Contains(modelName, "claude-3"):
+		return 200000 // Claude 3 Opus/Sonnet/Haiku
+	case strings.Contains(modelName, "claude-2.1"):
+		return 200000
+	case strings.Contains(modelName, "claude-2"):
+		return 100000
+	default:
+		return 100000 // Conservative default
+	}
+}
+
+// getSupportedModalities returns the list of input modalities.
+func (m *Model) getSupportedModalities(hasVision bool) []string {
+	if hasVision {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
 }
 
 // Generate executes a content generation request against the Anthropic API.
 // Returns an iterator that yields ModelResponse as they are received.
 // For streaming, multiple intermediate responses are yielded followed by the final complete response.
 // For non-streaming (blocking), only the final response is yielded.
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
-		if len(msgs) == 0 {
+		if req == nil || len(req.Messages) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
 		}
 
-		converted, systemText := convertMessagesToAnthropic(msgs)
+		converted, systemText := convertMessagesToAnthropic(req.Messages)
 
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model(m.opts.model),
@@ -150,9 +202,18 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			MaxTokens: m.opts.maxTokens,
 		}
 
+		// Build system instruction (combine request system prompt + extracted system text)
+		var systemParts []string
+		if req.SystemPrompt != "" {
+			systemParts = append(systemParts, req.SystemPrompt)
+		}
 		if systemText != "" {
+			systemParts = append(systemParts, systemText)
+		}
+
+		if len(systemParts) > 0 {
 			params.System = []anthropic.TextBlockParam{
-				{Text: systemText},
+				{Text: strings.Join(systemParts, "\n\n")},
 			}
 		}
 
@@ -160,19 +221,23 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			params.Temperature = param.NewOpt(m.opts.temperature)
 		}
 
-		if len(m.opts.tools) > 0 {
-			params.Tools = convertToolsToAnthropic(m.opts.tools)
+		// Apply tools from request if specified
+		if req != nil && len(req.Tools) > 0 {
+			params.Tools = convertToolsToAnthropic(normalizeTools(req.Tools))
 		}
 
-		// Try streaming first
-		stream := m.client.Messages().NewStreaming(ctx, params)
-		if stream.Err() == nil {
-			// Streaming successful
-			m.streamGenerate(stream, yield)
-			return
+		// Choose streaming or non-streaming based on request
+		if req.Stream {
+			stream := m.client.Messages().NewStreaming(ctx, params)
+			if stream.Err() == nil {
+				// Streaming successful
+				m.streamGenerate(stream, yield)
+				return
+			}
+			// If streaming fails, fall through to non-streaming
 		}
 
-		// Fall back to non-streaming
+		// Non-streaming mode
 		response, err := m.client.Messages().New(ctx, params)
 		if err != nil {
 			yield(nil, err)
@@ -194,6 +259,7 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 				CompletionTokens: int(response.Usage.OutputTokens),
 				TotalTokens:      int(response.Usage.InputTokens + response.Usage.OutputTokens),
 			},
+			Partial: false, // Blocking mode: single complete response
 		}
 
 		// Note: Claude 3.5+ with extended thinking would populate Reasoning here
@@ -226,6 +292,7 @@ func (m *Model) streamGenerate(
 				aiMsg := message.NewAIMessageFromText(delta.Text)
 				resp := &model.Response{
 					Message: aiMsg,
+					Partial: true, // Streaming chunk
 				}
 				if !yield(resp, nil) {
 					return
@@ -267,6 +334,7 @@ func (m *Model) streamGenerate(
 				resp := &model.Response{
 					Message:      finalMsg,
 					FinishReason: stopReason,
+					Partial:      false, // Final complete response
 					// Note: Streaming doesn't provide usage information or logprobs in Anthropic API
 				}
 				yield(resp, nil)
@@ -436,7 +504,4 @@ func convertAnthropicResponseToMessage(resp *anthropic.Message) (message.Message
 }
 
 // Compile-time interface checks
-var (
-	_ model.Model     = (*Model)(nil)
-	_ model.ToolAware = (*Model)(nil)
-)
+var _ model.Model = (*Model)(nil)

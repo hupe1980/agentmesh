@@ -11,11 +11,27 @@ import (
 
 // mockModel is a test implementation for integration tests
 type mockModel struct {
-	response *model.Response
-	err      error
+	response     *model.Response
+	err          error
+	capabilities model.Capabilities
 }
 
-func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+func (m *mockModel) Capabilities() model.Capabilities {
+	if m.capabilities.MaxContextTokens == 0 {
+		// Return default capabilities if not set
+		return model.Capabilities{
+			Streaming:           true,
+			Tools:               false,
+			StructuredOutput:    false,
+			MaxContextTokens:    4096,
+			MaxOutputTokens:     2048,
+			SupportedModalities: []string{"text"},
+		}
+	}
+	return m.capabilities
+}
+
+func (m *mockModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		if m.err != nil {
 			yield(nil, m.err)
@@ -32,6 +48,7 @@ func (m *mockModel) Generate(ctx context.Context, messages []message.Message) it
 					chunk1 := message.NewAIMessageFromText(text[:len(text)/2])
 					chunkResp := &model.Response{
 						Message: chunk1,
+						Partial: true, // Streaming chunk
 					}
 					if !yield(chunkResp, nil) {
 						return
@@ -40,8 +57,17 @@ func (m *mockModel) Generate(ctx context.Context, messages []message.Message) it
 			}
 		}
 
-		// Yield final response
-		yield(m.response, nil)
+		// Yield final response (make a copy with Partial=false)
+		finalResp := &model.Response{
+			Message:      m.response.Message,
+			Reasoning:    m.response.Reasoning,
+			FinishReason: m.response.FinishReason,
+			Logprobs:     m.response.Logprobs,
+			Usage:        m.response.Usage,
+			Metadata:     m.response.Metadata,
+			Partial:      false, // Final complete response
+		}
+		yield(finalResp, nil)
 	}
 }
 
@@ -59,7 +85,8 @@ func TestMockModel_Generate(t *testing.T) {
 		},
 	}
 
-	result, err := model.Last(mock.Generate(context.Background(), nil))
+	req := &model.Request{Messages: []message.Message{message.NewHumanMessageFromText("test")}}
+	result, err := model.Last(mock.Generate(context.Background(), req))
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -95,7 +122,8 @@ func TestMockModel_Stream(t *testing.T) {
 	}
 
 	// Test streaming by collecting all responses
-	responses, err := model.Collect(mock.Generate(context.Background(), nil))
+	req := &model.Request{Messages: []message.Message{message.NewHumanMessageFromText("test")}}
+	responses, err := model.Collect(mock.Generate(context.Background(), req))
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

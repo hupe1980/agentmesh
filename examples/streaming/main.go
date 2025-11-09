@@ -93,8 +93,13 @@ func main() {
 		// Get messages from state
 		msgs := s.MessagesSnapshot()
 
+		// Create request
+		req := &pkgmodel.Request{
+			Messages: msgs,
+		}
+
 		// Call the model
-		resp, err := pkgmodel.Last(model.Generate(ctx, msgs))
+		resp, err := pkgmodel.Last(model.Generate(ctx, req))
 		if err != nil {
 			return nil, err
 		}

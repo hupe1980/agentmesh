@@ -38,6 +38,50 @@ type Logprobs struct {
 	Content []TokenLogprob
 }
 
+// Request contains all parameters for a model generation request.
+// This struct allows passing messages, tools, and other options in a single call.
+type Request struct {
+	// Messages is the conversation history to send to the model
+	Messages []message.Message
+
+	// Tools is an optional list of tools the model can call during generation.
+	// Only relevant if Capabilities().Tools is true.
+	Tools []tool.Tool
+
+	// SystemPrompt is an optional system instruction sent with this request.
+	// When provided, it will be prepended to the messages (or sent via provider-specific
+	// system parameter). This is sent per-request and not stored in conversation history,
+	// making it more token-efficient than adding a system message to the state.
+	//
+	// If empty, only the messages from the Messages field are used.
+	SystemPrompt string
+
+	// Schema is an optional JSON schema for structured output generation.
+	// When provided (and Capabilities().StructuredOutput is true), the model will
+	// be constrained to generate valid JSON matching this schema.
+	// The schema should be a map[string]any representing a JSON Schema definition.
+	//
+	// Example:
+	//  req.Schema = map[string]any{
+	//      "type": "object",
+	//      "properties": map[string]any{
+	//          "name": map[string]any{"type": "string"},
+	//          "age":  map[string]any{"type": "integer"},
+	//      },
+	//      "required": []string{"name", "age"},
+	//  }
+	Schema map[string]any
+
+	// Stream indicates whether to use streaming mode.
+	// When true, Generate() will yield incremental chunks with Partial=true.
+	// When false, Generate() will yield only the final complete response.
+	Stream bool
+
+	// Metadata contains additional request-specific parameters.
+	// Use this for provider-specific options not covered by standard fields.
+	Metadata map[string]any
+}
+
 // Response wraps the message with additional metadata from model generation.
 // This provides a clean way to access reasoning, usage statistics, and other
 // model-specific information without polluting the message structure.
@@ -69,6 +113,13 @@ type Response struct {
 
 	// Metadata contains additional model-specific information
 	Metadata map[string]any
+
+	// Partial indicates whether this is an incremental streaming chunk (true)
+	// or the final complete response (false).
+	// For streaming mode: true for all chunks except the last one.
+	// For blocking mode: always false (single complete response).
+	// Useful for UI state management (e.g., showing spinners until !Partial).
+	Partial bool
 }
 
 // UsageInfo tracks token consumption for observability and cost tracking.
@@ -88,6 +139,52 @@ type UsageInfo struct {
 	TotalTokens int
 }
 
+// Capabilities describes the features and limitations of a model.
+// This allows callers to discover what a model supports before using it.
+type Capabilities struct {
+	// Streaming indicates if the model supports streaming responses.
+	// When true, Generate() will yield incremental chunks with Partial=true.
+	Streaming bool
+
+	// Tools indicates if the model supports tool/function calling.
+	// When true, you can include tools in Request.Tools.
+	Tools bool
+
+	// StructuredOutput indicates if the model supports JSON schema-constrained output.
+	// When true, you can provide a schema in Request.Metadata["schema"].
+	StructuredOutput bool
+
+	// NativeReasoning indicates if the model exposes its internal reasoning process.
+	// When true, Response.Reasoning will be populated with the model's thinking.
+	// Examples: OpenAI o1/o3, Gemini 2.0 thinking mode, Claude extended thinking.
+	NativeReasoning bool
+
+	// Logprobs indicates if the model can provide token-level log probabilities.
+	// When true, Response.Logprobs may be populated (if explicitly requested).
+	Logprobs bool
+
+	// Vision indicates if the model can process image inputs.
+	// When true, you can include message.ImagePart in your messages.
+	Vision bool
+
+	// Audio indicates if the model can process audio inputs.
+	Audio bool
+
+	// MaxContextTokens is the maximum context window size in tokens.
+	// This is the total budget for input + output tokens.
+	// Zero means unknown or unlimited.
+	MaxContextTokens int
+
+	// MaxOutputTokens is the maximum number of tokens the model can generate.
+	// This may be constrained by configuration or model architecture.
+	// Zero means unknown or uses default limits.
+	MaxOutputTokens int
+
+	// SupportedModalities lists the input types the model accepts.
+	// Common values: "text", "image", "audio", "video"
+	SupportedModalities []string
+}
+
 // Model defines the contract for language model backends using Go 1.23+ iterators.
 // The unified Generate method supports both streaming and blocking consumption patterns.
 type Model interface {
@@ -96,13 +193,18 @@ type Model interface {
 	// For blocking, consume only the final response using Last() or similar helpers.
 	//
 	// Streaming usage:
-	//   for resp, err := range model.Generate(ctx, messages) {
+	//   req := &model.Request{
+	//       Messages: messages,
+	//       Tools:    myTools,
+	//   }
+	//   for resp, err := range model.Generate(ctx, req) {
 	//       if err != nil { return err }
 	//       fmt.Print(resp.Message.Content) // Process each chunk
 	//   }
 	//
 	// Blocking usage (helper required):
-	//   resp, err := Last(model.Generate(ctx, messages))
+	//   req := &model.Request{Messages: messages}
+	//   resp, err := Last(model.Generate(ctx, req))
 	//   if err != nil { return err }
 	//   fmt.Println(resp.Message.Content) // Process final message
 	//   fmt.Println("Reasoning:", resp.Reasoning) // Access native reasoning
@@ -118,7 +220,21 @@ type Model interface {
 	// - The last yield will contain any error encountered
 	//
 	// Context cancellation is respected and will stop iteration.
-	Generate(ctx context.Context, messages []message.Message) iter.Seq2[*Response, error]
+	Generate(ctx context.Context, req *Request) iter.Seq2[*Response, error]
+
+	// Capabilities returns the features and limitations of this model.
+	// Use this to discover what the model supports before attempting to use
+	// optional features like tools, structured output, or native reasoning.
+	//
+	// Example:
+	//   caps := model.Capabilities()
+	//   if caps.Tools {
+	//       req.Tools = myTools
+	//   }
+	//   if caps.NativeReasoning {
+	//       // Model will populate Response.Reasoning automatically
+	//   }
+	Capabilities() Capabilities
 }
 
 // Last consumes an iterator and returns only the final response and error.
@@ -126,7 +242,8 @@ type Model interface {
 //
 // Example:
 //
-//	resp, err := model.Last(model.Generate(ctx, messages))
+//	req := &model.Request{Messages: messages}
+//	resp, err := model.Last(model.Generate(ctx, req))
 //	if err != nil {
 //	    return err
 //	}
@@ -154,7 +271,8 @@ func Last(seq iter.Seq2[*Response, error]) (*Response, error) {
 //
 // Example:
 //
-//	responses, err := model.Collect(model.Generate(ctx, messages))
+//	req := &model.Request{Messages: messages}
+//	responses, err := model.Collect(model.Generate(ctx, req))
 //	if err != nil {
 //	    return err
 //	}
@@ -174,34 +292,4 @@ func Collect(seq iter.Seq2[*Response, error]) ([]*Response, error) {
 	}
 
 	return responses, lastErr
-}
-
-// ToolAware defines models that support tool/function calling.
-type ToolAware interface {
-	// BindTools returns a copy of this model with the given tools configured.
-	// The model will be able to call these tools during generation.
-	BindTools(tools ...tool.Tool) Model
-}
-
-// StructuredOutput defines models that support structured output generation.
-type StructuredOutput interface {
-	// WithStructuredOutput returns a copy of this model configured to generate
-	// output conforming to the provided JSON schema. The schema parameter should
-	// be a map[string]any representing a JSON Schema definition.
-	//
-	// When using structured output:
-	// - The model will be constrained to generate valid JSON matching the schema
-	// - The response will typically be in the content of the returned message
-	// - Invalid outputs may result in errors depending on the implementation
-	//
-	// Example schema:
-	//  schema := map[string]any{
-	//      "type": "object",
-	//      "properties": map[string]any{
-	//          "name": map[string]any{"type": "string"},
-	//          "age":  map[string]any{"type": "integer"},
-	//      },
-	//      "required": []string{"name", "age"},
-	//  }
-	WithStructuredOutput(schema map[string]any) Model
 }

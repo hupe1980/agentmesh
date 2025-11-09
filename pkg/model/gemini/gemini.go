@@ -58,7 +58,6 @@ type Options struct {
 	topP               float32
 	topK               float32
 	apiKey             string
-	tools              []tool.Tool
 	versionHeaderValue string
 }
 
@@ -165,34 +164,94 @@ func WithAPIKey(apiKey string) func(o *Options) {
 	}
 }
 
-// BindTools returns a new model configured with the provided tools.
-func (m *Model) BindTools(tools ...tool.Tool) model.Model {
-	return NewModelFromClient(m.client, func(o *Options) {
-		*o = m.opts
-		o.tools = normalizeTools(tools)
-	})
-}
-
 // Name returns the configured Gemini model identifier.
 func (m *Model) Name() string {
 	return m.opts.model
+}
+
+// Capabilities returns the features and limitations of this Gemini model.
+func (m *Model) Capabilities() model.Capabilities {
+	modelName := strings.ToLower(m.opts.model)
+
+	// Gemini 2.0 Flash supports thinking mode (native reasoning)
+	hasThinkingMode := strings.Contains(modelName, "gemini-2.0") || strings.Contains(modelName, "gemini-exp-1206")
+
+	// Most Gemini models support vision
+	hasVision := !strings.Contains(modelName, "text-only")
+
+	// Context window varies by model
+	contextWindow := m.getContextWindow(modelName)
+
+	caps := model.Capabilities{
+		Streaming:           true,
+		Tools:               true,  // All Gemini models support function calling
+		StructuredOutput:    false, // Gemini doesn't have built-in JSON schema validation
+		NativeReasoning:     hasThinkingMode,
+		Logprobs:            false, // Gemini doesn't provide logprobs
+		Vision:              hasVision,
+		Audio:               false, // Audio support not yet implemented
+		MaxContextTokens:    contextWindow,
+		MaxOutputTokens:     int(m.opts.maxOutputTokens),
+		SupportedModalities: m.getSupportedModalities(hasVision),
+	}
+
+	return caps
+}
+
+// getContextWindow returns the context window size for a given Gemini model.
+func (m *Model) getContextWindow(modelName string) int {
+	switch {
+	case strings.Contains(modelName, "gemini-2.0"):
+		return 1000000 // 1M token context for Gemini 2.0
+	case strings.Contains(modelName, "gemini-1.5-pro"), strings.Contains(modelName, "gemini-1.5-flash"):
+		return 1000000 // 1M token context for Gemini 1.5
+	case strings.Contains(modelName, "gemini-pro"):
+		return 32768
+	default:
+		return 32768 // Conservative default
+	}
+}
+
+// getSupportedModalities returns the list of input modalities.
+func (m *Model) getSupportedModalities(hasVision bool) []string {
+	if hasVision {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
 }
 
 // Generate executes a content generation request against the Gemini API.
 // Returns an iterator that yields ModelResponse as they are received.
 // For streaming, multiple intermediate responses are yielded followed by the final complete response.
 // For non-streaming (blocking), only the final response is yielded.
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
-		if len(msgs) == 0 {
+		if req == nil || len(req.Messages) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
 		}
 
-		contents, systemInstruction := convertMessagesToGemini(msgs)
+		contents, systemInstruction := convertMessagesToGemini(req.Messages)
 
-		cfg := m.buildConfig(systemInstruction) // Try streaming first
-		m.streamGenerate(ctx, &contents, cfg, yield)
+		// Use request system prompt if provided, otherwise use extracted system instruction
+		finalSystemPrompt := systemInstruction
+		if req.SystemPrompt != "" {
+			// Combine: request system prompt + extracted system instruction
+			if systemInstruction != "" {
+				finalSystemPrompt = req.SystemPrompt + "\n\n" + systemInstruction
+			} else {
+				finalSystemPrompt = req.SystemPrompt
+			}
+		}
+
+		cfg := m.buildConfig(finalSystemPrompt, req)
+
+		// Choose streaming or non-streaming based on request
+		if req.Stream {
+			m.streamGenerate(ctx, &contents, cfg, yield)
+		} else {
+			m.blockingGenerate(ctx, &contents, cfg, yield)
+		}
 	}
 }
 
@@ -240,6 +299,7 @@ func (m *Model) streamGenerate(
 				aiMsg := message.NewAIMessageFromText(text)
 				response := &model.Response{
 					Message: aiMsg,
+					Partial: true, // Streaming chunk
 				}
 				if !yield(response, nil) {
 					return
@@ -285,6 +345,7 @@ func (m *Model) streamGenerate(
 	response := &model.Response{
 		Message:      aiMessage,
 		FinishReason: finishReason,
+		Partial:      false, // Final complete response
 		// Note: Gemini 2.0 Flash with thinking mode would populate Reasoning here
 		// Note: Usage information and logprobs not available in streaming mode
 	}
@@ -292,8 +353,93 @@ func (m *Model) streamGenerate(
 	yield(response, nil)
 }
 
+// blockingGenerate handles non-streaming responses from Gemini API
+func (m *Model) blockingGenerate(
+	ctx context.Context,
+	contents *[]*genai.Content,
+	cfg *genai.GenerateContentConfig,
+	yield func(*model.Response, error) bool,
+) {
+	// Ensure user content as last message (Gemini requirement)
+	m.maybeAppendUserContent(contents)
+
+	resp, err := m.client.GenerateContent(ctx, m.opts.model, *contents, cfg)
+	if err != nil {
+		yield(nil, err)
+		return
+	}
+
+	if len(resp.Candidates) == 0 {
+		yield(nil, fmt.Errorf("gemini response contained no candidates"))
+		return
+	}
+
+	candidate := resp.Candidates[0]
+
+	// Extract finish reason
+	finishReason := ""
+	if candidate.FinishReason != genai.FinishReasonUnspecified {
+		finishReason = string(candidate.FinishReason)
+	}
+
+	if candidate.Content == nil {
+		yield(nil, fmt.Errorf("gemini response contained no content"))
+		return
+	}
+
+	var textParts []string
+	var toolCalls []message.ToolCall
+
+	for _, part := range candidate.Content.Parts {
+		if part.Text != "" {
+			textParts = append(textParts, part.Text)
+		}
+
+		if part.FunctionCall != nil {
+			args := make(map[string]any)
+			if part.FunctionCall.Args != nil {
+				for k, v := range part.FunctionCall.Args {
+					args[k] = v
+				}
+			}
+			toolCalls = append(toolCalls, message.ToolCall{
+				ID:        part.FunctionCall.Name, // Gemini uses name as ID
+				Name:      part.FunctionCall.Name,
+				Type:      "function",
+				Arguments: args,
+			})
+		}
+	}
+
+	// Build message
+	var parts message.Parts
+	finalText := strings.TrimSpace(strings.Join(textParts, ""))
+	if finalText != "" {
+		parts = message.Parts{message.NewTextPart(finalText)}
+	}
+
+	aiMessage := message.NewAIMessage(parts)
+	if len(toolCalls) > 0 {
+		aiMessage.ToolCalls = toolCalls
+	}
+
+	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
+		yield(nil, fmt.Errorf("gemini response contained no content"))
+		return
+	}
+
+	// Build response
+	response := &model.Response{
+		Message:      aiMessage,
+		FinishReason: finishReason,
+		Partial:      false,
+	}
+
+	yield(response, nil)
+}
+
 // buildConfig creates the Gemini generation config with tools and settings
-func (m *Model) buildConfig(systemInstruction string) *genai.GenerateContentConfig {
+func (m *Model) buildConfig(systemInstruction string, req *model.Request) *genai.GenerateContentConfig {
 	cfg := &genai.GenerateContentConfig{
 		Temperature:     &m.opts.temperature,
 		MaxOutputTokens: m.opts.maxOutputTokens,
@@ -307,8 +453,9 @@ func (m *Model) buildConfig(systemInstruction string) *genai.GenerateContentConf
 		}
 	}
 
-	if len(m.opts.tools) > 0 {
-		cfg.Tools = []*genai.Tool{convertToolsToGemini(m.opts.tools)}
+	// Apply tools from request if specified
+	if req != nil && len(req.Tools) > 0 {
+		cfg.Tools = []*genai.Tool{convertToolsToGemini(normalizeTools(req.Tools))}
 	}
 
 	return cfg
@@ -573,7 +720,4 @@ func convertTypeToGemini(typeStr string) genai.Type {
 }
 
 // Compile-time interface checks
-var (
-	_ model.Model     = (*Model)(nil)
-	_ model.ToolAware = (*Model)(nil)
-)
+var _ model.Model = (*Model)(nil)

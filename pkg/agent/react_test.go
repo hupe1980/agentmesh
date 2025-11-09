@@ -15,35 +15,43 @@ import (
 
 // Mock implementations for testing
 type mockModel struct {
-	generateFunc func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error]
-	bindFunc     func(tools ...tool.Tool) model.Model
+	generateFunc     func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error]
+	capabilitiesFunc func() model.Capabilities
 }
 
-func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+func (m *mockModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	if m.generateFunc != nil {
-		return m.generateFunc(ctx, messages)
+		return m.generateFunc(ctx, req)
 	}
 	// Default implementation returns a single message
 	return func(yield func(*model.Response, error) bool) {
 		yield(&model.Response{
 			Message: message.NewAIMessageFromText("mock response"),
+			Partial: false, // Single complete response
 		}, nil)
 	}
 }
 
-func (m *mockModel) BindTools(tools ...tool.Tool) model.Model {
-	if m.bindFunc != nil {
-		return m.bindFunc(tools...)
+func (m *mockModel) Capabilities() model.Capabilities {
+	if m.capabilitiesFunc != nil {
+		return m.capabilitiesFunc()
 	}
-	return m
+	// Default capabilities
+	return model.Capabilities{
+		Streaming:           true,
+		Tools:               true,
+		MaxContextTokens:    4096,
+		MaxOutputTokens:     2048,
+		SupportedModalities: []string{"text"},
+	}
 }
 
 // Helper to wrap simple generate functions into iterators
-func wrapGenerate(fn func(ctx context.Context, messages []message.Message) (message.Message, error)) func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
-	return func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+func wrapGenerate(fn func(ctx context.Context, messages []message.Message) (message.Message, error)) func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+	return func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 		return func(yield func(*model.Response, error) bool) {
-			msg, err := fn(ctx, messages)
-			yield(&model.Response{Message: msg}, err)
+			msg, err := fn(ctx, req.Messages)
+			yield(&model.Response{Message: msg, Partial: false}, err)
 		}
 	}
 }
@@ -113,39 +121,45 @@ func TestNew_NilToolsIgnored(t *testing.T) {
 	require.NotNil(t, compiled)
 }
 
-func TestNew_ModelBindToolsCalled(t *testing.T) {
-	bindCalled := false
-	var mdl *mockModel
-	mdl = &mockModel{
-		bindFunc: func(tools ...tool.Tool) model.Model {
-			bindCalled = true
-			assert.Len(t, tools, 1)
-			return mdl
+func TestNew_ModelSupportsTools(t *testing.T) {
+	mdl := &mockModel{
+		capabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				Tools:               true,
+				MaxContextTokens:    4096,
+				MaxOutputTokens:     2048,
+				SupportedModalities: []string{"text"},
+			}
 		},
 	}
 	weatherTool := &mockTool{name: "weather"}
 
-	_, err := NewReActAgent(mdl, WithTools(weatherTool))
+	agent, err := NewReActAgent(mdl, WithTools(weatherTool))
 
 	require.NoError(t, err)
-	assert.True(t, bindCalled, "BindTools should be called")
+	require.NotNil(t, agent)
 }
 
 func TestNew_ModelDoesNotSupportTools(t *testing.T) {
-	// Mock model without ToolAware interface
+	// Mock model that doesn't support tools (Capabilities().Tools = false)
 	mdl := &basicModel{}
 	weatherTool := &mockTool{name: "weather"}
 
 	_, err := NewReActAgent(mdl, WithTools(weatherTool))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not support tool configuration")
+	assert.Contains(t, err.Error(), "does not support tools")
 }
 
-func TestNew_BindToolsReturnsNil(t *testing.T) {
+func TestNew_ModelDoesNotSupportToolsViaCapabilities(t *testing.T) {
 	mdl := &mockModel{
-		bindFunc: func(tools ...tool.Tool) model.Model {
-			return nil
+		capabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				Tools:               false, // Model doesn't support tools
+				MaxContextTokens:    4096,
+				MaxOutputTokens:     2048,
+				SupportedModalities: []string{"text"},
+			}
 		},
 	}
 	weatherTool := &mockTool{name: "weather"}
@@ -153,12 +167,12 @@ func TestNew_BindToolsReturnsNil(t *testing.T) {
 	_, err := NewReActAgent(mdl, WithTools(weatherTool))
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "returned nil from BindTools")
+	assert.Contains(t, err.Error(), "does not support tools")
 }
 
 func TestAgent_BasicExecution(t *testing.T) {
 	mdl := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+		generateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 			return func(yield func(*model.Response, error) bool) {
 				yield(&model.Response{
 					Message: message.NewAIMessageFromText("Hello! I'm here to help."),
@@ -414,13 +428,24 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 	assert.Equal(t, 2, toolMsgCount, "Should have 2 tool result messages")
 }
 
-// Basic model without ToolAware interface for testing
+// Basic model without Tools support for testing
 type basicModel struct{}
 
-func (m *basicModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+func (m *basicModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		yield(&model.Response{
 			Message: message.NewAIMessageFromText("response"),
+			Partial: false,
 		}, nil)
+	}
+}
+
+func (m *basicModel) Capabilities() model.Capabilities {
+	return model.Capabilities{
+		Streaming:           true,
+		Tools:               false, // Basic model doesn't support tools
+		MaxContextTokens:    4096,
+		MaxOutputTokens:     2048,
+		SupportedModalities: []string{"text"},
 	}
 }
