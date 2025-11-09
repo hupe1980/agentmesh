@@ -147,13 +147,13 @@ func (m *Model) Name() string {
 }
 
 // Generate executes a chat completion request against the OpenAI API.
-// Returns an iterator that yields messages as they are received.
-// For streaming, multiple intermediate messages are yielded followed by the final complete message.
-// For non-streaming (blocking), only the final message is yielded.
+// Returns an iterator that yields ModelResponse as they are received.
+// For streaming, multiple intermediate responses are yielded followed by the final complete response.
+// For non-streaming (blocking), only the final response is yielded.
 //
 //nolint:gocyclo // Generation requires handling many message and response types
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
 		if len(msgs) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
@@ -242,7 +242,26 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			return
 		}
 
-		yield(aiMessage, nil)
+		// Build ModelResponse with usage information
+		response := &model.Response{
+			Message:      aiMessage,
+			FinishReason: choice.FinishReason,
+			Usage: &model.UsageInfo{
+				PromptTokens:     int(completion.Usage.PromptTokens),
+				CompletionTokens: int(completion.Usage.CompletionTokens),
+				TotalTokens:      int(completion.Usage.TotalTokens),
+			},
+		}
+
+		// Populate logprobs if available
+		if len(choice.Logprobs.Content) > 0 {
+			response.Logprobs = convertLogprobs(choice.Logprobs)
+		}
+
+		// Note: OpenAI o1/o3 models would expose reasoning_content here
+		// This will be added when implementing o1-specific support
+
+		yield(response, nil)
 	}
 }
 
@@ -251,7 +270,7 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 //nolint:gocyclo // Streaming requires handling many delta types and states
 func (m *Model) streamGenerate(
 	apiStream Stream,
-	yield func(message.Message, error) bool,
+	yield func(*model.Response, error) bool,
 	cancel context.CancelFunc,
 ) {
 	defer cancel()
@@ -266,6 +285,7 @@ func (m *Model) streamGenerate(
 
 	textBuilder := &strings.Builder{}
 	toolCalls := make(map[int64]*toolCallAccumulator)
+	var finishReason string
 
 	for apiStream.Next() {
 		chunk := apiStream.Current()
@@ -275,10 +295,18 @@ func (m *Model) streamGenerate(
 		choice := chunk.Choices[0]
 		delta := choice.Delta
 
+		// Capture finish reason from the final chunk
+		if choice.FinishReason != "" {
+			finishReason = choice.FinishReason
+		}
+
 		if delta.Content != "" {
 			textBuilder.WriteString(delta.Content)
 			aiMessage := message.NewAIMessageFromText(delta.Content)
-			if !yield(aiMessage, nil) {
+			response := &model.Response{
+				Message: aiMessage,
+			}
+			if !yield(response, nil) {
 				return
 			}
 		}
@@ -286,7 +314,10 @@ func (m *Model) streamGenerate(
 		if delta.Refusal != "" {
 			textBuilder.WriteString(delta.Refusal)
 			aiMessage := message.NewAIMessageFromText(delta.Refusal)
-			if !yield(aiMessage, nil) {
+			response := &model.Response{
+				Message: aiMessage,
+			}
+			if !yield(response, nil) {
 				return
 			}
 		}
@@ -360,7 +391,15 @@ func (m *Model) streamGenerate(
 		return
 	}
 
-	yield(aiMessage, nil)
+	// Build final response
+	response := &model.Response{
+		Message:      aiMessage,
+		FinishReason: finishReason,
+		// Note: Streaming doesn't provide usage information or logprobs in OpenAI API
+		// Usage and Logprobs will be nil for streaming responses
+	}
+
+	yield(response, nil)
 }
 
 func (m *Model) applyOptions(params *openai.ChatCompletionNewParams) error {
@@ -583,6 +622,58 @@ func joinTextParts(parts message.Parts) (string, error) {
 		}
 	}
 	return sb.String(), nil
+}
+
+// convertLogprobs converts OpenAI logprobs to agentmesh logprobs format
+func convertLogprobs(openaiLogprobs openai.ChatCompletionChoiceLogprobs) *model.Logprobs {
+	if len(openaiLogprobs.Content) == 0 {
+		return nil
+	}
+
+	content := make([]model.TokenLogprob, 0, len(openaiLogprobs.Content))
+	for i := range openaiLogprobs.Content {
+		item := &openaiLogprobs.Content[i]
+		tokenLogprob := model.TokenLogprob{
+			Token:   item.Token,
+			Logprob: item.Logprob,
+		}
+
+		// Convert bytes if available (OpenAI uses []int64, we use []byte)
+		if len(item.Bytes) > 0 {
+			bytes := make([]byte, len(item.Bytes))
+			for j, b := range item.Bytes {
+				bytes[j] = byte(b)
+			}
+			tokenLogprob.Bytes = bytes
+		}
+
+		// Convert top logprobs if available
+		if len(item.TopLogprobs) > 0 {
+			topLogprobs := make([]model.TopLogprob, 0, len(item.TopLogprobs))
+			for j := range item.TopLogprobs {
+				top := &item.TopLogprobs[j]
+				topLogprob := model.TopLogprob{
+					Token:   top.Token,
+					Logprob: top.Logprob,
+				}
+				if len(top.Bytes) > 0 {
+					bytes := make([]byte, len(top.Bytes))
+					for k, b := range top.Bytes {
+						bytes[k] = byte(b)
+					}
+					topLogprob.Bytes = bytes
+				}
+				topLogprobs = append(topLogprobs, topLogprob)
+			}
+			tokenLogprob.TopLogprobs = topLogprobs
+		}
+
+		content = append(content, tokenLogprob)
+	}
+
+	return &model.Logprobs{
+		Content: content,
+	}
 }
 
 // Compile-time interface checks

@@ -11,33 +11,36 @@ import (
 
 // mockModel is a test implementation for integration tests
 type mockModel struct {
-	response message.Message
+	response *model.Response
 	err      error
 }
 
-func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
 		if m.err != nil {
 			yield(nil, m.err)
 			return
 		}
 
 		// Simulate streaming with intermediate chunks
-		parts := m.response.Parts()
+		parts := m.response.Message.Parts()
 		if len(parts) > 0 {
 			if textPart, ok := parts[0].(message.TextPart); ok {
 				// Yield intermediate chunks
 				text := textPart.Text
 				if len(text) > 3 {
 					chunk1 := message.NewAIMessageFromText(text[:len(text)/2])
-					if !yield(chunk1, nil) {
+					chunkResp := &model.Response{
+						Message: chunk1,
+					}
+					if !yield(chunkResp, nil) {
 						return
 					}
 				}
 			}
 		}
 
-		// Yield final message
+		// Yield final response
 		yield(m.response, nil)
 	}
 }
@@ -45,14 +48,23 @@ func (m *mockModel) Generate(ctx context.Context, messages []message.Message) it
 // TestMockModel_Generate verifies mock model implementation
 func TestMockModel_Generate(t *testing.T) {
 	expectedMsg := message.NewAIMessageFromText("Test response")
-	mock := &mockModel{response: expectedMsg}
+	mock := &mockModel{
+		response: &model.Response{
+			Message: expectedMsg,
+			Usage: &model.UsageInfo{
+				PromptTokens:     10,
+				CompletionTokens: 5,
+				TotalTokens:      15,
+			},
+		},
+	}
 
 	result, err := model.Last(mock.Generate(context.Background(), nil))
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	parts := result.Parts()
+	parts := result.Message.Parts()
 	if len(parts) == 0 {
 		t.Fatal("Expected message to have parts")
 	}
@@ -63,26 +75,38 @@ func TestMockModel_Generate(t *testing.T) {
 	} else {
 		t.Error("Expected first part to be TextPart")
 	}
+
+	// Verify usage information
+	if result.Usage == nil {
+		t.Fatal("Expected usage information")
+	}
+	if result.Usage.TotalTokens != 15 {
+		t.Errorf("Expected 15 total tokens, got %d", result.Usage.TotalTokens)
+	}
 }
 
 // TestMockModel_Stream verifies mock streaming
 func TestMockModel_Stream(t *testing.T) {
 	expectedMsg := message.NewAIMessageFromText("Streaming")
-	mock := &mockModel{response: expectedMsg}
+	mock := &mockModel{
+		response: &model.Response{
+			Message: expectedMsg,
+		},
+	}
 
-	// Test streaming by collecting all messages
-	messages, err := model.Collect(mock.Generate(context.Background(), nil))
+	// Test streaming by collecting all responses
+	responses, err := model.Collect(mock.Generate(context.Background(), nil))
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if len(messages) < 1 {
-		t.Fatal("Expected at least one message")
+	if len(responses) < 1 {
+		t.Fatal("Expected at least one response")
 	}
 
-	// Verify the final message
-	finalMsg := messages[len(messages)-1]
-	parts := finalMsg.Parts()
+	// Verify the final response
+	finalResp := responses[len(responses)-1]
+	parts := finalResp.Message.Parts()
 	if len(parts) == 0 {
 		t.Fatal("Expected final message to have parts")
 	}

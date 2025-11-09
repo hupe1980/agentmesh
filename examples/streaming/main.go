@@ -94,7 +94,7 @@ func main() {
 		msgs := s.MessagesSnapshot()
 
 		// Call the model
-		response, err := pkgmodel.Last(model.Generate(ctx, msgs))
+		resp, err := pkgmodel.Last(model.Generate(ctx, msgs))
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func main() {
 		}
 
 		return &graph.NodeResult{
-			Messages: []message.Message{response},
+			Messages: []message.Message{resp.Message},
 			Updates: map[string]any{
 				"status": "llm_completed",
 			},

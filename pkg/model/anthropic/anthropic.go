@@ -131,12 +131,12 @@ func (m *Model) BindTools(tools ...tool.Tool) model.Model {
 	})
 }
 
-// Generate executes a message request against the Anthropic API.
-// Returns an iterator that yields messages as they are received.
-// For streaming, multiple intermediate messages are yielded followed by the final complete message.
-// For non-streaming (blocking), only the final message is yielded.
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+// Generate executes a content generation request against the Anthropic API.
+// Returns an iterator that yields ModelResponse as they are received.
+// For streaming, multiple intermediate responses are yielded followed by the final complete response.
+// For non-streaming (blocking), only the final response is yielded.
+func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
 		if len(msgs) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
@@ -185,19 +185,36 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 			return
 		}
 
-		yield(msg, nil)
+		// Build response with usage information
+		resp := &model.Response{
+			Message:      msg,
+			FinishReason: string(response.StopReason),
+			Usage: &model.UsageInfo{
+				PromptTokens:     int(response.Usage.InputTokens),
+				CompletionTokens: int(response.Usage.OutputTokens),
+				TotalTokens:      int(response.Usage.InputTokens + response.Usage.OutputTokens),
+			},
+		}
+
+		// Note: Claude 3.5+ with extended thinking would populate Reasoning here
+		// Note: Anthropic does not provide logprobs in their API
+
+		yield(resp, nil)
 	}
 }
 
 // streamGenerate handles streaming responses from Anthropic API
+//
+//nolint:gocyclo // Streaming requires handling many event types
 func (m *Model) streamGenerate(
 	stream *ssestream.Stream[anthropic.MessageStreamEventUnion],
-	yield func(message.Message, error) bool,
+	yield func(*model.Response, error) bool,
 ) {
 	defer func() { _ = stream.Close() }() // Best effort close
 
 	var textBuffer strings.Builder
 	var toolCalls []message.ToolCall
+	var stopReason string
 
 	for stream.Next() {
 		event := stream.Current()
@@ -207,7 +224,10 @@ func (m *Model) streamGenerate(
 			if delta, ok := e.Delta.AsAny().(anthropic.TextDelta); ok {
 				textBuffer.WriteString(delta.Text)
 				aiMsg := message.NewAIMessageFromText(delta.Text)
-				if !yield(aiMsg, nil) {
+				resp := &model.Response{
+					Message: aiMsg,
+				}
+				if !yield(resp, nil) {
 					return
 				}
 			}
@@ -225,6 +245,12 @@ func (m *Model) streamGenerate(
 				}
 			}
 
+		case anthropic.MessageDeltaEvent:
+			// Capture stop reason from delta
+			if e.Delta.StopReason != "" {
+				stopReason = string(e.Delta.StopReason)
+			}
+
 		case anthropic.MessageStopEvent:
 			// Send final message with accumulated content
 			var parts message.Parts
@@ -238,7 +264,12 @@ func (m *Model) streamGenerate(
 			}
 
 			if len(parts) > 0 || len(toolCalls) > 0 {
-				yield(finalMsg, nil)
+				resp := &model.Response{
+					Message:      finalMsg,
+					FinishReason: stopReason,
+					// Note: Streaming doesn't provide usage information or logprobs in Anthropic API
+				}
+				yield(resp, nil)
 			}
 			return
 		}

@@ -39,7 +39,10 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🧠 Memory** - Long-term conversation storage with semantic vector search and session management
 - **📝 Prompt Templates** - Variable substitution with {{.Variable}} syntax for reusable prompt patterns
 - **🔍 Retrieval** - RAG integration with AWS Bedrock Knowledge Bases and Kendra
-- **🔄 Unified Streaming** - Iterator-based model API (Go 1.23+ `iter.Seq2`) for consistent streaming/blocking modes
+- **🔄 Unified Model API** - Iterator-based `iter.Seq2[*model.Response, error]` with streaming/blocking support
+- **🧠 Native Reasoning** - First-class support for reasoning-capable models (OpenAI o1/o3, Gemini 2.0, Claude)
+- **📊 Rich Metadata** - Access reasoning traces, finish reasons, token probabilities, and usage statistics
+- **🎯 Token Tracking** - Comprehensive usage info (prompt, completion, reasoning tokens) for cost monitoring
 
 ### 🌐 Integration & Extensibility
 - **🤝 Agent-to-Agent (A2A) Protocol** - Expose agents as A2A services or connect to external A2A agents
@@ -224,6 +227,91 @@ func main() {
 ```
 The weather in Paris is currently sunny with a temperature of 22°C.
 ```
+
+---
+
+### Using Model Responses with Metadata
+
+Access reasoning traces, usage statistics, and metadata from model responses:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/model"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+// Create model
+mdl := openai.NewModel(
+    openai.WithModel("gpt-4o"),
+    openai.WithLogprobs(true, 5), // Request token probabilities
+)
+
+// For blocking mode - get final response with metadata
+resp, err := model.Last(mdl.Generate(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
+
+// Access the message content
+fmt.Println("Response:", resp.Message.Content())
+
+// Access native reasoning (for o1/o3, Gemini 2.0, Claude)
+if resp.Reasoning != "" {
+    fmt.Println("Model's reasoning:", resp.Reasoning)
+}
+
+// Check why generation stopped
+fmt.Println("Finish reason:", resp.FinishReason) // "stop", "length", "tool_calls", etc.
+
+// Track token usage for cost monitoring
+if resp.Usage != nil {
+    fmt.Printf("Tokens - Prompt: %d, Completion: %d, Reasoning: %d, Total: %d\n",
+        resp.Usage.PromptTokens,
+        resp.Usage.CompletionTokens,
+        resp.Usage.ReasoningTokens,
+        resp.Usage.TotalTokens)
+}
+
+// Analyze token probabilities (OpenAI only)
+if resp.Logprobs != nil {
+    for _, token := range resp.Logprobs.Content {
+        fmt.Printf("Token: %s, Probability: %.2f%%\n",
+            token.Token,
+            math.Exp(token.Logprob)*100)
+        
+        // See alternative tokens the model considered
+        for _, alt := range token.TopLogprobs {
+            fmt.Printf("  Alternative: %s (%.2f%%)\n",
+                alt.Token,
+                math.Exp(alt.Logprob)*100)
+        }
+    }
+}
+
+// For streaming mode - get incremental responses
+for resp, err := range mdl.Generate(ctx, messages) {
+    if err != nil {
+        log.Printf("Error: %v", err)
+        break
+    }
+    
+    // Print content as it arrives
+    fmt.Print(resp.Message.Content())
+    
+    // Access partial reasoning (if available)
+    if resp.Reasoning != "" {
+        fmt.Printf("\n[Reasoning: %s]\n", resp.Reasoning)
+    }
+}
+```
+
+**Response Fields:**
+- `Message` - The actual message content (text, tool calls, images)
+- `Reasoning` - Native reasoning/thinking from o1/o3, Gemini 2.0, Claude (empty for other models)
+- `FinishReason` - Why generation stopped: "stop", "length", "tool_calls", "content_filter"
+- `Logprobs` - Token-level probabilities and alternatives (OpenAI only, requires opt-in)
+- `Usage` - Token consumption with separate prompt/completion/reasoning tracking
+- `Metadata` - Additional provider-specific information
 
 ---
 

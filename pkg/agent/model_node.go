@@ -98,7 +98,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			messages := s.MessagesSnapshot()
 
 			// Call the model
-			msg, err := model.Last(mdl.Generate(ctx, messages))
+			resp, err := model.Last(mdl.Generate(ctx, messages))
 			if err != nil {
 				fallback, transformedErr := handleModelError(ctx, s, err, &config)
 				if transformedErr != nil {
@@ -112,7 +112,10 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 					}, nil
 				}
 				return nil, err
-			} // Execute AfterModel callbacks
+			}
+
+			// Execute AfterModel callbacks
+			msg := resp.Message
 			if config.callbacks != nil && config.callbacks.HasAfterModelCallbacks() {
 				transformed, err := config.callbacks.ExecuteAfterModel(ctx, s, msg)
 				if err != nil {

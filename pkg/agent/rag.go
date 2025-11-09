@@ -159,12 +159,12 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 		msgs = append([]message.Message{contextMsg}, msgs...)
 	}
 
-	msg, err := model.Last(mdl.Generate(ctx, msgs))
+	resp, err := model.Last(mdl.Generate(ctx, msgs))
 	if err != nil {
 		return nil, err
 	}
 
 	return &graph.NodeResult{
-		Messages: []message.Message{msg},
+		Messages: []message.Message{resp.Message},
 	}, nil
 }

@@ -39,20 +39,50 @@ AgentMesh abstracts language models behind a common `model.Model` interface that
 
 ```go
 type Model interface {
-    Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error]
+    Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error]
 }
 ```
 
 The iterator-based API unifies streaming and blocking modes:
-- **Streaming**: Iterate over partial messages as they arrive
+- **Streaming**: Iterate over partial responses as they arrive
 - **Blocking**: Use `model.Last()` to get only the final response
-- **Batch collection**: Use `model.Collect()` to gather all messages
+- **Batch collection**: Use `model.Collect()` to gather all responses
 
-Models may also implement `model.ToolAware` to support function calling:
+### Response Structure
+
+Models return a `*model.Response` with rich metadata:
 
 ```go
+type Response struct {
+    Message      message.Message // The actual message content
+    Reasoning    string          // Native reasoning (o1/o3, Gemini 2.0, Claude)
+    FinishReason string          // Why generation stopped
+    Logprobs     *Logprobs       // Token probabilities (OpenAI)
+    Usage        *UsageInfo      // Token consumption tracking
+    Metadata     map[string]any  // Provider-specific metadata
+}
+
+type UsageInfo struct {
+    PromptTokens     int // Input tokens
+    CompletionTokens int // Output tokens
+    ReasoningTokens  int // Reasoning tokens (o1/o3)
+    TotalTokens      int // Sum of all tokens
+}
+```
+
+### Optional Interfaces
+
+Models may also implement additional capabilities:
+
+```go
+// ToolAware enables function calling
 type ToolAware interface {
     BindTools(tools ...tool.Tool) Model
+}
+
+// StructuredOutput enables JSON schema validation
+type StructuredOutput interface {
+    WithStructuredOutput(schema map[string]any) Model
 }
 ```
 
@@ -186,18 +216,23 @@ compiled, err := agent.NewReActAgent(
 All models support streaming through the unified iterator API:
 
 ```go
-// Stream model responses directly
-for msg, err := range model.Generate(ctx, messages) {
+// Stream model responses directly with full metadata access
+for resp, err := range model.Generate(ctx, messages) {
     if err != nil {
         log.Printf("Error: %v", err)
         break
     }
     
-    // Print partial responses as they arrive
-    for _, part := range msg.Parts() {
+    // Print partial content as it arrives
+    for _, part := range resp.Message.Parts() {
         if text, ok := part.(message.TextPart); ok {
             fmt.Print(text.Text)
         }
+    }
+    
+    // Access streaming reasoning (if supported)
+    if resp.Reasoning != "" {
+        fmt.Printf("\n[Reasoning: %s]\n", resp.Reasoning)
     }
 }
 ```
@@ -205,25 +240,44 @@ for msg, err := range model.Generate(ctx, messages) {
 For blocking (non-streaming) mode, use `model.Last()`:
 
 ```go
-// Get only the final response
-finalMsg, err := model.Last(model.Generate(ctx, messages))
+// Get only the final response with metadata
+resp, err := model.Last(model.Generate(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println(finalMsg.Content())
+
+// Access message content
+fmt.Println(resp.Message.Content())
+
+// Access reasoning (for o1/o3, Gemini 2.0, Claude)
+if resp.Reasoning != "" {
+    fmt.Println("Reasoning:", resp.Reasoning)
+}
+
+// Track token usage
+if resp.Usage != nil {
+    fmt.Printf("Total tokens: %d (prompt: %d, completion: %d, reasoning: %d)\n",
+        resp.Usage.TotalTokens,
+        resp.Usage.PromptTokens,
+        resp.Usage.CompletionTokens,
+        resp.Usage.ReasoningTokens)
+}
+
+// Check finish reason
+fmt.Println("Finish reason:", resp.FinishReason)
 ```
 
-Collect all intermediate messages:
+Collect all intermediate responses:
 
 ```go
-// Gather all messages (useful for debugging)
-messages, err := model.Collect(model.Generate(ctx, messages))
+// Gather all responses (useful for debugging streaming)
+responses, err := model.Collect(model.Generate(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
 
-for _, msg := range messages {
-    fmt.Printf("Message: %s\n", msg.Content())
+for i, resp := range responses {
+    fmt.Printf("Chunk %d: %s\n", i, resp.Message.Content())
 }
 ```
 
@@ -238,9 +292,37 @@ for event := range stream {
     }
     
     if event.Node == "model" {
-        // Access partial response from iterator
+        // Access messages from graph events
         for _, msg := range event.Messages {
             fmt.Print(msg.Content())
+        }
+    }
+}
+```
+
+### Accessing Token Probabilities
+
+OpenAI models support token-level probability analysis:
+
+```go
+model := openai.NewModel(
+    openai.WithLogprobs(true, 5), // Request top 5 alternatives per token
+)
+
+resp, err := model.Last(model.Generate(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
+
+if resp.Logprobs != nil {
+    for _, tokenInfo := range resp.Logprobs.Content {
+        // Main token chosen
+        fmt.Printf("Token: %s, Log Probability: %.3f\n",
+            tokenInfo.Token, tokenInfo.Logprob)
+        
+        // Alternative tokens considered
+        for _, alt := range tokenInfo.TopLogprobs {
+            fmt.Printf("  Alt: %s (%.3f)\n", alt.Token, alt.Logprob)
         }
     }
 }
@@ -257,8 +339,8 @@ type CustomModel struct {
     client *CustomClient
 }
 
-func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-    return func(yield func(message.Message, error) bool) {
+func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+    return func(yield func(*model.Response, error) bool) {
         // Convert messages to provider format
         req := convertMessages(messages)
         
@@ -269,23 +351,45 @@ func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) 
             return
         }
         
+        var totalTokens int
         for chunk := range stream {
             // Convert chunk to AgentMesh format
             msg := message.NewAIMessageFromText(chunk.Text)
             
-            // Yield partial message; if false returned, stop streaming
-            if !yield(msg, nil) {
+            // Build response with metadata
+            resp := &model.Response{
+                Message:      msg,
+                Reasoning:    chunk.Reasoning,     // If your provider supports it
+                FinishReason: chunk.FinishReason,  // e.g., "stop", "length"
+                Usage: &model.UsageInfo{
+                    PromptTokens:     chunk.PromptTokens,
+                    CompletionTokens: chunk.CompletionTokens,
+                    TotalTokens:      chunk.TotalTokens,
+                },
+            }
+            
+            // Yield response; if false returned, stop streaming
+            if !yield(resp, nil) {
                 return
             }
         }
         
-        // For non-streaming providers, yield single final message
+        // For non-streaming providers, yield single final response
         // resp, err := m.client.Complete(ctx, req)
         // if err != nil {
         //     yield(nil, err)
         //     return
         // }
-        // yield(message.NewAIMessage(message.NewTextPart(resp.Text)), nil)
+        // 
+        // yield(&model.Response{
+        //     Message: message.NewAIMessage(message.NewTextPart(resp.Text)),
+        //     Usage: &model.UsageInfo{
+        //         PromptTokens:     resp.Usage.PromptTokens,
+        //         CompletionTokens: resp.Usage.CompletionTokens,
+        //         TotalTokens:      resp.Usage.TotalTokens,
+        //     },
+        //     FinishReason: resp.FinishReason,
+        // }, nil)
     }
 }
 
@@ -306,3 +410,11 @@ compiled, err := agent.NewReActAgent(model, tools)
 ```
 
 The iterator pattern automatically supports both streaming and blocking modes through `model.Last()` and `model.Collect()` helpers.
+
+**Key Points for Custom Implementations:**
+- Return `iter.Seq2[*model.Response, error]` (note the pointer)
+- Populate `Usage` field for token tracking and cost monitoring
+- Set `FinishReason` to indicate why generation stopped
+- Set `Reasoning` field if your provider exposes internal reasoning
+- Use `Metadata` map for provider-specific information
+- Yield `nil` error for successful chunks, non-nil error to stop iteration

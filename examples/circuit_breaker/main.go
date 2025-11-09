@@ -12,6 +12,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/callbacks/policies"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
 // FlakyModel simulates an unreliable external service
@@ -19,8 +20,8 @@ type FlakyModel struct {
 	callCount int
 }
 
-func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
 		m.callCount++
 
 		// Simulate service behavior:
@@ -33,7 +34,9 @@ func (m *FlakyModel) Generate(ctx context.Context, messages []message.Message) i
 		}
 
 		log.Printf("[Call %d] ✓ Service success", m.callCount)
-		yield(message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)), nil)
+		yield(&model.Response{
+			Message: message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)),
+		}, nil)
 	}
 }
 

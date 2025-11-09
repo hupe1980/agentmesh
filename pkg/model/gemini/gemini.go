@@ -179,11 +179,11 @@ func (m *Model) Name() string {
 }
 
 // Generate executes a content generation request against the Gemini API.
-// Returns an iterator that yields messages as they are received.
-// For streaming, multiple intermediate messages are yielded followed by the final complete message.
-// For non-streaming (blocking), only the final message is yielded.
-func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+// Returns an iterator that yields ModelResponse as they are received.
+// For streaming, multiple intermediate responses are yielded followed by the final complete response.
+// For non-streaming (blocking), only the final response is yielded.
+func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
 		if len(msgs) == 0 {
 			yield(nil, fmt.Errorf("generate requires at least one message"))
 			return
@@ -197,17 +197,20 @@ func (m *Model) Generate(ctx context.Context, msgs []message.Message) iter.Seq2[
 }
 
 // streamGenerate handles streaming responses from Gemini API
+//
+//nolint:gocyclo // Streaming requires handling many response types
 func (m *Model) streamGenerate(
 	ctx context.Context,
 	contents *[]*genai.Content,
 	cfg *genai.GenerateContentConfig,
-	yield func(message.Message, error) bool,
+	yield func(*model.Response, error) bool,
 ) {
 	// Ensure user content as last message (Gemini requirement)
 	m.maybeAppendUserContent(contents)
 
 	textBuilder := &strings.Builder{}
 	var toolCalls []message.ToolCall
+	var finishReason string
 
 	for resp, err := range m.client.GenerateContentStream(ctx, m.opts.model, *contents, cfg) {
 		if err != nil {
@@ -220,6 +223,12 @@ func (m *Model) streamGenerate(
 		}
 
 		candidate := resp.Candidates[0]
+
+		// Capture finish reason if available
+		if candidate.FinishReason != genai.FinishReasonUnspecified {
+			finishReason = string(candidate.FinishReason)
+		}
+
 		if candidate.Content == nil {
 			continue
 		}
@@ -229,7 +238,10 @@ func (m *Model) streamGenerate(
 				text := part.Text
 				textBuilder.WriteString(text)
 				aiMsg := message.NewAIMessageFromText(text)
-				if !yield(aiMsg, nil) {
+				response := &model.Response{
+					Message: aiMsg,
+				}
+				if !yield(response, nil) {
 					return
 				}
 			}
@@ -269,7 +281,15 @@ func (m *Model) streamGenerate(
 		return
 	}
 
-	yield(aiMessage, nil)
+	// Build final response
+	response := &model.Response{
+		Message:      aiMessage,
+		FinishReason: finishReason,
+		// Note: Gemini 2.0 Flash with thinking mode would populate Reasoning here
+		// Note: Usage information and logprobs not available in streaming mode
+	}
+
+	yield(response, nil)
 }
 
 // buildConfig creates the Gemini generation config with tools and settings

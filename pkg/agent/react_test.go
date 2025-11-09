@@ -15,17 +15,19 @@ import (
 
 // Mock implementations for testing
 type mockModel struct {
-	generateFunc func(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error]
+	generateFunc func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error]
 	bindFunc     func(tools ...tool.Tool) model.Model
 }
 
-func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
+func (m *mockModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
 	if m.generateFunc != nil {
 		return m.generateFunc(ctx, messages)
 	}
 	// Default implementation returns a single message
-	return func(yield func(message.Message, error) bool) {
-		yield(message.NewAIMessageFromText("mock response"), nil)
+	return func(yield func(*model.Response, error) bool) {
+		yield(&model.Response{
+			Message: message.NewAIMessageFromText("mock response"),
+		}, nil)
 	}
 }
 
@@ -37,11 +39,11 @@ func (m *mockModel) BindTools(tools ...tool.Tool) model.Model {
 }
 
 // Helper to wrap simple generate functions into iterators
-func wrapGenerate(fn func(ctx context.Context, messages []message.Message) (message.Message, error)) func(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-	return func(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-		return func(yield func(message.Message, error) bool) {
+func wrapGenerate(fn func(ctx context.Context, messages []message.Message) (message.Message, error)) func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+	return func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+		return func(yield func(*model.Response, error) bool) {
 			msg, err := fn(ctx, messages)
-			yield(msg, err)
+			yield(&model.Response{Message: msg}, err)
 		}
 	}
 }
@@ -156,9 +158,11 @@ func TestNew_BindToolsReturnsNil(t *testing.T) {
 
 func TestAgent_BasicExecution(t *testing.T) {
 	mdl := &mockModel{
-		generateFunc: func(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-			return func(yield func(message.Message, error) bool) {
-				yield(message.NewAIMessageFromText("Hello! I'm here to help."), nil)
+		generateFunc: func(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+			return func(yield func(*model.Response, error) bool) {
+				yield(&model.Response{
+					Message: message.NewAIMessageFromText("Hello! I'm here to help."),
+				}, nil)
 			}
 		},
 	}
@@ -413,8 +417,10 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 // Basic model without ToolAware interface for testing
 type basicModel struct{}
 
-func (m *basicModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
-		yield(message.NewAIMessageFromText("response"), nil)
+func (m *basicModel) Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error] {
+	return func(yield func(*model.Response, error) bool) {
+		yield(&model.Response{
+			Message: message.NewAIMessageFromText("response"),
+		}, nil)
 	}
 }
