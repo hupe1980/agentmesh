@@ -347,22 +347,36 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 
 	// Attempt to restore from checkpoint if configured
 	if options.checkpointer != nil && options.runID != "" && options.autoRestore {
+		logger := logging.FromContext(ctx)
 		var checkpoint *Checkpoint
 		var err error
 
 		if options.resume && options.resumeFrom > 0 {
 			// Resume from specific superstep
+			logger.Info("loading checkpoint at specific superstep",
+				"run_id", options.runID,
+				"superstep", options.resumeFrom)
 			checkpoint, err = options.checkpointer.LoadAtSuperstep(ctx, options.runID, options.resumeFrom)
 		} else {
 			// Resume from latest checkpoint
+			logger.Info("loading latest checkpoint",
+				"run_id", options.runID)
 			checkpoint, err = options.checkpointer.Load(ctx, options.runID)
 		}
 
 		if err != nil {
+			logger.Error("failed to load checkpoint",
+				"run_id", options.runID,
+				"error", err)
 			return nil, fmt.Errorf("failed to load checkpoint: %w", err)
 		}
 
 		if checkpoint != nil {
+			logger.Info("restoring from checkpoint",
+				"run_id", options.runID,
+				"superstep", checkpoint.Superstep,
+				"version", checkpoint.Version)
+
 			// Trace checkpoint restore operation (if instrumentation configured)
 			if instrumentation != nil {
 				restoreCtx, restoreSpan := instrumentation.TraceCheckpoint(ctx, "restore", options.runID, checkpoint.Superstep)
@@ -374,8 +388,18 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 			}
 
 			if err != nil {
+				logger.Error("failed to restore checkpoint",
+					"run_id", options.runID,
+					"superstep", checkpoint.Superstep,
+					"error", err)
 				return nil, fmt.Errorf("failed to restore checkpoint: %w", err)
 			}
+
+			logger.Info("checkpoint restored successfully",
+				"run_id", options.runID,
+				"superstep", checkpoint.Superstep,
+				"version", checkpoint.Version)
+
 			// Set initial superstep to resume from
 			options.initialSuperstep = checkpoint.Superstep
 		}

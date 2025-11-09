@@ -78,11 +78,10 @@ import (
     "github.com/hupe1980/agentmesh/pkg/trace/opentelemetry"
 )
 
-// Configure structured logging
-logger := logging.NewSlogAdapter(
-    slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-        Level: slog.LevelInfo,
-    })),
+// Configure structured logging (built-in slog adapter)
+logger := logging.NewSlogLogger(
+    logging.LogLevelInfo,      // Debug, Info, Warn, Error
+    logging.LogFormatJSON,     // JSON or Text format
 )
 
 // Configure OpenTelemetry tracing
@@ -108,7 +107,29 @@ result, err := compiled.Invoke(ctx, messages,
 
 When you configure providers, AgentMesh **automatically**:
 
-### 1. Creates Trace Spans
+### 1. Emits Structured Logs
+
+Throughout execution, the runtime emits structured logs using `logging.FromContext()`:
+
+**Graph Runtime:**
+- Graph execution start/completion (Info level)
+- Checkpoint save/restore operations (Info/Debug)
+- Checkpoint failures (Error level)
+- Graph execution failures (Error level)
+
+**Node Execution:**
+- Node start/completion (Debug level)
+- Node failures (Error level)
+- Human pause events (Info level)
+
+**Pregel Runtime:**
+- Superstep start/completion (Debug level)
+- Frontier consumption (Debug level)
+- Runtime failures (Error level)
+
+All logs include structured attributes like `run_id`, `superstep`, `node`, `duration_ms`, etc.
+
+### 2. Creates Trace Spans
 
 - **Graph execution** - Overall `Invoke()` or `Stream()` duration
 - **Node execution** - Every node that runs, including timing
@@ -122,7 +143,7 @@ graph.execute (1.5s)
 └── checkpoint.save (50ms)
 ```
 
-### 2. Records Metrics
+### 3. Records Metrics
 
 All metrics include relevant labels (`node.name`, `superstep`, etc.):
 
@@ -135,7 +156,7 @@ All metrics include relevant labels (`node.name`, `superstep`, etc.):
 - `agentgraph.graph.executions` (counter) - Number of graph executions
 - `agentgraph.superstep.latency_ms` (histogram) - Superstep duration
 
-### 3. Propagates Context
+### 4. Propagates Context
 
 All providers are automatically attached to context and available in node RunFuncs:
 

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/trace"
@@ -126,9 +127,6 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // implement custom MessageBus backends, schedulers, and fine-tune the
 // execution engine for specific use cases.
 //
-// Context Handling: This struct follows idiomatic Go patterns by NOT storing
-// context.Context as a field. Instead, contexts are passed explicitly to methods.
-//
 // The done field is used for cancellation checks in emit() where the method
 // signature doesn't include a context parameter (for performance reasons).
 type graphRuntime struct {
@@ -234,12 +232,18 @@ func newPregelRuntime(cg *CompiledGraph, cancel context.CancelFunc, options runO
 }
 
 func (gr *graphRuntime) startCheckpointWorker(ctx context.Context) {
+	logger := logging.FromContext(ctx)
+
 	if gr.options.checkpointer == nil || gr.options.runID == "" {
 		return
 	}
 	if gr.checkpointQueue != nil {
 		return
 	}
+
+	logger.Debug("starting async checkpoint worker",
+		"run_id", gr.options.runID,
+		"queue_size", 1)
 
 	gr.checkpointQueue = make(chan *Checkpoint, 1)
 	// Create detached context for background saves (checkpoints must complete even if request canceled)
@@ -248,19 +252,37 @@ func (gr *graphRuntime) startCheckpointWorker(ctx context.Context) {
 
 	go func() {
 		defer gr.checkpointWG.Done()
+		logger := logging.FromContext(saveCtx)
+
 		for checkpoint := range gr.checkpointQueue {
 			if checkpoint == nil {
 				continue
 			}
+
+			logger.Debug("processing checkpoint from queue",
+				"run_id", checkpoint.RunID,
+				"superstep", checkpoint.Superstep)
+
 			if err := gr.options.checkpointer.Save(saveCtx, checkpoint); err != nil {
 				checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err)
+				logger.Error("async checkpoint save failed",
+					"run_id", checkpoint.RunID,
+					"superstep", checkpoint.Superstep,
+					"error", err)
 				if gr.options.failOnCheckpointError {
 					gr.fail(checkpointErr)
 				} else {
 					gr.emitError(checkpointErr)
 				}
+			} else {
+				logger.Info("async checkpoint saved successfully",
+					"run_id", checkpoint.RunID,
+					"superstep", checkpoint.Superstep,
+					"version", checkpoint.Version)
 			}
 		}
+
+		logger.Debug("checkpoint worker stopped", "run_id", gr.options.runID)
 	}()
 }
 
@@ -274,8 +296,15 @@ func (gr *graphRuntime) stopCheckpointWorker() {
 }
 
 func (gr *graphRuntime) run(ctx context.Context) error {
+	logger := logging.FromContext(ctx)
+	startTime := time.Now()
+
 	// Store done channel for cancellation checks in emit()
 	gr.done = ctx.Done()
+
+	logger.Info("starting graph execution",
+		"run_id", gr.options.runID,
+		"checkpoint_interval", gr.options.checkpointInterval)
 
 	// Start checkpoint worker with this request's context
 	gr.startCheckpointWorker(ctx)
@@ -296,6 +325,8 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 	if gr.cg != nil {
 		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
 	}
+
+	duration := time.Since(startTime)
 
 	// Transfer final aggregates to graph state
 	if err == nil || errors.Is(err, context.Canceled) {
@@ -327,13 +358,31 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 		}
 	}
 
-	if err != nil && !errors.Is(err, context.Canceled) {
+	switch {
+	case err != nil && !errors.Is(err, context.Canceled):
+		logger.Error("graph execution failed",
+			"run_id", gr.options.runID,
+			"supersteps", gr.engine.Stats().Supersteps,
+			"duration_ms", duration.Milliseconds(),
+			"error", err)
 		gr.fail(err)
+	case errors.Is(err, context.Canceled):
+		logger.Warn("graph execution canceled",
+			"run_id", gr.options.runID,
+			"supersteps", gr.engine.Stats().Supersteps,
+			"duration_ms", duration.Milliseconds())
+	default:
+		logger.Info("graph execution completed successfully",
+			"run_id", gr.options.runID,
+			"supersteps", gr.engine.Stats().Supersteps,
+			"duration_ms", duration.Milliseconds())
 	}
 	return err
 }
 
 func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
+	logger := logging.FromContext(ctx)
+
 	// Skip checkpoint if not configured or interval not reached
 	if gr.options.checkpointer == nil || gr.options.runID == "" {
 		return
@@ -341,6 +390,11 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 	if gr.options.checkpointInterval > 0 && superstep%int64(gr.options.checkpointInterval) != 0 {
 		return
 	}
+
+	logger.Debug("saving checkpoint",
+		"run_id", gr.options.runID,
+		"superstep", superstep,
+		"interval", gr.options.checkpointInterval)
 
 	// Trace checkpoint save operation
 	var span trace.Span
@@ -352,14 +406,24 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 	// Create checkpoint from current state
 	checkpoint := gr.cg.createCheckpoint(gr.options.runID, superstep, nil)
 	if checkpoint == nil {
+		logger.Warn("failed to create checkpoint snapshot",
+			"run_id", gr.options.runID,
+			"superstep", superstep)
 		return
 	}
 
 	if gr.checkpointQueue != nil {
 		select {
 		case gr.checkpointQueue <- checkpoint:
+			logger.Debug("checkpoint queued for async save",
+				"run_id", gr.options.runID,
+				"superstep", superstep)
 		default:
 			queueErr := fmt.Errorf("checkpoint queue full at superstep %d: dropping checkpoint", superstep)
+			logger.Error("checkpoint queue full, dropping checkpoint",
+				"run_id", gr.options.runID,
+				"superstep", superstep,
+				"error", queueErr)
 			if gr.options.failOnCheckpointError {
 				gr.fail(queueErr)
 			} else {
@@ -371,11 +435,20 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 
 	if err := gr.options.checkpointer.Save(context.WithoutCancel(ctx), checkpoint); err != nil {
 		checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err)
+		logger.Error("failed to save checkpoint",
+			"run_id", gr.options.runID,
+			"superstep", superstep,
+			"error", err)
 		if gr.options.failOnCheckpointError {
 			gr.fail(checkpointErr)
 		} else {
 			gr.emitError(checkpointErr)
 		}
+	} else {
+		logger.Info("checkpoint saved successfully",
+			"run_id", gr.options.runID,
+			"superstep", superstep,
+			"version", checkpoint.Version)
 	}
 }
 
@@ -457,11 +530,19 @@ func (n *nodeAdapter) Name() string { return n.name }
 
 //nolint:gocyclo // Node execution requires handling many runtime conditions
 func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[StateManager, ChannelMessage], incoming []pregel.Message[ChannelMessage]) error {
+	logger := logging.FromContext(ctx)
+
 	// Start node execution trace span
 	var superstep int64
 	if n.runtime != nil && n.runtime.engine != nil {
 		superstep = n.runtime.engine.CurrentSuperstep()
 	}
+
+	logger.Debug("starting node execution",
+		"node", n.name,
+		"superstep", superstep,
+		"incoming_messages", len(incoming))
+
 	startTime := time.Now()
 	var span trace.Span
 	if n.runtime.instrumentation != nil {
@@ -520,11 +601,19 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 
 	if err != nil {
 		if errors.Is(err, ErrHumanInterrupt) {
+			logger.Info("node paused for human input",
+				"node", n.name,
+				"superstep", n.runtime.engine.CurrentSuperstep())
 			n.runtime.cg.markPaused(n.name)
 			n.runtime.setPaused(n.name)
 			n.runtime.emit(StreamEvent{Node: n.name, Err: ErrHumanInterrupt})
 			return nil
 		}
+		logger.Error("node execution failed",
+			"node", n.name,
+			"superstep", n.runtime.engine.CurrentSuperstep(),
+			"duration_ms", time.Since(startTime).Milliseconds(),
+			"error", err)
 		n.runtime.emit(StreamEvent{Node: n.name, Err: err})
 		return &NodeExecutionError{
 			Node:      n.name,
@@ -532,6 +621,11 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 			Cause:     err,
 		}
 	}
+
+	logger.Debug("node execution completed successfully",
+		"node", n.name,
+		"superstep", n.runtime.engine.CurrentSuperstep(),
+		"duration_ms", time.Since(startTime).Milliseconds())
 
 	var updates map[string]any
 	var messages []message.Message
@@ -550,6 +644,11 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 					if err := vertex.State.RecordAggregation(name, value); err != nil {
 						// Aggregator failures are terminal - they indicate state corruption
 						aggErr := fmt.Errorf("node %q: aggregation %q failed: %w", n.name, name, err)
+						logger.Error("aggregation failed",
+							"node", n.name,
+							"aggregator", name,
+							"superstep", n.runtime.engine.CurrentSuperstep(),
+							"error", err)
 						n.runtime.emit(StreamEvent{Node: n.name, Err: aggErr})
 						return &NodeExecutionError{
 							Node:      n.name,

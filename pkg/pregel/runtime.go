@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hupe1980/agentmesh/pkg/logging"
 )
 
 // Runtime executes a Pregel-style computation over any graph.
@@ -243,25 +245,44 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 
 // Run executes all supersteps until the computation quiesces.
 func (r *Runtime[S, M]) Run(ctx context.Context) error {
+	logger := logging.FromContext(ctx)
 	frontier := r.initialFrontier()
 	superstep := r.supersteps.Load()
 	iterationCount := int64(0)
 
+	logger.Info("pregel runtime starting",
+		"initial_frontier_size", len(frontier),
+		"initial_superstep", superstep,
+		"max_workers", r.opts.MaxWorkers,
+		"max_iterations", r.opts.MaxIterations)
+
 	var err error
 	for len(frontier) > 0 {
 		if err := ctx.Err(); err != nil {
+			logger.Warn("pregel runtime canceled", "superstep", superstep, "error", err)
 			return err
 		}
 
 		// Check max iterations limit (if configured)
 		if r.opts.MaxIterations > 0 && iterationCount >= int64(r.opts.MaxIterations) {
+			logger.Warn("max iterations exceeded",
+				"max_iterations", r.opts.MaxIterations,
+				"superstep", superstep)
 			return ErrMaxIterationsExceeded
 		}
 		iterationCount++
 
 		nextSuperstep := superstep + 1
 		r.supersteps.Store(nextSuperstep)
+
+		logger.Debug("starting superstep",
+			"superstep", nextSuperstep,
+			"frontier_size", len(frontier))
+
 		if err := r.runSuperstep(ctx, frontier, nextSuperstep); err != nil {
+			logger.Error("superstep execution failed",
+				"superstep", nextSuperstep,
+				"error", err)
 			return err
 		}
 		superstep = nextSuperstep
@@ -273,9 +294,21 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 
 		frontier, err = r.consumeNextFrontier()
 		if err != nil {
+			logger.Error("failed to consume next frontier",
+				"superstep", superstep,
+				"error", err)
 			return err
 		}
+
+		logger.Debug("superstep completed",
+			"superstep", superstep,
+			"next_frontier_size", len(frontier))
 	}
+
+	logger.Info("pregel runtime completed",
+		"total_supersteps", superstep,
+		"total_vertices", r.vertices.Load(),
+		"total_messages", r.messages.Load())
 
 	// Return nil on successful completion (don't return ctx.Err() which might be non-nil)
 	return nil

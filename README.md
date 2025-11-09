@@ -546,15 +546,15 @@ import (
 )
 
 // Configure observability providers
-logger := logging.NewSlogAdapter(slog.New(...))
+logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
 metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
-// Automatic instrumentation - no code changes needed!
+// Automatic instrumentation - structured logs throughout execution!
 messages, _ := compiled.Invoke(ctx, initialMessages,
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
+    graph.WithLogger(logger),          // Structured logging (JSON/text)
+    graph.WithTracer(traceProvider),   // Distributed tracing
+    graph.WithMetrics(metricsProvider), // Metrics collection
 )
 ```
 
