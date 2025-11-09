@@ -268,7 +268,7 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 
 		// Call superstep completion callback (useful for checkpointing)
 		if r.opts.OnSuperstepComplete != nil {
-			r.opts.OnSuperstepComplete(superstep)
+			r.opts.OnSuperstepComplete(ctx, superstep)
 		}
 
 		frontier, err = r.consumeNextFrontier()

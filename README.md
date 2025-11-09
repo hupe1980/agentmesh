@@ -539,33 +539,36 @@ Built-in OpenTelemetry integration:
 
 ```go
 import (
+    "github.com/hupe1980/agentmesh/pkg/logging"
     "github.com/hupe1980/agentmesh/pkg/metrics"
     "github.com/hupe1980/agentmesh/pkg/trace"
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
 
+// Configure observability providers
+logger := logging.NewSlogAdapter(slog.New(...))
 metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
-inst := graph.NewInstrumentation(metricsProvider, traceProvider)
-
-// Use instrumentation during execution
-ctx, span := inst.TraceGraphExecution(ctx, "my-workflow")
-defer span.End()
-messages, _ := compiled.Invoke(ctx, initialMessages)
+// Automatic instrumentation - no code changes needed!
+messages, _ := compiled.Invoke(ctx, initialMessages,
+    graph.WithLogger(logger),
+    graph.WithTracer(traceProvider),
+    graph.WithMetrics(metricsProvider),
+)
 ```
 
-**Metrics Tracked:**
-- Node execution count and duration
-- Superstep execution time
-- Error rates per node
-- Graph-level execution metrics
+**Automatically Tracked:**
+- ✅ Node execution count and duration
+- ✅ Superstep execution time
+- ✅ Error rates per node with labels
+- ✅ Graph-level execution metrics
 
-**Distributed Tracing:**
-- Span per graph execution
-- Nested spans for each node
-- Automatic context propagation
-- Error recording with stack traces
+**Automatic Distributed Tracing:**
+- ✅ Span per graph execution
+- ✅ Nested spans for each node
+- ✅ Checkpoint operation spans
+- ✅ Providers available in nodes via `FromContext()`
 
 ### 🔢 Embeddings & Memory
 

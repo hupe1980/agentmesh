@@ -1,16 +1,15 @@
 // Package main demonstrates production-grade observability with metrics and distributed tracing.
 //
 // This example shows how to:
-//   - Integrate OpenTelemetry for metrics collection and distributed tracing
-//   - Track graph execution performance with timing metrics
-//   - Create trace spans for node execution and message delivery
+//   - Configure observability using explicit graph options
+//   - Automatically instrument graph execution with traces and metrics
+//   - Use providers in node RunFuncs via FromContext()
 //   - Monitor graph health and performance in production
-//   - Record custom metrics for supersteps, nodes, and operations
 //
 // Key concepts:
-//   - Instrumentation: Wrapper for metrics and tracing providers
-//   - MetricsProvider: Records performance metrics (node duration, message count)
-//   - TraceProvider: Creates distributed trace spans for debugging
+//   - WithLogger/WithTracer/WithMetrics: Explicit observability configuration
+//   - Automatic instrumentation: Framework creates spans/metrics automatically
+//   - FromContext(): Access providers in node RunFuncs for custom instrumentation
 //   - Production Setup: Replace Noop() with OpenTelemetry providers
 //
 // Production integration:
@@ -30,50 +29,48 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-// This example demonstrates using the observability instrumentation
-// to track graph execution with metrics and tracing.
+// This example demonstrates using automatic observability instrumentation
+// with explicit provider configuration.
 
 func main() {
-	// For this example, we'll use a simple in-memory metrics collector
-	// In production, you would use:
-	// - metrics/opentelemetry.New() for Prometheus metrics
-	// - trace/opentelemetry.New() for distributed tracing
-
+	// Create observability providers (using noop for demonstration)
+	// In production, replace with OpenTelemetry implementations
+	logger := logging.NoopLogger{}
 	metricsProvider := metrics.Noop() // Replace with opentelemetry.New(meterProvider)
 	traceProvider := trace.Noop()     // Replace with opentelemetry.New(tracerProvider)
-
-	inst := graph.NewInstrumentation(metricsProvider, traceProvider)
 
 	// Create a simple graph
 	state := graph.NewStateManager(0) // Unlimited messages
 	state.Set("counter", 0)
 	g := graph.NewGraph(state)
 
-	// Add nodes with instrumentation
+	// Add nodes that use providers via FromContext()
+	// Automatic instrumentation happens behind the scenes
 	if err := g.AddNode(&graph.Node{
 		Name: "step1",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			// Start a trace span for this node
-			ctx, span := inst.TraceNodeExecution(ctx, "step1", 1)
-			defer span.End(nil)
+			// Access logger and tracer from context if needed for custom instrumentation
+			log := logging.FromContext(ctx)
+			log.Info("Processing step1", "node", "step1")
 
-			start := time.Now()
+			// Optional: Create custom spans for sub-operations
+			tp := trace.FromContext(ctx)
+			tracer := tp.Tracer("observability-example")
+			ctx, span := tracer.Start(ctx, "business-logic")
+			defer span.End(nil)
 
 			// Simulate work
 			time.Sleep(10 * time.Millisecond)
 			counter, _ := s.Get("counter").(int)
-			result := &graph.NodeResult{
+
+			return &graph.NodeResult{
 				Updates: map[string]any{"counter": counter + 1},
-			}
-
-			// Record metrics
-			inst.RecordNodeExecution(ctx, "step1", time.Since(start), nil)
-
-			return result, nil
+			}, nil
 		},
 	}); err != nil {
 		log.Fatal(err)
@@ -82,20 +79,20 @@ func main() {
 	if err := g.AddNode(&graph.Node{
 		Name: "step2",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			ctx, span := inst.TraceNodeExecution(ctx, "step2", 1)
-			defer span.End(nil)
+			log := logging.FromContext(ctx)
+			log.Info("Processing step2", "node", "step2")
 
-			start := time.Now()
+			// Optional: Record custom metrics
+			mp := metrics.FromContext(ctx)
+			counter := mp.Counter("custom.operations")
+			counter.Add(ctx, 1, metrics.Attr{Key: "operation", Value: "step2"})
 
 			time.Sleep(15 * time.Millisecond)
-			counter, _ := s.Get("counter").(int)
-			result := &graph.NodeResult{
-				Updates: map[string]any{"counter": counter + 10},
-			}
+			currentCounter, _ := s.Get("counter").(int)
 
-			inst.RecordNodeExecution(ctx, "step2", time.Since(start), nil)
-
-			return result, nil
+			return &graph.NodeResult{
+				Updates: map[string]any{"counter": currentCounter + 10},
+			}, nil
 		},
 	}); err != nil {
 		log.Fatal(err)
@@ -109,29 +106,44 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Execute with tracing
+	// Execute with explicit observability configuration
+	// Framework automatically creates spans and records metrics
 	ctx := context.Background()
-	ctx, graphSpan := inst.TraceGraphExecution(ctx, "example-graph")
-
 	startTime := time.Now()
-	_, err = compiled.Invoke(ctx, nil)
+
+	_, err = compiled.Invoke(ctx, nil,
+		graph.WithLogger(logger),
+		graph.WithTracer(traceProvider),
+		graph.WithMetrics(metricsProvider),
+	)
+
 	duration := time.Since(startTime)
 
 	if err != nil {
-		graphSpan.End(err)
 		log.Fatal(err)
 	}
-	graphSpan.End(nil)
-
-	// Record graph-level metrics
-	inst.RecordGraphExecution(ctx, "example-graph", duration, true)
 
 	// Print results
 	counter, _ := compiled.State().Get("counter").(int)
 	fmt.Printf("Final counter value: %d\n", counter)
 	fmt.Printf("Total execution time: %v\n", duration)
 
-	fmt.Println("\nObservability instrumentation configured!")
-	fmt.Println("In production, metrics would be exported to Prometheus")
-	fmt.Println("and traces would be sent to your distributed tracing backend (Jaeger, Zipkin, etc.)")
+	fmt.Println("\n=== Observability Configuration ===")
+	fmt.Println("✓ Automatic instrumentation enabled via:")
+	fmt.Println("  - graph.WithLogger(logger)")
+	fmt.Println("  - graph.WithTracer(traceProvider)")
+	fmt.Println("  - graph.WithMetrics(metricsProvider)")
+	fmt.Println("\n✓ Framework automatically creates:")
+	fmt.Println("  - Trace spans for each node execution")
+	fmt.Println("  - Metrics for node duration and errors")
+	fmt.Println("  - Structured logs (if logger configured)")
+	fmt.Println("\n✓ Nodes can access providers via FromContext()")
+	fmt.Println("  - logging.FromContext(ctx)")
+	fmt.Println("  - trace.FromContext(ctx)")
+	fmt.Println("  - metrics.FromContext(ctx)")
+	fmt.Println("\n=== Production Setup ===")
+	fmt.Println("Replace noop providers with:")
+	fmt.Println("- Tracer: trace.NewOpenTelemetryProvider(...)")
+	fmt.Println("- Metrics: metrics.NewOpenTelemetryProvider(...)")
+	fmt.Println("- Logger: logging.NewSlogAdapter(slog.New(...))")
 }

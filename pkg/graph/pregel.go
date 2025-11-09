@@ -11,6 +11,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // =============================================================================
@@ -124,19 +125,26 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // The pkg/pregel package is now public API, enabling advanced users to
 // implement custom MessageBus backends, schedulers, and fine-tune the
 // execution engine for specific use cases.
+//
+// Context Handling: This struct follows idiomatic Go patterns by NOT storing
+// context.Context as a field. Instead, contexts are passed explicitly to methods.
+//
+// The done field is used for cancellation checks in emit() where the method
+// signature doesn't include a context parameter (for performance reasons).
 type graphRuntime struct {
 	cg      *CompiledGraph
-	ctx     context.Context
 	cancel  context.CancelFunc
 	options runOptions
 	stream  chan<- StreamEvent
 
-	scheduler *vertexScheduler                              // Graph topology & routing
-	engine    *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
+	scheduler       *vertexScheduler                              // Graph topology & routing
+	engine          *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
+	instrumentation *Instrumentation                              // Observability instrumentation (passed from options)
 
 	errOnce         sync.Once
 	checkpointQueue chan *Checkpoint
 	checkpointWG    sync.WaitGroup
+	done            <-chan struct{} // Done channel for cancellation checks (set during run)
 }
 
 // compiledPregelGraph adapts CompiledGraph to the pregel.PregelGraph interface.
@@ -168,16 +176,16 @@ type nodeAdapter struct {
 	node    *Node
 }
 
-func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}) *graphRuntime {
+func newPregelRuntime(cg *CompiledGraph, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
 	gr := &graphRuntime{
-		cg:        cg,
-		ctx:       ctx,
-		cancel:    cancel,
-		options:   options,
-		stream:    stream,
-		scheduler: scheduler,
+		cg:              cg,
+		cancel:          cancel,
+		options:         options,
+		stream:          stream,
+		scheduler:       scheduler,
+		instrumentation: instrumentation,
 	}
 
 	// Note: maxMessages is now configured at StateManager creation time via NewStateManager(maxMessages).
@@ -206,8 +214,9 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 	}
 	// Install checkpoint callback if configured
 	if options.checkpointer != nil && options.runID != "" && options.checkpointInterval > 0 {
-		runtimeOptions = append(runtimeOptions, pregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(superstep int64) {
-			gr.saveCheckpoint(superstep)
+		runtimeOptions = append(runtimeOptions, pregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(ctx context.Context, superstep int64) {
+			// Context is now passed directly from the pregel runtime
+			gr.saveCheckpoint(ctx, superstep)
 		}))
 	}
 
@@ -219,12 +228,12 @@ func newPregelRuntime(cg *CompiledGraph, ctx context.Context, cancel context.Can
 		gr.engine.SetDoneChannel(done)
 	}
 
-	gr.startCheckpointWorker()
+	// Note: checkpoint worker will be started in run() method with context
 
 	return gr
 }
 
-func (gr *graphRuntime) startCheckpointWorker() {
+func (gr *graphRuntime) startCheckpointWorker(ctx context.Context) {
 	if gr.options.checkpointer == nil || gr.options.runID == "" {
 		return
 	}
@@ -233,7 +242,8 @@ func (gr *graphRuntime) startCheckpointWorker() {
 	}
 
 	gr.checkpointQueue = make(chan *Checkpoint, 1)
-	saveCtx := context.WithoutCancel(gr.ctx)
+	// Create detached context for background saves (checkpoints must complete even if request canceled)
+	saveCtx := context.WithoutCancel(ctx)
 	gr.checkpointWG.Add(1)
 
 	go func() {
@@ -263,14 +273,26 @@ func (gr *graphRuntime) stopCheckpointWorker() {
 	gr.checkpointQueue = nil
 }
 
-func (gr *graphRuntime) run() error {
+func (gr *graphRuntime) run(ctx context.Context) error {
+	// Store done channel for cancellation checks in emit()
+	gr.done = ctx.Done()
+
+	// Start checkpoint worker with this request's context
+	gr.startCheckpointWorker(ctx)
 	defer gr.stopCheckpointWorker()
 
-	if gr.cg != nil {
-		gr.cg.bootstrapScheduler(gr.ctx, gr.scheduler)
+	// Start runtime trace span
+	var span trace.Span
+	if gr.instrumentation != nil {
+		ctx, span = gr.instrumentation.TraceGraphExecution(ctx, "runtime.run")
+		defer span.End(nil)
 	}
 
-	err := gr.engine.Run(gr.ctx)
+	if gr.cg != nil {
+		gr.cg.bootstrapScheduler(ctx, gr.scheduler)
+	}
+
+	err := gr.engine.Run(ctx)
 	if gr.cg != nil {
 		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
 	}
@@ -291,7 +313,7 @@ func (gr *graphRuntime) run() error {
 		if !errors.As(err, &nodeTimeoutErr) {
 			// Not wrapped yet - this is a runtime-level timeout
 			timeout := int64(0)
-			if deadline, ok := gr.ctx.Deadline(); ok {
+			if deadline, ok := ctx.Deadline(); ok {
 				elapsed := time.Since(deadline)
 				if elapsed > 0 {
 					timeout = int64(elapsed / time.Millisecond)
@@ -311,13 +333,20 @@ func (gr *graphRuntime) run() error {
 	return err
 }
 
-func (gr *graphRuntime) saveCheckpoint(superstep int64) {
+func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 	// Skip checkpoint if not configured or interval not reached
 	if gr.options.checkpointer == nil || gr.options.runID == "" {
 		return
 	}
 	if gr.options.checkpointInterval > 0 && superstep%int64(gr.options.checkpointInterval) != 0 {
 		return
+	}
+
+	// Trace checkpoint save operation
+	var span trace.Span
+	if gr.instrumentation != nil {
+		ctx, span = gr.instrumentation.TraceCheckpoint(ctx, "save", gr.options.runID, superstep)
+		defer span.End(nil)
 	}
 
 	// Create checkpoint from current state
@@ -340,7 +369,7 @@ func (gr *graphRuntime) saveCheckpoint(superstep int64) {
 		return
 	}
 
-	if err := gr.options.checkpointer.Save(context.WithoutCancel(gr.ctx), checkpoint); err != nil {
+	if err := gr.options.checkpointer.Save(context.WithoutCancel(ctx), checkpoint); err != nil {
 		checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err)
 		if gr.options.failOnCheckpointError {
 			gr.fail(checkpointErr)
@@ -371,7 +400,7 @@ func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]s
 
 func (gr *graphRuntime) emit(event StreamEvent) {
 	select {
-	case <-gr.ctx.Done():
+	case <-gr.done:
 	case gr.stream <- event:
 	}
 }
@@ -428,6 +457,25 @@ func (n *nodeAdapter) Name() string { return n.name }
 
 //nolint:gocyclo // Node execution requires handling many runtime conditions
 func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[StateManager, ChannelMessage], incoming []pregel.Message[ChannelMessage]) error {
+	// Start node execution trace span
+	var superstep int64
+	if n.runtime != nil && n.runtime.engine != nil {
+		superstep = n.runtime.engine.CurrentSuperstep()
+	}
+	startTime := time.Now()
+	var span trace.Span
+	if n.runtime.instrumentation != nil {
+		ctx, span = n.runtime.instrumentation.TraceNodeExecution(ctx, n.name, superstep)
+	}
+	defer func() {
+		// Record metrics and end span
+		duration := time.Since(startTime)
+		if n.runtime.instrumentation != nil {
+			n.runtime.instrumentation.RecordNodeExecution(ctx, n.name, duration, nil)
+			span.End(nil)
+		}
+	}()
+
 	writer := func(result *NodeResult) {
 		if result == nil {
 			return

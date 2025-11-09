@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // CompiledGraph is an immutable, validated graph ready for execution.
@@ -114,6 +118,38 @@ func (cg *CompiledGraph) CurrentSuperstep() int64 {
 // In v2.0, this returns the StateManager interface instead of *GraphState.
 func (cg *CompiledGraph) State() StateManager {
 	return cg.stateManager
+}
+
+// attachProvidersToContext attaches observability providers from options to context.
+// This ensures providers are available to node RunFuncs via FromContext() helpers.
+func (cg *CompiledGraph) attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
+	// Attach logger if configured
+	if options.logger != nil {
+		ctx = logging.WithLogger(ctx, options.logger)
+	}
+
+	// Attach tracer if configured
+	if options.tracer != nil {
+		ctx = trace.WithProvider(ctx, options.tracer)
+	}
+
+	// Attach metrics provider if configured
+	if options.metricsProvider != nil {
+		ctx = metrics.WithProvider(ctx, options.metricsProvider)
+	}
+
+	return ctx
+}
+
+// createInstrumentation builds an Instrumentation from the configured providers.
+// Returns nil if no providers configured (noop behavior).
+func (cg *CompiledGraph) createInstrumentation(options runOptions) *Instrumentation {
+	// Only create instrumentation if at least one provider is configured
+	if options.tracer == nil && options.metricsProvider == nil {
+		return nil
+	}
+
+	return newInstrumentation(options.metricsProvider, options.tracer)
 }
 
 func (cg *CompiledGraph) bootstrapScheduler(ctx context.Context, s *vertexScheduler) {
@@ -239,20 +275,55 @@ func (cg *CompiledGraph) AsNodeWithStateMapping(
 }
 
 func (cg *CompiledGraph) invokeWithOptions(ctx context.Context, messages []message.Message, options runOptions) ([]message.Message, error) {
+	// Attach observability providers to context if configured
+	ctx = cg.attachProvidersToContext(ctx, options)
+
+	// Create instrumentation from providers
+	instrumentation := cg.createInstrumentation(options)
+
+	// Start graph execution trace span
+	var span trace.Span
+	if instrumentation != nil {
+		ctx, span = instrumentation.TraceGraphExecution(ctx, "graph.invoke")
+		defer func() {
+			if span != nil {
+				span.End(nil)
+			}
+		}()
+	}
+
+	startTime := time.Now()
 	stream, err := cg.streamWithOptions(ctx, messages, options)
 	if err != nil {
+		if span != nil {
+			span.End(err)
+		}
 		return nil, err
 	}
 	defer stream.Cancel()
+
 	for stream.Next() {
 		event := stream.Current()
 		if event.Err != nil {
+			if span != nil {
+				span.End(event.Err)
+			}
 			return nil, event.Err
 		}
 	}
+
 	if err := stream.Err(); err != nil {
+		if span != nil {
+			span.End(err)
+		}
 		return nil, err
 	}
+
+	// Record metrics
+	if instrumentation != nil {
+		instrumentation.RecordGraphExecution(ctx, "graph.invoke", time.Since(startTime), true)
+	}
+
 	if cg == nil || cg.stateManager == nil {
 		return nil, nil
 	}
@@ -267,6 +338,12 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 	if options.maxConcurrency < 1 {
 		options.maxConcurrency = 1
 	}
+
+	// Attach observability providers to context if configured
+	ctx = cg.attachProvidersToContext(ctx, options)
+
+	// Create instrumentation from providers
+	instrumentation := cg.createInstrumentation(options)
 
 	// Attempt to restore from checkpoint if configured
 	if options.checkpointer != nil && options.runID != "" && options.autoRestore {
@@ -286,7 +363,17 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 		}
 
 		if checkpoint != nil {
-			if err := cg.restoreCheckpoint(checkpoint); err != nil {
+			// Trace checkpoint restore operation (if instrumentation configured)
+			if instrumentation != nil {
+				restoreCtx, restoreSpan := instrumentation.TraceCheckpoint(ctx, "restore", options.runID, checkpoint.Superstep)
+				err := cg.restoreCheckpoint(checkpoint)
+				restoreSpan.End(err)
+				_ = restoreCtx // Context not used further
+			} else {
+				err = cg.restoreCheckpoint(checkpoint)
+			}
+
+			if err != nil {
 				return nil, fmt.Errorf("failed to restore checkpoint: %w", err)
 			}
 			// Set initial superstep to resume from
@@ -312,8 +399,8 @@ func (cg *CompiledGraph) streamWithOptions(ctx context.Context, messages []messa
 		defer close(done)
 		defer cancel()
 
-		rt := newPregelRuntime(cg, derivedCtx, cancel, options, events, done)
-		_ = rt.run() // Errors are emitted as events
+		rt := newPregelRuntime(cg, cancel, options, events, done, instrumentation)
+		_ = rt.run(derivedCtx) // Pass context to run() method
 
 		// Don't emit deadline exceeded errors here - they're already wrapped and emitted
 		// by the node adapter with the specific node name. Only emit unexpected context errors.

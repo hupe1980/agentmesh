@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // Aggregator is defined in pregel.Aggregator.
@@ -32,13 +35,16 @@ type runOptions struct {
 	eventBufferSize       int // Size of event channel for streaming (default = 100)
 	aggregators           map[string]pregel.Aggregator
 	combiner              Combiner
-	checkpointer          Checkpointer // Checkpoint storage backend
-	checkpointInterval    int          // Save every N supersteps (0 = every superstep)
-	autoRestore           bool         // Automatically restore from last checkpoint
-	failOnCheckpointError bool         // Fail execution on checkpoint errors (default: false, just log)
-	runID                 string       // Unique identifier for this execution run
-	resume                bool         // Resume from checkpoint
-	resumeFrom            int64        // Superstep to resume from (0 = most recent)
+	checkpointer          Checkpointer     // Checkpoint storage backend
+	checkpointInterval    int              // Save every N supersteps (0 = every superstep)
+	autoRestore           bool             // Automatically restore from last checkpoint
+	failOnCheckpointError bool             // Fail execution on checkpoint errors (default: false, just log)
+	logger                logging.Logger   // Logger for observability (attached to context and used for instrumentation)
+	tracer                trace.Provider   // Trace provider for observability (attached to context and used for instrumentation)
+	metricsProvider       metrics.Provider // Metrics provider for observability (attached to context and used for instrumentation)
+	runID                 string           // Unique identifier for this execution run
+	resume                bool             // Resume from checkpoint
+	resumeFrom            int64            // Superstep to resume from (0 = most recent)
 }
 
 type RunOption func(*runOptions)
@@ -48,6 +54,7 @@ func defaultRunOptions() runOptions {
 		maxConcurrency:  runtime.NumCPU(),
 		maxMessages:     0,   // Unlimited by default
 		eventBufferSize: 100, // Default buffer size for event channel
+		// Providers default to nil - noop implementations will be used in compiled_graph.go
 	}
 }
 
@@ -309,6 +316,93 @@ func WithFailOnCheckpointError(fail bool) RunOption {
 			return
 		}
 		opts.failOnCheckpointError = fail
+	}
+}
+
+// WithLogger configures a custom logger for observability.
+// The logger is automatically attached to the context passed to all node RunFuncs
+// and used for automatic instrumentation. Nodes can retrieve it using logging.FromContext(ctx).
+//
+// Example:
+//
+//	logger := logging.NewSlogAdapter(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+//	compiled.Invoke(ctx, messages, graph.WithLogger(logger))
+//
+// In node RunFunc:
+//
+//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	    log := logging.FromContext(ctx) // Retrieves the configured logger
+//	    log.Info("Processing node", "name", "my_node")
+//	    // ...
+//	}
+func WithLogger(logger logging.Logger) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		opts.logger = logger
+	}
+}
+
+// WithTracer configures a trace provider for observability.
+// The provider is automatically attached to the context passed to all node RunFuncs
+// and used for automatic span creation. Nodes can retrieve it using trace.FromContext(ctx).
+//
+// Example:
+//
+//	import "github.com/hupe1980/agentmesh/pkg/trace/opentelemetry"
+//
+//	traceProvider := opentelemetry.NewProvider(
+//	    opentelemetry.WithEndpoint("http://jaeger:4318"),
+//	    opentelemetry.WithServiceName("my-service"),
+//	)
+//	compiled.Invoke(ctx, messages, graph.WithTracer(traceProvider))
+//
+// In node RunFunc:
+//
+//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	    tp := trace.FromContext(ctx)
+//	    tracer := tp.Tracer("my-service")
+//	    ctx, span := tracer.Start(ctx, "operation")
+//	    defer span.End(nil)
+//	    // ...
+//	}
+func WithTracer(tracer trace.Provider) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		opts.tracer = tracer
+	}
+}
+
+// WithMetrics configures a metrics provider for observability.
+// The provider is automatically attached to the context passed to all node RunFuncs
+// and used for automatic metrics recording. Nodes can retrieve it using metrics.FromContext(ctx).
+//
+// Example:
+//
+//	import "github.com/hupe1980/agentmesh/pkg/metrics/opentelemetry"
+//
+//	metricsProvider := opentelemetry.NewMetricsProvider(
+//	    opentelemetry.WithEndpoint("http://prometheus:9090"),
+//	)
+//	compiled.Invoke(ctx, messages, graph.WithMetrics(metricsProvider))
+//
+// In node RunFunc:
+//
+//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	    mp := metrics.FromContext(ctx)
+//	    counter := mp.Counter("operations.count")
+//	    counter.Add(ctx, 1, metrics.Attr{Key: "node", Value: "my_node"})
+//	    // ...
+//	}
+func WithMetrics(metricsProvider metrics.Provider) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		opts.metricsProvider = metricsProvider
 	}
 }
 

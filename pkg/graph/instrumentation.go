@@ -9,6 +9,7 @@ import (
 )
 
 // Instrumentation provides observability hooks for graph execution.
+// It is created internally from WithLogger(), WithTracer(), and WithMetrics() options.
 type Instrumentation struct {
 	metrics metrics.Provider
 	trace   trace.Provider
@@ -24,8 +25,9 @@ type Instrumentation struct {
 	tracer trace.Tracer
 }
 
-// NewInstrumentation creates observability instrumentation for graph execution.
-func NewInstrumentation(mp metrics.Provider, tp trace.Provider) *Instrumentation {
+// newInstrumentation creates observability instrumentation for graph execution.
+// This is an internal function called by compiled_graph.go.
+func newInstrumentation(mp metrics.Provider, tp trace.Provider) *Instrumentation {
 	if mp == nil {
 		mp = metrics.Noop()
 	}
@@ -124,10 +126,25 @@ func (i *Instrumentation) RecordGraphExecution(ctx context.Context, graphName st
 	i.graphExecutions.Add(ctx, 1, attrs...)
 }
 
-// WithInstrumentation returns a RunOption that configures observability instrumentation.
-func WithInstrumentation(inst *Instrumentation) RunOption {
-	return func(opts *runOptions) {
-		// Store instrumentation in options for use by runtime
-		// (This requires adding an instrumentation field to runOptions)
+// TraceSuperstep starts a trace span for a superstep execution.
+func (i *Instrumentation) TraceSuperstep(ctx context.Context, superstep int64) (context.Context, trace.Span) {
+	if i == nil || i.tracer == nil {
+		return ctx, noopSpan{}
 	}
+
+	return i.tracer.Start(ctx, "superstep.execute",
+		trace.Attr{Key: "superstep", Value: superstep},
+	)
+}
+
+// TraceCheckpoint starts a trace span for checkpoint save/restore operations.
+func (i *Instrumentation) TraceCheckpoint(ctx context.Context, operation string, runID string, superstep int64) (context.Context, trace.Span) {
+	if i == nil || i.tracer == nil {
+		return ctx, noopSpan{}
+	}
+
+	return i.tracer.Start(ctx, "checkpoint."+operation,
+		trace.Attr{Key: "run_id", Value: runID},
+		trace.Attr{Key: "superstep", Value: superstep},
+	)
 }

@@ -7,195 +7,239 @@ hero:
   title: Monitor graph execution
   description: Track agent workflows with built-in OpenTelemetry metrics and distributed tracing support.
   primary_cta:
-    label: Enable instrumentation
-    href: "#instrumentation"
+    label: Enable observability
+    href: "#quick-start"
   secondary_cta:
     label: View example →
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples/observability"
     external: true
 sidebar:
-  - title: Instrumentation
-    url: "#instrumentation"
-  - title: Metrics
-    url: "#metrics"
-  - title: Tracing
-    url: "#tracing"
-  - title: Integration example
-    url: "#integration-example"
+  - title: Quick Start
+    url: "#quick-start"
+  - title: Configuration
+    url: "#configuration"
+  - title: What Gets Instrumented
+    url: "#what-gets-instrumented"
+  - title: Custom Instrumentation
+    url: "#custom-instrumentation"
+  - title: Metrics Reference
+    url: "#metrics-reference"
 ---
 
-## Instrumentation {#instrumentation}
+## Quick Start {#quick-start}
 
-AgentMesh provides built-in instrumentation through the `graph.Instrumentation` type. Enable it when executing graphs to collect metrics and traces:
+Enable observability with explicit options:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/logging"
     "github.com/hupe1980/agentmesh/pkg/metrics"
     "github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-// Create instrumentation with providers
-metricsProvider := metrics.Noop()  // or metrics/opentelemetry.New(meterProvider)
-traceProvider := trace.Noop()      // or trace/opentelemetry.New(tracerProvider)
+// Configure providers (noop for development)
+logger := logging.NoopLogger{}
+metricsProvider := metrics.Noop()
+traceProvider := trace.Noop()
 
-inst := graph.NewInstrumentation(metricsProvider, traceProvider)
+// Execute with automatic instrumentation
+result, err := compiled.Invoke(ctx, messages,
+    graph.WithLogger(logger),
+    graph.WithTracer(traceProvider),
+    graph.WithMetrics(metricsProvider),
+)
 ```
 
-Use the instrumentation in your graph nodes:
+## Configuration {#configuration}
+
+### Development (Noop Providers)
+
+For testing with zero overhead:
 
 ```go
-builder.Node("agent", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    // Start a trace span for this node
-    ctx, span := inst.TraceNodeExecution(ctx, "agent", superstep)
-    defer span.End()
-    
-    // Record metrics
-    inst.RecordNodeExecution(ctx, "agent", duration, err)
-    
-    // Your node logic...
-    return &graph.NodeResult{...}, nil
-})
+compiled.Invoke(ctx, messages,
+    graph.WithLogger(logging.NoopLogger{}),
+    graph.WithTracer(trace.Noop()),
+    graph.WithMetrics(metrics.Noop()),
+)
 ```
 
----
+### Production (OpenTelemetry)
 
-## Metrics {#metrics}
-
-The metrics package provides an abstraction over OpenTelemetry metrics:
-
-The OpenTelemetry adapter (`metrics/opentelemetry`) bridges AgentMesh metrics to any OTLP backend. Swap it with your own implementation if you prefer Prometheus, StatsD, or another collector.
-
----
-
-## Tracing {#tracing}
-
-Tracing hooks connect spans around every run, agent, and tool invocation. Retrieve the provider via `trace.FromContext(ctx)` to start spans within your custom code.
-
-### Built-in metrics
-
-AgentMesh tracks:
-- **Node execution time** – Duration of each node execution
-- **Node errors** – Count of failed node executions
-- **Graph execution time** – Total time for graph invocations
-- **Superstep count** – Number of supersteps per execution
-
-### OpenTelemetry integration
+For production with OpenTelemetry:
 
 ```go
 import (
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/exporters/prometheus"
-    "go.opentelemetry.io/otel/sdk/metric"
+    "log/slog"
+    "os"
+    "github.com/hupe1980/agentmesh/pkg/logging"
+    "github.com/hupe1980/agentmesh/pkg/metrics/opentelemetry"
+    "github.com/hupe1980/agentmesh/pkg/trace/opentelemetry"
 )
 
-// Create OpenTelemetry meter provider
-exporter, _ := prometheus.New()
-provider := metric.NewMeterProvider(
-    metric.WithReader(exporter),
+// Configure structured logging
+logger := logging.NewSlogAdapter(
+    slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+        Level: slog.LevelInfo,
+    })),
 )
-otel.SetMeterProvider(provider)
 
-// Use in AgentMesh
-metricsProvider := metrics.NewOpenTelemetry(provider)
-inst := graph.NewInstrumentation(metricsProvider, traceProvider)
+// Configure OpenTelemetry tracing
+traceProvider := opentelemetry.NewProvider(
+    opentelemetry.WithEndpoint("http://jaeger:4318"),
+    opentelemetry.WithServiceName("my-agent-service"),
+)
+
+// Configure OpenTelemetry metrics
+metricsProvider := opentelemetry.NewMetricsProvider(
+    opentelemetry.WithEndpoint("http://prometheus:9090"),
+)
+
+// Execute with full observability
+result, err := compiled.Invoke(ctx, messages,
+    graph.WithLogger(logger),
+    graph.WithTracer(traceProvider),
+    graph.WithMetrics(metricsProvider),
+)
 ```
 
----
+## What Gets Instrumented {#what-gets-instrumented}
 
-## Tracing {#tracing}
+When you configure providers, AgentMesh **automatically**:
 
-Distributed tracing helps you understand the execution flow of complex graphs:
+### 1. Creates Trace Spans
 
-### Built-in traces
+- **Graph execution** - Overall `Invoke()` or `Stream()` duration
+- **Node execution** - Every node that runs, including timing
+- **Checkpoint operations** - Save and restore operations
 
-AgentMesh creates spans for:
-- **Graph execution** – Top-level span for entire graph invocation
-- **Node execution** – Individual spans for each node
-- **Supersteps** – Group nodes executed in parallel
-
-### OpenTelemetry integration
-
-```go
-import (
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/exporters/jaeger"
-    "go.opentelemetry.io/otel/sdk/trace"
-)
-
-// Create OpenTelemetry tracer provider
-exporter, _ := jaeger.New(jaeger.WithCollectorEndpoint())
-provider := trace.NewTracerProvider(
-    trace.WithBatcher(exporter),
-)
-otel.SetTracerProvider(provider)
-
-// Use in AgentMesh
-traceProvider := trace.NewOpenTelemetry(provider)
-inst := graph.NewInstrumentation(metricsProvider, traceProvider)
+Example trace hierarchy:
+```
+graph.execute (1.5s)
+├── node.execute[step1] (500ms)
+├── node.execute[step2] (700ms)
+└── checkpoint.save (50ms)
 ```
 
----
+### 2. Records Metrics
 
-## Integration example {#integration-example}
+All metrics include relevant labels (`node.name`, `superstep`, etc.):
 
-Complete example with Prometheus metrics and Jaeger tracing:
+**Node Metrics:**
+- `agentgraph.node.executions` (counter) - Number of node executions
+- `agentgraph.node.latency_ms` (histogram) - Node execution duration
+- `agentgraph.node.errors` (counter) - Node execution errors
+
+**Graph Metrics:**
+- `agentgraph.graph.executions` (counter) - Number of graph executions
+- `agentgraph.superstep.latency_ms` (histogram) - Superstep duration
+
+### 3. Propagates Context
+
+All providers are automatically attached to context and available in node RunFuncs:
 
 ```go
-package main
-
-import (
-    "context"
-    "log"
+func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    log := logging.FromContext(ctx)
+    tp := trace.FromContext(ctx)
+    mp := metrics.FromContext(ctx)
     
-    "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/message"
-    "github.com/hupe1980/agentmesh/pkg/metrics"
-    "github.com/hupe1980/agentmesh/pkg/model/openai"
-    "github.com/hupe1980/agentmesh/pkg/trace"
-    
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/exporters/prometheus"
-    sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-    sdktrace "go.opentelemetry.io/otel/sdk/trace"
-)
-
-func main() {
-    // Setup OpenTelemetry
-    promExporter, _ := prometheus.New()
-    meterProvider := sdkmetric.NewMeterProvider(
-        sdkmetric.WithReader(promExporter),
-    )
-    otel.SetMeterProvider(meterProvider)
-    
-    tracerProvider := sdktrace.NewTracerProvider()
-    otel.SetTracerProvider(tracerProvider)
-    
-    // Create instrumentation
-    metricsProvider := metrics.NewOpenTelemetry(meterProvider)
-    traceProvider := trace.NewOpenTelemetry(tracerProvider)
-    inst := graph.NewInstrumentation(metricsProvider, traceProvider)
-    
-    // Create agent with instrumentation
-    compiled, err := agent.NewReActAgent(openai.NewModel(), tools)
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Execute with tracing
-    ctx := context.Background()
-    ctx, span := inst.TraceGraphExecution(ctx, "my-agent")
-    defer span.End()
-    
-    results, err := compiled.Invoke(ctx, messages)
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Metrics are automatically exported to Prometheus
-    // Traces are sent to Jaeger (if configured)
+    // Use for custom instrumentation
+    log.Info("Processing data", "count", len(data))
+    // ... more below
 }
 ```
 
-See `examples/observability` for a complete working example.
+## Custom Instrumentation {#custom-instrumentation}
+
+Access providers in your node RunFuncs for custom instrumentation:
+
+### Logging
+
+```go
+func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    log := logging.FromContext(ctx)
+    
+    log.Info("Starting processing", "node", "data_processor")
+    log.Debug("Details", "records", len(data))
+    log.Warn("Slow operation detected", "duration_ms", elapsed)
+    
+    return result, nil
+}
+```
+
+### Custom Spans
+
+```go
+func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    tp := trace.FromContext(ctx)
+    tracer := tp.Tracer("my-service")
+    
+    // Create custom span for sub-operation
+    ctx, span := tracer.Start(ctx, "database-query",
+        trace.Attr{Key: "query", Value: sql},
+    )
+    defer span.End(nil)
+    
+    // Execute operation
+    results := queryDatabase(ctx, sql)
+    
+    return &graph.NodeResult{...}, nil
+}
+```
+
+### Custom Metrics
+
+```go
+func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    mp := metrics.FromContext(ctx)
+    
+    // Record counter
+    processedCounter := mp.Counter("records.processed")
+    processedCounter.Add(ctx, int64(len(data)),
+        metrics.Attr{Key: "type", Value: "user_data"},
+    )
+    
+    // Record histogram
+    duration := mp.Histogram("operation.duration_ms")
+    duration.Record(ctx, float64(elapsed.Milliseconds()))
+    
+    return result, nil
+}
+```
+
+## Metrics Reference {#metrics-reference}
+
+### Automatically Collected
+
+| Metric | Type | Description | Labels |
+|--------|------|-------------|--------|
+| `agentgraph.node.executions` | Counter | Node execution count | `node.name` |
+| `agentgraph.node.latency_ms` | Histogram | Node execution time | `node.name` |
+| `agentgraph.node.errors` | Counter | Node execution errors | `node.name`, `error.type` |
+| `agentgraph.graph.executions` | Counter | Graph execution count | `graph.name`, `success` |
+| `agentgraph.superstep.latency_ms` | Histogram | Superstep duration | `superstep`, `node_count` |
+
+### Zero Overhead
+
+If you don't configure providers, AgentMesh uses **noop** implementations with **zero performance overhead**:
+
+```go
+// No providers = zero overhead
+result, err := compiled.Invoke(ctx, messages)
+```
+
+## Benefits
+
+✅ **Automatic instrumentation** - No code changes needed  
+✅ **Explicit configuration** - Clear, type-safe options  
+✅ **Production ready** - OpenTelemetry compatible  
+✅ **Zero overhead** - Noop providers when not configured  
+✅ **Custom instrumentation** - Full provider access in nodes  
+✅ **Context propagation** - Providers automatically available everywhere
+
+## Examples
+
+- [**observability**](https://github.com/hupe1980/agentmesh/tree/main/examples/observability) - Automatic instrumentation setup
+- [**custom_observability**](https://github.com/hupe1980/agentmesh/tree/main/examples/custom_observability) - Custom instrumentation in nodes

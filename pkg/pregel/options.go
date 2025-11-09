@@ -1,6 +1,9 @@
 package pregel
 
-import "runtime"
+import (
+	"context"
+	"runtime"
+)
 
 // RuntimeOptions configures runtime behaviour for a Pregel computation over
 // state type S with messages of type M.
@@ -38,8 +41,8 @@ type RuntimeOptions[S any, M any] struct {
 	MessageBus MessageBus[M]
 
 	// OnSuperstepComplete is called after each superstep completes successfully.
-	// The callback receives the superstep number. Useful for checkpointing.
-	OnSuperstepComplete func(superstep int64)
+	// The callback receives the execution context and superstep number. Useful for checkpointing.
+	OnSuperstepComplete func(ctx context.Context, superstep int64)
 }
 
 // RuntimeOption mutates runtime options.
@@ -114,7 +117,7 @@ func WithMaxMailboxSize[S any, M any](size int) RuntimeOption[S, M] {
 
 // WithOnSuperstepComplete sets a callback that is invoked after each superstep
 // completes successfully. Useful for checkpointing or progress monitoring.
-func WithOnSuperstepComplete[S any, M any](callback func(superstep int64)) RuntimeOption[S, M] {
+func WithOnSuperstepComplete[S any, M any](callback func(ctx context.Context, superstep int64)) RuntimeOption[S, M] {
 	return func(o *RuntimeOptions[S, M]) {
 		o.OnSuperstepComplete = callback
 	}
