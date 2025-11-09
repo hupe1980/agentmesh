@@ -489,34 +489,39 @@ metrics := compiled.GetMetrics()
 fmt.Printf("Complexity: %d\n", metrics.CyclomaticComplexity)
 ```
 
-### � Callbacks
+### 📞 Callbacks
 
 Intercept and transform model/tool invocations with a composable callback system:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/callbacks"
+import (
+    "github.com/hupe1980/agentmesh/pkg/callbacks"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
+)
 
 // Create callback manager
 cbManager := callbacks.NewManager()
 
 // Register model callbacks
-cbManager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    // Content filtering/guardrails
-    if containsUnsafeContent(req.Messages) {
+cbManager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+    // Content filtering/guardrails - access full graph state
+    messages := s.MessagesSnapshot()
+    if containsUnsafeContent(messages) {
         return nil, errors.New("unsafe content detected")
     }
     return nil, nil  // Continue to model
 })
 
-cbManager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
+cbManager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
     // Post-process response, logging, metrics
-    log.Printf("Model latency: %v", resp.Metadata["latency"])
-    return resp, nil
+    log.Printf("Response parts: %d", len(response.Parts()))
+    return response, nil  // Can transform or replace response
 })
 
-cbManager.RegisterOnModelError(func(ctx context.Context, req *callbacks.ModelRequest, err error) (*callbacks.ModelResponse, error) {
+cbManager.RegisterOnModelError(func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
     // Fallback logic, retry, or error transformation
-    return getFallbackResponse(), nil
+    return message.NewAIMessageFromText("Sorry, I encountered an error."), nil
 })
 
 // Use with ReAct agent
@@ -529,9 +534,9 @@ compiled, _ := agent.NewReActAgent(
 ```
 
 **Callback Types:**
-- `BeforeModel/BeforeTool` - Pre-execution validation, caching, transformation
-- `AfterModel/AfterTool` - Post-processing, logging, metrics collection
-- `OnModelError/OnToolError` - Error handling, fallbacks, retry logic
+- `BeforeModel/BeforeTool` - Pre-execution validation, caching, transformation (return non-nil message to short-circuit)
+- `AfterModel/AfterTool` - Post-processing, logging, metrics collection (can transform response)
+- `OnModelError/OnToolError` - Error handling, fallbacks, retry logic (can provide fallback response)
 
 ### �📊 Observability
 
@@ -896,6 +901,6 @@ This project is licensed under the **Apache License 2.0** - see the [LICENSE](LI
 
 **⭐ Star this repo if you find it useful!**
 
-Made with ❤️ by [Frank Hübner](https://github.com/hupe1980)
+Made with ❤️ by [hupe1980](https://github.com/hupe1980)
 
 </div>
