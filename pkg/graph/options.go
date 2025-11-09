@@ -35,16 +35,17 @@ type runOptions struct {
 	eventBufferSize       int // Size of event channel for streaming (default = 100)
 	aggregators           map[string]pregel.Aggregator
 	combiner              Combiner
-	checkpointer          Checkpointer     // Checkpoint storage backend
-	checkpointInterval    int              // Save every N supersteps (0 = every superstep)
-	autoRestore           bool             // Automatically restore from last checkpoint
-	failOnCheckpointError bool             // Fail execution on checkpoint errors (default: false, just log)
-	logger                logging.Logger   // Logger for observability (attached to context and used for instrumentation)
-	tracer                trace.Provider   // Trace provider for observability (attached to context and used for instrumentation)
-	metricsProvider       metrics.Provider // Metrics provider for observability (attached to context and used for instrumentation)
-	runID                 string           // Unique identifier for this execution run
-	resume                bool             // Resume from checkpoint
-	resumeFrom            int64            // Superstep to resume from (0 = most recent)
+	messageBus            pregel.MessageBus[ChannelMessage] // Custom message bus for distributed execution
+	checkpointer          Checkpointer                      // Checkpoint storage backend
+	checkpointInterval    int                               // Save every N supersteps (0 = every superstep)
+	autoRestore           bool                              // Automatically restore from last checkpoint
+	failOnCheckpointError bool                              // Fail execution on checkpoint errors (default: false, just log)
+	logger                logging.Logger                    // Logger for observability (attached to context and used for instrumentation)
+	tracer                trace.Provider                    // Trace provider for observability (attached to context and used for instrumentation)
+	metricsProvider       metrics.Provider                  // Metrics provider for observability (attached to context and used for instrumentation)
+	runID                 string                            // Unique identifier for this execution run
+	resume                bool                              // Resume from checkpoint
+	resumeFrom            int64                             // Superstep to resume from (0 = most recent)
 }
 
 type RunOption func(*runOptions)
@@ -186,6 +187,29 @@ func WithEventBufferSize(size int) RunOption {
 		if size > 0 {
 			opts.eventBufferSize = size
 		}
+	}
+}
+
+// WithPregelMessageBus sets a custom message bus for distributed graph execution.
+// This enables multi-process or multi-node execution of the graph using a shared
+// message delivery backend (e.g., Redis, Kafka).
+//
+// The message bus handles communication between vertices during Pregel-style
+// iterative computation. If not provided, an in-memory message bus is used.
+//
+// Example with Redis:
+//
+//	bus := redis.NewMessageBus[graph.ChannelMessage]("localhost:6379", "", 0, &redis.Options{
+//	    Namespace: "my-graph-execution",
+//	})
+//	defer bus.Close()
+//	compiled.Invoke(ctx, messages, graph.WithPregelMessageBus(bus))
+func WithPregelMessageBus(bus pregel.MessageBus[ChannelMessage]) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		opts.messageBus = bus
 	}
 }
 

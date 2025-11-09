@@ -210,6 +210,10 @@ func newPregelRuntime(cg *CompiledGraph, cancel context.CancelFunc, options runO
 	if options.combiner != nil {
 		runtimeOptions = append(runtimeOptions, pregel.WithCombiner[StateManager, ChannelMessage](adaptCombiner(options.combiner)))
 	}
+	// Use custom message bus if provided (enables distributed execution)
+	if options.messageBus != nil {
+		runtimeOptions = append(runtimeOptions, pregel.WithMessageBus[StateManager, ChannelMessage](options.messageBus))
+	}
 	// Install checkpoint callback if configured
 	if options.checkpointer != nil && options.runID != "" && options.checkpointInterval > 0 {
 		runtimeOptions = append(runtimeOptions, pregel.WithOnSuperstepComplete[StateManager, ChannelMessage](func(ctx context.Context, superstep int64) {
