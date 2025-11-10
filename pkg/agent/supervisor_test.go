@@ -41,7 +41,7 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 
 	// Verify supervisor state is initialized
 	state := supervisor.State()
-	messages := state.MessagesSnapshot()
+	messages := state.MessageEventsSnapshot()
 
 	// State should be empty initially (system prompt sent per-request)
 	if len(messages) != 0 {
@@ -113,10 +113,10 @@ func TestNewSupervisorAgent(t *testing.T) {
 
 	// Verify custom system prompt
 	state := supervisor.State()
-	messages := state.MessagesSnapshot()
+	events := state.MessageEventsSnapshot()
 
-	if len(messages) > 0 {
-		if sysMsg, ok := messages[0].(*message.SystemMessage); ok {
+	if len(events) > 0 {
+		if sysMsg, ok := events[0].Message.(*message.SystemMessage); ok {
 			prompt := getMessageText(sysMsg)
 			if prompt != "Custom supervisor prompt" {
 				t.Errorf("Expected custom system prompt, got %q", prompt)

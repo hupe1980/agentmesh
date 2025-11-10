@@ -77,13 +77,13 @@ func main() {
 
 // validateRequest is a BeforeModel callback that validates requests before calling the model
 func validateRequest(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-	messages := s.MessagesSnapshot()
-	if len(messages) == 0 {
+	events := s.MessageEventsSnapshot()
+	if len(events) == 0 {
 		return nil, fmt.Errorf("empty message list")
 	}
 
 	// Example: block requests with certain keywords
-	lastMsg := messages[len(messages)-1]
+	lastMsg := events[len(events)-1].Message
 	parts := lastMsg.Parts()
 	for _, part := range parts {
 		if textPart, ok := part.(message.TextPart); ok {

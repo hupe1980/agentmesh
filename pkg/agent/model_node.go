@@ -7,6 +7,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
 // modelNodeOptions holds configuration for a model node.
@@ -14,6 +15,7 @@ type modelNodeOptions struct {
 	nodeName     string
 	callbacks    *callbacks.Manager
 	systemPrompt string
+	tools        []tool.Tool
 }
 
 // ModelNodeOption configures a model node.
@@ -40,6 +42,14 @@ func WithModelCallbacks(cb *callbacks.Manager) ModelNodeOption {
 func WithModelSystemPrompt(prompt string) ModelNodeOption {
 	return func(c *modelNodeOptions) {
 		c.systemPrompt = prompt
+	}
+}
+
+// WithModelTools sets the tools available to the model for this node.
+// The tools are passed to the model along with the request.
+func WithModelTools(tools ...tool.Tool) ModelNodeOption {
+	return func(c *modelNodeOptions) {
+		c.tools = tools
 	}
 }
 
@@ -104,12 +114,14 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			}
 
 			// Get messages for model invocation
-			messages := s.MessagesSnapshot()
+			events := s.MessageEventsSnapshot()
+			messages := graph.ExtractMessages(events)
 
 			// Create request
 			req := &model.Request{
 				Messages:     messages,
 				SystemPrompt: config.systemPrompt,
+				Tools:        config.tools,
 			}
 
 			// Call the model

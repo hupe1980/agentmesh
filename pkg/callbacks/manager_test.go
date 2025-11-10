@@ -40,8 +40,12 @@ func (m *mockStateWriter) Set(key string, value any) {
 	m.state[key] = value
 }
 
-func (m *mockStateWriter) MessagesSnapshot() []message.Message {
-	return m.messages
+func (m *mockStateWriter) MessageEventsSnapshot() []graph.MessageEvent {
+	events := make([]graph.MessageEvent, len(m.messages))
+	for i, msg := range m.messages {
+		events[i] = *graph.NewMessageEvent(msg, "", "")
+	}
+	return events
 }
 
 func (m *mockStateWriter) AggregatesSnapshot() map[string]any {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/trace"
@@ -444,13 +445,21 @@ func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map
 		pausedNodes = runtime.pausedNames()
 	}
 
+	// Extract messages from events for checkpoint serialization
+	// TODO: Phase 3 - Update checkpoint to store full MessageEvent with metadata
+	events := cg.stateManager.MessageEventsSnapshot()
+	messages := make([]message.Message, len(events))
+	for i, evt := range events {
+		messages[i] = evt.Message
+	}
+
 	return &checkpoint.Checkpoint{
 		RunID:          runID,
 		Superstep:      superstep,
 		Version:        cg.stateManager.Version(),
 		Timestamp:      time.Now(),
 		State:          cg.stateManager.GetAll(),
-		Messages:       cg.stateManager.MessagesSnapshot(),
+		Messages:       messages,
 		CompletedNodes: completedNodes,
 		PausedNodes:    pausedNodes,
 		Metadata:       metadata,
@@ -473,7 +482,14 @@ func (cg *Compiled) restoreCheckpoint(chkpt *checkpoint.Checkpoint) error {
 
 	// Restore state
 	if cg.stateManager != nil {
-		cg.stateManager.ApplyUpdates(chkpt.State, chkpt.Messages)
+		// Wrap checkpoint messages as MessageEvents
+		// TODO: Phase 3 - Checkpoint should store full MessageEvent metadata
+		events := make([]MessageEvent, len(chkpt.Messages))
+		for i, msg := range chkpt.Messages {
+			events[i] = *NewMessageEvent(msg, chkpt.RunID, "__restored__")
+		}
+
+		cg.stateManager.ApplyUpdates(chkpt.State, events)
 		// Restore version from checkpoint
 		if gs, ok := cg.stateManager.(*State); ok {
 			gs.setVersion(chkpt.Version)

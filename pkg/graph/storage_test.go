@@ -16,9 +16,9 @@ func TestInMemoryStateStore(t *testing.T) {
 	state := NewStateManager(0).(*State) // Type assert for store.Save
 	state.Set("count", 42)
 	state.Set("name", "test")
-	state.AddMessages([]message.Message{
+	state.AddMessages(wrapMessages([]message.Message{
 		message.NewHumanMessageFromText("hello"),
-	})
+	}))
 
 	// Test Save
 	err := store.Save("checkpoint1", state)
@@ -30,7 +30,7 @@ func TestInMemoryStateStore(t *testing.T) {
 	require.NotNil(t, loaded)
 	require.Equal(t, 42, loaded.Get("count"))
 	require.Equal(t, "test", loaded.Get("name"))
-	require.Len(t, loaded.MessagesSnapshot(), 1)
+	require.Len(t, loaded.MessageEventsSnapshot(), 1)
 
 	// Test List
 	ids, err := store.List()

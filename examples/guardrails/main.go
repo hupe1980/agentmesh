@@ -17,9 +17,9 @@ func BlockUnsafeContent(ctx context.Context, s graph.StateWriter) (message.Messa
 	blockedKeywords := []string{"hack", "exploit", "bypass"}
 
 	// Check all messages for blocked content
-	messages := s.MessagesSnapshot()
-	for _, msg := range messages {
-		parts := msg.Parts()
+	events := s.MessageEventsSnapshot()
+	for _, evt := range events {
+		parts := evt.Message.Parts()
 		for _, part := range parts {
 			if textPart, ok := part.(message.TextPart); ok {
 				lowerText := strings.ToLower(textPart.Text)
@@ -97,12 +97,12 @@ func redactPII(text string) string {
 func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallback {
 	return func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		// Simple cache key from last message
-		messages := s.MessagesSnapshot()
-		if len(messages) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return nil, nil
 		}
 
-		lastMsg := messages[len(messages)-1]
+		lastMsg := events[len(events)-1].Message
 		parts := lastMsg.Parts()
 		if len(parts) == 0 {
 			return nil, nil
@@ -133,12 +133,12 @@ func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallb
 // StoreInCache is an AfterModel callback that stores responses in the cache
 func StoreInCache(cache map[string]message.Message) callbacks.AfterModelCallback {
 	return func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
-		messages := s.MessagesSnapshot()
-		if len(messages) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return nil, nil
 		}
 
-		lastMsg := messages[len(messages)-1]
+		lastMsg := events[len(events)-1].Message
 		parts := lastMsg.Parts()
 		if len(parts) == 0 {
 			return nil, nil
@@ -185,8 +185,12 @@ func (m *mockStateWriter) Set(key string, value any) {
 	m.state[key] = value
 }
 
-func (m *mockStateWriter) MessagesSnapshot() []message.Message {
-	return m.messages
+func (m *mockStateWriter) MessageEventsSnapshot() []graph.MessageEvent {
+	events := make([]graph.MessageEvent, len(m.messages))
+	for i, msg := range m.messages {
+		events[i] = *graph.NewMessageEvent(msg, "", "mock")
+	}
+	return events
 }
 
 func (m *mockStateWriter) AggregatesSnapshot() map[string]any {

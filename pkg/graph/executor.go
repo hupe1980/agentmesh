@@ -99,8 +99,8 @@ type ExecutionStats struct {
 
 // InvokeResult contains the final graph execution result.
 type InvokeResult struct {
-	// Messages from the final state
-	Messages []message.Message
+	// Messages from the final state with execution metadata
+	Messages []MessageEvent
 
 	// State snapshot at completion
 	State map[string]any

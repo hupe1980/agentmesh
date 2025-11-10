@@ -40,7 +40,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			// Verify we received the update from node_a
 			fromA := s.Get("from_a")
 			counter := s.Get("counter")
-			msgs := s.MessagesSnapshot()
+			msgs := s.MessageEventsSnapshot()
 
 			// These should be available after node_a completes
 			require.NotNil(t, fromA, "Should receive update from node_a")

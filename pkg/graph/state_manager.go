@@ -25,8 +25,8 @@ type StateReader interface {
 	// GetAll returns a snapshot of all channel values.
 	GetAll() map[string]any
 
-	// MessagesSnapshot returns messages from the "messages" channel.
-	MessagesSnapshot() []message.Message
+	// MessageEventsSnapshot returns message events from the "messages" channel.
+	MessageEventsSnapshot() []MessageEvent
 
 	// AggregatesSnapshot returns a copy of global aggregates from the previous superstep.
 	AggregatesSnapshot() map[string]any
@@ -62,7 +62,7 @@ type StateManager interface {
 	// State access
 	Get(key string) any
 	GetAll() map[string]any
-	MessagesSnapshot() []message.Message
+	MessageEventsSnapshot() []MessageEvent
 	AggregatesSnapshot() map[string]any
 
 	// Channel management
@@ -84,8 +84,8 @@ type StateManager interface {
 	SetCheckpointer(checkpointer checkpoint.Checkpointer)
 
 	// Message management
-	AddMessages(messages []message.Message)
-	ApplyUpdates(values map[string]any, messages []message.Message)
+	AddMessages(messages []MessageEvent)
+	ApplyUpdates(values map[string]any, messages []MessageEvent)
 	Set(key string, value any) error
 
 	// Version management
@@ -190,8 +190,8 @@ func (s *State) GetAll() map[string]any {
 	return values
 }
 
-// MessagesSnapshot returns a copy of current messages.
-func (s *State) MessagesSnapshot() []message.Message {
+// MessageEventsSnapshot returns a copy of current message events with metadata.
+func (s *State) MessageEventsSnapshot() []MessageEvent {
 	ch, ok := s.GetChannel("messages")
 	if !ok {
 		return nil
@@ -202,19 +202,19 @@ func (s *State) MessagesSnapshot() []message.Message {
 		return nil
 	}
 
-	// Convert []any to []message.Message
+	// Convert []any to []MessageEvent
 	values, ok := val.([]any)
 	if !ok || len(values) == 0 {
 		return nil
 	}
 
-	messages := make([]message.Message, 0, len(values))
+	events := make([]MessageEvent, 0, len(values))
 	for _, v := range values {
-		if msg, ok := v.(message.Message); ok {
-			messages = append(messages, msg)
+		if evt, ok := v.(MessageEvent); ok {
+			events = append(events, evt)
 		}
 	}
-	return messages
+	return events
 }
 
 // =============================================================================
@@ -437,7 +437,7 @@ func (s *State) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 // =============================================================================
 
 // AddMessages appends messages to the state's message history.
-func (s *State) AddMessages(messages []message.Message) {
+func (s *State) AddMessages(messages []MessageEvent) {
 	if len(messages) == 0 {
 		return
 	}
@@ -489,7 +489,7 @@ func (s *State) SetMaxMessages(maxMessages int) {
 }
 
 // ApplyUpdates applies state updates and messages to the state manager.
-func (s *State) ApplyUpdates(values map[string]any, messages []message.Message) {
+func (s *State) ApplyUpdates(values map[string]any, messages []MessageEvent) {
 	ctx := context.Background()
 
 	// No lock needed - Set methods handle their own locking
@@ -613,9 +613,9 @@ func (sr *StateReaderAdapter) GetAll() map[string]any {
 	return sr.manager.GetAll()
 }
 
-// MessagesSnapshot returns current messages.
-func (sr *StateReaderAdapter) MessagesSnapshot() []message.Message {
-	return sr.manager.MessagesSnapshot()
+// MessageEventsSnapshot returns current message events.
+func (sr *StateReaderAdapter) MessageEventsSnapshot() []MessageEvent {
+	return sr.manager.MessageEventsSnapshot()
 }
 
 // AggregatesSnapshot returns aggregate values.
@@ -682,8 +682,8 @@ func (bsw *bufferedStateWriter) GetAll() map[string]any {
 	return bsw.reader.GetAll()
 }
 
-func (bsw *bufferedStateWriter) MessagesSnapshot() []message.Message {
-	return bsw.reader.MessagesSnapshot()
+func (bsw *bufferedStateWriter) MessageEventsSnapshot() []MessageEvent {
+	return bsw.reader.MessageEventsSnapshot()
 }
 
 func (bsw *bufferedStateWriter) AggregatesSnapshot() map[string]any {

@@ -171,7 +171,7 @@ func executeHandoff(
 	}
 
 	// Extract text from the last message
-	lastMsg := resultMessages[len(resultMessages)-1]
+	lastMsg := resultMessages[len(resultMessages)-1].Message
 	return extractTextFromMessage(lastMsg), nil
 }
 

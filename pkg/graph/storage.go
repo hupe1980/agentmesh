@@ -36,7 +36,7 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *State) error {
 
 	// Create a deep copy with snapshots of all channels
 	snapshot := state.SnapshotAll()
-	msgs := cloneMessages(state.MessagesSnapshot())
+	msgs := cloneMessageEvents(state.MessageEventsSnapshot())
 
 	// Create new state and restore channels
 	// Note: We need to recreate channels with the same types as original
@@ -66,7 +66,7 @@ func (s *InMemoryStateStore) Load(checkpointID string) (*State, error) {
 
 	// Return a copy to prevent mutations
 	snapshot := state.SnapshotAll()
-	msgs := cloneMessages(state.MessagesSnapshot())
+	msgs := cloneMessageEvents(state.MessageEventsSnapshot())
 
 	loaded := NewState(0) // Unlimited messages
 

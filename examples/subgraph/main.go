@@ -9,7 +9,6 @@ import (
 	"maps"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Example: Multi-stage data processing pipeline using subgraphs
@@ -239,7 +238,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	analysisNode := analysis.AsNodeWithStateMapping(
 		"analysis",
 		// mapInput: map enriched_data to analysis input
-		func(s graph.StateReader) (map[string]any, []message.Message) {
+		func(s graph.StateReader) (map[string]any, []graph.MessageEvent) {
 			enrichedData, ok := s.Get("enriched_data").(map[string]any)
 			if !ok {
 				return map[string]any{"input": map[string]any{}}, nil
@@ -247,7 +246,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 			return map[string]any{"input": enrichedData}, nil
 		},
 		// mapOutput: map analysis output to parent analysis key
-		func(s graph.StateReader) (map[string]any, []message.Message) {
+		func(s graph.StateReader) (map[string]any, []graph.MessageEvent) {
 			output, ok := s.Get("output").(map[string]any)
 			if !ok {
 				return map[string]any{"analysis": map[string]any{}}, nil

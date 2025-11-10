@@ -106,12 +106,12 @@ func TestSubgraphSupport(t *testing.T) {
 		subNode := compiledSub.AsNodeWithStateMapping(
 			"mapped-subgraph",
 			// Map parent "data" to subgraph "input"
-			func(s StateReader) (map[string]any, []message.Message) {
+			func(s StateReader) (map[string]any, []MessageEvent) {
 				data, _ := s.Get("data").(string)
 				return map[string]any{"input": data}, nil
 			},
 			// Map subgraph "output" to parent "result"
-			func(s StateReader) (map[string]any, []message.Message) {
+			func(s StateReader) (map[string]any, []MessageEvent) {
 				output, _ := s.Get("output").(string)
 				return map[string]any{"result": output}, nil
 			},
@@ -302,14 +302,14 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Check that messages were passed through
-		msgs := compiled.State().MessagesSnapshot()
+		msgs := compiled.State().MessageEventsSnapshot()
 		if len(msgs) == 0 {
 			t.Fatal("expected messages from subgraph")
 		}
 
 		found := false
-		for _, msg := range msgs {
-			if text, ok := msg.(*message.HumanMessage); ok {
+		for _, evt := range msgs {
+			if text, ok := evt.Message.(*message.HumanMessage); ok {
 				for _, part := range text.Parts() {
 					if tp, ok := part.(message.TextPart); ok && tp.Text == "Hello from subgraph" {
 						found = true
@@ -318,7 +318,6 @@ func TestSubgraphSupport(t *testing.T) {
 				}
 			}
 		}
-
 		if !found {
 			t.Error("expected to find 'Hello from subgraph' in messages")
 		}

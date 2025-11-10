@@ -97,10 +97,8 @@ func main() {
 	// Display the complete conversation transcript
 	fmt.Println("=== Agent Transcript ===")
 	fmt.Println()
-	for i, msg := range results {
-		if msg == nil {
-			continue
-		}
+	for i, evt := range results {
+		msg := evt.Message
 
 		fmt.Printf("[%d] %s\n", i+1, msg.Type())
 

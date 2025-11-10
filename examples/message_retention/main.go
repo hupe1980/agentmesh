@@ -40,8 +40,8 @@ func main() {
 	err := g.AddNode(&graph.Node{
 		Name: "echo",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			messages := s.MessagesSnapshot()
-			lastMsg := messages[len(messages)-1]
+			events := s.MessageEventsSnapshot()
+			lastMsg := events[len(events)-1].Message
 
 			return &graph.NodeResult{
 				Messages: []message.Message{

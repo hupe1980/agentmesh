@@ -119,13 +119,13 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 	return &graph.Node{
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			transcript := s.MessagesSnapshot()
-			if len(transcript) == 0 {
+			events := s.MessageEventsSnapshot()
+			if len(events) == 0 {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			}
 
-			last := transcript[len(transcript)-1]
-			ai, ok := last.(*message.AIMessage)
+			lastMsg := events[len(events)-1].Message
+			ai, ok := lastMsg.(*message.AIMessage)
 			if !ok || ai == nil {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			}

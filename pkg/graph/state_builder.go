@@ -224,7 +224,13 @@ func (b *StateBuilder) Build() *State {
 
 	// Add initial messages if configured
 	if len(b.initialMsgs) > 0 {
-		state.AddMessages(b.initialMsgs)
+		// Wrap messages as MessageEvents
+		// Note: Using empty graphID and "__initial__" node since these are pre-execution messages
+		events := make([]MessageEvent, len(b.initialMsgs))
+		for i, msg := range b.initialMsgs {
+			events[i] = *NewMessageEvent(msg, "", "__initial__")
+		}
+		state.AddMessages(events)
 	}
 
 	return state

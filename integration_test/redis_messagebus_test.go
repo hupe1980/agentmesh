@@ -374,13 +374,14 @@ func TestRedisMessageBus_CleanNamespace(t *testing.T) {
 
 // TestRedisMessageBus_Stats tests statistics gathering
 func TestRedisMessageBus_Stats(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
 	if err != nil {
 		t.Fatalf("Failed to start Redis container: %v", err)
 	}
-	defer container.Terminate(ctx)
+	defer container.Terminate(context.Background())
 
 	addr, err := container.Endpoint(ctx, "")
 	if err != nil {

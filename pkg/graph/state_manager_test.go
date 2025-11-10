@@ -14,8 +14,7 @@ func TestStateCloneDeepCopy(t *testing.T) {
 		t.Fatalf("set status failed: %v", err)
 	}
 
-	msg1 := message.NewHumanMessageFromText("hello")
-	state.AddMessages([]message.Message{msg1})
+	state.AddMessages(wrapTestMessages([]message.Message{message.NewHumanMessageFromText("hello")}))
 
 	clonedAny := state.Clone()
 	cloned, ok := clonedAny.(*State)
@@ -26,14 +25,13 @@ func TestStateCloneDeepCopy(t *testing.T) {
 	if err := state.Set("status", "done"); err != nil {
 		t.Fatalf("set status failed: %v", err)
 	}
-	msg2 := message.NewAIMessageFromText("world")
-	state.AddMessages([]message.Message{msg2})
+	state.AddMessages(wrapTestMessages([]message.Message{message.NewAIMessageFromText("world")}))
 
 	if got := cloned.Get("status"); got != "pending" {
 		t.Fatalf("clone should retain original status, got %v", got)
 	}
 
-	clonedMessages := cloned.MessagesSnapshot()
+	clonedMessages := cloned.MessageEventsSnapshot()
 	if len(clonedMessages) != 1 {
 		t.Fatalf("expected 1 message in clone, got %d", len(clonedMessages))
 	}
@@ -59,12 +57,12 @@ func TestStateSetMaxMessages(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		msg := message.NewHumanMessageFromText(fmt.Sprintf("msg-%d", i))
-		state.AddMessages([]message.Message{msg})
+		state.AddMessages(wrapTestMessages([]message.Message{msg}))
 	}
 
 	state.SetMaxMessages(3)
 
-	messages := state.MessagesSnapshot()
+	messages := state.MessageEventsSnapshot()
 	if len(messages) != 3 {
 		t.Fatalf("expected 3 messages retained, got %d", len(messages))
 	}
@@ -88,4 +86,12 @@ func TestStateSetMaxMessages(t *testing.T) {
 	if val := state.Get("flag"); val != true {
 		t.Fatalf("expected flag to remain true, got %v", val)
 	}
+}
+
+func wrapTestMessages(msgs []message.Message) []MessageEvent {
+	events := make([]MessageEvent, len(msgs))
+	for i, msg := range msgs {
+		events[i] = *NewMessageEvent(msg, "", "test")
+	}
+	return events
 }

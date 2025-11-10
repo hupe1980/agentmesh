@@ -18,7 +18,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 
 	// Node 1: Input processing
 	builder.Node("preprocess", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		msgs := s.MessagesSnapshot()
+		msgs := s.MessageEventsSnapshot()
 		return &graph.NodeResult{
 			Updates: map[string]any{"processed": len(msgs)},
 		}, nil
@@ -238,7 +238,7 @@ func BenchmarkMessageThroughput(b *testing.B) {
 			builder := graph.NewBuilder()
 
 			builder.Node("processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-				msgs := s.MessagesSnapshot()
+				msgs := s.MessageEventsSnapshot()
 				return &graph.NodeResult{
 					Updates: map[string]any{"count": len(msgs)},
 				}, nil

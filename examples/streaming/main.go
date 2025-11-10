@@ -91,14 +91,13 @@ func main() {
 		}
 
 		// Get messages from state
-		msgs := s.MessagesSnapshot()
+		events := s.MessageEventsSnapshot()
+		msgs := graph.ExtractMessages(events)
 
 		// Create request
 		req := &pkgmodel.Request{
 			Messages: msgs,
-		}
-
-		// Call the model
+		} // Call the model
 		resp, err := pkgmodel.Last(model.Generate(ctx, req))
 		if err != nil {
 			return nil, err
@@ -119,9 +118,7 @@ func main() {
 				"status": "llm_completed",
 			},
 		}, nil
-	})
-
-	// Node 3: Multi-step analyzer with detailed streaming
+	}) // Node 3: Multi-step analyzer with detailed streaming
 	builder.Node("analyzer", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -291,18 +288,18 @@ func main() {
 		}
 
 		// Show final messages
-		finalMessages := finalState.MessagesSnapshot()
-		if len(finalMessages) > 0 {
+		finalEvents := finalState.MessageEventsSnapshot()
+		if len(finalEvents) > 0 {
 			fmt.Println("\n💬 Final Messages:")
-			for i, msg := range finalMessages {
+			for i, evt := range finalEvents {
 				content := ""
-				for _, part := range msg.Parts() {
+				for _, part := range evt.Message.Parts() {
 					if textPart, ok := part.(message.TextPart); ok {
 						content += textPart.Text
 					}
 				}
 				if content != "" {
-					fmt.Printf("   [%d] %s: %s\n", i+1, msg.Type(), content)
+					fmt.Printf("   [%d] %s: %s\n", i+1, evt.Message.Type(), content)
 				}
 			}
 		}

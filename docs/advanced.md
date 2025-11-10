@@ -687,25 +687,24 @@ parent.AddEdge("doubler", graph.EndNode)
 
 ### State Mapping
 
-Map parent state to subgraph state and back using `AddSubgraphWithMapping`:
+Map parent state to subgraph state and back using `AsNodeWithStateMapping`:
 
 ```go
-parent.AddSubgraphWithMapping(
+parent.AddNode(compiledSub.AsNodeWithStateMapping(
     "processor",
-    compiledSub,
-    // Map parent state -> subgraph state
-    func(parentState graph.State) map[string]any {
+    // Map parent state -> subgraph input (values and messages)
+    func(parentState graph.StateReader) (map[string]any, []graph.MessageEvent) {
         return map[string]any{
             "input": parentState.Get("data"),
-        }
+        }, nil
     },
-    // Map subgraph state -> parent state updates
-    func(subState graph.State) map[string]any {
+    // Map subgraph output -> parent state updates (values and messages)
+    func(subState graph.StateReader) (map[string]any, []graph.MessageEvent) {
         return map[string]any{
             "processed_data": subState.Get("output"),
-        }
+        }, nil
     },
-)
+))
 ```
 
 ### Use Cases

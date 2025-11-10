@@ -22,17 +22,17 @@ import (
 //	g.AddConditionalEdges("model", RouteOnToolCalls("tool", graph.EndNode), []string{"tool", graph.EndNode})
 func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, graph.StateReader) []string {
 	return func(_ context.Context, s graph.StateReader) []string {
-		transcript := s.MessagesSnapshot()
-		if len(transcript) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return []string{otherwise}
 		}
 
-		last := transcript[len(transcript)-1]
-		if last == nil {
+		lastMsg := events[len(events)-1].Message
+		if lastMsg == nil {
 			return []string{otherwise}
 		}
 
-		if ai, ok := last.(*message.AIMessage); ok {
+		if ai, ok := lastMsg.(*message.AIMessage); ok {
 			if len(ai.ToolCalls) > 0 {
 				return []string{ifToolCalls}
 			}

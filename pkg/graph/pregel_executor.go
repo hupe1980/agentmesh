@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"slices"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -46,7 +47,7 @@ func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.
 
 // Stream executes the graph with real-time event streaming.
 func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (<-chan interface{}, <-chan error) {
-	eventChan := make(chan interface{}, 100)
+	eventChan := make(chan any, 100)
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -109,12 +110,7 @@ func (e *PregelExecutor) IsPaused(nodeName string) bool {
 	}
 	// Check if node is in the paused list
 	pausedNodes := e.cg.runtime.pausedNames()
-	for _, name := range pausedNodes {
-		if name == nodeName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(pausedNodes, nodeName)
 }
 
 // CurrentSuperstep returns the current superstep number.

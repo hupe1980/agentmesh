@@ -52,8 +52,8 @@ func main() {
 
 	// Print results
 	log.Printf("Agent Response:")
-	for _, msg := range results {
-		if aiMsg, ok := msg.(*message.AIMessage); ok {
+	for _, evt := range results {
+		if aiMsg, ok := evt.Message.(*message.AIMessage); ok {
 			for _, part := range aiMsg.Parts() {
 				if textPart, ok := part.(message.TextPart); ok {
 					log.Printf("  %s", textPart.Text)

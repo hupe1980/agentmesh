@@ -364,27 +364,27 @@ func TestStateBuilder_WithInitialMessages(t *testing.T) {
 		WithInitialMessages(systemMsg, humanMsg).
 		Build()
 
-	messages := state.MessagesSnapshot()
-	if len(messages) != 2 {
-		t.Fatalf("Expected 2 initial messages, got %d", len(messages))
+	events := state.MessageEventsSnapshot()
+	if len(events) != 2 {
+		t.Fatalf("Expected 2 initial messages, got %d", len(events))
 	}
 
 	// Verify first message is system message
-	if _, ok := messages[0].(*message.SystemMessage); !ok {
+	if _, ok := events[0].Message.(*message.SystemMessage); !ok {
 		t.Error("First message should be SystemMessage")
 	}
 
 	// Verify second message is human message
-	if _, ok := messages[1].(*message.HumanMessage); !ok {
+	if _, ok := events[1].Message.(*message.HumanMessage); !ok {
 		t.Error("Second message should be HumanMessage")
 	}
 
 	// Verify message content
-	if text := getMessageText(messages[0]); text != "You are a helpful assistant" {
+	if text := getMessageText(events[0].Message); text != "You are a helpful assistant" {
 		t.Errorf("Expected system message text 'You are a helpful assistant', got %q", text)
 	}
 
-	if text := getMessageText(messages[1]); text != "Hello" {
+	if text := getMessageText(events[1].Message); text != "Hello" {
 		t.Errorf("Expected human message text 'Hello', got %q", text)
 	}
 }

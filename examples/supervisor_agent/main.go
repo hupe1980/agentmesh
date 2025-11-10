@@ -152,14 +152,12 @@ func createCodeAgent() (*graph.Compiled, error) {
 }
 
 // displayTranscript shows the conversation flow including tool calls
-func displayTranscript(query string, messages []message.Message) {
+func displayTranscript(query string, events []graph.MessageEvent) {
 	// Print the user query at the top only
 	fmt.Printf("👤 User:\n   %s\n", query)
 
-	for i, msg := range messages {
-		if msg == nil {
-			continue
-		}
+	for i, evt := range events {
+		msg := evt.Message
 
 		switch m := msg.(type) {
 		case *message.AIMessage:
@@ -212,7 +210,7 @@ func displayTranscript(query string, messages []message.Message) {
 		}
 
 		// Add spacing between messages
-		if i < len(messages)-1 {
+		if i < len(events)-1 {
 			fmt.Println()
 		}
 	}

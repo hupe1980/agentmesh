@@ -76,9 +76,9 @@ func BenchmarkState_ApplyUpdatesWithReducer(b *testing.B) {
 
 func BenchmarkState_AddMessages(b *testing.B) {
 	state := graph.NewStateManager(0)
-	msgs := []message.Message{
-		message.NewHumanMessageFromText("Hello"),
-		message.NewAIMessageFromText("Hi there"),
+	msgs := []graph.MessageEvent{
+		*graph.NewMessageEvent(message.NewHumanMessageFromText("Hello"), "", ""),
+		*graph.NewMessageEvent(message.NewAIMessageFromText("Hi there"), "", ""),
 	}
 
 	for b.Loop() {
@@ -89,21 +89,21 @@ func BenchmarkState_AddMessages(b *testing.B) {
 func BenchmarkState_MessagesSnapshot(b *testing.B) {
 	state := graph.NewStateManager(0)
 	for range 100 {
-		state.AddMessages([]message.Message{
-			message.NewHumanMessageFromText("Message"),
+		state.AddMessages([]graph.MessageEvent{
+			*graph.NewMessageEvent(message.NewHumanMessageFromText("Message"), "", ""),
 		})
 	}
 
 	for b.Loop() {
-		_ = state.MessagesSnapshot()
+		_ = state.MessageEventsSnapshot()
 	}
 }
 
 func BenchmarkState_MessagesWithCompaction(b *testing.B) {
 	state := graph.NewStateManager(100) // Enable compaction with max 100 messages
 
-	msgs := []message.Message{
-		message.NewHumanMessageFromText("Hello"),
+	msgs := []graph.MessageEvent{
+		*graph.NewMessageEvent(message.NewHumanMessageFromText("Hello"), "", ""),
 	}
 
 	for b.Loop() {

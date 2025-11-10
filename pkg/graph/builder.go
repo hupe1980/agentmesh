@@ -2,8 +2,6 @@ package graph
 
 import (
 	"context"
-
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Builder provides a fluent API for constructing graphs.
@@ -249,17 +247,6 @@ func (b *Builder) Parallel(source string, tasks []string, destination string) *B
 // Convenience method wrapping Compiled.AsNode().
 func (b *Builder) AddSubgraph(name string, subgraph *Compiled) *Builder {
 	return b.AddNode(subgraph.AsNode(name))
-}
-
-// AddSubgraphWithMapping embeds a compiled subgraph with state mapping.
-// Convenience method wrapping Compiled.AsNodeWithStateMapping().
-func (b *Builder) AddSubgraphWithMapping(
-	name string,
-	subgraph *Compiled,
-	mapInput func(StateReader) (map[string]any, []message.Message),
-	mapOutput func(StateReader) (map[string]any, []message.Message),
-) *Builder {
-	return b.AddNode(subgraph.AsNodeWithStateMapping(name, mapInput, mapOutput))
 }
 
 // Graph returns the underlying graph being built.

@@ -42,17 +42,17 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 
 	// Retrieve node: fetch relevant documents
 	builder.Node("retrieve", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		msgs := s.MessagesSnapshot()
-		if len(msgs) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
 
 		// Get last user message as query
 		var query string
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].Type() == message.TypeHuman {
+		for i := len(events) - 1; i >= 0; i-- {
+			if events[i].Message.Type() == message.TypeHuman {
 				// Get text from Parts
-				for _, part := range msgs[i].Parts() {
+				for _, part := range events[i].Message.Parts() {
 					if textPart, ok := part.(message.TextPart); ok {
 						query = textPart.Text
 						break
@@ -93,7 +93,9 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		docs, ok := s.Get("documents").([]string)
 		if !ok || len(docs) == 0 {
 			// No documents found, generate without context
-			return generateWithModel(ctx, mdl, s.MessagesSnapshot(), "")
+			events := s.MessageEventsSnapshot()
+			messages := graph.ExtractMessages(events)
+			return generateWithModel(ctx, mdl, messages, "")
 		}
 
 		// Format context from documents
@@ -101,7 +103,9 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 			"Documents": docs,
 		})
 
-		return generateWithModel(ctx, mdl, s.MessagesSnapshot(), contextPrompt)
+		events := s.MessageEventsSnapshot()
+		messages := graph.ExtractMessages(events)
+		return generateWithModel(ctx, mdl, messages, contextPrompt)
 	})
 
 	// Chain: retrieve → generate

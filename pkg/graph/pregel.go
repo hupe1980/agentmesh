@@ -51,8 +51,8 @@ func wrapTimeoutError(ctx context.Context, err error) error {
 // ChannelMessage is the data-carrying message payload for Pregel BSP execution.
 // It contains actual data to be communicated between nodes via channels.
 type ChannelMessage struct {
-	// Messages contains conversation messages to be passed between nodes
-	Messages []message.Message `json:"messages,omitzero"`
+	// Messages contains message events with execution metadata
+	Messages []MessageEvent `json:"messages,omitzero"`
 
 	// Updates contains key-value state updates to be applied to channels
 	Updates map[string]any `json:"updates,omitzero"`
@@ -61,8 +61,8 @@ type ChannelMessage struct {
 	Metadata map[string]string `json:"metadata,omitzero"`
 }
 
-// NewChannelMessage creates a new channel message with the given messages and updates.
-func NewChannelMessage(messages []message.Message, updates map[string]any) ChannelMessage {
+// NewChannelMessage creates a new channel message with the given message events and updates.
+func NewChannelMessage(messages []MessageEvent, updates map[string]any) ChannelMessage {
 	return ChannelMessage{
 		Messages: messages,
 		Updates:  updates,
@@ -115,7 +115,7 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 	}
 
 	if len(cm.Messages) > 0 {
-		clone.Messages = make([]message.Message, len(cm.Messages))
+		clone.Messages = make([]MessageEvent, len(cm.Messages))
 		copy(clone.Messages, cm.Messages)
 	}
 
@@ -201,6 +201,26 @@ type nodeAdapter struct {
 	runtime *graphRuntime
 	name    string
 	node    *Node
+}
+
+// wrapMessagesAsEvents wraps raw messages from node execution in MessageEvent structs
+// with execution metadata (graphID, nodeName, timestamp, UUID).
+func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []MessageEvent {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	graphID := ""
+	if n.runtime != nil {
+		graphID = n.runtime.options.runID
+	}
+
+	events := make([]MessageEvent, len(messages))
+	for i, msg := range messages {
+		events[i] = *NewMessageEvent(msg, graphID, n.name)
+	}
+
+	return events
 }
 
 func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}, instrumentation *Instrumentation) *graphRuntime {
@@ -564,7 +584,7 @@ func (g *compiledPregelGraph) State() StateManager {
 func (n *nodeAdapter) Name() string { return n.name }
 
 // handleScheduledDelivery handles message delivery to scheduled next nodes.
-func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []message.Message, updates map[string]any) error {
+func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []MessageEvent, updates map[string]any) error {
 	if n.runtime == nil || n.runtime.scheduler == nil {
 		return nil
 	}
@@ -699,10 +719,11 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	var updates map[string]any
-	var messages []message.Message
+	var messages []MessageEvent
 	if result != nil {
 		updates = result.Updates
-		messages = result.Messages
+		// Framework automatically wraps plain messages with execution metadata
+		messages = n.wrapMessagesAsEvents(result.Messages)
 	}
 
 	// Flush buffered aggregates from the node execution
@@ -732,7 +753,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		}
 	}
 
-	event := StreamEvent{Node: n.name, Updates: updates, Messages: cloneMessages(messages)}
+	event := StreamEvent{Node: n.name, Updates: updates, Messages: cloneMessageEvents(messages)}
 	n.runtime.emit(event)
 
 	// Hybrid approach for in-memory AND distributed execution:

@@ -39,8 +39,8 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	}
 
 	// Convert results back to A2A format and write to queue
-	for _, msg := range results {
-		a2aMsg, err := ConvertToA2AMessage(msg)
+	for _, evt := range results {
+		a2aMsg, err := ConvertToA2AMessage(evt.Message)
 		if err != nil {
 			return fmt.Errorf("failed to convert result message: %w", err)
 		}
@@ -98,7 +98,7 @@ func (e *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		// Convert the message if present
 		if len(event.Messages) > 0 {
 			for _, msg := range event.Messages {
-				a2aMsg, err := ConvertToA2AMessage(msg)
+				a2aMsg, err := ConvertToA2AMessage(msg.Message)
 				if err != nil {
 					return fmt.Errorf("failed to convert streamed message: %w", err)
 				}

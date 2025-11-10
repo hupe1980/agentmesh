@@ -135,13 +135,13 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 		}
 
 		// Get messages from state
-		messages := s.MessagesSnapshot()
-		if len(messages) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return &graph.NodeResult{}, nil
 		}
 
 		// Convert the last message to A2A format
-		lastMsg := messages[len(messages)-1]
+		lastMsg := events[len(events)-1].Message
 		a2aMsg, err := ConvertToA2AMessage(lastMsg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)
@@ -196,12 +196,12 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 			return nil, fmt.Errorf("failed to create A2A client: %w", clientErr)
 		}
 
-		messages := s.MessagesSnapshot()
-		if len(messages) == 0 {
+		events := s.MessageEventsSnapshot()
+		if len(events) == 0 {
 			return &graph.NodeResult{}, nil
 		}
 
-		lastMsg := messages[len(messages)-1]
+		lastMsg := events[len(events)-1].Message
 		a2aMsg, err := ConvertToA2AMessage(lastMsg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)

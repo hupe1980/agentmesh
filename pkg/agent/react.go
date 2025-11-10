@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
@@ -97,31 +96,10 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 
 	// Model node: generate response with tools and system prompt
 	// System prompt is sent per-request (Pydantic AI style) for token efficiency
-	modelNode := &graph.Node{
-		Name: "model",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			messages := s.MessagesSnapshot()
-
-			// Create request with tools and system prompt
-			req := &model.Request{
-				Messages:     messages,
-				Tools:        acceptedTools,
-				SystemPrompt: config.systemPrompt, // Sent per-request, not stored in state
-			}
-
-			// Call the model
-			resp, err := model.Last(mdl.Generate(ctx, req))
-			if err != nil {
-				return nil, err
-			}
-
-			return &graph.NodeResult{
-				Messages: []message.Message{resp.Message},
-				Updates:  map[string]any{},
-			}, nil
-		},
-	}
-	_ = g.AddNode(modelNode)
+	_ = g.AddNode(ModelNode(mdl,
+		WithModelTools(acceptedTools...),
+		WithModelSystemPrompt(config.systemPrompt),
+	))
 
 	// Tool node: execute tool calls
 	_ = g.AddNode(ToolNode(toolRegistry, WithToolErrorPrefix("react agent")))

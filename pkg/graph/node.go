@@ -16,9 +16,10 @@ type Runnable interface {
 
 // NodeResult contains the output of a node execution.
 // Updates modify graph state values, and Messages append to the conversation history.
+// The framework automatically wraps Messages in MessageEvent with execution metadata.
 type NodeResult struct {
-	Updates  map[string]any      // State updates (key-value pairs)
-	Messages []message.Message   // Messages to append to conversation
+	Updates  map[string]any    // State updates (key-value pairs)
+	Messages []message.Message // Messages to append (framework adds metadata)
 }
 
 // RetryPolicy configures automatic retry behavior for transient failures.
@@ -51,7 +52,7 @@ func DefaultBackoff(attempt int) time.Duration {
 // Node represents a vertex in the execution graph with custom logic.
 // Each node has a unique name and a RunFunc that performs computation.
 type Node struct {
-	Name        string      // Unique identifier for the node
+	Name        string // Unique identifier for the node
 	RunFunc     func(ctx context.Context, s StateWriter) (*NodeResult, error)
 	RetryPolicy *RetryPolicy // Optional retry configuration
 }
@@ -66,14 +67,14 @@ func (n *Node) Run(ctx context.Context, s StateWriter) (*NodeResult, error) {
 
 // Edge represents a directed connection between two nodes.
 type Edge struct {
-	From string  // Source node name
-	To   string  // Destination node name
+	From string // Source node name
+	To   string // Destination node name
 }
 
 // ConditionalEdges represents dynamic routing based on node output.
 // The Condition function evaluates the graph state to determine which target nodes to execute.
 type ConditionalEdges struct {
-	From      string      // Source node name
-	Targets   []string    // Possible target node names
-	Condition func(context.Context, StateReader) []string  // Function determining which targets to activate
+	From      string                                      // Source node name
+	Targets   []string                                    // Possible target node names
+	Condition func(context.Context, StateReader) []string // Function determining which targets to activate
 }

@@ -323,7 +323,7 @@ func TestManyMessages(t *testing.T) {
 		t.Errorf("Many messages test failed: %v", err)
 	}
 
-	snapshot := compiled.State().MessagesSnapshot()
+	snapshot := compiled.State().MessageEventsSnapshot()
 	if len(snapshot) != 1000 {
 		t.Errorf("Expected 1000 messages, got %d", len(snapshot))
 	}
