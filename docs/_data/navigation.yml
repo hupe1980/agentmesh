@@ -10,6 +10,8 @@
   href: /models/
 - label: Tools
   href: /tools/
+- label: WASM Sandboxing
+  href: /wasm-sandboxing/
 - label: State Management
   href: /state-management/
 - label: Memory & Embeddings

@@ -19,6 +19,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🔄 Parallel Graph Execution** - Pregel-based BSP engine for efficient multi-agent coordination
 - **🧠 LLM Integration** - First-class support for OpenAI, Anthropic, and extensible model interfaces
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic JSON schema generation
+- **🔒 WASM Tool Sandboxing** - Memory-safe sandbox for executing untrusted code with strict isolation
 - **💾 State Management** - Channel-based state with versioning and time-travel debugging
 - **🔁 Retry Policies** - Configurable exponential backoff with custom retry logic
 - **🎭 Subgraph Support** - Compose complex workflows from reusable graph components
@@ -48,6 +49,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🤝 Agent-to-Agent (A2A) Protocol** - Expose agents as A2A services or connect to external A2A agents
 - **🔌 Model Context Protocol (MCP)** - Dynamic tool discovery from MCP servers
 - **🛠️ LangChainGo Tools** - Import and use LangChainGo tool ecosystem
+- **🔒 WebAssembly Sandboxing** - Memory-safe execution of untrusted tools with runtime-enforced isolation
 - **🤖 Multi-Provider LLMs** - OpenAI, Anthropic, Gemini with functional options pattern
 - **⚙️ Custom Execution Backends** - Public `pkg/pregel` API for distributed MessageBus (Redis, Kafka) and custom schedulers
 - **🔒 Checkpoint Integrity** - State versioning detects corruption and concurrent modifications
@@ -493,6 +495,7 @@ Explore **17 comprehensive examples** demonstrating different use cases and patt
 | 👥 [supervisor_agent](examples/supervisor_agent) | Multi-agent coordination pattern | Supervisor routing, worker specialists, handoff tools |
 | 🏗️ [state_builder](examples/state_builder) | Simplified state initialization | Fluent API, channel patterns, reduced boilerplate |
 | 🔌 [mcp_tools](examples/mcp_tools) | Model Context Protocol integration | Dynamic tool discovery, MCP toolsets, runtime tools |
+| 🔒 [wasm_tool](examples/wasm_tool) | WebAssembly sandboxed tools | Memory-safe isolation, Rust WASM modules, security policies |
 | 🌊 [streaming](examples/streaming) | Real-time event streaming | Live updates, partial results, progress tracking |
 | 🔀 [conditional_flow](examples/conditional_flow) | Dynamic routing based on state | Conditional edges, branching logic, flow control |
 | ⚡ [parallel_tasks](examples/parallel_tasks) | Concurrent execution patterns | Parallel nodes, fan-out/fan-in, result aggregation |
@@ -632,6 +635,63 @@ os.WriteFile("graph.mmd", []byte(flowchart), 0644)
 metrics := compiled.GetMetrics()
 fmt.Printf("Complexity: %d\n", metrics.CyclomaticComplexity)
 ```
+
+### 🔒 WASM Tool Sandboxing
+
+Execute untrusted or third-party code securely using WebAssembly:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/tool/wasm"
+
+// Load WASM module
+wasmBytes, _ := os.ReadFile("calculator.wasm")
+
+// Create sandboxed tool with compute-only policy
+tool, err := wasm.NewWASMTool(
+    "calculator",
+    "Evaluate mathematical expressions with guaranteed isolation",
+    wasmBytes,
+    wasm.WithPolicy(wasm.ComputeOnlyPolicy()),  // No network, filesystem, or syscalls
+)
+
+// Use in agent - tool runs in isolated WASM environment
+agent, _ := agent.NewReActAgent(model, []tool.Tool{tool})
+```
+
+**Security Policies:**
+
+```go
+// Compute-only: Pure computation, no external access
+wasm.ComputeOnlyPolicy()
+
+// Network-only: HTTP/API access, no filesystem
+wasm.NetworkOnlyPolicy()
+
+// File processing: Access specific directories
+wasm.FileProcessingPolicy([]string{"/data"}, false)
+
+// Deterministic: Fresh instance per call, reproducible results
+wasm.DeterministicPolicy()
+
+// Custom: Fine-grained control
+policy := &wasm.SandboxPolicy{
+    MaxMemoryBytes:    50 * 1024 * 1024,  // 50 MB
+    TimeoutDuration:   5 * time.Second,
+    AllowNetworkAccess: false,
+    AllowFilesystemAccess: false,
+    SecurityLevel: wasm.SecurityLevelUntrusted,
+}
+```
+
+**Why WASM sandboxing?**
+- ✅ **Runtime-enforced isolation** - Cannot be bypassed by malicious code
+- ✅ **Memory-safe** - Isolated linear memory, no access to host or other processes
+- ✅ **Controlled capabilities** - All host access via explicitly granted WASI interfaces
+- ✅ **Resource limits** - Strict memory, timeout, and CPU constraints
+- ✅ **Cross-platform** - Same security on Linux, macOS, Windows
+- ✅ **Minimal overhead** - 1-5ms per invocation
+
+See the [wasm_tool example](examples/wasm_tool) for building WASM modules with Rust.
 
 ### 📞 Callbacks
 

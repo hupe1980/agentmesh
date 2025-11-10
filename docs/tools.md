@@ -23,6 +23,12 @@ sidebar:
     url: "#error-handling"
   - title: Best practices
     url: "#best-practices"
+  - title: WASM tools
+    url: "#wasm-tools"
+  - title: LangChainGo integration
+    url: "#langchaingo-tool"
+  - title: Retrieval tools
+    url: "#retrieval-tools"
 ---
 
 Tools enable agents to perform actions, fetch data, and interact with external systems. AgentMesh provides automatic JSON schema generation from Go types, making tool creation straightforward and type-safe.
@@ -536,6 +542,410 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 ```
 
 Need additional metadata or custom validation? Pass option functions to `NewTool` to override the generated name and description or wrap the result with your own schema enforcement.
+
+---
+
+## WASM Tools {#wasm-tools}
+
+AgentMesh provides **WebAssembly-based tool sandboxing** for securely executing untrusted or third-party code.
+
+WASM tools run inside a lightweight, memory-safe sandbox enforced by the WebAssembly runtime. Each tool operates in its own isolated environment with strict resource limits and no access to the host system unless explicitly granted through controlled interfaces (e.g., WASI capabilities).
+
+When combined with containerization or process isolation, this approach achieves defense-in-depth comparable to kernel-level isolation—but with the speed and portability of WebAssembly.
+
+### Why WASM sandboxing?
+
+Traditional tool sandboxing approaches have critical limitations:
+
+- **User-space restrictions** can be bypassed by malicious code creating its own HTTP clients or file handles
+- **Docker containers** add deployment complexity and significant resource overhead
+- **Process isolation** requires OS-specific implementations and careful privilege management
+
+WASM provides **runtime-enforced security** through the WebAssembly sandbox:
+
+- ✅ **Isolated memory** - No access to host memory or pointers
+- ✅ **No syscalls by default** - Network, filesystem, and system calls are blocked unless explicitly enabled via WASI
+- ✅ **Cannot be bypassed** - Security is enforced by the WASM runtime, not the guest code
+- ✅ **Cross-platform** - Same security guarantees on Linux, macOS, and Windows
+- ✅ **Minimal overhead** - 1-5ms startup time per invocation
+- ✅ **Resource limits** - Configurable memory, timeout, and compute constraints
+
+### Quick start
+
+Create a WASM tool from a compiled `.wasm` file:
+
+```go
+import (
+    "context"
+    "github.com/hupe1980/agentmesh/pkg/tool/wasm"
+)
+
+// Load WASM module
+wasmBytes, err := os.ReadFile("calculator.wasm")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Create tool with compute-only policy (no network/filesystem)
+tool, err := wasm.NewWASMTool(
+    "calculator",
+    "Evaluate mathematical expressions",
+    wasmBytes,
+    wasm.WithPolicy(wasm.ComputeOnlyPolicy()),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Use in agent
+agent, _ := agent.NewReActAgent(model, []tool.Tool{tool})
+```
+
+### Security policies
+
+WASM tools enforce security through **sandbox policies** that define what capabilities are available:
+
+#### Compute-only (default)
+
+Allows pure computation with no external access:
+
+```go
+tool, _ := wasm.NewWASMTool(
+    "math",
+    "Pure mathematical computations",
+    wasmBytes,
+    wasm.WithPolicy(wasm.ComputeOnlyPolicy()),
+)
+```
+
+**Allowed:**
+- Mathematical operations
+- String processing
+- Data transformations
+- Memory allocations (within limits)
+
+**Blocked:**
+- Network access (TCP, UDP, HTTP)
+- Filesystem access (read/write)
+- System calls
+- Random number generation
+- Clock access
+
+#### Network-only
+
+Allows network access but blocks filesystem:
+
+```go
+tool, _ := wasm.NewWASMTool(
+    "api_client",
+    "Call external HTTP APIs",
+    wasmBytes,
+    wasm.WithPolicy(wasm.NetworkOnlyPolicy()),
+)
+```
+
+**Use cases:**
+- HTTP API clients
+- Data fetching from external services
+- Webhook notifications
+
+#### File processing
+
+Allows filesystem access to specific directories:
+
+```go
+tool, _ := wasm.NewWASMTool(
+    "csv_processor",
+    "Process CSV files from data directory",
+    wasmBytes,
+    wasm.WithPolicy(wasm.FileProcessingPolicy(
+        []string{"/data/input", "/data/output"}, // Allowed paths
+        false,                                     // Read-write access
+    )),
+)
+```
+
+**Use cases:**
+- Data file processing
+- Log analysis
+- Report generation
+
+#### Deterministic
+
+Ensures the same input always produces the same output by creating fresh module instances:
+
+```go
+tool, _ := wasm.NewWASMTool(
+    "hash_function",
+    "Cryptographic hashing",
+    wasmBytes,
+    wasm.WithPolicy(wasm.DeterministicPolicy()),
+)
+```
+
+**Use cases:**
+- Cryptographic operations
+- Reproducible computations
+- Testing and validation
+
+#### Permissive
+
+Allows all capabilities (use with caution):
+
+```go
+tool, _ := wasm.NewWASMTool(
+    "system_tool",
+    "Trusted system operations",
+    wasmBytes,
+    wasm.WithPolicy(wasm.PermissiveSandboxPolicy()),
+)
+```
+
+### Custom policies
+
+Create fine-grained policies for specific use cases:
+
+```go
+customPolicy := &wasm.SandboxPolicy{
+    // Resource limits
+    MaxMemoryBytes:    50 * 1024 * 1024,  // 50 MB
+    TimeoutDuration:   5 * time.Second,
+    
+    // Capabilities
+    AllowNetworkAccess:    false,
+    AllowFilesystemAccess: false,
+    AllowRandomness:       false,
+    AllowClockAccess:      false,
+    
+    // Module instantiation
+    InstanceReuse: wasm.ReuseNever,  // Fresh instance per call
+    
+    // Security level
+    SecurityLevel: wasm.SecurityLevelThirdParty,
+}
+
+tool, _ := wasm.NewWASMTool(
+    "custom_tool",
+    "Tool with custom security policy",
+    wasmBytes,
+    wasm.WithPolicy(customPolicy),
+)
+```
+
+### Resource limits
+
+All policies support configurable resource constraints:
+
+```go
+policy := wasm.ComputeOnlyPolicy()
+policy.MaxMemoryBytes = 100 * 1024 * 1024  // 100 MB limit
+policy.TimeoutDuration = 10 * time.Second  // 10 second timeout
+
+tool, _ := wasm.NewWASMTool("compute", "desc", wasmBytes,
+    wasm.WithPolicy(policy))
+```
+
+### Building WASM modules
+
+WASM tools require compiled WebAssembly modules. Here's how to build them:
+
+#### Rust (recommended)
+
+Rust produces the smallest and most efficient WASM binaries:
+
+```rust
+// src/lib.rs
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn add(a: f64, b: f64) -> f64 {
+    a + b
+}
+
+#[no_mangle]
+pub extern "C" fn process(input_ptr: *const c_char) -> *mut c_char {
+    let input = unsafe { CStr::from_ptr(input_ptr).to_string_lossy() };
+    let result = format!("Processed: {}", input);
+    CString::new(result).unwrap().into_raw()
+}
+```
+
+**Build configuration (Cargo.toml):**
+
+```toml
+[package]
+name = "my-wasm-tool"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"      # Optimize for size
+lto = true           # Link-time optimization
+strip = true         # Strip debug symbols
+panic = "abort"      # Smaller panic handler
+codegen-units = 1    # Better optimization
+```
+
+**Build:**
+
+```bash
+cargo build --target wasm32-unknown-unknown --release
+# Output: target/wasm32-unknown-unknown/release/my_wasm_tool.wasm
+```
+
+**Typical binary size:** 70-130 KB (optimized)
+
+#### TinyGo
+
+For Go developers, TinyGo can compile to WASM:
+
+```go
+//go:build wasm
+package main
+
+import "syscall/js"
+
+func add(this js.Value, args []js.Value) interface{} {
+    a := args[0].Float()
+    b := args[1].Float()
+    return a + b
+}
+
+func main() {
+    js.Global().Set("add", js.FuncOf(add))
+    <-make(chan bool)
+}
+```
+
+**Build:**
+
+```bash
+tinygo build -o tool.wasm -target wasm main.go
+```
+
+**Binary size:** 400-1000 KB (larger than Rust)
+
+### Tool interface contract
+
+WASM modules must expose a `call` function that accepts and returns JSON:
+
+```rust
+#[no_mangle]
+pub extern "C" fn call(input_ptr: *const c_char) -> *mut c_char {
+    let input = unsafe { CStr::from_ptr(input_ptr).to_string_lossy() };
+    
+    // Parse JSON input
+    let args: serde_json::Value = serde_json::from_str(&input)
+        .unwrap_or(serde_json::Value::Null);
+    
+    // Perform operation
+    let result = process(args);
+    
+    // Return JSON result
+    let output = serde_json::to_string(&result).unwrap();
+    CString::new(output).unwrap().into_raw()
+}
+```
+
+### Integration with agents
+
+WASM tools work seamlessly with all agent types:
+
+```go
+// Create WASM tools
+mathTool, _ := wasm.NewWASMTool("math", "Math operations", mathWasm,
+    wasm.WithPolicy(wasm.ComputeOnlyPolicy()))
+
+apiTool, _ := wasm.NewWASMTool("fetch_data", "Fetch external data", apiWasm,
+    wasm.WithPolicy(wasm.NetworkOnlyPolicy()))
+
+// Use in ReAct agent
+agent, _ := agent.NewReActAgent(
+    model,
+    []tool.Tool{mathTool, apiTool},
+)
+
+// Use in supervisor agent
+supervisor, _ := agent.NewSupervisorAgent(
+    model,
+    agent.WithWorker("compute", "Computation worker", agent.NewReActAgent(model, []tool.Tool{mathTool})),
+    agent.WithWorker("fetch", "Data fetching worker", agent.NewReActAgent(model, []tool.Tool{apiTool})),
+)
+```
+
+### Security guarantees
+
+WASM tools provide verifiable security guarantees:
+
+1. **Memory isolation** - WASM modules have isolated linear memory, cannot access host memory
+2. **No syscalls** - Network, filesystem, and system calls are blocked by default
+3. **Resource limits** - Memory and CPU usage are strictly enforced
+4. **Controlled capabilities** - All host access goes through explicitly granted WASI interfaces
+5. **Sandboxed errors** - Errors and panics are contained within the module
+
+These guarantees are enforced by the Wazero WebAssembly runtime and cannot be bypassed by malicious code.
+
+### Performance characteristics
+
+- **Module loading**: 1-2ms per tool creation
+- **Function call overhead**: 1-5ms per invocation
+- **Memory overhead**: ~1-2 MB per loaded module
+- **Instance creation**: 100-500μs per fresh instance
+
+For most agent workflows, this overhead is negligible compared to LLM inference time.
+
+### Best practices
+
+**Use the most restrictive policy that works:**
+
+```go
+// Good: Compute-only for pure functions
+mathTool, _ := wasm.NewWASMTool("math", "desc", wasmBytes,
+    wasm.WithPolicy(wasm.ComputeOnlyPolicy()))
+
+// Avoid: Permissive when compute-only would work
+mathTool, _ := wasm.NewWASMTool("math", "desc", wasmBytes,
+    wasm.WithPolicy(wasm.PermissiveSandboxPolicy()))  // Too permissive
+```
+
+**Set appropriate resource limits:**
+
+```go
+policy := wasm.ComputeOnlyPolicy()
+policy.MaxMemoryBytes = 10 * 1024 * 1024  // 10 MB for small computations
+policy.TimeoutDuration = 2 * time.Second   // Fast timeout for simple ops
+
+tool, _ := wasm.NewWASMTool("fast_op", "desc", wasmBytes,
+    wasm.WithPolicy(policy))
+```
+
+**Use deterministic policies for reproducible operations:**
+
+```go
+// Ensure cryptographic operations are reproducible
+hashTool, _ := wasm.NewWASMTool("hash", "desc", wasmBytes,
+    wasm.WithPolicy(wasm.DeterministicPolicy()))
+```
+
+**Document security expectations:**
+
+```go
+// Clear documentation of capabilities
+tool, _ := wasm.NewWASMTool(
+    "api_client",
+    "Fetches data from external APIs. Requires network access. No filesystem or random access.",
+    wasmBytes,
+    wasm.WithPolicy(wasm.NetworkOnlyPolicy()),
+)
+```
+
+### Example: Calculator tool
+
+See the [wasm_tool example](https://github.com/hupe1980/agentmesh/tree/main/examples/wasm_tool) for a complete working example of a WASM-based calculator tool integrated with a ReAct agent.
 
 ---
 

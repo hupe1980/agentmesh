@@ -1,0 +1,6 @@
+# Build artifacts in module directories
+*/target/
+*/Cargo.lock
+
+# Built WASM files (copied to root for tests)
+*.wasm
