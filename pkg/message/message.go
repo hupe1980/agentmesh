@@ -1,6 +1,9 @@
 package message
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Part is a polymorphic segment of role-based content. Concrete part types
 // implement the unexported isPart marker to form a closed set.
@@ -105,6 +108,26 @@ type FunctionResponsePart struct {
 }
 
 func (FunctionResponsePart) isPart() {}
+
+// Stringify converts a message's text parts into a single string.
+func Stringify(m Message) string {
+	if m == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, part := range m.Parts() {
+		switch p := part.(type) {
+		case TextPart:
+			sb.WriteString(p.Text)
+		case *TextPart:
+			if p != nil {
+				sb.WriteString(p.Text)
+			}
+		}
+	}
+	return sb.String()
+}
 
 // ToolCall mirrors LangChain tool invocation metadata.
 type ToolCall struct {

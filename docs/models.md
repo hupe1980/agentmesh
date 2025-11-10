@@ -317,10 +317,10 @@ for i, resp := range responses {
 When using graph streaming, agents automatically handle the iterator:
 
 ```go
-stream := compiled.Stream(ctx, messages)
-for event := range stream {
-    if event.Err != nil {
-        log.Printf("Error: %v", event.Err)
+seq := compiled.Run(ctx, messages)
+for event, err := range seq {
+    if err != nil {
+        log.Printf("Error: %v", err)
         continue
     }
     

@@ -31,6 +31,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
+	"github.com/logrusorgru/aurora/v3"
 )
 
 func main() {
@@ -188,92 +189,33 @@ func main() {
 	fmt.Println(strings.Repeat("=", 70))
 
 	// Stream the graph execution
-	stream, err := compiled.Stream(ctx, messages)
-	if err != nil {
-		log.Fatalf("Failed to start stream: %v", err)
-	}
-	defer stream.Cancel()
+	seq := compiled.Run(ctx, messages)
 
 	// Track execution progress
 	eventCount := 0
 	currentNode := ""
 
-	// Process streaming events
-	for stream.Next() {
-		event := stream.Current()
+	for event, err := range seq {
+		if err != nil {
+			log.Fatalf("Streaming error: %v", err)
+		}
+
+		if event.Node != currentNode {
+			if currentNode != "" {
+				fmt.Println() // Newline after previous node's output
+			}
+			currentNode = event.Node
+			fmt.Printf("\n▶️ Executing Node: %s\n", aurora.Bold(aurora.Cyan(currentNode)))
+			fmt.Println(strings.Repeat("-", 30))
+		}
+
+		for _, msg := range event.Messages {
+			if msg.Type() == message.TypeAI {
+				// Print partial AI responses as they stream in
+				fmt.Print(aurora.Green(msg.String()))
+			}
+		}
 		eventCount++
-
-		// Handle errors
-		if event.Err != nil {
-			fmt.Printf("\n❌ Error in node %q: %v\n", event.Node, event.Err)
-			continue
-		}
-
-		// Display node execution events
-		if event.Node != "" {
-			// New node starting
-			if event.Node != currentNode && event.Result == nil {
-				currentNode = event.Node
-				fmt.Printf("\n📍 Node: %s\n", event.Node)
-			}
-
-			// Show intermediate updates (from StreamWriter calls)
-			if event.Result != nil && len(event.Result.Updates) > 0 {
-				fmt.Printf("   ⚡ Intermediate: ")
-				for key, val := range event.Result.Updates {
-					fmt.Printf("%s=%v ", key, val)
-				}
-				fmt.Println()
-			}
-
-			// Show state updates (final result)
-			if len(event.Updates) > 0 && event.Result == nil {
-				fmt.Printf("   ✅ Final: ")
-				for key, val := range event.Updates {
-					fmt.Printf("%s=%v ", key, val)
-				}
-				fmt.Println()
-			}
-
-			// Show messages
-			if len(event.Messages) > 0 {
-				for _, msg := range event.Messages {
-					msgType := "Unknown"
-					switch msg.Type() {
-					case message.TypeHuman:
-						msgType = "👤 Human"
-					case message.TypeAI:
-						msgType = "🤖 AI"
-					case message.TypeSystem:
-						msgType = "⚙️  System"
-					case message.TypeTool:
-						msgType = "🔧 Tool"
-					}
-
-					// Extract content from message parts
-					content := ""
-					for _, part := range msg.Parts() {
-						if textPart, ok := part.(message.TextPart); ok {
-							content += textPart.Text
-						}
-					}
-
-					if content != "" {
-						// Truncate for display
-						displayContent := content
-						if len(displayContent) > 80 {
-							displayContent = displayContent[:77] + "..."
-						}
-						fmt.Printf("   💬 %s: %s\n", msgType, displayContent)
-					}
-				}
-			}
-		}
-	}
-
-	// Check for stream errors
-	if err := stream.Err(); err != nil {
-		log.Fatalf("Stream error: %v", err)
 	}
 
 	fmt.Println("\n" + strings.Repeat("=", 70))

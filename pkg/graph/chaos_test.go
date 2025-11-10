@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestNodePanicRecovery verifies that panicking nodes don't crash the process
@@ -65,39 +66,20 @@ func TestNodePanicRecovery(t *testing.T) {
 		}
 
 		// Collect stream events
-		stream, err := compiled.Stream(context.Background(), []message.Message{})
-		if err != nil {
-			t.Fatalf("Failed to start stream: %v", err)
-		}
+		seq := compiled.Run(context.Background(), []message.Message{})
 
 		var events []StreamEvent
 		var errorFound bool
-		for stream.Next() {
-			event := stream.Current()
-			events = append(events, event)
-			if event.Err != nil {
+		for event, err := range seq {
+			if err != nil {
 				errorFound = true
-				errStr := event.Err.Error()
-				// Verify error contains panic information
-				if !contains(errStr, "node panicked") && !contains(errStr, "stream panic test") {
-					t.Logf("Event error: %v", event.Err)
-				}
+				break
 			}
+			events = append(events, event)
 		}
 
-		// Check final stream error
-		if stream.Err() == nil {
-			t.Error("Expected stream to end with error")
-		}
-
-		if !errorFound {
-			t.Error("Expected to find error event in stream")
-		}
-
-		// Should not crash - if we got here, panic was recovered
-		if len(events) == 0 {
-			t.Error("Expected at least one event from stream")
-		}
+		assert.True(t, errorFound, "Expected an error from the panicking node")
+		assert.Empty(t, events, "Expected no events before the panic")
 	})
 
 	t.Run("MultiplePanicRecovery", func(t *testing.T) {

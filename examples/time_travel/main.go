@@ -76,7 +76,7 @@ func main() {
 	// Set initial state
 	compiled.State().Set("value", 1)
 
-	stream, _ := compiled.Stream(ctx, nil,
+	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID1),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
@@ -85,12 +85,11 @@ func main() {
 		}),
 	)
 
-	for stream.Next() {
-		if event := stream.Current(); event.Err != nil {
-			log.Fatal(event.Err)
+	for _, err := range seq {
+		if err != nil {
+			log.Fatalf("Run 1 failed: %v", err)
 		}
 	}
-
 	result1, _ := compiled.State().Get("value").(int)
 	fmt.Printf("  Final value: %d\n\n", result1)
 
@@ -102,7 +101,7 @@ func main() {
 	// Set initial state
 	compiled.State().Set("value", 5)
 
-	stream, _ = compiled.Stream(ctx, nil,
+	seq2 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID2),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
@@ -111,9 +110,9 @@ func main() {
 		}),
 	)
 
-	for stream.Next() {
-		if event := stream.Current(); event.Err != nil {
-			log.Fatal(event.Err)
+	for _, err := range seq2 {
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 
@@ -128,7 +127,7 @@ func main() {
 	// Set initial state
 	compiled.State().Set("value", 10)
 
-	stream, _ = compiled.Stream(ctx, nil,
+	seq3 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID3),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
@@ -137,9 +136,9 @@ func main() {
 		}),
 	)
 
-	for stream.Next() {
-		if event := stream.Current(); event.Err != nil {
-			log.Fatal(event.Err)
+	for _, err := range seq3 {
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 

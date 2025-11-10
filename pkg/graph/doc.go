@@ -48,11 +48,11 @@ Graphs can be executed in different modes:
 	// Invoke: Execute once and return results
 	results, err := compiled.Invoke(ctx, messages)
 
-	// Stream: Execute with real-time event streaming
-	stream := compiled.Stream(ctx, messages)
-	for event := range stream {
-		if event.Err != nil {
-			log.Printf("Error: %v", event.Err)
+	// Run: Execute with real-time event streaming
+	seq := compiled.Run(ctx, messages)
+	for event, err := range seq {
+		if err != nil {
+			log.Printf("Error: %v", err)
 		}
 		log.Printf("Node %s completed", event.Node)
 	}
@@ -220,8 +220,11 @@ The graph engine supports OpenTelemetry for tracing and metrics:
 
 Events can be streamed for monitoring:
 
-	for event := range compiled.Stream(ctx, messages) {
-		log.Printf("Node: %s, Superstep: %d", event.Node, event.Superstep)
+	for event, err := range compiled.Run(ctx, messages) {
+		if err != nil {
+			// handle error
+		}
+		log.Printf("Node: %s", event.Node)
 	}
 
 # Advanced Features

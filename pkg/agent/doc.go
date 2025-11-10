@@ -64,8 +64,11 @@ Agents are implemented as graphs with three main nodes:
 
 Get real-time updates as the agent runs:
 
-	stream := compiled.Stream(ctx, messages)
-	for event := range stream {
+	seq := compiled.Run(ctx, messages)
+	for event, err := range seq {
+		if err != nil {
+			// Handle error
+		}
 		switch {
 		case event.Node == "agent":
 			fmt.Println("Agent thinking...")

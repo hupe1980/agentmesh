@@ -69,15 +69,16 @@ model := openai.NewModel(client, openai.WithStreaming(true))
 
 ### 2. Start Streaming Execution
 ```go
-stream, err := compiled.Stream(ctx, messages)
-defer stream.Close() // Always cleanup!
+seq := compiled.Run(ctx, messages)
 ```
 
 ### 3. Process Events
 ```go
-for event := range stream.Events() {
-    switch e := event.(type) {
-    case *graph.NodeStartEvent:
+for event, err := range seq {
+    if err != nil {
+        // handle error
+    }
+    // process event
         fmt.Printf("→ Starting: %s\n", e.NodeName)
     
     case *graph.NodeCompleteEvent:
@@ -145,29 +146,12 @@ type GraphCompleteEvent struct {
 
 ## Proper Cleanup
 
-### Using defer
-```go
-stream, err := compiled.Stream(ctx, messages)
-if err != nil {
-    return err
-}
-defer stream.Close() // Cleanup goroutines
-```
-
-### Manual Cancel
-```go
-stream, _ := compiled.Stream(ctx, messages)
-
-// Later, to stop early:
-stream.Cancel()
-```
-
 ### Context Cancellation
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
 
-stream, _ := compiled.Stream(ctx, messages)
+seq := compiled.Run(ctx, messages)
 ```
 
 ## What This Example Teaches

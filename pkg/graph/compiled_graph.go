@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"sort"
 	"sync"
 	"time"
@@ -20,14 +21,14 @@ import (
 // Compiled is safe for concurrent use across multiple goroutines.
 //
 // Concurrency Model:
-//   - Multiple concurrent Stream() calls are allowed (each gets independent state)
-//   - Invoke() serializes execution via invokeMu (one invocation at a time)
+//   - Multiple concurrent Run() calls are allowed (each gets independent state)
+//   - Run() serializes execution via invokeMu (one invocation at a time)
 //   - Runtime state access is protected by runtimeMu (RWMutex for read-heavy workload)
 //
 // Mutex Usage & Lock Ordering:
 //
-//  1. invokeMu: Coarse-grained lock preventing concurrent Invoke/Stream calls
-//     - Acquired: Start of Invoke(), released at end
+//  1. invokeMu: Coarse-grained lock preventing concurrent Run calls
+//     - Acquired: Start of Run(), released at end
 //     - Purpose: Prevents state corruption from concurrent executions
 //     - Never held while calling into Pregel runtime
 //
@@ -40,18 +41,17 @@ import (
 // Deadlock Prevention:
 //   - Never acquire invokeMu while holding runtimeMu
 //   - Never call external callbacks while holding any mutex
-//   - Always release mutex before emitting stream events
 //
 // Key Methods:
+//   - Run: Execute graph and return an iterator over execution events
 //   - Invoke: Execute graph and return final messages
-//   - Stream: Execute graph with real-time event streaming
 //
 // Created by Builder.Compile() after graph construction.
 type Compiled struct {
 	stateManager      StateManager
 	runtime           *executionState
 	runtimeMu         sync.RWMutex // Protects runtime state pointer
-	invokeMu          sync.Mutex   // Serializes Invoke/Stream calls
+	invokeMu          sync.Mutex   // Serializes Run calls
 	nodes             map[string]*Node
 	edges             []Edge
 	conditionals      []ConditionalEdges
@@ -167,9 +167,10 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 	s.Bootstrap(ctx, completed, paused)
 }
 
-// Invoke executes the graph synchronously and returns the final message events.
-// Returns MessageEvent slice with execution metadata (node, timestamp, etc).
-func (cg *Compiled) Invoke(ctx context.Context, messages []message.Message, optFns ...RunOption) ([]MessageEvent, error) {
+// Run executes the graph and returns an iterator over the execution events.
+// This is the primary method for running a compiled graph.
+// The returned iterator can be consumed to stream results or collected to get a final result.
+func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[StreamEvent, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -178,19 +179,57 @@ func (cg *Compiled) Invoke(ctx context.Context, messages []message.Message, optF
 		optFn(&options)
 	}
 
-	return cg.invokeWithOptions(ctx, messages, options)
+	return cg.runWithOptions(ctx, messages, options)
 }
 
-// Stream executes the graph and streams intermediate results.
-func (cg *Compiled) Stream(ctx context.Context, messages []message.Message, optFns ...RunOption) (*Stream, error) {
-	cg.invokeMu.Lock()
-	defer cg.invokeMu.Unlock()
-
+// Invoke executes the graph synchronously and returns the final message events.
+// It is a convenience wrapper around Run that collects all events.
+func (cg *Compiled) Invoke(ctx context.Context, messages []message.Message, optFns ...RunOption) ([]MessageEvent, error) {
+	// Attach observability providers to context if configured
 	options := defaultRunOptions()
 	for _, optFn := range optFns {
 		optFn(&options)
 	}
-	return cg.streamWithOptions(ctx, messages, options)
+	ctx = cg.attachProvidersToContext(ctx, options)
+
+	// Create instrumentation from providers
+	instrumentation := cg.createInstrumentation(options)
+
+	// Start graph execution trace span
+	var span trace.Span
+	if instrumentation != nil {
+		ctx, span = instrumentation.TraceGraphExecution(ctx, "graph.invoke")
+		defer func() {
+			if span != nil {
+				span.End(nil)
+			}
+		}()
+	}
+
+	startTime := time.Now()
+
+	seq := cg.Run(ctx, messages, optFns...)
+
+	for _, err := range seq {
+		if err != nil {
+			if span != nil {
+				span.End(err)
+			}
+			return nil, err
+		}
+	}
+
+	// Record metrics
+	if instrumentation != nil {
+		instrumentation.RecordGraphExecution(ctx, "graph.invoke", time.Since(startTime), true)
+	}
+
+	if cg == nil || cg.stateManager == nil {
+		return nil, nil
+	}
+
+	// Return message events with execution metadata
+	return cg.stateManager.MessageEventsSnapshot(), nil
 }
 
 // ApplyState synchronously merges values and messages into the committed graph state.
@@ -303,73 +342,6 @@ func (cg *Compiled) AsNodeWithStateMapping(
 	}
 }
 
-func (cg *Compiled) invokeWithOptions(ctx context.Context, messages []message.Message, options runOptions) ([]MessageEvent, error) {
-	// Wrap input messages as MessageEvents for internal processing
-	var messageEvents []MessageEvent
-	if len(messages) > 0 {
-		messageEvents = make([]MessageEvent, len(messages))
-		for i, msg := range messages {
-			messageEvents[i] = *NewMessageEvent(msg, options.runID, "__input__")
-		}
-	}
-
-	// Attach observability providers to context if configured
-	ctx = cg.attachProvidersToContext(ctx, options)
-
-	// Create instrumentation from providers
-	instrumentation := cg.createInstrumentation(options)
-
-	// Start graph execution trace span
-	var span trace.Span
-	if instrumentation != nil {
-		ctx, span = instrumentation.TraceGraphExecution(ctx, "graph.invoke")
-		defer func() {
-			if span != nil {
-				span.End(nil)
-			}
-		}()
-	}
-
-	startTime := time.Now()
-	stream, err := cg.streamWithOptions(ctx, messages, options)
-	if err != nil {
-		if span != nil {
-			span.End(err)
-		}
-		return nil, err
-	}
-	defer stream.Cancel()
-
-	for stream.Next() {
-		event := stream.Current()
-		if event.Err != nil {
-			if span != nil {
-				span.End(event.Err)
-			}
-			return nil, event.Err
-		}
-	}
-
-	if err := stream.Err(); err != nil {
-		if span != nil {
-			span.End(err)
-		}
-		return nil, err
-	}
-
-	// Record metrics
-	if instrumentation != nil {
-		instrumentation.RecordGraphExecution(ctx, "graph.invoke", time.Since(startTime), true)
-	}
-
-	if cg == nil || cg.stateManager == nil {
-		return nil, nil
-	}
-
-	// Return message events with execution metadata
-	return cg.stateManager.MessageEventsSnapshot(), nil
-}
-
 // restoreFromCheckpoint loads and restores checkpoint if configured.
 // Returns the initial superstep to resume from, or 0 if no checkpoint was loaded.
 func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptions, instrumentation *Instrumentation) (int64, error) {
@@ -436,67 +408,95 @@ func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptio
 	return chkpt.Superstep, nil
 }
 
-func (cg *Compiled) streamWithOptions(ctx context.Context, messages []message.Message, options runOptions) (*Stream, error) {
+// setupRun prepares the execution context, instrumentation, and state for a graph run.
+// It handles context validation, message preparation, checkpoint restoration, and provider setup.
+func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, options *runOptions) (context.Context, *Instrumentation, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("%w", ErrNilContext)
+		return nil, nil, fmt.Errorf("%w", ErrNilContext)
 	}
 	if options.maxConcurrency < 1 {
 		options.maxConcurrency = 1
 	}
 
 	// Wrap input messages as MessageEvents for internal processing
-	var messageEvents []MessageEvent
 	if len(messages) > 0 {
-		messageEvents = make([]MessageEvent, len(messages))
+		messageEvents := make([]MessageEvent, len(messages))
 		for i, msg := range messages {
 			messageEvents[i] = *NewMessageEvent(msg, options.runID, "__input__")
 		}
+		if cg.stateManager != nil {
+			cg.stateManager.ApplyUpdates(nil, messageEvents)
+		}
 	}
 
-	// Attach observability providers to context if configured
-	ctx = cg.attachProvidersToContext(ctx, options)
+	// Attach observability providers to context
+	ctx = cg.attachProvidersToContext(ctx, *options)
 
 	// Create instrumentation from providers
-	instrumentation := cg.createInstrumentation(options)
+	instrumentation := cg.createInstrumentation(*options)
 
-	// Attempt to restore from checkpoint if configured
-	initialSuperstep, err := cg.restoreFromCheckpoint(ctx, &options, instrumentation)
+	// Attempt to restore from checkpoint
+	initialSuperstep, err := cg.restoreFromCheckpoint(ctx, options, instrumentation)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if initialSuperstep > 0 {
 		options.initialSuperstep = initialSuperstep
 	}
 
-	if len(messageEvents) > 0 && cg != nil && cg.stateManager != nil {
-		cg.stateManager.ApplyUpdates(nil, messageEvents)
-	}
+	return ctx, instrumentation, nil
+}
 
-	derivedCtx, cancel := context.WithCancel(ctx)
-	// Use configurable event buffer size
-	bufferSize := options.eventBufferSize
-	if bufferSize <= 0 {
-		bufferSize = 100 // Fallback to default
-	}
-	events := make(chan StreamEvent, bufferSize) // Buffered to reduce blocking
-	done := make(chan struct{})                  // Signal for early termination
+func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[StreamEvent, error] {
+	return func(yield func(StreamEvent, error) bool) {
+		runCtx, instrumentation, err := cg.setupRun(ctx, messages, &options)
+		if err != nil {
+			yield(StreamEvent{}, err)
+			return
+		}
 
-	go func() {
-		defer close(events)
-		defer close(done)
+		derivedCtx, cancel := context.WithCancel(runCtx)
 		defer cancel()
 
-		rt := newPregelRuntime(cg, cancel, options, events, done, instrumentation)
-		_ = rt.run(derivedCtx) // Pass context to run() method
-
-		// Don't emit deadline exceeded errors here - they're already wrapped and emitted
-		// by the node adapter with the specific node name. Only emit unexpected context errors.
-		if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			rt.emitError(err)
+		// Use configurable event buffer size
+		bufferSize := options.eventBufferSize
+		if bufferSize <= 0 {
+			bufferSize = 100 // Fallback to default
 		}
-	}()
+		events := make(chan StreamEvent, bufferSize) // Buffered to reduce blocking
+		done := make(chan struct{})                  // Signal for early termination
 
-	return newStream(events, cancel, done), nil
+		go func() {
+			defer close(events)
+			defer close(done)
+
+			rt := newPregelRuntime(cg, cancel, options, events, done, instrumentation)
+			_ = rt.run(derivedCtx) // Pass context to run() method
+
+			// Don't emit deadline exceeded errors here - they're already wrapped and emitted
+			// by the node adapter with the specific node name. Only emit unexpected context errors.
+			if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				rt.emitError(err)
+			}
+		}()
+
+		for {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				if !yield(event, event.Err) {
+					return
+				}
+				if event.Err != nil {
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}
 }
 
 // StreamEvent represents a single event emitted during graph execution.
@@ -507,98 +507,6 @@ type StreamEvent struct {
 	Messages []MessageEvent // New message events appended by the node
 	Result   *NodeResult    // Full node result (Updates + Messages)
 	Err      error          // Error if node execution failed
-}
-
-// Stream provides an iterator over graph execution events.
-// Use Next() to advance and Event() to retrieve the current event.
-// IMPORTANT: Always call Cancel() or Close() when done to prevent goroutine leaks.
-type Stream struct {
-	events  <-chan StreamEvent
-	cancel  context.CancelFunc
-	done    <-chan struct{} // Signals when background goroutine completes
-	current StreamEvent
-	err     error
-	closed  bool
-	mu      sync.Mutex
-}
-
-func newStream(events <-chan StreamEvent, cancel context.CancelFunc, done <-chan struct{}) *Stream {
-	return &Stream{
-		events: events,
-		cancel: cancel,
-		done:   done,
-	}
-}
-
-// Next advances to the next stream event.
-func (s *Stream) Next() bool {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return false
-	}
-	s.mu.Unlock()
-
-	event, ok := <-s.events
-	if !ok {
-		s.mu.Lock()
-		s.closed = true
-		s.mu.Unlock()
-		return false
-	}
-
-	s.mu.Lock()
-	s.current = event
-	if event.Err != nil {
-		if s.err == nil {
-			s.err = event.Err
-		}
-		s.closed = true
-	}
-	s.mu.Unlock()
-
-	return true
-}
-
-// Current returns the current stream event.
-func (s *Stream) Current() StreamEvent {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.current
-}
-
-// Err returns any error encountered during streaming.
-func (s *Stream) Err() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.err
-}
-
-// Cancel stops the stream and releases resources.
-func (s *Stream) Cancel() {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return
-	}
-	s.closed = true
-	s.mu.Unlock()
-
-	if s.cancel != nil {
-		s.cancel()
-	}
-}
-
-// Close cancels the stream and waits for the background goroutine to finish.
-// This prevents goroutine leaks when the consumer stops reading events early.
-// Close is idempotent and safe to call multiple times.
-func (s *Stream) Close() error {
-	s.Cancel()
-	// Wait for background goroutine to exit
-	if s.done != nil {
-		<-s.done
-	}
-	return nil
 }
 
 // =============================================================================

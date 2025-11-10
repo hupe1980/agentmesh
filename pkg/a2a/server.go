@@ -82,37 +82,25 @@ func (e *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	}
 
 	// Stream execution results
-	stream, err := e.compiled.Stream(ctx, messages)
-	if err != nil {
-		return fmt.Errorf("failed to start streaming: %w", err)
-	}
+	seq := e.compiled.Run(ctx, messages)
 
 	// Process each event from the stream
-	for stream.Next() {
-		event := stream.Current()
-
-		if event.Err != nil {
-			return fmt.Errorf("streaming error: %w", event.Err)
+	for event, err := range seq {
+		if err != nil {
+			return fmt.Errorf("streaming error: %w", err)
 		}
 
-		// Convert the message if present
-		if len(event.Messages) > 0 {
-			for _, msg := range event.Messages {
-				a2aMsg, err := ConvertToA2AMessage(msg.Message)
-				if err != nil {
-					return fmt.Errorf("failed to convert streamed message: %w", err)
-				}
+		for _, msgEvt := range event.Messages {
+			a2aMsg, err := ConvertToA2AMessage(msgEvt.Message)
+			if err != nil {
+				// It might be better to log this and continue
+				return fmt.Errorf("failed to convert result message: %w", err)
+			}
 
-				if err := q.Write(ctx, a2aMsg); err != nil {
-					return fmt.Errorf("failed to write streamed message: %w", err)
-				}
+			if err := q.Write(ctx, a2aMsg); err != nil {
+				return fmt.Errorf("failed to write message to queue: %w", err)
 			}
 		}
-	}
-
-	// Check for any errors after streaming completes
-	if err := stream.Err(); err != nil {
-		return fmt.Errorf("stream error: %w", err)
 	}
 
 	return nil

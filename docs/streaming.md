@@ -32,11 +32,7 @@ if err != nil {
 }
 
 // Start streaming execution
-stream, err := compiled.Stream(ctx, messages)
-if err != nil {
-    log.Fatal(err)
-}
-defer stream.Cancel()
+seq := compiled.Run(ctx, messages)
 
 // Process events as they arrive
 for stream.Next() {
@@ -218,15 +214,12 @@ func main() {
     compiled, _ := builder.Compile()
     
     // Execute with streaming
-    stream, _ := compiled.Stream(context.Background(), nil)
-    defer stream.Cancel()
+    seq := compiled.Run(context.Background(), nil)
     
     // Process events
-    for stream.Next() {
-        event := stream.Current()
-        
-        if event.Err != nil {
-            fmt.Printf("❌ Error: %v\n", event.Err)
+    for event, err := range seq {
+        if err != nil {
+            fmt.Printf("❌ Error: %v\n", err)
             continue
         }
         
@@ -298,31 +291,27 @@ builder.Node("batch_processor", func(ctx context.Context, s graph.StateWriter) (
 builder.Node("llm_call", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
-    // Start streaming from the model
-    stream, err := model.Stream(ctx, messages)
-    if err != nil {
-        return nil, err
-    }
-    defer stream.Cancel()
+    // Stream from the model
+    seq := model.Generate(ctx, &model.Request{
+        Messages: messages,
+        Stream:   true,
+    })
     
     var fullResponse strings.Builder
     
     // Forward model tokens to graph stream
-    for stream.Next() {
-        chunk := stream.Current()
-        fullResponse.WriteString(chunk.Text)
-        
-        if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "token":         chunk.Text,
-                    "partial_text": fullResponse.String(),
-                },
-            })
+    for chunk, err := range seq {
+        if err != nil {
+            return nil, err
         }
+        
+        // Stream partial response out of the node
+        sw.Write(message.NewAIMessageFromText(chunk.Message.String()))
+        
+        fullResponse.WriteString(chunk.Message.String())
     }
     
-    // Return complete message
+    // Return final, complete message
     return &graph.NodeResult{
         Messages: []message.Message{
             message.NewAIMessageFromText(fullResponse.String()),
@@ -491,21 +480,19 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
     
     flusher, ok := w.(http.Flusher)
     if !ok {
-        http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+        http.Error(w, "Streaming not supported", http.StatusInternalServerError)
         return
     }
-    
-    // Execute graph with streaming
-    stream, err := compiled.Stream(r.Context(), messages)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-    defer stream.Cancel()
-    
+
+    // Execute graph and stream events
+    seq := compiled.Run(r.Context(), messages)
+
     // Forward events to SSE
-    for stream.Next() {
-        event := stream.Current()
+    for event, err := range seq {
+        if err != nil {
+            // Handle error, maybe send an SSE error event
+            break
+        }
         
         data, _ := json.Marshal(event)
         fmt.Fprintf(w, "data: %s\n\n", data)
@@ -513,6 +500,14 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
     }
 }
 ```
+
+## Proper Cleanup
+
+For proper cleanup and resource management:
+
+- Always cancel contexts when done
+- Close any open streams or connections
+- Handle errors and edge cases in streaming logic
 
 ---
 

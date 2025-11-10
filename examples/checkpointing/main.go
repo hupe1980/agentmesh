@@ -37,32 +37,22 @@ func runDemo(ctx context.Context) {
 
 	compiled := buildWorkflow()
 
-	stream, err := compiled.Stream(ctx, nil,
+	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1, // Save after every superstep
 			AutoRestore:  false,
-		}),
-	)
-	if err != nil {
-		log.Fatalf("Failed to start: %v", err)
-	}
+		}))
 
-	// Process events
-	for stream.Next() {
-		event := stream.Current()
-		if event.Err != nil {
-			log.Printf("Error: %v", event.Err)
+	fmt.Println("Workflow Results:")
+	for event, err := range seq {
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			break
 		}
+		fmt.Printf("Node: %s, Superstep: %d, Messages: %d\n", event.Node, compiled.CurrentSuperstep(), len(event.Messages))
 	}
-
-	if stream.Err() != nil {
-		log.Fatalf("Workflow failed: %v", stream.Err())
-	}
-
-	fmt.Println("✓ Workflow completed with automatic checkpoints saved")
-	fmt.Println()
 
 	// === Part 2: View checkpoint history ===
 	fmt.Println("=== Part 2: Viewing Checkpoint History ===")
@@ -117,7 +107,7 @@ func runDemo(ctx context.Context) {
 	failRunID := "failing-workflow"
 
 	// First attempt - will fail
-	stream, _ = failingWorkflow.Stream(ctx, nil,
+	failSeq := failingWorkflow.Run(ctx, nil,
 		graph.WithRunID(failRunID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
@@ -126,10 +116,9 @@ func runDemo(ctx context.Context) {
 		}),
 	)
 
-	for stream.Next() {
-		event := stream.Current()
-		if event.Err != nil {
-			fmt.Printf("❌ Workflow failed: %v\n", event.Err)
+	for _, err := range failSeq {
+		if err != nil {
+			fmt.Printf("❌ Workflow failed: %v\n", err)
 			break
 		}
 	}
@@ -148,7 +137,7 @@ func runDemo(ctx context.Context) {
 	fmt.Println("Resuming from last checkpoint with auto-restore enabled...")
 	fixedWorkflow := buildFixedWorkflow()
 
-	stream, _ = fixedWorkflow.Stream(ctx, nil,
+	resumeSeq := fixedWorkflow.Run(ctx, nil,
 		graph.WithRunID(failRunID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
@@ -157,14 +146,15 @@ func runDemo(ctx context.Context) {
 		}),
 	)
 
-	for stream.Next() {
-		event := stream.Current()
-		if event.Err != nil {
-			log.Printf("Error: %v", event.Err)
+	var lastErr error
+	for _, err := range resumeSeq {
+		if err != nil {
+			lastErr = err
+			log.Printf("Error: %v", err)
 		}
 	}
 
-	if stream.Err() == nil {
+	if lastErr == nil {
 		fmt.Println("✓ Workflow recovered and completed successfully!")
 		fmt.Println("  • Restored state from last checkpoint")
 		fmt.Println("  • Skipped already-completed nodes")

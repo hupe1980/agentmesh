@@ -22,16 +22,22 @@ func NewPregelExecutor(cg *Compiled) *PregelExecutor {
 
 // Execute runs the graph to completion and returns the final result.
 func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (*InvokeResult, error) {
-	// Convert ExecuteOptions to internal runOptions
-	runOpts := runOptions{
-		maxIterations:      options.MaxIterations,
-		maxConcurrency:     options.MaxWorkers,
-		checkpointInterval: options.CheckpointInterval,
-		runID:              options.RunID,
+	// Convert ExecuteOptions to RunOption functions
+	var optFns []RunOption
+	if options.MaxIterations > 0 {
+		optFns = append(optFns, WithMaxIterations(options.MaxIterations))
 	}
+	if options.MaxWorkers > 0 {
+		optFns = append(optFns, WithMaxConcurrency(options.MaxWorkers))
+	}
+	if options.RunID != "" {
+		optFns = append(optFns, WithRunID(options.RunID))
+	}
+	// Note: CheckpointInterval is not directly supported here as PregelExecutor
+	// does not manage a Checkpointer instance. Pass it via graph options if needed.
 
-	// Use existing invokeWithOptions implementation
-	messages, err := e.cg.invokeWithOptions(ctx, initialMessages, runOpts)
+	// Use the public Invoke method
+	messages, err := e.cg.Invoke(ctx, initialMessages, optFns...)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +52,7 @@ func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.
 }
 
 // Stream executes the graph with real-time event streaming.
-func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (<-chan interface{}, <-chan error) {
+func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (<-chan any, <-chan error) {
 	eventChan := make(chan any, 100)
 	errChan := make(chan error, 1)
 
@@ -54,34 +60,28 @@ func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.M
 		defer close(eventChan)
 		defer close(errChan)
 
-		// Convert ExecuteOptions to internal runOptions
-		runOpts := runOptions{
-			maxIterations:      options.MaxIterations,
-			maxConcurrency:     options.MaxWorkers,
-			checkpointInterval: options.CheckpointInterval,
-			runID:              options.RunID,
+		// Convert ExecuteOptions to RunOption functions
+		var optFns []RunOption
+		if options.MaxIterations > 0 {
+			optFns = append(optFns, WithMaxIterations(options.MaxIterations))
+		}
+		if options.MaxWorkers > 0 {
+			optFns = append(optFns, WithMaxConcurrency(options.MaxWorkers))
+		}
+		if options.RunID != "" {
+			optFns = append(optFns, WithRunID(options.RunID))
 		}
 
-		// Use existing streamWithOptions implementation
-		stream, err := e.cg.streamWithOptions(ctx, initialMessages, runOpts)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		defer stream.Cancel()
+		// Use the public Run method
+		seq := e.cg.Run(ctx, initialMessages, optFns...)
 
 		// Forward StreamEvents as interface{}
-		for stream.Next() {
-			event := stream.Current()
-			if event.Err != nil {
-				errChan <- event.Err
+		for event, err := range seq {
+			if err != nil {
+				errChan <- err
 				return
 			}
 			eventChan <- event
-		}
-
-		if err := stream.Err(); err != nil {
-			errChan <- err
 		}
 	}()
 

@@ -913,11 +913,12 @@ type StreamEvent struct {
 **Usage**:
 
 ```go
-stream := compiled.Stream(ctx, messages)
-for event := range stream {
-    switch {
-    case event.Err != nil:
-        log.Printf("Error in node %s: %v", event.Node, event.Err)
+seq := compiled.Run(ctx, messages)
+for event, err := range seq {
+    if err != nil {
+        log.Printf("Error in node %s: %v", event.Node, err)
+        break
+    }
     case event.Node != "":
         log.Printf("Superstep %d: %s completed", event.Superstep, event.Node)
     }
@@ -1213,10 +1214,10 @@ The compiler validates the graph topology, checks for cycles, and prepares the e
 results, err := compiled.Invoke(ctx, initialMessages)
 
 // Streaming execution
-stream := compiled.Stream(ctx, initialMessages)
-for event := range stream {
-    if event.Err != nil {
-        log.Printf("Error: %v", event.Err)
+seq := compiled.Run(ctx, initialMessages)
+for event, err := range seq {
+    if err != nil {
+        log.Printf("Error: %v", err)
     }
     log.Printf("Superstep %d: Node %s completed", event.Superstep, event.Node)
 }

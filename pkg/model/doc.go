@@ -61,13 +61,21 @@ Models that implement ToolAware can invoke tools:
 
 Stream responses token-by-token:
 
-	stream := llm.Stream(ctx, messages)
-	for event := range stream {
-		if event.Err != nil {
-			log.Printf("Error: %v", event.Err)
-			break
+	seq := llm.Generate(ctx, &model.Request{
+		Messages: messages,
+		Stream:   true,
+	})
+
+	for res, err := range seq {
+		if err != nil {
+			log.Fatalf("Error: %v", err)
 		}
-		fmt.Print(event.Content)
+
+		if res.Partial {
+			fmt.Print(res.Message.String())
+		} else {
+			fmt.Println(res.Message.String())
+		}
 	}
 
 # Model Interface

@@ -180,7 +180,7 @@ func WithMaxMessages(n int) RunOption {
 //
 // Example:
 //
-//	stream, _ := compiled.Stream(ctx, messages, graph.WithEventBufferSize(500))
+//	seq := compiled.Run(ctx, messages, graph.WithEventBufferSize(500))
 func WithEventBufferSize(size int) RunOption {
 	return func(opts *runOptions) {
 		if opts == nil {

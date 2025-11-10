@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"iter"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -37,17 +38,20 @@ func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start streaming but only read one event
-	stream, err := compiled.Stream(context.Background(), nil)
-	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	seq := compiled.Run(ctx, nil)
+	pull, stop := iter.Pull2(seq)
+	defer stop()
 
 	// Read only first event
-	if stream.Next() {
-		_ = stream.Current()
+	_, _, ok := pull()
+	if ok {
+		// continue
 	}
 
-	// Close stream early (before all events consumed)
-	err = stream.Close()
-	assert.NoError(t, err)
+	// Cancel the context to stop the stream
+	cancel()
 
 	// Give time for goroutines to exit
 	time.Sleep(100 * time.Millisecond)
@@ -61,30 +65,6 @@ func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 	assert.LessOrEqual(t, diff, 2,
 		"goroutine leak detected: started with %d, ended with %d (diff: %d)",
 		initialGoroutines, finalGoroutines, diff)
-}
-
-// TestStream_CloseIsIdempotent verifies Close can be called multiple times safely.
-func TestStream_CloseIsIdempotent(t *testing.T) {
-	t.Parallel()
-
-	builder := NewBuilder()
-	builder.Node("test", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
-		return nil, nil
-	})
-	builder.StartTo("test").ToEnd("test")
-
-	compiled, err := builder.Compile()
-	require.NoError(t, err)
-
-	stream, err := compiled.Stream(context.Background(), nil)
-	require.NoError(t, err)
-
-	// Close multiple times - should not panic
-	assert.NotPanics(t, func() {
-		_ = stream.Close()
-		_ = stream.Close()
-		_ = stream.Close()
-	})
 }
 
 // TestStream_CancelStopsExecution verifies that Cancel stops the graph execution.
@@ -119,20 +99,33 @@ func TestStream_CancelStopsExecution(t *testing.T) {
 	compiled, err := builder.Compile()
 	require.NoError(t, err)
 
-	stream, err := compiled.Stream(context.Background(), nil)
-	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seq := compiled.Run(ctx, nil)
+	pull, stop := iter.Pull2(seq)
+	defer stop()
 
 	// Read a few events then cancel
 	eventCount := 0
-	for stream.Next() && eventCount < 5 {
+	for eventCount < 5 {
+		_, _, ok := pull()
+		if !ok {
+			break
+		}
 		eventCount++
 	}
 
-	stream.Cancel()
+	cancel()
 
-	// Execution should stop soon
+	// Give time for cancellation to propagate
 	time.Sleep(50 * time.Millisecond)
 
-	// Should not have executed all 100 nodes
-	assert.Less(t, int(executionCount.Load()), 100, "execution should have been cancelled")
+	// Get the final execution count
+	finalCount := executionCount.Load()
+
+	// The execution should stop soon after cancellation.
+	// It should not execute all 100 nodes.
+	assert.Less(t, finalCount, int32(100), "execution should have been cancelled early")
+	assert.Greater(t, finalCount, int32(0), "at least some nodes should have executed")
 }

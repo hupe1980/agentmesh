@@ -199,14 +199,14 @@ type Model interface {
 	//   }
 	//   for resp, err := range model.Generate(ctx, req) {
 	//       if err != nil { return err }
-	//       fmt.Print(resp.Message.Content) // Process each chunk
+	//       fmt.Print(message.Stringify(resp.Message)) // Process each chunk
 	//   }
 	//
 	// Blocking usage (helper required):
 	//   req := &model.Request{Messages: messages}
 	//   resp, err := Last(model.Generate(ctx, req))
 	//   if err != nil { return err }
-	//   fmt.Println(resp.Message.Content) // Process final message
+	//   fmt.Println(message.Stringify(resp.Message)) // Process final message
 	//   fmt.Println("Reasoning:", resp.Reasoning) // Access native reasoning
 	//   fmt.Println("Finish reason:", resp.FinishReason) // Why generation stopped
 	//   fmt.Printf("Tokens used: %d\n", resp.Usage.TotalTokens)
@@ -247,7 +247,7 @@ type Model interface {
 //	if err != nil {
 //	    return err
 //	}
-//	fmt.Println(resp.Message.Content)
+//	fmt.Println(message.Stringify(resp.Message))
 //	if resp.Reasoning != "" {
 //	    fmt.Println("Reasoning:", resp.Reasoning)
 //	}
@@ -277,7 +277,7 @@ func Last(seq iter.Seq2[*Response, error]) (*Response, error) {
 //	    return err
 //	}
 //	for _, resp := range responses {
-//	    fmt.Println(resp.Message.Content)
+//	    fmt.Print(message.Stringify(resp.Message))
 //	}
 func Collect(seq iter.Seq2[*Response, error]) ([]*Response, error) {
 	responses := make([]*Response, 0)

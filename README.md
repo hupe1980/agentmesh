@@ -974,10 +974,10 @@ result, err := node.Run(ctx, state)
 // Graphs use Invoke() - high-level blocking API
 messages, err := compiled.Invoke(ctx, initialMessages)
 
-// Graphs use Stream() - high-level streaming API
-stream, err := compiled.Stream(ctx, initialMessages)
-for stream.Next() {
-    event := stream.Current()
+// Graphs use Run() - high-level streaming API
+seq := compiled.Run(ctx, initialMessages)
+for event, err := range seq {
+    // handle event and error
 }
 
 // Executors use Execute() - strategy implementation
