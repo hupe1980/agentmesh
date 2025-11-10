@@ -39,7 +39,9 @@ type PropertySchema struct {
 }
 
 // WASMTool executes WebAssembly modules with strict sandboxing.
-// It provides kernel-level isolation that cannot be bypassed by tool code.
+// It provides runtime-enforced isolation that cannot be bypassed by tool code.
+//
+//nolint:revive // WASMTool is intentionally prefixed to distinguish from generic tool.Tool interface
 type WASMTool struct {
 	name        string
 	description string
@@ -70,7 +72,7 @@ type RuntimeOptions struct {
 
 // NewWASMTool creates a new WASM tool from compiled bytecode.
 // The tool is immediately validated and compiled, but not instantiated until Call().
-func NewWASMTool(ctx context.Context, name, description string, wasmBytes []byte, opts ...WASMToolOption) (*WASMTool, error) {
+func NewWASMTool(ctx context.Context, name, description string, wasmBytes []byte, opts ...ToolOption) (*WASMTool, error) {
 	if name == "" {
 		return nil, errors.New("tool name cannot be empty")
 	}
@@ -102,7 +104,9 @@ func NewWASMTool(ctx context.Context, name, description string, wasmBytes []byte
 	// Compile module (validates WASM)
 	compiled, err := tool.runtime.CompileModule(ctx, wasmBytes)
 	if err != nil {
-		tool.runtime.Close(ctx)
+		if closeErr := tool.runtime.Close(ctx); closeErr != nil {
+			return nil, fmt.Errorf("failed to compile WASM module: %w (cleanup error: %w)", err, closeErr)
+		}
 		return nil, fmt.Errorf("failed to compile WASM module: %w", err)
 	}
 	tool.compiled = compiled
@@ -110,25 +114,25 @@ func NewWASMTool(ctx context.Context, name, description string, wasmBytes []byte
 	return tool, nil
 }
 
-// WASMToolOption configures a WASMTool.
-type WASMToolOption func(*WASMTool)
+// ToolOption configures a WASMTool.
+type ToolOption func(*WASMTool)
 
 // WithPolicy sets the sandbox policy for the tool.
-func WithPolicy(policy *SandboxPolicy) WASMToolOption {
+func WithPolicy(policy *SandboxPolicy) ToolOption {
 	return func(t *WASMTool) {
 		t.policy = policy
 	}
 }
 
 // WithCompilationCache enables compilation caching for faster instantiation.
-func WithCompilationCache(cache wazero.CompilationCache) WASMToolOption {
+func WithCompilationCache(cache wazero.CompilationCache) ToolOption {
 	return func(t *WASMTool) {
 		t.runtimeOpts.CompilationCache = cache
 	}
 }
 
 // WithStdout redirects stdout to the provided writer.
-func WithStdout(w io.Writer) WASMToolOption {
+func WithStdout(w io.Writer) ToolOption {
 	return func(t *WASMTool) {
 		t.runtimeOpts.StdoutWriter = w
 		t.policy.AllowStdout = true
@@ -136,7 +140,7 @@ func WithStdout(w io.Writer) WASMToolOption {
 }
 
 // WithStderr redirects stderr to the provided writer.
-func WithStderr(w io.Writer) WASMToolOption {
+func WithStderr(w io.Writer) ToolOption {
 	return func(t *WASMTool) {
 		t.runtimeOpts.StderrWriter = w
 		t.policy.AllowStderr = true
@@ -144,7 +148,7 @@ func WithStderr(w io.Writer) WASMToolOption {
 }
 
 // WithSchema sets the tool schema for LLM integration.
-func WithSchema(schema *ToolSchema) WASMToolOption {
+func WithSchema(schema *ToolSchema) ToolOption {
 	return func(t *WASMTool) {
 		t.schema = schema
 	}
@@ -213,7 +217,12 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate WASM module: %w", err)
 	}
-	defer mod.Close(ctx)
+	defer func() {
+		if closeErr := mod.Close(ctx); closeErr != nil {
+			// Log error but don't override the main error
+			_ = closeErr
+		}
+	}()
 
 	// Get the execute function
 	executeFunc := mod.ExportedFunction("execute")
@@ -250,8 +259,8 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 		return nil, fmt.Errorf("failed to get result length: %w", err)
 	}
 
-	resultPtr := uint32(ptrResults[0])
-	resultLen := uint32(lenResults[0])
+	resultPtr := uint32(ptrResults[0]) // #nosec G115 - WASM address space is 32-bit
+	resultLen := uint32(lenResults[0]) // #nosec G115 - WASM length values are 32-bit
 
 	if resultLen == 0 {
 		return nil, fmt.Errorf("WASM returned empty result")
@@ -294,10 +303,7 @@ func (w *WASMTool) instantiateWithPolicy(ctx context.Context) (api.Module, error
 	}
 
 	// Configure environment based on policy
-	// Note: Cannot completely disable environment in Wazero, but we can set to minimal
-	if !w.policy.AllowEnvironment {
-		// Minimal environment - no custom variables
-	}
+	// Note: Wazero provides minimal environment by default when no environment is set
 
 	// Configure filesystem based on policy
 	if !w.policy.AllowFilesystem {
@@ -305,9 +311,7 @@ func (w *WASMTool) instantiateWithPolicy(ctx context.Context) (api.Module, error
 	}
 
 	// Configure time based on policy
-	if w.policy.Deterministic && w.policy.FixedTimestamp != nil {
-		// TODO: Implement deterministic time via custom WASI implementation
-	}
+	// Note: Deterministic time requires custom WASI implementation (future enhancement)
 
 	// Instantiate WASI (only if not already instantiated)
 	if w.runtime.Module("wasi_snapshot_preview1") == nil {

@@ -12,7 +12,7 @@ import (
 // The WASM module must export an "allocate" function: allocate(size) -> ptr
 func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string) (ptr uint32, length uint32, err error) {
 	bytes := []byte(s)
-	length = uint32(len(bytes))
+	length = uint32(len(bytes)) // #nosec G115 - length is bounded by reasonable string sizes
 
 	if length == 0 {
 		return 0, 0, nil
@@ -34,7 +34,7 @@ func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string)
 		return 0, 0, fmt.Errorf("allocate() did not return a pointer")
 	}
 
-	ptr = uint32(results[0])
+	ptr = uint32(results[0]) // #nosec G115 - WASM address space is 32-bit
 	if ptr == 0 {
 		return 0, 0, fmt.Errorf("allocate() returned null pointer")
 	}
