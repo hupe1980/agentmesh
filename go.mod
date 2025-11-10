@@ -14,6 +14,7 @@ require (
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/redis/go-redis/v9 v9.16.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
+	github.com/tetratelabs/wazero v1.10.0
 	go.opentelemetry.io/otel/metric v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
 	golang.org/x/sync v0.17.0
