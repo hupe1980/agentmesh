@@ -749,11 +749,3 @@ func cloneMessages(msgs []message.Message) []message.Message {
 	}
 	return out
 }
-
-// ensureState creates a new State if the provided state is nil.
-func ensureState(state *State) *State {
-	if state == nil {
-		return NewState(0) // Unlimited messages by default
-	}
-	return state
-}

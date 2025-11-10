@@ -282,8 +282,7 @@ func TestManyMessages(t *testing.T) {
 	}
 
 	state := NewStateManager(10000) // Allow 10K messages
-	builder := NewBuilder()
-	builder.graph.State = state.(*State) // Type assert for internal use
+	builder := NewBuilder().WithState(state)
 
 	builder.Node("producer", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		messages := make([]message.Message, 1000)

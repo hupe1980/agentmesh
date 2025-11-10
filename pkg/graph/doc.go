@@ -70,7 +70,8 @@ Routes can be determined dynamically based on node output:
 
 # State Management
 
-State is shared across all nodes with thread-safe access:
+State is shared across all nodes with thread-safe access. The StateManager interface
+provides a pluggable abstraction, allowing custom storage backends (Redis, PostgreSQL, etc.):
 
 	// Read state (immutable snapshot)
 	value := state.Get("key")
@@ -83,6 +84,18 @@ State is shared across all nodes with thread-safe access:
 			"status":  "processed",
 		},
 	}, nil
+
+The Graph and Builder types work exclusively with the StateManager interface,
+enabling custom implementations while the default *State implementation provides
+channel-based state with checkpointing and message history management.
+
+	// Use default state
+	compiled := graph.NewBuilder().
+		WithState(graph.NewState(100)).
+		Compile()
+
+	// Custom implementations can be provided by implementing StateManager interface
+	// This enables Redis-backed, PostgreSQL-backed, or other storage backends
 
 # Channel-Based State Architecture
 

@@ -17,11 +17,11 @@ const (
 
 // Graph represents a computational graph with nodes, edges, and conditional branches.
 type Graph struct {
-	Nodes    map[string]*Node
-	Edges    []Edge
-	Branches []ConditionalEdges
-	State    *State
-	runtime  *executionState
+	Nodes        map[string]*Node
+	Edges        []Edge
+	Branches     []ConditionalEdges
+	stateManager StateManager
+	runtime      *executionState
 
 	mu       sync.Mutex
 	compiled bool
@@ -35,27 +35,23 @@ func ensureExecutionState(rt *executionState) *executionState {
 }
 
 // NewGraph creates a new graph with the given state manager.
+// If stateManager is nil, creates a default State with unlimited messages.
 func NewGraph(stateManager StateManager) *Graph {
-	var state *State
 	if stateManager == nil {
-		state = NewState(0) // Unlimited messages by default
-	} else {
-		// Type assert to *State (current implementation requirement)
-		var ok bool
-		state, ok = stateManager.(*State)
-		if !ok {
-			// If not a *State, create a new one
-			// TODO: Support custom StateManager implementations
-			state = NewState(0)
-		}
+		stateManager = NewStateManager(0) // Unlimited messages by default
 	}
 	return &Graph{
-		Nodes:    make(map[string]*Node),
-		Edges:    make([]Edge, 0),
-		Branches: make([]ConditionalEdges, 0),
-		State:    state,
-		runtime:  newExecutionState(),
+		Nodes:        make(map[string]*Node),
+		Edges:        make([]Edge, 0),
+		Branches:     make([]ConditionalEdges, 0),
+		stateManager: stateManager,
+		runtime:      newExecutionState(),
 	}
+}
+
+// StateManager returns the graph's state manager.
+func (g *Graph) StateManager() StateManager {
+	return g.stateManager
 }
 
 // AddNode registers a node in the graph.
@@ -117,11 +113,8 @@ func (g *Graph) Compile() (*Compiled, error) {
 	g.mu.Lock()
 	g.compiled = true
 	g.runtime = ensureExecutionState(g.runtime)
-	g.State = ensureState(g.State)
 	runtime := g.runtime
-
-	// Use State directly as StateManager (no conversion needed)
-	var stateManager StateManager = g.State
+	stateManager := g.stateManager
 
 	nodes := make(map[string]*Node, len(g.Nodes))
 	maps.Copy(nodes, g.Nodes)
