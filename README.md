@@ -134,7 +134,12 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Core Framework** (`pkg/graph`)
 - **Compiled**: Orchestrates execution via StateManager + Executor
 - **Builder**: Fluent API for graph construction
-- **StateManager**: Manages channels, checkpoints, aggregates (interface)
+- **StateManager**: Composed interface with focused sub-interfaces
+  - `StateReader`: Read-only state access for nodes
+  - `StateWriter`: Write capabilities (extends StateReader)
+  - `ChannelManager`: Channel lifecycle management
+  - `AggregateManager`: Cross-node aggregate operations
+  - `CheckpointManager`: State persistence and restoration
 - **Executor**: Abstracts execution strategy (interface)
 - **Built-in Pregel BSP**: Default parallel execution via `graphRuntime` + `pkg/pregel`
 - **SimpleGraphExecutor**: Sequential execution for debugging
@@ -155,10 +160,10 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
-- **Interface-Based**: StateManager and Executor are interfaces
+- **Interface Segregation**: Focused, composable interfaces (StateReader, ChannelManager, etc.)
 - **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
 - **Extensibility**: Public `pkg/pregel` API for custom backends
-- **Testability**: Mock StateManager/Executor for unit tests
+- **Testability**: Mock small, focused interfaces instead of monolithic StateManager
 
 ---
 

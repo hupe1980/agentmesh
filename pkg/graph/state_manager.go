@@ -10,13 +10,54 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
+// State Management Architecture
+//
+// This file implements the state management layer following the Interface Segregation
+// Principle. Previously, StateManager was a monolithic interface with 20+ methods,
+// making it difficult to test and violating the Single Responsibility Principle.
+//
+// Current Design (Refactored):
+//
+// 1. StateReader (4 methods) - Read-only access for node execution
+//    Use case: Pass to node RunFunc to prevent direct state mutations
+//
+// 2. StateWriter (2 methods) - Extends StateReader with write capabilities
+//    Use case: Pass to nodes that need to update state or contribute to aggregates
+//
+// 3. ChannelManager (7 methods) - Channel lifecycle management
+//    Use case: Internal graph runtime for managing channel updates
+//
+// 4. AggregateManager (5 methods) - Cross-node aggregate coordination
+//    Use case: Runtime coordination of global aggregates across supersteps
+//
+// 5. CheckpointManager (3 methods) - State persistence and restoration
+//    Use case: Configure and manage checkpoint backends
+//
+// 6. StateManager - Composed interface that brings all concerns together
+//    Use case: Internal use by graphRuntime for full state coordination
+//
+// Benefits:
+// - Small, focused interfaces are easier to mock in tests
+// - Clear separation of concerns (read, write, channels, aggregates, checkpoints)
+// - Clients depend only on the methods they actually use
+// - Better documentation with focused interface docs
+// - Enables partial implementations for specialized use cases
+//
+// Implementation:
+// - State struct implements all interfaces
+// - No breaking changes to State struct itself
+// - Nodes receive StateReader or StateWriter (not full StateManager)
+// - Runtime uses StateManager for full control
+
 // =============================================================================
-// State Interfaces
+// Focused State Interfaces (Interface Segregation Principle)
 // =============================================================================
 
 // StateReader provides read-only access to graph state for deterministic node execution.
 // Nodes receive this interface to prevent direct state mutations, ensuring all updates
 // go through the NodeResult return value for atomic application between supersteps.
+//
+// Use Case: Pass to node RunFunc for read-only state access.
 type StateReader interface {
 	// Get retrieves the current value from a named channel.
 	Get(key string) any
@@ -31,67 +72,121 @@ type StateReader interface {
 	AggregatesSnapshot() map[string]any
 }
 
-// StateWriter extends StateReader with mutation capabilities for aggregators.
+// StateWriter extends StateReader with write capabilities for state mutations.
+// This allows nodes to update state values and contribute to aggregators.
+//
+// Use Case: Pass to node RunFunc when write access is needed.
 type StateWriter interface {
 	StateReader
+
+	// Set updates or creates a channel value.
+	Set(key string, value any) error
 
 	// Aggregate contributes a value to a named aggregator for the current superstep.
 	Aggregate(name string, value any) error
 }
 
-// =============================================================================
-// StateManager Interface
-// =============================================================================
-
-// StateManager owns all state concerns: channels, checkpoints, and aggregates.
-// This provides a clean separation of state management from execution logic.
+// ChannelManager handles channel lifecycle and batch operations.
+// Separated from StateReader/Writer for clear responsibility boundaries.
 //
-// Responsibilities:
-//   - Channel-based state management (TopicChannel, LastValueChannel, BinaryOpChannel)
-//   - Checkpoint persistence and restoration
-//   - Aggregate value management (cross-node reductions)
-//   - Thread-safe state access and mutations
-//
-// Design Goals:
-//   - Single source of truth for all graph state
-//   - Clean interface for state reads and writes
-//   - Pluggable checkpoint backends
-//   - No execution logic (pure state management)
-type StateManager interface {
-	// State access
-	Get(key string) any
-	GetAll() map[string]any
-	EventsSnapshot() []Event
-	AggregatesSnapshot() map[string]any
-
-	// Channel management
+// Use Case: Internal graph runtime management of channels.
+type ChannelManager interface {
+	// AddChannel registers a new channel in the state.
 	AddChannel(ch channel.Channel)
+
+	// GetChannel retrieves a channel by name.
 	GetChannel(name string) (channel.Channel, bool)
-	UpdateChannel(ctx context.Context, name string, value any) error
-	UpdateChannels(ctx context.Context, updates map[string]any) error
 
-	// Aggregate management
-	GetAggregate(name string) any
-	GetAggregatesSnapshot() map[string]any
-	SetAggregates(aggregates map[string]any)
-	SetAggregateFn(fn func(string, any) error)
-	RecordAggregation(name string, value any) error
-
-	// Checkpoint management
-	SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error
-	LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error)
-	SetCheckpointer(checkpointer checkpoint.Checkpointer)
-
-	// Message management
-	AddMessages(messages []Event)
-	ApplyUpdates(values map[string]any, messages []Event)
+	// Set updates or creates a channel value.
 	Set(key string, value any) error
 
-	// Version management
+	// UpdateChannel writes a value to a specific channel.
+	UpdateChannel(ctx context.Context, name string, value any) error
+
+	// UpdateChannels batch-updates multiple channels atomically.
+	UpdateChannels(ctx context.Context, updates map[string]any) error
+
+	// AddMessages appends messages to the "messages" channel.
+	AddMessages(messages []Event)
+
+	// ApplyUpdates applies channel updates and messages in a single operation.
+	ApplyUpdates(values map[string]any, messages []Event)
+}
+
+// AggregateManager handles aggregate value management for cross-node reductions.
+// Provides both read access and configuration for aggregation logic.
+//
+// Use Case: Runtime coordination of global aggregates across supersteps.
+type AggregateManager interface {
+	// GetAggregate retrieves the current value of a named aggregate.
+	GetAggregate(name string) any
+
+	// GetAggregatesSnapshot returns a read-only snapshot of all aggregates.
+	GetAggregatesSnapshot() map[string]any
+
+	// SetAggregates replaces all aggregates with the provided map.
+	SetAggregates(aggregates map[string]any)
+
+	// SetAggregateFn configures the function used to combine aggregate values.
+	SetAggregateFn(fn func(string, any) error)
+
+	// RecordAggregation records a value for aggregation.
+	RecordAggregation(name string, value any) error
+}
+
+// CheckpointManager handles persistence and restoration of graph state.
+// Decoupled from state operations for pluggable checkpoint backends.
+//
+// Use Case: Configure and manage checkpoint persistence.
+type CheckpointManager interface {
+	// SaveCheckpoint persists current state to configured backend.
+	SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error
+
+	// LoadCheckpoint restores state from a previous checkpoint.
+	LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error)
+
+	// SetCheckpointer configures the checkpoint backend.
+	SetCheckpointer(checkpointer checkpoint.Checkpointer)
+}
+
+// =============================================================================
+// Composed StateManager Interface
+// =============================================================================
+
+// StateManager is the complete interface composing all state management concerns.
+// It provides full control over channels, checkpoints, aggregates, and state access.
+//
+// Interface Composition:
+//   - StateReader: Read-only state access
+//   - ChannelManager: Channel lifecycle and updates
+//   - AggregateManager: Cross-node aggregate management
+//   - CheckpointManager: State persistence and restoration
+//
+// Additional Capabilities:
+//   - Version tracking for checkpoint integrity
+//   - State snapshots for debugging
+//   - State cloning for independent execution contexts
+//
+// Design Goals:
+//   - Interface Segregation: Clients depend only on methods they use
+//   - Single Responsibility: Each sub-interface has one clear purpose
+//   - Testability: Easy to mock small, focused interfaces
+//   - Extensibility: Can implement subsets for specialized use cases
+//
+// Use Case: Internal use by graphRuntime for full state coordination.
+type StateManager interface {
+	StateReader
+	ChannelManager
+	AggregateManager
+	CheckpointManager
+
+	// Version returns the current state version (monotonic counter).
 	Version() uint64
 
-	// State snapshots
+	// Snapshot returns a complete snapshot of all channel values.
 	Snapshot() map[string]any
+
+	// Clone creates an independent copy of the state manager.
 	Clone() StateManager
 }
 
@@ -640,6 +735,11 @@ func NewStateWriterAdapter(manager StateManager) *StateWriterAdapter {
 	}
 }
 
+// Set updates a state value.
+func (sw *StateWriterAdapter) Set(key string, value any) error {
+	return sw.manager.Set(key, value)
+}
+
 // Aggregate performs an aggregation operation.
 func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 	return sw.manager.RecordAggregation(name, value)
@@ -687,6 +787,11 @@ func (bsw *bufferedStateWriter) EventsSnapshot() []Event {
 
 func (bsw *bufferedStateWriter) AggregatesSnapshot() map[string]any {
 	return bsw.reader.AggregatesSnapshot()
+}
+
+func (bsw *bufferedStateWriter) Set(key string, value any) error {
+	// bufferedStateWriter doesn't support Set - writes go through NodeResult
+	return fmt.Errorf("bufferedStateWriter.Set is not supported: state writes must go through NodeResult")
 }
 
 func (bsw *bufferedStateWriter) Aggregate(name string, value any) error {

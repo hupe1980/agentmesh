@@ -181,8 +181,9 @@ func (m *mockStateWriter) GetAll() map[string]any {
 	return m.state
 }
 
-func (m *mockStateWriter) Set(key string, value any) {
+func (m *mockStateWriter) Set(key string, value any) error {
 	m.state[key] = value
+	return nil
 }
 
 func (m *mockStateWriter) EventsSnapshot() []graph.Event {
