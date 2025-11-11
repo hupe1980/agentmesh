@@ -91,6 +91,23 @@ func (b *Builder) WithInitialChannels(configFn func(*State)) *Builder {
 	return b
 }
 
+// WithExecutor sets a custom execution strategy for the graph.
+// By default, graphs use Pregel BSP parallel execution. Use this to:
+//   - Switch to SimpleGraphExecutor for debugging (sequential, single-threaded)
+//   - Implement custom execution strategies
+//   - Use alternative distributed execution backends
+//
+// Example:
+//
+//	builder.WithExecutor(graph.NewSimpleGraphExecutor()) // Sequential debugging mode
+func (b *Builder) WithExecutor(executor Executor) *Builder {
+	if b.err != nil {
+		return b
+	}
+	b.graph.executor = executor
+	return b
+}
+
 // AddNode adds a node to the graph.
 // Returns the builder for chaining.
 func (b *Builder) AddNode(node *Node) *Builder {

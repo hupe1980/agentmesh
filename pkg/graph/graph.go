@@ -21,6 +21,7 @@ type Graph struct {
 	Edges        []Edge
 	Branches     []ConditionalEdges
 	stateManager StateManager
+	executor     Executor
 	runtime      *executionState
 
 	mu       sync.Mutex
@@ -153,6 +154,7 @@ func (g *Graph) Compile() (*Compiled, error) {
 
 	cg := &Compiled{
 		stateManager:      stateManager,
+		executor:          g.executor, // Use custom executor if set, otherwise defaults to Pregel
 		runtime:           runtime,
 		nodes:             nodes,
 		edges:             topo.edges,
@@ -162,6 +164,8 @@ func (g *Graph) Compile() (*Compiled, error) {
 		outgoing:          outgoing,
 		conditionalByFrom: conditionalByFrom,
 		nodeNames:         topo.nodeNames,
+		startKey:          StartNode,
+		endKey:            EndNode,
 	}
 
 	return cg, nil

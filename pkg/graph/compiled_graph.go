@@ -47,6 +47,7 @@ import (
 // Created by Builder.Compile() after graph construction.
 type Compiled struct {
 	stateManager      StateManager
+	executor          Executor // Pluggable execution strategy
 	runtime           *executionState
 	runtimeMu         sync.RWMutex // Protects runtime state pointer
 	invokeMu          sync.Mutex   // Serializes Run calls
@@ -58,6 +59,8 @@ type Compiled struct {
 	outgoing          map[string][]string
 	conditionalByFrom map[string][]ConditionalEdges
 	nodeNames         []string
+	startKey          string
+	endKey            string
 }
 
 func (cg *Compiled) hasExecutable(name string) bool {
@@ -120,6 +123,24 @@ func (cg *Compiled) State() StateManager {
 	return cg.stateManager
 }
 
+// topology creates an ExecutorTopology snapshot for executors.
+// This provides a clean abstraction of the graph structure without exposing
+// internal Compiled fields.
+func (cg *Compiled) topology() *ExecutorTopology {
+	return &ExecutorTopology{
+		Nodes:             cg.nodes,
+		Edges:             cg.edges,
+		Conditionals:      cg.conditionals,
+		Incoming:          cg.incoming,
+		ConditionalGate:   cg.conditionalGate,
+		Outgoing:          cg.outgoing,
+		ConditionalByFrom: cg.conditionalByFrom,
+		NodeNames:         cg.nodeNames,
+		StartKey:          cg.startKey,
+		EndKey:            cg.endKey,
+	}
+}
+
 // attachProvidersToContext attaches observability providers from options to context.
 // This ensures providers are available to node RunFuncs via FromContext() helpers.
 func (cg *Compiled) attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
@@ -165,9 +186,11 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 	s.Bootstrap(ctx, completed, paused)
 }
 
-// Run executes the graph and returns an iterator over the execution events.
-// This is the primary method for running a compiled graph.
-// The returned iterator can be consumed to stream results or collected to get a final result.
+// Run executes the graph with the given initial messages and returns an iterator
+// of execution events. This is the primary API for graph execution.
+//
+// If a custom Executor is configured, execution is delegated to it.
+// Otherwise, uses the default Pregel BSP execution.
 func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[Event, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
@@ -177,6 +200,17 @@ func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns 
 		optFn(&options)
 	}
 
+	// If custom executor is configured, delegate to it
+	if cg.executor != nil {
+		runOpts := &RunOptions{
+			MaxIterations:  options.maxIterations,
+			MaxConcurrency: options.maxConcurrency,
+			RunID:          options.runID,
+		}
+		return cg.executor.Run(ctx, cg.topology(), cg.stateManager, messages, runOpts)
+	}
+
+	// Default: use built-in Pregel BSP execution
 	return cg.runWithOptions(ctx, messages, options)
 }
 
