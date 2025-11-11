@@ -27,6 +27,8 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 ### 📊 Production Features
 - **📈 Observability** - Built-in OpenTelemetry metrics and distributed tracing
 - **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities
+- **🔐 Checkpoint Signing** - HMAC-SHA256 signatures prevent state tampering and ensure integrity
+- **🛡️ Input Validation** - Configurable size/count limits protect against DoS and resource exhaustion
 - **⏱️ Execution Control** - Max iterations, timeouts, and graceful termination
 - **🔀 Conditional Routing** - Dynamic flow control based on node outputs
 - **🔍 Graph Introspection** - Debug and visualize graphs with topology analysis and Mermaid flowcharts
@@ -104,16 +106,19 @@ AgentMesh follows a **component-based architecture** with clean separation of co
     │  • State versioning    │  │  • Execution Statistics    │
     └────────────────────────┘  └──────────┬─────────────────┘
                                            │
-                                           │ implements
-                                           ▼
-                                  ┌──────────────────┐
-                                  │ PregelExecutor   │
-                                  │                  │
-                                  │ • BSP Model      │
-                                  │ • Worker Pool    │
-                                  │ • Mailbox System │
-                                  │ • pkg/pregel     │
-                                  └──────────────────┘
+                         ┌─────────────────┴─────────────────┐
+                         │ implements                        │ implements
+                         ▼                                   ▼
+            ┌─────────────────────────┐      ┌─────────────────────────┐
+            │ Built-in Pregel BSP     │      │ SimpleGraphExecutor     │
+            │ (graphRuntime + pregel) │      │ (sequential)            │
+            │                         │      │                         │
+            │ • BSP Supersteps        │      │ • Topological order     │
+            │ • Parallel execution    │      │ • Single-threaded       │
+            │ • Worker Pool           │      │ • No synchronization    │
+            │ • Mailbox System        │      │ • For debugging         │
+            │ • pkg/pregel runtime    │      │                         │
+            └─────────────────────────┘      └─────────────────────────┘
 ```
 
 ### Component Layers
@@ -132,7 +137,8 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 - **Builder**: Fluent API for graph construction
 - **StateManager**: Manages channels, checkpoints, aggregates (interface)
 - **Executor**: Abstracts execution strategy (interface)
-- **PregelExecutor**: Default Pregel BSP implementation
+- **Built-in Pregel BSP**: Default parallel execution via `graphRuntime` + `pkg/pregel`
+- **SimpleGraphExecutor**: Sequential execution for debugging
 
 **Supporting Packages**
 - `pkg/channel`: Topic, LastValue, BinaryOp channels
@@ -151,7 +157,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
 - **Interface-Based**: StateManager and Executor are interfaces
-- **Composition**: PregelExecutor wraps Compiled without modification
+- **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
 - **Extensibility**: Public `pkg/pregel` API for custom backends
 - **Testability**: Mock StateManager/Executor for unit tests
 
@@ -487,7 +493,7 @@ This enables:
 
 ## 🎨 Examples
 
-Explore **17 comprehensive examples** demonstrating different use cases and patterns:
+Explore **19 comprehensive examples** demonstrating different use cases and patterns:
 
 | Example | Description | Key Features |
 |---------|-------------|--------------|
@@ -502,6 +508,8 @@ Explore **17 comprehensive examples** demonstrating different use cases and patt
 | ⏸️ [human_pause](examples/human_pause) | Human-in-the-loop workflows | Interrupt, resume, user approval |
 | ⏰ [time_travel](examples/time_travel) | Debug with state versioning | Checkpointing, state replay, time-travel debugging |
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
+| 🔐 [checkpoint_signing](examples/checkpoint_signing) | HMAC-SHA256 checkpoint integrity | Tamper detection, cryptographic signing, security |
+| 🛡️ [input_validation](examples/input_validation) | Message size/count validation | DoS prevention, resource limits, security |
 | 📞 [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
 | 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
 | 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |

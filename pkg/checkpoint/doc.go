@@ -21,7 +21,7 @@
 // # Basic Usage
 //
 //	// In-memory (testing/development)
-//	checkpointer := checkpoint.NewMemoryCheckpointer()
+//	checkpointer := checkpoint.NewInMemoryCheckpointer()
 //
 //	// SQL (production - see pkg/checkpoint/sql for details)
 //	checkpointer := sql.NewSQLiteCheckpointer("checkpoints.db")
@@ -39,6 +39,28 @@
 //	        AutoRestore:  true,
 //	    }),
 //	)
+//
+// # Checkpoint Signing (Security)
+//
+// Enable HMAC-SHA256 signatures to detect tampering:
+//
+//	// Generate secure signing key (32+ bytes recommended)
+//	signingKey := make([]byte, 32)
+//	rand.Read(signingKey)
+//
+//	// Create checkpointer with signing enabled
+//	checkpointer := checkpoint.NewInMemoryCheckpointer(
+//	    checkpoint.WithSigning(signingKey),
+//	)
+//
+//	// Checkpoints are automatically signed on Save()
+//	// and verified on Load() - fails if tampered
+//	checkpoint, err := checkpointer.Load(ctx, "workflow-123")
+//	if errors.Is(err, checkpoint.ErrInvalidSignature) {
+//	    // Tampering detected!
+//	}
+//
+// See examples/checkpoint_signing for comprehensive usage.
 //
 // # Resume from Checkpoint
 //

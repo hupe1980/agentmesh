@@ -40,22 +40,25 @@ Checkpointing enables automatic state persistence during graph execution. Every 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 
-// Create checkpoint store
-store := checkpoint.NewMemory()
+// Create checkpointer
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // Enable checkpointing
-compiled, err := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),  // Save every superstep
-)
+compiled, err := builder.Compile()
 
-// Execute with thread ID for persistence
-results, err := compiled.Invoke(ctx, messages,
-    graph.WithThreadID("workflow-123"),
+// Execute with run ID for persistence
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID("workflow-123"),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1, AutoRestore: true}),
 )
 
 // Resume from checkpoint after failure
-results, err = compiled.InvokeFromCheckpoint(ctx, "workflow-123")
+seq = compiled.Run(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID("workflow-123"),
+    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+)
 ```
 
 ### Checkpoint contents
@@ -100,7 +103,7 @@ AgentMesh supports multiple checkpoint storage backends.
 In-memory storage - fast but not persistent across restarts:
 
 ```go
-store := checkpoint.NewMemory()
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 ```
 
 **Use when:**
@@ -286,15 +289,21 @@ builder.Node("request_approval", func(ctx context.Context, s graph.StateWriter) 
 
 ```go
 // Initial execution pauses at approval node
-results, err := compiled.Invoke(ctx, messages,
-    graph.WithThreadID("approval-flow"),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID("approval-flow"),
+    graph.WithCheckpointer(checkpointer),
 )
+
+// Process events until interrupt
+for event, err := range seq {
+    // Handle events...
+}
 
 // Human reviews and provides input
 // ...
 
 // Resume execution with approval
-results, err = compiled.Resume(ctx, "approval-flow", map[string]any{
+seq = compiled.Resume(ctx, "approval-flow", map[string]any{
     "approved": true,
     "reviewer": "alice@example.com",
 })

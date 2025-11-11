@@ -38,26 +38,39 @@ When enabled, AgentMesh automatically saves state after each superstep:
 import (
     "github.com/hupe1980/agentmesh/pkg/checkpoint"
     "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Create checkpoint store
-store := checkpoint.NewMemory()
+// Create checkpointer
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-// Enable automatic checkpointing
-compiled, err := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),  // Save every superstep
-)
-
-// Each execution is automatically checkpointed
-threadID := "workflow-123"
-messages := []message.Message{
-    message.NewHumanMessage("Start workflow"),
+// Compile graph
+compiled, err := builder.Compile()
+if err != nil {
+    log.Fatal(err)
 }
 
-result, err := compiled.Invoke(ctx, messages, 
-    graph.WithThreadID(threadID),
+// Execute with automatic checkpointing
+runID := "workflow-123"
+messages := []message.Message{
+    message.NewHumanMessageFromText("Start workflow"),
+}
+
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID(runID),
+    graph.WithCheckpointConfig(checkpoint.Config{
+        SaveInterval: 1,  // Save every superstep
+        AutoRestore:  true,
+    }),
 )
+
+// Consume events
+for _, err := range seq {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
 ### 2. Checkpoint Contents
@@ -114,19 +127,26 @@ builder.Edge("process", "finish")
 Continue execution from the last saved state:
 
 ```go
-store := checkpoint.NewMemory()
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // First execution (gets interrupted)
-compiled.Invoke(ctx, messages,
-    graph.WithThreadID("workflow-123"),
-    graph.WithCheckpointStore(store),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID("workflow-123"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1, AutoRestore: true}),
 )
 
-// Later: Resume from last checkpoint
-messages, err := compiled.InvokeFromCheckpoint(ctx, "workflow-123")
-if err != nil {
-    log.Fatal(err)
+// Process events...
+for event, err := range seq {
+    // Handle events
 }
+
+// Later: Resume from last checkpoint
+seq = compiled.Run(ctx, messages,
+    graph.WithRunID("workflow-123"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+)
 // Continues from where it left off
 ```
 
@@ -143,11 +163,13 @@ AgentMesh supports three checkpoint storage backends with different trade-offs:
 ```go
 import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 
-store := checkpoint.NewMemory()
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),
+compiled, _ := builder.Compile()
+
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
 )
 ```
 
@@ -169,20 +191,23 @@ compiled, _ := builder.Compile(
 
 ```go
 func TestGraphCheckpointing(t *testing.T) {
-    store := checkpoint.NewMemory()
-    compiled, _ := builder.Compile(
-        graph.WithCheckpointStore(store),
-        graph.WithCheckpointInterval(1),
-    )
+    checkpointer := checkpoint.NewInMemoryCheckpointer()
+    compiled, _ := builder.Compile()
     
     // Run workflow
-    _, err := compiled.Invoke(ctx, messages,
-        graph.WithThreadID("test-run"),
+    seq := compiled.Run(ctx, messages,
+        graph.WithRunID("test-run"),
+        graph.WithCheckpointer(checkpointer),
+        graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
     )
-    require.NoError(t, err)
+    
+    // Process events
+    for event, err := range seq {
+        require.NoError(t, err)
+    }
     
     // Verify checkpoint saved
-    cp, err := store.Load(ctx, "test-run")
+    cp, err := checkpointer.Load(ctx, "test-run")
     require.NoError(t, err)
     require.NotNil(t, cp)
 }
@@ -211,9 +236,11 @@ store := checkpointdb.NewCheckpointer(client,
 // Auto-create table if needed
 err := store.CreateTable(ctx)
 
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),
+compiled, _ := builder.Compile()
+
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(store),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
 )
 ```
 
@@ -281,8 +308,8 @@ store := checkpointdb.NewCheckpointer(client,
 metadata := map[string]any{
     "ttl": time.Now().Add(7 * 24 * time.Hour).Unix(),
 }
-compiled.Invoke(ctx, messages,
-    graph.WithThreadID(threadID),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID(runID),
     graph.WithMetadata(metadata),
 )
 ```
@@ -310,9 +337,11 @@ store, _ := checkpointsql.NewPostgreSQLCheckpointer(ctx, db)
 db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/agentmesh")
 store, _ := checkpointsql.NewMySQLCheckpointer(ctx, db)
 
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),
+compiled, _ := builder.Compile()
+
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(store),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
 )
 ```
 
@@ -373,6 +402,180 @@ rows, _ := db.Query(`
 
 ---
 
+## Checkpoint Signing (Security) {#checkpoint-signing}
+
+**Available since: v2.1.0**
+
+Checkpoint signing provides cryptographic verification that checkpoints haven't been tampered with. This is critical for:
+
+- **Compliance**: Prove checkpoint integrity for audits
+- **Security**: Detect unauthorized modifications
+- **Trust**: Verify checkpoint authenticity in distributed systems
+
+### How It Works
+
+AgentMesh uses **HMAC-SHA256** to sign checkpoints:
+
+1. Checkpoint data is encoded deterministically (binary.BigEndian)
+2. HMAC-SHA256 signature (32 bytes) is computed using your secret key
+3. Signature is stored in `checkpoint.Signature` field
+4. On load, signature is verified using constant-time comparison
+
+### Basic Usage
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/checkpoint"
+)
+
+// Create checkpointer with signing enabled
+secret := []byte("your-secret-key-min-32-bytes-long!")
+checkpointer := checkpoint.NewInMemoryCheckpointer(
+    checkpoint.WithSigning(secret),
+)
+
+// Checkpoints are now automatically signed
+compiled, _ := builder.Compile()
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID("secure-workflow"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+)
+
+// Signatures are verified automatically on load
+seq = compiled.Run(ctx, messages,
+    graph.WithRunID("secure-workflow"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+)
+// Fails if signature invalid or checkpoint modified
+```
+
+### Key Management Best Practices
+
+```go
+// ✅ Load secret from secure source
+secret := []byte(os.Getenv("CHECKPOINT_SIGNING_KEY"))
+
+// ✅ Use key rotation
+currentSecret := loadCurrentKey()
+previousSecret := loadPreviousKey()
+
+checkpointer := checkpoint.NewInMemoryCheckpointer(
+    checkpoint.WithSigning(currentSecret),
+)
+
+// ✅ Minimum 32 bytes for security
+if len(secret) < 32 {
+    log.Fatal("Signing key must be at least 32 bytes")
+}
+
+// ❌ Never hardcode secrets
+// secret := []byte("my-secret")  // DON'T DO THIS
+```
+
+### Verifying Signature Manually
+
+```go
+// Load checkpoint
+cp, err := checkpointer.Load(ctx, runID)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Verify signature
+if cp.Signature == nil {
+    log.Warn("Checkpoint not signed")
+} else {
+    // Signature verified automatically during Load()
+    log.Printf("Checkpoint signature verified (32 bytes)")
+}
+```
+
+### Production Example
+
+```go
+func setupSecureCheckpointer() (checkpoint.Checkpointer, error) {
+    // Load signing key from secrets manager
+    secret, err := loadSigningKeyFromVault()
+    if err != nil {
+        return nil, fmt.Errorf("failed to load signing key: %w", err)
+    }
+    
+    // Validate key length
+    if len(secret) < 32 {
+        return nil, fmt.Errorf("signing key too short: %d bytes (min 32)", len(secret))
+    }
+    
+    // Create SQL checkpointer with signing
+    db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+    if err != nil {
+        return nil, err
+    }
+    
+    checkpointer, err := checkpointsql.NewPostgreSQLCheckpointer(ctx, db,
+        checkpointsql.WithTableName("production_checkpoints"),
+        checkpointsql.WithSigning(secret),
+    )
+    if err != nil {
+        return nil, err
+    }
+    
+    return checkpointer, nil
+}
+
+func main() {
+    checkpointer, err := setupSecureCheckpointer()
+    if err != nil {
+        log.Fatalf("Checkpointer setup failed: %v", err)
+    }
+    
+    compiled, _ := builder.Compile()
+    
+    // All checkpoints are cryptographically signed
+    seq := compiled.Run(ctx, messages,
+        graph.WithRunID(fmt.Sprintf("prod-%s", userID)),
+        graph.WithCheckpointer(checkpointer),
+        graph.WithCheckpointConfig(checkpoint.Config{
+            SaveInterval: 1,
+            AutoRestore:  true,
+        }),
+    )
+    
+    for event, err := range seq {
+        if err != nil {
+            log.Printf("Error: %v", err)
+            break
+        }
+        // Process events...
+    }
+}
+```
+
+### Security Considerations
+
+**When to Use Checkpoint Signing:**
+- ✅ Production systems handling sensitive data
+- ✅ Compliance requirements (SOC2, HIPAA, etc.)
+- ✅ Multi-tenant environments
+- ✅ Distributed systems with untrusted storage
+
+**When It's Optional:**
+- Development and testing environments
+- Single-tenant systems with trusted storage
+- Non-critical workflows
+
+**Important Notes:**
+- Signing uses HMAC-SHA256 (symmetric key)
+- Verification uses constant-time comparison (timing-attack resistant)
+- Signature is 32 bytes, stored in `checkpoint.Signature` field
+- Invalid signatures cause `Load()` to fail immediately
+- All storage backends support signing (Memory, DynamoDB, SQL)
+
+For a complete working example, see [examples/checkpoint_signing](https://github.com/hupe1980/agentmesh/tree/main/examples/checkpoint_signing).
+
+---
+
 ## Time-Travel Debugging
 
 One of the most powerful features of checkpointing is the ability to "time-travel" to any previous state:
@@ -382,20 +585,26 @@ One of the most powerful features of checkpointing is the ability to "time-trave
 Load and inspect any checkpoint:
 
 ```go
-store := checkpoint.NewMemory()
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // Run workflow with checkpointing
-compiled.Invoke(ctx, messages,
-    graph.WithThreadID("debug-run"),
-    graph.WithCheckpointStore(store),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID("debug-run"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
 )
 
+// Process events
+for event, err := range seq {
+    // Handle events
+}
+
 // List all checkpoints for the run
-checkpoints, _ := store.List(ctx, "debug-run")
+checkpoints, _ := checkpointer.List(ctx, "debug-run")
 fmt.Printf("Total supersteps: %d\n", len(checkpoints))
 
 // Inspect checkpoint at superstep 2
-cp, _ := store.LoadAtSuperstep(ctx, "debug-run", 2)
+cp, _ := checkpointer.LoadAtSuperstep(ctx, "debug-run", 2)
 fmt.Printf("State at step 2: %+v\n", cp.State)
 fmt.Printf("Messages: %d\n", len(cp.Messages))
 fmt.Printf("Completed nodes: %v\n", cp.CompletedNodes)
@@ -549,15 +758,17 @@ Balance between recovery granularity and overhead:
 
 ```go
 // Fine-grained (every step) - Best for critical workflows
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1),  // Save every superstep
+compiled, _ := builder.Compile()
+seq := compiled.Run(ctx, messages,
+    graph.WithCheckpointer(store),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),  // Save every superstep
 )
 
 // Coarse-grained (every 5 steps) - Better performance
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(5),  // Save every 5 supersteps
+compiled, _ := builder.Compile()
+seq = compiled.Run(ctx, messages,
+    graph.WithCheckpointer(store),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 5}),  // Save every 5 supersteps
 )
 
 // Manual control - Checkpoint only at critical points
@@ -599,8 +810,8 @@ For 1000 runs with 10 supersteps each:
 
 ```go
 // 1. Limit message history in checkpoints
-compiled.Invoke(ctx, messages,
-    graph.WithThreadID(threadID),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID(runID),
     graph.WithMaxMessages(100),  // Keep only last 100 messages
 )
 
@@ -642,23 +853,42 @@ func executeWithCheckpointing(
 ) ([]message.Message, error) {
     
     // Try to resume from checkpoint first
-    result, err := compiled.InvokeFromCheckpoint(ctx, threadID)
-    if err != nil {
-        // Check if it's a "not found" error
-        if errors.Is(err, checkpoint.ErrNotFound) {
-            // No checkpoint exists, start fresh
-            return compiled.Invoke(ctx, messages,
-                graph.WithThreadID(threadID),
+    seq := compiled.Run(ctx, messages,
+        graph.WithRunID(threadID),
+        graph.WithCheckpointer(checkpointer),
+        graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+    )
+    
+    var result []message.Message
+    for event, err := range seq {
+        if err != nil {
+            // Check if it's a "not found" error
+            if errors.Is(err, checkpoint.ErrNotFound) {
+                // No checkpoint exists, start fresh
+                seq = compiled.Run(ctx, messages,
+                    graph.WithRunID(threadID),
+                    graph.WithCheckpointer(checkpointer),
+                )
+                break
+            }
+            
+            // Checkpoint exists but corrupted - decide on strategy
+            log.Warnf("Checkpoint load failed: %v", err)
+            
+            // Option 1: Start fresh (lose progress)
+            seq = compiled.Run(ctx, messages,
+                graph.WithRunID(threadID),
+                graph.WithCheckpointer(checkpointer),
             )
+            break
         }
         
-        // Checkpoint exists but corrupted - decide on strategy
-        log.Warnf("Checkpoint load failed: %v", err)
-        
-        // Option 1: Start fresh (lose progress)
-        return compiled.Invoke(ctx, messages,
-            graph.WithThreadID(threadID),
-        )
+        if event.Message != nil {
+            result = append(result, event.Message)
+        }
+    }
+    
+    return result, nil
         
         // Option 2: Try older checkpoint
         // store.LoadAtSuperstep(ctx, threadID, superstep-1)
@@ -712,10 +942,17 @@ for i := 0; i < 10; i++ {
     go func(n int) {
         defer wg.Done()
         
-        threadID := fmt.Sprintf("concurrent-run-%d", n)
-        _, err := compiled.Invoke(ctx, messages,
-            graph.WithThreadID(threadID),
+        runID := fmt.Sprintf("concurrent-run-%d", n)
+        seq := compiled.Run(ctx, messages,
+            graph.WithRunID(runID),
+            graph.WithCheckpointer(checkpointer),
         )
+        
+        for _, err := range seq {
+            if err != nil {
+                break
+            }
+        }
         if err != nil {
             log.Errorf("Run %d failed: %v", n, err)
         }
@@ -973,8 +1210,8 @@ metadata := map[string]any{
     "triggered_by": "api",
 }
 
-compiled.Invoke(ctx, messages,
-    graph.WithThreadID(threadID),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID(runID),
     graph.WithMetadata(metadata),
 )
 ```
@@ -983,13 +1220,13 @@ compiled.Invoke(ctx, messages,
 
 ```go
 func TestCheckpointRecovery(t *testing.T) {
-    store := checkpoint.NewMemory()
+    checkpointer := checkpoint.NewInMemoryCheckpointer()
     
     // Start execution
-    threadID := "test-recovery"
-    _, err := compiled.Invoke(ctx, messages,
-        graph.WithThreadID(threadID),
-        graph.WithCheckpointStore(store),
+    runID := "test-recovery"
+    seq := compiled.Run(ctx, messages,
+        graph.WithRunID(runID),
+        graph.WithCheckpointer(checkpointer),
         graph.WithMaxIterations(5),  // Partial execution
     )
     require.NoError(t, err)
@@ -1088,8 +1325,6 @@ func main() {
     // ... add nodes ...
     
     compiled, err := builder.Compile(
-        graph.WithCheckpointStore(store),
-        graph.WithCheckpointInterval(1),
         graph.WithMaxIterations(100),
     )
     if err != nil {
@@ -1097,8 +1332,8 @@ func main() {
     }
     
     // Execute with error handling
-    threadID := "production-workflow-123"
-    result, err := executeWithRetry(ctx, compiled, threadID, messages)
+    runID := "production-workflow-123"
+    result, err := executeWithRetry(ctx, compiled, store, runID, messages)
     if err != nil {
         log.Fatalf("Execution failed: %v", err)
     }
@@ -1119,22 +1354,29 @@ func executeWithRetry(
     maxRetries := 3
     for attempt := 0; attempt < maxRetries; attempt++ {
         // Try to resume from checkpoint
-        result, err := compiled.InvokeFromCheckpoint(ctx, threadID)
-        if err == nil {
-            return result, nil
-        }
+        seq := compiled.Run(ctx, messages,
+            graph.WithRunID(threadID),
+            graph.WithCheckpointer(checkpointer),
+            graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+        )
         
-        // If no checkpoint, start fresh
-        if attempt == 0 {
-            result, err := compiled.Invoke(ctx, messages,
-                graph.WithThreadID(threadID),
-            )
-            if err == nil {
-                return result, nil
+        var result []message.Message
+        var lastErr error
+        for event, err := range seq {
+            if err != nil {
+                lastErr = err
+                break
+            }
+            if event.Message != nil {
+                result = append(result, event.Message)
             }
         }
         
-        log.Printf("Attempt %d failed: %v", attempt+1, err)
+        if lastErr == nil {
+            return result, nil
+        }
+        
+        log.Printf("Attempt %d failed: %v", attempt+1, lastErr)
     }
     
     return nil, fmt.Errorf("execution failed after %d attempts", maxRetries)
@@ -1172,7 +1414,7 @@ func scheduleCleanup(db *sql.DB, retentionDays int) {
 
 ## Next Steps
 
-1. **Start with Memory**: Use `checkpoint.NewMemory()` for development
+1. **Start with Memory**: Use `checkpoint.NewInMemoryCheckpointer()` for development
 2. **Choose Backend**: Pick DynamoDB (cloud) or SQL (on-premise) for production
 3. **Test Recovery**: Verify checkpoint/resume works with your workflow
 4. **Setup Cleanup**: Implement retention policy appropriate for your use case

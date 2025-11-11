@@ -222,6 +222,26 @@ Retries can be configured per-node:
 		},
 	}
 
+# Input Validation
+
+Protect workflows from DoS attacks and resource exhaustion with built-in validation:
+
+	compiled.Run(ctx, messages,
+		graph.WithMaxMessageSize(1_000_000),    // 1MB per message
+		graph.WithMaxInputMessages(100),        // Max 100 messages
+		graph.WithMaxTotalSize(10_000_000),     // 10MB total
+	)
+
+Validation occurs before graph execution, with detailed error messages:
+
+	// Returns MessageValidationError with Type, Limit, Actual, MessageIndex
+	err := compiled.Run(ctx, oversizedMessages)
+	if errors.Is(err, graph.ErrMessageTooLarge) {
+		// Handle validation failure
+	}
+
+See examples/input_validation for comprehensive usage.
+
 # Observability
 
 The graph engine supports OpenTelemetry for tracing and metrics:

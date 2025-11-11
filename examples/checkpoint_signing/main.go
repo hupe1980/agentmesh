@@ -16,7 +16,8 @@ import (
 func main() {
 	ctx := context.Background()
 
-	fmt.Println("=== Checkpoint Signing Example ===\n")
+	fmt.Println("=== Checkpoint Signing Example ===")
+	fmt.Println()
 
 	// Example 1: Basic signing and verification
 	fmt.Println("1. Basic Checkpoint Signing and Verification")

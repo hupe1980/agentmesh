@@ -95,7 +95,7 @@ recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
 })
 
 for _, msg := range recalled {
-    fmt.Printf("[%.2f] %s\n", msg.Score, msg.Message.Content())
+    fmt.Printf("[%.2f] %s\n", msg.Score, message.Stringify(msg.Message))
 }
 ```
 
@@ -424,12 +424,11 @@ Persist memory alongside graph state:
 mem.Store(ctx, sessionID, messages)
 
 // Also checkpoint for resumability
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(checkpointStore),
-)
+compiled, _ := builder.Compile()
 
-results, _ := compiled.Invoke(ctx, messages,
-    graph.WithThreadID(sessionID),
+seq := compiled.Run(ctx, messages,
+    graph.WithRunID(sessionID),
+    graph.WithCheckpointer(checkpointer),
 )
 ```
 

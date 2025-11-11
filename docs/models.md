@@ -280,7 +280,7 @@ if err != nil {
 }
 
 // Access message content
-fmt.Println(resp.Message.Content())
+fmt.Println(message.Stringify(resp.Message))
 
 // Access reasoning (for o1/o3, Gemini 2.0, Claude)
 if resp.Reasoning != "" {
@@ -310,7 +310,7 @@ if err != nil {
 }
 
 for i, resp := range responses {
-    fmt.Printf("Chunk %d: %s\n", i, resp.Message.Content())
+    fmt.Printf("Chunk %d: %s\n", i, message.Stringify(resp.Message))
 }
 ```
 
@@ -325,10 +325,8 @@ for event, err := range seq {
     }
     
     if event.Node == "model" {
-        // Access messages from graph events
-        for _, msg := range event.Messages {
-            fmt.Print(msg.Content())
-        }
+        // Each event contains exactly one message
+        fmt.Print(message.Stringify(event.Message))
     }
 }
 ```

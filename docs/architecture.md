@@ -69,22 +69,25 @@ AgentMesh follows a **component-based architecture** with clean separation of co
     │  • State versioning    │  │  • Execution Statistics    │
     └────────────────────────┘  └──────────┬─────────────────┘
                                            │
-                                           │ implements
-                                           ▼
-                                  ┌──────────────────┐
-                                  │ PregelExecutor   │
-                                  │                  │
-                                  │ • BSP Model      │
-                                  │ • Worker Pool    │
-                                  │ • Mailbox System │
-                                  │ • pkg/pregel     │
-                                  └──────────────────┘
+                         ┌─────────────────┴─────────────────┐
+                         │ implements                        │ implements
+                         ▼                                   ▼
+            ┌─────────────────────────┐      ┌─────────────────────────┐
+            │ Built-in Pregel BSP     │      │ SimpleGraphExecutor     │
+            │ (graphRuntime + pregel) │      │ (sequential)            │
+            │                         │      │                         │
+            │ • BSP Supersteps        │      │ • Topological order     │
+            │ • Parallel execution    │      │ • Single-threaded       │
+            │ • Worker Pool           │      │ • No synchronization    │
+            │ • Mailbox System        │      │ • For debugging         │
+            │ • pkg/pregel runtime    │      │                         │
+            └─────────────────────────┘      └─────────────────────────┘
 ```
 
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
 - **Interface-Based**: StateManager and Executor are interfaces for testability
-- **Composition**: PregelExecutor wraps Compiled without modification
+- **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
 - **Extensibility**: Public `pkg/pregel` API for custom backends
 - **Layered Abstraction**: High-level agents build on low-level graph primitives
 
