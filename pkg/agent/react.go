@@ -111,17 +111,13 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 
 	g.AddEdge("tool", "model")
 
-	return g.Compile()
-}
-
-// MustNewReActAgent is like NewReActAgent but panics on error.
-// Use this in tests or when you're certain inputs are valid.
-func MustNewReActAgent(mdl model.Model, opts ...ReActOption) *graph.Compiled {
-	agent, err := NewReActAgent(mdl, opts...)
+	// Compile the graph
+	compiled, err := g.Compile()
 	if err != nil {
-		panic(fmt.Errorf("failed to create ReAct agent: %w", err))
+		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}
-	return agent
+
+	return compiled, nil
 }
 
 // reActOptions holds configuration for ReAct agents.

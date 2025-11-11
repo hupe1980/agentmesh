@@ -116,16 +116,6 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	return builder.Compile()
 }
 
-// MustNewRAGAgent is like NewRAGAgent but panics on error.
-// Use this in tests or when you're certain inputs are valid.
-func MustNewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) *graph.Compiled {
-	agent, err := NewRAGAgent(mdl, retriever, opts...)
-	if err != nil {
-		panic(fmt.Errorf("failed to create RAG agent: %w", err))
-	}
-	return agent
-}
-
 // ragOptions holds configuration for RAG agents.
 type ragOptions struct {
 	promptTemplate *prompt.Template

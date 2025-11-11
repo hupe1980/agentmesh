@@ -10,8 +10,8 @@ import (
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string               // Unique identifier for the worker
-	Description string               // Description of the worker's expertise
+	Name        string          // Unique identifier for the worker
+	Description string          // Description of the worker's expertise
 	Agent       *graph.Compiled // The actual agent graph
 }
 
@@ -167,12 +167,4 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.Compi
 	return NewReActAgent(mdl, reactOpts...)
 }
 
-// MustNewSupervisorAgent is like NewSupervisorAgent but panics on error.
-// Use this in tests or when you're certain inputs are valid.
-func MustNewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) *graph.Compiled {
-	agent, err := NewSupervisorAgent(mdl, opts...)
-	if err != nil {
-		panic(fmt.Errorf("failed to create supervisor agent: %w", err))
-	}
-	return agent
-}
+// supervisorOptions holds configuration for supervisor agents.
