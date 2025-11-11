@@ -1008,4 +1008,3 @@ func GetStreamWriter(ctx context.Context) StreamWriter {
 	writer, _ := ctx.Value(streamWriterContextKey).(StreamWriter)
 	return writer
 }
-

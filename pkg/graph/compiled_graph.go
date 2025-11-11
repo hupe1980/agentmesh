@@ -207,24 +207,24 @@ func (cg *Compiled) AsNode(name string) *Node {
 			parentMessages := ExtractMessages(s.EventsSnapshot())
 
 			// Execute the subgraph with parent messages and get final event
-		_, err := Last(cg.Run(ctx, parentMessages))
-		if err != nil {
-			return nil, fmt.Errorf("subgraph %q: %w", name, err)
-		}
+			_, err := Last(cg.Run(ctx, parentMessages))
+			if err != nil {
+				return nil, fmt.Errorf("subgraph %q: %w", name, err)
+			}
 
-		// Return the subgraph's final state as updates
-		// Get all accumulated events from state and convert to messages
-		updates := cg.State().GetAll()
-		events := cg.State().EventsSnapshot()
-		msgs := make([]message.Message, len(events))
-		for i := range events {
-			msgs[i] = events[i].Message
-		}
+			// Return the subgraph's final state as updates
+			// Get all accumulated events from state and convert to messages
+			updates := cg.State().GetAll()
+			events := cg.State().EventsSnapshot()
+			msgs := make([]message.Message, len(events))
+			for i := range events {
+				msgs[i] = events[i].Message
+			}
 
-		return &NodeResult{
-			Updates:  updates,
-			Messages: msgs,
-		}, nil
+			return &NodeResult{
+				Updates:  updates,
+				Messages: msgs,
+			}, nil
 		},
 	}
 }
@@ -257,38 +257,38 @@ func (cg *Compiled) AsNodeWithStateMapping(
 				messagesToInvoke = ExtractMessages(s.EventsSnapshot())
 			}
 
-		// Execute subgraph with messages and get final event
-		_, err := Last(cg.Run(ctx, messagesToInvoke))
-		if err != nil {
-			return nil, fmt.Errorf("subgraph %q: %w", name, err)
-		}
-
-		// Map subgraph output to parent updates
-		var updates map[string]any
-		var messages []message.Message
-		if mapOutput != nil {
-			var events []Event
-			updates, events = mapOutput(cg.State())
-			// Convert events to []message.Message
-			messages = make([]message.Message, len(events))
-			for i := range events {
-				messages[i] = events[i].Message
+			// Execute subgraph with messages and get final event
+			_, err := Last(cg.Run(ctx, messagesToInvoke))
+			if err != nil {
+				return nil, fmt.Errorf("subgraph %q: %w", name, err)
 			}
-		} else {
-		updates = cg.State().GetAll()
-		// Get all accumulated events from state and convert to messages
-		events := cg.State().EventsSnapshot()
-		messages = make([]message.Message, len(events))
-		for i := range events {
-			messages[i] = events[i].Message
-		}
-	}
 
-	return &NodeResult{
-		Updates:  updates,
-		Messages: messages,
-	}, nil
-},
+			// Map subgraph output to parent updates
+			var updates map[string]any
+			var messages []message.Message
+			if mapOutput != nil {
+				var events []Event
+				updates, events = mapOutput(cg.State())
+				// Convert events to []message.Message
+				messages = make([]message.Message, len(events))
+				for i := range events {
+					messages[i] = events[i].Message
+				}
+			} else {
+				updates = cg.State().GetAll()
+				// Get all accumulated events from state and convert to messages
+				events := cg.State().EventsSnapshot()
+				messages = make([]message.Message, len(events))
+				for i := range events {
+					messages[i] = events[i].Message
+				}
+			}
+
+			return &NodeResult{
+				Updates:  updates,
+				Messages: messages,
+			}, nil
+		},
 	}
 }
 
