@@ -99,7 +99,7 @@ func main() {
 	}
 
 	fmt.Println("=== First Run ===")
-	if _, err := compiled.Invoke(context.Background(), nil); err != nil {
+	if _, err := graph.Last(compiled.Run(context.Background(), nil)); err != nil {
 		fmt.Println("run paused:", err)
 	}
 	fmt.Println("state after first run:", state.GetAll())
@@ -112,7 +112,7 @@ func main() {
 	}, nil)
 
 	fmt.Println("\n=== Resume ===")
-	if _, err := compiled.Invoke(context.Background(), nil, graph.WithInitialSuperstep(compiled.CurrentSuperstep())); err != nil {
+	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithInitialSuperstep(compiled.CurrentSuperstep()))); err != nil {
 		fmt.Println("resume error:", err)
 		return
 	}

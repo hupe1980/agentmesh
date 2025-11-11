@@ -72,7 +72,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute and expect failure due to chaos
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 
 	// Should have at least one failure (probabilistically)
 	if err != nil {
@@ -139,7 +139,7 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 }
 
@@ -186,13 +186,13 @@ func TestChaos_CheckpointCorruption(t *testing.T) {
 	// Run with checkpointing - save every superstep
 	// Note: checkpoint queue has size 1, so async saves may be dropped if they come too fast
 	// This is expected behavior - we just verify that checkpoint system works
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: baseCheckpointer,
 			SaveInterval: 1, // Save every superstep
 		}),
-	)
+	))
 	// Allow checkpoint errors (queue overflow is valid in fast executions)
 	if err != nil {
 		if !contains(err.Error(), "checkpoint queue full") {
@@ -285,7 +285,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute - may succeed or fail depending on random failures
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 
 	if err != nil {
 		t.Logf("Graph failed due to concurrent chaos: %v", err)
@@ -330,7 +330,7 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 	ctxTimeout, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	_, err = compiled.Invoke(ctxTimeout, nil)
+	_, err = graph.Last(compiled.Run(ctxTimeout, nil))
 
 	// Should timeout - but if the graph completes before context cancellation propagates,
 	// it may succeed. This is a race condition in the test.
@@ -386,7 +386,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute - should handle panic gracefully
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 
 	// The panic should be caught and converted to an error
 	if err != nil {
@@ -448,7 +448,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute - should handle large data
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 	t.Log("Successfully handled large memory allocation")
 }
@@ -513,7 +513,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	partition1Active.Store(true)
 	partition2Active.Store(true)
 	compiled1 := buildGraph()
-	_, err := compiled1.Invoke(ctx, nil)
+	_, err := graph.Last(compiled1.Run(ctx, nil))
 	require.NoError(t, err)
 	t.Log("Test with both partitions active: SUCCESS")
 
@@ -521,7 +521,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	partition1Active.Store(false)
 	partition2Active.Store(true)
 	compiled2 := buildGraph()
-	_, err = compiled2.Invoke(ctx, nil)
+	_, err = graph.Last(compiled2.Run(ctx, nil))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "partition 1 unreachable")
 	t.Log("Test with partition 1 down: FAILED as expected")
@@ -530,7 +530,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	partition1Active.Store(true)
 	partition2Active.Store(false)
 	compiled3 := buildGraph()
-	_, err = compiled3.Invoke(ctx, nil)
+	_, err = graph.Last(compiled3.Run(ctx, nil))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "partition 2 unreachable")
 	t.Log("Test with partition 2 down: FAILED as expected")

@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
 	a2atool "github.com/hupe1980/agentmesh/pkg/tool/a2a"
@@ -45,14 +46,14 @@ func main() {
 	}
 
 	log.Printf("Executing agent with remote A2A tool...")
-	results, err := localAgent.Invoke(ctx, messages)
+	events, err := graph.Collect(localAgent.Run(ctx, messages))
 	if err != nil {
 		log.Fatalf("Agent execution failed: %v", err)
 	}
 
 	// Print results
 	log.Printf("Agent Response:")
-	for _, evt := range results {
+	for _, evt := range events {
 		if aiMsg, ok := evt.Message.(*message.AIMessage); ok {
 			for _, part := range aiMsg.Parts() {
 				if textPart, ok := part.(message.TextPart); ok {

@@ -33,19 +33,18 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	}
 
 	// Execute the graph
-	results, err := e.compiled.Invoke(ctx, messages)
+	events, err := graph.Collect(e.compiled.Run(ctx, messages))
 	if err != nil {
 		return fmt.Errorf("graph execution failed: %w", err)
 	}
 
 	// Convert results back to A2A format and write to queue
-	for _, evt := range results {
-		a2aMsg, err := ConvertToA2AMessage(evt.Message)
+	for i := range events {
+		a2aMsg, err := ConvertToA2AMessage(events[i].Message)
 		if err != nil {
 			return fmt.Errorf("failed to convert result message: %w", err)
 		}
 
-		// Write the message to the queue
 		if err := q.Write(ctx, a2aMsg); err != nil {
 			return fmt.Errorf("failed to write message to queue: %w", err)
 		}
@@ -90,8 +89,8 @@ func (e *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			return fmt.Errorf("streaming error: %w", err)
 		}
 
-		for _, msgEvt := range event.Messages {
-			a2aMsg, err := ConvertToA2AMessage(msgEvt.Message)
+		if event.Message != nil {
+			a2aMsg, err := ConvertToA2AMessage(event.Message)
 			if err != nil {
 				// It might be better to log this and continue
 				return fmt.Errorf("failed to convert result message: %w", err)

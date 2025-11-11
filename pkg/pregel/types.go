@@ -49,8 +49,8 @@ type Message[M any] struct {
 	Data M
 }
 
-// StreamEvent can be used to observe runtime progress.
-type StreamEvent[M any] struct {
+// Event can be used to observe runtime progress.
+type Event[M any] struct {
 	Node        string
 	Superstep   int64
 	Output      any

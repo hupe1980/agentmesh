@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewMessageEvent(t *testing.T) {
+func TestNewEvent(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test message")
-	evt := NewMessageEvent(msg, "graph-123", "test-node")
+	evt := NewEvent(msg, "graph-123", "test-node")
 
 	assert.NotEmpty(t, evt.ID, "Event ID should be generated")
 	assert.Equal(t, "graph-123", evt.GraphID)
@@ -19,26 +19,26 @@ func TestNewMessageEvent(t *testing.T) {
 	assert.Equal(t, msg, evt.Message)
 }
 
-func TestMessageEvent_UUIDUniqueness(t *testing.T) {
+func TestEvent_UUIDUniqueness(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test")
-	evt1 := NewMessageEvent(msg, "graph-1", "node-1")
-	evt2 := NewMessageEvent(msg, "graph-1", "node-1")
+	evt1 := NewEvent(msg, "graph-1", "node-1")
+	evt2 := NewEvent(msg, "graph-1", "node-1")
 
 	assert.NotEqual(t, evt1.ID, evt2.ID, "Each event should have a unique UUID")
 }
 
-func TestMessageEvent_Type(t *testing.T) {
+func TestEvent_Type(t *testing.T) {
 	msg := message.NewAIMessageFromText("AI response")
-	evt := NewMessageEvent(msg, "graph-1", "node-1")
+	evt := NewEvent(msg, "graph-1", "node-1")
 
-	assert.Equal(t, message.TypeAI, evt.Type())
+	assert.Equal(t, message.TypeAI, evt.Message.Type())
 }
 
-func TestMessageEvent_Parts(t *testing.T) {
+func TestEvent_Parts(t *testing.T) {
 	msg := message.NewHumanMessageFromText("Hello")
-	evt := NewMessageEvent(msg, "graph-1", "node-1")
+	evt := NewEvent(msg, "graph-1", "node-1")
 
-	parts := evt.Parts()
+	parts := evt.Message.Parts()
 	assert.Len(t, parts, 1)
 
 	textPart, ok := parts[0].(message.TextPart)
@@ -46,17 +46,16 @@ func TestMessageEvent_Parts(t *testing.T) {
 	assert.Equal(t, "Hello", textPart.Text)
 }
 
-func TestMessageEvent_Clone(t *testing.T) {
+func TestEvent_Clone(t *testing.T) {
 	originalMsg := message.NewSystemMessageFromText("original")
-	evt := NewMessageEvent(originalMsg, "graph-123", "node-abc")
+	evt := NewEvent(originalMsg, "graph-123", "node-abc")
 
 	// Allow a small time for timestamp
 	time.Sleep(1 * time.Millisecond)
 
-	cloned := evt.Clone()
+	clonedEvt := evt.Clone()
 
-	assert.IsType(t, &MessageEvent{}, cloned)
-	clonedEvt := cloned.(*MessageEvent)
+	assert.IsType(t, &Event{}, clonedEvt)
 
 	// Should preserve all metadata
 	assert.Equal(t, evt.ID, clonedEvt.ID)
@@ -69,9 +68,9 @@ func TestMessageEvent_Clone(t *testing.T) {
 	assert.NotSame(t, evt.Message, clonedEvt.Message)
 }
 
-func TestMessageEvent_String(t *testing.T) {
+func TestEvent_String(t *testing.T) {
 	msg := message.NewAIMessageFromText("test")
-	evt := NewMessageEvent(msg, "run-456", "analyzer")
+	evt := NewEvent(msg, "run-456", "analyzer")
 
 	str := evt.String()
 	assert.Contains(t, str, "run-456")
@@ -79,11 +78,11 @@ func TestMessageEvent_String(t *testing.T) {
 	assert.Contains(t, str, "ai")
 }
 
-func TestMessageEvent_ImplementsMessageInterface(t *testing.T) {
+func TestEvent_WrapsMessage(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test")
-	evt := NewMessageEvent(msg, "graph-1", "node-1")
+	evt := NewEvent(msg, "graph-1", "node-1")
 
-	// Verify it implements message.Message interface
-	var _ message.Message = evt
-	var _ message.Message = (*MessageEvent)(nil)
+	// Verify it wraps a message.Message
+	assert.NotNil(t, evt.Message)
+	assert.Equal(t, message.TypeSystem, evt.Message.Type())
 }

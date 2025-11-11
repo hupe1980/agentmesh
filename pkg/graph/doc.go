@@ -46,7 +46,7 @@ Create graphs using the fluent builder API:
 Graphs can be executed in different modes:
 
 	// Invoke: Execute once and return results
-	results, err := compiled.Invoke(ctx, messages)
+	results, err := lastEvent, err := graph.Last(compiled.Run(ctx, messages)
 
 	// Run: Execute with real-time event streaming
 	seq := compiled.Run(ctx, messages)
@@ -186,7 +186,7 @@ Core files in pkg/graph:
   - node.go: Node definitions and execution
   - state_manager.go: State management (StateManager, State, bufferedStateWriter)
   - pregel.go: BSP execution adapter (ChannelMessage, graphRuntime, nodeAdapter)
-  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, StreamEvent)
+  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, Event)
   - executor.go: Execution abstractions (Executor, ExecutionTracker, executionState)
   - scheduler.go: Topology-based node scheduling (vertexScheduler, TopologyScheduler)
   - options.go: Run options (checkpoint, retry, rate-limit configuration)
@@ -226,7 +226,7 @@ Retries can be configured per-node:
 
 The graph engine supports OpenTelemetry for tracing and metrics:
 
-	compiled.Invoke(ctx, messages,
+	lastEvent, err := graph.Last(compiled.Run(ctx, messages,
 		graph.WithTracer(tracer),
 		graph.WithMeterProvider(meterProvider),
 	)

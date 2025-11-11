@@ -33,7 +33,7 @@ func TestNodePanicRecovery(t *testing.T) {
 			}
 		}()
 
-		_, err = compiled.Invoke(context.Background(), []message.Message{})
+		_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 		// Expect some error (panic should be caught)
 		if err == nil {
 			t.Fatal("Expected error from panicking node")
@@ -52,7 +52,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		}
 	})
 
-	t.Run("PanicWithStreamEvents", func(t *testing.T) {
+	t.Run("PanicWithEvents", func(t *testing.T) {
 		builder := NewBuilder()
 		builder.Node("panicky", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			panic("stream panic test")
@@ -68,7 +68,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		// Collect stream events
 		seq := compiled.Run(context.Background(), []message.Message{})
 
-		var events []StreamEvent
+		var events []Event
 		var errorFound bool
 		for event, err := range seq {
 			if err != nil {
@@ -101,7 +101,7 @@ func TestNodePanicRecovery(t *testing.T) {
 			t.Fatalf("Failed to compile: %v", err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), []message.Message{})
+		_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 		if err == nil {
 			t.Error("Expected error from panicking nodes")
 		}
@@ -163,7 +163,7 @@ func TestContextCancellation(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	_, err = compiled.Invoke(ctx, []message.Message{})
+	_, err = Last(compiled.Run(ctx, []message.Message{}))
 	elapsed := time.Since(start)
 
 	// Node should have been executed
@@ -220,7 +220,7 @@ func TestConcurrentInvoke(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			_, err := compileds[idx].Invoke(context.Background(), []message.Message{})
+			_, err := Last(compileds[idx].Run(context.Background(), []message.Message{}))
 			errors[idx] = err
 		}(i)
 	}
@@ -260,7 +260,7 @@ func TestLargeStateStress(t *testing.T) {
 		t.Fatalf("Failed to compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), []message.Message{})
+	_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 	if err != nil {
 		t.Errorf("Large state test failed: %v", err)
 	}
@@ -299,12 +299,12 @@ func TestManyMessages(t *testing.T) {
 		t.Fatalf("Failed to compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), []message.Message{})
+	_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 	if err != nil {
 		t.Errorf("Many messages test failed: %v", err)
 	}
 
-	snapshot := compiled.State().MessageEventsSnapshot()
+	snapshot := compiled.State().EventsSnapshot()
 	if len(snapshot) != 1000 {
 		t.Errorf("Expected 1000 messages, got %d", len(snapshot))
 	}
@@ -326,7 +326,7 @@ func TestNodeErrorPropagation(t *testing.T) {
 		t.Fatalf("Failed to compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), []message.Message{})
+	_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 	if err == nil {
 		t.Fatal("Expected error from failing node")
 	}
@@ -372,7 +372,7 @@ func TestRapidRetry(t *testing.T) {
 		t.Fatalf("Failed to compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), []message.Message{})
+	_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 	if err != nil {
 		t.Errorf("Retry test failed: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestDeadlineExceeded(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(50*time.Millisecond))
 	defer cancel()
 
-	_, err = compiled.Invoke(ctx, []message.Message{})
+	_, err = Last(compiled.Run(ctx, []message.Message{}))
 
 	// If node checks context, it should return DeadlineExceeded
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -458,7 +458,7 @@ func TestParallelNodeExecution(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err = compiled.Invoke(context.Background(), []message.Message{})
+	_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 	duration := time.Since(start)
 
 	if err != nil {

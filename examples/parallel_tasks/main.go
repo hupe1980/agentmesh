@@ -161,7 +161,7 @@ func main() {
 	fmt.Println()
 
 	started := time.Now()
-	if _, err := compiled.Invoke(context.Background(), nil, graph.WithMaxConcurrency(2)); err != nil {
+	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2))); err != nil {
 		fmt.Printf("❌ Execution error: %v\n", err)
 		return
 	}

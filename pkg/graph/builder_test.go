@@ -29,7 +29,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
 
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	count := compiled.State().Get("count")
@@ -55,7 +55,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	compiled, err := builder.Compile()
 	require.NoError(t, err)
 
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	stateManager := compiled.State()
@@ -96,7 +96,7 @@ func TestBuilder_Chain(t *testing.T) {
 
 	compiled := builder.Chain("double", "add_ten", "square").MustCompile()
 
-	_, err := compiled.Invoke(context.Background(), nil)
+	_, err := Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	result := compiled.State().Get("value")
@@ -145,7 +145,7 @@ func TestBuilder_Parallel(t *testing.T) {
 	compiled, err := builder.Compile()
 	require.NoError(t, err)
 
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	results, ok := compiled.State().Get("results").([]any)
@@ -188,7 +188,7 @@ func TestBuilder_ConditionalRoute(t *testing.T) {
 
 	compiled := builder.MustCompile()
 
-	_, err := compiled.Invoke(context.Background(), nil)
+	_, err := Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	result := compiled.State().Get("result")

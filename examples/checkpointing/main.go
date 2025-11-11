@@ -46,12 +46,14 @@ func runDemo(ctx context.Context) {
 		}))
 
 	fmt.Println("Workflow Results:")
+	eventCount := 0
 	for event, err := range seq {
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			break
 		}
-		fmt.Printf("Node: %s, Superstep: %d, Messages: %d\n", event.Node, compiled.CurrentSuperstep(), len(event.Messages))
+		eventCount++
+		fmt.Printf("Node: %s, Superstep: %d, Events: %d\n", event.Node, compiled.CurrentSuperstep(), eventCount)
 	}
 
 	// === Part 2: View checkpoint history ===

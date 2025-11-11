@@ -59,7 +59,7 @@ func main() {
 	gph.AddEdge("process", graph.EndNode)
 
 	compiled, _ := gph.Compile()
-	compiled.Invoke(context.Background(), nil)
+	graph.Last(compiled.Run(context.Background(), nil))
 
 	fmt.Println("\n=== Final State ===")
 	fmt.Printf("Phase: %v\n", state.Get("phase"))

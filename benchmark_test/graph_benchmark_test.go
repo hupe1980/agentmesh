@@ -76,9 +76,9 @@ func BenchmarkState_ApplyUpdatesWithReducer(b *testing.B) {
 
 func BenchmarkState_AddMessages(b *testing.B) {
 	state := graph.NewStateManager(0)
-	msgs := []graph.MessageEvent{
-		*graph.NewMessageEvent(message.NewHumanMessageFromText("Hello"), "", ""),
-		*graph.NewMessageEvent(message.NewAIMessageFromText("Hi there"), "", ""),
+	msgs := []graph.Event{
+		*graph.NewEvent(message.NewHumanMessageFromText("Hello"), "", ""),
+		*graph.NewEvent(message.NewAIMessageFromText("Hi there"), "", ""),
 	}
 
 	for b.Loop() {
@@ -89,21 +89,21 @@ func BenchmarkState_AddMessages(b *testing.B) {
 func BenchmarkState_MessagesSnapshot(b *testing.B) {
 	state := graph.NewStateManager(0)
 	for range 100 {
-		state.AddMessages([]graph.MessageEvent{
-			*graph.NewMessageEvent(message.NewHumanMessageFromText("Message"), "", ""),
+		state.AddMessages([]graph.Event{
+			*graph.NewEvent(message.NewHumanMessageFromText("Message"), "", ""),
 		})
 	}
 
 	for b.Loop() {
-		_ = state.MessageEventsSnapshot()
+		_ = state.EventsSnapshot()
 	}
 }
 
 func BenchmarkState_MessagesWithCompaction(b *testing.B) {
 	state := graph.NewStateManager(100) // Enable compaction with max 100 messages
 
-	msgs := []graph.MessageEvent{
-		*graph.NewMessageEvent(message.NewHumanMessageFromText("Hello"), "", ""),
+	msgs := []graph.Event{
+		*graph.NewEvent(message.NewHumanMessageFromText("Hello"), "", ""),
 	}
 
 	for b.Loop() {
@@ -182,8 +182,8 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 	}
 
 	for b.Loop() {
-		graph := createSimpleGraph()
-		_, _ = graph.Invoke(context.Background(), nil)
+		compiled := createSimpleGraph()
+		_, _ = graph.Last(compiled.Run(context.Background(), nil))
 	}
 }
 
@@ -222,24 +222,24 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 	b.Run("Length5", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createChainGraph(5)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createChainGraph(5)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 
 	b.Run("Length10", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createChainGraph(10)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createChainGraph(10)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 
 	b.Run("Length20", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createChainGraph(20)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createChainGraph(20)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 }
@@ -286,24 +286,24 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 	b.Run("Parallel2", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createParallelGraph(2)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createParallelGraph(2)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 
 	b.Run("Parallel5", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createParallelGraph(5)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createParallelGraph(5)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 
 	b.Run("Parallel10", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			graph := createParallelGraph(10)
-			_, _ = graph.Invoke(context.Background(), nil)
+			compiled := createParallelGraph(10)
+			_, _ = graph.Last(compiled.Run(context.Background(), nil))
 		}
 	})
 }
@@ -349,8 +349,8 @@ func BenchmarkGraph_ConditionalRouting(b *testing.B) {
 	}
 
 	for b.Loop() {
-		graph := createConditionalGraph()
-		_, _ = graph.Invoke(context.Background(), nil)
+		compiled := createConditionalGraph()
+		_, _ = graph.Last(compiled.Run(context.Background(), nil))
 	}
 }
 

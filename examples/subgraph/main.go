@@ -56,7 +56,7 @@ func main() {
 
 	compiled.ApplyState(initialState, nil)
 
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	if err != nil {
 		log.Fatalf("Pipeline execution failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	analysisNode := analysis.AsNodeWithStateMapping(
 		"analysis",
 		// mapInput: map enriched_data to analysis input
-		func(s graph.StateReader) (map[string]any, []graph.MessageEvent) {
+		func(s graph.StateReader) (map[string]any, []graph.Event) {
 			enrichedData, ok := s.Get("enriched_data").(map[string]any)
 			if !ok {
 				return map[string]any{"input": map[string]any{}}, nil
@@ -246,7 +246,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 			return map[string]any{"input": enrichedData}, nil
 		},
 		// mapOutput: map analysis output to parent analysis key
-		func(s graph.StateReader) (map[string]any, []graph.MessageEvent) {
+		func(s graph.StateReader) (map[string]any, []graph.Event) {
 			output, ok := s.Get("output").(map[string]any)
 			if !ok {
 				return map[string]any{"analysis": map[string]any{}}, nil

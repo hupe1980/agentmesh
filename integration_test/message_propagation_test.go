@@ -40,7 +40,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			// Verify we received the update from node_a
 			fromA := s.Get("from_a")
 			counter := s.Get("counter")
-			msgs := s.MessageEventsSnapshot()
+			msgs := s.EventsSnapshot()
 
 			// These should be available after node_a completes
 			require.NotNil(t, fromA, "Should receive update from node_a")
@@ -67,9 +67,9 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 
 	// Execute the graph
 	ctx := context.Background()
-	results, err := compiled.Invoke(ctx, nil)
+	events, err := graph.Collect(compiled.Run(ctx, nil))
 	require.NoError(t, err)
-	require.NotNil(t, results)
+	require.NotNil(t, events)
 
 	// Verify final state
 	state := compiled.State()
@@ -133,7 +133,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify all updates were applied
@@ -212,7 +212,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify final state has all updates

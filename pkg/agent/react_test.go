@@ -6,6 +6,7 @@ import (
 	"iter"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -190,11 +191,12 @@ func TestAgent_BasicExecution(t *testing.T) {
 		message.NewHumanMessageFromText("Hello!"),
 	}
 
-	result, err := compiled.Invoke(ctx, input)
+	_, err = graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.GreaterOrEqual(t, len(result), 3) // System + Human + AI
+	events := compiled.State().EventsSnapshot()
+	require.NotNil(t, events)
+	assert.GreaterOrEqual(t, len(events), 3) // System + Human + AI
 }
 
 func TestAgent_ToolCalling(t *testing.T) {
@@ -238,13 +240,14 @@ func TestAgent_ToolCalling(t *testing.T) {
 		message.NewHumanMessageFromText("What's the weather in Berlin?"),
 	}
 
-	result, err := compiled.Invoke(ctx, input)
+	_, err = graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	require.NotNil(t, result)
+	events := compiled.State().EventsSnapshot()
+	require.NotNil(t, events)
 
 	// Should have: Human + AI (with tool call) + Tool result + AI (final response)
-	assert.GreaterOrEqual(t, len(result), 4)
+	assert.GreaterOrEqual(t, len(events), 4)
 
 	// Verify model was called twice (once for tool request, once after tool result)
 	assert.GreaterOrEqual(t, callCount, 1, "Model should be called at least once")
@@ -274,7 +277,7 @@ func TestAgent_UnregisteredTool(t *testing.T) {
 		message.NewHumanMessageFromText("Test"),
 	}
 
-	_, err = compiled.Invoke(ctx, input)
+	_, err = graph.Last(compiled.Run(ctx, input))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tool \"unknown_tool\" not registered")
@@ -305,7 +308,7 @@ func TestAgent_ToolExecutionError(t *testing.T) {
 	ctx := context.Background()
 	input := []message.Message{message.NewHumanMessageFromText("Test")}
 
-	_, err = compiled.Invoke(ctx, input)
+	_, err = graph.Last(compiled.Run(ctx, input))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tool execution failed")
@@ -350,9 +353,9 @@ func TestAgent_ConditionalRouting(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, []message.Message{
+	_, err = graph.Last(compiled.Run(ctx, []message.Message{
 		message.NewHumanMessageFromText("Test"),
-	})
+	}))
 
 	require.NoError(t, err)
 	assert.True(t, finalResponseSeen, "Should route to model after tool execution")
@@ -369,13 +372,13 @@ func TestAgent_EmptyMessages(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	result, err := compiled.Invoke(ctx, nil)
+	events, err := graph.Collect(compiled.Run(ctx, nil))
 
 	require.NoError(t, err)
-	require.NotNil(t, result)
+	require.NotNil(t, events)
 
 	// Should have at least the AI response
-	assert.GreaterOrEqual(t, len(result), 1)
+	assert.GreaterOrEqual(t, len(events), 1)
 }
 
 func TestAgent_MultipleToolCalls(t *testing.T) {
@@ -412,16 +415,16 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	result, err := compiled.Invoke(ctx, []message.Message{
+	events, err := graph.Collect(compiled.Run(ctx, []message.Message{
 		message.NewHumanMessageFromText("Test"),
-	})
+	}))
 
 	require.NoError(t, err)
 
 	// Count tool messages
 	toolMsgCount := 0
-	for _, msg := range result {
-		if msg.Type() == message.TypeTool {
+	for _, evt := range events {
+		if evt.Message != nil && evt.Message.Type() == message.TypeTool {
 			toolMsgCount++
 		}
 	}

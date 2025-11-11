@@ -257,11 +257,11 @@ func main() {
 	// The graph will automatically attach providers to context for all nodes
 	ctx := context.Background()
 	start := time.Now()
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithLogger(logger),
 		graph.WithTracer(traceProvider),
 		graph.WithMetrics(metricsProvider),
-	)
+	))
 	if err != nil {
 		panic(err)
 	}

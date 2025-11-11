@@ -111,11 +111,11 @@ func main() {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithLogger(logger),
 		graph.WithTracer(traceProvider),
 		graph.WithMetrics(metricsProvider),
-	)
+	))
 
 	duration := time.Since(startTime)
 

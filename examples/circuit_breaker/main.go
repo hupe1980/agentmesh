@@ -109,9 +109,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	result, err := compiled.Invoke(context.Background(), []message.Message{
+	result, err := graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Test circuit breaker"),
-	})
+	}))
 
 	fmt.Println("\n=== Results ===")
 	if err != nil {
@@ -120,9 +120,8 @@ func main() {
 	} else {
 		fmt.Println("✓ Service recovered successfully!")
 		fmt.Printf("Total calls made: %d\n", flakyModel.callCount)
-		if len(result) > 0 {
-			lastMsg := result[len(result)-1]
-			parts := lastMsg.Parts()
+		if result.Message != nil {
+			parts := result.Message.Parts()
 			if len(parts) > 0 {
 				if textPart, ok := parts[0].(message.TextPart); ok {
 					fmt.Printf("Final response: %s\n", textPart.Text)

@@ -364,7 +364,7 @@ func TestStateBuilder_WithInitialMessages(t *testing.T) {
 		WithInitialMessages(systemMsg, humanMsg).
 		Build()
 
-	events := state.MessageEventsSnapshot()
+	events := state.EventsSnapshot()
 	if len(events) != 2 {
 		t.Fatalf("Expected 2 initial messages, got %d", len(events))
 	}

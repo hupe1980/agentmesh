@@ -42,7 +42,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 
 	// Retrieve node: fetch relevant documents
 	builder.Node("retrieve", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		if len(events) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
@@ -93,7 +93,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		docs, ok := s.Get("documents").([]string)
 		if !ok || len(docs) == 0 {
 			// No documents found, generate without context
-			events := s.MessageEventsSnapshot()
+			events := s.EventsSnapshot()
 			messages := graph.ExtractMessages(events)
 			return generateWithModel(ctx, mdl, messages, "")
 		}
@@ -103,7 +103,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 			"Documents": docs,
 		})
 
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		messages := graph.ExtractMessages(events)
 		return generateWithModel(ctx, mdl, messages, contextPrompt)
 	})

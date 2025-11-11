@@ -114,12 +114,11 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 			}
 
 			// Get messages for model invocation
-			events := s.MessageEventsSnapshot()
-			messages := graph.ExtractMessages(events)
+			events := s.EventsSnapshot()
 
 			// Create request
 			req := &model.Request{
-				Messages:     messages,
+				Messages:     graph.ExtractMessages(events),
 				SystemPrompt: config.systemPrompt,
 				Tools:        config.tools,
 			}

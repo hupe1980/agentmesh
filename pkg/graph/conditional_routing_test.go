@@ -62,7 +62,7 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify that "left" was executed (because decision was "go_left")
@@ -143,7 +143,7 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify that path_b was taken (counter was 2)
@@ -208,7 +208,7 @@ func TestConditionalWithMultipleOutputs(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = compiled.Invoke(ctx, nil)
+	_, err = Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Both paths should have executed in parallel

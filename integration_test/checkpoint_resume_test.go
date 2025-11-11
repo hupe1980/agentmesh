@@ -63,14 +63,14 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 
 	// First run - complete execution
 	compiled := buildWorkflow()
-	_, err := compiled.Invoke(ctx, nil,
+	_, err := graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 2, // Save every 2 supersteps to reduce queue overflow
 			AutoRestore:  false,
 		}),
-	)
+	))
 	// Allow checkpoint queue overflow (valid in fast tests)
 	if err != nil && !strings.Contains(err.Error(), "checkpoint queue full") {
 		require.NoError(t, err)
@@ -95,14 +95,14 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 
 	// Second run - resume from checkpoint
 	compiled2 := buildWorkflow()
-	_, err = compiled2.Invoke(ctx, nil,
+	_, err = graph.Last(compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 2,
 			AutoRestore:  true, // Resume from last checkpoint
 		}),
-	)
+	))
 	// Allow checkpoint queue overflow
 	if err != nil && !strings.Contains(err.Error(), "checkpoint queue full") {
 		require.NoError(t, err)
@@ -182,14 +182,14 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 
 	// First run - should fail at step 3
 	compiled := buildFailingWorkflow()
-	_, err := compiled.Invoke(ctx, nil,
+	_, err := graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  false,
 		}),
-	)
+	))
 	require.Error(t, err, "Should fail at step 3")
 	assert.Contains(t, err.Error(), "simulated failure")
 	t.Log("First run failed as expected at step 3")
@@ -216,14 +216,14 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 
 	// Second run - resume and complete (should now succeed)
 	compiled2 := buildFailingWorkflow()
-	_, err = compiled2.Invoke(ctx, nil,
+	_, err = graph.Last(compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  true, // Resume from last checkpoint (with retry_allowed=true)
 		}),
-	)
+	))
 	require.NoError(t, err, "Should succeed after retry_allowed flag is set")
 	t.Log("Second run succeeded with resume")
 
@@ -324,14 +324,14 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 
 	// First run - complete execution
 	compiled := buildWorkflow()
-	_, err := compiled.Invoke(ctx, nil,
+	_, err := graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  false,
 		}),
-	)
+	))
 	require.NoError(t, err)
 
 	// Get final state: (42 * 2) + 10 = 94
@@ -346,14 +346,14 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 
 	// Second run - resume from checkpoint
 	compiled2 := buildWorkflow()
-	_, err = compiled2.Invoke(ctx, nil,
+	_, err = graph.Last(compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  true,
 		}),
-	)
+	))
 	require.NoError(t, err)
 
 	// Verify resumed state is identical
@@ -396,14 +396,14 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	// First run - create checkpoint
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  false,
 		}),
-	)
+	))
 	require.NoError(t, err)
 
 	// Load checkpoint and verify version exists
@@ -418,14 +418,14 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	assert.GreaterOrEqual(t, initialVersion, uint64(0), "Version should be non-negative")
 
 	// Second run with resume - should complete without error
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  true,
 		}),
-	)
+	))
 	require.NoError(t, err)
 
 	// Verify version is maintained (should not decrease)
@@ -476,14 +476,14 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute and save checkpoints at each superstep
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1, // Save after every superstep
 			AutoRestore:  false,
 		}),
-	)
+	))
 	// Allow checkpoint queue overflow (checkpoint queue has buffer=1, fast tests may overflow)
 	if err != nil && !strings.Contains(err.Error(), "checkpoint queue full") {
 		require.NoError(t, err)
@@ -564,14 +564,14 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 				return
 			}
 
-			_, err = compiled.Invoke(ctx, nil,
+			_, err = graph.Last(compiled.Run(ctx, nil,
 				graph.WithRunID(runID),
 				graph.WithCheckpointConfig(checkpoint.Config{
 					Checkpointer: checkpointer,
 					SaveInterval: 1,
 					AutoRestore:  false,
 				}),
-			)
+			))
 			done <- err
 		}()
 	}
@@ -624,14 +624,14 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to resume from non-existent checkpoint (should succeed as first run)
-	_, err = compiled.Invoke(ctx, nil,
+	_, err = graph.Last(compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
 		graph.WithCheckpointConfig(checkpoint.Config{
 			Checkpointer: checkpointer,
 			SaveInterval: 1,
 			AutoRestore:  true, // AutoRestore with no checkpoint should be no-op
 		}),
-	)
+	))
 	require.NoError(t, err)
 
 	// Verify checkpoint was created

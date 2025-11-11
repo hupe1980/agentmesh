@@ -13,6 +13,7 @@ import (
 	"os"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
 	mcptool "github.com/hupe1980/agentmesh/pkg/tool/mcp"
@@ -109,14 +110,14 @@ func main() {
 	fmt.Println("Question: Please add 3.5 and 4.25. What is the result?")
 	fmt.Println()
 
-	result, err := reactAgent.Invoke(ctx, messages)
+	events, err := graph.Collect(reactAgent.Run(ctx, messages))
 	if err != nil {
 		log.Fatalf("Agent invocation failed: %v", err)
 	}
 
 	// 5. Display the conversation
 	fmt.Println("=== Conversation ===")
-	for _, evt := range result {
+	for _, evt := range events {
 		switch m := evt.Message.(type) {
 		case *message.SystemMessage:
 			fmt.Print("[System] ")

@@ -170,7 +170,7 @@ func main() {
 	fmt.Println("EXECUTING GRAPH")
 	fmt.Println(repeatString("=", 80) + "\n")
 
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = graph.Last(compiled.Run(context.Background(), nil))
 	if err != nil {
 		log.Printf("Execution error: %v", err)
 	}

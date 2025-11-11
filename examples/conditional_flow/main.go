@@ -125,7 +125,7 @@ func runScenario(choice string) {
 	}
 
 	// Execute the graph - routing will happen automatically based on state
-	if _, err := compiled.Invoke(context.Background(), nil); err != nil {
+	if _, err := graph.Last(compiled.Run(context.Background(), nil)); err != nil {
 		fmt.Printf("❌ Execution error: %v\n", err)
 		return
 	}

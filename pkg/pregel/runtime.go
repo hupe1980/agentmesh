@@ -54,7 +54,7 @@ import (
 //  3. Repeat until frontier is empty or max iterations reached
 type Runtime[S any, M any] struct {
 	graph  Graph[S, M]
-	events chan StreamEvent[M]
+	events chan Event[M]
 	opts   RuntimeOptions[S, M]
 
 	messageBus MessageBus[M] // Pluggable message delivery backend
@@ -73,7 +73,7 @@ type Runtime[S any, M any] struct {
 
 // NewRuntime creates a new runtime for the given graph.
 // Returns an error if graph is nil or invalid.
-func NewRuntime[S any, M any](graph Graph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
+func NewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
 	if graph == nil {
 		return nil, ErrGraphRequired
 	}
@@ -137,7 +137,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], events chan StreamEvent[M], opt
 
 // MustNewRuntime creates a new runtime for the given graph.
 // Panics if graph is nil or invalid. Use this in tests or when you're certain inputs are valid.
-func MustNewRuntime[S any, M any](graph Graph[S, M], events chan StreamEvent[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
+func MustNewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
 	runtime, err := NewRuntime(graph, events, optFns...)
 	if err != nil {
 		panic(err)
@@ -339,7 +339,7 @@ func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
 	pending, err := r.messageBus.Pending()
 	if err != nil {
 		// Propagate message bus errors instead of swallowing them
-		r.emitEvent(StreamEvent[M]{Error: fmt.Errorf("message bus pending failed: %w", err)})
+		r.emitEvent(Event[M]{Error: fmt.Errorf("message bus pending failed: %w", err)})
 		return nil, fmt.Errorf("consume next frontier: %w", err)
 	}
 
@@ -449,7 +449,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	node := r.graph.NodeByName(name)
 	if node == nil {
 		err := fmt.Errorf("superstep %d: node %q: %w", superstep, name, ErrUnknownNode)
-		r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Error: err})
+		r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
 		return err
 	}
 
@@ -475,7 +475,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		if rec := recover(); rec != nil {
 			stack := debug.Stack()
 			recovered := fmt.Errorf("superstep %d: node %q: %w: %v", superstep, name, ErrNodePanicked, rec)
-			r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Diagnostics: stack, Error: recovered})
+			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Diagnostics: stack, Error: recovered})
 			err = recovered
 		}
 	}()
@@ -483,7 +483,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	runErr := node.Run(ctx, vertex, incoming)
 	if runErr != nil {
 		err = fmt.Errorf("superstep %d: node %q failed: %w", superstep, name, runErr)
-		r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Error: err})
+		r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
 		return err
 	}
 
@@ -493,12 +493,12 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		if deliverErr := r.recordDeliveries(ctx, sent); deliverErr != nil {
 			// If message delivery fails due to backpressure/timeout, treat as error
 			err = fmt.Errorf("superstep %d: node %q: failed to deliver messages: %w", superstep, name, deliverErr)
-			r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep, Error: err})
+			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
 			return err
 		}
 	}
 
-	r.emitEvent(StreamEvent[M]{Node: name, Superstep: superstep})
+	r.emitEvent(Event[M]{Node: name, Superstep: superstep})
 	return nil
 }
 
@@ -511,7 +511,7 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 	err := r.messageBus.Send(ctx, msgs)
 	if err != nil {
 		// Emit error event
-		r.emitEvent(StreamEvent[M]{
+		r.emitEvent(Event[M]{
 			Error: fmt.Errorf("failed to deliver messages: %w", err),
 		})
 		return err
@@ -523,7 +523,7 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 	msgs, err := r.messageBus.Receive(node)
 	if err != nil {
-		r.emitEvent(StreamEvent[M]{Error: fmt.Errorf("message bus receive failed for node %s: %w", node, err)})
+		r.emitEvent(Event[M]{Error: fmt.Errorf("message bus receive failed for node %s: %w", node, err)})
 		return nil, fmt.Errorf("drain mailbox for %s: %w", node, err)
 	}
 	if len(msgs) == 0 {
@@ -532,7 +532,7 @@ func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 	return msgs, nil
 }
 
-func (r *Runtime[S, M]) emitEvent(event StreamEvent[M]) {
+func (r *Runtime[S, M]) emitEvent(event Event[M]) {
 	if r.events == nil {
 		return
 	}

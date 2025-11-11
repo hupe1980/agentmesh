@@ -81,7 +81,7 @@ func TestPageRank(t *testing.T) {
 
 	// Run multiple iterations with max iterations set
 	for i := 0; i < iterations; i++ {
-		_, err := compiled.Invoke(context.Background(), nil, graph.WithMaxIterations(1))
+		_, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithMaxIterations(1)))
 		require.NoError(t, err)
 
 		// Accumulate contributions for each vertex
@@ -191,7 +191,7 @@ func TestShortestPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run algorithm (in practice, would need multiple supersteps)
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = graph.Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	// Verify shortest paths
@@ -251,7 +251,7 @@ func TestGraphConvergence(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run the graph once - nodes run until completion (no cyclic edges)
-	_, err = compiled.Invoke(context.Background(), nil)
+	_, err = graph.Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	counter := compiled.State().Get("counter")

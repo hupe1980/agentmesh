@@ -160,19 +160,18 @@ func executeHandoff(
 	// Add the actual task
 	messages = append(messages, message.NewHumanMessageFromText(args.Task))
 
-	// Invoke the worker agent graph
-	resultMessages, err := agentGraph.Invoke(ctx, messages)
+	// Execute the worker agent graph
+	lastEvent, err := graph.Last(agentGraph.Run(ctx, messages))
 	if err != nil {
 		return "", fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	if len(resultMessages) == 0 {
+	if lastEvent.Message == nil {
 		return "", fmt.Errorf("agent produced no messages")
 	}
 
 	// Extract text from the last message
-	lastMsg := resultMessages[len(resultMessages)-1].Message
-	return extractTextFromMessage(lastMsg), nil
+	return extractTextFromMessage(lastEvent.Message), nil
 }
 
 // extractTextFromMessage extracts text content from a message.

@@ -91,7 +91,7 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute with Redis message bus
-	_, err = compiled.Invoke(ctx, nil, graph.WithPregelMessageBus(bus))
+	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
 	require.NoError(t, err)
 
 	// Verify state updates
@@ -173,7 +173,7 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = compiled.Invoke(ctx, nil, graph.WithPregelMessageBus(bus))
+	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
 	require.NoError(t, err)
 
 	// Verify all workers completed
@@ -266,7 +266,7 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = compiled.Invoke(ctx, nil, graph.WithPregelMessageBus(bus))
+	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
 	require.NoError(t, err)
 
 	// Verify it took the positive path (value=42 > 0)

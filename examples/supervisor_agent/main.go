@@ -54,16 +54,17 @@ func main() {
 			continue
 		}
 
-		result, err := supervisor.Invoke(ctx, []message.Message{
+		_, err = graph.Last(supervisor.Run(ctx, []message.Message{
 			message.NewHumanMessageFromText(query),
-		})
+		}))
 		if err != nil {
 			log.Printf("Error executing query: %v", err)
 			continue
 		}
 
 		// Display conversation transcript
-		displayTranscript(query, result)
+		events := supervisor.State().EventsSnapshot()
+		displayTranscript(query, events)
 	}
 }
 
@@ -152,7 +153,7 @@ func createCodeAgent() (*graph.Compiled, error) {
 }
 
 // displayTranscript shows the conversation flow including tool calls
-func displayTranscript(query string, events []graph.MessageEvent) {
+func displayTranscript(query string, events []graph.Event) {
 	// Print the user query at the top only
 	fmt.Printf("👤 User:\n   %s\n", query)
 

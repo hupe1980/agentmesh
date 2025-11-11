@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"iter"
 	"slices"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -20,8 +21,9 @@ func NewPregelExecutor(cg *Compiled) *PregelExecutor {
 	}
 }
 
-// Execute runs the graph to completion and returns the final result.
-func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (*InvokeResult, error) {
+// Execute runs the graph and returns an iterator of execution events.
+// This method directly delegates to Compiled.Run() with the appropriate options.
+func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) iter.Seq2[Event, error] {
 	// Convert ExecuteOptions to RunOption functions
 	var optFns []RunOption
 	if options.MaxIterations > 0 {
@@ -36,56 +38,8 @@ func (e *PregelExecutor) Execute(ctx context.Context, initialMessages []message.
 	// Note: CheckpointInterval is not directly supported here as PregelExecutor
 	// does not manage a Checkpointer instance. Pass it via graph options if needed.
 
-	// Use the public Invoke method
-	messages, err := e.cg.Invoke(ctx, initialMessages, optFns...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build result
-	result := &InvokeResult{
-		Messages: messages,
-		State:    e.cg.stateManager.GetAll(),
-	}
-
-	return result, nil
-}
-
-// Stream executes the graph with real-time event streaming.
-func (e *PregelExecutor) Stream(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (<-chan any, <-chan error) {
-	eventChan := make(chan any, 100)
-	errChan := make(chan error, 1)
-
-	go func() {
-		defer close(eventChan)
-		defer close(errChan)
-
-		// Convert ExecuteOptions to RunOption functions
-		var optFns []RunOption
-		if options.MaxIterations > 0 {
-			optFns = append(optFns, WithMaxIterations(options.MaxIterations))
-		}
-		if options.MaxWorkers > 0 {
-			optFns = append(optFns, WithMaxConcurrency(options.MaxWorkers))
-		}
-		if options.RunID != "" {
-			optFns = append(optFns, WithRunID(options.RunID))
-		}
-
-		// Use the public Run method
-		seq := e.cg.Run(ctx, initialMessages, optFns...)
-
-		// Forward StreamEvents as interface{}
-		for event, err := range seq {
-			if err != nil {
-				errChan <- err
-				return
-			}
-			eventChan <- event
-		}
-	}()
-
-	return eventChan, errChan
+	// Return the iterator directly from Compiled.Run()
+	return e.cg.Run(ctx, initialMessages, optFns...)
 }
 
 // Pause pauses execution before the specified node.

@@ -36,7 +36,7 @@ func TestMaxIterations(t *testing.T) {
 		}
 
 		// Should terminate after 5 iterations
-		_, err = compiled.Invoke(context.Background(), nil, WithMaxIterations(5))
+		_, err = Last(compiled.Run(context.Background(), nil, WithMaxIterations(5)))
 		if err == nil {
 			t.Fatal("expected ErrMaxIterationsExceeded, got nil")
 		}
@@ -77,7 +77,7 @@ func TestMaxIterations(t *testing.T) {
 		}
 
 		// Should complete naturally (no max iterations specified)
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -112,7 +112,7 @@ func TestMaxIterations(t *testing.T) {
 		}
 
 		// Max iterations is 100 but should complete in 1 iteration
-		_, err = compiled.Invoke(context.Background(), nil, WithMaxIterations(100))
+		_, err = Last(compiled.Run(context.Background(), nil, WithMaxIterations(100)))
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}

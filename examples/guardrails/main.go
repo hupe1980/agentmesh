@@ -17,7 +17,7 @@ func BlockUnsafeContent(ctx context.Context, s graph.StateWriter) (message.Messa
 	blockedKeywords := []string{"hack", "exploit", "bypass"}
 
 	// Check all messages for blocked content
-	events := s.MessageEventsSnapshot()
+	events := s.EventsSnapshot()
 	for _, evt := range events {
 		parts := evt.Message.Parts()
 		for _, part := range parts {
@@ -97,7 +97,7 @@ func redactPII(text string) string {
 func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallback {
 	return func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
 		// Simple cache key from last message
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		if len(events) == 0 {
 			return nil, nil
 		}
@@ -133,7 +133,7 @@ func CacheResponses(cache map[string]message.Message) callbacks.BeforeModelCallb
 // StoreInCache is an AfterModel callback that stores responses in the cache
 func StoreInCache(cache map[string]message.Message) callbacks.AfterModelCallback {
 	return func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		if len(events) == 0 {
 			return nil, nil
 		}
@@ -185,10 +185,10 @@ func (m *mockStateWriter) Set(key string, value any) {
 	m.state[key] = value
 }
 
-func (m *mockStateWriter) MessageEventsSnapshot() []graph.MessageEvent {
-	events := make([]graph.MessageEvent, len(m.messages))
+func (m *mockStateWriter) EventsSnapshot() []graph.Event {
+	events := make([]graph.Event, len(m.messages))
 	for i, msg := range m.messages {
-		events[i] = *graph.NewMessageEvent(msg, "", "mock")
+		events[i] = *graph.NewEvent(msg, "", "mock")
 	}
 	return events
 }

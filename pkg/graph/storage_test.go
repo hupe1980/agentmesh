@@ -30,7 +30,7 @@ func TestInMemoryStateStore(t *testing.T) {
 	require.NotNil(t, loaded)
 	require.Equal(t, 42, loaded.Get("count"))
 	require.Equal(t, "test", loaded.Get("name"))
-	require.Len(t, loaded.MessageEventsSnapshot(), 1)
+	require.Len(t, loaded.EventsSnapshot(), 1)
 
 	// Test List
 	ids, err := store.List()

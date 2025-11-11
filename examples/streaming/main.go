@@ -92,7 +92,7 @@ func main() {
 		}
 
 		// Get messages from state
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		msgs := graph.ExtractMessages(events)
 
 		// Create request
@@ -209,10 +209,14 @@ func main() {
 			fmt.Println(strings.Repeat("-", 30))
 		}
 
-		for _, msg := range event.Messages {
-			if msg.Type() == message.TypeAI {
-				// Print partial AI responses as they stream in
-				fmt.Print(aurora.Green(msg.String()))
+		if event.Message != nil && event.Message.Type() == message.TypeAI {
+			// Print partial AI responses as they stream in
+			if aiMsg, ok := event.Message.(*message.AIMessage); ok {
+				for _, part := range aiMsg.Parts() {
+					if textPart, ok := part.(message.TextPart); ok {
+						fmt.Print(aurora.Green(textPart.Text))
+					}
+				}
 			}
 		}
 		eventCount++
@@ -230,7 +234,7 @@ func main() {
 		}
 
 		// Show final messages
-		finalEvents := finalState.MessageEventsSnapshot()
+		finalEvents := finalState.EventsSnapshot()
 		if len(finalEvents) > 0 {
 			fmt.Println("\n💬 Final Messages:")
 			for i, evt := range finalEvents {

@@ -135,7 +135,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 		}
 
 		// Get messages from state
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		if len(events) == 0 {
 			return &graph.NodeResult{}, nil
 		}
@@ -196,7 +196,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 			return nil, fmt.Errorf("failed to create A2A client: %w", clientErr)
 		}
 
-		events := s.MessageEventsSnapshot()
+		events := s.EventsSnapshot()
 		if len(events) == 0 {
 			return &graph.NodeResult{}, nil
 		}

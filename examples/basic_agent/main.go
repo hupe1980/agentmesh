@@ -89,15 +89,22 @@ func main() {
 	//   2. Decide to call get_weather tool
 	//   3. Process the tool result
 	//   4. Generate a natural language response
-	results, err := compiled.Invoke(context.Background(), []message.Message{system, human})
-	if err != nil {
-		log.Fatalf("agent execution failed: %v", err)
-	}
 
 	// Display the complete conversation transcript
 	fmt.Println("=== Agent Transcript ===")
 	fmt.Println()
-	for i, evt := range results {
+	i := 0
+	for evt, err := range compiled.Run(context.Background(), []message.Message{system, human}) {
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			break
+		}
+
+		// Each Event now contains ONE Message (not a Messages slice)
+		if evt.Message == nil {
+			continue
+		}
+
 		msg := evt.Message
 
 		fmt.Printf("[%d] %s\n", i+1, msg.Type())
@@ -132,5 +139,6 @@ func main() {
 			}
 		}
 		fmt.Println()
+		i++
 	}
 }

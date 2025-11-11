@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"iter"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -24,16 +25,21 @@ import (
 //   - Pluggable execution backends (Pregel, Simple, Distributed, etc.)
 //   - No state management (delegates to StateManager)
 //   - Observable execution via event streams
+//
+// Usage:
+//   - Stream events: for event, err := range executor.Execute(ctx, msgs, opts) { ... }
+//   - Block until done: events, err := graph.Collect(executor.Execute(ctx, msgs, opts))
+//   - Get last result: lastEvent, err := graph.Last(executor.Execute(ctx, msgs, opts))
 type Executor interface {
-	// Execute runs the graph to completion and returns the final result.
-	// This is a blocking call that returns when the graph reaches END or max iterations.
-	Execute(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (*InvokeResult, error)
-
-	// Stream executes the graph with real-time event streaming.
-	// Returns a channel of execution events that can be consumed by the caller.
-	// The event channel is closed when execution completes.
-	// Note: StreamEvent type is defined in compiled_graph.go
-	Stream(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) (<-chan interface{}, <-chan error)
+	// Execute runs the graph and returns an iterator of execution events.
+	// Events are emitted as nodes complete execution.
+	// The iterator completes when the graph reaches END, max iterations, or an error occurs.
+	//
+	// Consume patterns:
+	//   - Streaming: for event, err := range executor.Execute(ctx, msgs, opts)
+	//   - Blocking: events, err := graph.Collect(executor.Execute(ctx, msgs, opts))
+	//   - Last only: last, err := graph.Last(executor.Execute(ctx, msgs, opts))
+	Execute(ctx context.Context, initialMessages []message.Message, options ExecuteOptions) iter.Seq2[Event, error]
 
 	// Pause pauses execution before the specified node.
 	// The node will not execute until Resume() is called.
@@ -100,7 +106,7 @@ type ExecutionStats struct {
 // InvokeResult contains the final graph execution result.
 type InvokeResult struct {
 	// Messages from the final state with execution metadata
-	Messages []MessageEvent
+	Messages []Event
 
 	// State snapshot at completion
 	State map[string]any

@@ -40,7 +40,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.NoError(t, err)
 
 		assert.Equal(t, 1, attempts, "should succeed on first attempt")
@@ -75,7 +75,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.NoError(t, err)
 
 		assert.Equal(t, 3, attempts)
@@ -107,7 +107,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.Error(t, err, "should fail after exhausting retries")
 
 		assert.Equal(t, 3, attempts)
@@ -139,7 +139,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.Error(t, err)
 
 		// Should only attempt once since error is not retryable
@@ -177,7 +177,7 @@ func TestRetryPolicy(t *testing.T) {
 		}()
 
 		start := time.Now()
-		_, err = compiled.Invoke(ctx, nil)
+		_, err = Last(compiled.Run(ctx, nil))
 		elapsed := time.Since(start)
 
 		// Error can be nil if cancellation happens between graph execution steps
@@ -210,7 +210,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.Error(t, err)
 
 		assert.Equal(t, 1, attempts, "should execute exactly once without retry policy")
@@ -284,7 +284,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}}))
+		_, err = Last(compiled.Run(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}})))
 		require.NoError(t, err)
 
 		assert.Equal(t, 2, attempts)
@@ -325,7 +325,7 @@ func TestRetryPolicy(t *testing.T) {
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.Error(t, err, "should fail after exhausting retries")
 
 		// Check for RetryExhaustedError with all attempts preserved

@@ -84,7 +84,7 @@ All models implement the core Interface:
 
 	type Interface interface {
 		Generate(ctx context.Context, messages []message.Message, opts ...Option) (message.Message, error)
-		Stream(ctx context.Context, messages []message.Message, opts ...Option) <-chan StreamEvent
+		Stream(ctx context.Context, messages []message.Message, opts ...Option) <-chan Event
 	}
 
 # Tool-Aware Models
@@ -121,8 +121,8 @@ Implement the Interface to add new providers:
 		return response, nil
 	}
 
-	func (m *CustomModel) Stream(ctx context.Context, messages []message.Message, opts ...Option) <-chan StreamEvent {
-		ch := make(chan StreamEvent)
+	func (m *CustomModel) Stream(ctx context.Context, messages []message.Message, opts ...Option) <-chan Event {
+		ch := make(chan Event)
 		go func() {
 			defer close(ch)
 			// Stream from provider

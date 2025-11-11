@@ -31,7 +31,7 @@ func TestState_MessageRetention_Default(t *testing.T) {
 	}
 
 	state.AddMessages(wrapMessages(messages))
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 
 	assert.Len(t, retrieved, 3, "All messages should be retained by default")
 }
@@ -47,7 +47,7 @@ func TestState_SetMaxMessages_Zero(t *testing.T) {
 	}
 
 	state.AddMessages(wrapMessages(messages))
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 
 	assert.Len(t, retrieved, 150, "Zero limit should allow unlimited messages")
 }
@@ -62,7 +62,7 @@ func TestState_SetMaxMessages_EnforceLimit(t *testing.T) {
 	}
 
 	state.AddMessages(wrapMessages(messages))
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 
 	require.Len(t, retrieved, 5, "Should retain only maxMessages")
 }
@@ -79,7 +79,7 @@ func TestState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "keep3"}}),
 	}))
 
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 	require.Len(t, retrieved, 3, "Should have exactly 3 messages")
 
 	// Check that we kept the last 3
@@ -106,7 +106,7 @@ func TestState_SetMaxMessages_MultipleAdds(t *testing.T) {
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg5"}}),
 	}))
 
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 	require.Len(t, retrieved, 4, "Should enforce limit across multiple adds")
 
 	// Should have msg2, msg3, msg4, msg5 (dropped msg1)
@@ -128,7 +128,7 @@ func TestState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg5"}}),
 	}))
 
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 	require.Len(t, retrieved, 2, "Should enforce limit immediately")
 
 	assert.Equal(t, "msg4", getMessageText(retrieved[0].Message))
@@ -146,7 +146,7 @@ func TestState_SetMaxMessages_Negative(t *testing.T) {
 	}
 
 	state.AddMessages(wrapMessages(messages))
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 
 	assert.Len(t, retrieved, 20, "Negative limit should be treated as unlimited")
 }
@@ -166,7 +166,7 @@ func TestState_ApplyUpdates_RespectsLimit(t *testing.T) {
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg4"}}),
 	}))
 
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 	require.Len(t, retrieved, 3, "ApplyUpdates should enforce limit")
 
 	assert.Equal(t, "msg2", getMessageText(retrieved[0].Message))
@@ -180,7 +180,7 @@ func TestState_MessageRetention_EmptyMessages(t *testing.T) {
 
 	// Adding empty slice should not panic
 	state.AddMessages(wrapMessages([]message.Message{}))
-	retrieved := state.MessageEventsSnapshot()
+	retrieved := state.EventsSnapshot()
 
 	assert.Len(t, retrieved, 0, "No messages added")
 }
@@ -227,10 +227,10 @@ func TestWithMaxMessages_NilOptions(t *testing.T) {
 
 // Helper function for tests to wrap messages as events
 
-func wrapMessages(msgs []message.Message) []MessageEvent {
-	events := make([]MessageEvent, len(msgs))
+func wrapMessages(msgs []message.Message) []Event {
+	events := make([]Event, len(msgs))
 	for i, msg := range msgs {
-		events[i] = *NewMessageEvent(msg, "", "test")
+		events[i] = *NewEvent(msg, "", "test")
 	}
 	return events
 }

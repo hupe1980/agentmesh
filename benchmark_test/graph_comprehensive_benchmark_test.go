@@ -18,7 +18,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 
 	// Node 1: Input processing
 	builder.Node("preprocess", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		msgs := s.MessageEventsSnapshot()
+		msgs := s.EventsSnapshot()
 		return &graph.NodeResult{
 			Updates: map[string]any{"processed": len(msgs)},
 		}, nil
@@ -71,7 +71,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_, err := compiled.Invoke(ctx, initialMessages)
+		_, err := graph.Last(compiled.Run(ctx, initialMessages))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func BenchmarkDeepChain(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_, err := compiled.Invoke(ctx, initialMessages)
+				_, err := graph.Last(compiled.Run(ctx, initialMessages))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -165,7 +165,7 @@ func BenchmarkWideParallel(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_, err := compiled.Invoke(ctx, initialMessages)
+				_, err := graph.Last(compiled.Run(ctx, initialMessages))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -220,7 +220,7 @@ func BenchmarkConditionalBranching(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_, err := compiled.Invoke(ctx, initialMessages)
+		_, err := graph.Last(compiled.Run(ctx, initialMessages))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -238,7 +238,7 @@ func BenchmarkMessageThroughput(b *testing.B) {
 			builder := graph.NewBuilder()
 
 			builder.Node("processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-				msgs := s.MessageEventsSnapshot()
+				msgs := s.EventsSnapshot()
 				return &graph.NodeResult{
 					Updates: map[string]any{"count": len(msgs)},
 				}, nil
@@ -262,7 +262,7 @@ func BenchmarkMessageThroughput(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_, err := compiled.Invoke(ctx, initialMessages)
+				_, err := graph.Last(compiled.Run(ctx, initialMessages))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -319,7 +319,7 @@ func BenchmarkStateUpdates(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_, err := compiled.Invoke(ctx, initialMessages)
+				_, err := graph.Last(compiled.Run(ctx, initialMessages))
 				if err != nil {
 					b.Fatal(err)
 				}

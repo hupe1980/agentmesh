@@ -170,7 +170,7 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 			t.Fatalf("Failed to compile: %v", err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), []message.Message{})
+		_, err = Last(compiled.Run(context.Background(), []message.Message{}))
 		if err != nil {
 			t.Fatalf("Failed to invoke: %v", err)
 		}

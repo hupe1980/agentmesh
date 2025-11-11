@@ -272,7 +272,7 @@ func (g *errorGraph) NodeByName(name string) Node[mockState, mockMessage] {
 func (g *errorGraph) State() mockState { return g.state }
 
 func TestRuntime_NodeErrorPropagation(t *testing.T) {
-	events := make(chan StreamEvent[mockMessage], 1)
+	events := make(chan Event[mockMessage], 1)
 	rt := MustNewRuntime[mockState, mockMessage](&errorGraph{}, events)
 
 	err := rt.Run(context.Background())
@@ -307,7 +307,7 @@ func (g *panicGraph) NodeByName(name string) Node[mockState, mockMessage] {
 func (g *panicGraph) State() mockState { return g.state }
 
 func TestRuntime_NodePanicRecovery(t *testing.T) {
-	events := make(chan StreamEvent[mockMessage], 1)
+	events := make(chan Event[mockMessage], 1)
 	rt := MustNewRuntime[mockState, mockMessage](&panicGraph{}, events)
 
 	err := rt.Run(context.Background())

@@ -185,7 +185,7 @@ func TestNodeTimeoutError(t *testing.T) {
 		defer cancel()
 
 		start := time.Now()
-		_, err = compiled.Invoke(ctx, nil)
+		_, err = Last(compiled.Run(ctx, nil))
 		duration := time.Since(start)
 
 		// Should timeout

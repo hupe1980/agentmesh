@@ -7,7 +7,6 @@ import (
 	"iter"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
@@ -44,7 +43,6 @@ import (
 //
 // Key Methods:
 //   - Run: Execute graph and return an iterator over execution events
-//   - Invoke: Execute graph and return final messages
 //
 // Created by Builder.Compile() after graph construction.
 type Compiled struct {
@@ -170,7 +168,7 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 // Run executes the graph and returns an iterator over the execution events.
 // This is the primary method for running a compiled graph.
 // The returned iterator can be consumed to stream results or collected to get a final result.
-func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[StreamEvent, error] {
+func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[Event, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -182,60 +180,10 @@ func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns 
 	return cg.runWithOptions(ctx, messages, options)
 }
 
-// Invoke executes the graph synchronously and returns the final message events.
-// It is a convenience wrapper around Run that collects all events.
-func (cg *Compiled) Invoke(ctx context.Context, messages []message.Message, optFns ...RunOption) ([]MessageEvent, error) {
-	// Attach observability providers to context if configured
-	options := defaultRunOptions()
-	for _, optFn := range optFns {
-		optFn(&options)
-	}
-	ctx = cg.attachProvidersToContext(ctx, options)
-
-	// Create instrumentation from providers
-	instrumentation := cg.createInstrumentation(options)
-
-	// Start graph execution trace span
-	var span trace.Span
-	if instrumentation != nil {
-		ctx, span = instrumentation.TraceGraphExecution(ctx, "graph.invoke")
-		defer func() {
-			if span != nil {
-				span.End(nil)
-			}
-		}()
-	}
-
-	startTime := time.Now()
-
-	seq := cg.Run(ctx, messages, optFns...)
-
-	for _, err := range seq {
-		if err != nil {
-			if span != nil {
-				span.End(err)
-			}
-			return nil, err
-		}
-	}
-
-	// Record metrics
-	if instrumentation != nil {
-		instrumentation.RecordGraphExecution(ctx, "graph.invoke", time.Since(startTime), true)
-	}
-
-	if cg == nil || cg.stateManager == nil {
-		return nil, nil
-	}
-
-	// Return message events with execution metadata
-	return cg.stateManager.MessageEventsSnapshot(), nil
-}
-
 // ApplyState synchronously merges values and messages into the committed graph state.
 // Intended for external systems (e.g., human-in-the-loop workflows) to inject
 // updates between supersteps without bypassing the staged execution pipeline.
-func (cg *Compiled) ApplyState(values map[string]any, messages []MessageEvent) {
+func (cg *Compiled) ApplyState(values map[string]any, messages []Event) {
 	if cg == nil || cg.stateManager == nil {
 		return
 	}
@@ -256,26 +204,27 @@ func (cg *Compiled) AsNode(name string) *Node {
 			}
 
 			// Get parent messages to pass to subgraph
-			parentMessages := ExtractMessages(s.MessageEventsSnapshot())
+			parentMessages := ExtractMessages(s.EventsSnapshot())
 
-			// Execute the subgraph with parent messages and get events with metadata
-			events, err := cg.Invoke(ctx, parentMessages)
-			if err != nil {
-				return nil, fmt.Errorf("subgraph %q: %w", name, err)
-			}
+			// Execute the subgraph with parent messages and get final event
+		_, err := Last(cg.Run(ctx, parentMessages))
+		if err != nil {
+			return nil, fmt.Errorf("subgraph %q: %w", name, err)
+		}
 
-			// Return the subgraph's final state as updates
-			// Convert events to []message.Message (MessageEvent implements message.Message)
-			updates := cg.State().GetAll()
-			msgs := make([]message.Message, len(events))
-			for i, evt := range events {
-				msgs[i] = &evt
-			}
+		// Return the subgraph's final state as updates
+		// Get all accumulated events from state and convert to messages
+		updates := cg.State().GetAll()
+		events := cg.State().EventsSnapshot()
+		msgs := make([]message.Message, len(events))
+		for i := range events {
+			msgs[i] = events[i].Message
+		}
 
-			return &NodeResult{
-				Updates:  updates,
-				Messages: msgs,
-			}, nil
+		return &NodeResult{
+			Updates:  updates,
+			Messages: msgs,
+		}, nil
 		},
 	}
 }
@@ -285,15 +234,15 @@ func (cg *Compiled) AsNode(name string) *Node {
 // mapOutput transforms subgraph output state into parent updates.
 func (cg *Compiled) AsNodeWithStateMapping(
 	name string,
-	mapInput func(StateReader) (map[string]any, []MessageEvent),
-	mapOutput func(StateReader) (map[string]any, []MessageEvent),
+	mapInput func(StateReader) (map[string]any, []Event),
+	mapOutput func(StateReader) (map[string]any, []Event),
 ) *Node {
 	return &Node{
 		Name: name,
 		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			// Map parent state to subgraph input
 			var inputValues map[string]any
-			var inputMessages []MessageEvent
+			var inputMessages []Event
 			var messagesToInvoke []message.Message
 
 			if mapInput != nil {
@@ -305,40 +254,41 @@ func (cg *Compiled) AsNodeWithStateMapping(
 				messagesToInvoke = ExtractMessages(inputMessages)
 			} else {
 				// Get parent messages
-				messagesToInvoke = ExtractMessages(s.MessageEventsSnapshot())
+				messagesToInvoke = ExtractMessages(s.EventsSnapshot())
 			}
 
-			// Execute subgraph with messages and get events with metadata
-			events, err := cg.Invoke(ctx, messagesToInvoke)
-			if err != nil {
-				return nil, fmt.Errorf("subgraph %q: %w", name, err)
-			}
+		// Execute subgraph with messages and get final event
+		_, err := Last(cg.Run(ctx, messagesToInvoke))
+		if err != nil {
+			return nil, fmt.Errorf("subgraph %q: %w", name, err)
+		}
 
-			// Map subgraph output to parent updates
-			var updates map[string]any
-			var messages []message.Message
-			if mapOutput != nil {
-				var messageEvents []MessageEvent
-				updates, messageEvents = mapOutput(cg.State())
-				// Convert events to []message.Message
-				messages = make([]message.Message, len(messageEvents))
-				for i, evt := range messageEvents {
-					messages[i] = &evt
-				}
-			} else {
-				updates = cg.State().GetAll()
-				// Convert events to []message.Message (MessageEvent implements message.Message)
-				messages = make([]message.Message, len(events))
-				for i, evt := range events {
-					messages[i] = &evt
-				}
+		// Map subgraph output to parent updates
+		var updates map[string]any
+		var messages []message.Message
+		if mapOutput != nil {
+			var events []Event
+			updates, events = mapOutput(cg.State())
+			// Convert events to []message.Message
+			messages = make([]message.Message, len(events))
+			for i := range events {
+				messages[i] = events[i].Message
 			}
+		} else {
+		updates = cg.State().GetAll()
+		// Get all accumulated events from state and convert to messages
+		events := cg.State().EventsSnapshot()
+		messages = make([]message.Message, len(events))
+		for i := range events {
+			messages[i] = events[i].Message
+		}
+	}
 
-			return &NodeResult{
-				Updates:  updates,
-				Messages: messages,
-			}, nil
-		},
+	return &NodeResult{
+		Updates:  updates,
+		Messages: messages,
+	}, nil
+},
 	}
 }
 
@@ -418,14 +368,14 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 		options.maxConcurrency = 1
 	}
 
-	// Wrap input messages as MessageEvents for internal processing
+	// Wrap input messages as Events for internal processing
 	if len(messages) > 0 {
-		messageEvents := make([]MessageEvent, len(messages))
+		events := make([]Event, len(messages))
 		for i, msg := range messages {
-			messageEvents[i] = *NewMessageEvent(msg, options.runID, "__input__")
+			events[i] = *NewEvent(msg, options.runID, "__input__")
 		}
 		if cg.stateManager != nil {
-			cg.stateManager.ApplyUpdates(nil, messageEvents)
+			cg.stateManager.ApplyUpdates(nil, events)
 		}
 	}
 
@@ -447,66 +397,27 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 	return ctx, instrumentation, nil
 }
 
-func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[StreamEvent, error] {
-	return func(yield func(StreamEvent, error) bool) {
+func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[Event, error] {
+	return func(yield func(Event, error) bool) {
 		runCtx, instrumentation, err := cg.setupRun(ctx, messages, &options)
 		if err != nil {
-			yield(StreamEvent{}, err)
+			yield(Event{}, err)
 			return
 		}
 
 		derivedCtx, cancel := context.WithCancel(runCtx)
 		defer cancel()
 
-		// Use configurable event buffer size
-		bufferSize := options.eventBufferSize
-		if bufferSize <= 0 {
-			bufferSize = 100 // Fallback to default
-		}
-		events := make(chan StreamEvent, bufferSize) // Buffered to reduce blocking
-		done := make(chan struct{})                  // Signal for early termination
+		// Create runtime with yield function directly
+		rt := newPregelRuntime(cg, cancel, options, yield, instrumentation)
+		_ = rt.run(derivedCtx)
 
-		go func() {
-			defer close(events)
-			defer close(done)
-
-			rt := newPregelRuntime(cg, cancel, options, events, done, instrumentation)
-			_ = rt.run(derivedCtx) // Pass context to run() method
-
-			// Don't emit deadline exceeded errors here - they're already wrapped and emitted
-			// by the node adapter with the specific node name. Only emit unexpected context errors.
-			if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				rt.emitError(err)
-			}
-		}()
-
-		for {
-			select {
-			case event, ok := <-events:
-				if !ok {
-					return
-				}
-				if !yield(event, event.Err) {
-					return
-				}
-				if event.Err != nil {
-					return
-				}
-			case <-done:
-				return
-			}
+		// Don't emit deadline exceeded errors here - they're already wrapped and emitted
+		// by the node adapter with the specific node name. Only emit unexpected context errors.
+		if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			rt.emitError(err)
 		}
 	}
-}
-
-// StreamEvent represents a single event emitted during graph execution.
-// Events are emitted after each node completes execution.
-type StreamEvent struct {
-	Node     string         // Name of the node that completed
-	Updates  map[string]any // State updates from the node
-	Messages []MessageEvent // New message events appended by the node
-	Result   *NodeResult    // Full node result (Updates + Messages)
-	Err      error          // Error if node execution failed
 }
 
 // =============================================================================

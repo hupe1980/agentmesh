@@ -52,7 +52,7 @@ func wrapTimeoutError(ctx context.Context, err error) error {
 // It contains actual data to be communicated between nodes via channels.
 type ChannelMessage struct {
 	// Messages contains message events with execution metadata
-	Messages []MessageEvent `json:"messages,omitzero"`
+	Messages []Event `json:"messages,omitzero"`
 
 	// Updates contains key-value state updates to be applied to channels
 	Updates map[string]any `json:"updates,omitzero"`
@@ -62,7 +62,7 @@ type ChannelMessage struct {
 }
 
 // NewChannelMessage creates a new channel message with the given message events and updates.
-func NewChannelMessage(messages []MessageEvent, updates map[string]any) ChannelMessage {
+func NewChannelMessage(messages []Event, updates map[string]any) ChannelMessage {
 	return ChannelMessage{
 		Messages: messages,
 		Updates:  updates,
@@ -115,7 +115,7 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 	}
 
 	if len(cm.Messages) > 0 {
-		clone.Messages = make([]MessageEvent, len(cm.Messages))
+		clone.Messages = make([]Event, len(cm.Messages))
 		copy(clone.Messages, cm.Messages)
 	}
 
@@ -156,22 +156,23 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // implement custom MessageBus backends, schedulers, and fine-tune the
 // execution engine for specific use cases.
 //
-// The done field is used for cancellation checks in emit() where the method
-// signature doesn't include a context parameter (for performance reasons).
+// The yield function is used to emit events directly to the iterator consumer.
+// The cancel function is stored for early termination when yield returns false.
 type graphRuntime struct {
 	cg      *Compiled
 	cancel  context.CancelFunc
 	options runOptions
-	stream  chan<- StreamEvent
+	yield   func(Event, error) bool // Iterator yield function for emitting events
 
 	scheduler       *vertexScheduler                              // Graph topology & routing
 	engine          *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
 	instrumentation *Instrumentation                              // Observability instrumentation (passed from options)
 
 	errOnce         sync.Once
+	yieldMu         sync.Mutex // Protects yield from concurrent access
+	yieldStopped    bool       // True when yield has returned false
 	checkpointQueue chan *checkpoint.Checkpoint
 	checkpointWG    sync.WaitGroup
-	done            <-chan struct{} // Done channel for cancellation checks (set during run)
 }
 
 // compiledPregelGraph adapts Compiled to the pregel.Graph interface.
@@ -203,9 +204,9 @@ type nodeAdapter struct {
 	node    *Node
 }
 
-// wrapMessagesAsEvents wraps raw messages from node execution in MessageEvent structs
+// wrapMessagesAsEvents wraps raw messages from node execution in Event structs
 // with execution metadata (graphID, nodeName, timestamp, UUID).
-func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []MessageEvent {
+func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []Event {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -215,22 +216,22 @@ func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []Message
 		graphID = n.runtime.options.runID
 	}
 
-	events := make([]MessageEvent, len(messages))
+	events := make([]Event, len(messages))
 	for i, msg := range messages {
-		events[i] = *NewMessageEvent(msg, graphID, n.name)
+		events[i] = *NewEvent(msg, graphID, n.name)
 	}
 
 	return events
 }
 
-func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, stream chan<- StreamEvent, done <-chan struct{}, instrumentation *Instrumentation) *graphRuntime {
+func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(Event, error) bool, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
 	gr := &graphRuntime{
 		cg:              cg,
 		cancel:          cancel,
 		options:         options,
-		stream:          stream,
+		yield:           yield,
 		scheduler:       scheduler,
 		instrumentation: instrumentation,
 	}
@@ -239,10 +240,7 @@ func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOption
 	// The message limit cannot be changed after the state is created.
 
 	adapter := &compiledPregelGraph{runtime: gr}
-	maxWorkers := options.maxConcurrency
-	if maxWorkers < 1 {
-		maxWorkers = 1
-	}
+	maxWorkers := max(options.maxConcurrency, 1)
 	if cg != nil {
 		cg.setCurrentSuperstep(options.initialSuperstep)
 	}
@@ -273,11 +271,6 @@ func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOption
 
 	// Create the Pregel runtime (use MustNewRuntime since inputs are already validated)
 	gr.engine = pregel.MustNewRuntime(adapter, nil, runtimeOptions...)
-
-	// Configure the engine to respect early termination
-	if done != nil {
-		gr.engine.SetDoneChannel(done)
-	}
 
 	// Note: checkpoint worker will be started in run() method with context
 
@@ -351,9 +344,6 @@ func (gr *graphRuntime) stopCheckpointWorker() {
 func (gr *graphRuntime) run(ctx context.Context) error {
 	logger := logging.FromContext(ctx)
 	startTime := time.Now()
-
-	// Store done channel for cancellation checks in emit()
-	gr.done = ctx.Done()
 
 	logger.Info("starting graph execution",
 		"run_id", gr.options.runID,
@@ -526,10 +516,25 @@ func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]s
 	return gr.scheduler.OnVertexCompleted(ctx, name)
 }
 
-func (gr *graphRuntime) emit(event StreamEvent) {
-	select {
-	case <-gr.done:
-	case gr.stream <- event:
+func (gr *graphRuntime) emit(event Event) {
+	if gr.yield == nil {
+		return
+	}
+
+	gr.yieldMu.Lock()
+	defer gr.yieldMu.Unlock()
+
+	// Don't call yield if it already returned false
+	if gr.yieldStopped {
+		return
+	}
+
+	// Call yield and mark as stopped if it returns false
+	if !gr.yield(event, event.Err) {
+		gr.yieldStopped = true
+		if gr.cancel != nil {
+			gr.cancel()
+		}
 	}
 }
 
@@ -538,7 +543,7 @@ func (gr *graphRuntime) fail(err error) {
 		return
 	}
 	gr.errOnce.Do(func() {
-		gr.emit(StreamEvent{Err: err})
+		gr.emit(Event{Err: err})
 		if gr.cancel != nil {
 			gr.cancel()
 		}
@@ -549,7 +554,7 @@ func (gr *graphRuntime) emitError(err error) {
 	if err == nil {
 		return
 	}
-	gr.emit(StreamEvent{Err: err})
+	gr.emit(Event{Err: err})
 }
 
 // compiledPregelGraph implements the pregel interfaces for Compiled.
@@ -584,7 +589,7 @@ func (g *compiledPregelGraph) State() StateManager {
 func (n *nodeAdapter) Name() string { return n.name }
 
 // handleScheduledDelivery handles message delivery to scheduled next nodes.
-func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []MessageEvent, updates map[string]any) error {
+func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []Event, updates map[string]any) error {
 	if n.runtime == nil || n.runtime.scheduler == nil {
 		return nil
 	}
@@ -652,7 +657,23 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		if result == nil {
 			return
 		}
-		n.runtime.emit(StreamEvent{Node: n.name, Result: cloneNodeResult(result)})
+		// Emit one Event per message
+		if len(result.Messages) == 0 {
+			// No messages: emit a single event with just Updates
+			n.runtime.emit(Event{
+				Node:    n.name,
+				Updates: result.Updates,
+			})
+		} else {
+			for i, msg := range result.Messages {
+				evt := NewEvent(msg, n.runtime.options.runID, n.name)
+				// Include Updates only in the first event
+				if i == 0 {
+					evt.Updates = result.Updates
+				}
+				n.runtime.emit(*evt)
+			}
+		}
 	}
 	nodeCtx := withStreamWriter(ctx, writer)
 
@@ -697,7 +718,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 				"superstep", n.runtime.engine.CurrentSuperstep())
 			n.runtime.cg.markPaused(n.name)
 			n.runtime.setPaused(n.name)
-			n.runtime.emit(StreamEvent{Node: n.name, Err: ErrHumanInterrupt})
+			n.runtime.emit(Event{Node: n.name, Err: ErrHumanInterrupt})
 			return nil
 		}
 		logger.Error("node execution failed",
@@ -705,7 +726,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 			"superstep", n.runtime.engine.CurrentSuperstep(),
 			"duration_ms", time.Since(startTime).Milliseconds(),
 			"error", err)
-		n.runtime.emit(StreamEvent{Node: n.name, Err: err})
+		n.runtime.emit(Event{Node: n.name, Err: err})
 		return &NodeExecutionError{
 			Node:      n.name,
 			Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -719,7 +740,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	var updates map[string]any
-	var messages []MessageEvent
+	var messages []Event
 	if result != nil {
 		updates = result.Updates
 		// Framework automatically wraps plain messages with execution metadata
@@ -741,7 +762,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 							"aggregator", name,
 							"superstep", n.runtime.engine.CurrentSuperstep(),
 							"error", err)
-						n.runtime.emit(StreamEvent{Node: n.name, Err: aggErr})
+						n.runtime.emit(Event{Node: n.name, Err: aggErr})
 						return &NodeExecutionError{
 							Node:      n.name,
 							Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -753,8 +774,14 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		}
 	}
 
-	event := StreamEvent{Node: n.name, Updates: updates, Messages: cloneMessageEvents(messages)}
-	n.runtime.emit(event)
+	// Emit one Event per message
+	for i := range messages {
+		// Include Updates only in the first event
+		if i == 0 {
+			messages[i].Updates = updates
+		}
+		n.runtime.emit(messages[i])
+	}
 
 	// Hybrid approach for in-memory AND distributed execution:
 	// Apply updates immediately to local state (for in-memory efficiency)
@@ -882,7 +909,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 			if backoff > MaxRetryBackoff {
 				requestedBackoff := backoff
 				backoff = MaxRetryBackoff
-				n.runtime.emit(StreamEvent{
+				n.runtime.emit(Event{
 					Node: n.name,
 					Err:  fmt.Errorf("retry backoff capped at %v (requested %v)", MaxRetryBackoff, requestedBackoff),
 				})
@@ -982,19 +1009,3 @@ func GetStreamWriter(ctx context.Context) StreamWriter {
 	return writer
 }
 
-func cloneNodeResult(result *NodeResult) *NodeResult {
-	if result == nil {
-		return nil
-	}
-	var updates map[string]any
-	if len(result.Updates) > 0 {
-		updates = make(map[string]any, len(result.Updates))
-		for k, v := range result.Updates {
-			updates[k] = v
-		}
-	}
-	return &NodeResult{
-		Updates:  updates,
-		Messages: cloneMessages(result.Messages),
-	}
-}

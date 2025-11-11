@@ -46,7 +46,7 @@ compiled, err := agent.NewReActAgent(
 			message.NewSystemMessageFromText("You are a helpful assistant"),
 			message.NewHumanMessageFromText("What's the weather in Boston?"),
 		}
-		results, err := compiled.Invoke(context.Background(), messages)
+		results, err := lastEvent, err := graph.Last(compiled.Run(context.Background(), messages)
 
 # Architecture
 
@@ -116,12 +116,12 @@ compiled, err := agent.NewReActAgent(
 Agents maintain conversation state automatically:
 
 	// First interaction
-	results1, _ := compiled.Invoke(ctx, []message.Message{
+	results1, _ := lastEvent, err := graph.Last(compiled.Run(ctx, []message.Message{
 		message.NewHumanMessageFromText("What's 2+2?"),
 	})
 
 	// Second interaction (includes history)
-	results2, _ := compiled.Invoke(ctx, []message.Message{
+	results2, _ := lastEvent, err := graph.Last(compiled.Run(ctx, []message.Message{
 		message.NewHumanMessageFromText("Add 3 to that"),
 	})
 

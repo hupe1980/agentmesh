@@ -8,7 +8,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // =============================================================================
@@ -25,8 +24,8 @@ type StateReader interface {
 	// GetAll returns a snapshot of all channel values.
 	GetAll() map[string]any
 
-	// MessageEventsSnapshot returns message events from the "messages" channel.
-	MessageEventsSnapshot() []MessageEvent
+	// EventsSnapshot returns message events from the "messages" channel.
+	EventsSnapshot() []Event
 
 	// AggregatesSnapshot returns a copy of global aggregates from the previous superstep.
 	AggregatesSnapshot() map[string]any
@@ -62,7 +61,7 @@ type StateManager interface {
 	// State access
 	Get(key string) any
 	GetAll() map[string]any
-	MessageEventsSnapshot() []MessageEvent
+	EventsSnapshot() []Event
 	AggregatesSnapshot() map[string]any
 
 	// Channel management
@@ -84,8 +83,8 @@ type StateManager interface {
 	SetCheckpointer(checkpointer checkpoint.Checkpointer)
 
 	// Message management
-	AddMessages(messages []MessageEvent)
-	ApplyUpdates(values map[string]any, messages []MessageEvent)
+	AddMessages(messages []Event)
+	ApplyUpdates(values map[string]any, messages []Event)
 	Set(key string, value any) error
 
 	// Version management
@@ -190,8 +189,8 @@ func (s *State) GetAll() map[string]any {
 	return values
 }
 
-// MessageEventsSnapshot returns a copy of current message events with metadata.
-func (s *State) MessageEventsSnapshot() []MessageEvent {
+// EventsSnapshot returns a copy of current message events with metadata.
+func (s *State) EventsSnapshot() []Event {
 	ch, ok := s.GetChannel("messages")
 	if !ok {
 		return nil
@@ -202,15 +201,15 @@ func (s *State) MessageEventsSnapshot() []MessageEvent {
 		return nil
 	}
 
-	// Convert []any to []MessageEvent
+	// Convert []any to []Event
 	values, ok := val.([]any)
 	if !ok || len(values) == 0 {
 		return nil
 	}
 
-	events := make([]MessageEvent, 0, len(values))
+	events := make([]Event, 0, len(values))
 	for _, v := range values {
-		if evt, ok := v.(MessageEvent); ok {
+		if evt, ok := v.(Event); ok {
 			events = append(events, evt)
 		}
 	}
@@ -437,7 +436,7 @@ func (s *State) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 // =============================================================================
 
 // AddMessages appends messages to the state's message history.
-func (s *State) AddMessages(messages []MessageEvent) {
+func (s *State) AddMessages(messages []Event) {
 	if len(messages) == 0 {
 		return
 	}
@@ -448,8 +447,8 @@ func (s *State) AddMessages(messages []MessageEvent) {
 	}
 
 	values := make([]any, len(messages))
-	for i, msg := range messages {
-		values[i] = msg
+	for i := range messages {
+		values[i] = messages[i]
 	}
 
 	_ = ch.Write(context.Background(), values) // Ignore error - internal initialization
@@ -489,7 +488,7 @@ func (s *State) SetMaxMessages(maxMessages int) {
 }
 
 // ApplyUpdates applies state updates and messages to the state manager.
-func (s *State) ApplyUpdates(values map[string]any, messages []MessageEvent) {
+func (s *State) ApplyUpdates(values map[string]any, messages []Event) {
 	ctx := context.Background()
 
 	// No lock needed - Set methods handle their own locking
@@ -505,8 +504,8 @@ func (s *State) ApplyUpdates(values map[string]any, messages []MessageEvent) {
 	if len(messages) > 0 {
 		if ch, ok := s.channels.Get("messages"); ok {
 			vals := make([]any, len(messages))
-			for i, msg := range messages {
-				vals[i] = msg
+			for i := range messages {
+				vals[i] = messages[i]
 			}
 			_ = ch.Write(ctx, vals) // Ignore error - updates are best-effort
 		}
@@ -613,9 +612,9 @@ func (sr *StateReaderAdapter) GetAll() map[string]any {
 	return sr.manager.GetAll()
 }
 
-// MessageEventsSnapshot returns current message events.
-func (sr *StateReaderAdapter) MessageEventsSnapshot() []MessageEvent {
-	return sr.manager.MessageEventsSnapshot()
+// EventsSnapshot returns current message events.
+func (sr *StateReaderAdapter) EventsSnapshot() []Event {
+	return sr.manager.EventsSnapshot()
 }
 
 // AggregatesSnapshot returns aggregate values.
@@ -682,8 +681,8 @@ func (bsw *bufferedStateWriter) GetAll() map[string]any {
 	return bsw.reader.GetAll()
 }
 
-func (bsw *bufferedStateWriter) MessageEventsSnapshot() []MessageEvent {
-	return bsw.reader.MessageEventsSnapshot()
+func (bsw *bufferedStateWriter) EventsSnapshot() []Event {
+	return bsw.reader.EventsSnapshot()
 }
 
 func (bsw *bufferedStateWriter) AggregatesSnapshot() map[string]any {
@@ -735,17 +734,3 @@ func (bsw *bufferedStateWriter) resetAggregates() {
 // =============================================================================
 
 // cloneMessages creates a deep copy of a message slice for immutability.
-func cloneMessages(msgs []message.Message) []message.Message {
-	if len(msgs) == 0 {
-		return nil
-	}
-	out := make([]message.Message, 0, len(msgs))
-	for _, msg := range msgs {
-		if msg == nil {
-			out = append(out, nil)
-			continue
-		}
-		out = append(out, msg.Clone())
-	}
-	return out
-}

@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
 	"github.com/hupe1980/agentmesh/pkg/tool/wasm"
@@ -110,7 +111,7 @@ func main() {
 	human := message.NewHumanMessageFromText("What is 15 multiplied by 8?")
 
 	// Execute the agent
-	results, err := reactAgent.Invoke(ctx, []message.Message{system, human})
+	events, err := graph.Collect(reactAgent.Run(ctx, []message.Message{system, human}))
 	if err != nil {
 		log.Fatalf("agent execution failed: %v", err)
 	}
@@ -118,7 +119,7 @@ func main() {
 	// Display the complete conversation transcript
 	fmt.Println("Agent Transcript:")
 	fmt.Println()
-	for i, evt := range results {
+	for i, evt := range events {
 		msg := evt.Message
 
 		fmt.Printf("[%d] %s\n", i+1, msg.Type())

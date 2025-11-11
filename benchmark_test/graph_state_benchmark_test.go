@@ -54,7 +54,7 @@ func BenchmarkGraphExecution(b *testing.B) {
 
 			b.ResetTimer()
 			for b.Loop() {
-				_, err := compiled.Invoke(context.Background(), nil)
+				_, err := graph.Last(compiled.Run(context.Background(), nil))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -103,7 +103,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 
 			b.ResetTimer()
 			for b.Loop() {
-				_, err := compiled.Invoke(context.Background(), nil)
+				_, err := graph.Last(compiled.Run(context.Background(), nil))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -175,7 +175,7 @@ func BenchmarkScheduler(b *testing.B) {
 	}
 
 	for b.Loop() {
-		_, err := compiled.Invoke(context.Background(), nil)
+		_, err := graph.Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			b.Fatal(err)
 		}

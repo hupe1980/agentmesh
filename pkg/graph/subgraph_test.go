@@ -62,7 +62,7 @@ func TestSubgraphSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("execution failed: %v", err)
 		}
@@ -106,12 +106,12 @@ func TestSubgraphSupport(t *testing.T) {
 		subNode := compiledSub.AsNodeWithStateMapping(
 			"mapped-subgraph",
 			// Map parent "data" to subgraph "input"
-			func(s StateReader) (map[string]any, []MessageEvent) {
+			func(s StateReader) (map[string]any, []Event) {
 				data, _ := s.Get("data").(string)
 				return map[string]any{"input": data}, nil
 			},
 			// Map subgraph "output" to parent "result"
-			func(s StateReader) (map[string]any, []MessageEvent) {
+			func(s StateReader) (map[string]any, []Event) {
 				output, _ := s.Get("output").(string)
 				return map[string]any{"result": output}, nil
 			},
@@ -128,7 +128,7 @@ func TestSubgraphSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("execution failed: %v", err)
 		}
@@ -200,7 +200,7 @@ func TestSubgraphSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("execution failed: %v", err)
 		}
@@ -246,7 +246,7 @@ func TestSubgraphSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err == nil {
 			t.Fatal("expected error from failing subgraph")
 		}
@@ -296,13 +296,13 @@ func TestSubgraphSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err = compiled.Invoke(context.Background(), nil)
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("execution failed: %v", err)
 		}
 
 		// Check that messages were passed through
-		msgs := compiled.State().MessageEventsSnapshot()
+		msgs := compiled.State().EventsSnapshot()
 		if len(msgs) == 0 {
 			t.Fatal("expected messages from subgraph")
 		}

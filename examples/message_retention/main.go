@@ -40,7 +40,7 @@ func main() {
 	err := g.AddNode(&graph.Node{
 		Name: "echo",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			events := s.MessageEventsSnapshot()
+			events := s.EventsSnapshot()
 			lastMsg := events[len(events)-1].Message
 
 			return &graph.NodeResult{
@@ -64,27 +64,29 @@ func main() {
 
 	// Example 1: Unlimited retention (default)
 	fmt.Println("=== Unlimited Retention ===")
-	result1, err := compiled.Invoke(context.Background(), []message.Message{
+	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Message 1"),
 		message.NewHumanMessageFromText("Message 2"),
 		message.NewHumanMessageFromText("Message 3"),
-	})
+	}))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Messages retained: %d\n\n", len(result1))
+	events1 := compiled.State().EventsSnapshot()
+	fmt.Printf("Messages retained: %d\n\n", len(events1))
 
 	// Example 2: Limit to 2 messages
 	fmt.Println("=== With MaxMessages=2 ===")
-	result2, err := compiled.Invoke(context.Background(), []message.Message{
+	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Message 1"),
 		message.NewHumanMessageFromText("Message 2"),
 		message.NewHumanMessageFromText("Message 3"),
-	}, graph.WithMaxMessages(2))
+	}, graph.WithMaxMessages(2)))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(result2))
+	events2 := compiled.State().EventsSnapshot()
+	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(events2))
 
 	// Example 3: Recommended for long-running agents
 	fmt.Println("\n=== Recommended Configuration ===")
@@ -92,9 +94,9 @@ func main() {
 	fmt.Println("This prevents OOM while retaining sufficient context")
 
 	// Simulate long-running agent with retention
-	_, err = compiled.Invoke(context.Background(), []message.Message{
+	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Start long conversation"),
-	}, graph.WithMaxMessages(100))
+	}, graph.WithMaxMessages(100)))
 	if err != nil {
 		log.Fatal(err)
 	}

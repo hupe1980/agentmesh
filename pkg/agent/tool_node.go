@@ -119,7 +119,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 	return &graph.Node{
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			events := s.MessageEventsSnapshot()
+			events := s.EventsSnapshot()
 			if len(events) == 0 {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			}
