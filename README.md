@@ -1,6 +1,6 @@
 # 🤖🕸️ AgentMesh
 
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 [![GoDoc](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
@@ -9,8 +9,7 @@
 
 AgentMesh enables you to build sophisticated AI agent workflows with parallel execution, state management, and enterprise-grade observability. Built natively in Go for performance and type safety.
 
-**Requires Go 1.23+** for iterator support (`iter.Seq2`).
-
+**Requires Go 1.24+**
 ---
 
 ## ✨ Features
@@ -62,7 +61,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 
 ### Requirements
 
-- **Go 1.23+** (required for `iter.Seq2` support)
+- **Go 1.24+**
 
 ### Installation
 
