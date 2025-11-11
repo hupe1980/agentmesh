@@ -62,8 +62,11 @@ compiled, err := agent.NewReActAgent(
     agent.WithMaxIterations(5),
 )
 
-// Execute
-results, err := compiled.Invoke(ctx, messages)
+// Execute and collect messages
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Configuration options
@@ -134,10 +137,13 @@ supervisor, err := agent.NewSupervisorAgent(
     agent.WithWorkerRetries(2),
 )
 
-// Execute
-results, err := supervisor.Invoke(ctx, []message.Message{
+// Execute and collect messages
+messages, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
-})
+}))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Configuration options
@@ -218,8 +224,12 @@ compiled, err := agent.NewRAGAgent(
     agent.WithRAGPromptTemplate(customTemplate),
 )
 
-// Execute
-results, err := compiled.Invoke(ctx, messages)
+// Execute and collect results
+events, err := graph.Collect(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
+messages := graph.ExtractMessages(events)
 ```
 
 ### Configuration options
@@ -293,7 +303,10 @@ builder.AddEdge("handle_sales", "END")
 
 // Compile and execute
 compiled, err := builder.Compile()
-results, err := compiled.Invoke(ctx, messages)
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Node functions
@@ -383,7 +396,7 @@ researchGraph := createResearchGraph()
 // Embed in parent graph
 builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
     // Execute subgraph
-    messages, err := researchGraph.Invoke(ctx, s.MessagesSnapshot())
+    messages, err := graph.CollectMessages(researchGraph.Run(ctx, s.MessagesSnapshot()))
     if err != nil {
         return nil, err
     }

@@ -1,6 +1,10 @@
 package graph
 
-import "iter"
+import (
+	"iter"
+
+	"github.com/hupe1980/agentmesh/pkg/message"
+)
 
 // Last consumes an iterator and returns only the final event and error.
 // This is useful for getting the result of a graph run without processing intermediate steps.
@@ -39,4 +43,36 @@ func Collect(seq iter.Seq2[Event, error]) ([]Event, error) {
 	}
 
 	return events, lastErr
+}
+
+// CollectMessages directly collects all messages from an iterator.
+// This is a convenience function that extracts messages from events as they arrive,
+// avoiding the need to collect events first and then extract messages separately.
+// The final error (if any) is returned separately.
+func CollectMessages(seq iter.Seq2[Event, error]) ([]message.Message, error) {
+	messages := make([]message.Message, 0)
+	var lastErr error
+
+	for event, err := range seq {
+		if err != nil {
+			lastErr = err
+			break
+		}
+		if event.Message != nil {
+			messages = append(messages, event.Message)
+		}
+	}
+
+	return messages, lastErr
+}
+
+// LastMessage consumes an iterator and returns only the final message and error.
+// This is useful for getting the final result of a graph run without processing
+// intermediate messages.
+func LastMessage(seq iter.Seq2[Event, error]) (message.Message, error) {
+	event, err := Last(seq)
+	if err != nil {
+		return nil, err
+	}
+	return event.Message, nil
 }

@@ -90,7 +90,8 @@ func main() {
         message.NewHumanMessageFromText("What's the weather in Paris?"),
     }
 
-    results, err := compiled.Invoke(ctx, messages)
+    // Execute and collect messages
+    results, err := graph.CollectMessages(compiled.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }

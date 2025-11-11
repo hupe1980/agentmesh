@@ -171,7 +171,10 @@ func main() {
     )
     
     // 5. Execute workflow that uses remote tools
-    results, err := compiled.Invoke(ctx, messages)
+    messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+    if err != nil {
+        log.Fatal(err)
+    }
 }
 ```
 
@@ -248,9 +251,12 @@ func createCoordinator() (*graph.Compiled, error) {
 
 // Usage
 coordinator, _ := createCoordinator()
-results, _ := coordinator.Invoke(ctx, []message.Message{
+messages, err := graph.CollectMessages(coordinator.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("Research AI trends, analyze the data, and write a report"),
-})
+}))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### 2. Cross-Framework Integration
@@ -378,7 +384,7 @@ func createAgent(useMock bool) (*graph.Compiled, error) {
 // Test
 func TestAgentWorkflow(t *testing.T) {
     agent, _ := createAgent(true) // Use mock
-    results, err := agent.Invoke(ctx, messages)
+    messages, err := graph.CollectMessages(agent.Run(ctx, messages))
     assert.NoError(t, err)
 }
 ```

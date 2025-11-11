@@ -213,13 +213,14 @@ func main() {
         message.NewHumanMessageFromText("What's the weather in Paris?"),
     }
 
-    results, err := compiled.Invoke(ctx, messages)
+    // Execute and collect all messages
+    messages, err = graph.CollectMessages(compiled.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }
     
     // Print the final AI response
-    for _, msg := range results {
+    for _, msg := range messages {
         if aiMsg, ok := msg.(*message.AIMessage); ok {
             for _, part := range aiMsg.Parts() {
                 if text, ok := part.(message.TextPart); ok {
@@ -261,7 +262,7 @@ if err != nil {
 }
 
 // Access the message content
-fmt.Println("Response:", resp.Message.Content())
+fmt.Println("Response:", message.Stringify(resp.Message))
 
 // Access native reasoning (for o1/o3, Gemini 2.0, Claude)
 if resp.Reasoning != "" {
@@ -304,7 +305,7 @@ for resp, err := range mdl.Generate(ctx, messages) {
     }
     
     // Print content as it arrives
-    fmt.Print(resp.Message.Content())
+    fmt.Print(message.Stringify(resp.Message))
     
     // Access partial reasoning (if available)
     if resp.Reasoning != "" {
@@ -422,8 +423,9 @@ func main() {
         message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
     }
 
-    results, _ := supervisor.Invoke(ctx, messages)
-    // Supervisor routes to math agent → returns answer
+    // Supervisor routes to math agent and returns answer
+    events, _ := graph.Collect(supervisor.Run(ctx, messages))
+    messages = graph.ExtractMessages(events)
 }
 ```
 
@@ -471,7 +473,8 @@ builder.AddEdge("step2", graph.EndNode)
 
 // Compile and run
 compiled, _ := builder.Compile()
-messages, _ := compiled.Invoke(context.Background(), initialMessages)
+events, _ := graph.Collect(compiled.Run(context.Background(), initialMessages))
+messages := graph.ExtractMessages(events)
 ```
 
 ### 🔄 Pregel-Style Execution
@@ -573,21 +576,26 @@ Automatic state persistence and recovery:
 ```go
 import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 
-// Create checkpoint store
-store := checkpoint.NewMemory()
+// Create checkpointer
+checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-// Compile with checkpointing
-compiled, _ := builder.Compile(
-    graph.WithCheckpointStore(store),
-    graph.WithCheckpointInterval(1), // Save every superstep
-)
+// Compile graph
+compiled, _ := builder.Compile()
 
 // Execute - state is automatically saved
-messages, _ := compiled.Invoke(ctx, initialMessages)
+runID := "conversation-123"
+events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID(runID),
+    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+))
 
 // Resume from checkpoint after failure
-threadID := "conversation-123"
-messages, _ := compiled.InvokeFromCheckpoint(ctx, threadID, initialMessages)
+events, _ = graph.Collect(compiled.Run(ctx, initialMessages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID(runID),
+    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+))
 ```
 
 ### 🕰️ Time Travel Debugging
@@ -612,12 +620,13 @@ researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
 builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    msgs, err := researchGraph.Invoke(ctx, s.MessagesSnapshot())
+    parentMessages := graph.ExtractMessages(s.EventsSnapshot())
+    events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {
         return nil, err
     }
     return &graph.NodeResult{
-        Messages: msgs,
+        Messages: graph.ExtractMessages(events),
     }, nil
 })
 ```
@@ -768,11 +777,11 @@ metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
 // Automatic instrumentation - structured logs throughout execution!
-messages, _ := compiled.Invoke(ctx, initialMessages,
+events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
     graph.WithLogger(logger),          // Structured logging (JSON/text)
     graph.WithTracer(traceProvider),   // Distributed tracing
     graph.WithMetrics(metricsProvider), // Metrics collection
-)
+))
 ```
 
 **Automatically Tracked:**
@@ -1018,15 +1027,13 @@ AgentMesh follows a **consistent naming convention** across all components to im
 | Method | Component | Purpose | When to Use |
 |--------|-----------|---------|-------------|
 | **`Call()`** | `Tool` | Execute a tool function | Invoking tool/function logic |
-| **`Run()`** | `Node`, `Runnable` | Execute node logic | Low-level synchronous node execution |
-| **`Invoke()`** | `Compiled` | Execute graph (blocking) | High-level public API for complete execution |
-| **`Stream()`** | `Compiled` | Execute graph (streaming) | High-level public API with real-time events |
+| **`Run()`** | `Node`, `Compiled` | Execute logic, return iterator | Node execution, graph execution with streaming |
 | **`Execute()`** | `Executor`, Adapters | Strategy implementation | Internal execution strategy pattern |
 
 ### Rationale
 
-- **`Run`** - Used for internal, synchronous operations (nodes, services, goroutines)
-- **`Invoke`** - Used for high-level public APIs (RPC-style graph execution)
+- **`Run`** - Used for execution that returns results directly (nodes) or via iterators (graphs)
+- **`Call`** - Used for function invocation semantics (tools, callbacks)
 - **`Execute`** - Used for strategy pattern implementations (executor interfaces, adapters)
 - **`Call`** - Used for function invocation semantics (tools, callbacks)
 
@@ -1039,14 +1046,15 @@ result, err := weatherTool.Call(ctx, `{"location": "Boston"}`)
 // Nodes use Run() - low-level execution
 result, err := node.Run(ctx, state)
 
-// Graphs use Invoke() - high-level blocking API
-messages, err := compiled.Invoke(ctx, initialMessages)
-
-// Graphs use Run() - high-level streaming API
+// Graphs use Run() - high-level streaming API (returns iterator)
 seq := compiled.Run(ctx, initialMessages)
 for event, err := range seq {
     // handle event and error
 }
+
+// Helper: Collect all events for blocking-style execution
+events, err := graph.Collect(compiled.Run(ctx, initialMessages))
+messages := graph.ExtractMessages(events)
 
 // Executors use Execute() - strategy implementation
 result, err := executor.Execute(ctx, messages, options)

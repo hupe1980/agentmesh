@@ -44,11 +44,14 @@ metricsProvider := metrics.Noop()
 traceProvider := trace.Noop()
 
 // Execute with automatic instrumentation
-result, err := compiled.Invoke(ctx, messages,
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
     graph.WithLogger(logger),
     graph.WithTracer(traceProvider),
     graph.WithMetrics(metricsProvider),
-)
+))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ## Configuration {#configuration}
@@ -58,11 +61,14 @@ result, err := compiled.Invoke(ctx, messages,
 For testing with zero overhead:
 
 ```go
-compiled.Invoke(ctx, messages,
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
     graph.WithLogger(logging.NoopLogger{}),
     graph.WithTracer(trace.Noop()),
     graph.WithMetrics(metrics.Noop()),
-)
+))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Production (OpenTelemetry)
@@ -96,11 +102,14 @@ metricsProvider := opentelemetry.NewMetricsProvider(
 )
 
 // Execute with full observability
-result, err := compiled.Invoke(ctx, messages,
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
     graph.WithLogger(logger),
     graph.WithTracer(traceProvider),
     graph.WithMetrics(metricsProvider),
-)
+))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ## What Gets Instrumented {#what-gets-instrumented}
@@ -248,7 +257,10 @@ If you don't configure providers, AgentMesh uses **noop** implementations with *
 
 ```go
 // No providers = zero overhead
-result, err := compiled.Invoke(ctx, messages)
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 ## Benefits

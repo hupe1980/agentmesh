@@ -544,14 +544,20 @@ type vertexScheduler struct {
 compiled.Pause("review_node")
 
 // Execute graph (will stop before review_node)
-results, err := compiled.Invoke(ctx, messages)
+_, err := graph.CollectMessages(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
 
 // Human reviews and provides input
 // ...
 
 // Resume execution
 compiled.Resume("review_node")
-results, err = compiled.Invoke(ctx, messages)
+messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
 **Use cases**:
@@ -1213,10 +1219,13 @@ The compiler validates the graph topology, checks for cycles, and prepares the e
 ### 2. Invocation
 
 ```go
-// Synchronous execution
-results, err := compiled.Invoke(ctx, initialMessages)
+// Blocking execution - collect all messages
+messages, err := graph.CollectMessages(compiled.Run(ctx, initialMessages))
+if err != nil {
+    log.Fatal(err)
+}
 
-// Streaming execution
+// Streaming execution - process events as they arrive
 seq := compiled.Run(ctx, initialMessages)
 for event, err := range seq {
     if err != nil {
