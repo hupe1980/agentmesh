@@ -33,6 +33,9 @@ type runOptions struct {
 	initialSuperstep      int64
 	maxIterations         int
 	maxMessages           int // Maximum number of messages to retain (0 = unlimited)
+	maxMessageSize        int // Maximum size of a single message in bytes (0 = unlimited)
+	maxInputMessages      int // Maximum number of input messages allowed (0 = unlimited)
+	maxTotalSize          int // Maximum total size of all input messages in bytes (0 = unlimited)
 	eventBufferSize       int // Size of event channel for streaming (default = 100)
 	aggregators           map[string]pregel.Aggregator
 	combiner              Combiner
@@ -166,6 +169,60 @@ func WithMaxMessages(n int) RunOption {
 		}
 		if n >= 0 {
 			opts.maxMessages = n
+		}
+	}
+}
+
+// WithMaxMessageSize sets the maximum size in bytes for a single input message.
+// Messages exceeding this limit will cause the graph execution to fail with ErrMessageTooLarge.
+// Use 0 for unlimited (default). Recommended: 1-10 MB for production to prevent DoS attacks.
+//
+// Example:
+//
+//	compiled.Run(ctx, messages, graph.WithMaxMessageSize(1_000_000)) // 1MB limit
+func WithMaxMessageSize(bytes int) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		if bytes >= 0 {
+			opts.maxMessageSize = bytes
+		}
+	}
+}
+
+// WithMaxInputMessages sets the maximum number of input messages allowed.
+// Exceeding this limit will cause the graph execution to fail with ErrTooManyMessages.
+// Use 0 for unlimited (default). Recommended: 10-1000 for production to prevent resource exhaustion.
+//
+// Example:
+//
+//	compiled.Run(ctx, messages, graph.WithMaxInputMessages(100))
+func WithMaxInputMessages(count int) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		if count >= 0 {
+			opts.maxInputMessages = count
+		}
+	}
+}
+
+// WithMaxTotalSize sets the maximum total size in bytes for all input messages combined.
+// Exceeding this limit will cause the graph execution to fail with ErrTotalSizeTooLarge.
+// Use 0 for unlimited (default). Recommended: 10-100 MB for production to prevent memory exhaustion.
+//
+// Example:
+//
+//	compiled.Run(ctx, messages, graph.WithMaxTotalSize(10_000_000)) // 10MB total
+func WithMaxTotalSize(bytes int) RunOption {
+	return func(opts *runOptions) {
+		if opts == nil {
+			return
+		}
+		if bytes >= 0 {
+			opts.maxTotalSize = bytes
 		}
 	}
 }

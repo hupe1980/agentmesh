@@ -392,6 +392,129 @@ func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptio
 	return chkpt.Superstep, nil
 }
 
+// calculateMessageSize calculates the approximate size in bytes of a message
+// by summing the sizes of all its parts.
+func calculateMessageSize(msg message.Message) int {
+	size := 0
+	for _, part := range msg.Parts() {
+		size += calculatePartSize(part)
+	}
+	return size
+}
+
+// calculatePartSize calculates the approximate size of a single message part.
+func calculatePartSize(part message.Part) int {
+	switch p := part.(type) {
+	case message.TextPart:
+		return len(p.Text)
+	case message.DataPart:
+		return calculateDataPartSize(p)
+	case message.FilePart:
+		return calculateFilePartSize(p)
+	case message.FunctionCallPart:
+		return calculateFunctionCallPartSize(p)
+	case message.FunctionResponsePart:
+		return calculateFunctionResponsePartSize(p)
+	default:
+		return 0
+	}
+}
+
+// calculateDataPartSize approximates the size of a DataPart.
+func calculateDataPartSize(p message.DataPart) int {
+	size := 0
+	for k, v := range p.Data {
+		size += len(k)
+		if v != nil {
+			size += len(fmt.Sprint(v))
+		}
+	}
+	return size
+}
+
+// calculateFilePartSize calculates the size of a FilePart.
+func calculateFilePartSize(p message.FilePart) int {
+	size := len(p.Name) + len(p.MimeType)
+	switch fc := p.File.(type) {
+	case message.FileRawBytes:
+		size += len(fc.Bytes)
+	case message.FileBase64:
+		size += len(fc.Base64)
+	case message.FilePath:
+		size += len(fc.Path)
+	case message.FileURI:
+		size += len(fc.URI)
+	}
+	return size
+}
+
+// calculateFunctionCallPartSize calculates the size of a FunctionCallPart.
+func calculateFunctionCallPartSize(p message.FunctionCallPart) int {
+	if p.FunctionCall == nil {
+		return 0
+	}
+	return len(p.FunctionCall.ID) + len(p.FunctionCall.Name) + len(p.FunctionCall.Arguments)
+}
+
+// calculateFunctionResponsePartSize calculates the size of a FunctionResponsePart.
+func calculateFunctionResponsePartSize(p message.FunctionResponsePart) int {
+	if p.FunctionResponse == nil {
+		return 0
+	}
+	size := len(p.FunctionResponse.ID) + len(p.FunctionResponse.Name)
+	if p.FunctionResponse.Response != nil {
+		size += len(fmt.Sprint(p.FunctionResponse.Response))
+	}
+	return size
+}
+
+// validateMessages validates input messages against configured size and count limits.
+// Returns a MessageValidationError if any limits are exceeded.
+func (cg *Compiled) validateMessages(messages []message.Message, options *runOptions) error {
+	// Validate message count
+	if options.maxInputMessages > 0 && len(messages) > options.maxInputMessages {
+		return &MessageValidationError{
+			Type:          "message_count",
+			Limit:         options.maxInputMessages,
+			Actual:        len(messages),
+			MessageIndex:  -1,
+			UnderlyingErr: ErrTooManyMessages,
+		}
+	}
+
+	// Validate individual message sizes and calculate total
+	totalSize := 0
+	for i, msg := range messages {
+		msgSize := calculateMessageSize(msg)
+
+		// Check individual message size
+		if options.maxMessageSize > 0 && msgSize > options.maxMessageSize {
+			return &MessageValidationError{
+				Type:          "message_size",
+				Limit:         options.maxMessageSize,
+				Actual:        msgSize,
+				MessageIndex:  i,
+				UnderlyingErr: ErrMessageTooLarge,
+			}
+		}
+
+		totalSize += msgSize
+	}
+
+	// Validate total size
+	if options.maxTotalSize > 0 && totalSize > options.maxTotalSize {
+		return &MessageValidationError{
+			Type:          "total_size",
+			Limit:         options.maxTotalSize,
+			Actual:        totalSize,
+			MessageIndex:  -1,
+			UnderlyingErr: ErrTotalSizeTooLarge,
+		}
+	}
+
+	return nil
+}
+
 // setupRun prepares the execution context, instrumentation, and state for a graph run.
 // It handles context validation, message preparation, checkpoint restoration, and provider setup.
 func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, options *runOptions) (context.Context, *Instrumentation, error) {
@@ -400,6 +523,11 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 	}
 	if options.maxConcurrency < 1 {
 		options.maxConcurrency = 1
+	}
+
+	// Validate input messages against configured limits
+	if err := cg.validateMessages(messages, options); err != nil {
+		return nil, nil, err
 	}
 
 	// Wrap input messages as Events for internal processing

@@ -57,6 +57,15 @@ var (
 
 	// ErrHumanInterrupt indicates execution paused for human input
 	ErrHumanInterrupt = errors.New("waiting for human input")
+
+	// ErrMessageTooLarge indicates a single message exceeds the size limit
+	ErrMessageTooLarge = errors.New("message size exceeds limit")
+
+	// ErrTooManyMessages indicates the number of input messages exceeds the limit
+	ErrTooManyMessages = errors.New("number of messages exceeds limit")
+
+	// ErrTotalSizeTooLarge indicates the total size of all messages exceeds the limit
+	ErrTotalSizeTooLarge = errors.New("total message size exceeds limit")
 )
 
 // NodeExecutionError wraps errors that occur during node execution,
@@ -135,4 +144,31 @@ func (e *RetryExhaustedError) Unwrap() error {
 		return e.Attempts[len(e.Attempts)-1]
 	}
 	return nil
+}
+
+// MessageValidationError provides detailed information about message validation failures.
+type MessageValidationError struct {
+	Type          string // Type of validation error (size, count, total)
+	Limit         int    // The configured limit
+	Actual        int    // The actual value that exceeded the limit
+	MessageIndex  int    // Index of the problematic message (for single message errors, -1 for aggregate)
+	UnderlyingErr error  // The sentinel error (ErrMessageTooLarge, etc.)
+}
+
+func (e *MessageValidationError) Error() string {
+	switch e.Type {
+	case "message_size":
+		return fmt.Sprintf("message at index %d exceeds size limit: %d bytes > %d bytes limit",
+			e.MessageIndex, e.Actual, e.Limit)
+	case "message_count":
+		return fmt.Sprintf("too many messages: %d messages > %d limit", e.Actual, e.Limit)
+	case "total_size":
+		return fmt.Sprintf("total message size exceeds limit: %d bytes > %d bytes limit", e.Actual, e.Limit)
+	default:
+		return fmt.Sprintf("message validation failed: %v", e.UnderlyingErr)
+	}
+}
+
+func (e *MessageValidationError) Unwrap() error {
+	return e.UnderlyingErr
 }
