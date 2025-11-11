@@ -15,6 +15,23 @@ import (
 type InMemoryCheckpointer struct {
 	mu          sync.RWMutex
 	checkpoints map[string][]*Checkpoint // runID -> checkpoints (sorted by superstep)
+	signingKey  []byte                   // Optional HMAC signing key for checkpoint integrity
+}
+
+// InMemoryCheckpointerOption is a functional option for configuring InMemoryCheckpointer.
+type InMemoryCheckpointerOption func(*InMemoryCheckpointer)
+
+// WithSigning configures the checkpointer to sign checkpoints on save and verify signatures on load.
+// The signing key should be a secure random value (at least 32 bytes recommended).
+//
+// Example:
+//
+//	signingKey := []byte("your-secure-signing-key-at-least-32-bytes-long")
+//	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
+func WithSigning(key []byte) InMemoryCheckpointerOption {
+	return func(c *InMemoryCheckpointer) {
+		c.signingKey = key
+	}
 }
 
 // NewInMemoryCheckpointer creates a new in-memory checkpointer.
@@ -26,10 +43,21 @@ type InMemoryCheckpointer struct {
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("test-run"),
 //	)
-func NewInMemoryCheckpointer() *InMemoryCheckpointer {
-	return &InMemoryCheckpointer{
+//
+// With signing enabled:
+//
+//	signingKey := []byte("your-secure-signing-key")
+//	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
+func NewInMemoryCheckpointer(opts ...InMemoryCheckpointerOption) *InMemoryCheckpointer {
+	c := &InMemoryCheckpointer{
 		checkpoints: make(map[string][]*Checkpoint),
 	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	return c
 }
 
 // Save persists a checkpoint to memory
@@ -46,6 +74,15 @@ func (m *InMemoryCheckpointer) Save(ctx context.Context, checkpoint *Checkpoint)
 
 	// Deep copy the checkpoint to prevent external modifications
 	cp := m.deepCopy(checkpoint)
+
+	// Sign the checkpoint if signing key is configured
+	if len(m.signingKey) > 0 {
+		signature, err := SignCheckpoint(cp, m.signingKey)
+		if err != nil {
+			return fmt.Errorf("failed to sign checkpoint: %w", err)
+		}
+		cp.Signature = signature
+	}
 
 	runCheckpoints, exists := m.checkpoints[cp.RunID]
 	if !exists {
@@ -98,7 +135,16 @@ func (m *InMemoryCheckpointer) Load(ctx context.Context, runID string) (*Checkpo
 	}
 
 	// First checkpoint is the most recent (sorted by superstep desc)
-	return m.deepCopy(runCheckpoints[0]), nil
+	cp := m.deepCopy(runCheckpoints[0])
+
+	// Verify signature if signing key is configured
+	if len(m.signingKey) > 0 {
+		if err := VerifyCheckpoint(cp, m.signingKey); err != nil {
+			return nil, fmt.Errorf("checkpoint signature verification failed: %w", err)
+		}
+	}
+
+	return cp, nil
 }
 
 // LoadAtSuperstep retrieves a checkpoint at a specific superstep
@@ -117,7 +163,16 @@ func (m *InMemoryCheckpointer) LoadAtSuperstep(ctx context.Context, runID string
 
 	for _, cp := range runCheckpoints {
 		if cp.Superstep == superstep {
-			return m.deepCopy(cp), nil
+			checkpoint := m.deepCopy(cp)
+
+			// Verify signature if signing key is configured
+			if len(m.signingKey) > 0 {
+				if err := VerifyCheckpoint(checkpoint, m.signingKey); err != nil {
+					return nil, fmt.Errorf("checkpoint signature verification failed: %w", err)
+				}
+			}
+
+			return checkpoint, nil
 		}
 	}
 
@@ -138,10 +193,19 @@ func (m *InMemoryCheckpointer) List(ctx context.Context, runID string) ([]*Check
 		return []*Checkpoint{}, nil
 	}
 
-	// Return deep copies
+	// Return deep copies and verify signatures if signing is enabled
 	result := make([]*Checkpoint, len(runCheckpoints))
 	for i, cp := range runCheckpoints {
-		result[i] = m.deepCopy(cp)
+		checkpoint := m.deepCopy(cp)
+
+		// Verify signature if signing key is configured
+		if len(m.signingKey) > 0 {
+			if err := VerifyCheckpoint(checkpoint, m.signingKey); err != nil {
+				return nil, fmt.Errorf("checkpoint signature verification failed for superstep %d: %w", checkpoint.Superstep, err)
+			}
+		}
+
+		result[i] = checkpoint
 	}
 
 	return result, nil
@@ -174,6 +238,12 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 		RunID:     src.RunID,
 		Superstep: src.Superstep,
 		Timestamp: src.Timestamp,
+	}
+
+	// Deep copy Signature
+	if src.Signature != nil {
+		dst.Signature = make([]byte, len(src.Signature))
+		copy(dst.Signature, src.Signature)
 	}
 
 	// Deep copy State

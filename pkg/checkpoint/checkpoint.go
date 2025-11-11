@@ -24,6 +24,11 @@ type Checkpoint struct {
 	// Timestamp when the checkpoint was created
 	Timestamp time.Time
 
+	// Signature is an HMAC-SHA256 signature of the checkpoint data for integrity verification.
+	// When signing is enabled, this field is populated during Save() and verified during Load().
+	// An empty signature indicates the checkpoint was saved without signing enabled.
+	Signature []byte
+
 	// State contains all channel values and custom state
 	State map[string]any
 
