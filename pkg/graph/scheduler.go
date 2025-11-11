@@ -15,6 +15,11 @@ import (
 // - Topology: Pure DAG structure and dependencies
 // - Evaluator: Stateful conditional logic
 // - Tracker: Execution progress and control flow
+//
+// Thread Safety:
+//   - All methods acquire appropriate locks (RLock for reads, Lock for writes)
+//   - Component methods (topology, evaluator, tracker) have internal locking
+//   - Safe for concurrent calls to Ready(), MarkExecuted(), etc.
 type vertexScheduler struct {
 	cg        *Compiled
 	mu        sync.RWMutex
@@ -61,6 +66,9 @@ func (s *vertexScheduler) Ready() []string {
 // Bootstrap seeds the scheduler with persisted execution state.
 // This is used for checkpoint resume scenarios.
 func (s *vertexScheduler) Bootstrap(ctx context.Context, completed, paused []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Set paused state in tracker
 	s.tracker.SetPaused(paused)
 
@@ -90,11 +98,17 @@ func (s *vertexScheduler) MarkExecuted(name string) {
 // MarkPaused records that a vertex yielded for external intervention.
 // This is used for human-in-the-loop workflows.
 func (s *vertexScheduler) MarkPaused(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.tracker.MarkPaused(name)
 }
 
 // OnVertexCompleted updates dependent vertices and returns the next ready set.
 func (s *vertexScheduler) OnVertexCompleted(ctx context.Context, name string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Get downstream vertices (regular edges)
 	downstream := s.cg.outgoing[name]
 
@@ -106,9 +120,6 @@ func (s *vertexScheduler) OnVertexCompleted(ctx context.Context, name string) ([
 	if err != nil {
 		return nil, err
 	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	// Collect all candidates (downstream + conditional)
 	candidates := make(map[string]struct{})

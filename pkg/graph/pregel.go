@@ -156,6 +156,13 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // implement custom MessageBus backends, schedulers, and fine-tune the
 // execution engine for specific use cases.
 //
+// Thread Safety:
+//   - yield: Protected by yieldMu. Safe to call emit() from multiple goroutines.
+//   - yieldStopped: Protected by yieldMu to prevent double-calls to stopped iterator.
+//   - checkpointQueue: Channel-based communication, inherently thread-safe.
+//   - checkpointWG: Used to ensure checkpoint worker cleanup before shutdown.
+//   - scheduler: Has internal locking, safe for concurrent access.
+//
 // The yield function is used to emit events directly to the iterator consumer.
 // The cancel function is stored for early termination when yield returns false.
 type graphRuntime struct {
@@ -170,7 +177,7 @@ type graphRuntime struct {
 
 	errOnce         sync.Once
 	yieldMu         sync.Mutex // Protects yield from concurrent access
-	yieldStopped    bool       // True when yield has returned false
+	yieldStopped    bool       // True when yield has returned false (protected by yieldMu)
 	checkpointQueue chan *checkpoint.Checkpoint
 	checkpointWG    sync.WaitGroup
 }
