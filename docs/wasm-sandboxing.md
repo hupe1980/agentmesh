@@ -459,6 +459,7 @@ cargo build --target wasm32-unknown-unknown --release
 
 #### JSON processing example
 
+{% raw %}
 ```rust
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -518,6 +519,7 @@ pub extern "C" fn call(input_ptr: *const c_char) -> *mut c_char {
     CString::new(output_str).unwrap().into_raw()
 }
 ```
+{% endraw %}
 
 ### TinyGo
 
