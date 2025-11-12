@@ -6,60 +6,50 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
-// This example demonstrates callback integration with ModelNode and ToolNode.
-// It shows how to use callbacks for:
+// This example demonstrates plugin integration with AgentMesh.
+// It shows how to use plugins for:
 // - Request validation (BeforeModel)
 // - Response transformation (AfterModel)
 // - Tool access control (BeforeTool)
 // - Tool result transformation (AfterTool)
-// - Error handling (OnToolError)
+// - Error handling (OnToolError, OnModelError)
 
 func main() {
-	fmt.Println("=== AgentMesh Callback Integration Demo ===")
+	fmt.Println("=== AgentMesh Plugin Integration Demo ===")
 	fmt.Println()
 
-	// Create callback manager
-	cbManager := callbacks.NewManager()
+	// Create plugin manager
+	pluginMgr := callbacks.NewPluginManager()
 
-	// Register model callbacks
-	cbManager.RegisterBeforeModel(validateRequest)
-	cbManager.RegisterAfterModel(sanitizeResponse)
+	// Create and register custom plugin
+	customPlugin := &DemoPlugin{}
+	if err := pluginMgr.Register(context.Background(), customPlugin); err != nil {
+		log.Fatal(err)
+	}
 
-	// Register tool callbacks
-	cbManager.RegisterBeforeTool(validateToolAccess)
-	cbManager.RegisterAfterTool(transformToolResult)
-	cbManager.RegisterOnToolError(handleToolError)
-
-	fmt.Println("✓ Callback manager configured with 5 callbacks")
-	fmt.Println("  - BeforeModel: validateRequest")
-	fmt.Println("  - AfterModel: sanitizeResponse")
-	fmt.Println("  - BeforeTool: validateToolAccess")
-	fmt.Println("  - AfterTool: transformToolResult")
-	fmt.Println("  - OnToolError: handleToolError")
+	fmt.Println("✓ Plugin manager configured with DemoPlugin")
+	fmt.Println("  - BeforeModel: validates requests")
+	fmt.Println("  - AfterModel: sanitizes responses")
+	fmt.Println("  - BeforeTool: validates tool access")
+	fmt.Println("  - AfterTool: transforms results")
+	fmt.Println("  - OnModelError: handles model failures")
+	fmt.Println("  - OnToolError: handles tool failures")
 	fmt.Println()
 
-	// Note: In a real application, you would create ModelNode and ToolNode like this:
+	// Note: In a real application, you would pass the plugin manager to agents:
 	//
-	// modelNode := agent.ModelNode(
+	// agent := agent.NewReActAgent(
 	//     myModel,
-	//     agent.WithModelCallbacks(cbManager),
-	// )
-	//
-	// toolNode := agent.ToolNode(
-	//     toolRegistry,
-	//     agent.WithToolCallbacks(cbManager),
+	//     tools,
+	//     agent.WithPluginManager(pluginMgr),
 	// )
 
-	fmt.Println("ModelNode Integration:")
-	fmt.Println("  modelNode := agent.ModelNode(myModel, agent.WithModelCallbacks(cbManager))")
-	fmt.Println()
-
-	fmt.Println("ToolNode Integration:")
-	fmt.Println("  toolNode := agent.ToolNode(toolRegistry, agent.WithToolCallbacks(cbManager))")
+	fmt.Println("Agent Integration:")
+	fmt.Println("  agent := agent.NewReActAgent(model, tools, agent.WithPluginManager(pluginMgr))")
 	fmt.Println()
 
 	fmt.Println("Execution Flow:")
@@ -67,7 +57,7 @@ func main() {
 	fmt.Println("  2. Model generates response (if not short-circuited)")
 	fmt.Println("  3. AfterModel sanitizes response")
 	fmt.Println("  4. BeforeTool validates tool access")
-	fmt.Println("  5. Tool executes (if not short-circuited)")
+	fmt.Println("  5. Tool executes (if not blocked)")
 	fmt.Println("  6. AfterTool transforms result")
 	fmt.Println("  7. OnToolError handles failures (if tool failed)")
 	fmt.Println()
@@ -75,103 +65,83 @@ func main() {
 	fmt.Println("=== Demo Complete ===")
 }
 
-// validateRequest is a BeforeModel callback that validates requests before calling the model
-func validateRequest(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-	events := s.EventsSnapshot()
-	if len(events) == 0 {
+// DemoPlugin demonstrates a custom plugin implementation
+type DemoPlugin struct {
+	callbacks.NoopPlugin
+}
+
+// BeforeModel validates requests before calling the model
+func (p *DemoPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+	if len(req.Messages) == 0 {
 		return nil, fmt.Errorf("empty message list")
 	}
 
-	// Example: block requests with certain keywords
-	lastMsg := events[len(events)-1].Message
-	parts := lastMsg.Parts()
-	for _, part := range parts {
-		if textPart, ok := part.(message.TextPart); ok {
-			if len(textPart.Text) > 10000 {
-				return nil, fmt.Errorf("request too long: %d characters", len(textPart.Text))
-			}
-		}
+	// Example: block requests with long content
+	lastMsg := req.Messages[len(req.Messages)-1]
+	text := message.Stringify(lastMsg)
+
+	if len(text) > 10000 {
+		return nil, fmt.Errorf("request too long: %d characters", len(text))
 	}
 
 	return nil, nil // Continue to model
 }
 
-// sanitizeResponse is an AfterModel callback that sanitizes model responses
-func sanitizeResponse(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
+// AfterModel sanitizes model responses
+func (p *DemoPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
 	// Example: redact sensitive information
-	// In production, use proper PII detection
+	text := message.Stringify(resp.Message)
 
-	aiMsg, ok := response.(*message.AIMessage)
-	if !ok {
-		return nil, nil // Keep original
-	}
-
-	// Check if response contains sensitive patterns
-	parts := aiMsg.Parts()
-	needsSanitization := false
-
-	for _, part := range parts {
-		if textPart, ok := part.(message.TextPart); ok {
-			if len(textPart.Text) > 0 {
-				// Simple check - in production use proper detection
-				if containsSensitiveData(textPart.Text) {
-					needsSanitization = true
-					break
-				}
-			}
-		}
-	}
-
-	if needsSanitization {
+	if containsSensitiveData(text) {
 		// Return sanitized version
-		return message.NewAIMessageFromText("[Response sanitized for safety]"), nil
+		return &model.Response{
+			Message: message.NewAIMessageFromText("[Response sanitized for safety]"),
+		}, nil
 	}
 
 	return nil, nil // Keep original
 }
 
-// validateToolAccess is a BeforeTool callback that validates tool access
-func validateToolAccess(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
+// BeforeTool validates tool access
+func (p *DemoPlugin) BeforeTool(ctx context.Context, toolName string, input any) error {
 	// Example: check if user has permission to use this tool
-	// In production, check actual user permissions from context
-
 	restrictedTools := []string{"delete_database", "execute_command"}
+
 	for _, restricted := range restrictedTools {
-		if call.Name == restricted {
-			return nil, fmt.Errorf("access denied: tool %s requires elevated permissions", call.Name)
+		if toolName == restricted {
+			return fmt.Errorf("access denied: tool %s requires elevated permissions", toolName)
 		}
 	}
 
-	return nil, nil // Continue to tool execution
+	return nil // Continue to tool execution
 }
 
-// transformToolResult is an AfterTool callback that transforms tool results
-func transformToolResult(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
-	// Example: format results consistently
-	// In production, apply proper transformation logic
-
-	if result == nil {
-		return "No result", nil
-	}
-
-	// Wrap result in standard format
-	return map[string]any{
-		"tool":      call.Name,
-		"result":    result,
-		"processed": true,
-	}, nil
+// AfterTool transforms tool results
+func (p *DemoPlugin) AfterTool(ctx context.Context, toolName string, result callbacks.ToolResult) error {
+	// Log tool execution
+	log.Printf("Tool %s executed in %v", toolName, result.Duration)
+	return nil
 }
 
-// handleToolError is an OnToolError callback that handles tool execution failures
-func handleToolError(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
+// OnToolError handles tool execution failures
+func (p *DemoPlugin) OnToolError(ctx context.Context, toolName string, err error) error {
+	// Example: log error for monitoring
+	log.Printf("Tool %s failed: %v", toolName, err)
+
+	// Propagate error (no fallback in this example)
+	return nil
+}
+
+// OnModelError handles model failures
+func (p *DemoPlugin) OnModelError(ctx context.Context, req *model.Request, err error) (*model.Response, error) {
 	// Example: provide fallback for certain errors
-	// In production, implement proper error handling strategy
+	log.Printf("Model call failed: %v", err)
 
-	log.Printf("Tool %s failed: %v", call.Name, err)
-
-	// Provide fallback for known transient errors
 	if isTransientError(err) {
-		return fmt.Sprintf("Tool temporarily unavailable: %s", call.Name), nil
+		// Provide fallback response
+		return &model.Response{
+			Message: message.NewAIMessageFromText("Model temporarily unavailable. Please try again."),
+		}, nil
 	}
 
 	// Propagate error for unknown failures

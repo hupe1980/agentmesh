@@ -17,11 +17,31 @@ cd examples/callback_integration
 go run main.go
 ```
 
+# Example: Plugin Integration
+
+## Overview
+Demonstrates comprehensive plugin system integration with ModelNode and ToolNode. Shows how to intercept and transform requests/responses at multiple execution stages using the type-safe plugin architecture.
+
+## Key Concepts
+- **Plugin System**: Unified interface for cross-cutting concerns
+- **BeforeModel**: Request validation before LLM calls
+- **AfterModel**: Response transformation after LLM calls
+- **BeforeTool**: Tool access control and parameter validation
+- **AfterTool**: Tool result transformation
+- **OnToolError**: Error handling and recovery
+- **Plugin Composition**: Multiple plugins working together
+
+## Running
+```bash
+cd examples/callback_integration
+go run main.go
+```
+
 ## Expected Output
 ```
-=== AgentMesh Callback Integration Demo ===
+=== AgentMesh Plugin Integration Demo ===
 
-✓ Callback manager configured with 5 callbacks
+✓ Plugin manager configured with DemoPlugin
   - BeforeModel: validateRequest
   - AfterModel: sanitizeResponse
   - BeforeTool: validateToolAccess
@@ -54,6 +74,66 @@ Example demonstrates:
    - Retry logic
    - Error reporting
 ```
+
+## Code Walkthrough
+
+### 1. Create Custom Plugin
+```go
+type DemoPlugin struct {
+    callbacks.NoopPlugin  // Embed for default implementations
+    
+    // Plugin state
+    callCount int
+    mu        sync.Mutex
+}
+
+### 2. Implement Request Validator
+```go
+func (p *DemoPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    p.mu.Lock()
+    p.callCount++
+    p.mu.Unlock()
+    
+    // Validate request
+    for _, msg := range req.Messages {
+        content := message.Stringify(msg)
+        if containsBlacklisted(content) {
+            return nil, fmt.Errorf("blocked: content violates policy")
+        }
+    }
+    return nil, nil // Continue to model
+}
+```
+
+### 3. Implement Response Sanitizer
+```go
+func (p *DemoPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+    // Sanitize response content
+    content := message.Stringify(resp.Message)
+    sanitized := redactPII(content)
+    
+    // Return modified response
+    return &model.Response{
+        Message: message.NewAIMessage(message.NewTextPart(sanitized)),
+        Usage:   resp.Usage,
+    }, nil
+}
+```
+
+### 4. Register Plugin
+```go
+pm := callbacks.NewPluginManager()
+pm.Register(&DemoPlugin{})
+```
+
+### 5. Attach to Agent
+```go
+compiled, _ := agent.NewReActAgent(
+    model,
+    tools,
+    agent.WithModelCallbacks(pm),
+    agent.WithToolCallbacks(pm),
+)
 
 ## Code Walkthrough
 
@@ -98,7 +178,33 @@ modelNode := agent.ModelNode(model,
 )
 
 toolNode := agent.ToolNode(toolset,
-    agent.WithToolCallbacks(cbManager),
+    ```
+
+## Features
+
+### Type-Safe Plugin Architecture
+- Single plugin with multiple hook methods
+- State management within plugin
+- Constructor-based configuration
+- No runtime configuration overhead
+
+### Lifecycle Hooks
+- `Init/Shutdown` - Resource management
+- `BeforeModel/AfterModel` - Model request/response interception
+- `BeforeTool/AfterTool` - Tool execution monitoring
+- `OnToolError/OnModelError` - Error handling
+
+### Use Cases
+- Implement custom plugins for your use case
+- Combine multiple plugins for complex workflows
+- Share plugins across agents and graphs
+- Build reusable plugin libraries
+
+## Related Resources
+- [pkg/callbacks](../../pkg/callbacks) - Plugin system documentation
+- [pkg/callbacks/plugins](../../pkg/callbacks/plugins) - Built-in plugins
+- [examples/guardrails](../guardrails) - Security plugins
+- [examples/circuit_breaker](../circuit_breaker) - Resilience plugins
 )
 ```
 

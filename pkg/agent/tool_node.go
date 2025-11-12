@@ -16,7 +16,7 @@ type toolNodeOptions struct {
 	nodeName        string
 	errorPrefix     string
 	continueOnError bool
-	callbacks       *callbacks.Manager
+	callbacks       *callbacks.PluginManager
 }
 
 // ToolNodeOption configures a tool node.
@@ -44,10 +44,10 @@ func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
 	}
 }
 
-// WithToolCallbacks sets the callback manager for the tool node.
-// Callbacks enable intercepting and modifying tool invocations for access control,
+// WithToolCallbacks sets the plugin manager for the tool node.
+// Plugins enable intercepting and modifying tool invocations for access control,
 // caching, metrics, error handling, and other cross-cutting concerns.
-func WithToolCallbacks(cb *callbacks.Manager) ToolNodeOption {
+func WithToolCallbacks(cb *callbacks.PluginManager) ToolNodeOption {
 	return func(c *toolNodeOptions) {
 		c.callbacks = cb
 	}
@@ -171,7 +171,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 				result, err := tool.Call(ctx, args)
 				if err != nil {
-					handledResult, errMsgs, handledErr := handleToolError(ctx, s, call, err, &config, idx)
+					errMsgs, handledErr := handleToolError(ctx, s, call, err, &config, idx)
 					if handledErr != nil {
 						return nil, handledErr
 					}
@@ -179,7 +179,6 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 						toolMessages = append(toolMessages, errMsgs...)
 						continue
 					}
-					result = handledResult
 				}
 
 				// Execute AfterTool callbacks
@@ -207,26 +206,22 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 			}, nil
 		},
 	}
-} // handleToolError processes tool execution errors with callbacks and fallbacks.
-// Returns the result (possibly from fallback) and error (nil if handled).
-func handleToolError(ctx context.Context, s graph.StateWriter, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) (any, []message.Message, error) {
-	var result any
+}
+
+// handleToolError processes tool execution errors with plugins and fallbacks.
+// Returns error messages (if continuing on error) and error (nil if handled).
+func handleToolError(ctx context.Context, _ graph.StateWriter, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
 	err := execErr
 
-	// Execute OnToolError callbacks
-	if config.callbacks != nil && config.callbacks.HasOnToolErrorCallbacks() {
-		fallback, cbErr := config.callbacks.ExecuteOnToolError(ctx, s, call, err)
-		if cbErr != nil {
-			err = cbErr // Use transformed error
-		}
-		if fallback != nil {
-			// Callback provided fallback result
-			result = fallback
-			err = nil // Clear error since we have fallback
+	// Execute OnToolError plugins
+	if config.callbacks != nil && config.callbacks.HasPlugins() {
+		pluginErr := config.callbacks.ExecuteOnToolError(ctx, call.Name, err)
+		if pluginErr != nil {
+			err = pluginErr // Use transformed error
 		}
 	}
 
-	// If still error after callbacks, handle it
+	// If still error after plugins, handle it
 	if err != nil {
 		if config.continueOnError {
 			toolCallID := call.ID
@@ -235,69 +230,66 @@ func handleToolError(ctx context.Context, s graph.StateWriter, call message.Tool
 			}
 			errMsg := fmt.Sprintf("Error: %v", err)
 			toolMsg := message.NewToolMessage(toolCallID, errMsg)
-			return nil, []message.Message{toolMsg}, nil
+			return []message.Message{toolMsg}, nil
 		}
-		return nil, nil, fmt.Errorf("%s: tool %q call failed: %w", config.errorPrefix, call.Name, err)
-	}
-
-	return result, nil, nil
-}
-
-// handleBeforeToolCallback executes before-tool callbacks and handles short-circuits.
-// Returns toolMessages if the callback short-circuits execution, or error if callback fails.
-func handleBeforeToolCallback(ctx context.Context, s graph.StateWriter, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
-	if config.callbacks == nil || !config.callbacks.HasBeforeToolCallbacks() {
-		return nil, nil
-	}
-
-	callbackResult, err := config.callbacks.ExecuteBeforeTool(ctx, s, call)
-	if err != nil {
-		if config.continueOnError {
-			toolCallID := call.ID
-			if toolCallID == "" {
-				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
-			}
-			errMsg := fmt.Sprintf("Error: callback rejected: %v", err)
-			return []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
-		}
-		return nil, fmt.Errorf("%s: before tool callback: %w", config.errorPrefix, err)
-	}
-
-	if callbackResult != nil {
-		// Short-circuit: use callback result instead of calling tool
-		toolCallID := call.ID
-		if toolCallID == "" {
-			toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
-		}
-		text := formatToolResult(callbackResult)
-		return []message.Message{message.NewToolMessage(toolCallID, text)}, nil
+		return nil, fmt.Errorf("%s: tool %q call failed: %w", config.errorPrefix, call.Name, err)
 	}
 
 	return nil, nil
 }
 
-// handleAfterToolCallback executes after-tool callbacks and handles transformation.
-// Returns transformed result or error if callback fails.
-func handleAfterToolCallback(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
-	if config.callbacks == nil || !config.callbacks.HasAfterToolCallbacks() {
-		return result, nil, nil
+// handleBeforeToolCallback executes before-tool plugins.
+// Returns error if plugin fails.
+func handleBeforeToolCallback(ctx context.Context, _ graph.StateWriter, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
+	if config.callbacks == nil || !config.callbacks.HasPlugins() {
+		return nil, nil
 	}
 
-	transformed, err := config.callbacks.ExecuteAfterTool(ctx, s, call, result)
+	// Marshal arguments for plugin inspection
+	var input any = call.Arguments
+	if len(call.Arguments) > 0 {
+		payload, _ := json.Marshal(call.Arguments)
+		input = string(payload)
+	}
+
+	err := config.callbacks.ExecuteBeforeTool(ctx, call.Name, input)
 	if err != nil {
 		if config.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
 			}
-			errMsg := fmt.Sprintf("Error: callback failed: %v", err)
-			return nil, []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
+			errMsg := fmt.Sprintf("Error: plugin rejected: %v", err)
+			return []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
 		}
-		return nil, nil, fmt.Errorf("%s: after tool callback: %w", config.errorPrefix, err)
+		return nil, fmt.Errorf("%s: before tool plugin: %w", config.errorPrefix, err)
 	}
 
-	if transformed != nil {
-		return transformed, nil, nil
+	return nil, nil
+}
+
+// handleAfterToolCallback executes after-tool plugins.
+// Returns error if plugin fails.
+func handleAfterToolCallback(ctx context.Context, _ graph.StateWriter, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
+	if config.callbacks == nil || !config.callbacks.HasPlugins() {
+		return result, nil, nil
+	}
+
+	pluginResult := callbacks.ToolResult{
+		Output: result,
+	}
+
+	err := config.callbacks.ExecuteAfterTool(ctx, call.Name, pluginResult)
+	if err != nil {
+		if config.continueOnError {
+			toolCallID := call.ID
+			if toolCallID == "" {
+				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
+			}
+			errMsg := fmt.Sprintf("Error: plugin failed: %v", err)
+			return nil, []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
+		}
+		return nil, nil, fmt.Errorf("%s: after tool plugin: %w", config.errorPrefix, err)
 	}
 
 	return result, nil, nil

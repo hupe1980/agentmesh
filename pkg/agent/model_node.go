@@ -13,7 +13,7 @@ import (
 // modelNodeOptions holds configuration for a model node.
 type modelNodeOptions struct {
 	nodeName     string
-	callbacks    *callbacks.Manager
+	callbacks    *callbacks.PluginManager
 	systemPrompt string
 	tools        []tool.Tool
 }
@@ -28,10 +28,10 @@ func WithModelNodeName(name string) ModelNodeOption {
 	}
 }
 
-// WithModelCallbacks sets the callback manager for the model node.
-// Callbacks enable intercepting and modifying model invocations for guardrails,
+// WithModelCallbacks sets the plugin manager for the model node.
+// Plugins enable intercepting and modifying model invocations for guardrails,
 // caching, metrics, and other cross-cutting concerns.
-func WithModelCallbacks(cb *callbacks.Manager) ModelNodeOption {
+func WithModelCallbacks(cb *callbacks.PluginManager) ModelNodeOption {
 	return func(c *modelNodeOptions) {
 		c.callbacks = cb
 	}
@@ -53,21 +53,6 @@ func WithModelTools(tools ...tool.Tool) ModelNodeOption {
 	}
 }
 
-// handleModelError handles model errors with callbacks and returns fallback message if provided.
-// Returns (fallbackMessage, transformedError).
-func handleModelError(ctx context.Context, s graph.StateWriter, err error, config *modelNodeOptions) (message.Message, error) {
-	if config.callbacks == nil || !config.callbacks.HasOnModelErrorCallbacks() {
-		return nil, err
-	}
-
-	fallback, cbErr := config.callbacks.ExecuteOnModelError(ctx, s, err)
-	if cbErr != nil {
-		return nil, cbErr
-	}
-
-	return fallback, err
-}
-
 // ModelNode creates a reusable graph node that generates responses using the provided model.
 // The node takes the current message history from the state and produces a new AI message.
 //
@@ -79,12 +64,12 @@ func handleModelError(ctx context.Context, s graph.StateWriter, err error, confi
 //	g.AddNode(ModelNode(myModel))
 //	g.AddNode(ModelNode(myModel, WithModelNodeName("generator")))
 //
-// With callbacks:
+// With plugins:
 //
-//	cb := callbacks.NewManager()
-//	cb.RegisterBeforeModel(guardrails.BlockUnsafeContent)
-//	cb.RegisterAfterModel(guardrails.FilterPII)
-//	g.AddNode(ModelNode(myModel, WithModelCallbacks(cb)))
+//	pm := callbacks.NewPluginManager()
+//	pm.Register(ctx, guardrails.NewBlockUnsafeContentPlugin())
+//	pm.Register(ctx, guardrails.NewFilterPIIPlugin())
+//	g.AddNode(ModelNode(myModel, WithModelCallbacks(pm)))
 func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 	config := modelNodeOptions{
 		nodeName:  "model",
@@ -98,21 +83,6 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 	return &graph.Node{
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			// Execute BeforeModel callbacks
-			if config.callbacks != nil && config.callbacks.HasBeforeModelCallbacks() {
-				result, err := config.callbacks.ExecuteBeforeModel(ctx, s)
-				if err != nil {
-					return nil, err
-				}
-				if result != nil {
-					// Short-circuit: use callback response instead of calling model
-					return &graph.NodeResult{
-						Messages: []message.Message{result},
-						Updates:  map[string]any{},
-					}, nil
-				}
-			}
-
 			// Get messages for model invocation
 			events := s.EventsSnapshot()
 
@@ -123,39 +93,61 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 				Tools:        config.tools,
 			}
 
-			// Call the model
-			resp, err := model.Last(mdl.Generate(ctx, req))
-			if err != nil {
-				fallback, transformedErr := handleModelError(ctx, s, err, &config)
-				if transformedErr != nil {
-					return nil, transformedErr
+			// Execute BeforeModel plugins
+			if config.callbacks != nil && config.callbacks.HasPlugins() {
+				resp, err := config.callbacks.ExecuteBeforeModel(ctx, req)
+				if err != nil {
+					return nil, err
 				}
-				if fallback != nil {
-					// Callback provided fallback response
+				if resp != nil {
+					// Short-circuit: use plugin response instead of calling model
 					return &graph.NodeResult{
-						Messages: []message.Message{fallback},
+						Messages: []message.Message{resp.Message},
 						Updates:  map[string]any{},
 					}, nil
 				}
-				return nil, err
 			}
 
-			// Execute AfterModel callbacks
-			msg := resp.Message
-			if config.callbacks != nil && config.callbacks.HasAfterModelCallbacks() {
-				transformed, err := config.callbacks.ExecuteAfterModel(ctx, s, msg)
+			// Call the model
+			resp, err := model.Last(mdl.Generate(ctx, req))
+			if err != nil {
+				return handleModelError(ctx, req, err, config)
+			}
+
+			// Execute AfterModel plugins
+			if config.callbacks != nil && config.callbacks.HasPlugins() {
+				transformed, err := config.callbacks.ExecuteAfterModel(ctx, req, resp)
 				if err != nil {
 					return nil, err
 				}
 				if transformed != nil {
-					msg = transformed
+					resp = transformed
 				}
 			}
 
 			return &graph.NodeResult{
-				Messages: []message.Message{msg},
+				Messages: []message.Message{resp.Message},
 				Updates:  map[string]any{},
 			}, nil
 		},
 	}
+}
+
+// handleModelError processes model execution errors through plugins.
+func handleModelError(ctx context.Context, req *model.Request, err error, config modelNodeOptions) (*graph.NodeResult, error) {
+	// Execute OnModelError plugins
+	if config.callbacks != nil && config.callbacks.HasPlugins() {
+		fallback, transformedErr := config.callbacks.ExecuteOnModelError(ctx, req, err)
+		if fallback != nil {
+			// Plugin provided fallback response
+			return &graph.NodeResult{
+				Messages: []message.Message{fallback.Message},
+				Updates:  map[string]any{},
+			}, nil
+		}
+		if transformedErr != nil {
+			return nil, transformedErr
+		}
+	}
+	return nil, err
 }

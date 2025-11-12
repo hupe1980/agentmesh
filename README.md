@@ -33,7 +33,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🔍 Graph Introspection** - Debug and visualize graphs with topology analysis and Mermaid flowcharts
 - **🎨 Flowchart Generation** - Auto-generate Mermaid diagrams from graph topology
 - **⏸️ Human-in-the-Loop** - Pause workflows for human approval/input
-- **🔌 Callback System** - Intercept and transform model/tool requests with BeforeModel, AfterModel, OnError handlers
+- **🔌 Plugin System** - Type-safe lifecycle hooks for model/tool interception, metrics, tracing, and custom logic
 - **🧪 Testing First** - Comprehensive test coverage across core features
 
 ### 🧠 AI/ML Features
@@ -714,54 +714,94 @@ policy := &wasm.SandboxPolicy{
 
 See the [wasm_tool example](examples/wasm_tool) for building WASM modules with Rust.
 
-### 📞 Callbacks
+### 📞 Plugin System
 
-Intercept and transform model/tool invocations with a composable callback system:
+Extend AgentMesh with a type-safe plugin system for cross-cutting concerns:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/message"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    "github.com/hupe1980/agentmesh/pkg/model"
 )
 
-// Create callback manager
-cbManager := callbacks.NewManager()
+// Create plugin manager
+pm := callbacks.NewPluginManager()
 
-// Register model callbacks
-cbManager.RegisterBeforeModel(func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    // Content filtering/guardrails - access full graph state
-    messages := s.MessagesSnapshot()
-    if containsUnsafeContent(messages) {
-        return nil, errors.New("unsafe content detected")
+// Register built-in plugins
+pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[AgentMesh]"))
+
+// Create custom plugin with typed config
+type CachePlugin struct {
+    callbacks.NoopPlugin  // Embed for default no-op implementations
+    cache *Cache
+}
+
+func (p *CachePlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    // Check cache before model invocation
+    if cached := p.cache.Get(req); cached != nil {
+        return cached, nil  // Short-circuit with cached response
     }
     return nil, nil  // Continue to model
-})
+}
 
-cbManager.RegisterAfterModel(func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
-    // Post-process response, logging, metrics
-    log.Printf("Response parts: %d", len(response.Parts()))
-    return response, nil  // Can transform or replace response
-})
+func (p *CachePlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+    // Cache the response
+    p.cache.Set(req, resp)
+    return nil, nil  // No transformation
+}
 
-cbManager.RegisterOnModelError(func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
-    // Fallback logic, retry, or error transformation
-    return message.NewAIMessageFromText("Sorry, I encountered an error."), nil
-})
+// Register custom plugin
+pm.Register(ctx, &CachePlugin{cache: myCache})
 
-// Use with ReAct agent
+// Use with agents
 compiled, _ := agent.NewReActAgent(
     model,
     tools,
-    agent.WithModelCallbacks(cbManager),
-    agent.WithToolCallbacks(cbManager),
+    agent.WithModelCallbacks(pm),
+    agent.WithToolCallbacks(pm),
 )
 ```
 
-**Callback Types:**
-- `BeforeModel/BeforeTool` - Pre-execution validation, caching, transformation (return non-nil message to short-circuit)
-- `AfterModel/AfterTool` - Post-processing, logging, metrics collection (can transform response)
-- `OnModelError/OnToolError` - Error handling, fallbacks, retry logic (can provide fallback response)
+**Plugin Lifecycle Hooks:**
+- `Init/Shutdown` - Resource management (connections, cleanup)
+- `OnGraphStart/OnGraphComplete/OnGraphError` - Graph lifecycle tracking
+- `BeforeNode/AfterNode` - Node-level interception
+- `BeforeModel/AfterModel/OnModelError` - Model request/response transformation (uses `model.Request/Response`)
+- `BeforeTool/AfterTool/OnToolError` - Tool execution monitoring
+- `OnStateChange/OnMessage` - State and message tracking
+
+**Why Plugins?**
+- **Type-safe configuration** - Pass dependencies via constructor, not `map[string]any`
+- **Simple registration** - Order-based execution, no priority management
+- **Composable** - Embed `NoopPlugin` and override only what you need
+- **Request/Response based** - Model hooks use `model.Request/Response` for short-circuiting
+
+### 📊 Observability
+
+Built-in OpenTelemetry integration:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/logging"
+    "github.com/hupe1980/agentmesh/pkg/metrics"
+    "github.com/hupe1980/agentmesh/pkg/trace"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+)
+
+// Configure observability providers
+logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
+metricsProvider := metrics.NewOpenTelemetry(meterProvider)
+traceProvider := trace.NewOpenTelemetry(tracerProvider)
+
+// Automatic instrumentation - structured logs throughout execution!
+events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
+    graph.WithLogger(logger),          // Structured logging (JSON/text)
+    graph.WithTracer(traceProvider),   // Distributed tracing
+    graph.WithMetrics(metricsProvider), // Metrics collection
+))
+```
+
 
 ### �📊 Observability
 

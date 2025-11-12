@@ -9,7 +9,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/callbacks/policies"
+	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -54,9 +54,9 @@ func (m *FlakyModel) Generate(ctx context.Context, req *model.Request) iter.Seq2
 func main() {
 	fmt.Println("=== Circuit Breaker Pattern Example ===")
 	fmt.Println()
-	fmt.Println("Demonstrating callback-based circuit breaker:")
+	fmt.Println("Demonstrating plugin-based circuit breaker:")
 	fmt.Println("- First 3 failures → Circuit opens")
-	fmt.Println("- While open, callbacks reject requests")
+	fmt.Println("- While open, plugin rejects requests")
 	fmt.Println("- After 5s timeout → Circuit transitions to half-open")
 	fmt.Println("- Successful call → Circuit closes")
 	fmt.Println()
@@ -64,29 +64,18 @@ func main() {
 	// Create a flaky model
 	flakyModel := &FlakyModel{}
 
-	// Create callback manager with circuit breaker
-	manager := callbacks.NewManager()
+	// Create plugin manager with circuit breaker
+	pluginMgr := callbacks.NewPluginManager()
 
-	// Configure circuit breaker:
+	// Configure circuit breaker plugin:
 	// - Opens after 3 failures
 	// - Waits 5 seconds before transitioning to half-open
-	// - Tracks failures within a 1 minute window
-	config := policies.DefaultCircuitBreakerConfig()
-	config.MaxFailures = 3
-	config.Timeout = 5 * time.Second
-	config.FailureWindow = 1 * time.Minute
+	// - Allows 1 test request in half-open state
+	cbPlugin := plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1)
 
-	before, after, onError := policies.CircuitBreaker(config)
-	manager.RegisterBeforeModel(before)
-	manager.RegisterAfterModel(after)
-	manager.RegisterOnModelError(onError)
-
-	// Add retry policy with short delays to see circuit breaker in action
-	retryConfig := policies.DefaultRetryConfig()
-	retryConfig.MaxAttempts = 20
-	retryConfig.InitialDelay = 200 * time.Millisecond
-	retryConfig.MaxDelay = 1 * time.Second
-	manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
+	if err := pluginMgr.Register(context.Background(), cbPlugin); err != nil {
+		log.Fatal(err)
+	}
 
 	// Build the graph using agent
 	state := graph.NewStateManager(10)
@@ -95,7 +84,7 @@ func main() {
 	err := g.AddNode(agent.ModelNode(
 		flakyModel,
 		agent.WithModelNodeName("flaky-service"),
-		agent.WithModelCallbacks(manager),
+		agent.WithModelCallbacks(pluginMgr),
 	))
 	if err != nil {
 		log.Fatal(err)
@@ -109,24 +98,38 @@ func main() {
 		log.Fatal(err)
 	}
 
-	result, err := graph.Last(compiled.Run(context.Background(), []message.Message{
-		message.NewHumanMessageFromText("Test circuit breaker"),
-	}))
+	// Make multiple attempts to demonstrate circuit breaker behavior
+	ctx := context.Background()
+	var lastErr error
+
+	for i := 1; i <= 10; i++ {
+		fmt.Printf("\n--- Attempt %d ---\n", i)
+
+		result, err := graph.Last(compiled.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText(fmt.Sprintf("Test attempt %d", i)),
+		}))
+
+		lastErr = err
+
+		if err != nil {
+			fmt.Printf("❌ Attempt failed: %v\n", err)
+		} else if result.Message != nil {
+			text := message.Stringify(result.Message)
+			fmt.Printf("✓ Success: %s\n", text)
+			break
+		}
+
+		// Wait before next attempt
+		time.Sleep(time.Second)
+	}
 
 	fmt.Println("\n=== Results ===")
-	if err != nil {
-		fmt.Printf("❌ Final error: %v\n", err)
-		fmt.Printf("Total calls attempted: %d\n", flakyModel.callCount)
+	fmt.Printf("Circuit breaker state: %v\n", cbPlugin.GetState())
+	fmt.Printf("Total model calls made: %d\n", flakyModel.callCount)
+
+	if lastErr != nil {
+		fmt.Printf("❌ Final error: %v\n", lastErr)
 	} else {
 		fmt.Println("✓ Service recovered successfully!")
-		fmt.Printf("Total calls made: %d\n", flakyModel.callCount)
-		if result.Message != nil {
-			parts := result.Message.Parts()
-			if len(parts) > 0 {
-				if textPart, ok := parts[0].(message.TextPart); ok {
-					fmt.Printf("Final response: %s\n", textPart.Text)
-				}
-			}
-		}
 	}
 }

@@ -4,128 +4,155 @@ import (
 	"context"
 	"sync"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
-// Manager orchestrates callback registration and execution with thread-safety.
-// It maintains separate lists for each callback type and executes them in registration order.
-//
-// All methods are safe for concurrent use. Callbacks are executed sequentially in the order
-// they were registered. If any callback returns an error, execution stops and that error
-// is returned immediately.
-type Manager struct {
-	mu sync.RWMutex
-
-	beforeModel  []BeforeModelCallback
-	afterModel   []AfterModelCallback
-	onModelError []OnModelErrorCallback
-
-	beforeTool  []BeforeToolCallback
-	afterTool   []AfterToolCallback
-	onToolError []OnToolErrorCallback
+// PluginManager orchestrates plugin registration and lifecycle with thread-safety.
+type PluginManager struct {
+	mu      sync.RWMutex
+	plugins []Plugin
 }
 
-// NewManager creates a new callback manager with no registered callbacks.
-func NewManager() *Manager {
-	return &Manager{
-		beforeModel:  []BeforeModelCallback{},
-		afterModel:   []AfterModelCallback{},
-		onModelError: []OnModelErrorCallback{},
-		beforeTool:   []BeforeToolCallback{},
-		afterTool:    []AfterToolCallback{},
-		onToolError:  []OnToolErrorCallback{},
+// NewPluginManager creates a new plugin manager with no registered plugins.
+func NewPluginManager() *PluginManager {
+	return &PluginManager{
+		plugins: []Plugin{},
 	}
 }
 
-// RegisterBeforeModel adds a callback to be invoked before model execution.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterBeforeModel(cb BeforeModelCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.beforeModel = append(m.beforeModel, cb)
+// Register adds a plugin to the manager and initializes it.
+func (pm *PluginManager) Register(ctx context.Context, plugin Plugin) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if err := plugin.Init(ctx); err != nil {
+		return err
+	}
+
+	pm.plugins = append(pm.plugins, plugin)
+	return nil
 }
 
-// RegisterAfterModel adds a callback to be invoked after model execution.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterAfterModel(cb AfterModelCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.afterModel = append(m.afterModel, cb)
+// Shutdown gracefully shuts down all registered plugins in reverse order.
+func (pm *PluginManager) Shutdown(ctx context.Context) error {
+	pm.mu.RLock()
+	plugins := make([]Plugin, len(pm.plugins))
+	copy(plugins, pm.plugins)
+	pm.mu.RUnlock()
+
+	for i := len(plugins) - 1; i >= 0; i-- {
+		if err := plugins[i].Shutdown(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// RegisterOnModelError adds a callback to be invoked when a model execution fails.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterOnModelError(cb OnModelErrorCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.onModelError = append(m.onModelError, cb)
+// ExecuteOnGraphStart runs all plugins OnGraphStart hooks.
+func (pm *PluginManager) ExecuteOnGraphStart(ctx context.Context, graphID string) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if err := safeExecuteOnGraphStart(ctx, p, graphID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// RegisterBeforeTool adds a callback to be invoked before tool execution.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterBeforeTool(cb BeforeToolCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.beforeTool = append(m.beforeTool, cb)
+// ExecuteOnGraphComplete runs all plugins OnGraphComplete hooks.
+func (pm *PluginManager) ExecuteOnGraphComplete(ctx context.Context, graphID string, stats GraphStats) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if err := safeExecuteOnGraphComplete(ctx, p, graphID, stats); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// RegisterAfterTool adds a callback to be invoked after tool execution.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterAfterTool(cb AfterToolCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.afterTool = append(m.afterTool, cb)
+// ExecuteOnGraphError runs all plugins OnGraphError hooks.
+func (pm *PluginManager) ExecuteOnGraphError(ctx context.Context, graphID string, err error) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if hookErr := safeExecuteOnGraphError(ctx, p, graphID, err); hookErr != nil {
+			return hookErr
+		}
+	}
+
+	return nil
 }
 
-// RegisterOnToolError adds a callback to be invoked when a tool execution fails.
-// Callbacks are executed in registration order.
-func (m *Manager) RegisterOnToolError(cb OnToolErrorCallback) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.onToolError = append(m.onToolError, cb)
+// ExecuteBeforeNode runs all plugins BeforeNode hooks.
+func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if err := safeExecuteBeforeNode(ctx, p, nodeName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// ExecuteBeforeModel runs all registered BeforeModel callbacks in order.
-// If any callback returns a non-nil message, execution stops and that message is returned.
-// If any callback returns an error, execution stops and that error is returned.
-//
-// Returns:
-//   - message.Message: non-nil if a callback short-circuited with a response
-//   - error: non-nil if a callback failed
-func (m *Manager) ExecuteBeforeModel(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-	m.mu.RLock()
-	callbacks := m.beforeModel
-	m.mu.RUnlock()
+// ExecuteAfterNode runs all plugins AfterNode hooks.
+func (pm *PluginManager) ExecuteAfterNode(ctx context.Context, nodeName string, result NodeResult) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
-	for _, cb := range callbacks {
-		result, err := safeExecuteBeforeModel(ctx, cb, s)
+	for _, p := range plugins {
+		if err := safeExecuteAfterNode(ctx, p, nodeName, result); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ExecuteBeforeModel runs all plugins BeforeModel hooks.
+func (pm *PluginManager) ExecuteBeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		resp, err := safeExecuteBeforeModel(ctx, p, req)
 		if err != nil {
 			return nil, err
 		}
-		if result != nil {
-			return result, nil // Short-circuit
+		if resp != nil {
+			return resp, nil
 		}
 	}
 
 	return nil, nil
 }
 
-// ExecuteAfterModel runs all registered AfterModel callbacks in order.
-// Each callback may transform the response. The final (possibly transformed) response is returned.
-// If any callback returns an error, execution stops and that error is returned.
-//
-// Returns:
-//   - message.Message: the final response (original or transformed)
-//   - error: non-nil if a callback failed
-func (m *Manager) ExecuteAfterModel(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
-	m.mu.RLock()
-	callbacks := m.afterModel
-	m.mu.RUnlock()
+// ExecuteAfterModel runs all plugins AfterModel hooks.
+func (pm *PluginManager) ExecuteAfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
-	current := response
-	for _, cb := range callbacks {
-		transformed, err := safeExecuteAfterModel(ctx, cb, s, current)
+	current := resp
+	for _, p := range plugins {
+		transformed, err := safeExecuteAfterModel(ctx, p, req, current)
 		if err != nil {
 			return nil, err
 		}
@@ -137,149 +164,104 @@ func (m *Manager) ExecuteAfterModel(ctx context.Context, s graph.StateWriter, re
 	return current, nil
 }
 
-// ExecuteOnModelError runs all registered OnModelError callbacks in order.
-// Callbacks can provide fallback responses or transform errors.
-// If a callback returns a non-nil message, that becomes the final response and execution stops.
-// If a callback returns a non-nil error, that becomes the final error and execution stops.
-//
-// Returns:
-//   - message.Message: non-nil if a callback provided a fallback response
-//   - error: the final error (original or transformed)
-func (m *Manager) ExecuteOnModelError(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
-	m.mu.RLock()
-	callbacks := m.onModelError
-	m.mu.RUnlock()
+// ExecuteOnModelError runs all plugins OnModelError hooks.
+func (pm *PluginManager) ExecuteOnModelError(ctx context.Context, req *model.Request, err error) (*model.Response, error) {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
 	currentErr := err
-	for _, cb := range callbacks {
-		result, newErr := safeExecuteOnModelError(ctx, cb, s, currentErr)
-		if result != nil {
-			return result, nil // Fallback provided
+	for _, p := range plugins {
+		resp, hookErr := safeExecuteOnModelError(ctx, p, req, currentErr)
+		if resp != nil {
+			return resp, nil
 		}
-		if newErr != nil {
-			currentErr = newErr
+		if hookErr != nil {
+			currentErr = hookErr
 		}
 	}
 
 	return nil, currentErr
 }
 
-// ExecuteBeforeTool runs all registered BeforeTool callbacks in order.
-// If any callback returns a non-nil result, execution stops and that result is returned.
-// If any callback returns an error, execution stops and that error is returned.
-//
-// Returns:
-//   - any: non-nil if a callback short-circuited with a result
-//   - error: non-nil if a callback failed
-func (m *Manager) ExecuteBeforeTool(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
-	m.mu.RLock()
-	callbacks := m.beforeTool
-	m.mu.RUnlock()
+// ExecuteBeforeTool runs all plugins BeforeTool hooks.
+func (pm *PluginManager) ExecuteBeforeTool(ctx context.Context, toolName string, input any) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
-	for _, cb := range callbacks {
-		result, err := safeExecuteBeforeTool(ctx, cb, s, call)
-		if err != nil {
-			return nil, err
-		}
-		if result != nil {
-			return result, nil // Short-circuit
+	for _, p := range plugins {
+		if err := safeExecuteBeforeTool(ctx, p, toolName, input); err != nil {
+			return err
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
-// ExecuteAfterTool runs all registered AfterTool callbacks in order.
-// Each callback may transform the result. The final (possibly transformed) result is returned.
-// If any callback returns an error, execution stops and that error is returned.
-//
-// Returns:
-//   - any: the final result (original or transformed)
-//   - error: non-nil if a callback failed
-func (m *Manager) ExecuteAfterTool(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
-	m.mu.RLock()
-	callbacks := m.afterTool
-	m.mu.RUnlock()
+// ExecuteAfterTool runs all plugins AfterTool hooks.
+func (pm *PluginManager) ExecuteAfterTool(ctx context.Context, toolName string, result ToolResult) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
-	current := result
-	for _, cb := range callbacks {
-		transformed, err := safeExecuteAfterTool(ctx, cb, s, call, current)
-		if err != nil {
-			return nil, err
-		}
-		if transformed != nil {
-			current = transformed
+	for _, p := range plugins {
+		if err := safeExecuteAfterTool(ctx, p, toolName, result); err != nil {
+			return err
 		}
 	}
 
-	return current, nil
+	return nil
 }
 
-// ExecuteOnToolError runs all registered OnToolError callbacks in order.
-// Callbacks can provide fallback results or transform errors.
-// If a callback returns a non-nil result, that becomes the final result and execution stops.
-// If a callback returns a non-nil error, that becomes the final error and execution stops.
-//
-// Returns:
-//   - any: non-nil if a callback provided a fallback result
-//   - error: the final error (original or transformed)
-func (m *Manager) ExecuteOnToolError(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
-	m.mu.RLock()
-	callbacks := m.onToolError
-	m.mu.RUnlock()
+// ExecuteOnToolError runs all plugins OnToolError hooks.
+func (pm *PluginManager) ExecuteOnToolError(ctx context.Context, toolName string, err error) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
 
-	currentErr := err
-	for _, cb := range callbacks {
-		result, newErr := safeExecuteOnToolError(ctx, cb, s, call, currentErr)
-		if result != nil {
-			return result, nil // Fallback provided
-		}
-		if newErr != nil {
-			currentErr = newErr
+	for _, p := range plugins {
+		if hookErr := safeExecuteOnToolError(ctx, p, toolName, err); hookErr != nil {
+			return hookErr
 		}
 	}
 
-	return nil, currentErr
+	return nil
 }
 
-// HasBeforeModelCallbacks returns true if any BeforeModel callbacks are registered.
-func (m *Manager) HasBeforeModelCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.beforeModel) > 0
+// ExecuteOnStateChange runs all plugins OnStateChange hooks.
+func (pm *PluginManager) ExecuteOnStateChange(ctx context.Context, changes StateChanges) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if err := safeExecuteOnStateChange(ctx, p, changes); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// HasAfterModelCallbacks returns true if any AfterModel callbacks are registered.
-func (m *Manager) HasAfterModelCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.afterModel) > 0
+// ExecuteOnMessage runs all plugins OnMessage hooks.
+func (pm *PluginManager) ExecuteOnMessage(ctx context.Context, msg message.Message) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if err := safeExecuteOnMessage(ctx, p, msg); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// HasOnModelErrorCallbacks returns true if any OnModelError callbacks are registered.
-func (m *Manager) HasOnModelErrorCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.onModelError) > 0
-}
-
-// HasBeforeToolCallbacks returns true if any BeforeTool callbacks are registered.
-func (m *Manager) HasBeforeToolCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.beforeTool) > 0
-}
-
-// HasAfterToolCallbacks returns true if any AfterTool callbacks are registered.
-func (m *Manager) HasAfterToolCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.afterTool) > 0
-}
-
-// HasOnToolErrorCallbacks returns true if any OnToolError callbacks are registered.
-func (m *Manager) HasOnToolErrorCallbacks() bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.onToolError) > 0
+// HasPlugins returns true if any plugins are registered.
+func (pm *PluginManager) HasPlugins() bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return len(pm.plugins) > 0
 }

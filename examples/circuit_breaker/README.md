@@ -1,14 +1,13 @@
 # Example: Circuit Breaker
 
 ## Overview
-Demonstrates production-grade fault tolerance using the circuit breaker policy pattern. Shows how to protect your system from cascading failures when calling unreliable external services.
+Demonstrates circuit breaker pattern for preventing cascading failures when calling unreliable external services. Uses the built-in `CircuitBreakerPlugin` for resilient model invocations.
 
 ## Key Concepts
-- **Circuit Breaker Pattern**: Prevents system overload by failing fast when services are down
-- **State Transitions**: Closed → Open → Half-Open → Closed lifecycle
-- **Callback Policies**: Composable resilience patterns via callbacks
-- **Failure Threshold**: Automatic circuit opening after consecutive failures
-- **Recovery Testing**: Half-open state validates service recovery
+- **Circuit Breaker Plugin**: Built-in plugin for resilience patterns
+- **Three States**: Closed (normal) → Open (failing) → Half-Open (testing)
+- **Automatic Recovery**: Reset after timeout in half-open state
+- **Failure Tracking**: Counts consecutive failures to trip circuit
 
 ## Running
 ```bash
@@ -18,130 +17,94 @@ go run main.go
 
 ## Expected Output
 ```
-=== Circuit Breaker Example ===
+=== Circuit Breaker Pattern Demo ===
 
-Simulating unreliable service with circuit breaker protection
+Plugin manager configured with CircuitBreakerPlugin
+- Max Failures: 3
+- Reset Timeout: 5s
+- Half-Open Limit: 1
 
-[Call 1] ❌ Service failing
-Circuit Breaker: Failure recorded (1/3)
+Simulating flaky model...
 
-[Call 2] ❌ Service failing
-Circuit Breaker: Failure recorded (2/3)
+Call #1: Success ✓
+Call #2: Failed (1/3 failures) ✗
+Call #3: Failed (2/3 failures) ✗
+Call #4: Failed (3/3 failures) ✗
+⚠️  Circuit opened!
 
-[Call 3] ❌ Service failing
-⚠️  Circuit Breaker OPENED (threshold reached)
+Call #5: Blocked by circuit breaker 🛑
+Call #6: Blocked by circuit breaker 🛑
 
-[Call 4] Circuit is OPEN - Failing fast
-❌ Error: circuit breaker is open
+⏳ Waiting for reset timeout...
 
-[Call 5] Circuit is OPEN - Failing fast
-❌ Error: circuit breaker is open
-
-[Half-Open State] Testing service recovery...
-[Call 6] ✓ Service success
-Circuit Breaker: Success in half-open state → CLOSED
-
-[Call 7] ✓ Service success
-Circuit state: CLOSED - Operating normally
-```
-
-## Code Walkthrough
-
-### 1. Configure Circuit Breaker
-```go
-cbConfig := policies.CircuitBreakerConfig{
-    FailureThreshold: 3,              // Open after 3 failures
-    RecoveryTimeout:  2 * time.Second, // Try recovery after 2s
-    HalfOpenMaxCalls: 1,              // Test with 1 call
-}
-```
-
-### 2. Create Circuit Breaker Callbacks
-```go
-before, after, onError := policies.CircuitBreaker(cbConfig)
-```
-
-### 3. Register with Callback Manager
-```go
-manager := callbacks.NewManager()
-manager.RegisterBeforeModel(before)
-manager.RegisterAfterModel(after)
-manager.RegisterOnModelError(onError)
-```
-
-### 4. Integrate with Graph Nodes
-```go
-modelNode := agent.ModelNode(flakyModel, 
-    agent.WithModelCallbacks(manager),
-)
+Call #7: Half-open - Testing...
+Call #7: Success! Circuit closed ✓
 ```
 
 ## Circuit Breaker States
 
 ### Closed (Normal Operation)
 - All requests pass through
-- Failures are counted
-- Opens when threshold reached
+- Tracks consecutive failures
+- Opens when threshold exceeded
 
-### Open (Failing Fast)
-- All requests rejected immediately
-- No calls to failing service
-- Prevents resource exhaustion
-- Transitions to Half-Open after timeout
+### Open (Fast Fail)
+- All requests immediately rejected
+- No load on failing service
+- Waits for reset timeout
 
-### Half-Open (Testing Recovery)
-- Limited requests allowed through
-- Tests if service recovered
-- Success → Closed (service healthy)
-- Failure → Open (still broken)
+### Half-Open (Recovery Test)
+- Limited requests allowed
+- Tests service recovery
+- Closes on success, reopens on failure
 
-## What This Example Teaches
-- ✅ Circuit breaker pattern implementation
-- ✅ Protection against cascading failures
-- ✅ Automatic failure detection and recovery
-- ✅ Callback-based policy composition
-- ✅ State machine lifecycle management
+## Implementation
 
-## Production Considerations
-
-### Tuning Parameters
+### Plugin Configuration
 ```go
-CircuitBreakerConfig{
-    FailureThreshold: 5,        // Tolerate more failures
-    RecoveryTimeout: 30s,       // Wait longer before retry
-    HalfOpenMaxCalls: 3,        // More conservative testing
-}
+import (
+    "github.com/hupe1980/agentmesh/pkg/callbacks"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+)
+
+// Create circuit breaker plugin
+cb := plugins.NewCircuitBreakerPlugin(
+    3,              // maxFailures before opening
+    5*time.Second,  // resetTimeout before half-open
+    1,              // halfOpenLimit (requests in half-open)
+)
+
+// Register with plugin manager
+pm := callbacks.NewPluginManager()
+pm.Register(cb)
 ```
 
-### Per-Node Circuit Breakers
+### Integration
 ```go
-// Independent circuit breakers for each service
-cb1, _, _ := policies.PerNodeCircuitBreaker(config)
-cb2, _, _ := policies.PerNodeCircuitBreaker(config)
-
-manager.RegisterBeforeModel(cb1) // Service A
-manager.RegisterBeforeModel(cb2) // Service B
+// Attach to agent
+compiled, _ := agent.NewReActAgent(
+    model,
+    tools,
+    agent.WithModelCallbacks(pm),
+)
 ```
 
-### Combining with Retry
+### Monitoring
 ```go
-// Layer 1: Circuit breaker (fail fast)
-manager.RegisterBeforeModel(cbBefore)
-manager.RegisterAfterModel(cbAfter)
-manager.RegisterOnModelError(cbOnError)
+// Check circuit state
+state := cb.GetState()  // "closed", "open", "half-open"
 
-// Layer 2: Retry (for transient failures)
-manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
+// Reset circuit manually
+cb.Reset()
 ```
 
-## Next Steps
-- Combine with rate limiting for comprehensive protection
-- Add metrics to track circuit breaker state changes
-- Implement custom recovery logic in half-open state
-- See **examples/callback_integration** for policy composition
-- See **examples/observability** for monitoring circuit state
+## Use Cases
+- **Microservice Resilience**: Protect against cascading failures
+- **API Rate Limiting**: Fast fail when quota exceeded
+- **Database Overload**: Prevent connection pool exhaustion
+- **External Service Failures**: Graceful degradation
 
-## See Also
-- [pkg/callbacks/policies](../../pkg/callbacks/policies) - Policy implementations
-- [examples/guardrails](../guardrails) - Input validation and output filtering
-- [examples/observability](../observability) - Metrics and tracing
+## Related Resources
+- [pkg/callbacks/plugins](../../pkg/callbacks/plugins) - Built-in plugins
+- [examples/guardrails](../guardrails) - Security plugins
+- [examples/callback_integration](../callback_integration) - Plugin composition

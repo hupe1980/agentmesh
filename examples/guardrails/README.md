@@ -1,14 +1,13 @@
 # Example: Guardrails
 
 ## Overview
-Demonstrates content filtering and PII redaction using callbacks. Shows how to implement security guardrails for production LLM applications.
+Demonstrates content filtering and PII redaction using plugins. Shows how to implement security guardrails for production LLM applications with the type-safe plugin system.
 
 ## Key Concepts
-- **Input Validation**: Block unsafe prompts before LLM
-- **Output Filtering**: Redact sensitive information after LLM
-- **Content Policies**: Enforce acceptable use policies
-- **PII Protection**: Automatic detection and redaction
-- **Short-Circuit**: Stop execution on policy violations
+- **Security Plugins**: Content validation and PII protection
+- **Response Caching**: Performance optimization with CachePlugin
+- **Plugin Composition**: Multiple plugins working together
+- **Short-Circuit Returns**: Block unsafe content before model invocation
 
 ## Running
 ```bash
@@ -20,176 +19,139 @@ go run main.go
 ```
 === Guardrails Example ===
 
+Plugin manager configured with:
+- GuardrailsPlugin (content filtering + PII redaction)
+- CachePlugin (response caching)
+
 Test 1: Normal Request
-User: "What is the capital of France?"
+Input: "What is the capital of France?"
+Output: "The capital of France is Paris."
 ✓ Passed validation
-Assistant: "The capital of France is Paris."
 
 Test 2: Blocked Content
-User: "How to hack a system?"
-❌ Blocked: content contains disallowed keyword 'hack'
-Assistant: [Request blocked before reaching model]
+Input: "How to hack a system?"
+❌ Blocked: Content violates safety policy
 
 Test 3: PII Redaction
-User: "My email is john@example.com and SSN is 123-45-6789"
-✓ Passed validation
-Assistant: "Your email is [EMAIL] and SSN is [SSN]"
+Input: "My email is john@example.com and phone is 555-1234"
+Output: "My email is [EMAIL_REDACTED] and phone is [PHONE_REDACTED]"
+✓ PII redacted
 
-Test 4: URL Filtering
-User: "Check out http://malicious-site.com"
-✓ Passed validation (URL filtered)
-Assistant: "Check out [FILTERED_URL]"
+Test 4: Cache Hit
+Input: "What is the capital of France?"  # Same as Test 1
+Output: "The capital of France is Paris." (from cache)
+⚡ Cache hit! (0ms)
+
+Statistics:
+- Total requests: 4
+- Blocked: 1
+- PII redactions: 2
+- Cache hits: 1
+- Cache hit rate: 25%
 ```
 
-## Code Walkthrough
+## Implementation
 
-### 1. Create Input Validator
+### GuardrailsPlugin
 ```go
-func BlockUnsafeContent(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    blockedKeywords := []string{"hack", "exploit", "bypass"}
+type GuardrailsPlugin struct {
+    callbacks.NoopPlugin
     
-    messages := s.MessagesSnapshot()
-    for _, msg := range messages {
-        for _, part := range msg.Parts() {
-            if textPart, ok := part.(message.TextPart); ok {
-                for _, keyword := range blockedKeywords {
-                    if strings.Contains(strings.ToLower(textPart.Text), keyword) {
-                        return nil, fmt.Errorf(
-                            "content blocked: disallowed keyword '%s'", 
-                            keyword,
-                        )
-                    }
-                }
-            }
+    stats GuardrailStats
+    mu    sync.Mutex
+}
+
+func (p *GuardrailsPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    for _, msg := range req.Messages {
+        content := message.Stringify(msg)
+        
+        // Check for unsafe content
+        if containsUnsafeContent(content) {
+            p.recordBlocked()
+            return nil, fmt.Errorf("blocked: unsafe content detected")
         }
     }
-    return nil, nil // Pass validation
+    return nil, nil  // Continue to model
+}
+
+func (p *GuardrailsPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+    content := message.Stringify(resp.Message)
+    
+    // Redact PII
+    redacted, count := redactPII(content)
+    p.recordPIIRedactions(count)
+    
+    return &model.Response{
+        Message: message.NewAIMessage(message.NewTextPart(redacted)),
+        Usage:   resp.Usage,
+    }, nil
 }
 ```
 
-### 2. Create Output Filter
+### CachePlugin
 ```go
-func FilterPII(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    messages := s.MessagesSnapshot()
-    lastMsg := messages[len(messages)-1]
-    
-    // Redact PII patterns
-    text := getMessageText(lastMsg)
-    text = emailRegex.ReplaceAllString(text, "[EMAIL]")
-    text = ssnRegex.ReplaceAllString(text, "[SSN]")
-    text = phoneRegex.ReplaceAllString(text, "[PHONE]")
-    
-    return message.NewAIMessageFromText(text), nil
-}
+cache := plugins.NewCachePlugin(100)  // max 100 entries
+
+pm := callbacks.NewPluginManager()
+pm.Register(&GuardrailsPlugin{})
+pm.Register(cache)
 ```
 
-### 3. Register Guardrails
+### Integration
 ```go
-cbManager := callbacks.NewManager()
-cbManager.RegisterBeforeModel(BlockUnsafeContent)
-cbManager.RegisterAfterModel(FilterPII)
-
-modelNode := agent.ModelNode(model,
-    agent.WithModelCallbacks(cbManager),
+compiled, _ := agent.NewReActAgent(
+    model,
+    tools,
+    agent.WithModelCallbacks(pm),
 )
 ```
 
-## Common Patterns
+## Security Patterns
 
-### Email Redaction
+### Content Filtering (BeforeModel)
+- Block unsafe prompts
+- Enforce content policies
+- Validate input constraints
+
+### PII Redaction (AfterModel)
+- Email addresses → `[EMAIL_REDACTED]`
+- Phone numbers → `[PHONE_REDACTED]`
+- SSN/Credit cards → `[SENSITIVE_REDACTED]`
+
+### Combined with Caching
+- Cache safe responses
+- Skip blocked requests
+- Performance + Security
+
+## Use Cases
+- ✅ Input validation with BeforeModel plugins
+- ✅ Output filtering with AfterModel plugins
+- ✅ PII protection for compliance (GDPR, HIPAA)
+- ✅ Content moderation for user-facing apps
+- ✅ Rate limiting and quota enforcement
+- ✅ Audit logging for security
+
+## Plugin Composition
+
+Plugins execute in registration order:
+1. **GuardrailsPlugin** - Security first
+2. **CachePlugin** - Performance optimization
+
+Both plugins share the same PluginManager and can maintain independent state.
+
+## Statistics
+
 ```go
-emailRegex := regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`)
-text = emailRegex.ReplaceAllString(text, "[EMAIL]")
+stats := guardrailsPlugin.GetStats()
+fmt.Printf("Blocked: %d\n", stats.Blocked)
+fmt.Printf("PII Redactions: %d\n", stats.PIIRedactions)
+
+cacheStats := cachePlugin.GetStats()
+fmt.Printf("Cache Hits: %d\n", cacheStats.Hits)
+fmt.Printf("Hit Rate: %.1f%%\n", cacheStats.HitRate*100)
 ```
 
-### SSN Redaction
-```go
-ssnRegex := regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
-text = ssnRegex.ReplaceAllString(text, "[SSN]")
-```
-
-### Credit Card Redaction
-```go
-ccRegex := regexp.MustCompile(`\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b`)
-text = ccRegex.ReplaceAllString(text, "[CREDIT_CARD]")
-```
-
-### URL Filtering
-```go
-urlRegex := regexp.MustCompile(`https?://[^\s]+`)
-text = urlRegex.ReplaceAllString(text, "[FILTERED_URL]")
-```
-
-## Content Policy Examples
-
-### Profanity Filter
-```go
-func BlockProfanity(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    profanityList := loadProfanityList()
-    // Check messages...
-}
-```
-
-### Topic Restrictions
-```go
-func EnforceTopicPolicy(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    allowedTopics := []string{"weather", "news", "sports"}
-    // Validate topic...
-}
-```
-
-### Length Limits
-```go
-func EnforceLengthLimit(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    maxLength := 1000
-    text := getMessageText(lastMessage)
-    if len(text) > maxLength {
-        return nil, fmt.Errorf("message too long: %d > %d", len(text), maxLength)
-    }
-    return nil, nil
-}
-```
-
-## What This Example Teaches
-- ✅ Input validation with BeforeModel callbacks
-- ✅ Output filtering with AfterModel callbacks
-- ✅ PII detection and redaction
-- ✅ Content policy enforcement
-- ✅ Security best practices
-
-## Production Considerations
-
-### Comprehensive PII Detection
-- Use specialized libraries (e.g., Microsoft Presidio)
-- Consider context (false positives)
-- Support multiple languages
-- Handle edge cases
-
-### Performance
-```go
-// Compile regex patterns once
-var (
-    emailRegex = regexp.MustCompile(emailPattern)
-    ssnRegex   = regexp.MustCompile(ssnPattern)
-)
-```
-
-### Logging & Auditing
-```go
-func AuditBlockedContent(ctx context.Context, s graph.StateWriter) (message.Message, error) {
-    if isBlocked {
-        log.Printf("Blocked content: user=%s, reason=%s", userID, reason)
-    }
-}
-```
-
-## Next Steps
-- Implement custom PII detectors
-- Add compliance logging
-- Integrate with DLP (Data Loss Prevention) systems
-- See **examples/callback_integration** for advanced patterns
-
-## See Also
-- [pkg/callbacks](../../pkg/callbacks) - Callback system
-- [examples/callback_integration](../callback_integration) - Callback patterns
-- [examples/circuit_breaker](../circuit_breaker) - Error handling
+## Related Resources
+- [pkg/callbacks/plugins](../../pkg/callbacks/plugins) - Built-in plugins
+- [examples/circuit_breaker](../circuit_breaker) - Resilience plugins
+- [examples/callback_integration](../callback_integration) - Plugin basics

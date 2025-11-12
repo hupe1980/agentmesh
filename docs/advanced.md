@@ -1,11 +1,11 @@
 ---
 layout: doc
 title: Advanced Patterns
-description: Advanced AgentMesh patterns including retry policies, circuit breakers, aggregators, and subgraphs.
+description: Advanced AgentMesh patterns including plugins, circuit breakers, aggregators, and subgraphs.
 permalink: /advanced/
 hero:
   title: Advanced Patterns
-  description: Leverage retry policies, circuit breakers, BSP aggregators, and subgraph composition.
+  description: Leverage resilience plugins, BSP aggregators, and subgraph composition.
   primary_cta:
     label: Explore examples
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
@@ -15,8 +15,8 @@ hero:
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
     external: true
 sidebar:
-  - title: Retry policies
-    url: "#retry-policies"
+  - title: Resilience Plugins
+    url: "#resilience-plugins"
   - title: Circuit Breaker
     url: "#circuit-breaker"
   - title: Aggregators
@@ -30,24 +30,32 @@ sidebar:
 This guide covers advanced patterns for building robust, scalable AgentMesh applications.
 
 {: .note }
-> For state management patterns (checkpointing, time travel, message retention, human-in-loop), see **[State Management](/state-management/)**.
+> For state management patterns (checkpointing, time travel, message retention, human-in-loop), see **[State Management](/state-management/)**. For the plugin system, see **[Plugin System](/callbacks/)**.
 
 ---
 
-## Retry Policies {#retry-policies}
+## Resilience Plugins {#resilience-plugins}
 
-Configure automatic retries with exponential backoff for transient failures:
+Use built-in plugins for automatic retries, circuit breakers, and rate limiting:
+
+### Retry Plugin
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/callbacks"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
     "time"
 )
 
-// Configure retry on individual nodes
-builder.Node("unreliable_api", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    result, err := callExternalAPI()
-    if err != nil {
+pm := callbacks.NewPluginManager()
+
+// Add retry plugin with exponential backoff
+retry := plugins.NewRetryPlugin(
+    3,                   // maxRetries
+    100*time.Millisecond, // baseDelay
+    5*time.Second,       // maxDelay
+)
+pm.Register(retry)
         return nil, err
     }
     return &graph.NodeResult{
@@ -86,101 +94,46 @@ RetryPolicy: &graph.RetryPolicy{
 
 ## Circuit Breaker {#circuit-breaker}
 
-The circuit breaker pattern prevents cascading failures when calling external services. AgentMesh implements this as a **callback policy** in the `pkg/callbacks/policies` package, allowing you to wrap model or tool calls with automatic failure detection.
-
-### How It Works
-
-The circuit breaker implements three states:
-
-- **CLOSED** - Normal operation, requests flow through
-- **OPEN** - Too many failures detected, reject requests immediately with error
-- **HALF_OPEN** - Testing recovery after timeout, allow limited requests
-
-### Basic Usage
-
-Circuit breakers are registered as callbacks on the callback manager:
+The circuit breaker pattern prevents cascading failures when calling external services. Use the built-in `CircuitBreakerPlugin`:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/policies"
-    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
 )
 
-// Create callback manager
-manager := callbacks.NewManager()
+pm := callbacks.NewPluginManager()
 
 // Configure circuit breaker
-config := policies.DefaultCircuitBreakerConfig()
-config.MaxFailures = 3              // Open after 3 failures
-config.Timeout = 5 * time.Second    // Wait 5s before half-open
-config.FailureWindow = 1 * time.Minute  // Track failures over 1 minute
+cb := plugins.NewCircuitBreakerPlugin(
+    3,              // maxFailures before opening
+    5*time.Second,  // resetTimeout
+    1,              // halfOpenLimit
+)
+pm.Register(cb)
 
-// Register circuit breaker callbacks
-before, after, onError := policies.CircuitBreaker(config)
-manager.RegisterBeforeModel(before)
-manager.RegisterAfterModel(after)
-manager.RegisterOnModelError(onError)
-
-// Use with agent (circuit breaker protects model calls)
-compiled, err := agent.NewReActAgent(
+// Attach to agent
+compiled, _ := agent.NewReActAgent(
     model,
     tools,
-    agent.WithModelCallbacks(manager),
+    agent.WithModelCallbacks(pm),
 )
+
+// Monitor circuit state
+state := cb.GetState()  // "closed", "open", "half-open"
+cb.Reset()              // Manual reset
 ```
 
-### Integration with Retry Policy
+### Circuit States
 
-Combine circuit breakers with retry policies for robust error handling:
+- **CLOSED** - Normal operation, all requests pass through
+- **OPEN** - Fast fail after threshold exceeded, no requests to failing service
+- **HALF-OPEN** - Limited requests allowed to test recovery
 
-```go
-manager := callbacks.NewManager()
+### Example
 
-// Add circuit breaker
-cbConfig := policies.DefaultCircuitBreakerConfig()
-cbConfig.MaxFailures = 3
-cbConfig.Timeout = 5 * time.Second
-cbBefore, cbAfter, cbError := policies.CircuitBreaker(cbConfig)
-manager.RegisterBeforeModel(cbBefore)
-manager.RegisterAfterModel(cbAfter)
-manager.RegisterOnModelError(cbError)
+See [examples/circuit_breaker](https://github.com/hupe1980/agentmesh/tree/main/examples/circuit_breaker) for complete implementation.
 
-// Add retry policy with circuit breaker awareness
-retryConfig := policies.DefaultRetryConfig()
-retryConfig.MaxAttempts = 3
-retryConfig.Retryable = func(err error) bool {
-    // Don't retry if circuit is open (will fail immediately anyway)
-    if strings.Contains(err.Error(), "circuit breaker open") {
-        return false
-    }
-    // Retry other transient errors
-    return isTransientError(err)
-}
-manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
-```
-
-### State Transitions
-
-```
-CLOSED ──[failure threshold reached]──> OPEN
-  ↑                                       │
-  │                                       │
-  └─[success]─────────────── HALF_OPEN ←─[timeout elapsed]
-           │
-           └─[any failure]──> OPEN
-```
-
-### Thread Safety
-
-The circuit breaker policy is safe for concurrent use across multiple goroutines using atomic operations.
-
-**See Also**:
-- `examples/circuit_breaker` - Complete working example with flaky service
-- [Callbacks Guide](/callbacks/) - Callback system overview
-- `pkg/callbacks/policies` - Policy implementations (circuit breaker, retry, etc.)
-
----
 
 ## Aggregators & BSP Coordination {#aggregators}
 

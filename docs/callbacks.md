@@ -1,12 +1,12 @@
 ---
 layout: doc
-title: Callbacks
+title: Plugin System
 permalink: /callbacks/
 hero:
-  title: Callback System
-  description: Intercept and transform model and tool invocations with composable callbacks.
+  title: Plugin System
+  description: Extend AgentMesh with type-safe plugins for observability, security, and resilience.
   primary_cta:
-    label: View example
+    label: View examples
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples/callback_integration"
     external: true
   secondary_cta:
@@ -16,543 +16,432 @@ hero:
 sidebar:
   - title: Overview
     url: "#overview"
-  - title: Callback types
-    url: "#callback-types"
+  - title: Plugin interface
+    url: "#plugin-interface"
   - title: Basic usage
     url: "#basic-usage"
-  - title: Built-in policies
-    url: "#built-in-policies"
-  - title: Use cases
-    url: "#use-cases"
+  - title: Built-in plugins
+    url: "#built-in-plugins"
+  - title: Custom plugins
+    url: "#custom-plugins"
   - title: Best practices
     url: "#best-practices"
 ---
 
-# Callbacks
+# Plugin System
 
-The callback system enables powerful extensions to AgentMesh workflows by intercepting and modifying model and tool invocations at multiple execution stages.
+The plugin system enables powerful extensions to AgentMesh workflows through a unified, type-safe interface for cross-cutting concerns like observability, security, and resilience.
 
 ---
 
 ## Overview {#overview}
 
-Callbacks provide hooks into the agent execution lifecycle:
+Plugins provide lifecycle hooks into agent execution:
 
-- **BeforeModel/BeforeTool** - Intercept requests before execution
-- **AfterModel/AfterTool** - Post-process responses after execution
-- **OnModelError/OnToolError** - Handle errors with fallback logic
+- **Init/Shutdown** - Resource management (connections, cleanup)
+- **BeforeModel/AfterModel/OnModelError** - Model request/response transformation
+- **BeforeTool/AfterTool/OnToolError** - Tool execution monitoring
+- **OnGraphStart/OnGraphComplete/OnGraphError** - Graph lifecycle tracking
+- **BeforeNode/AfterNode** - Node-level interception
+- **OnStateChange/OnMessage** - State and message tracking
 
 **Key features**:
-- ✅ Composable - Chain multiple callbacks in sequence
-- ✅ Thread-safe - Safe for concurrent execution
-- ✅ Short-circuiting - Return early to skip execution
-- ✅ Type-safe - Strongly typed request/response objects
+- ✅ Type-safe - Constructor-based configuration, no `map[string]any`
+- ✅ Composable - Multiple plugins work together seamlessly
+- ✅ Stateful - Plugins can maintain internal state across invocations
+- ✅ Thread-safe - Built-in concurrency protection
+- ✅ Short-circuiting - Return early to skip model calls (caching, rate limiting)
 
 ---
 
-## Callback Types {#callback-types}
+## Plugin Interface {#plugin-interface}
 
-### Model Callbacks
-
-#### BeforeModelCallback
-
-Intercepts model requests before execution. Can validate, transform, or short-circuit.
+All plugins implement the `Plugin` interface:
 
 ```go
-type BeforeModelCallback func(
-    ctx context.Context,
-    req *callbacks.ModelRequest,
-) (*callbacks.ModelResponse, error)
+type Plugin interface {
+    // Lifecycle
+    Init(ctx context.Context) error
+    Shutdown(ctx context.Context) error
+    
+    // Graph-level hooks
+    OnGraphStart(ctx context.Context, graphID string) error
+    OnGraphComplete(ctx context.Context, graphID string, stats GraphStats) error
+    OnGraphError(ctx context.Context, graphID string, err error) error
+    
+    // Node-level hooks
+    BeforeNode(ctx context.Context, nodeName string) error
+    AfterNode(ctx context.Context, nodeName string, result NodeResult) error
+    
+    // Model hooks
+    BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error)
+    AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error)
+    OnModelError(ctx context.Context, req *model.Request, err error) (*model.Response, error)
+    
+    // Tool hooks
+    BeforeTool(ctx context.Context, toolName string, input any) error
+    AfterTool(ctx context.Context, toolName string, result ToolResult) error
+    OnToolError(ctx context.Context, toolName string, err error) error
+    
+    // State hooks
+    OnStateChange(ctx context.Context, changes StateChanges) error
+    OnMessage(ctx context.Context, msg message.Message) error
+}
 ```
 
-**Returns**:
-- `nil, nil` - Continue to model execution
-- `response, nil` - Short-circuit with cached/transformed response
-- `nil, error` - Abort with error
+### NoopPlugin Helper
 
-#### AfterModelCallback
-
-Post-processes model responses after execution.
+Embed `NoopPlugin` to implement only the hooks you need:
 
 ```go
-type AfterModelCallback func(
-    ctx context.Context,
-    req *callbacks.ModelRequest,
-    resp *callbacks.ModelResponse,
-) (*callbacks.ModelResponse, error)
+type MyPlugin struct {
+    callbacks.NoopPlugin  // Default no-op implementations
+    
+    // Your plugin state
+    counter int
+}
+
+func (p *MyPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    p.counter++
+    // Only implement what you need
+    return nil, nil
+}
 ```
-
-**Returns**:
-- `response, nil` - Return (potentially modified) response
-- `nil, error` - Abort with error
-
-#### OnModelErrorCallback
-
-Handles model execution errors with fallback logic.
-
-```go
-type OnModelErrorCallback func(
-    ctx context.Context,
-    req *callbacks.ModelRequest,
-    err error,
-) (*callbacks.ModelResponse, error)
-```
-
-**Returns**:
-- `response, nil` - Recover with fallback response
-- `nil, error` - Propagate or transform error
-
-### Tool Callbacks
-
-Tool callbacks follow the same pattern as model callbacks:
-
-- `BeforeToolCallback` - Intercept tool requests
-- `AfterToolCallback` - Post-process tool responses
-- `OnToolErrorCallback` - Handle tool errors
 
 ---
 
 ## Basic Usage {#basic-usage}
 
-### Creating a Callback Manager
+### 1. Create Plugin Manager
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/callbacks"
+import (
+    "github.com/hupe1980/agentmesh/pkg/callbacks"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+)
 
-// Create manager
-manager := callbacks.NewManager()
-
-// Register callbacks
-manager.RegisterBeforeModel(validateInputCallback)
-manager.RegisterAfterModel(loggingCallback)
-manager.RegisterOnModelError(fallbackCallback)
+pm := callbacks.NewPluginManager()
 ```
 
-### Using with ReAct Agents
+### 2. Register Plugins
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/agent"
+// Built-in plugins
+pm.Register(plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
+pm.Register(plugins.NewMetricsPlugin(metricsProvider))
+pm.Register(plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1))
 
+// Custom plugins
+pm.Register(&MyCustomPlugin{})
+```
+
+### 3. Attach to Agent
+
+```go
 compiled, err := agent.NewReActAgent(
     model,
     tools,
-    agent.WithModelCallbacks(manager),
-    agent.WithToolCallbacks(manager),
+    agent.WithModelCallbacks(pm),
+    agent.WithToolCallbacks(pm),
 )
 ```
 
-### Complete Example
+### 4. Cleanup on Shutdown
 
 ```go
-package main
+defer pm.Shutdown(context.Background())
+```
 
-import (
-    "context"
-    "log"
+---
 
-    "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/agent"
+## Built-in Plugins {#built-in-plugins}
+
+AgentMesh provides production-ready plugins in `pkg/callbacks/plugins`:
+
+### LoggingPlugin
+
+Logs all lifecycle events for debugging and audit trails.
+
+```go
+plugin := plugins.NewLoggingPlugin(
+    log.Default(),
+    "[AgentMesh]",  // prefix
 )
+pm.Register(plugin)
+```
 
-func main() {
-    manager := callbacks.NewManager()
+### MetricsPlugin
+
+Collects execution metrics (latency, errors, throughput) for observability.
+
+```go
+provider := prometheus.NewProvider()
+plugin := plugins.NewMetricsPlugin(provider)
+pm.Register(plugin)
+
+// Get snapshot
+snapshot := plugin.GetSnapshot()
+fmt.Printf("Model calls: %d, errors: %d, avg latency: %v\n",
+    snapshot.ModelCalls, snapshot.ModelErrors, snapshot.AvgModelLatency)
+```
+
+### TracingPlugin
+
+Creates distributed tracing spans for OpenTelemetry/Jaeger integration.
+
+```go
+tracer := trace.NewOpenTelemetryTracer("agentmesh")
+plugin := plugins.NewTracingPlugin(tracer)
+pm.Register(plugin)
+```
+
+### CircuitBreakerPlugin
+
+Prevents cascading failures with three-state circuit breaker pattern.
+
+```go
+plugin := plugins.NewCircuitBreakerPlugin(
+    3,              // maxFailures
+    5*time.Second,  // resetTimeout
+    1,              // halfOpenLimit
+)
+pm.Register(plugin)
+
+// Monitor state
+state := plugin.GetState()  // "closed", "open", "half-open"
+plugin.Reset()              // Manual reset
+```
+
+### RateLimitPlugin
+
+Enforces rate limiting with sliding window algorithm.
+
+```go
+plugin := plugins.NewRateLimitPlugin(
+    100,           // maxRequests
+    time.Minute,   // window
+)
+pm.Register(plugin)
+
+// Check current rate
+rate := plugin.GetCurrentRate()
+```
+
+### CachePlugin
+
+In-memory response caching with LRU eviction.
+
+```go
+plugin := plugins.NewCachePlugin(100)  // max entries
+pm.Register(plugin)
+
+// Get statistics
+stats := plugin.GetStats()
+fmt.Printf("Hit rate: %.1f%%, size: %d\n",
+    stats.HitRate*100, stats.Size)
+```
+
+### RetryPlugin
+
+Tracks retry attempts with exponential backoff (note: actual retry requires model layer integration).
+
+```go
+plugin := plugins.NewRetryPlugin(
+    3,                  // maxRetries
+    100*time.Millisecond, // baseDelay
+    5*time.Second,      // maxDelay
+)
+pm.Register(plugin)
+```
+
+### PersistencePlugin
+
+Persists execution data to SQL database for audit and analytics.
+
+```go
+db, _ := sql.Open("sqlite3", "audit.db")
+plugin := plugins.NewPersistencePlugin(db)
+pm.Register(plugin)
+```
+
+### ReplayPlugin
+
+Records and replays model responses for deterministic testing.
+
+```go
+// Record mode
+plugin := plugins.NewReplayPlugin(plugins.RecordMode)
+pm.Register(plugin)
+// ... run tests ...
+f, _ := os.Create("recordings.json")
+plugin.SaveRecordings(f)
+
+// Replay mode
+plugin := plugins.NewReplayPlugin(plugins.ModeReplay)
+f, _ := os.Open("recordings.json")
+plugin.LoadRecordings(f)
+pm.Register(plugin)
+```
+
+### AuditPlugin
+
+Writes JSON audit logs to any `io.Writer`.
+
+```go
+f, _ := os.Create("audit.log")
+plugin := plugins.NewAuditPlugin(f)
+pm.Register(plugin)
+```
+
+---
+
+## Custom Plugins {#custom-plugins}
+
+### Basic Plugin
+
+```go
+type ValidationPlugin struct {
+    callbacks.NoopPlugin
     
-    // Content filtering
-    manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-        for _, msg := range req.Messages {
-            if containsProfanity(msg) {
-                return nil, errors.New("inappropriate content detected")
+    blocklist []string
+    mu        sync.RWMutex
+}
+
+func (p *ValidationPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    p.mu.RLock()
+    defer p.mu.RUnlock()
+    
+    for _, msg := range req.Messages {
+        content := message.Stringify(msg)
+        for _, blocked := range p.blocklist {
+            if strings.Contains(content, blocked) {
+                return nil, fmt.Errorf("blocked: contains '%s'", blocked)
             }
         }
-        return nil, nil // Continue
-    })
-    
-    // Response logging
-    manager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
-        log.Printf("Model: %s, Tokens: %d", req.Model, resp.TokenUsage.Total)
-        return resp, nil
-    })
-    
-    // Fallback on error
-    manager.RegisterOnModelError(func(ctx context.Context, req *callbacks.ModelRequest, err error) (*callbacks.ModelResponse, error) {
-        if isRateLimitError(err) {
-            log.Println("Rate limited, using fallback")
-            return getFallbackResponse(req), nil
-        }
-        return nil, err
-    })
-    
-    // Create agent with callbacks
-    compiled, _ := agent.NewReActAgent(
-        model,
-        tools,
-        agent.WithModelCallbacks(manager),
-    )
-    
-    results, _ := compiled.Invoke(ctx, messages)
-}
-```
-
----
-
-## Built-in Policies {#built-in-policies}
-
-AgentMesh provides pre-built callback policies in `pkg/callbacks/policies` for common patterns:
-
-### Retry Policy
-
-Automatic retry with exponential backoff for transient failures:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/callbacks/policies"
-
-manager := callbacks.NewManager()
-
-// Configure retry policy
-config := policies.DefaultRetryConfig()
-config.MaxAttempts = 3
-config.InitialDelay = 100 * time.Millisecond
-config.MaxDelay = 5 * time.Second
-config.Retryable = func(err error) bool {
-    // Only retry specific error types
-    return isTransientError(err)
-}
-
-// Register as error callback
-manager.RegisterOnModelError(policies.ExponentialBackoffRetry(config))
-```
-
-### Circuit Breaker Policy
-
-Prevent cascading failures with automatic circuit breaking:
-
-```go
-manager := callbacks.NewManager()
-
-// Configure circuit breaker
-config := policies.DefaultCircuitBreakerConfig()
-config.MaxFailures = 3              // Open after 3 failures
-config.Timeout = 5 * time.Second    // Half-open after 5s
-config.FailureWindow = 1 * time.Minute
-
-// Register all three circuit breaker callbacks
-before, after, onError := policies.CircuitBreaker(config)
-manager.RegisterBeforeModel(before)
-manager.RegisterAfterModel(after)
-manager.RegisterOnModelError(onError)
-```
-
-**Circuit breaker states**:
-- **CLOSED**: Normal operation, requests pass through
-- **OPEN**: Failures threshold reached, reject requests immediately
-- **HALF_OPEN**: Testing recovery, allow limited requests
-
-### Combining Policies
-
-Stack retry and circuit breaker for robust error handling:
-
-```go
-manager := callbacks.NewManager()
-
-// Circuit breaker (registers before/after/error)
-cbConfig := policies.DefaultCircuitBreakerConfig()
-cbBefore, cbAfter, cbError := policies.CircuitBreaker(cbConfig)
-manager.RegisterBeforeModel(cbBefore)
-manager.RegisterAfterModel(cbAfter)
-manager.RegisterOnModelError(cbError)
-
-// Retry policy (registers only error)
-retryConfig := policies.DefaultRetryConfig()
-retryConfig.Retryable = func(err error) bool {
-    // Don't retry if circuit is open
-    if strings.Contains(err.Error(), "circuit breaker open") {
-        return false
     }
-    return isTransientError(err)
+    return nil, nil  // Continue to model
 }
-manager.RegisterOnModelError(policies.ExponentialBackoffRetry(retryConfig))
 ```
 
-**Execution order**: BeforeModel → Model → AfterModel → OnModelError (if error occurs)
-
----
-
-## Use Cases {#use-cases}
-
-### 1. Content Guardrails
-
-Filter unsafe content before and after model execution:
+### Stateful Plugin
 
 ```go
-// Input filtering
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    for _, msg := range req.Messages {
-        if containsPII(msg) {
-            return nil, errors.New("PII detected in input")
-        }
-        if containsUnsafeContent(msg) {
-            return nil, errors.New("unsafe content detected")
-        }
-    }
+type MetricsPlugin struct {
+    callbacks.NoopPlugin
+    
+    callCount   atomic.Int64
+    errorCount  atomic.Int64
+    latencies   []time.Duration
+    mu          sync.Mutex
+    startTimes  map[string]time.Time
+}
+
+func (p *MetricsPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    p.callCount.Add(1)
+    
+    p.mu.Lock()
+    p.startTimes[fmt.Sprintf("%p", req)] = time.Now()
+    p.mu.Unlock()
+    
     return nil, nil
-})
+}
 
-// Output filtering
-manager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
-    filtered := filterPII(resp.Message)
-    resp.Message = filtered
-    return resp, nil
-})
-```
-
-### 2. Response Caching
-
-Cache model responses to reduce latency and cost:
-
-```go
-var cache = make(map[string]*callbacks.ModelResponse)
-
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    key := hashRequest(req)
-    if cached, ok := cache[key]; ok {
-        log.Println("Cache hit")
-        return cached, nil // Short-circuit
+func (p *MetricsPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+    p.mu.Lock()
+    key := fmt.Sprintf("%p", req)
+    if start, ok := p.startTimes[key]; ok {
+        p.latencies = append(p.latencies, time.Since(start))
+        delete(p.startTimes, key)
     }
-    return nil, nil // Continue to model
-})
-
-manager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
-    key := hashRequest(req)
-    cache[key] = resp
-    return resp, nil
-})
-```
-
-### 3. Metrics & Monitoring
-
-Track model performance and usage:
-
-```go
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    ctx = context.WithValue(ctx, "startTime", time.Now())
+    p.mu.Unlock()
+    
     return nil, nil
-})
+}
 
-manager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
-    start := ctx.Value("startTime").(time.Time)
-    latency := time.Since(start)
-    
-    metrics.RecordModelLatency(req.Model, latency)
-    metrics.RecordTokens(resp.TokenUsage.Total)
-    
-    return resp, nil
-})
-
-manager.RegisterOnModelError(func(ctx context.Context, req *callbacks.ModelRequest, err error) (*callbacks.ModelResponse, error) {
-    metrics.RecordModelError(req.Model, err)
+func (p *MetricsPlugin) OnModelError(ctx context.Context, req *model.Request, err error) (*model.Response, error) {
+    p.errorCount.Add(1)
     return nil, err
-})
+}
 ```
 
-### 4. Policy Enforcement
-
-Enforce business rules on model usage:
+### Plugin with Dependencies
 
 ```go
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    user := ctx.Value("user").(string)
+type CachePlugin struct {
+    callbacks.NoopPlugin
     
-    // Check rate limits
-    if exceedsRateLimit(user) {
-        return nil, errors.New("rate limit exceeded")
-    }
-    
-    // Check permissions
-    if !hasPermission(user, req.Model) {
-        return nil, errors.New("unauthorized model access")
-    }
-    
-    // Check cost limits
-    estimatedCost := estimateTokenCost(req.Messages)
-    if exceedsBudget(user, estimatedCost) {
-        return nil, errors.New("budget exceeded")
-    }
-    
-    return nil, nil
-})
-```
+    metricsPlugin *MetricsPlugin  // Dependency
+    cache         map[string]*model.Response
+}
 
-### 5. Retry & Fallback
-
-Implement sophisticated retry logic with fallbacks:
-
-```go
-manager.RegisterOnModelError(func(ctx context.Context, req *callbacks.ModelRequest, err error) (*callbacks.ModelResponse, error) {
-    // Retry on transient errors
-    if isTransientError(err) {
-        retries := ctx.Value("retries").(int)
-        if retries < 3 {
-            time.Sleep(backoff(retries))
-            ctx = context.WithValue(ctx, "retries", retries+1)
-            // Trigger retry by returning original error
-            return nil, err
-        }
+func NewCachePlugin(metrics *MetricsPlugin) *CachePlugin {
+    return &CachePlugin{
+        metricsPlugin: metrics,
+        cache:         make(map[string]*model.Response),
     }
-    
-    // Fallback to cheaper model
-    if isRateLimitError(err) && req.Model == "gpt-4" {
-        log.Println("Falling back to gpt-3.5-turbo")
-        req.Model = "gpt-3.5-turbo"
-        // Execute with fallback model
-        return executeFallbackModel(ctx, req)
-    }
-    
-    return nil, err
-})
-```
+}
 
-### 6. Tool Validation
+// Register in order
+metrics := &MetricsPlugin{}
+cache := NewCachePlugin(metrics)
 
-Validate tool arguments and results:
-
-```go
-manager.RegisterBeforeTool(func(ctx context.Context, req *callbacks.ToolRequest) (*callbacks.ToolResponse, error) {
-    // Validate arguments
-    if err := validateToolArgs(req.Name, req.Arguments); err != nil {
-        return nil, fmt.Errorf("invalid tool arguments: %w", err)
-    }
-    
-    // Check authorization
-    if !isAuthorizedTool(ctx, req.Name) {
-        return nil, errors.New("unauthorized tool access")
-    }
-    
-    return nil, nil
-})
-
-manager.RegisterAfterTool(func(ctx context.Context, req *callbacks.ToolRequest, resp *callbacks.ToolResponse) (*callbacks.ToolResponse, error) {
-    // Validate result format
-    if !isValidToolResult(resp.Result) {
-        return nil, errors.New("invalid tool result format")
-    }
-    
-    // Sanitize output
-    resp.Result = sanitizeToolOutput(resp.Result)
-    
-    return resp, nil
-})
+pm.Register(metrics)
+pm.Register(cache)
 ```
 
 ---
 
 ## Best Practices {#best-practices}
 
-### 1. Keep Callbacks Fast
+### Plugin Design
 
-Callbacks execute in the hot path. Avoid expensive operations:
+1. **Single Responsibility** - Each plugin should handle one concern
+2. **Constructor Configuration** - Pass dependencies via constructor, not runtime config
+3. **Thread-Safe State** - Use `sync.Mutex` or `atomic` for shared state
+4. **Embed NoopPlugin** - Override only the hooks you need
+
+### Registration Order
+
+Plugins execute in registration order:
 
 ```go
-// ❌ Bad - expensive operation
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    // Don't do expensive database lookups
-    rules := fetchRulesFromDatabase()
-    return validateAgainstRules(req, rules)
-})
-
-// ✅ Good - use cached rules
-var rulesCache = loadRulesAtStartup()
-
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    return validateAgainstRules(req, rulesCache)
-})
+pm.Register(authPlugin)      // Security first
+pm.Register(rateLimitPlugin) // Then rate limiting
+pm.Register(cachePlugin)     // Then caching
+pm.Register(metricsPlugin)   // Finally metrics
 ```
 
-### 2. Use Context for State
+### Error Handling
 
-Pass state between callbacks using context:
+- **BeforeModel**: Return error to block execution
+- **AfterModel**: Return error to propagate failure
+- **OnModelError**: Transform error or return fallback response
 
-```go
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    ctx = context.WithValue(ctx, "requestID", uuid.New())
-    ctx = context.WithValue(ctx, "startTime", time.Now())
-    return nil, nil
-})
-
-manager.RegisterAfterModel(func(ctx context.Context, req *callbacks.ModelRequest, resp *callbacks.ModelResponse) (*callbacks.ModelResponse, error) {
-    requestID := ctx.Value("requestID")
-    startTime := ctx.Value("startTime").(time.Time)
-    log.Printf("[%s] Completed in %v", requestID, time.Since(startTime))
-    return resp, nil
-})
-```
-
-### 3. Handle Errors Gracefully
-
-Decide whether to fail fast or recover:
+### Short-Circuiting
 
 ```go
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    // Critical validation - fail fast
-    if containsMalware(req) {
-        return nil, errors.New("security violation")
+func (p *CachePlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
+    if cached := p.cache.Get(req); cached != nil {
+        return cached, nil  // Skip model call
     }
-    
-    // Optional enhancement - log and continue
-    if err := logToAnalytics(req); err != nil {
-        log.Printf("Analytics logging failed: %v", err)
-        // Don't fail the request
-    }
-    
-    return nil, nil
-})
+    return nil, nil  // Continue to model
+}
 ```
 
-### 4. Order Matters
-
-Callbacks execute in registration order:
+### Resource Management
 
 ```go
-// Register in logical order
-manager.RegisterBeforeModel(authCallback)      // 1. Authenticate
-manager.RegisterBeforeModel(validationCallback) // 2. Validate
-manager.RegisterBeforeModel(cacheCallback)      // 3. Check cache
-manager.RegisterBeforeModel(loggingCallback)    // 4. Log
-```
-
-### 5. Thread Safety
-
-CallbackManager is thread-safe, but your callbacks should be too:
-
-```go
-// ✅ Thread-safe cache
-var cache sync.Map
-
-manager.RegisterBeforeModel(func(ctx context.Context, req *callbacks.ModelRequest) (*callbacks.ModelResponse, error) {
-    key := hashRequest(req)
-    if val, ok := cache.Load(key); ok {
-        return val.(*callbacks.ModelResponse), nil
+func (p *DatabasePlugin) Init(ctx context.Context) error {
+    db, err := sql.Open("postgres", p.connectionString)
+    if err != nil {
+        return err
     }
-    return nil, nil
-})
-```
+    p.db = db
+    return nil
+}
 
-### 6. Testing Callbacks
-
-Test callbacks in isolation:
-
-```go
-func TestContentFilterCallback(t *testing.T) {
-    cb := contentFilterCallback()
-    
-    req := &callbacks.ModelRequest{
-        Messages: []message.Message{
-            message.NewHumanMessageFromText("inappropriate content"),
-        },
-    }
-    
-    resp, err := cb(context.Background(), req)
-    assert.Error(t, err)
-    assert.Nil(t, resp)
+func (p *DatabasePlugin) Shutdown(ctx context.Context) error {
+    return p.db.Close()
 }
 ```
 
@@ -560,13 +449,8 @@ func TestContentFilterCallback(t *testing.T) {
 
 ## Examples
 
-- **[callback_integration](https://github.com/hupe1980/agentmesh/tree/main/examples/callback_integration)** - Complete callback system demonstration
-- **[guardrails](https://github.com/hupe1980/agentmesh/tree/main/examples/guardrails)** - Content filtering with callbacks
+- [Plugin Integration](https://github.com/hupe1980/agentmesh/tree/main/examples/callback_integration) - Complete plugin system demo
+- [Circuit Breaker](https://github.com/hupe1980/agentmesh/tree/main/examples/circuit_breaker) - Resilience patterns
+- [Guardrails](https://github.com/hupe1980/agentmesh/tree/main/examples/guardrails) - Security and PII protection
 
----
-
-## See Also
-
-- [Agents Guide](/agents/) - Using callbacks with ReAct agents
-- [Observability](/observability/) - Combining callbacks with metrics
-- [API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/callbacks)
+See [CALLBACK.md](https://github.com/hupe1980/agentmesh/blob/main/CALLBACK.md) for detailed design documentation.
