@@ -31,8 +31,10 @@ func mustAddNode(t testing.TB, g *Graph, n *Node) {
 func TestVertexSchedulerReadyInitial(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
 	mustAddNode(t, g, noopNode("process2"))
@@ -50,8 +52,10 @@ func TestVertexSchedulerReadyInitial(t *testing.T) {
 func TestVertexSchedulerOnCompletion(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
 	mustAddNode(t, g, noopNode("process2"))
@@ -73,8 +77,10 @@ func TestVertexSchedulerOnCompletion(t *testing.T) {
 func TestVertexSchedulerBootstrapResume(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	process1 := noopNode("process1")
 	mustAddNode(t, g, process1)
 	mustAddNode(t, g, noopNode("process2"))
@@ -94,9 +100,11 @@ func TestVertexSchedulerBootstrapResume(t *testing.T) {
 func TestVertexSchedulerStartConditionals(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	state.Set("branch", "taskB") // Initialize branch value
-	g := NewGraph(state)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	mustAddNode(t, g, noopNode("taskA"))
 	mustAddNode(t, g, noopNode("taskB"))
 	g.AddEdge(StartNode, "taskA")
@@ -124,8 +132,10 @@ func TestVertexSchedulerStartConditionals(t *testing.T) {
 func TestVertexSchedulerSnapshot(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	mustAddNode(t, g, noopNode("a"))
 	mustAddNode(t, g, noopNode("b"))
 	g.AddEdge(StartNode, "a")
@@ -149,8 +159,10 @@ func TestVertexSchedulerSnapshot(t *testing.T) {
 func TestVertexSchedulerReset(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	mustAddNode(t, g, noopNode("a"))
 	g.AddEdge(StartNode, "a")
 
@@ -167,8 +179,10 @@ func TestVertexSchedulerReset(t *testing.T) {
 func TestVertexSchedulerConditionalSelectionDedup(t *testing.T) {
 	t.Parallel()
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 
 	mustAddNode(t, g, noopNode("next"))
 	mustAddNode(t, g, noopNode("selector"))

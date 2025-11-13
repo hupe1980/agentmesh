@@ -10,10 +10,12 @@ import (
 
 func TestGraphValidation(t *testing.T) {
 	t.Run("detects unreachable node", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "reachable",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				return &NodeResult{}, nil
@@ -40,10 +42,12 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("allows valid graph", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "step1",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				return &NodeResult{}, nil
@@ -68,10 +72,12 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("unreachable node via conditional branch is reachable", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "router",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				return &NodeResult{}, nil
@@ -108,10 +114,12 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("detects missing edge target", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "existing",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				return &NodeResult{}, nil

@@ -14,8 +14,14 @@ func BenchmarkGraphExecution(b *testing.B) {
 
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("nodes_%d", size), func(b *testing.B) {
-			state := graph.NewStateManager(0)
-			g := graph.NewGraph(state)
+			state, err := graph.NewStateManager(0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			g, err := graph.NewGraph(state)
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			// Create a chain of nodes
 			for i := 0; i < size; i++ {
@@ -69,8 +75,14 @@ func BenchmarkParallelExecution(b *testing.B) {
 
 	for _, size := range parallelSizes {
 		b.Run(fmt.Sprintf("parallel_%d", size), func(b *testing.B) {
-			state := graph.NewStateManager(0)
-			g := graph.NewGraph(state)
+			state, err := graph.NewStateManager(0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			g, err := graph.NewGraph(state)
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			// Create parallel nodes (all from START)
 			for i := 0; i < size; i++ {
@@ -115,7 +127,10 @@ func BenchmarkParallelExecution(b *testing.B) {
 // BenchmarkStateOperations measures state access performance
 func BenchmarkStateOperations(b *testing.B) {
 	b.Run("Set", func(b *testing.B) {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		b.ResetTimer()
 		for b.Loop() {
 			state.Set(fmt.Sprintf("key_%d", b.N%100), b.N)
@@ -123,7 +138,10 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		for i := range 100 {
 			state.Set(fmt.Sprintf("key_%d", i), i)
 		}
@@ -134,7 +152,10 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("GetAll", func(b *testing.B) {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		for i := range 100 {
 			state.Set(fmt.Sprintf("key_%d", i), i)
 		}
@@ -147,8 +168,14 @@ func BenchmarkStateOperations(b *testing.B) {
 
 // BenchmarkScheduler measures scheduler performance
 func BenchmarkScheduler(b *testing.B) {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	// Create a moderately complex graph
 	for i := range 50 {

@@ -3,13 +3,13 @@
 // This example shows how to:
 //   - Use Stream for live updates during graph execution
 //   - Stream partial results as nodes complete
-//   - Track execution progress with real-time event handling
+//   - Track execution progress with real-time result handling
 //   - Stream LLM responses token-by-token for better UX
 //   - Handle cleanup with defer stream.Close() to prevent goroutine leaks
 //
 // Key concepts:
-//   - Stream: Real-time event channel for graph execution
-//   - Event Types: NodeStart, NodeComplete, NodeError, GraphComplete
+//   - Stream: Real-time execution result channel for graph execution
+//   - Execution Results: NodeStart, NodeComplete, NodeError, GraphComplete
 //   - Proper cleanup: Always call stream.Close() or stream.Cancel()
 //
 // Prerequisites:
@@ -43,7 +43,10 @@ func main() {
 	model := openai.NewModel()
 
 	// Build a multi-node graph to demonstrate streaming
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		log.Fatalf("Failed to create builder: %v", err)
+	}
 
 	// Node 1: Data processor with intermediate streaming
 	builder.Node("data_processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {

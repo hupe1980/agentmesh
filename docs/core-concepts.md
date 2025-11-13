@@ -39,7 +39,10 @@ A graph consists of:
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-builder := graph.NewBuilder()
+builder, err := graph.NewBuilder()
+if err != nil {
+    return err
+}
 
 // Add nodes
 builder.Node("fetch", fetchDataFunc)
@@ -54,6 +57,9 @@ builder.AddEdge("save", "END")
 
 // Compile into executable graph
 compiled, err := builder.Compile()
+if err != nil {
+    return err
+}
 ```
 
 ### Node functions

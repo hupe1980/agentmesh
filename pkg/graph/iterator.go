@@ -6,60 +6,60 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Last consumes an iterator and returns only the final event and error.
+// Last consumes an iterator and returns only the final execution result and error.
 // This is useful for getting the result of a graph run without processing intermediate steps.
 //
-// Note: Each Event contains a single Message from node execution.
-// To get ALL accumulated messages, use Collect to gather all events, or access
+// Note: Each ExecutionResult contains a single Message from node execution.
+// To get ALL accumulated messages, use Collect to gather all results, or access
 // the graph's State().EventsSnapshot() directly after consuming the iterator.
-func Last(seq iter.Seq2[Event, error]) (Event, error) {
-	var lastEvent Event
+func Last(seq iter.Seq2[ExecutionResult, error]) (ExecutionResult, error) {
+	var lastResult ExecutionResult
 	var lastErr error
 
-	for event, err := range seq {
-		lastEvent = event
+	for result, err := range seq {
+		lastResult = result
 		if err != nil {
 			lastErr = err
 			break
 		}
 	}
 
-	return lastEvent, lastErr
+	return lastResult, lastErr
 }
 
-// Collect gathers all events from an iterator into a slice.
+// Collect gathers all execution results from an iterator into a slice.
 // The final error (if any) is returned separately. This is useful for testing
 // and debugging to inspect the full execution trace.
-func Collect(seq iter.Seq2[Event, error]) ([]Event, error) {
-	events := make([]Event, 0)
+func Collect(seq iter.Seq2[ExecutionResult, error]) ([]ExecutionResult, error) {
+	results := make([]ExecutionResult, 0)
 	var lastErr error
 
-	for event, err := range seq {
+	for result, err := range seq {
 		if err != nil {
 			lastErr = err
 			break
 		}
-		events = append(events, event)
+		results = append(results, result)
 	}
 
-	return events, lastErr
+	return results, lastErr
 }
 
 // CollectMessages directly collects all messages from an iterator.
-// This is a convenience function that extracts messages from events as they arrive,
-// avoiding the need to collect events first and then extract messages separately.
+// This is a convenience function that extracts messages from execution results as they arrive,
+// avoiding the need to collect results first and then extract messages separately.
 // The final error (if any) is returned separately.
-func CollectMessages(seq iter.Seq2[Event, error]) ([]message.Message, error) {
+func CollectMessages(seq iter.Seq2[ExecutionResult, error]) ([]message.Message, error) {
 	messages := make([]message.Message, 0)
 	var lastErr error
 
-	for event, err := range seq {
+	for result, err := range seq {
 		if err != nil {
 			lastErr = err
 			break
 		}
-		if event.Message != nil {
-			messages = append(messages, event.Message)
+		if result.Message != nil {
+			messages = append(messages, result.Message)
 		}
 	}
 
@@ -69,10 +69,10 @@ func CollectMessages(seq iter.Seq2[Event, error]) ([]message.Message, error) {
 // LastMessage consumes an iterator and returns only the final message and error.
 // This is useful for getting the final result of a graph run without processing
 // intermediate messages.
-func LastMessage(seq iter.Seq2[Event, error]) (message.Message, error) {
-	event, err := Last(seq)
+func LastMessage(seq iter.Seq2[ExecutionResult, error]) (message.Message, error) {
+	result, err := Last(seq)
 	if err != nil {
 		return nil, err
 	}
-	return event.Message, nil
+	return result.Message, nil
 }

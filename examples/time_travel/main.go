@@ -24,7 +24,10 @@ func main() {
 
 	// Build a simple mathematical workflow
 	buildWorkflow := func() *graph.Compiled {
-		builder := graph.NewBuilder()
+		builder, err := graph.NewBuilder()
+		if err != nil {
+			panic(err)
+		}
 
 		// Step 1: Double the value
 		builder.Node("double", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {

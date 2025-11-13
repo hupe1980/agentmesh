@@ -188,7 +188,10 @@ func runDemo(ctx context.Context) {
 }
 
 func buildWorkflow() *graph.Compiled {
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		panic(err)
+	}
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		fmt.Println("→ Step 1: Initializing...")
@@ -227,7 +230,10 @@ func buildWorkflow() *graph.Compiled {
 }
 
 func buildFailingWorkflow() *graph.Compiled {
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		panic(err)
+	}
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		fmt.Println("  Step 1: OK")
@@ -257,7 +263,10 @@ func buildFailingWorkflow() *graph.Compiled {
 }
 
 func buildFixedWorkflow() *graph.Compiled {
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		panic(err)
+	}
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")

@@ -23,7 +23,8 @@ func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 	initialGoroutines := runtime.NumGoroutine()
 
 	// Create a graph with multiple nodes
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	for i := 0; i < 10; i++ {
 		name := string(rune('a' + i))
 		builder.Node(name, func(ctx context.Context, s StateWriter) (*NodeResult, error) {
@@ -75,7 +76,8 @@ func TestStream_CancelStopsExecution(t *testing.T) {
 	t.Parallel()
 
 	var executionCount atomic.Int32
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 
 	// Create a chain of nodes
 	for i := 0; i < 100; i++ {

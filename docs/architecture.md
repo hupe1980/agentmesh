@@ -180,7 +180,7 @@ return &graph.NodeResult{
 ```go
 // Configure mailbox size (default: unlimited)
 runtime := pregel.NewRuntime(graph, state,
-    pregel.WithMaxMailboxSize[*State, ChannelMessage](1000),
+    pregel.WithMaxMailboxSize[*ChannelState, ChannelMessage](1000),
 )
 
 // Recommendations:

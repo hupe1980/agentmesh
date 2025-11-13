@@ -22,7 +22,8 @@ func getMessageText(msg message.Message) string {
 
 func TestState_MessageRetention_Default(t *testing.T) {
 	// Default behavior: unlimited retention
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 
 	messages := []message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -38,7 +39,8 @@ func TestState_MessageRetention_Default(t *testing.T) {
 
 func TestState_SetMaxMessages_Zero(t *testing.T) {
 	// Zero means unlimited
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	// MaxMessages now set at creation: NewStateManager(0)
 
 	messages := make([]message.Message, 150)
@@ -54,7 +56,8 @@ func TestState_SetMaxMessages_Zero(t *testing.T) {
 
 func TestState_SetMaxMessages_EnforceLimit(t *testing.T) {
 	// Set limit at construction
-	state := NewStateManager(5)
+	state, err := NewStateManager(5)
+	require.NoError(t, err)
 
 	messages := make([]message.Message, 10)
 	for i := range messages {
@@ -69,7 +72,8 @@ func TestState_SetMaxMessages_EnforceLimit(t *testing.T) {
 
 func TestState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 	// Verify oldest messages are discarded, newest are kept
-	state := NewStateManager(3)
+	state, err := NewStateManager(3)
+	require.NoError(t, err)
 
 	state.AddMessages(wrapMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "old1"}}),
@@ -90,7 +94,8 @@ func TestState_SetMaxMessages_KeepsMostRecent(t *testing.T) {
 
 func TestState_SetMaxMessages_MultipleAdds(t *testing.T) {
 	// Multiple AddMessages calls should still respect limit
-	state := NewStateManager(4)
+	state, err := NewStateManager(4)
+	require.NoError(t, err)
 
 	state.AddMessages(wrapMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -118,7 +123,8 @@ func TestState_SetMaxMessages_MultipleAdds(t *testing.T) {
 
 func TestState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 	// Setting limit at construction should immediately enforce it
-	state := NewStateManager(2)
+	state, err := NewStateManager(2)
+	require.NoError(t, err)
 
 	state.AddMessages(wrapMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -138,7 +144,10 @@ func TestState_SetMaxMessages_ApplyAfterMessages(t *testing.T) {
 func TestState_SetMaxMessages_Negative(t *testing.T) {
 	// Negative values should be treated as zero (unlimited)
 	// Note: maxMessages is now set at construction, so we test with 0
-	state := NewStateManager(0) // 0 means unlimited
+	state, err := NewStateManager(0) // 0 means unlimited
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	messages := make([]message.Message, 20)
 	for i := range messages {
@@ -153,7 +162,8 @@ func TestState_SetMaxMessages_Negative(t *testing.T) {
 
 func TestState_ApplyUpdates_RespectsLimit(t *testing.T) {
 	// ApplyUpdates should also respect message limits
-	state := NewStateManager(3)
+	state, err := NewStateManager(3)
+	require.NoError(t, err)
 
 	state.AddMessages(wrapMessages([]message.Message{
 		message.NewHumanMessage(message.Parts{message.TextPart{Text: "msg1"}}),
@@ -175,7 +185,8 @@ func TestState_ApplyUpdates_RespectsLimit(t *testing.T) {
 }
 
 func TestState_MessageRetention_EmptyMessages(t *testing.T) {
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	// MaxMessages now set at creation: NewStateManager(5)
 
 	// Adding empty slice should not panic
@@ -227,10 +238,10 @@ func TestWithMaxMessages_NilOptions(t *testing.T) {
 
 // Helper function for tests to wrap messages as events
 
-func wrapMessages(msgs []message.Message) []Event {
-	events := make([]Event, len(msgs))
+func wrapMessages(msgs []message.Message) []ExecutionResult {
+	events := make([]ExecutionResult, len(msgs))
 	for i, msg := range msgs {
-		events[i] = *NewEvent(msg, "", "test")
+		events[i] = *NewExecutionResult(msg, "", "test")
 	}
 	return events
 }

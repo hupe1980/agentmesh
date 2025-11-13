@@ -16,7 +16,11 @@ func main() {
 	fmt.Println()
 
 	// Create a simple graph
-	builder := graph.NewBuilder().
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		panic(err)
+	}
+	builder.
 		Node("echo", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			events := s.EventsSnapshot()
 			if len(events) > 0 {

@@ -78,10 +78,16 @@ func main() {
 	}
 
 	// Build the graph using agent
-	state := graph.NewStateManager(10)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(10)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	err := g.AddNode(agent.ModelNode(
+	err = g.AddNode(agent.ModelNode(
 		flakyModel,
 		agent.WithModelNodeName("flaky-service"),
 		agent.WithModelCallbacks(pluginMgr),

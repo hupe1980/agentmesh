@@ -53,7 +53,10 @@ func main() {
 	fmt.Println()
 
 	// Initialize state with unlimited message history
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
 
 	// TopicChannel: Accumulates action history (like appending to a list)
 	// Each node's updates are collected without overwriting previous entries
@@ -64,7 +67,10 @@ func main() {
 	// combines them into a single map without losing data
 	state.AddChannel(channel.NewBinaryOpChannel("results", map[string]any{}, mergeMapReducer))
 
-	gph := graph.NewGraph(state)
+	gph, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	// Task A: Simulates data analysis work
 	taskA := &graph.Node{

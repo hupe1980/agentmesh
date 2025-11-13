@@ -6,10 +6,12 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStateCloneDeepCopy(t *testing.T) {
-	state := NewStateManager(5)
+	state, err := NewStateManager(5)
+	require.NoError(t, err)
 	if err := state.Set("status", "pending"); err != nil {
 		t.Fatalf("set status failed: %v", err)
 	}
@@ -17,7 +19,7 @@ func TestStateCloneDeepCopy(t *testing.T) {
 	state.AddMessages(wrapTestMessages([]message.Message{message.NewHumanMessageFromText("hello")}))
 
 	clonedAny := state.Clone()
-	cloned, ok := clonedAny.(*State)
+	cloned, ok := clonedAny.(*ChannelState)
 	if !ok {
 		t.Fatalf("expected *State clone, got %T", clonedAny)
 	}
@@ -50,7 +52,9 @@ func TestStateCloneDeepCopy(t *testing.T) {
 }
 
 func TestStateSetMaxMessages(t *testing.T) {
-	state := NewStateManager(0).(*State) // Type assert to access SetMaxMessages
+	mgr, err := NewStateManager(0)
+	require.NoError(t, err)
+	state := mgr.(*ChannelState) // Type assert to access SetMaxMessages
 	if err := state.Set("flag", true); err != nil {
 		t.Fatalf("set flag failed: %v", err)
 	}
@@ -88,10 +92,10 @@ func TestStateSetMaxMessages(t *testing.T) {
 	}
 }
 
-func wrapTestMessages(msgs []message.Message) []Event {
-	events := make([]Event, len(msgs))
+func wrapTestMessages(msgs []message.Message) []ExecutionResult {
+	events := make([]ExecutionResult, len(msgs))
 	for i, msg := range msgs {
-		events[i] = *NewEvent(msg, "", "test")
+		events[i] = *NewExecutionResult(msg, "", "test")
 	}
 	return events
 }

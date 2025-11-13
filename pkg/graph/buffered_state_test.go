@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/stretchr/testify/require"
 )
 
 // TestBufferedStateWriter_IsolatesAggregates verifies that Aggregate() calls
 // are buffered and not visible within the same superstep.
 func TestBufferedStateWriter_IsolatesAggregates(t *testing.T) {
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 
 	// Create buffered writer
 	buffered := newBufferedStateWriter(state)
@@ -49,7 +51,8 @@ func TestBufferedStateWriter_IsolatesAggregates(t *testing.T) {
 // TestBufferedStateWriter_ReadsUnderlyingState verifies that reads go through
 // to the underlying committed state, not the buffered changes.
 func TestBufferedStateWriter_ReadsUnderlyingState(t *testing.T) {
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	state.Set("key1", "value1")
 	state.Set("key2", "value2")
 
@@ -68,7 +71,8 @@ func TestBufferedStateWriter_ReadsUnderlyingState(t *testing.T) {
 
 // TestBufferedStateWriter_ConcurrentAccess verifies thread safety of buffered writer.
 func TestBufferedStateWriter_ConcurrentAccess(t *testing.T) {
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	buffered := newBufferedStateWriter(state)
 
 	// Concurrent aggregates
@@ -102,7 +106,8 @@ func TestBufferedStateWriter_ConcurrentAccess(t *testing.T) {
 }
 
 func TestBufferedStateWriter_MultipleAggregatesPerKey(t *testing.T) {
-	state := NewStateManager(0)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
 	buffered := newBufferedStateWriter(state)
 
 	if err := buffered.Aggregate("counter", 1); err != nil {
@@ -132,10 +137,13 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 	// With buffering, they should both see the initial value
 
 	runTest := func() string {
-		state := NewStateManager(0)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
 		state.Set("value", "initial")
 
-		builder := NewBuilder().SetStateManager(state)
+		builder, err := NewBuilder()
+		require.NoError(t, err)
+		builder.SetStateManager(state)
 
 		node1 := &Node{
 			Name: "node1",

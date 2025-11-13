@@ -24,8 +24,14 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 
 	// Create a simple workflow that increments a counter through 5 nodes
 	buildWorkflow := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
-		g := graph.NewGraph(state)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		for i := 1; i <= 5; i++ {
 			nodeNum := i
@@ -134,8 +140,14 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 
 	// Create workflow that fails on node 3 ONLY on first attempt
 	buildFailingWorkflow := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
-		g := graph.NewGraph(state)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		for i := 1; i <= 5; i++ {
 			nodeNum := i
@@ -250,8 +262,14 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	logMu.Store(make([]string, 0))
 
 	buildWorkflow := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
-		g := graph.NewGraph(state)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		// Node A sets value
 		require.NoError(t, g.AddNode(&graph.Node{
@@ -377,8 +395,14 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	runID := "test-resume-version"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",
@@ -447,8 +471,14 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create workflow with multiple supersteps
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for i := 1; i <= 3; i++ {
 		nodeNum := i
@@ -539,8 +569,14 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 		go func() {
 			runID := fmt.Sprintf("concurrent-run-%d", workflowID)
 
-			state := graph.NewStateManager(0)
-			g := graph.NewGraph(state)
+			state, err := graph.NewStateManager(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := graph.NewGraph(state)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: "work",
@@ -605,8 +641,14 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	runID := "test-empty-state"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",

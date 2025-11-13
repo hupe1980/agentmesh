@@ -34,11 +34,17 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 	defer bus.Close()
 
 	// Create graph state with a counter and history channel
-	state := graph.NewState(0)
+	state, err := graph.NewChannelState(0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	state.Set("counter", 0)
 	state.AddChannel(channel.NewTopicChannel("history", 0))
 
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Add three sequential nodes
 	require.NoError(t, g.AddNode(&graph.Node{
@@ -134,10 +140,16 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 	})
 	defer bus.Close()
 
-	state := graph.NewState(0)
+	state, err := graph.NewChannelState(0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	state.AddChannel(channel.NewTopicChannel("completed", 0))
 
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create 3 parallel workers
 	for i := 1; i <= 3; i++ {
@@ -201,11 +213,17 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 	})
 	defer bus.Close()
 
-	state := graph.NewState(0)
+	state, err := graph.NewChannelState(0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	state.Set("value", 42)
 	state.Set("path", "start")
 
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "start",

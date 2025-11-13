@@ -100,7 +100,7 @@ func main() {
 			break
 		}
 
-		// Each Event now contains ONE Message (not a Messages slice)
+		// Each ExecutionResult now contains ONE Message (not a Messages slice)
 		if evt.Message == nil {
 			continue
 		}

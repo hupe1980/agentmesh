@@ -13,8 +13,10 @@ func TestVertexSchedulerRaceSafety(t *testing.T) {
 		t.Skip("skip race guard in short mode")
 	}
 
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 	require.NoError(t, g.AddNode(noopNode("start")))
 	require.NoError(t, g.AddNode(noopNode("next")))
 	g.AddEdge(StartNode, "start")

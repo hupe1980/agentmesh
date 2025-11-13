@@ -36,10 +36,15 @@ func ensureExecutionState(rt *executionState) *executionState {
 }
 
 // NewGraph creates a new graph with the given state manager.
-// If stateManager is nil, creates a default State with unlimited messages.
-func NewGraph(stateManager StateManager) *Graph {
+// If stateManager is nil, creates a default StateManager with unlimited messages.
+// Returns an error if state manager creation fails.
+func NewGraph(stateManager StateManager) (*Graph, error) {
 	if stateManager == nil {
-		stateManager = NewStateManager(0) // Unlimited messages by default
+		sm, err := NewStateManager(0) // Unlimited messages by default
+		if err != nil {
+			return nil, fmt.Errorf("failed to create default state manager: %w", err)
+		}
+		stateManager = sm
 	}
 	return &Graph{
 		Nodes:        make(map[string]*Node),
@@ -47,7 +52,7 @@ func NewGraph(stateManager StateManager) *Graph {
 		Branches:     make([]ConditionalEdges, 0),
 		stateManager: stateManager,
 		runtime:      newExecutionState(),
-	}
+	}, nil
 }
 
 // StateManager returns the graph's state manager.

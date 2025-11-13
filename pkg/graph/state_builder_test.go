@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewStateBuilder(t *testing.T) {
@@ -18,9 +19,10 @@ func TestNewStateBuilder(t *testing.T) {
 }
 
 func TestStateBuilder_WithMessages(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithMessages(50).
 		Build()
+	require.NoError(t, err)
 
 	// Verify the messages channel has correct limit
 	ch, ok := state.GetChannel("messages")
@@ -39,9 +41,10 @@ func TestStateBuilder_WithMessages(t *testing.T) {
 }
 
 func TestStateBuilder_WithUnlimitedMessages(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithUnlimitedMessages().
 		Build()
+	require.NoError(t, err)
 
 	ch, ok := state.GetChannel("messages")
 	if !ok {
@@ -54,10 +57,11 @@ func TestStateBuilder_WithUnlimitedMessages(t *testing.T) {
 }
 
 func TestStateBuilder_WithLastValue(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithLastValue("status", "pending").
 		WithLastValue("temperature", 72).
 		Build()
+	require.NoError(t, err)
 
 	// Check status channel
 	if _, ok := state.GetChannel("status"); !ok {
@@ -81,10 +85,11 @@ func TestStateBuilder_WithLastValue(t *testing.T) {
 }
 
 func TestStateBuilder_WithCounter(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithCounter("iterations").
 		WithCounter("score").
 		Build()
+	require.NoError(t, err)
 
 	// Check counter channels exist
 	if _, ok := state.GetChannel("iterations"); !ok {
@@ -112,10 +117,11 @@ func TestStateBuilder_WithCounter(t *testing.T) {
 }
 
 func TestStateBuilder_WithFlag(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithFlag("completed").
 		WithFlag("validated").
 		Build()
+	require.NoError(t, err)
 
 	// Check flags exist and start false
 	completed := state.Get("completed")
@@ -137,10 +143,11 @@ func TestStateBuilder_WithFlag(t *testing.T) {
 }
 
 func TestStateBuilder_WithList(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithList("action_history").
 		WithList("errors").
 		Build()
+	require.NoError(t, err)
 
 	// Check list channels exist
 	if _, ok := state.GetChannel("action_history"); !ok {
@@ -167,9 +174,10 @@ func TestStateBuilder_WithList(t *testing.T) {
 }
 
 func TestStateBuilder_WithListLimit(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithListLimit("recent_actions", 2).
 		Build()
+	require.NoError(t, err)
 
 	// Add more items than the limit
 	state.Set("recent_actions", []string{"action1"})
@@ -189,9 +197,10 @@ func TestStateBuilder_WithListLimit(t *testing.T) {
 }
 
 func TestStateBuilder_WithMap(t *testing.T) {
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithMap("task_results").
 		Build()
+	require.NoError(t, err)
 
 	// Check map channel exists
 	if _, ok := state.GetChannel("task_results"); !ok {
@@ -229,9 +238,10 @@ func TestStateBuilder_WithBinaryOp(t *testing.T) {
 		return oldStr + newStr
 	}
 
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithBinaryOp("concatenated", "", concat).
 		Build()
+	require.NoError(t, err)
 
 	// Test custom reducer
 	state.Set("concatenated", "Hello")
@@ -247,9 +257,10 @@ func TestStateBuilder_WithBinaryOp(t *testing.T) {
 func TestStateBuilder_WithChannel(t *testing.T) {
 	customChannel := channel.NewLastValueChannel("custom")
 
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithChannel(customChannel).
 		Build()
+	require.NoError(t, err)
 
 	// Check custom channel exists
 	if _, ok := state.GetChannel("custom"); !ok {
@@ -259,7 +270,7 @@ func TestStateBuilder_WithChannel(t *testing.T) {
 
 func TestStateBuilder_ChainedCalls(t *testing.T) {
 	// Test fluent API with multiple chained calls
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithMessages(50).
 		WithLastValue("status", "running").
 		WithCounter("iterations").
@@ -267,6 +278,7 @@ func TestStateBuilder_ChainedCalls(t *testing.T) {
 		WithList("logs").
 		WithMap("results").
 		Build()
+	require.NoError(t, err)
 
 	// Verify all channels exist
 	channels := []string{"messages", "status", "iterations", "completed", "logs", "results"}
@@ -290,7 +302,8 @@ func TestStateBuilder_ChainedCalls(t *testing.T) {
 
 func TestStateBuilder_EmptyBuild(t *testing.T) {
 	// Build with no additional channels (just default messages)
-	state := NewStateBuilder().Build()
+	state, err := NewStateBuilder().Build()
+	require.NoError(t, err)
 
 	if state == nil {
 		t.Fatal("Build returned nil")
@@ -304,12 +317,13 @@ func TestStateBuilder_EmptyBuild(t *testing.T) {
 
 func TestStateBuilder_ComplexWorkflow(t *testing.T) {
 	// Simulate a complex workflow state setup
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithMessages(100).
 		WithLastValue("current_phase", "initialization").
 		WithCounter("total_attempts").
 		WithFlag("validation_passed").
 		WithList("error_log").
+		WithMap("step_results").
 		WithMap("phase_results").
 		WithBinaryOp("score_sum", 0.0, func(old, new any) any {
 			oldF, _ := old.(float64)
@@ -317,6 +331,7 @@ func TestStateBuilder_ComplexWorkflow(t *testing.T) {
 			return oldF + newF
 		}).
 		Build()
+	require.NoError(t, err)
 
 	// Simulate workflow operations
 	state.Set("current_phase", "processing")
@@ -359,10 +374,11 @@ func TestStateBuilder_WithInitialMessages(t *testing.T) {
 	systemMsg := message.NewSystemMessageFromText("You are a helpful assistant")
 	humanMsg := message.NewHumanMessageFromText("Hello")
 
-	state := NewStateBuilder().
+	state, err := NewStateBuilder().
 		WithUnlimitedMessages().
 		WithInitialMessages(systemMsg, humanMsg).
 		Build()
+	require.NoError(t, err)
 
 	events := state.EventsSnapshot()
 	if len(events) != 2 {

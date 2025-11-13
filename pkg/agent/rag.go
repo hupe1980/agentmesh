@@ -11,6 +11,77 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
 )
 
+// extractUserQuery finds the last human message text from execution results.
+func extractUserQuery(events []graph.ExecutionResult) (string, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Message.Type() == message.TypeHuman {
+			// Get text from Parts
+			for _, part := range events[i].Message.Parts() {
+				if textPart, ok := part.(message.TextPart); ok {
+					return textPart.Text, nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("no user query found")
+}
+
+// extractDocumentContent converts retrieval documents to string slices.
+func extractDocumentContent(docs []retrieval.Document) []string {
+	docStrings := make([]string, len(docs))
+	for i, doc := range docs {
+		docStrings[i] = doc.PageContent
+	}
+	return docStrings
+}
+
+// createRetrieveNode creates the retrieval node for fetching relevant documents.
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, graph.StateWriter) (*graph.NodeResult, error) {
+	return func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		events := s.EventsSnapshot()
+		if len(events) == 0 {
+			return nil, fmt.Errorf("no query messages")
+		}
+
+		query, err := extractUserQuery(events)
+		if err != nil {
+			return nil, err
+		}
+
+		docs, err := retriever.Retrieve(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("retrieval failed: %w", err)
+		}
+
+		return &graph.NodeResult{
+			Updates: map[string]any{
+				"documents": extractDocumentContent(docs),
+			},
+		}, nil
+	}
+}
+
+// createGenerateNode creates the generation node for producing responses with context.
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, graph.StateWriter) (*graph.NodeResult, error) {
+	return func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		events := s.EventsSnapshot()
+		messages := graph.ExtractMessages(events)
+
+		docs, ok := s.Get("documents").([]string)
+		if !ok || len(docs) == 0 {
+			// No documents found, generate without context
+			return generateWithModel(ctx, mdl, messages, "")
+		}
+
+		// Format context from documents
+		contextPrompt := config.promptTemplate.MustRender(map[string]any{
+			"Documents": docs,
+		})
+
+		return generateWithModel(ctx, mdl, messages, contextPrompt)
+	}
+}
+
 // NewRAGAgent creates a Retrieval-Augmented Generation agent that:
 //  1. Retrieves relevant context from a knowledge base
 //  2. Generates a response using both the query and retrieved context
@@ -37,76 +108,13 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	// Build RAG graph
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create graph builder: %w", err)
+	}
 
-	// Retrieve node: fetch relevant documents
-	builder.Node("retrieve", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		events := s.EventsSnapshot()
-		if len(events) == 0 {
-			return nil, fmt.Errorf("no query messages")
-		}
-
-		// Get last user message as query
-		var query string
-		for i := len(events) - 1; i >= 0; i-- {
-			if events[i].Message.Type() == message.TypeHuman {
-				// Get text from Parts
-				for _, part := range events[i].Message.Parts() {
-					if textPart, ok := part.(message.TextPart); ok {
-						query = textPart.Text
-						break
-					}
-				}
-				if query != "" {
-					break
-				}
-			}
-		}
-
-		if query == "" {
-			return nil, fmt.Errorf("no user query found")
-		}
-
-		// Retrieve documents
-		docs, err := retriever.Retrieve(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("retrieval failed: %w", err)
-		}
-
-		// Extract page content from documents
-		docStrings := make([]string, len(docs))
-		for i, doc := range docs {
-			docStrings[i] = doc.PageContent
-		}
-
-		// Store documents in state
-		return &graph.NodeResult{
-			Updates: map[string]any{
-				"documents": docStrings,
-			},
-		}, nil
-	})
-
-	// Generate node: create response with context
-	builder.Node("generate", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		docs, ok := s.Get("documents").([]string)
-		if !ok || len(docs) == 0 {
-			// No documents found, generate without context
-			events := s.EventsSnapshot()
-			messages := graph.ExtractMessages(events)
-			return generateWithModel(ctx, mdl, messages, "")
-		}
-
-		// Format context from documents
-		contextPrompt := config.promptTemplate.MustRender(map[string]any{
-			"Documents": docs,
-		})
-
-		events := s.EventsSnapshot()
-		messages := graph.ExtractMessages(events)
-		return generateWithModel(ctx, mdl, messages, contextPrompt)
-	})
+	builder.Node("retrieve", createRetrieveNode(retriever))
+	builder.Node("generate", createGenerateNode(mdl, config))
 
 	// Chain: retrieve → generate
 	builder.AddEdge(graph.StartNode, "retrieve")

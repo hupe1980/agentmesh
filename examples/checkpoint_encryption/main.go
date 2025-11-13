@@ -56,8 +56,14 @@ func basicEncryptionExample(ctx context.Context) {
 	}
 
 	// Create a simple graph
-	state := graph.NewStateManager(10)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(10)
+	if err != nil {
+		log.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	g.AddNode(&graph.Node{
 		Name: "secure_node",

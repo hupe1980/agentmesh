@@ -24,8 +24,14 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	ctx := context.Background()
 	failureRate := 0.2 // 20% of nodes will fail randomly
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Counter to track successful executions
 	var successCount atomic.Int32
@@ -34,7 +40,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	// Create a chain of 10 nodes where each increments a counter
 	for i := 0; i < 10; i++ {
 		nodeNum := i
-		err := g.AddNode(&graph.Node{
+		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("node_%d", i),
 			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				// Random failure injection
@@ -108,10 +114,16 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 
 	// This test verifies the graph detects message bus issues
 	// For in-memory execution, we'll test with checkpoint failures instead
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "node_a",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
@@ -153,10 +165,16 @@ func TestChaos_CheckpointCorruption(t *testing.T) {
 	// Use base checkpointer for testing
 	baseCheckpointer := checkpoint.NewInMemoryCheckpointer()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "node_1",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
@@ -231,13 +249,19 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 
 	ctx := context.Background()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create parallel nodes that may fail
 	for i := 0; i < 5; i++ {
 		nodeNum := i
-		err := g.AddNode(&graph.Node{
+		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("parallel_%d", i),
 			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				// Simulate work with random failure
@@ -258,7 +282,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	}
 
 	// Aggregator node collects results
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "aggregator",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			total := 0
@@ -301,10 +325,16 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	ctx := context.Background()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "slow_node",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			// Simulate slow operation that will timeout
@@ -355,10 +385,16 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	ctx := context.Background()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "panicking_node",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			// This should be caught and converted to an error
@@ -405,11 +441,17 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	ctx := context.Background()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Node that allocates large amounts of memory
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "memory_hog",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			// Allocate 100MB
@@ -464,10 +506,16 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	var partition2Active atomic.Bool
 
 	buildGraph := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
-		g := graph.NewGraph(state)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-		err := g.AddNode(&graph.Node{
+		err = g.AddNode(&graph.Node{
 			Name: "partition_1_node",
 			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				if !partition1Active.Load() {

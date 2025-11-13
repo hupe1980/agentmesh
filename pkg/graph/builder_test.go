@@ -11,9 +11,12 @@ import (
 func TestBuilder_BasicUsage(t *testing.T) {
 	t.Parallel()
 
-	compiled, err := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	compiled, err := builder.
 		WithMaxMessages(0).
-		WithInitialChannels(func(state *State) {
+		WithInitialChannels(func(state *ChannelState) {
 			state.Set("count", 0)
 		}).
 		Node("increment", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
@@ -39,8 +42,11 @@ func TestBuilder_BasicUsage(t *testing.T) {
 func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	t.Parallel()
 
-	builder := NewBuilder().
-		WithInitialChannels(func(state *State) {
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	builder.
+		WithInitialChannels(func(state *ChannelState) {
 			state.Set("status", "pending")
 		}).
 		WithMaxMessages(5)
@@ -62,7 +68,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	status := stateManager.Get("status")
 	require.Equal(t, "pending", status)
 
-	graphState, ok := stateManager.(*State)
+	graphState, ok := stateManager.(*ChannelState)
 	require.True(t, ok)
 
 	ch, ok := graphState.GetChannel("messages")
@@ -75,7 +81,10 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 func TestBuilder_Chain(t *testing.T) {
 	t.Parallel()
 
-	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *State) {
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	builder.WithMaxMessages(0).WithInitialChannels(func(state *ChannelState) {
 		state.Set("value", 1)
 	})
 
@@ -96,7 +105,7 @@ func TestBuilder_Chain(t *testing.T) {
 
 	compiled := builder.Chain("double", "add_ten", "square").MustCompile()
 
-	_, err := Last(compiled.Run(context.Background(), nil))
+	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	result := compiled.State().Get("value")
@@ -112,9 +121,12 @@ func TestBuilder_Parallel(t *testing.T) {
 		return append(oldSlice, newSlice...)
 	}
 
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	builder.
 		WithMaxMessages(0).
-		WithInitialChannels(func(state *State) {
+		WithInitialChannels(func(state *ChannelState) {
 			state.AddChannel(channel.NewBinaryOpChannel("results", []any{}, appendReducer))
 		})
 
@@ -159,7 +171,10 @@ func TestBuilder_Parallel(t *testing.T) {
 func TestBuilder_ConditionalRoute(t *testing.T) {
 	t.Parallel()
 
-	builder := NewBuilder().WithMaxMessages(0).WithInitialChannels(func(state *State) {
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	builder.WithMaxMessages(0).WithInitialChannels(func(state *ChannelState) {
 		state.Set("score", 75)
 	})
 
@@ -188,7 +203,7 @@ func TestBuilder_ConditionalRoute(t *testing.T) {
 
 	compiled := builder.MustCompile()
 
-	_, err := Last(compiled.Run(context.Background(), nil))
+	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	result := compiled.State().Get("result")

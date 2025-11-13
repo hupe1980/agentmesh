@@ -22,8 +22,14 @@ func TestPageRank(t *testing.T) {
 
 	// Create a simple graph: A -> B, A -> C, B -> C, C -> A
 	// This creates a cycle that PageRank can analyze
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	vertices := []string{"A", "B", "C"}
 	edges := map[string][]string{
@@ -42,7 +48,7 @@ func TestPageRank(t *testing.T) {
 	// Create compute nodes for each vertex
 	for _, vertex := range vertices {
 		v := vertex // capture loop variable
-		err := g.AddNode(&graph.Node{
+		err = g.AddNode(&graph.Node{
 			Name: v,
 			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				// Get outgoing edges
@@ -126,8 +132,14 @@ func TestPageRank(t *testing.T) {
 func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create graph: A -1-> B -1-> C
 	//                A -5-> C
@@ -151,7 +163,7 @@ func TestShortestPath(t *testing.T) {
 	// Create relaxation nodes
 	for _, vertex := range vertices {
 		v := vertex
-		err := g.AddNode(&graph.Node{
+		err = g.AddNode(&graph.Node{
 			Name: v,
 			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				currentDist := s.Get(fmt.Sprintf("dist_%s", v))
@@ -209,14 +221,20 @@ func TestShortestPath(t *testing.T) {
 func TestGraphConvergence(t *testing.T) {
 	t.Parallel()
 
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create nodes that increment a counter until reaching a target
 	state.Set("counter", 0)
 	state.Set("target", 10)
 
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "incrementer",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			counter := s.Get("counter")

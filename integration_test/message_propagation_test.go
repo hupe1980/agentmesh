@@ -14,7 +14,10 @@ import (
 func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	t.Parallel()
 
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Node A sends updates to Node B
 	builder.AddNode(&graph.Node{
@@ -83,7 +86,10 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 func TestParallelMessagePropagation(t *testing.T) {
 	t.Parallel()
 
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Two parallel nodes sending to the same target
 	builder.AddNode(&graph.Node{
@@ -148,7 +154,10 @@ func TestParallelMessagePropagation(t *testing.T) {
 func TestMessagePropagationSequential(t *testing.T) {
 	t.Parallel()
 
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Node 1: Sets initial values
 	builder.AddNode(&graph.Node{

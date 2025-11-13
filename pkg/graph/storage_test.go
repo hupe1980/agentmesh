@@ -13,7 +13,9 @@ func TestInMemoryStateStore(t *testing.T) {
 	store := NewInMemoryStateStore()
 
 	// Create test state
-	state := NewStateManager(0).(*State) // Type assert for store.Save
+	mgr, err := NewStateManager(0)
+	require.NoError(t, err)
+	state := mgr.(*ChannelState) // Type assert for store.Save
 	state.Set("count", 42)
 	state.Set("name", "test")
 	state.AddMessages(wrapMessages([]message.Message{
@@ -21,7 +23,7 @@ func TestInMemoryStateStore(t *testing.T) {
 	}))
 
 	// Test Save
-	err := store.Save("checkpoint1", state)
+	err = store.Save("checkpoint1", state)
 	require.NoError(t, err)
 
 	// Test Load

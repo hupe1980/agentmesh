@@ -455,7 +455,10 @@ AgentMesh uses a **directed graph** model where:
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // Create a graph builder
-builder := graph.NewBuilder()
+builder, err := graph.NewBuilder()
+if err != nil {
+    log.Fatal(err)
+}
 
 // Add nodes with functions
 builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
@@ -476,7 +479,10 @@ builder.AddEdge("step1", "step2")
 builder.AddEdge("step2", graph.EndNode)
 
 // Compile and run
-compiled, _ := builder.Compile()
+compiled, err := builder.Compile()
+if err != nil {
+    log.Fatal(err)
+}
 events, _ := graph.Collect(compiled.Run(context.Background(), initialMessages))
 messages := graph.ExtractMessages(events)
 ```
@@ -509,7 +515,7 @@ Explore **19 comprehensive examples** demonstrating different use cases and patt
 | 🏗️ [state_builder](examples/state_builder) | Simplified state initialization | Fluent API, channel patterns, reduced boilerplate |
 | 🔌 [mcp_tools](examples/mcp_tools) | Model Context Protocol integration | Dynamic tool discovery, MCP toolsets, runtime tools |
 | 🔒 [wasm_tool](examples/wasm_tool) | WebAssembly sandboxed tools | Memory-safe isolation, Rust WASM modules, security policies |
-| 🌊 [streaming](examples/streaming) | Real-time event streaming | Live updates, partial results, progress tracking |
+| 🌊 [streaming](examples/streaming) | Real-time execution result streaming | Live updates, partial results, progress tracking |
 | 🔀 [conditional_flow](examples/conditional_flow) | Dynamic routing based on state | Conditional edges, branching logic, flow control |
 | ⚡ [parallel_tasks](examples/parallel_tasks) | Concurrent execution patterns | Parallel nodes, fan-out/fan-in, result aggregation |
 | ⏸️ [human_pause](examples/human_pause) | Human-in-the-loop workflows | Interrupt, resume, user approval |
@@ -1092,13 +1098,13 @@ result, err := node.Run(ctx, state)
 
 // Graphs use Run() - high-level streaming API (returns iterator)
 seq := compiled.Run(ctx, initialMessages)
-for event, err := range seq {
-    // handle event and error
+for result, err := range seq {
+    // handle result and error
 }
 
-// Helper: Collect all events for blocking-style execution
-events, err := graph.Collect(compiled.Run(ctx, initialMessages))
-messages := graph.ExtractMessages(events)
+// Helper: Collect all results for blocking-style execution
+results, err := graph.Collect(compiled.Run(ctx, initialMessages))
+messages := graph.ExtractMessages(results)
 
 // Executors use Execute() - strategy implementation
 result, err := executor.Execute(ctx, messages, options)

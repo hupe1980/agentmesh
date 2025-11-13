@@ -33,11 +33,17 @@ import (
 )
 
 func main() {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	// Create a simple echo node
-	err := g.AddNode(&graph.Node{
+	err = g.AddNode(&graph.Node{
 		Name: "echo",
 		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 			events := s.EventsSnapshot()

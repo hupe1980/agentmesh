@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 )
 
 // Builder provides a fluent API for constructing graphs.
@@ -23,10 +24,15 @@ type Builder struct {
 }
 
 // NewBuilder creates a new graph builder with default empty state.
-func NewBuilder() *Builder {
-	return &Builder{
-		graph: NewGraph(nil),
+// Returns an error if the graph cannot be initialized (currently always succeeds).
+func NewBuilder() (*Builder, error) {
+	graph, err := NewGraph(nil)
+	if err != nil {
+		return nil, err
 	}
+	return &Builder{
+		graph: graph,
+	}, nil
 }
 
 // SetStateManager configures the graph state manager.
@@ -47,14 +53,14 @@ func (b *Builder) WithState(stateManager StateManager) *Builder {
 
 // WithMaxMessages configures the maximum number of messages to retain.
 // Default is 0 (unlimited). This applies to the standard "messages" channel.
-// Note: This only works with the default *State implementation.
+// Note: This only works with the default *ChannelState implementation.
 func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
 	if b.err != nil {
 		return b
 	}
 
-	// This is a convenience method that only works with *State
-	if state, ok := b.graph.stateManager.(*State); ok {
+	// This is a convenience method that only works with *ChannelState
+	if state, ok := b.graph.stateManager.(*ChannelState); ok {
 		state.SetMaxMessages(maxMessages)
 	}
 	// Note: If using a custom StateManager, the caller must configure it directly
@@ -64,26 +70,31 @@ func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
 }
 
 // WithInitialChannels initializes the state with custom channels.
-// Note: This only works with the default *State implementation.
+// Note: This only works with the default *ChannelState implementation.
 // For custom StateManager implementations, configure them before passing to SetStateManager.
 //
 // Example:
 //
-//	state := graph.NewStateManager(0).(*graph.State)
+//	state := graph.NewStateManager(0).(*graph.ChannelState)
 //	state.AddChannel(channel.NewLastValueChannel("status"))
 //	builder.WithState(state)
-func (b *Builder) WithInitialChannels(configFn func(*State)) *Builder {
+func (b *Builder) WithInitialChannels(configFn func(*ChannelState)) *Builder {
 	if b.err != nil {
 		return b
 	}
 
 	// Ensure we have a state manager
 	if b.graph.stateManager == nil {
-		b.graph.stateManager = NewStateManager(0)
+		sm, err := NewStateManager(0)
+		if err != nil {
+			b.err = fmt.Errorf("failed to create state manager: %w", err)
+			return b
+		}
+		b.graph.stateManager = sm
 	}
 
-	// This convenience method only works with *State
-	if state, ok := b.graph.stateManager.(*State); ok && configFn != nil {
+	// This convenience method only works with *ChannelState
+	if state, ok := b.graph.stateManager.(*ChannelState); ok && configFn != nil {
 		configFn(state)
 	}
 	// For custom StateManagers, silently skip - they should be pre-configured

@@ -19,11 +19,13 @@ var (
 
 func TestRetryPolicy(t *testing.T) {
 	t.Run("succeeds on first attempt", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "success",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -51,11 +53,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("retries and eventually succeeds", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "retry-succeed",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -86,11 +90,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("exhausts retries and fails", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "always-fail",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -115,11 +121,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("custom retryable function skips non-retryable errors", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "permanent-fail",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -147,11 +155,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("respects context cancellation during backoff", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "cancel-during-retry",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -192,11 +202,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("no retry policy executes once", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "no-retry",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -237,11 +249,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("aggregates reset between retry attempts", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "retry-aggregate",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++
@@ -302,11 +316,13 @@ func TestRetryPolicy(t *testing.T) {
 	})
 
 	t.Run("preserves all retry attempt errors", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		attempts := 0
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "failing-node",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				attempts++

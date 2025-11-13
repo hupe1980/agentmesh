@@ -46,15 +46,15 @@ Create graphs using the fluent builder API:
 Graphs can be executed in different modes:
 
 	// Invoke: Execute once and return results
-	results, err := lastEvent, err := graph.Last(compiled.Run(ctx, messages)
+	results, err := lastResult, err := graph.Last(compiled.Run(ctx, messages)
 
-	// Run: Execute with real-time event streaming
+	// Run: Execute with real-time execution result streaming
 	seq := compiled.Run(ctx, messages)
-	for event, err := range seq {
+	for result, err := range seq {
 		if err != nil {
 			log.Printf("Error: %v", err)
 		}
-		log.Printf("Node %s completed", event.Node)
+		log.Printf("Node %s completed", result.Node)
 	}
 
 # Conditional Routing
@@ -91,7 +91,7 @@ channel-based state with checkpointing and message history management.
 
 	// Use default state
 	compiled := graph.NewBuilder().
-		WithState(graph.NewState(100)).
+		WithState(graph.NewStateManager(100)).
 		Compile()
 
 	// Custom implementations can be provided by implementing StateManager interface
@@ -101,13 +101,14 @@ channel-based state with checkpointing and message history management.
 
 The graph package uses a deterministic channel-based state system implemented in state_manager.go:
 
-	// Create state with message limit
-	state := graph.NewState(maxMessages)
+	// Create state with message limit (returns StateManager interface)
+	state := graph.NewStateManager(maxMessages)
 
-	// Add custom channels for typed data flow
-	state.AddChannel(channel.NewLastValueChannel("status"))
-	state.AddChannel(channel.NewTopicChannel("events", 100))
-	state.AddChannel(channel.NewBinaryOpChannel("counter", 0, func(a, b any) any {
+	// For direct ChannelState access (advanced use):
+	channelState := graph.NewChannelState(maxMessages)
+	channelState.AddChannel(channel.NewLastValueChannel("status"))
+	channelState.AddChannel(channel.NewTopicChannel("events", 100))
+	channelState.AddChannel(channel.NewBinaryOpChannel("counter", 0, func(a, b any) any {
 		return a.(int) + b.(int)
 	}))
 
@@ -116,7 +117,7 @@ The graph package uses a deterministic channel-based state system implemented in
 For common use cases, use StateBuilder instead of manual channel setup:
 
 	// Old way (verbose)
-	state := graph.NewState(100)
+	state := graph.NewChannelState(100)
 	state.AddChannel(channel.NewLastValueChannel("status"))
 	state.Set("status", "pending")
 	state.AddChannel(channel.NewBinaryOpChannel("counter", 0, addFunc))
@@ -186,7 +187,7 @@ Core files in pkg/graph:
   - node.go: Node definitions and execution
   - state_manager.go: State management (StateManager, State, bufferedStateWriter)
   - pregel.go: BSP execution adapter (ChannelMessage, graphRuntime, nodeAdapter)
-  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, Event)
+  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, ExecutionResult)
   - executor.go: Execution abstractions (Executor, ExecutionTracker, executionState)
   - scheduler.go: Topology-based node scheduling (vertexScheduler, TopologyScheduler)
   - options.go: Run options (checkpoint, retry, rate-limit configuration)
@@ -246,18 +247,18 @@ See examples/input_validation for comprehensive usage.
 
 The graph engine supports OpenTelemetry for tracing and metrics:
 
-	lastEvent, err := graph.Last(compiled.Run(ctx, messages,
+	lastResult, err := graph.Last(compiled.Run(ctx, messages,
 		graph.WithTracer(tracer),
 		graph.WithMeterProvider(meterProvider),
 	)
 
-Events can be streamed for monitoring:
+Execution results can be streamed for monitoring:
 
-	for event, err := range compiled.Run(ctx, messages) {
+	for result, err := range compiled.Run(ctx, messages) {
 		if err != nil {
 			// handle error
 		}
-		log.Printf("Node: %s", event.Node)
+		log.Printf("Node: %s", result.Node)
 	}
 
 # Advanced Features

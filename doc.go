@@ -93,7 +93,7 @@
 // See the examples/ directory for comprehensive examples:
 //
 //   - examples/basic_agent/ - Simple ReAct agent with tools
-//   - examples/streaming/ - Real-time event streaming
+//   - examples/streaming/ - Real-time execution result streaming
 //   - examples/conditional_flow/ - Dynamic routing
 //   - examples/parallel_tasks/ - Parallel node execution
 //   - examples/checkpointing/ - State persistence and recovery

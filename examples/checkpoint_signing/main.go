@@ -165,7 +165,10 @@ func productionExample(ctx context.Context) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
 
 	// Create a simple workflow graph
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		counter := 0

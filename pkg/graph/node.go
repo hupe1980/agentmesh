@@ -16,7 +16,7 @@ type Runnable interface {
 
 // NodeResult contains the output of a node execution.
 // Updates modify graph state values, and Messages append to the conversation history.
-// The framework automatically wraps Messages in Event with execution metadata.
+// The framework automatically wraps Messages in ExecutionResult with execution metadata.
 type NodeResult struct {
 	Updates  map[string]any    // State updates (key-value pairs)
 	Messages []message.Message // Messages to append (framework adds metadata)

@@ -13,7 +13,7 @@ func main() {
 	fmt.Println()
 
 	// Build state with common patterns using fluent API
-	state := graph.NewStateBuilder().
+	state, err := graph.NewStateBuilder().
 		WithMessages(50).
 		WithLastValue("phase", "initialization").
 		WithCounter("attempts").
@@ -21,9 +21,15 @@ func main() {
 		WithList("action_log").
 		WithMap("task_results").
 		Build()
+	if err != nil {
+		panic(err)
+	}
 
 	// Create a simple workflow
-	gph := graph.NewGraph(state)
+	gph, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	gph.AddNode(&graph.Node{
 		Name: "init",

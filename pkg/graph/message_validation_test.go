@@ -13,7 +13,10 @@ import (
 
 func TestMessageValidation_MaxMessageSize(t *testing.T) {
 	// Create a simple graph
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+
+	builder.
 		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
@@ -98,7 +101,9 @@ func TestMessageValidation_MaxMessageSize(t *testing.T) {
 }
 
 func TestMessageValidation_MaxInputMessages(t *testing.T) {
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+	builder.
 		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
@@ -168,7 +173,9 @@ func TestMessageValidation_MaxInputMessages(t *testing.T) {
 }
 
 func TestMessageValidation_MaxTotalSize(t *testing.T) {
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+	builder.
 		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
@@ -236,7 +243,9 @@ func TestMessageValidation_MaxTotalSize(t *testing.T) {
 }
 
 func TestMessageValidation_CombinedLimits(t *testing.T) {
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+	builder.
 		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
@@ -328,7 +337,9 @@ func TestMessageValidation_CombinedLimits(t *testing.T) {
 }
 
 func TestMessageValidation_DifferentMessageTypes(t *testing.T) {
-	builder := NewBuilder().
+	builder, err := NewBuilder()
+	require.NoError(t, err)
+	builder.
 		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).

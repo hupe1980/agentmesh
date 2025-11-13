@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"fmt"
+
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -202,15 +204,22 @@ func (b *StateBuilder) WithChannel(ch channel.Channel) *StateBuilder {
 	return b
 }
 
-// Build constructs the final State with all configured channels and initial values.
+// Build constructs the final ChannelState with all configured channels and initial values.
 // This creates the "messages" channel automatically with the configured limit.
+// Returns an error if state creation fails.
 //
 // Example:
 //
-//	state := builder.Build()
-func (b *StateBuilder) Build() *State {
+//	state, err := builder.Build()
+//	if err != nil {
+//	    return err
+//	}
+func (b *StateBuilder) Build() (*ChannelState, error) {
 	// Create state with configured message limit
-	state := NewState(b.maxMessages)
+	state, err := NewChannelState(b.maxMessages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create channel state: %w", err)
+	}
 
 	// Add all configured channels
 	for _, ch := range b.channels {
@@ -224,14 +233,14 @@ func (b *StateBuilder) Build() *State {
 
 	// Add initial messages if configured
 	if len(b.initialMsgs) > 0 {
-		// Wrap messages as Events
+		// Wrap messages as ExecutionResults
 		// Note: Using empty graphID and "__initial__" node since these are pre-execution messages
-		events := make([]Event, len(b.initialMsgs))
+		events := make([]ExecutionResult, len(b.initialMsgs))
 		for i, msg := range b.initialMsgs {
-			events[i] = *NewEvent(msg, "", "__initial__")
+			events[i] = *NewExecutionResult(msg, "", "__initial__")
 		}
 		state.AddMessages(events)
 	}
 
-	return state
+	return state, nil
 }

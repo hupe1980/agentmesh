@@ -36,7 +36,10 @@ func runScenario(choice string) {
 	fmt.Printf("=== Conditional Flow Example: %s ===\n", choice)
 
 	// Initialize graph state with unlimited message history
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
 	state.Set("choice", choice)
 	state.Set("next_path", "")
 
@@ -45,7 +48,10 @@ func runScenario(choice string) {
 	state.AddChannel(channel.NewTopicChannel("action_history", 0))
 
 	// Create the graph and helper function for adding nodes
-	gph := graph.NewGraph(state)
+	gph, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 	mustAddNode := func(n *graph.Node) {
 		if err := gph.AddNode(n); err != nil {
 			panic(err)

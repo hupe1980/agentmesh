@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMaxIterations(t *testing.T) {
 	t.Run("terminates cyclic graph at max iterations", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		// Create a self-loop that increments counter
 		if err := g.AddNode(&Node{
@@ -55,8 +58,11 @@ func TestMaxIterations(t *testing.T) {
 	})
 
 	t.Run("unlimited iterations when not specified", func(t *testing.T) {
-		state := NewStateManager(0); state.Set("count", 0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		state.Set("count", 0)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		if err := g.AddNode(&Node{
 			Name: "simple",
@@ -92,8 +98,10 @@ func TestMaxIterations(t *testing.T) {
 	})
 
 	t.Run("terminates before max iterations if quiesced", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
 		if err := g.AddNode(&Node{
 			Name: "simple",

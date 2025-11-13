@@ -66,7 +66,7 @@ type StateReader interface {
 	GetAll() map[string]any
 
 	// EventsSnapshot returns message events from the "messages" channel.
-	EventsSnapshot() []Event
+	EventsSnapshot() []ExecutionResult
 
 	// AggregatesSnapshot returns a copy of global aggregates from the previous superstep.
 	AggregatesSnapshot() map[string]any
@@ -107,10 +107,10 @@ type ChannelManager interface {
 	UpdateChannels(ctx context.Context, updates map[string]any) error
 
 	// AddMessages appends messages to the "messages" channel.
-	AddMessages(messages []Event)
+	AddMessages(messages []ExecutionResult)
 
 	// ApplyUpdates applies channel updates and messages in a single operation.
-	ApplyUpdates(values map[string]any, messages []Event)
+	ApplyUpdates(values map[string]any, messages []ExecutionResult)
 }
 
 // AggregateManager handles aggregate value management for cross-node reductions.
@@ -191,14 +191,16 @@ type StateManager interface {
 }
 
 // =============================================================================
-// State - Primary StateManager Implementation
+// ChannelState - Primary StateManager Implementation
 // =============================================================================
 
-// State is the primary implementation of the StateManager interface.
+// ChannelState manages channel-based state for graph execution.
+// This is the concrete implementation of the StateManager interface.
+//
 // It manages data flow through typed channels with thread-safe access.
 //
-// State serves as both:
-// - The user-facing API for building graphs (via NewState, Graph.State)
+// ChannelState serves as both:
+// - The user-facing API for building graphs (via NewStateManager, Graph.State)
 // - The runtime state during execution (no conversion needed)
 //
 // This is the ONLY StateManager implementation in v2.0+ (Option A architecture).
@@ -213,8 +215,7 @@ type StateManager interface {
 // - Lazy copy-on-write for aggregate snapshots
 // - Version tracking to invalidate cached snapshots
 // - Avoids full map copy on every GetAggregatesSnapshot() call
-// State manages channel-based state for graph execution.
-type State struct {
+type ChannelState struct {
 	channels       *channel.Set
 	aggregates     map[string]any
 	aggregateFn    func(string, any) error
@@ -232,36 +233,46 @@ type State struct {
 	cachedVersion    uint64         // Version of current cache
 }
 
-// NewStateManager creates a new StateManager with the default State implementation.
+// NewStateManager creates a new StateManager with the default ChannelState implementation.
 // It automatically creates a standard "messages" channel (Topic with maxMessages limit).
 // This is the recommended way to create a state manager for graph execution.
-func NewStateManager(maxMessages int) StateManager {
+//
+// Returns an error if maxMessages is negative.
+func NewStateManager(maxMessages int) (StateManager, error) {
+	if maxMessages < 0 {
+		return nil, fmt.Errorf("maxMessages must be non-negative, got %d", maxMessages)
+	}
 	channels := channel.NewSet()
 	channels.Add(channel.NewTopicChannel("messages", maxMessages))
-	return &State{
+	return &ChannelState{
 		channels:   channels,
 		aggregates: make(map[string]any),
-	}
+	}, nil
 }
 
-// NewState creates a new channel-based graph state.
-// This is kept for internal use and direct *State access.
-// For normal usage, prefer NewStateManager() which returns the StateManager interface.
-func NewState(maxMessages int) *State {
+// NewChannelState creates a new channel-based graph state.
+// Returns a concrete *ChannelState for cases requiring direct access to the implementation.
+// For most use cases, prefer NewStateManager() which returns the StateManager interface.
+//
+// Returns an error if maxMessages is negative.
+func NewChannelState(maxMessages int) (*ChannelState, error) {
+	if maxMessages < 0 {
+		return nil, fmt.Errorf("maxMessages must be non-negative, got %d", maxMessages)
+	}
 	channels := channel.NewSet()
 	channels.Add(channel.NewTopicChannel("messages", maxMessages))
-	return &State{
+	return &ChannelState{
 		channels:   channels,
 		aggregates: make(map[string]any),
-	}
+	}, nil
 }
 
 // =============================================================================
-// State - State Read Methods
+// ChannelState - State Read Methods
 // =============================================================================
 
 // Get retrieves a value from the state by key.
-func (s *State) Get(key string) any {
+func (s *ChannelState) Get(key string) any {
 	// No lock needed - Set.Get() and Channel.Read() handle their own locking
 	ch, ok := s.channels.Get(key)
 	if !ok {
@@ -275,7 +286,7 @@ func (s *State) Get(key string) any {
 }
 
 // GetAll returns all state values as a map.
-func (s *State) GetAll() map[string]any {
+func (s *ChannelState) GetAll() map[string]any {
 	// No lock needed - Set.ReadAll() handles its own locking
 	values, err := s.channels.ReadAll(context.Background())
 	if err != nil {
@@ -285,7 +296,7 @@ func (s *State) GetAll() map[string]any {
 }
 
 // EventsSnapshot returns a copy of current message events with metadata.
-func (s *State) EventsSnapshot() []Event {
+func (s *ChannelState) EventsSnapshot() []ExecutionResult {
 	ch, ok := s.GetChannel("messages")
 	if !ok {
 		return nil
@@ -296,15 +307,15 @@ func (s *State) EventsSnapshot() []Event {
 		return nil
 	}
 
-	// Convert []any to []Event
+	// Convert []any to []ExecutionResult
 	values, ok := val.([]any)
 	if !ok || len(values) == 0 {
 		return nil
 	}
 
-	events := make([]Event, 0, len(values))
+	events := make([]ExecutionResult, 0, len(values))
 	for _, v := range values {
-		if evt, ok := v.(Event); ok {
+		if evt, ok := v.(ExecutionResult); ok {
 			events = append(events, evt)
 		}
 	}
@@ -316,19 +327,19 @@ func (s *State) EventsSnapshot() []Event {
 // =============================================================================
 
 // AddChannel registers a new channel in the state.
-func (s *State) AddChannel(ch channel.Channel) {
+func (s *ChannelState) AddChannel(ch channel.Channel) {
 	// No lock needed - Set.Add() handles its own locking
 	s.channels.Add(ch)
 }
 
 // GetChannel retrieves a channel by name.
-func (s *State) GetChannel(name string) (channel.Channel, bool) {
+func (s *ChannelState) GetChannel(name string) (channel.Channel, bool) {
 	// No lock needed - Set.Get() handles its own locking
 	return s.channels.Get(name)
 }
 
 // UpdateChannel writes a value to a specific channel.
-func (s *State) UpdateChannel(ctx context.Context, name string, value any) error {
+func (s *ChannelState) UpdateChannel(ctx context.Context, name string, value any) error {
 	// No lock needed - Set.Get() and Channel.Write() handle their own locking
 	ch, ok := s.channels.Get(name)
 	if !ok {
@@ -338,7 +349,7 @@ func (s *State) UpdateChannel(ctx context.Context, name string, value any) error
 }
 
 // UpdateChannels batch-updates multiple channels.
-func (s *State) UpdateChannels(ctx context.Context, updates map[string]any) error {
+func (s *ChannelState) UpdateChannels(ctx context.Context, updates map[string]any) error {
 	if len(updates) == 0 {
 		return nil
 	}
@@ -365,14 +376,14 @@ func (s *State) UpdateChannels(ctx context.Context, updates map[string]any) erro
 // =============================================================================
 
 // GetAggregate retrieves the current value of a named aggregate.
-func (s *State) GetAggregate(name string) any {
+func (s *ChannelState) GetAggregate(name string) any {
 	s.aggregatesMu.RLock()
 	defer s.aggregatesMu.RUnlock()
 	return s.aggregates[name]
 }
 
 // GetAggregatesSnapshot returns a read-only snapshot of all aggregates.
-func (s *State) GetAggregatesSnapshot() map[string]any {
+func (s *ChannelState) GetAggregatesSnapshot() map[string]any {
 	s.aggregatesMu.RLock()
 
 	// Fast path: return cached snapshot if version matches
@@ -409,7 +420,7 @@ func (s *State) GetAggregatesSnapshot() map[string]any {
 }
 
 // AggregatesSnapshot is an alias for GetAggregatesSnapshot for backward compatibility.
-func (s *State) AggregatesSnapshot() map[string]any {
+func (s *ChannelState) AggregatesSnapshot() map[string]any {
 	return s.GetAggregatesSnapshot()
 }
 
@@ -419,7 +430,7 @@ func (s *State) AggregatesSnapshot() map[string]any {
 
 // incrementVersion atomically increments the state version counter.
 // Called after any state mutation to track state evolution for checkpoint integrity.
-func (s *State) incrementVersion() {
+func (s *ChannelState) incrementVersion() {
 	s.versionMu.Lock()
 	s.version++
 	s.versionMu.Unlock()
@@ -427,14 +438,14 @@ func (s *State) incrementVersion() {
 
 // Version returns the current state version.
 // This monotonic counter increases with every state mutation.
-func (s *State) Version() uint64 {
+func (s *ChannelState) Version() uint64 {
 	s.versionMu.Lock()
 	defer s.versionMu.Unlock()
 	return s.version
 }
 
 // setVersion explicitly sets the version (used during checkpoint restore).
-func (s *State) setVersion(v uint64) {
+func (s *ChannelState) setVersion(v uint64) {
 	s.versionMu.Lock()
 	s.version = v
 	s.versionMu.Unlock()
@@ -445,7 +456,7 @@ func (s *State) setVersion(v uint64) {
 // =============================================================================
 
 // SetAggregates replaces all aggregates with the provided map.
-func (s *State) SetAggregates(aggregates map[string]any) {
+func (s *ChannelState) SetAggregates(aggregates map[string]any) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
 
@@ -460,14 +471,14 @@ func (s *State) SetAggregates(aggregates map[string]any) {
 }
 
 // SetAggregateFn sets the aggregation function used to combine values.
-func (s *State) SetAggregateFn(fn func(string, any) error) {
+func (s *ChannelState) SetAggregateFn(fn func(string, any) error) {
 	s.aggregatesMu.Lock()
 	defer s.aggregatesMu.Unlock()
 	s.aggregateFn = fn
 }
 
 // RecordAggregation records a value for aggregation using the configured aggregation function.
-func (s *State) RecordAggregation(name string, value any) error {
+func (s *ChannelState) RecordAggregation(name string, value any) error {
 	s.aggregatesMu.RLock()
 	fn := s.aggregateFn
 	s.aggregatesMu.RUnlock()
@@ -479,7 +490,7 @@ func (s *State) RecordAggregation(name string, value any) error {
 }
 
 // Aggregate is an alias for RecordAggregation for backward compatibility.
-func (s *State) Aggregate(name string, value any) error {
+func (s *ChannelState) Aggregate(name string, value any) error {
 	return s.RecordAggregation(name, value)
 }
 
@@ -488,7 +499,7 @@ func (s *State) Aggregate(name string, value any) error {
 // =============================================================================
 
 // SaveCheckpoint saves the current state to the configured checkpointer.
-func (s *State) SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error {
+func (s *ChannelState) SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error {
 	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
 	s.checkpointerMu.RUnlock()
@@ -507,7 +518,7 @@ func (s *State) SaveCheckpoint(ctx context.Context, runID string, superstep int6
 }
 
 // LoadCheckpoint loads a checkpoint from the configured checkpointer.
-func (s *State) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
+func (s *ChannelState) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
 	s.checkpointerMu.RLock()
 	checkpointer := s.checkpointer
 	s.checkpointerMu.RUnlock()
@@ -520,7 +531,7 @@ func (s *State) LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.C
 }
 
 // SetCheckpointer configures the checkpointer to use for state persistence.
-func (s *State) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
+func (s *ChannelState) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 	s.checkpointerMu.Lock()
 	defer s.checkpointerMu.Unlock()
 	s.checkpointer = checkpointer
@@ -531,7 +542,7 @@ func (s *State) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 // =============================================================================
 
 // AddMessages appends messages to the state's message history.
-func (s *State) AddMessages(messages []Event) {
+func (s *ChannelState) AddMessages(messages []ExecutionResult) {
 	if len(messages) == 0 {
 		return
 	}
@@ -551,7 +562,7 @@ func (s *State) AddMessages(messages []Event) {
 
 // SetMaxMessages updates the retention limit of the "messages" channel without
 // discarding existing channel configuration.
-func (s *State) SetMaxMessages(maxMessages int) {
+func (s *ChannelState) SetMaxMessages(maxMessages int) {
 	if maxMessages < 0 {
 		maxMessages = 0
 	}
@@ -583,7 +594,7 @@ func (s *State) SetMaxMessages(maxMessages int) {
 }
 
 // ApplyUpdates applies state updates and messages to the state manager.
-func (s *State) ApplyUpdates(values map[string]any, messages []Event) {
+func (s *ChannelState) ApplyUpdates(values map[string]any, messages []ExecutionResult) {
 	ctx := context.Background()
 
 	// No lock needed - Set methods handle their own locking
@@ -608,7 +619,7 @@ func (s *State) ApplyUpdates(values map[string]any, messages []Event) {
 }
 
 // Set sets a value in the state for the given key.
-func (s *State) Set(key string, value any) error {
+func (s *ChannelState) Set(key string, value any) error {
 	// No lock needed - Set methods handle their own locking
 	ch, exists := s.channels.Get(key)
 	if !exists {
@@ -623,7 +634,7 @@ func (s *State) Set(key string, value any) error {
 // =============================================================================
 
 // Snapshot returns a snapshot of all channel values.
-func (s *State) Snapshot() map[string]any {
+func (s *ChannelState) Snapshot() map[string]any {
 	// No lock needed - Set.SnapshotAll() handles its own locking
 	values, err := s.channels.SnapshotAll(context.Background())
 	if err != nil {
@@ -633,9 +644,9 @@ func (s *State) Snapshot() map[string]any {
 }
 
 // Clone creates a deep copy of the state manager.
-func (s *State) Clone() StateManager {
+func (s *ChannelState) Clone() StateManager {
 	// Create new state with same channel configuration
-	cloned := &State{
+	cloned := &ChannelState{
 		channels:   channel.NewSet(),
 		aggregates: make(map[string]any),
 	}
@@ -662,22 +673,22 @@ func (s *State) Clone() StateManager {
 }
 
 // =============================================================================
-// State - Convenience Methods
+// ChannelState - Convenience Methods
 // =============================================================================
 
 // SnapshotAll is an alias for Snapshot for backward compatibility.
-func (s *State) SnapshotAll() map[string]any {
+func (s *ChannelState) SnapshotAll() map[string]any {
 	return s.Snapshot() // Alias
 }
 
 // ListChannels returns the names of all channels in the state.
-func (s *State) ListChannels() []string {
+func (s *ChannelState) ListChannels() []string {
 	// No lock needed - Set.List() handles its own locking
 	return s.channels.List()
 }
 
-// Ensure State implements StateManager interface
-var _ StateManager = (*State)(nil)
+// Ensure ChannelState implements StateManager interface
+var _ StateManager = (*ChannelState)(nil)
 
 // =============================================================================
 // State Adapters
@@ -708,7 +719,7 @@ func (sr *StateReaderAdapter) GetAll() map[string]any {
 }
 
 // EventsSnapshot returns current message events.
-func (sr *StateReaderAdapter) EventsSnapshot() []Event {
+func (sr *StateReaderAdapter) EventsSnapshot() []ExecutionResult {
 	return sr.manager.EventsSnapshot()
 }
 
@@ -781,7 +792,7 @@ func (bsw *bufferedStateWriter) GetAll() map[string]any {
 	return bsw.reader.GetAll()
 }
 
-func (bsw *bufferedStateWriter) EventsSnapshot() []Event {
+func (bsw *bufferedStateWriter) EventsSnapshot() []ExecutionResult {
 	return bsw.reader.EventsSnapshot()
 }
 

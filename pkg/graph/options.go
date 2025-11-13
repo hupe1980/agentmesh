@@ -503,7 +503,7 @@ func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map
 	}
 
 	// Extract messages from events for checkpoint serialization
-	// TODO: Phase 3 - Update checkpoint to store full Event with metadata
+	// TODO: Phase 3 - Update checkpoint to store full ExecutionResult with metadata
 	events := cg.stateManager.EventsSnapshot()
 	messages := make([]message.Message, len(events))
 	for i := range events {
@@ -539,16 +539,16 @@ func (cg *Compiled) restoreCheckpoint(chkpt *checkpoint.Checkpoint) error {
 
 	// Restore state
 	if cg.stateManager != nil {
-		// Wrap checkpoint messages as Events
-		// TODO: Phase 3 - Checkpoint should store full Event metadata
-		events := make([]Event, len(chkpt.Messages))
+		// Wrap checkpoint messages as ExecutionResults
+		// TODO: Phase 3 - Checkpoint should store full ExecutionResult metadata
+		events := make([]ExecutionResult, len(chkpt.Messages))
 		for i, msg := range chkpt.Messages {
-			events[i] = *NewEvent(msg, chkpt.RunID, "__restored__")
+			events[i] = *NewExecutionResult(msg, chkpt.RunID, "__restored__")
 		}
 
 		cg.stateManager.ApplyUpdates(chkpt.State, events)
 		// Restore version from checkpoint
-		if gs, ok := cg.stateManager.(*State); ok {
+		if gs, ok := cg.stateManager.(*ChannelState); ok {
 			gs.setVersion(chkpt.Version)
 		}
 	}

@@ -14,7 +14,10 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	ctx := context.Background()
 
 	// Create a realistic multi-step workflow
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	// Node 1: Input processing
 	builder.Node("preprocess", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
@@ -86,7 +89,10 @@ func BenchmarkDeepChain(b *testing.B) {
 
 	for _, depth := range depths {
 		b.Run(fmt.Sprintf("depth-%d", depth), func(b *testing.B) {
-			builder := graph.NewBuilder()
+			builder, err := graph.NewBuilder()
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			// Create chain of nodes
 			for i := range depth {
@@ -138,7 +144,10 @@ func BenchmarkWideParallel(b *testing.B) {
 
 	for _, width := range widths {
 		b.Run(fmt.Sprintf("width-%d", width), func(b *testing.B) {
-			builder := graph.NewBuilder()
+			builder, err := graph.NewBuilder()
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			// Create parallel nodes
 			for i := range width {
@@ -177,7 +186,10 @@ func BenchmarkWideParallel(b *testing.B) {
 // BenchmarkConditionalBranching benchmarks conditional routing
 func BenchmarkConditionalBranching(b *testing.B) {
 	ctx := context.Background()
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	builder.Node("router", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 		return &graph.NodeResult{
@@ -235,7 +247,10 @@ func BenchmarkMessageThroughput(b *testing.B) {
 
 	for _, count := range messageCounts {
 		b.Run(fmt.Sprintf("messages-%d", count), func(b *testing.B) {
-			builder := graph.NewBuilder()
+			builder, err := graph.NewBuilder()
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			builder.Node("processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				msgs := s.EventsSnapshot()
@@ -279,7 +294,10 @@ func BenchmarkStateUpdates(b *testing.B) {
 
 	for _, keyCount := range keyCounts {
 		b.Run(fmt.Sprintf("keys-%d", keyCount), func(b *testing.B) {
-			builder := graph.NewBuilder()
+			builder, err := graph.NewBuilder()
+			if err != nil {
+				b.Fatal(err)
+			}
 
 			builder.Node("writer", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
 				updates := make(map[string]any, keyCount)

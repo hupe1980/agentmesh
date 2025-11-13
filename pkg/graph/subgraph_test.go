@@ -5,13 +5,16 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubgraphSupport(t *testing.T) {
 	t.Run("basic subgraph as node", func(t *testing.T) {
 		// Create subgraph that doubles a counter
-		subState := NewStateManager(0)
-		subGraph := NewGraph(subState)
+		subState, err := NewStateManager(0)
+		require.NoError(t, err)
+		subGraph, err := NewGraph(subState)
+		require.NoError(t, err)
 
 		if err := subGraph.AddNode(&Node{
 			Name: "double",
@@ -32,9 +35,11 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Create parent graph that uses subgraph
-		parentState := NewStateManager(0)
+		parentState, err := NewStateManager(0)
+		require.NoError(t, err)
 		parentState.Set("count", 5) // Initialize count
-		parentGraph := NewGraph(parentState)
+		parentGraph, err := NewGraph(parentState)
+		require.NoError(t, err)
 
 		if err := parentGraph.AddNode(&Node{
 			Name: "prepare",
@@ -76,8 +81,10 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph with state mapping", func(t *testing.T) {
 		// Create subgraph that processes "input" and produces "output"
-		subState := NewStateManager(0)
-		subGraph := NewGraph(subState)
+		subState, err := NewStateManager(0)
+		require.NoError(t, err)
+		subGraph, err := NewGraph(subState)
+		require.NoError(t, err)
 
 		if err := subGraph.AddNode(&Node{
 			Name: "process",
@@ -98,20 +105,22 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Create parent graph with different state keys
-		parentState := NewStateManager(0)
+		parentState, err := NewStateManager(0)
+		require.NoError(t, err)
 		parentState.Set("data", "hello") // Initialize data
-		parentGraph := NewGraph(parentState)
+		parentGraph, err := NewGraph(parentState)
+		require.NoError(t, err)
 
 		// Add subgraph with state mapping
 		subNode := compiledSub.AsNodeWithStateMapping(
 			"mapped-subgraph",
 			// Map parent "data" to subgraph "input"
-			func(s StateReader) (map[string]any, []Event) {
+			func(s StateReader) (map[string]any, []ExecutionResult) {
 				data, _ := s.Get("data").(string)
 				return map[string]any{"input": data}, nil
 			},
 			// Map subgraph "output" to parent "result"
-			func(s StateReader) (map[string]any, []Event) {
+			func(s StateReader) (map[string]any, []ExecutionResult) {
 				output, _ := s.Get("output").(string)
 				return map[string]any{"result": output}, nil
 			},
@@ -142,8 +151,10 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("nested subgraphs", func(t *testing.T) {
 		// Inner subgraph: adds 10
-		innerState := NewStateManager(0)
-		innerGraph := NewGraph(innerState)
+		innerState, err := NewStateManager(0)
+		require.NoError(t, err)
+		innerGraph, err := NewGraph(innerState)
+		require.NoError(t, err)
 
 		if err := innerGraph.AddNode(&Node{
 			Name: "add10",
@@ -161,8 +172,10 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Middle subgraph: contains inner subgraph, then multiplies by 2
-		middleState := NewStateManager(0)
-		middleGraph := NewGraph(middleState)
+		middleState, err := NewStateManager(0)
+		require.NoError(t, err)
+		middleGraph, err := NewGraph(middleState)
+		require.NoError(t, err)
 
 		if err := middleGraph.AddNode(compiledInner.AsNode("inner")); err != nil {
 			t.Fatal(err)
@@ -186,9 +199,11 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Outer graph: initializes n=5, then runs middle subgraph
-		outerState := NewStateManager(0)
+		outerState, err := NewStateManager(0)
+		require.NoError(t, err)
 		outerState.Set("n", 5) // Initialize n
-		outerGraph := NewGraph(outerState)
+		outerGraph, err := NewGraph(outerState)
+		require.NoError(t, err)
 
 		if err := outerGraph.AddNode(compiledMiddle.AsNode("middle")); err != nil {
 			t.Fatal(err)
@@ -214,8 +229,10 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph handles errors", func(t *testing.T) {
 		// Create subgraph that fails
-		subState := NewStateManager(0)
-		subGraph := NewGraph(subState)
+		subState, err := NewStateManager(0)
+		require.NoError(t, err)
+		subGraph, err := NewGraph(subState)
+		require.NoError(t, err)
 
 		if err := subGraph.AddNode(&Node{
 			Name: "fail",
@@ -233,8 +250,10 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Parent graph using failing subgraph
-		parentState := NewStateManager(0)
-		parentGraph := NewGraph(parentState)
+		parentState, err := NewStateManager(0)
+		require.NoError(t, err)
+		parentGraph, err := NewGraph(parentState)
+		require.NoError(t, err)
 
 		if err := parentGraph.AddNode(compiledSub.AsNode("failing-sub")); err != nil {
 			t.Fatal(err)
@@ -259,8 +278,10 @@ func TestSubgraphSupport(t *testing.T) {
 
 	t.Run("subgraph with message passing", func(t *testing.T) {
 		// Subgraph that produces messages
-		subState := NewStateManager(0)
-		subGraph := NewGraph(subState)
+		subState, err := NewStateManager(0)
+		require.NoError(t, err)
+		subGraph, err := NewGraph(subState)
+		require.NoError(t, err)
 
 		if err := subGraph.AddNode(&Node{
 			Name: "messenger",
@@ -283,8 +304,10 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Parent graph
-		parentState := NewStateManager(0)
-		parentGraph := NewGraph(parentState)
+		parentState, err := NewStateManager(0)
+		require.NoError(t, err)
+		parentGraph, err := NewGraph(parentState)
+		require.NoError(t, err)
 
 		if err := parentGraph.AddNode(compiledSub.AsNode("sub-with-messages")); err != nil {
 			t.Fatal(err)

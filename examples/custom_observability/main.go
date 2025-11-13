@@ -47,8 +47,14 @@ func main() {
 	// Step 2: Build Graph with Nodes that Use Context Providers
 	// ============================================================
 
-	state := graph.NewState(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewChannelState(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	// Node 1: Data Ingestion - demonstrates logger usage
 	if err := g.AddNode(&graph.Node{

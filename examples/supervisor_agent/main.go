@@ -153,7 +153,7 @@ func createCodeAgent() (*graph.Compiled, error) {
 }
 
 // displayTranscript shows the conversation flow including tool calls
-func displayTranscript(query string, events []graph.Event) {
+func displayTranscript(query string, events []graph.ExecutionResult) {
 	// Print the user query at the top only
 	fmt.Printf("👤 User:\n   %s\n", query)
 

@@ -9,7 +9,8 @@ import (
 )
 
 func TestGetNodes(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -36,7 +37,8 @@ func TestGetNodes(t *testing.T) {
 }
 
 func TestGetNodeInfo(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("node1", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -70,10 +72,12 @@ func TestGetNodeInfo(t *testing.T) {
 }
 
 func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 
-	err := g.AddNode(&Node{
+	err = g.AddNode(&Node{
 		Name: "retryable",
 		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
@@ -97,7 +101,8 @@ func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
 }
 
 func TestGetAllNodeInfo(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -125,7 +130,8 @@ func TestGetAllNodeInfo(t *testing.T) {
 }
 
 func TestGetEdges(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -164,7 +170,8 @@ func TestGetEdges(t *testing.T) {
 }
 
 func TestGetTopology(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("entry", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -193,7 +200,8 @@ func TestGetTopology(t *testing.T) {
 }
 
 func TestGetTopology_WithConditionals(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("router", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -220,7 +228,8 @@ func TestGetTopology_WithConditionals(t *testing.T) {
 }
 
 func TestGetMetrics(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -249,7 +258,8 @@ func TestGetMetrics(t *testing.T) {
 }
 
 func TestGetDependencies(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -293,7 +303,8 @@ func TestGetDependencies(t *testing.T) {
 }
 
 func TestGetExecutionPath(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -323,7 +334,8 @@ func TestGetExecutionPath(t *testing.T) {
 }
 
 func TestGetExecutionPath_WithBranching(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("router", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -350,7 +362,8 @@ func TestGetExecutionPath_WithBranching(t *testing.T) {
 }
 
 func TestCalculateDepth(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -375,7 +388,8 @@ func TestCalculateDepth(t *testing.T) {
 }
 
 func TestFindAllPredecessors(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -406,7 +420,8 @@ func TestFindAllPredecessors(t *testing.T) {
 }
 
 func TestFindAllSuccessors(t *testing.T) {
-	builder := NewBuilder()
+	builder, err := NewBuilder()
+	require.NoError(t, err)
 	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
@@ -433,7 +448,8 @@ func TestFindAllSuccessors(t *testing.T) {
 
 func TestCyclomaticComplexity(t *testing.T) {
 	t.Run("linear graph", func(t *testing.T) {
-		builder := NewBuilder()
+		builder, err := NewBuilder()
+		require.NoError(t, err)
 		builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
@@ -454,7 +470,8 @@ func TestCyclomaticComplexity(t *testing.T) {
 	})
 
 	t.Run("branching graph", func(t *testing.T) {
-		builder := NewBuilder()
+		builder, err := NewBuilder()
+		require.NoError(t, err)
 		builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})

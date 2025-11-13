@@ -36,14 +36,14 @@ type Executor interface {
 	//   - initialMessages: Starting messages for the graph
 	//   - options: Execution configuration
 	//
-	// Returns: Iterator yielding (Event, error) pairs
+	// Returns: Iterator yielding (ExecutionResult, error) pairs
 	Run(
 		ctx context.Context,
 		topology *ExecutorTopology,
 		stateManager StateManager,
 		initialMessages []message.Message,
 		options *RunOptions,
-	) iter.Seq2[Event, error]
+	) iter.Seq2[ExecutionResult, error]
 
 	// CurrentSuperstep returns the current superstep/iteration number.
 	// Returns 0 for non-iterative executors.

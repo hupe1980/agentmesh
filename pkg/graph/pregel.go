@@ -52,7 +52,7 @@ func wrapTimeoutError(ctx context.Context, err error) error {
 // It contains actual data to be communicated between nodes via channels.
 type ChannelMessage struct {
 	// Messages contains message events with execution metadata
-	Messages []Event `json:"messages,omitzero"`
+	Messages []ExecutionResult `json:"messages,omitzero"`
 
 	// Updates contains key-value state updates to be applied to channels
 	Updates map[string]any `json:"updates,omitzero"`
@@ -62,7 +62,7 @@ type ChannelMessage struct {
 }
 
 // NewChannelMessage creates a new channel message with the given message events and updates.
-func NewChannelMessage(messages []Event, updates map[string]any) ChannelMessage {
+func NewChannelMessage(messages []ExecutionResult, updates map[string]any) ChannelMessage {
 	return ChannelMessage{
 		Messages: messages,
 		Updates:  updates,
@@ -115,7 +115,7 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 	}
 
 	if len(cm.Messages) > 0 {
-		clone.Messages = make([]Event, len(cm.Messages))
+		clone.Messages = make([]ExecutionResult, len(cm.Messages))
 		copy(clone.Messages, cm.Messages)
 	}
 
@@ -169,7 +169,7 @@ type graphRuntime struct {
 	cg      *Compiled
 	cancel  context.CancelFunc
 	options runOptions
-	yield   func(Event, error) bool // Iterator yield function for emitting events
+	yield   func(ExecutionResult, error) bool // Iterator yield function for emitting execution results
 
 	scheduler       *vertexScheduler                              // Graph topology & routing
 	engine          *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
@@ -211,9 +211,9 @@ type nodeAdapter struct {
 	node    *Node
 }
 
-// wrapMessagesAsEvents wraps raw messages from node execution in Event structs
+// wrapMessagesAsEvents wraps raw messages from node execution in ExecutionResult structs
 // with execution metadata (graphID, nodeName, timestamp, UUID).
-func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []Event {
+func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []ExecutionResult {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -223,15 +223,15 @@ func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []Event {
 		graphID = n.runtime.options.runID
 	}
 
-	events := make([]Event, len(messages))
+	events := make([]ExecutionResult, len(messages))
 	for i, msg := range messages {
-		events[i] = *NewEvent(msg, graphID, n.name)
+		events[i] = *NewExecutionResult(msg, graphID, n.name)
 	}
 
 	return events
 }
 
-func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(Event, error) bool, instrumentation *Instrumentation) *graphRuntime {
+func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(ExecutionResult, error) bool, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
 	gr := &graphRuntime{
@@ -523,7 +523,7 @@ func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]s
 	return gr.scheduler.OnVertexCompleted(ctx, name)
 }
 
-func (gr *graphRuntime) emit(event Event) {
+func (gr *graphRuntime) emit(event ExecutionResult) {
 	if gr.yield == nil {
 		return
 	}
@@ -550,7 +550,7 @@ func (gr *graphRuntime) fail(err error) {
 		return
 	}
 	gr.errOnce.Do(func() {
-		gr.emit(Event{Err: err})
+		gr.emit(ExecutionResult{Err: err})
 		if gr.cancel != nil {
 			gr.cancel()
 		}
@@ -561,7 +561,7 @@ func (gr *graphRuntime) emitError(err error) {
 	if err == nil {
 		return
 	}
-	gr.emit(Event{Err: err})
+	gr.emit(ExecutionResult{Err: err})
 }
 
 // compiledPregelGraph implements the pregel interfaces for Compiled.
@@ -596,7 +596,7 @@ func (g *compiledPregelGraph) State() StateManager {
 func (n *nodeAdapter) Name() string { return n.name }
 
 // handleScheduledDelivery handles message delivery to scheduled next nodes.
-func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []Event, updates map[string]any) error {
+func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []ExecutionResult, updates map[string]any) error {
 	if n.runtime == nil || n.runtime.scheduler == nil {
 		return nil
 	}
@@ -664,17 +664,17 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		if result == nil {
 			return
 		}
-		// Emit one Event per message
+		// Emit one ExecutionResult per message
 		if len(result.Messages) == 0 {
-			// No messages: emit a single event with just Updates
-			n.runtime.emit(Event{
+			// No messages: emit a single result with just Updates
+			n.runtime.emit(ExecutionResult{
 				Node:    n.name,
 				Updates: result.Updates,
 			})
 		} else {
 			for i, msg := range result.Messages {
-				evt := NewEvent(msg, n.runtime.options.runID, n.name)
-				// Include Updates only in the first event
+				evt := NewExecutionResult(msg, n.runtime.options.runID, n.name)
+				// Include Updates only in the first result
 				if i == 0 {
 					evt.Updates = result.Updates
 				}
@@ -725,7 +725,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 				"superstep", n.runtime.engine.CurrentSuperstep())
 			n.runtime.cg.markPaused(n.name)
 			n.runtime.setPaused(n.name)
-			n.runtime.emit(Event{Node: n.name, Err: ErrHumanInterrupt})
+			n.runtime.emit(ExecutionResult{Node: n.name, Err: ErrHumanInterrupt})
 			return nil
 		}
 		logger.Error("node execution failed",
@@ -733,7 +733,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 			"superstep", n.runtime.engine.CurrentSuperstep(),
 			"duration_ms", time.Since(startTime).Milliseconds(),
 			"error", err)
-		n.runtime.emit(Event{Node: n.name, Err: err})
+		n.runtime.emit(ExecutionResult{Node: n.name, Err: err})
 		return &NodeExecutionError{
 			Node:      n.name,
 			Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -747,7 +747,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	var updates map[string]any
-	var messages []Event
+	var messages []ExecutionResult
 	if result != nil {
 		updates = result.Updates
 		// Framework automatically wraps plain messages with execution metadata
@@ -769,7 +769,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 							"aggregator", name,
 							"superstep", n.runtime.engine.CurrentSuperstep(),
 							"error", err)
-						n.runtime.emit(Event{Node: n.name, Err: aggErr})
+						n.runtime.emit(ExecutionResult{Node: n.name, Err: aggErr})
 						return &NodeExecutionError{
 							Node:      n.name,
 							Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -781,9 +781,9 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		}
 	}
 
-	// Emit one Event per message
+	// Emit one ExecutionResult per message
 	for i := range messages {
-		// Include Updates only in the first event
+		// Include Updates only in the first result
 		if i == 0 {
 			messages[i].Updates = updates
 		}
@@ -916,7 +916,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 			if backoff > MaxRetryBackoff {
 				requestedBackoff := backoff
 				backoff = MaxRetryBackoff
-				n.runtime.emit(Event{
+				n.runtime.emit(ExecutionResult{
 					Node: n.name,
 					Err:  fmt.Errorf("retry backoff capped at %v (requested %v)", MaxRetryBackoff, requestedBackoff),
 				})

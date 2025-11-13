@@ -11,8 +11,10 @@ import (
 // TestConditionalSeesNodeOutput verifies that conditional edges can route based on
 // the output of the node that just executed (state is committed before evaluation).
 func TestConditionalSeesNodeOutput(t *testing.T) {
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 
 	// Node that sets a decision value
 	g.AddNode(&Node{
@@ -77,8 +79,10 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 // TestConditionalSeesUpdatedState verifies that conditionals see state updates
 // from multiple nodes in sequence.
 func TestConditionalSeesUpdatedState(t *testing.T) {
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 
 	// First node sets counter to 1
 	g.AddNode(&Node{
@@ -156,8 +160,10 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 
 // TestConditionalWithMultipleOutputs verifies conditionals work with multiple target selection.
 func TestConditionalWithMultipleOutputs(t *testing.T) {
-	state := NewStateManager(0)
-	g := NewGraph(state)
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+	g, err := NewGraph(state)
+	require.NoError(t, err)
 
 	// Node that produces multiple flags
 	g.AddNode(&Node{

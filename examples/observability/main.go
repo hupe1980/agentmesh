@@ -45,9 +45,15 @@ func main() {
 	traceProvider := trace.Noop()     // Replace with opentelemetry.New(tracerProvider)
 
 	// Create a simple graph
-	state := graph.NewStateManager(0) // Unlimited messages
+	state, err := graph.NewStateManager(0) // Unlimited messages
+	if err != nil {
+		panic(err)
+	}
 	state.Set("counter", 0)
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	// Add nodes that use providers via FromContext()
 	// Automatic instrumentation happens behind the scenes

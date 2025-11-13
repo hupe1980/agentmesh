@@ -51,7 +51,10 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 		// Note: toolset.ListTools requires a context and StateReader
 		// We'll use an empty state snapshot for initialization
 		ctx := context.Background()
-		emptyState := graph.NewState(0)
+		emptyState, err := graph.NewStateManager(0)
+		if err != nil {
+			return nil, fmt.Errorf("react agent: failed to create state manager: %w", err)
+		}
 
 		toolsetTools, err := config.toolset.ListTools(ctx, emptyState)
 		if err != nil {
@@ -90,9 +93,15 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 	stateBuilder := graph.NewStateBuilder().
 		WithUnlimitedMessages()
 
-	state := stateBuilder.Build()
+	state, err := stateBuilder.Build()
+	if err != nil {
+		return nil, fmt.Errorf("react agent: failed to build state: %w", err)
+	}
 
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
+	}
 
 	// Model node: generate response with tools and system prompt
 	// System prompt is sent per-request (Pydantic AI style) for token efficiency

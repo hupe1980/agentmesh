@@ -71,8 +71,14 @@ func main() {
 
 // createValidationSubgraph validates input data
 func createValidationSubgraph() *graph.Graph {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	g.AddNode(&graph.Node{
 		Name: "validate_structure",
@@ -141,8 +147,14 @@ func createValidationSubgraph() *graph.Graph {
 
 // createEnrichmentSubgraph adds computed fields to data
 func createEnrichmentSubgraph() *graph.Graph {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	g.AddNode(&graph.Node{
 		Name: "enrich",
@@ -184,8 +196,14 @@ func createEnrichmentSubgraph() *graph.Graph {
 
 // createAnalysisSubgraph performs analysis on enriched data
 func createAnalysisSubgraph() *graph.Graph {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	g.AddNode(&graph.Node{
 		Name: "analyze",
@@ -225,8 +243,14 @@ func createAnalysisSubgraph() *graph.Graph {
 
 // createPipeline assembles subgraphs into a processing pipeline
 func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
-	state := graph.NewStateManager(0)
-	g := graph.NewGraph(state)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		panic(err)
+	}
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 
 	// Add validation subgraph (direct embedding)
 	g.AddNode(validation.AsNode("validation"))
@@ -238,7 +262,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	analysisNode := analysis.AsNodeWithStateMapping(
 		"analysis",
 		// mapInput: map enriched_data to analysis input
-		func(s graph.StateReader) (map[string]any, []graph.Event) {
+		func(s graph.StateReader) (map[string]any, []graph.ExecutionResult) {
 			enrichedData, ok := s.Get("enriched_data").(map[string]any)
 			if !ok {
 				return map[string]any{"input": map[string]any{}}, nil
@@ -246,7 +270,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 			return map[string]any{"input": enrichedData}, nil
 		},
 		// mapOutput: map analysis output to parent analysis key
-		func(s graph.StateReader) (map[string]any, []graph.Event) {
+		func(s graph.StateReader) (map[string]any, []graph.ExecutionResult) {
 			output, ok := s.Get("output").(map[string]any)
 			if !ok {
 				return map[string]any{"analysis": map[string]any{}}, nil

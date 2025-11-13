@@ -191,7 +191,7 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 //
 // If a custom Executor is configured, execution is delegated to it.
 // Otherwise, uses the default Pregel BSP execution.
-func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[Event, error] {
+func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[ExecutionResult, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -217,7 +217,7 @@ func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns 
 // ApplyState synchronously merges values and messages into the committed graph state.
 // Intended for external systems (e.g., human-in-the-loop workflows) to inject
 // updates between supersteps without bypassing the staged execution pipeline.
-func (cg *Compiled) ApplyState(values map[string]any, messages []Event) {
+func (cg *Compiled) ApplyState(values map[string]any, messages []ExecutionResult) {
 	if cg == nil || cg.stateManager == nil {
 		return
 	}
@@ -268,15 +268,15 @@ func (cg *Compiled) AsNode(name string) *Node {
 // mapOutput transforms subgraph output state into parent updates.
 func (cg *Compiled) AsNodeWithStateMapping(
 	name string,
-	mapInput func(StateReader) (map[string]any, []Event),
-	mapOutput func(StateReader) (map[string]any, []Event),
+	mapInput func(StateReader) (map[string]any, []ExecutionResult),
+	mapOutput func(StateReader) (map[string]any, []ExecutionResult),
 ) *Node {
 	return &Node{
 		Name: name,
 		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 			// Map parent state to subgraph input
 			var inputValues map[string]any
-			var inputMessages []Event
+			var inputMessages []ExecutionResult
 			var messagesToInvoke []message.Message
 
 			if mapInput != nil {
@@ -301,7 +301,7 @@ func (cg *Compiled) AsNodeWithStateMapping(
 			var updates map[string]any
 			var messages []message.Message
 			if mapOutput != nil {
-				var events []Event
+				var events []ExecutionResult
 				updates, events = mapOutput(cg.State())
 				// Convert events to []message.Message
 				messages = make([]message.Message, len(events))
@@ -530,11 +530,11 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 		return nil, nil, err
 	}
 
-	// Wrap input messages as Events for internal processing
+	// Wrap input messages as ExecutionResults for internal processing
 	if len(messages) > 0 {
-		events := make([]Event, len(messages))
+		events := make([]ExecutionResult, len(messages))
 		for i, msg := range messages {
-			events[i] = *NewEvent(msg, options.runID, "__input__")
+			events[i] = *NewExecutionResult(msg, options.runID, "__input__")
 		}
 		if cg.stateManager != nil {
 			cg.stateManager.ApplyUpdates(nil, events)
@@ -559,11 +559,11 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 	return ctx, instrumentation, nil
 }
 
-func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[Event, error] {
-	return func(yield func(Event, error) bool) {
+func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[ExecutionResult, error] {
+	return func(yield func(ExecutionResult, error) bool) {
 		runCtx, instrumentation, err := cg.setupRun(ctx, messages, &options)
 		if err != nil {
-			yield(Event{}, err)
+			yield(ExecutionResult{}, err)
 			return
 		}
 

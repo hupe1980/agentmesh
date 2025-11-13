@@ -155,10 +155,12 @@ func TestErrorWrapping(t *testing.T) {
 
 func TestNodeTimeoutError(t *testing.T) {
 	t.Run("enforces_context_deadline", func(t *testing.T) {
-		state := NewStateManager(0)
-		g := NewGraph(state)
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		g, err := NewGraph(state)
+		require.NoError(t, err)
 
-		err := g.AddNode(&Node{
+		err = g.AddNode(&Node{
 			Name: "slow-node",
 			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
 				// Block until context is done or 10 seconds pass

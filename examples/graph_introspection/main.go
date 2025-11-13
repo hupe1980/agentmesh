@@ -23,7 +23,10 @@ func repeatString(char string, count int) string {
 
 func main() {
 	// Build a complex graph with conditional routing
-	builder := graph.NewBuilder()
+	builder, err := graph.NewBuilder()
+	if err != nil {
+		panic(err)
+	}
 
 	// Add nodes
 	builder.Node("input_validator", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {

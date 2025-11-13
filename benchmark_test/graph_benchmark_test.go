@@ -12,7 +12,10 @@ import (
 // Benchmark state operations
 
 func BenchmarkState_Get(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	state.Set("key1", "value1")
 	state.Set("key2", 42)
 	state.Set("key3", []string{"a", "b", "c"})
@@ -23,7 +26,10 @@ func BenchmarkState_Get(b *testing.B) {
 }
 
 func BenchmarkState_Set(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	for i := 0; b.Loop(); i++ {
 		state.Set("key", i)
@@ -31,7 +37,10 @@ func BenchmarkState_Set(b *testing.B) {
 }
 
 func BenchmarkState_GetAll(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	for i := range 100 {
 		state.Set(string(rune('a'+i%26)), i)
 	}
@@ -42,7 +51,10 @@ func BenchmarkState_GetAll(b *testing.B) {
 }
 
 func BenchmarkState_ApplyUpdates(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	updates := map[string]any{
 		"key1": "value1",
 		"key2": 42,
@@ -61,7 +73,10 @@ func BenchmarkState_ApplyUpdatesWithReducer(b *testing.B) {
 		return append(oldSlice, newSlice...)
 	}
 
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	// Use BinaryOpChannel for accumulation with custom reducer
 	state.AddChannel(channel.NewBinaryOpChannel("items", []int{}, appendReducer))
 
@@ -75,10 +90,13 @@ func BenchmarkState_ApplyUpdatesWithReducer(b *testing.B) {
 // Benchmark message operations
 
 func BenchmarkState_AddMessages(b *testing.B) {
-	state := graph.NewStateManager(0)
-	msgs := []graph.Event{
-		*graph.NewEvent(message.NewHumanMessageFromText("Hello"), "", ""),
-		*graph.NewEvent(message.NewAIMessageFromText("Hi there"), "", ""),
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	msgs := []graph.ExecutionResult{
+		*graph.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
+		*graph.NewExecutionResult(message.NewAIMessageFromText("Hi there"), "", ""),
 	}
 
 	for b.Loop() {
@@ -87,10 +105,13 @@ func BenchmarkState_AddMessages(b *testing.B) {
 }
 
 func BenchmarkState_MessagesSnapshot(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	for range 100 {
-		state.AddMessages([]graph.Event{
-			*graph.NewEvent(message.NewHumanMessageFromText("Message"), "", ""),
+		state.AddMessages([]graph.ExecutionResult{
+			*graph.NewExecutionResult(message.NewHumanMessageFromText("Message"), "", ""),
 		})
 	}
 
@@ -100,10 +121,13 @@ func BenchmarkState_MessagesSnapshot(b *testing.B) {
 }
 
 func BenchmarkState_MessagesWithCompaction(b *testing.B) {
-	state := graph.NewStateManager(100) // Enable compaction with max 100 messages
+	state, err := graph.NewStateManager(100) // Enable compaction with max 100 messages
+	if err != nil {
+		b.Fatal(err)
+	}
 
-	msgs := []graph.Event{
-		*graph.NewEvent(message.NewHumanMessageFromText("Hello"), "", ""),
+	msgs := []graph.ExecutionResult{
+		*graph.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
 	}
 
 	for b.Loop() {
@@ -114,7 +138,10 @@ func BenchmarkState_MessagesWithCompaction(b *testing.B) {
 // Benchmark parallel state access
 
 func BenchmarkState_ParallelReads(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	state.Set("key1", "value1")
 	state.Set("key2", 42)
 
@@ -127,7 +154,10 @@ func BenchmarkState_ParallelReads(b *testing.B) {
 }
 
 func BenchmarkState_ParallelWrites(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -140,7 +170,10 @@ func BenchmarkState_ParallelWrites(b *testing.B) {
 }
 
 func BenchmarkState_ParallelMixed(b *testing.B) {
-	state := graph.NewStateManager(0)
+	state, err := graph.NewStateManager(0)
+	if err != nil {
+		b.Fatal(err)
+	}
 	state.Set("key1", "value1")
 	state.Set("key2", 42)
 
@@ -162,9 +195,15 @@ func BenchmarkState_ParallelMixed(b *testing.B) {
 
 func BenchmarkGraph_SimpleExecution(b *testing.B) {
 	createSimpleGraph := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		state.Set("count", 0)
-		g := graph.NewGraph(state)
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		g.AddNode(&graph.Node{
 			Name: "increment",
@@ -189,9 +228,15 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 
 func BenchmarkGraph_LinearChain(b *testing.B) {
 	createChainGraph := func(length int) *graph.Compiled {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		state.Set("value", 0) // Fixed
-		g := graph.NewGraph(state)
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		for i := range length {
 			name := string(rune('a' + i%26))
@@ -252,10 +297,16 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 			return append(oldSlice, newSlice...)
 		}
 
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		// Use BinaryOpChannel for results accumulation
 		state.AddChannel(channel.NewBinaryOpChannel("results", []int{}, appendReducer))
-		g := graph.NewGraph(state)
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		g.AddNode(&graph.Node{
 			Name: "start",
@@ -310,9 +361,15 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 
 func BenchmarkGraph_ConditionalRouting(b *testing.B) {
 	createConditionalGraph := func() *graph.Compiled {
-		state := graph.NewStateManager(0)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		state.Set("route", "left") // Fixed
-		g := graph.NewGraph(state)
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		g.AddNode(&graph.Node{
 			Name: "router",
@@ -382,8 +439,14 @@ func BenchmarkCloneMessages_Large(b *testing.B) {
 
 func BenchmarkGraph_Compile(b *testing.B) {
 	createGraph := func() *graph.Graph {
-		state := graph.NewStateManager(0)
-		g := graph.NewGraph(state)
+		state, err := graph.NewStateManager(0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		g, err := graph.NewGraph(state)
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		for i := 0; i < 10; i++ {
 			name := string(rune('a' + i))

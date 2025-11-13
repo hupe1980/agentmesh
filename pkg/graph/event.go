@@ -9,25 +9,26 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Event represents a message event from node execution.
+// ExecutionResult represents a message event from node execution.
+// This wraps a message with execution metadata (node name, timestamp, updates, errors).
 //
-// Each Event contains exactly ONE Message (the embedded message.Message field).
-// During streaming (graph.Run iteration), events are emitted one at a time as nodes produce messages.
+// Each ExecutionResult contains exactly ONE Message (the embedded message.Message field).
+// During streaming (graph.Run iteration), results are emitted one at a time as nodes produce messages.
 //
 // To get all accumulated messages:
-//   - Use Collect() to gather all events from the iterator
+//   - Use Collect() to gather all results from the iterator
 //   - Or access graph.State().EventsSnapshot() after execution
 //
-// ERROR EVENTS:
+// ERROR RESULTS:
 //   - Message is nil, only Err is set
-type Event struct {
-	// Single message content (one message per event)
+type ExecutionResult struct {
+	// Single message content (one message per result)
 	Message message.Message
 
 	// Execution metadata
-	ID        string    // UUID event identifier (generated automatically)
+	ID        string    // UUID result identifier (generated automatically)
 	GraphID   string    // Graph run ID (hierarchical for subgraphs: "parent:child")
-	Node      string    // Node that created this event
+	Node      string    // Node that created this result
 	Timestamp time.Time // Creation timestamp
 
 	// Node execution results
@@ -35,11 +36,11 @@ type Event struct {
 	Err     error          // Error if node execution failed
 }
 
-// NewEvent creates an event wrapping a message with metadata.
-// Automatically generates a UUID for the event ID.
+// NewExecutionResult creates an execution result wrapping a message with metadata.
+// Automatically generates a UUID for the result ID.
 // Used internally for state management message wrapping.
-func NewEvent(msg message.Message, graphID, node string) *Event {
-	return &Event{
+func NewExecutionResult(msg message.Message, graphID, node string) *ExecutionResult {
+	return &ExecutionResult{
 		Message:   msg,
 		ID:        uuid.New().String(),
 		GraphID:   graphID,
@@ -48,17 +49,17 @@ func NewEvent(msg message.Message, graphID, node string) *Event {
 	}
 }
 
-// String returns a human-readable representation of the event.
-func (e *Event) String() string {
+// String returns a human-readable representation of the execution result.
+func (e *ExecutionResult) String() string {
 	if e.Message != nil {
 		return fmt.Sprintf("[%s:%s] %s", e.GraphID, e.Node, e.Message.Type())
 	}
 	return fmt.Sprintf("[%s:%s]", e.GraphID, e.Node)
 }
 
-// Clone creates a deep copy of the event and wrapped message.
-func (e *Event) Clone() *Event {
-	clone := &Event{
+// Clone creates a deep copy of the execution result and wrapped message.
+func (e *ExecutionResult) Clone() *ExecutionResult {
+	clone := &ExecutionResult{
 		ID:        e.ID,
 		GraphID:   e.GraphID,
 		Node:      e.Node,
@@ -75,16 +76,16 @@ func (e *Event) Clone() *Event {
 	return clone
 }
 
-// ExtractMessages extracts the underlying messages from Events.
-// Helper for accessing message content when Event metadata is not needed.
-func ExtractMessages(events []Event) []message.Message {
-	if len(events) == 0 {
+// ExtractMessages extracts the underlying messages from ExecutionResults.
+// Helper for accessing message content when ExecutionResult metadata is not needed.
+func ExtractMessages(results []ExecutionResult) []message.Message {
+	if len(results) == 0 {
 		return nil
 	}
-	messages := make([]message.Message, 0, len(events))
-	for i := range events {
-		if events[i].Message != nil {
-			messages = append(messages, events[i].Message)
+	messages := make([]message.Message, 0, len(results))
+	for i := range results {
+		if results[i].Message != nil {
+			messages = append(messages, results[i].Message)
 		}
 	}
 	return messages

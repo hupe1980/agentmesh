@@ -1,13 +1,15 @@
 package graph
 
+import "fmt"
+
 // StateStore defines the interface for persisting and retrieving graph state.
 // This abstraction enables checkpointing, state snapshots, and distributed execution.
 type StateStore interface {
 	// Save persists the current state snapshot with the given checkpoint ID.
-	Save(checkpointID string, state *State) error
+	Save(checkpointID string, state *ChannelState) error
 
 	// Load retrieves a previously saved state snapshot.
-	Load(checkpointID string) (*State, error)
+	Load(checkpointID string) (*ChannelState, error)
 
 	// Delete removes a checkpoint from storage.
 	Delete(checkpointID string) error
@@ -18,18 +20,18 @@ type StateStore interface {
 
 // InMemoryStateStore provides a simple in-memory implementation of StateStore.
 type InMemoryStateStore struct {
-	checkpoints map[string]*State
+	checkpoints map[string]*ChannelState
 }
 
 // NewInMemoryStateStore creates a new in-memory state store.
 func NewInMemoryStateStore() *InMemoryStateStore {
 	return &InMemoryStateStore{
-		checkpoints: make(map[string]*State),
+		checkpoints: make(map[string]*ChannelState),
 	}
 }
 
 // Save stores a deep copy of the state.
-func (s *InMemoryStateStore) Save(checkpointID string, state *State) error {
+func (s *InMemoryStateStore) Save(checkpointID string, state *ChannelState) error {
 	if state == nil {
 		return ErrInvalidState
 	}
@@ -37,7 +39,7 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *State) error {
 	// Create a deep copy with snapshots of all channels
 	snapshot := state.SnapshotAll()
 	events := state.EventsSnapshot()
-	msgs := make([]Event, len(events))
+	msgs := make([]ExecutionResult, len(events))
 	for i := range events {
 		msgs[i] = *events[i].Clone()
 	}
@@ -45,7 +47,10 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *State) error {
 	// Create new state and restore channels
 	// Note: We need to recreate channels with the same types as original
 	// For now, we create a simple state and populate it
-	newState := NewState(0) // Unlimited messages
+	newState, err := NewChannelState(0) // Unlimited messages
+	if err != nil {
+		return fmt.Errorf("failed to create state for checkpoint: %w", err)
+	}
 
 	// Copy all channel data except messages (handled separately)
 	for key, value := range snapshot {
@@ -62,7 +67,7 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *State) error {
 }
 
 // Load retrieves a state snapshot.
-func (s *InMemoryStateStore) Load(checkpointID string) (*State, error) {
+func (s *InMemoryStateStore) Load(checkpointID string) (*ChannelState, error) {
 	state, ok := s.checkpoints[checkpointID]
 	if !ok {
 		return nil, ErrCheckpointNotFound
@@ -71,12 +76,15 @@ func (s *InMemoryStateStore) Load(checkpointID string) (*State, error) {
 	// Return a copy to prevent mutations
 	snapshot := state.SnapshotAll()
 	events := state.EventsSnapshot()
-	msgs := make([]Event, len(events))
+	msgs := make([]ExecutionResult, len(events))
 	for i := range events {
 		msgs[i] = *events[i].Clone()
 	}
 
-	loaded := NewState(0) // Unlimited messages
+	loaded, err := NewChannelState(0) // Unlimited messages
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state for loading: %w", err)
+	}
 
 	// Copy all channel data except messages
 	for key, value := range snapshot {

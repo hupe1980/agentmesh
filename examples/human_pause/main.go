@@ -12,7 +12,10 @@ import (
 )
 
 func main() {
-	state := graph.NewStateManager(0) // Unlimited messages
+	state, err := graph.NewStateManager(0) // Unlimited messages
+	if err != nil {
+		panic(err)
+	}
 
 	// Initialize state values using LastValueChannel (auto-created by Set)
 	state.Set("current_task", "Impact of AI on climate change")
@@ -27,7 +30,10 @@ func main() {
 		"action_history": "Task initiated",
 	}, nil)
 
-	g := graph.NewGraph(state)
+	g, err := graph.NewGraph(state)
+	if err != nil {
+		panic(err)
+	}
 	mustAddNode := func(n *graph.Node) {
 		if err := g.AddNode(n); err != nil {
 			panic(err)
