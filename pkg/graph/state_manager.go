@@ -628,9 +628,13 @@ func (s *ChannelState) Clone() StateManager {
 	s.checkpointerMu.RUnlock()
 
 	// Clone all channels (Set methods handle their own locking)
+	// Use VersionedChannel interface for cloning internal state
 	for _, name := range s.channels.List() {
 		if ch, ok := s.channels.Get(name); ok {
-			cloned.channels.Add(ch.Clone())
+			// Type assert to VersionedChannel for Clone operation
+			if vch, ok := ch.(channel.VersionedChannel); ok {
+				cloned.channels.Add(vch.Clone())
+			}
 		}
 	}
 

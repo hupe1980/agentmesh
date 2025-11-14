@@ -6,10 +6,12 @@ import (
 	"sync/atomic"
 )
 
-// Channel is the core abstraction for data flow between nodes.
-// Each channel has specific update semantics (append, replace, merge, etc.)
+// Channel is the user-facing abstraction for data flow between nodes.
+// Provides simple read/write operations with channel-specific update semantics.
 //
-// All channels must be cloneable to support graph state snapshots and time travel.
+// Design: This interface exposes only essential operations needed by graph nodes.
+// Internal runtime operations (versioning, snapshots, cloning) are handled by
+// VersionedChannel to prevent misuse and clarify API boundaries.
 type Channel interface {
 	// Name returns the unique identifier for this channel
 	Name() string
@@ -18,20 +20,59 @@ type Channel interface {
 	Read(ctx context.Context) (any, error)
 
 	// Write adds value(s) to the channel using channel-specific semantics
+	// (append for TopicChannel, replace for LastValueChannel, merge for BinaryOpChannel)
 	Write(ctx context.Context, value any) error
+}
 
-	// Snapshot returns a read-only snapshot of the current channel state
-	// for consistent reads during a superstep
-	Snapshot(ctx context.Context) (any, error)
+// VersionedChannel extends Channel with internal runtime operations.
+// Used by the graph execution engine for cache invalidation, consistent snapshots,
+// and state cloning during checkpointing.
+//
+// Design: These methods are implementation details that should not be exposed
+// to user code. Separating them prevents accidental misuse and makes the API
+// clearer about what operations are safe for general use vs internal use.
+type VersionedChannel interface {
+	Channel
 
-	// Version returns the current version number (incremented on each write)
+	// Version returns the current version number (incremented on each write).
+	// Used for cache invalidation in copy-on-write optimizations.
+	// Internal use only - not part of public Channel API.
 	Version() int64
 
-	// Reset clears the channel to its initial state
-	Reset(ctx context.Context) error
+	// Snapshot returns a read-only snapshot of the current channel state
+	// for consistent reads during a superstep. Typically equivalent to Read()
+	// but semantically indicates a point-in-time capture.
+	// Internal use only - used by graph runtime for superstep isolation.
+	Snapshot(ctx context.Context) (any, error)
 
-	// Clone creates a deep copy of this channel with independent state
-	Clone() Channel
+	// Clone creates a deep copy of this channel with independent state.
+	// Used during state checkpointing and time travel to create isolated copies.
+	// Returns VersionedChannel to preserve internal operations on cloned instances.
+	// Internal use only - deep copy semantics require careful memory management.
+	Clone() VersionedChannel
+}
+
+// ResettableChannel extends Channel with administrative operations.
+// Provides dangerous state-clearing operations that should only be used
+// with explicit understanding of the consequences.
+//
+// Design: Reset() can corrupt state if called incorrectly during graph execution.
+// By segregating this operation into a separate interface, we make it explicit
+// that this is an administrative operation requiring careful consideration.
+//
+// Warning: Reset() during active graph execution may cause data loss, race
+// conditions, or inconsistent state. Only use in controlled scenarios:
+//   - Between graph runs (not during execution)
+//   - In test cleanup code
+//   - During explicit state reinitialization
+type ResettableChannel interface {
+	Channel
+
+	// Reset clears the channel to its initial state.
+	// WARNING: This is a destructive operation. Calling Reset() during graph
+	// execution can cause data loss and state corruption. Only use when you
+	// have explicit control over the execution lifecycle.
+	Reset(ctx context.Context) error
 }
 
 // TopicChannel accumulates values in append-only fashion.
@@ -165,7 +206,7 @@ func (tc *TopicChannel) SetMaxValues(limit int) {
 }
 
 // Clone returns a deep copy of the topic channel.
-func (tc *TopicChannel) Clone() Channel {
+func (tc *TopicChannel) Clone() VersionedChannel {
 	tc.mu.RLock()
 	defer tc.mu.RUnlock()
 
@@ -247,7 +288,7 @@ func (lvc *LastValueChannel) HasValue() bool {
 }
 
 // Clone returns a deep copy of the last value channel.
-func (lvc *LastValueChannel) Clone() Channel {
+func (lvc *LastValueChannel) Clone() VersionedChannel {
 	clone := &LastValueChannel{
 		name: lvc.name,
 	}
@@ -327,7 +368,7 @@ func (boc *BinaryOpChannel) Reset(ctx context.Context) error {
 }
 
 // Clone returns a deep copy of the binary op channel.
-func (boc *BinaryOpChannel) Clone() Channel {
+func (boc *BinaryOpChannel) Clone() VersionedChannel {
 	clone := &BinaryOpChannel{
 		name:     boc.name,
 		operator: boc.operator,
@@ -385,9 +426,15 @@ func (cs *Set) ReadAll(ctx context.Context) (map[string]any, error) {
 }
 
 // SnapshotAll returns a consistent snapshot of all channel values.
+// Uses VersionedChannel.Snapshot() for internal runtime operations.
 func (cs *Set) SnapshotAll(ctx context.Context) (map[string]any, error) {
 	return cs.processAll(func(ch Channel) (any, error) {
-		return ch.Snapshot(ctx)
+		// Type assert to VersionedChannel for snapshot access
+		if vch, ok := ch.(VersionedChannel); ok {
+			return vch.Snapshot(ctx)
+		}
+		// Fallback to Read() if channel doesn't support Snapshot()
+		return ch.Read(ctx)
 	})
 }
 
@@ -425,3 +472,20 @@ func (cs *Set) WriteAll(ctx context.Context, updates map[string]any) error {
 	}
 	return nil
 }
+
+// =============================================================================
+// Interface Assertions - Compile-time verification
+// =============================================================================
+
+// Verify all channel implementations satisfy the interface hierarchy
+var (
+	_ Channel           = (*TopicChannel)(nil)
+	_ VersionedChannel  = (*TopicChannel)(nil)
+	_ ResettableChannel = (*TopicChannel)(nil)
+	_ Channel           = (*LastValueChannel)(nil)
+	_ VersionedChannel  = (*LastValueChannel)(nil)
+	_ ResettableChannel = (*LastValueChannel)(nil)
+	_ Channel           = (*BinaryOpChannel)(nil)
+	_ VersionedChannel  = (*BinaryOpChannel)(nil)
+	_ ResettableChannel = (*BinaryOpChannel)(nil)
+)
