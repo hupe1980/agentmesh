@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -13,8 +14,8 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
 
-	mockModel := &mockModel{
-		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	mockModel := &testutil.MockModel{
+		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("supervisor response"), nil
 		}),
 	}
@@ -53,8 +54,8 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 }
 
 func TestNewSupervisorAgent_NoWorkers(t *testing.T) {
-	mockModel := &mockModel{
-		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	mockModel := &testutil.MockModel{
+		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
 		}),
 	}
@@ -67,8 +68,8 @@ func TestNewSupervisorAgent_NoWorkers(t *testing.T) {
 }
 
 func TestNewSupervisorAgent_NilWorkerAgent(t *testing.T) {
-	mockModel := &mockModel{
-		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	mockModel := &testutil.MockModel{
+		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
 		}),
 	}
@@ -87,8 +88,8 @@ func TestNewSupervisorAgent(t *testing.T) {
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
 
-	mockModel := &mockModel{
-		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	mockModel := &testutil.MockModel{
+		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("supervisor response"), nil
 		}),
 	}
@@ -145,8 +146,8 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 
 // createMockWorker creates a simple mock worker agent for testing
 func createMockWorker(expertise string) (*graph.Compiled, error) {
-	mockModel := &mockModel{
-		generateFunc: wrapGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+	mockModel := &testutil.MockModel{
+		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("worker response: " + expertise), nil
 		}),
 	}
