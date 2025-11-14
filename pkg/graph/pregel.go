@@ -157,30 +157,241 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 // implement custom MessageBus backends, schedulers, and fine-tune the
 // execution engine for specific use cases.
 //
-// Thread Safety:
-//   - yield: Protected by yieldMu. Safe to call emit() from multiple goroutines.
-//   - yieldStopped: Protected by yieldMu to prevent double-calls to stopped iterator.
-//   - checkpointQueue: Channel-based communication, inherently thread-safe.
-//   - checkpointWG: Used to ensure checkpoint worker cleanup before shutdown.
-//   - scheduler: Has internal locking, safe for concurrent access.
-//
-// The yield function is used to emit events directly to the iterator consumer.
-// The cancel function is stored for early termination when yield returns false.
-type graphRuntime struct {
-	cg      *Compiled
-	cancel  context.CancelFunc
-	options runOptions
-	yield   func(stateif.ExecutionResult, error) bool // Iterator yield function for emitting execution results
+// =============================================================================
+// Sub-Coordinators - Extracted responsibilities from graphRuntime
+// =============================================================================
 
-	scheduler       *vertexScheduler                              // Graph topology & routing
-	engine          *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
-	instrumentation *Instrumentation                              // Observability instrumentation (passed from options)
-
-	errOnce         sync.Once
-	yieldMu         sync.Mutex // Protects yield from concurrent access
-	yieldStopped    bool       // True when yield has returned false (protected by yieldMu)
+// stateCoordinator manages state persistence and asynchronous checkpointing.
+// It handles checkpoint queue management and background checkpoint saves.
+type stateCoordinator struct {
+	stateManager StateManager
+	checkpointer checkpoint.Checkpointer
+	options      struct {
+		runID                 string
+		checkpointInterval    int
+		failOnCheckpointError bool
+	}
 	checkpointQueue chan *checkpoint.Checkpoint
 	checkpointWG    sync.WaitGroup
+}
+
+// newStateCoordinator creates a new state coordinator for managing checkpoints.
+func newStateCoordinator(sm StateManager, checkpointer checkpoint.Checkpointer, runID string, interval int, failOnError bool) *stateCoordinator {
+	sc := &stateCoordinator{
+		stateManager: sm,
+		checkpointer: checkpointer,
+	}
+	sc.options.runID = runID
+	sc.options.checkpointInterval = interval
+	sc.options.failOnCheckpointError = failOnError
+	return sc
+}
+
+// startCheckpointWorker initializes and starts the asynchronous checkpoint worker.
+func (sc *stateCoordinator) startCheckpointWorker(ctx context.Context, onError func(error)) {
+	logger := logging.FromContext(ctx)
+
+	if sc.checkpointer == nil || sc.options.runID == "" {
+		return
+	}
+	if sc.checkpointQueue != nil {
+		return
+	}
+
+	logger.Debug("starting async checkpoint worker",
+		"run_id", sc.options.runID,
+		"queue_size", 1)
+
+	sc.checkpointQueue = make(chan *checkpoint.Checkpoint, 1)
+	// Create detached context for background saves (checkpoints must complete even if request canceled)
+	saveCtx := context.WithoutCancel(ctx)
+	sc.checkpointWG.Add(1)
+
+	go func() {
+		defer sc.checkpointWG.Done()
+		logger := logging.FromContext(saveCtx)
+
+		for checkpoint := range sc.checkpointQueue {
+			if checkpoint == nil {
+				continue
+			}
+
+			logger.Debug("processing checkpoint from queue",
+				"run_id", checkpoint.RunID,
+				"superstep", checkpoint.Superstep)
+
+			if err := sc.checkpointer.Save(saveCtx, checkpoint); err != nil {
+				checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err)
+				logger.Error("async checkpoint save failed",
+					"run_id", checkpoint.RunID,
+					"superstep", checkpoint.Superstep,
+					"error", err)
+				onError(checkpointErr)
+			} else {
+				logger.Info("async checkpoint saved successfully",
+					"run_id", checkpoint.RunID,
+					"superstep", checkpoint.Superstep,
+					"version", checkpoint.Version)
+			}
+		}
+
+		logger.Debug("checkpoint worker stopped", "run_id", sc.options.runID)
+	}()
+}
+
+// stopCheckpointWorker gracefully shuts down the checkpoint worker.
+func (sc *stateCoordinator) stopCheckpointWorker() {
+	if sc.checkpointQueue == nil {
+		return
+	}
+	close(sc.checkpointQueue)
+	sc.checkpointWG.Wait()
+	sc.checkpointQueue = nil
+}
+
+// queueCheckpoint adds a checkpoint to the async save queue with backpressure handling.
+func (sc *stateCoordinator) queueCheckpoint(ctx context.Context, checkpoint *checkpoint.Checkpoint, onError func(error)) {
+	logger := logging.FromContext(ctx)
+
+	if sc.checkpointQueue == nil {
+		return
+	}
+
+	select {
+	case sc.checkpointQueue <- checkpoint:
+		logger.Debug("checkpoint queued for async save",
+			"run_id", checkpoint.RunID,
+			"superstep", checkpoint.Superstep)
+	default:
+		// Queue is full - checkpoint worker is busy processing previous save
+		logger.Warn("checkpoint queue full, waiting for worker",
+			"run_id", checkpoint.RunID,
+			"superstep", checkpoint.Superstep)
+
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+
+		select {
+		case sc.checkpointQueue <- checkpoint:
+			logger.Debug("checkpoint queued after wait",
+				"run_id", checkpoint.RunID,
+				"superstep", checkpoint.Superstep)
+		case <-timer.C:
+			queueErr := fmt.Errorf("checkpoint queue timeout at superstep %d after 5s: checkpoint dropped", checkpoint.Superstep)
+			logger.Error("checkpoint queue timeout",
+				"run_id", checkpoint.RunID,
+				"superstep", checkpoint.Superstep)
+			onError(queueErr)
+		case <-ctx.Done():
+			logger.Warn("checkpoint save cancelled",
+				"run_id", checkpoint.RunID,
+				"superstep", checkpoint.Superstep)
+		}
+	}
+}
+
+// eventEmitter manages event emission and observability instrumentation.
+// It handles yield function calls, instrumentation tracing, and event stream control.
+type eventEmitter struct {
+	yield           func(stateif.ExecutionResult, error) bool
+	instrumentation *Instrumentation
+	cancel          context.CancelFunc
+	yieldMu         sync.Mutex
+	yieldStopped    bool
+	errOnce         sync.Once
+}
+
+// newEventEmitter creates a new event emitter for managing execution events.
+func newEventEmitter(yield func(stateif.ExecutionResult, error) bool, instrumentation *Instrumentation, cancel context.CancelFunc) *eventEmitter {
+	return &eventEmitter{
+		yield:           yield,
+		instrumentation: instrumentation,
+		cancel:          cancel,
+	}
+}
+
+// emit sends an execution result through the yield function with proper synchronization.
+func (ee *eventEmitter) emit(event stateif.ExecutionResult) {
+	if ee.yield == nil {
+		return
+	}
+
+	ee.yieldMu.Lock()
+	defer ee.yieldMu.Unlock()
+
+	// Don't call yield if it already returned false
+	if ee.yieldStopped {
+		return
+	}
+
+	// Call yield and mark as stopped if it returns false
+	if !ee.yield(event, event.Err) {
+		ee.yieldStopped = true
+		if ee.cancel != nil {
+			ee.cancel()
+		}
+	}
+}
+
+// fail emits a terminal error event and cancels execution (once only).
+func (ee *eventEmitter) fail(err error) {
+	if err == nil {
+		return
+	}
+	ee.errOnce.Do(func() {
+		ee.emit(stateif.ExecutionResult{Err: err})
+		if ee.cancel != nil {
+			ee.cancel()
+		}
+	})
+}
+
+// emitError emits a non-terminal error event without cancelling execution.
+func (ee *eventEmitter) emitError(err error) {
+	if err == nil {
+		return
+	}
+	ee.emit(stateif.ExecutionResult{Err: err})
+}
+
+// traceGraphExecution starts a trace span for graph execution.
+func (ee *eventEmitter) traceGraphExecution(ctx context.Context, name string) (context.Context, trace.Span) {
+	if ee.instrumentation == nil {
+		return ctx, nil
+	}
+	return ee.instrumentation.TraceGraphExecution(ctx, name)
+}
+
+// traceCheckpoint starts a trace span for checkpoint operations.
+func (ee *eventEmitter) traceCheckpoint(ctx context.Context, operation, runID string, superstep int64) (context.Context, trace.Span) {
+	if ee.instrumentation == nil {
+		return ctx, nil
+	}
+	return ee.instrumentation.TraceCheckpoint(ctx, operation, runID, superstep)
+}
+
+// =============================================================================
+// graphRuntime - BSP Execution Coordinator
+// =============================================================================
+
+// graphRuntime coordinates graph execution with delegated responsibilities.
+//
+// Thread Safety:
+//   - stateCoordinator: Handles checkpoint queue (channel-based, thread-safe) and WaitGroup
+//   - eventEmitter: Protects yield calls with mutex, safe for concurrent emit() calls
+//   - scheduler: Has internal locking, safe for concurrent access
+//
+// The runtime now delegates to sub-coordinators instead of managing all concerns directly:
+//   - stateCoordinator: Checkpoint persistence and async saves
+//   - eventEmitter: Event emission, yield management, and observability tracing
+type graphRuntime struct {
+	cg      *Compiled
+	options runOptions
+
+	scheduler        *vertexScheduler                              // Graph topology & routing
+	engine           *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
+	stateCoordinator *stateCoordinator                             // State persistence & checkpointing
+	eventEmitter     *eventEmitter                                 // Event emission & observability
 }
 
 // compiledPregelGraph adapts Compiled to the pregel.Graph interface.
@@ -235,13 +446,25 @@ func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []stateif
 func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(stateif.ExecutionResult, error) bool, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
+	// Create sub-coordinators
+	var stateCoord *stateCoordinator
+	if cg != nil {
+		stateCoord = newStateCoordinator(
+			cg.stateManager,
+			options.checkpointer,
+			options.runID,
+			options.checkpointInterval,
+			options.failOnCheckpointError,
+		)
+	}
+	eventEmit := newEventEmitter(yield, instrumentation, cancel)
+
 	gr := &graphRuntime{
-		cg:              cg,
-		cancel:          cancel,
-		options:         options,
-		yield:           yield,
-		scheduler:       scheduler,
-		instrumentation: instrumentation,
+		cg:               cg,
+		options:          options,
+		scheduler:        scheduler,
+		stateCoordinator: stateCoord,
+		eventEmitter:     eventEmit,
 	}
 
 	// Note: maxMessages is now configured at StateManager creation time via NewStateManager(maxMessages).
@@ -286,67 +509,24 @@ func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOption
 }
 
 func (gr *graphRuntime) startCheckpointWorker(ctx context.Context) {
-	logger := logging.FromContext(ctx)
-
-	if gr.options.checkpointer == nil || gr.options.runID == "" {
+	if gr.stateCoordinator == nil {
 		return
 	}
-	if gr.checkpointQueue != nil {
-		return
-	}
-
-	logger.Debug("starting async checkpoint worker",
-		"run_id", gr.options.runID,
-		"queue_size", 1)
-
-	gr.checkpointQueue = make(chan *checkpoint.Checkpoint, 1)
-	// Create detached context for background saves (checkpoints must complete even if request canceled)
-	saveCtx := context.WithoutCancel(ctx)
-	gr.checkpointWG.Add(1)
-
-	go func() {
-		defer gr.checkpointWG.Done()
-		logger := logging.FromContext(saveCtx)
-
-		for checkpoint := range gr.checkpointQueue {
-			if checkpoint == nil {
-				continue
-			}
-
-			logger.Debug("processing checkpoint from queue",
-				"run_id", checkpoint.RunID,
-				"superstep", checkpoint.Superstep)
-
-			if err := gr.options.checkpointer.Save(saveCtx, checkpoint); err != nil {
-				checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", checkpoint.Superstep, err)
-				logger.Error("async checkpoint save failed",
-					"run_id", checkpoint.RunID,
-					"superstep", checkpoint.Superstep,
-					"error", err)
-				if gr.options.failOnCheckpointError {
-					gr.fail(checkpointErr)
-				} else {
-					gr.emitError(checkpointErr)
-				}
-			} else {
-				logger.Info("async checkpoint saved successfully",
-					"run_id", checkpoint.RunID,
-					"superstep", checkpoint.Superstep,
-					"version", checkpoint.Version)
-			}
+	onError := func(err error) {
+		if gr.stateCoordinator.options.failOnCheckpointError {
+			gr.eventEmitter.fail(err)
+		} else {
+			gr.eventEmitter.emitError(err)
 		}
-
-		logger.Debug("checkpoint worker stopped", "run_id", gr.options.runID)
-	}()
+	}
+	gr.stateCoordinator.startCheckpointWorker(ctx, onError)
 }
 
 func (gr *graphRuntime) stopCheckpointWorker() {
-	if gr.checkpointQueue == nil {
+	if gr.stateCoordinator == nil {
 		return
 	}
-	close(gr.checkpointQueue)
-	gr.checkpointWG.Wait()
-	gr.checkpointQueue = nil
+	gr.stateCoordinator.stopCheckpointWorker()
 }
 
 // run executes the graph runtime, coordinating checkpointing, tracing, and execution.
@@ -384,10 +564,7 @@ func (gr *graphRuntime) setupExecution(ctx context.Context) (context.Context, fu
 	gr.startCheckpointWorker(ctx)
 
 	// Start runtime trace span
-	var span trace.Span
-	if gr.instrumentation != nil {
-		ctx, span = gr.instrumentation.TraceGraphExecution(ctx, "runtime.run")
-	}
+	ctx, span := gr.eventEmitter.traceGraphExecution(ctx, "runtime.run")
 
 	cleanup := func() {
 		if span != nil {
@@ -466,9 +643,8 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 		"interval", gr.options.checkpointInterval)
 
 	// Trace checkpoint save operation
-	var span trace.Span
-	if gr.instrumentation != nil {
-		ctx, span = gr.instrumentation.TraceCheckpoint(ctx, "save", gr.options.runID, superstep)
+	ctx, span := gr.eventEmitter.traceCheckpoint(ctx, "save", gr.options.runID, superstep)
+	if span != nil {
 		defer span.End(nil)
 	}
 
@@ -481,47 +657,20 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 		return
 	}
 
-	if gr.checkpointQueue != nil {
-		select {
-		case gr.checkpointQueue <- checkpoint:
-			logger.Debug("checkpoint queued for async save",
-				"run_id", gr.options.runID,
-				"superstep", superstep)
-		default:
-			// Queue is full - checkpoint worker is busy processing previous save
-			// This is expected under high checkpoint frequency. Try again with timeout
-			// to avoid dropping important checkpoints while still respecting context cancellation.
-			logger.Warn("checkpoint queue full, waiting for worker",
-				"run_id", gr.options.runID,
-				"superstep", superstep)
-
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-
-			select {
-			case gr.checkpointQueue <- checkpoint:
-				logger.Debug("checkpoint queued after wait",
-					"run_id", gr.options.runID,
-					"superstep", superstep)
-			case <-timer.C:
-				queueErr := fmt.Errorf("checkpoint queue timeout at superstep %d after 5s: checkpoint dropped", superstep)
-				logger.Error("checkpoint queue timeout",
-					"run_id", gr.options.runID,
-					"superstep", superstep)
-				if gr.options.failOnCheckpointError {
-					gr.fail(queueErr)
-				} else {
-					gr.emitError(queueErr)
-				}
-			case <-ctx.Done():
-				logger.Warn("checkpoint save cancelled",
-					"run_id", gr.options.runID,
-					"superstep", superstep)
+	// Delegate to stateCoordinator for async queueing
+	if gr.stateCoordinator != nil {
+		onError := func(err error) {
+			if gr.options.failOnCheckpointError {
+				gr.eventEmitter.fail(err)
+			} else {
+				gr.eventEmitter.emitError(err)
 			}
 		}
+		gr.stateCoordinator.queueCheckpoint(ctx, checkpoint, onError)
 		return
 	}
 
+	// Fallback to synchronous save if no coordinator
 	if err := gr.options.checkpointer.Save(context.WithoutCancel(ctx), checkpoint); err != nil {
 		checkpointErr := fmt.Errorf("failed to save checkpoint at superstep %d: %w", superstep, err)
 		logger.Error("failed to save checkpoint",
@@ -529,9 +678,9 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 			"superstep", superstep,
 			"error", err)
 		if gr.options.failOnCheckpointError {
-			gr.fail(checkpointErr)
+			gr.eventEmitter.fail(checkpointErr)
 		} else {
-			gr.emitError(checkpointErr)
+			gr.eventEmitter.emitError(checkpointErr)
 		}
 	} else {
 		logger.Info("checkpoint saved successfully",
@@ -561,44 +710,24 @@ func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]s
 }
 
 func (gr *graphRuntime) emit(event stateif.ExecutionResult) {
-	if gr.yield == nil {
+	if gr.eventEmitter == nil {
 		return
 	}
-
-	gr.yieldMu.Lock()
-	defer gr.yieldMu.Unlock()
-
-	// Don't call yield if it already returned false
-	if gr.yieldStopped {
-		return
-	}
-
-	// Call yield and mark as stopped if it returns false
-	if !gr.yield(event, event.Err) {
-		gr.yieldStopped = true
-		if gr.cancel != nil {
-			gr.cancel()
-		}
-	}
+	gr.eventEmitter.emit(event)
 }
 
 func (gr *graphRuntime) fail(err error) {
-	if err == nil {
+	if gr.eventEmitter == nil {
 		return
 	}
-	gr.errOnce.Do(func() {
-		gr.emit(stateif.ExecutionResult{Err: err})
-		if gr.cancel != nil {
-			gr.cancel()
-		}
-	})
+	gr.eventEmitter.fail(err)
 }
 
 func (gr *graphRuntime) emitError(err error) {
-	if err == nil {
+	if gr.eventEmitter == nil {
 		return
 	}
-	gr.emit(stateif.ExecutionResult{Err: err})
+	gr.eventEmitter.emitError(err)
 }
 
 // compiledPregelGraph implements the pregel interfaces for Compiled.
@@ -685,15 +814,17 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 
 	startTime := time.Now()
 	var span trace.Span
-	if n.runtime.instrumentation != nil {
-		ctx, span = n.runtime.instrumentation.TraceNodeExecution(ctx, n.name, superstep)
+	if n.runtime.eventEmitter != nil && n.runtime.eventEmitter.instrumentation != nil {
+		ctx, span = n.runtime.eventEmitter.instrumentation.TraceNodeExecution(ctx, n.name, superstep)
 	}
 	defer func() {
 		// Record metrics and end span
 		duration := time.Since(startTime)
-		if n.runtime.instrumentation != nil {
-			n.runtime.instrumentation.RecordNodeExecution(ctx, n.name, duration, nil)
-			span.End(nil)
+		if n.runtime.eventEmitter != nil && n.runtime.eventEmitter.instrumentation != nil {
+			n.runtime.eventEmitter.instrumentation.RecordNodeExecution(ctx, n.name, duration, nil)
+			if span != nil {
+				span.End(nil)
+			}
 		}
 	}()
 
