@@ -27,6 +27,8 @@ import (
 	"strings"
 	"time"
 
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
@@ -49,7 +51,7 @@ func main() {
 	}
 
 	// Node 1: Data processor with intermediate streaming
-	builder.Node("data_processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("data_processor", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -80,7 +82,7 @@ func main() {
 	})
 
 	// Node 2: LLM call with streaming
-	builder.Node("llm_call", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("llm_call", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
@@ -95,8 +97,8 @@ func main() {
 		}
 
 		// Get messages from state
-		events := s.EventsSnapshot()
-		msgs := graph.ExtractMessages(events)
+		events := s.MessagesSnapshot()
+		msgs := graphstate.ExtractMessages(events)
 
 		// Create request
 		req := &pkgmodel.Request{
@@ -123,7 +125,7 @@ func main() {
 			},
 		}, nil
 	}) // Node 3: Multi-step analyzer with detailed streaming
-	builder.Node("analyzer", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("analyzer", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -237,7 +239,7 @@ func main() {
 		}
 
 		// Show final messages
-		finalEvents := finalState.EventsSnapshot()
+		finalEvents := finalState.MessagesSnapshot()
 		if len(finalEvents) > 0 {
 			fmt.Println("\n💬 Final Messages:")
 			for i, evt := range finalEvents {

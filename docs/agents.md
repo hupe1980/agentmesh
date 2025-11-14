@@ -263,7 +263,7 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 builder := graph.NewBuilder()
 
 // Add nodes
-builder.Node("classify", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("classify", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Classify the user's intent
     msgs := s.MessagesSnapshot()
     category := classifyIntent(msgs)
@@ -273,7 +273,7 @@ builder.Node("classify", func(ctx context.Context, s graph.StateWriter) (*graph.
     }, nil
 })
 
-builder.Node("handle_support", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("handle_support", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Handle support queries
     response := message.NewAIMessage(message.NewTextPart("Support response..."))
     return &graph.NodeResult{
@@ -281,7 +281,7 @@ builder.Node("handle_support", func(ctx context.Context, s graph.StateWriter) (*
     }, nil
 })
 
-builder.Node("handle_sales", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("handle_sales", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Handle sales queries
     response := message.NewAIMessage(message.NewTextPart("Sales response..."))
     return &graph.NodeResult{
@@ -311,10 +311,10 @@ if err != nil {
 
 ### Node functions
 
-Nodes receive a `StateWriter` and return a `NodeResult`:
+Nodes receive a `Writer` and return a `NodeResult`:
 
 ```go
-RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Read state
     previousValue := s.Get("key")
     messages := s.MessagesSnapshot()
@@ -394,7 +394,7 @@ Compose complex workflows from reusable graph components:
 researchGraph := createResearchGraph()
 
 // Embed in parent graph
-builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("research", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Execute subgraph
     messages, err := graph.CollectMessages(researchGraph.Run(ctx, s.MessagesSnapshot()))
     if err != nil {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "success",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return &NodeResult{Updates: map[string]any{"result": "ok"}}, nil
 			},
@@ -61,7 +62,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "retry-succeed",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				if attempts < 3 {
 					return nil, fmt.Errorf("attempt %d failed: %w", attempts, ErrTransient)
@@ -98,7 +99,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "always-fail",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return nil, ErrTransient
 			},
@@ -129,7 +130,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "permanent-fail",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return nil, ErrPermanent
 			},
@@ -163,7 +164,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "cancel-during-retry",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return nil, ErrTransient
 			},
@@ -210,7 +211,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "no-retry",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return nil, ErrTransient
 			},
@@ -257,7 +258,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "retry-aggregate",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				_ = s.Aggregate("total", 1)
 				if attempts == 1 {
@@ -275,7 +276,7 @@ func TestRetryPolicy(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "report",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				snap := s.AggregatesSnapshot()
 				var total float64
 				if snap != nil {
@@ -324,7 +325,7 @@ func TestRetryPolicy(t *testing.T) {
 		attempts := 0
 		err = g.AddNode(&Node{
 			Name: "failing-node",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				attempts++
 				return nil, fmt.Errorf("error from attempt %d", attempts)
 			},

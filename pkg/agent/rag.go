@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -12,7 +14,7 @@ import (
 )
 
 // extractUserQuery finds the last human message text from execution results.
-func extractUserQuery(events []graph.ExecutionResult) (string, error) {
+func extractUserQuery(events []state.ExecutionResult) (string, error) {
 	for i := len(events) - 1; i >= 0; i-- {
 		if events[i].Message.Type() == message.TypeHuman {
 			// Get text from Parts
@@ -36,9 +38,9 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 }
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, graph.StateWriter) (*graph.NodeResult, error) {
-	return func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		events := s.EventsSnapshot()
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, state.Writer) (*graph.NodeResult, error) {
+	return func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		events := s.MessagesSnapshot()
 		if len(events) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
@@ -62,10 +64,10 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, gra
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, graph.StateWriter) (*graph.NodeResult, error) {
-	return func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		events := s.EventsSnapshot()
-		messages := graph.ExtractMessages(events)
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, state.Writer) (*graph.NodeResult, error) {
+	return func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		events := s.MessagesSnapshot()
+		messages := state.ExtractMessages(events)
 
 		docs, ok := s.Get("documents").([]string)
 		if !ok || len(docs) == 0 {

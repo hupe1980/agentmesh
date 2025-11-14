@@ -5,12 +5,13 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestNewExecutionResult(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test message")
-	evt := NewExecutionResult(msg, "graph-123", "test-node")
+	evt := stateif.NewExecutionResult(msg, "graph-123", "test-node")
 
 	assert.NotEmpty(t, evt.ID, "Event ID should be generated")
 	assert.Equal(t, "graph-123", evt.GraphID)
@@ -21,22 +22,22 @@ func TestNewExecutionResult(t *testing.T) {
 
 func TestEvent_UUIDUniqueness(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test")
-	evt1 := NewExecutionResult(msg, "graph-1", "node-1")
-	evt2 := NewExecutionResult(msg, "graph-1", "node-1")
+	evt1 := stateif.NewExecutionResult(msg, "graph-1", "node-1")
+	evt2 := stateif.NewExecutionResult(msg, "graph-1", "node-1")
 
 	assert.NotEqual(t, evt1.ID, evt2.ID, "Each event should have a unique UUID")
 }
 
 func TestEvent_Type(t *testing.T) {
 	msg := message.NewAIMessageFromText("AI response")
-	evt := NewExecutionResult(msg, "graph-1", "node-1")
+	evt := stateif.NewExecutionResult(msg, "graph-1", "node-1")
 
 	assert.Equal(t, message.TypeAI, evt.Message.Type())
 }
 
 func TestEvent_Parts(t *testing.T) {
 	msg := message.NewHumanMessageFromText("Hello")
-	evt := NewExecutionResult(msg, "graph-1", "node-1")
+	evt := stateif.NewExecutionResult(msg, "graph-1", "node-1")
 
 	parts := evt.Message.Parts()
 	assert.Len(t, parts, 1)
@@ -48,14 +49,14 @@ func TestEvent_Parts(t *testing.T) {
 
 func TestEvent_Clone(t *testing.T) {
 	originalMsg := message.NewSystemMessageFromText("original")
-	evt := NewExecutionResult(originalMsg, "graph-123", "node-abc")
+	evt := stateif.NewExecutionResult(originalMsg, "graph-123", "node-abc")
 
 	// Allow a small time for timestamp
 	time.Sleep(1 * time.Millisecond)
 
 	clonedEvt := evt.Clone()
 
-	assert.IsType(t, &ExecutionResult{}, clonedEvt)
+	assert.IsType(t, &stateif.ExecutionResult{}, clonedEvt)
 
 	// Should preserve all metadata
 	assert.Equal(t, evt.ID, clonedEvt.ID)
@@ -70,7 +71,7 @@ func TestEvent_Clone(t *testing.T) {
 
 func TestEvent_String(t *testing.T) {
 	msg := message.NewAIMessageFromText("test")
-	evt := NewExecutionResult(msg, "run-456", "analyzer")
+	evt := stateif.NewExecutionResult(msg, "run-456", "analyzer")
 
 	str := evt.String()
 	assert.Contains(t, str, "run-456")
@@ -80,7 +81,7 @@ func TestEvent_String(t *testing.T) {
 
 func TestEvent_WrapsMessage(t *testing.T) {
 	msg := message.NewSystemMessageFromText("test")
-	evt := NewExecutionResult(msg, "graph-1", "node-1")
+	evt := stateif.NewExecutionResult(msg, "graph-1", "node-1")
 
 	// Verify it wraps a message.Message
 	assert.NotNil(t, evt.Message)

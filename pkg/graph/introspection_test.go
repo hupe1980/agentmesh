@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -11,13 +12,13 @@ import (
 func TestGetNodes(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -39,10 +40,10 @@ func TestGetNodes(t *testing.T) {
 func TestGetNodeInfo(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("node1", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("node1", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("node2", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("node2", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -79,7 +80,7 @@ func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
 
 	err = g.AddNode(&Node{
 		Name: "retryable",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		},
 		RetryPolicy: &RetryPolicy{
@@ -103,10 +104,10 @@ func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
 func TestGetAllNodeInfo(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -132,19 +133,19 @@ func TestGetAllNodeInfo(t *testing.T) {
 func TestGetEdges(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
 	builder.AddEdge(StartNode, "a")
 	builder.AddEdge("a", "b")
-	builder.AddConditionalEdges("b", func(ctx context.Context, s StateReader) []string {
+	builder.AddConditionalEdges("b", func(ctx context.Context, s stateif.Reader) []string {
 		return []string{"c"}
 	}, []string{"c", EndNode})
 	builder.AddEdge("c", EndNode)
@@ -172,13 +173,13 @@ func TestGetEdges(t *testing.T) {
 func TestGetTopology(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("entry", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("entry", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("middle", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("middle", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("exit", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("exit", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -202,18 +203,18 @@ func TestGetTopology(t *testing.T) {
 func TestGetTopology_WithConditionals(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("router", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("path_a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("path_a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("path_b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("path_b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
 	builder.AddEdge(StartNode, "router")
-	builder.AddConditionalEdges("router", func(ctx context.Context, s StateReader) []string {
+	builder.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
 		return []string{"path_a"}
 	}, []string{"path_a", "path_b"})
 	builder.AddEdge("path_a", EndNode)
@@ -230,13 +231,13 @@ func TestGetTopology_WithConditionals(t *testing.T) {
 func TestGetMetrics(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -260,13 +261,13 @@ func TestGetMetrics(t *testing.T) {
 func TestGetDependencies(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -305,10 +306,10 @@ func TestGetDependencies(t *testing.T) {
 func TestGetExecutionPath(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -336,18 +337,18 @@ func TestGetExecutionPath(t *testing.T) {
 func TestGetExecutionPath_WithBranching(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("router", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("path_a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("path_a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("path_b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("path_b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
 	builder.AddEdge(StartNode, "router")
-	builder.AddConditionalEdges("router", func(ctx context.Context, s StateReader) []string {
+	builder.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
 		return []string{"path_a"}
 	}, []string{"path_a", "path_b"})
 	builder.AddEdge("path_a", EndNode)
@@ -364,13 +365,13 @@ func TestGetExecutionPath_WithBranching(t *testing.T) {
 func TestCalculateDepth(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -390,16 +391,16 @@ func TestCalculateDepth(t *testing.T) {
 func TestFindAllPredecessors(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("d", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("d", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -422,13 +423,13 @@ func TestFindAllPredecessors(t *testing.T) {
 func TestFindAllSuccessors(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
-	builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	})
 
@@ -450,10 +451,10 @@ func TestCyclomaticComplexity(t *testing.T) {
 	t.Run("linear graph", func(t *testing.T) {
 		builder, err := NewBuilder()
 		require.NoError(t, err)
-		builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
-		builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
 
@@ -472,13 +473,13 @@ func TestCyclomaticComplexity(t *testing.T) {
 	t.Run("branching graph", func(t *testing.T) {
 		builder, err := NewBuilder()
 		require.NoError(t, err)
-		builder.Node("a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
-		builder.Node("b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
-		builder.Node("c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		})
 

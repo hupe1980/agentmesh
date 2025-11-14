@@ -23,6 +23,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
@@ -59,7 +60,7 @@ func main() {
 	// Automatic instrumentation happens behind the scenes
 	if err := g.AddNode(&graph.Node{
 		Name: "step1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -84,7 +85,7 @@ func main() {
 
 	if err := g.AddNode(&graph.Node{
 		Name: "step2",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -170,7 +171,7 @@ func productionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		counter := 0
 		if c, ok := s.Get("counter").(int); ok {
 			counter = c
@@ -182,7 +183,7 @@ func productionExample(ctx context.Context) {
 		}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		counter := 0
 		if c, ok := s.Get("counter").(int); ok {
 			counter = c

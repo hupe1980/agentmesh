@@ -274,7 +274,7 @@ Pause execution for human approval or input.
 ### Interrupt execution
 
 ```go
-builder.Node("request_approval", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("request_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     return &graph.NodeResult{
         Updates: map[string]any{
             "status": "awaiting_approval",

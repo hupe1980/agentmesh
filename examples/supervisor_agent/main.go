@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -63,7 +65,7 @@ func main() {
 		}
 
 		// Display conversation transcript
-		events := supervisor.State().EventsSnapshot()
+		events := supervisor.State().MessagesSnapshot()
 		displayTranscript(query, events)
 	}
 }
@@ -153,7 +155,7 @@ func createCodeAgent() (*graph.Compiled, error) {
 }
 
 // displayTranscript shows the conversation flow including tool calls
-func displayTranscript(query string, events []graph.ExecutionResult) {
+func displayTranscript(query string, events []state.ExecutionResult) {
 	// Print the user query at the top only
 	fmt.Printf("👤 User:\n   %s\n", query)
 

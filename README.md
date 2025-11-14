@@ -135,8 +135,8 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 - **Compiled**: Orchestrates execution via StateManager + Executor
 - **Builder**: Fluent API for graph construction
 - **StateManager**: Composed interface with focused sub-interfaces
-  - `StateReader`: Read-only state access for nodes
-  - `StateWriter`: Write capabilities (extends StateReader)
+  - `Reader`: Read-only state access for nodes
+  - `Writer`: Write capabilities (extends Reader)
   - `ChannelManager`: Channel lifecycle management
   - `AggregateManager`: Cross-node aggregate operations
   - `CheckpointManager`: State persistence and restoration
@@ -160,7 +160,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
-- **Interface Segregation**: Focused, composable interfaces (StateReader, ChannelManager, etc.)
+- **Interface Segregation**: Focused, composable interfaces (Reader, ChannelManager, etc.)
 - **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
 - **Extensibility**: Public `pkg/pregel` API for custom backends
 - **Testability**: Mock small, focused interfaces instead of monolithic StateManager
@@ -461,13 +461,13 @@ if err != nil {
 }
 
 // Add nodes with functions
-builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("step1", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     return &graph.NodeResult{
         Updates: map[string]any{"result": "processed"},
     }, nil
 })
 
-builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("step2", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     result := s.Get("result").(string)
     fmt.Println("Received:", result)
     return &graph.NodeResult{}, nil
@@ -629,8 +629,8 @@ Compose complex workflows from reusable components:
 researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
-builder.Node("research", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-    parentMessages := graph.ExtractMessages(s.EventsSnapshot())
+builder.Node("research", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    parentMessages := graph.ExtractMessages(s.MessagesSnapshot())
     events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {
         return nil, err

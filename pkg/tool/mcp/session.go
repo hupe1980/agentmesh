@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -51,7 +51,7 @@ type HTTPOptions struct {
 }
 
 // SessionFactory creates and connects an *mcp.ClientSession* using the provided
-// graph.StateReader and configurable options. Implementations below
+// state.Reader and configurable options. Implementations below
 // demonstrate stdio (local command), in-memory, and HTTP/S (streamable, SSE)
 // transports. Additional transports can be added following this pattern.
 //
@@ -59,7 +59,7 @@ type HTTPOptions struct {
 // per session (e.g., to inject authentication headers or override the MCP client).
 type SessionFactory func(
 	ctx context.Context,
-	state graph.StateReader,
+	state state.Reader,
 	optFns ...func(o *SessionFactoryOptions),
 ) (*mcp.ClientSession, error)
 
@@ -68,7 +68,7 @@ type SessionFactory func(
 func NewInMemorySessionFactory(transport *mcp.InMemoryTransport) SessionFactory {
 	return func(
 		ctx context.Context,
-		state graph.StateReader,
+		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -99,7 +99,7 @@ func NewStdioSessionFactory(command string, args []string, optFns ...func(o *Exe
 
 	return func(
 		ctx context.Context,
-		state graph.StateReader,
+		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -211,7 +211,7 @@ func newHTTPSessionFactory(
 
 	return func(
 		ctx context.Context,
-		state graph.StateReader,
+		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -284,7 +284,7 @@ func NewSessionManager(factory SessionFactory) *SessionManager {
 // transports can apply them (e.g., for HTTP authentication).
 func (m *SessionManager) CreateSession(
 	ctx context.Context,
-	state graph.StateReader,
+	state state.Reader,
 	headers map[string]string,
 ) (*mcp.ClientSession, error) {
 	key, err := sessionKeyFromHeaders(headers)

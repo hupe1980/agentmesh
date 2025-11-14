@@ -1,6 +1,7 @@
 package tool
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -87,7 +88,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	require.NoError(t, err)
 	g.AddNode(&graph.Node{
 		Name: "worker",
-		RunFunc: func(ctx context.Context, w graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, w stateif.Writer) (*graph.NodeResult, error) {
 			if failOnce {
 				failOnce = false
 				return nil, assert.AnError
@@ -181,7 +182,7 @@ func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled {
 
 	g.AddNode(&graph.Node{
 		Name: "worker",
-		RunFunc: func(ctx context.Context, w graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, w stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Messages: []message.Message{message.NewAIMessageFromText(response)},
 			}, nil

@@ -13,6 +13,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +43,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 		nodeNum := i
 		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("node_%d", i),
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				// Random failure injection
 				if rand.Float64() < failureRate {
 					failCount.Add(1)
@@ -125,7 +126,7 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_a",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"value": 42},
 			}, nil
@@ -135,7 +136,7 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_b",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			value := s.Get("value")
 			require.NotNil(t, value)
 			assert.Equal(t, 42, value.(int))
@@ -176,7 +177,7 @@ func TestChaos_CheckpointCorruption(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"data": "checkpoint_me"},
 			}, nil
@@ -186,7 +187,7 @@ func TestChaos_CheckpointCorruption(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_2",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			data := s.Get("data")
 			require.NotNil(t, data)
 			return nil, nil
@@ -263,7 +264,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 		nodeNum := i
 		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("parallel_%d", i),
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				// Simulate work with random failure
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
@@ -284,7 +285,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	// Aggregator node collects results
 	err = g.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			total := 0
 			for i := 0; i < 5; i++ {
 				if val := s.Get(fmt.Sprintf("result_%d", i)); val != nil {
@@ -336,7 +337,7 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "slow_node",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// Simulate slow operation that will timeout
 			select {
 			case <-time.After(5 * time.Second):
@@ -396,7 +397,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "panicking_node",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// This should be caught and converted to an error
 			panic("chaos: intentional panic for testing")
 		},
@@ -405,7 +406,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "recovery_node",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// This should not execute if previous panicked
 			return &graph.NodeResult{
 				Updates: map[string]any{"recovered": true},
@@ -453,7 +454,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	// Node that allocates large amounts of memory
 	err = g.AddNode(&graph.Node{
 		Name: "memory_hog",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// Allocate 100MB
 			data := make([]byte, 100*1024*1024)
 			for i := range data {
@@ -470,7 +471,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "consumer",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			data := s.Get("large_data")
 			require.NotNil(t, data)
 
@@ -517,7 +518,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 
 		err = g.AddNode(&graph.Node{
 			Name: "partition_1_node",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				if !partition1Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 1 unreachable")
 				}
@@ -530,7 +531,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 
 		err = g.AddNode(&graph.Node{
 			Name: "partition_2_node",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				if !partition2Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 2 unreachable")
 				}

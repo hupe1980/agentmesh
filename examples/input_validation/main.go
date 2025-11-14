@@ -6,6 +6,8 @@ import (
 	"log"
 	"strings"
 
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -21,8 +23,8 @@ func main() {
 		panic(err)
 	}
 	builder.
-		Node("echo", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			events := s.EventsSnapshot()
+		Node("echo", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+			events := s.MessagesSnapshot()
 			if len(events) > 0 {
 				fmt.Printf("Processing message: %s\n", ExtractText(events[len(events)-1].Message))
 			}

@@ -87,7 +87,7 @@ type StreamEvent struct {
 Nodes can emit intermediate progress without waiting for completion using the **StreamWriter pattern**:
 
 ```go
-builder.Node("processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Get the stream writer from context
     streamWriter := graph.GetStreamWriter(ctx)
     
@@ -144,7 +144,7 @@ func main() {
     builder := graph.NewBuilder()
     
     // Node 1: Data processor with intermediate streaming
-    builder.Node("data_processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    builder.Node("data_processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
         streamWriter := graph.GetStreamWriter(ctx)
         
         chunks := []string{"chunk1", "chunk2", "chunk3", "chunk4"}
@@ -172,7 +172,7 @@ func main() {
     })
     
     // Node 2: Multi-step analyzer
-    builder.Node("analyzer", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    builder.Node("analyzer", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
         streamWriter := graph.GetStreamWriter(ctx)
         
         // Step 1: Validation
@@ -263,7 +263,7 @@ func main() {
 ### 1. Progress Bars and Loading States
 
 ```go
-builder.Node("batch_processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("batch_processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     for i, item := range items {
@@ -288,7 +288,7 @@ builder.Node("batch_processor", func(ctx context.Context, s graph.StateWriter) (
 ### 2. LLM Token Streaming
 
 ```go
-builder.Node("llm_call", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("llm_call", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     // Stream from the model
@@ -323,7 +323,7 @@ builder.Node("llm_call", func(ctx context.Context, s graph.StateWriter) (*graph.
 ### 3. Multi-Stage Processing
 
 ```go
-builder.Node("pipeline", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("pipeline", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     stages := []struct {
@@ -566,7 +566,7 @@ streamWriter(&graph.NodeResult{
 ### Conditional Streaming
 
 ```go
-func process(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+func process(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     verbose := s.Get("verbose").(bool)
     

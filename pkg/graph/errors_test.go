@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"errors"
 	"testing"
@@ -120,7 +121,7 @@ func TestStructuredErrors_Integration(t *testing.T) {
 	t.Run("duplicate_node_name", func(t *testing.T) {
 		g := &Graph{}
 
-		noopFunc := func(ctx context.Context, s StateWriter) (*NodeResult, error) { return nil, nil }
+		noopFunc := func(ctx context.Context, s stateif.Writer) (*NodeResult, error) { return nil, nil }
 
 		err1 := g.AddNode(&Node{Name: "worker", RunFunc: noopFunc})
 		require.NoError(t, err1)
@@ -162,7 +163,7 @@ func TestNodeTimeoutError(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "slow-node",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				// Block until context is done or 10 seconds pass
 				// With a 50ms timeout, this will ALWAYS trigger a timeout
 				select {

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -9,11 +10,11 @@ import (
 // Last consumes an iterator and returns only the final execution result and error.
 // This is useful for getting the result of a graph run without processing intermediate steps.
 //
-// Note: Each ExecutionResult contains a single Message from node execution.
+// Note: Each state.ExecutionResult contains a single Message from node execution.
 // To get ALL accumulated messages, use Collect to gather all results, or access
-// the graph's State().EventsSnapshot() directly after consuming the iterator.
-func Last(seq iter.Seq2[ExecutionResult, error]) (ExecutionResult, error) {
-	var lastResult ExecutionResult
+// the graph's State().MessagesSnapshot() directly after consuming the iterator.
+func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, error) {
+	var lastResult state.ExecutionResult
 	var lastErr error
 
 	for result, err := range seq {
@@ -30,8 +31,8 @@ func Last(seq iter.Seq2[ExecutionResult, error]) (ExecutionResult, error) {
 // Collect gathers all execution results from an iterator into a slice.
 // The final error (if any) is returned separately. This is useful for testing
 // and debugging to inspect the full execution trace.
-func Collect(seq iter.Seq2[ExecutionResult, error]) ([]ExecutionResult, error) {
-	results := make([]ExecutionResult, 0)
+func Collect(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
+	results := make([]state.ExecutionResult, 0)
 	var lastErr error
 
 	for result, err := range seq {
@@ -49,7 +50,7 @@ func Collect(seq iter.Seq2[ExecutionResult, error]) ([]ExecutionResult, error) {
 // This is a convenience function that extracts messages from execution results as they arrive,
 // avoiding the need to collect results first and then extract messages separately.
 // The final error (if any) is returned separately.
-func CollectMessages(seq iter.Seq2[ExecutionResult, error]) ([]message.Message, error) {
+func CollectMessages(seq iter.Seq2[state.ExecutionResult, error]) ([]message.Message, error) {
 	messages := make([]message.Message, 0)
 	var lastErr error
 
@@ -69,7 +70,7 @@ func CollectMessages(seq iter.Seq2[ExecutionResult, error]) ([]message.Message, 
 // LastMessage consumes an iterator and returns only the final message and error.
 // This is useful for getting the final result of a graph run without processing
 // intermediate messages.
-func LastMessage(seq iter.Seq2[ExecutionResult, error]) (message.Message, error) {
+func LastMessage(seq iter.Seq2[state.ExecutionResult, error]) (message.Message, error) {
 	result, err := Last(seq)
 	if err != nil {
 		return nil, err

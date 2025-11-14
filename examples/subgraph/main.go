@@ -3,6 +3,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
@@ -82,7 +83,7 @@ func createValidationSubgraph() *graph.Graph {
 
 	g.AddNode(&graph.Node{
 		Name: "validate_structure",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			data, ok := s.Get("data").(map[string]any)
 			if !ok {
 				return &graph.NodeResult{
@@ -117,7 +118,7 @@ func createValidationSubgraph() *graph.Graph {
 
 	g.AddNode(&graph.Node{
 		Name: "validate_values",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			if !s.Get("valid").(bool) {
 				return &graph.NodeResult{}, nil // Skip if already invalid
 			}
@@ -158,7 +159,7 @@ func createEnrichmentSubgraph() *graph.Graph {
 
 	g.AddNode(&graph.Node{
 		Name: "enrich",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			data, ok := s.Get("data").(map[string]any)
 			if !ok {
 				return &graph.NodeResult{}, nil
@@ -207,7 +208,7 @@ func createAnalysisSubgraph() *graph.Graph {
 
 	g.AddNode(&graph.Node{
 		Name: "analyze",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			// This subgraph expects "input" key (will be mapped)
 			input, ok := s.Get("input").(map[string]any)
 			if !ok {
@@ -262,7 +263,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	analysisNode := analysis.AsNodeWithStateMapping(
 		"analysis",
 		// mapInput: map enriched_data to analysis input
-		func(s graph.StateReader) (map[string]any, []graph.ExecutionResult) {
+		func(s graphstate.Reader) (map[string]any, []graphstate.ExecutionResult) {
 			enrichedData, ok := s.Get("enriched_data").(map[string]any)
 			if !ok {
 				return map[string]any{"input": map[string]any{}}, nil
@@ -270,7 +271,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 			return map[string]any{"input": enrichedData}, nil
 		},
 		// mapOutput: map analysis output to parent analysis key
-		func(s graph.StateReader) (map[string]any, []graph.ExecutionResult) {
+		func(s graphstate.Reader) (map[string]any, []graphstate.ExecutionResult) {
 			output, ok := s.Get("output").(map[string]any)
 			if !ok {
 				return map[string]any{"analysis": map[string]any{}}, nil
@@ -283,7 +284,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	// Add report generation node
 	g.AddNode(&graph.Node{
 		Name: "generate_report",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			analysis, ok := s.Get("analysis").(map[string]any)
 			if !ok {
 				return &graph.NodeResult{
@@ -314,7 +315,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 	g.AddEdge(graph.StartNode, "validation")
 
 	// Conditional: only proceed if valid
-	g.AddConditionalEdges("validation", func(_ context.Context, s graph.StateReader) []string {
+	g.AddConditionalEdges("validation", func(_ context.Context, s graphstate.Reader) []string {
 		valid, ok := s.Get("valid").(bool)
 		if !ok || !valid {
 			return []string{graph.EndNode}

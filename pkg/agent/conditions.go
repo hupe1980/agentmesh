@@ -3,8 +3,8 @@ package agent
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // RouteOnToolCalls creates a conditional routing function that checks if the last message
@@ -20,9 +20,9 @@ import (
 // Example:
 //
 //	g.AddConditionalEdges("model", RouteOnToolCalls("tool", graph.EndNode), []string{"tool", graph.EndNode})
-func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, graph.StateReader) []string {
-	return func(_ context.Context, s graph.StateReader) []string {
-		events := s.EventsSnapshot()
+func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, state.Reader) []string {
+	return func(_ context.Context, s state.Reader) []string {
+		events := s.MessagesSnapshot()
 		if len(events) == 0 {
 			return []string{otherwise}
 		}

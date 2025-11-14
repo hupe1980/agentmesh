@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"iter"
 	"runtime"
@@ -27,7 +28,7 @@ func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 	require.NoError(t, err)
 	for i := 0; i < 10; i++ {
 		name := string(rune('a' + i))
-		builder.Node(name, func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node(name, func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			time.Sleep(10 * time.Millisecond) // Simulate work
 			return &NodeResult{
 				Updates: map[string]any{"count": 1},
@@ -85,7 +86,7 @@ func TestStream_CancelStopsExecution(t *testing.T) {
 		if i > 0 {
 			name = name + string(rune('0'+i/26))
 		}
-		builder.Node(name, func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node(name, func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			// Check if context is cancelled before executing
 			select {
 			case <-ctx.Done():

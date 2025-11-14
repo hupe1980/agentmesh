@@ -7,7 +7,7 @@
 //
 // Key concepts:
 //   - AddConditionalEdges: Dynamic routing based on runtime state
-//   - StateReader: Read state values to make routing decisions
+//   - Reader: Read state values to make routing decisions
 //   - TopicChannel: Accumulate values without overwriting (like a list)
 //
 // Run: go run main.go
@@ -15,6 +15,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 
@@ -61,7 +62,7 @@ func runScenario(choice string) {
 	// Decision node: Reads input and decides which path to take
 	mustAddNode(&graph.Node{
 		Name: "decide",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			choiceVal, _ := s.Get("choice").(string)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
@@ -80,7 +81,7 @@ func runScenario(choice string) {
 	// Path A: Specialized processing for option A
 	mustAddNode(&graph.Node{
 		Name: "path_a",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -93,7 +94,7 @@ func runScenario(choice string) {
 	// Path B: Alternative processing for option B
 	mustAddNode(&graph.Node{
 		Name: "path_b",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -109,7 +110,7 @@ func runScenario(choice string) {
 	// AddConditionalEdges allows runtime decisions about which nodes to execute next
 	// The evaluator function is called at runtime and can return different targets
 	// based on the current state
-	gph.AddConditionalEdges("decide", func(_ context.Context, s graph.StateReader) []string {
+	gph.AddConditionalEdges("decide", func(_ context.Context, s graphstate.Reader) []string {
 		// Read the decision from state
 		if next, ok := s.Get("next_path").(string); ok && next != "" {
 			// Return the selected path as a slice (can return multiple for parallel execution)

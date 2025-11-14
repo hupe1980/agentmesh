@@ -16,6 +16,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"time"
@@ -75,7 +76,7 @@ func main() {
 	// Task A: Simulates data analysis work
 	taskA := &graph.Node{
 		Name: "task_a",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
@@ -94,7 +95,7 @@ func main() {
 	// Task B: Simulates simulation work (runs in parallel with Task A)
 	taskB := &graph.Node{
 		Name: "task_b",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
@@ -114,7 +115,7 @@ func main() {
 	// This demonstrates the fan-in pattern (many → one)
 	mergeResults := &graph.Node{
 		Name: "combine",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read the merged results from both tasks

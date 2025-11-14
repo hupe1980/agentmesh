@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 	// Node that sets a decision value
 	g.AddNode(&Node{
 		Name: "decide",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{
 				Updates: map[string]any{
 					"decision": "go_left",
@@ -31,7 +32,7 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 	// Two target nodes
 	g.AddNode(&Node{
 		Name: "left",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{
 				Updates: map[string]any{"result": "left_executed"},
 			}, nil
@@ -40,7 +41,7 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 
 	g.AddNode(&Node{
 		Name: "right",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{
 				Updates: map[string]any{"result": "right_executed"},
 			}, nil
@@ -48,7 +49,7 @@ func TestConditionalSeesNodeOutput(t *testing.T) {
 	})
 
 	// Conditional edge that routes based on the decision value
-	g.AddConditionalEdges("decide", func(ctx context.Context, s StateReader) []string {
+	g.AddConditionalEdges("decide", func(ctx context.Context, s stateif.Reader) []string {
 		decision := s.Get("decision")
 		if decision == "go_left" {
 			return []string{"left"}
@@ -87,7 +88,7 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 	// First node sets counter to 1
 	g.AddNode(&Node{
 		Name: "increment1",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{
 				Updates: map[string]any{"counter": 1},
 			}, nil
@@ -97,7 +98,7 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 	// Second node increments counter
 	g.AddNode(&Node{
 		Name: "increment2",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			current := s.Get("counter")
 			count := 0
 			if current != nil {
@@ -114,14 +115,14 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 	// Two target nodes
 	g.AddNode(&Node{
 		Name: "path_a",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{Updates: map[string]any{"path": "a"}}, nil
 		},
 	})
 
 	g.AddNode(&Node{
 		Name: "path_b",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{Updates: map[string]any{"path": "b"}}, nil
 		},
 	})
@@ -130,7 +131,7 @@ func TestConditionalSeesUpdatedState(t *testing.T) {
 	g.AddEdge("increment1", "increment2")
 
 	// Conditional routes based on counter value (should be 2 at this point)
-	g.AddConditionalEdges("increment2", func(ctx context.Context, s StateReader) []string {
+	g.AddConditionalEdges("increment2", func(ctx context.Context, s stateif.Reader) []string {
 		counter := s.Get("counter")
 		if counter != nil {
 			if c, ok := counter.(int); ok && c >= 2 {
@@ -168,7 +169,7 @@ func TestConditionalWithMultipleOutputs(t *testing.T) {
 	// Node that produces multiple flags
 	g.AddNode(&Node{
 		Name: "analyze",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{
 				Updates: map[string]any{
 					"needs_validation": true,
@@ -181,14 +182,14 @@ func TestConditionalWithMultipleOutputs(t *testing.T) {
 	// Multiple target nodes
 	g.AddNode(&Node{
 		Name: "validate",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{Updates: map[string]any{"validated": true}}, nil
 		},
 	})
 
 	g.AddNode(&Node{
 		Name: "log",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{Updates: map[string]any{"logged": true}}, nil
 		},
 	})
@@ -196,7 +197,7 @@ func TestConditionalWithMultipleOutputs(t *testing.T) {
 	g.AddEdge(StartNode, "analyze")
 
 	// Conditional that can activate multiple targets based on flags
-	g.AddConditionalEdges("analyze", func(ctx context.Context, s StateReader) []string {
+	g.AddConditionalEdges("analyze", func(ctx context.Context, s stateif.Reader) []string {
 		var targets []string
 		if s.Get("needs_validation") == true {
 			targets = append(targets, "validate")

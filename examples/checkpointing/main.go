@@ -3,6 +3,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
@@ -193,7 +194,7 @@ func buildWorkflow() *graph.Compiled {
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
 		return &graph.NodeResult{
@@ -201,7 +202,7 @@ func buildWorkflow() *graph.Compiled {
 		}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
 		return &graph.NodeResult{
@@ -209,7 +210,7 @@ func buildWorkflow() *graph.Compiled {
 		}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
 		return &graph.NodeResult{
@@ -235,21 +236,21 @@ func buildFailingWorkflow() *graph.Compiled {
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("  Step 1: OK")
 		return &graph.NodeResult{
 			Updates: map[string]any{"step": 1, "status": "ok"},
 		}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("  Step 2: OK")
 		return &graph.NodeResult{
 			Updates: map[string]any{"step": 2, "status": "ok"},
 		}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		return nil, fmt.Errorf("simulated failure at step 3")
 	})
 
@@ -268,21 +269,21 @@ func buildFixedWorkflow() *graph.Compiled {
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
 		return &graph.NodeResult{
 			Updates: map[string]any{"step": 1, "status": "ok"},
 		}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
 		return &graph.NodeResult{
 			Updates: map[string]any{"step": 2, "status": "ok"},
 		}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
 		return &graph.NodeResult{
 			Updates: map[string]any{"step": 3, "status": "fixed!"},

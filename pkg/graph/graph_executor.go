@@ -5,6 +5,7 @@ import (
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Executor is an internal interface for graph execution strategies.
@@ -36,14 +37,14 @@ type Executor interface {
 	//   - initialMessages: Starting messages for the graph
 	//   - options: Execution configuration
 	//
-	// Returns: Iterator yielding (ExecutionResult, error) pairs
+	// Returns: Iterator yielding (state.ExecutionResult, error) pairs
 	Run(
 		ctx context.Context,
 		topology *ExecutorTopology,
 		stateManager StateManager,
 		initialMessages []message.Message,
 		options *RunOptions,
-	) iter.Seq2[ExecutionResult, error]
+	) iter.Seq2[state.ExecutionResult, error]
 
 	// CurrentSuperstep returns the current superstep/iteration number.
 	// Returns 0 for non-iterative executors.

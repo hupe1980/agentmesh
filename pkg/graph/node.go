@@ -6,17 +6,18 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Runnable represents a graph node that can execute logic.
 // This interface allows custom node implementations beyond the standard Node type.
 type Runnable interface {
-	Run(ctx context.Context, s StateReader) (*NodeResult, error)
+	Run(ctx context.Context, s state.Reader) (*NodeResult, error)
 }
 
 // NodeResult contains the output of a node execution.
 // Updates modify graph state values, and Messages append to the conversation history.
-// The framework automatically wraps Messages in ExecutionResult with execution metadata.
+// The framework automatically wraps Messages in state.ExecutionResult with execution metadata.
 type NodeResult struct {
 	Updates  map[string]any    // State updates (key-value pairs)
 	Messages []message.Message // Messages to append (framework adds metadata)
@@ -53,12 +54,12 @@ func DefaultBackoff(attempt int) time.Duration {
 // Each node has a unique name and a RunFunc that performs computation.
 type Node struct {
 	Name        string // Unique identifier for the node
-	RunFunc     func(ctx context.Context, s StateWriter) (*NodeResult, error)
+	RunFunc     func(ctx context.Context, s state.Writer) (*NodeResult, error)
 	RetryPolicy *RetryPolicy // Optional retry configuration
 }
 
 // Run invokes the configured RunFunc for the node.
-func (n *Node) Run(ctx context.Context, s StateWriter) (*NodeResult, error) {
+func (n *Node) Run(ctx context.Context, s state.Writer) (*NodeResult, error) {
 	if n.RunFunc == nil {
 		return nil, fmt.Errorf("node %q: %w: no Run function", n.Name, ErrNodeNotFound)
 	}
@@ -74,7 +75,7 @@ type Edge struct {
 // ConditionalEdges represents dynamic routing based on node output.
 // The Condition function evaluates the graph state to determine which target nodes to execute.
 type ConditionalEdges struct {
-	From      string                                      // Source node name
-	Targets   []string                                    // Possible target node names
-	Condition func(context.Context, StateReader) []string // Function determining which targets to activate
+	From      string                                            // Source node name
+	Targets   []string                                          // Possible target node names
+	Condition func(context.Context, state.Reader) []string // Function determining which targets to activate
 }

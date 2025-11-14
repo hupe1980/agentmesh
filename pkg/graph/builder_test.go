@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 		WithInitialChannels(func(state *ChannelState) {
 			state.Set("count", 0)
 		}).
-		Node("increment", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("increment", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			count, _ := s.Get("count").(int)
 			return &NodeResult{
 				Updates: map[string]any{"count": count + 1},
@@ -51,7 +52,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 		}).
 		WithMaxMessages(5)
 
-	builder.Node("noop", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("noop", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return nil, nil
 	})
 
@@ -88,17 +89,17 @@ func TestBuilder_Chain(t *testing.T) {
 		state.Set("value", 1)
 	})
 
-	builder.Node("double", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("double", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		val, _ := s.Get("value").(int)
 		return &NodeResult{Updates: map[string]any{"value": val * 2}}, nil
 	})
 
-	builder.Node("add_ten", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("add_ten", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		val, _ := s.Get("value").(int)
 		return &NodeResult{Updates: map[string]any{"value": val + 10}}, nil
 	})
 
-	builder.Node("square", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("square", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		val, _ := s.Get("value").(int)
 		return &NodeResult{Updates: map[string]any{"value": val * val}}, nil
 	})
@@ -130,23 +131,23 @@ func TestBuilder_Parallel(t *testing.T) {
 			state.AddChannel(channel.NewBinaryOpChannel("results", []any{}, appendReducer))
 		})
 
-	builder.Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"triggered": true}}, nil
 	})
 
-	builder.Node("task_a", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("task_a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"results": []any{"A"}}}, nil
 	})
 
-	builder.Node("task_b", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("task_b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"results": []any{"B"}}}, nil
 	})
 
-	builder.Node("task_c", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("task_c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"results": []any{"C"}}}, nil
 	})
 
-	builder.Node("aggregate", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("aggregate", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"done": true}}, nil
 	})
 
@@ -178,20 +179,20 @@ func TestBuilder_ConditionalRoute(t *testing.T) {
 		state.Set("score", 75)
 	})
 
-	builder.Node("evaluate", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("evaluate", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"evaluated": true}}, nil
 	})
 
-	builder.Node("pass", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("pass", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"result": "passed"}}, nil
 	})
 
-	builder.Node("fail", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("fail", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return &NodeResult{Updates: map[string]any{"result": "failed"}}, nil
 	})
 
 	builder.StartTo("evaluate")
-	builder.ConditionalRoute("evaluate", func(ctx context.Context, s StateReader) (string, error) {
+	builder.ConditionalRoute("evaluate", func(ctx context.Context, s stateif.Reader) (string, error) {
 		score, _ := s.Get("score").(int)
 		if score >= 70 {
 			return "pass", nil

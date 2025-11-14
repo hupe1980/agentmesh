@@ -7,6 +7,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // BenchmarkComprehensiveWorkflow benchmarks a realistic agent workflow
@@ -20,15 +21,15 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	}
 
 	// Node 1: Input processing
-	builder.Node("preprocess", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-		msgs := s.EventsSnapshot()
+	builder.Node("preprocess", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		msgs := s.MessagesSnapshot()
 		return &graph.NodeResult{
 			Updates: map[string]any{"processed": len(msgs)},
 		}, nil
 	})
 
 	// Node 2: Analysis (parallel with node 3)
-	builder.Node("analyze", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("analyze", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		count := s.Get("processed").(int)
 		return &graph.NodeResult{
 			Updates: map[string]any{"analyzed": count * 2},
@@ -36,7 +37,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	})
 
 	// Node 3: Validate (parallel with node 2)
-	builder.Node("validate", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("validate", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		count := s.Get("processed").(int)
 		return &graph.NodeResult{
 			Updates: map[string]any{"valid": count > 0},
@@ -44,7 +45,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	})
 
 	// Node 4: Aggregate results
-	builder.Node("aggregate", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("aggregate", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		analyzed := s.Get("analyzed").(int)
 		valid := s.Get("valid").(bool)
 		return &graph.NodeResult{
@@ -97,7 +98,7 @@ func BenchmarkDeepChain(b *testing.B) {
 			// Create chain of nodes
 			for i := range depth {
 				nodeName := fmt.Sprintf("node-%d", i)
-				builder.Node(nodeName, func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				builder.Node(nodeName, func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					return &graph.NodeResult{
 						Updates: map[string]any{"step": nodeName},
 					}, nil
@@ -152,7 +153,7 @@ func BenchmarkWideParallel(b *testing.B) {
 			// Create parallel nodes
 			for i := range width {
 				nodeName := fmt.Sprintf("parallel-%d", i)
-				builder.Node(nodeName, func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				builder.Node(nodeName, func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					return &graph.NodeResult{
 						Updates: map[string]any{nodeName: i},
 					}, nil
@@ -191,26 +192,26 @@ func BenchmarkConditionalBranching(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	builder.Node("router", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		return &graph.NodeResult{
 			Updates: map[string]any{"route": "branch_a"},
 		}, nil
 	})
 
-	builder.Node("branch_a", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("branch_a", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		return &graph.NodeResult{
 			Updates: map[string]any{"result": "a"},
 		}, nil
 	})
 
-	builder.Node("branch_b", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("branch_b", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 		return &graph.NodeResult{
 			Updates: map[string]any{"result": "b"},
 		}, nil
 	})
 
 	builder.AddEdge(graph.StartNode, "router")
-	builder.AddConditionalEdges("router", func(ctx context.Context, s graph.StateReader) []string {
+	builder.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
 		route := s.Get("route").(string)
 		if route == "branch_a" {
 			return []string{"branch_a"}
@@ -252,8 +253,8 @@ func BenchmarkMessageThroughput(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			builder.Node("processor", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-				msgs := s.EventsSnapshot()
+			builder.Node("processor", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+				msgs := s.MessagesSnapshot()
 				return &graph.NodeResult{
 					Updates: map[string]any{"count": len(msgs)},
 				}, nil
@@ -299,7 +300,7 @@ func BenchmarkStateUpdates(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			builder.Node("writer", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			builder.Node("writer", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				updates := make(map[string]any, keyCount)
 				for i := range keyCount {
 					updates[fmt.Sprintf("key-%d", i)] = i
@@ -309,7 +310,7 @@ func BenchmarkStateUpdates(b *testing.B) {
 				}, nil
 			})
 
-			builder.Node("reader", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			builder.Node("reader", func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				sum := 0
 				for i := 0; i < keyCount; i++ {
 					val := s.Get(fmt.Sprintf("key-%d", i)).(int)

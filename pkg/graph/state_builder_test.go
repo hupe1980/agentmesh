@@ -380,7 +380,7 @@ func TestStateBuilder_WithInitialMessages(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	events := state.EventsSnapshot()
+	events := state.MessagesSnapshot()
 	if len(events) != 2 {
 		t.Fatalf("Expected 2 initial messages, got %d", len(events))
 	}

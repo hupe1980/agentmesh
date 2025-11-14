@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +20,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := subGraph.AddNode(&Node{
 			Name: "double",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				val, _ := s.Get("value").(int)
 				return &NodeResult{
 					Updates: map[string]any{"value": val * 2},
@@ -43,7 +45,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := parentGraph.AddNode(&Node{
 			Name: "prepare",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				count, _ := s.Get("count").(int)
 				// Pass count to subgraph as "value"
 				return &NodeResult{
@@ -88,7 +90,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := subGraph.AddNode(&Node{
 			Name: "process",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				input, _ := s.Get("input").(string)
 				return &NodeResult{
 					Updates: map[string]any{"output": "processed: " + input},
@@ -115,12 +117,12 @@ func TestSubgraphSupport(t *testing.T) {
 		subNode := compiledSub.AsNodeWithStateMapping(
 			"mapped-subgraph",
 			// Map parent "data" to subgraph "input"
-			func(s StateReader) (map[string]any, []ExecutionResult) {
+			func(s stateif.Reader) (map[string]any, []stateif.ExecutionResult) {
 				data, _ := s.Get("data").(string)
 				return map[string]any{"input": data}, nil
 			},
 			// Map subgraph "output" to parent "result"
-			func(s StateReader) (map[string]any, []ExecutionResult) {
+			func(s stateif.Reader) (map[string]any, []stateif.ExecutionResult) {
 				output, _ := s.Get("output").(string)
 				return map[string]any{"result": output}, nil
 			},
@@ -158,7 +160,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := innerGraph.AddNode(&Node{
 			Name: "add10",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				n, _ := s.Get("n").(int)
 				return &NodeResult{Updates: map[string]any{"n": n + 10}}, nil
 			},
@@ -183,7 +185,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := middleGraph.AddNode(&Node{
 			Name: "times2",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				n, _ := s.Get("n").(int)
 				return &NodeResult{Updates: map[string]any{"n": n * 2}}, nil
 			},
@@ -236,7 +238,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := subGraph.AddNode(&Node{
 			Name: "fail",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return nil, ErrNodeNotFound
 			},
 		}); err != nil {
@@ -285,7 +287,7 @@ func TestSubgraphSupport(t *testing.T) {
 
 		if err := subGraph.AddNode(&Node{
 			Name: "messenger",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{
 					Updates: map[string]any{"sent": true},
 					Messages: []message.Message{
@@ -325,7 +327,7 @@ func TestSubgraphSupport(t *testing.T) {
 		}
 
 		// Check that messages were passed through
-		msgs := compiled.State().EventsSnapshot()
+		msgs := compiled.State().MessagesSnapshot()
 		if len(msgs) == 0 {
 			t.Fatal("expected messages from subgraph")
 		}

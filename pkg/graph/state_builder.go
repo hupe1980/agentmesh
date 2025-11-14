@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // StateBuilder provides a fluent API for constructing State with common channel patterns.
@@ -235,9 +236,9 @@ func (b *StateBuilder) Build() (*ChannelState, error) {
 	if len(b.initialMsgs) > 0 {
 		// Wrap messages as ExecutionResults
 		// Note: Using empty graphID and "__initial__" node since these are pre-execution messages
-		events := make([]ExecutionResult, len(b.initialMsgs))
+		events := make([]stateif.ExecutionResult, len(b.initialMsgs))
 		for i, msg := range b.initialMsgs {
-			events[i] = *NewExecutionResult(msg, "", "__initial__")
+			events[i] = *stateif.NewExecutionResult(msg, "", "__initial__")
 		}
 		state.AddMessages(events)
 	}

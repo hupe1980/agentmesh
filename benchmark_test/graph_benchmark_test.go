@@ -7,6 +7,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Benchmark state operations
@@ -94,9 +95,9 @@ func BenchmarkState_AddMessages(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	msgs := []graph.ExecutionResult{
-		*graph.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
-		*graph.NewExecutionResult(message.NewAIMessageFromText("Hi there"), "", ""),
+	msgs := []stateif.ExecutionResult{
+		*stateif.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
+		*stateif.NewExecutionResult(message.NewAIMessageFromText("Hi there"), "", ""),
 	}
 
 	for b.Loop() {
@@ -110,13 +111,13 @@ func BenchmarkState_MessagesSnapshot(b *testing.B) {
 		b.Fatal(err)
 	}
 	for range 100 {
-		state.AddMessages([]graph.ExecutionResult{
-			*graph.NewExecutionResult(message.NewHumanMessageFromText("Message"), "", ""),
+		state.AddMessages([]stateif.ExecutionResult{
+			*stateif.NewExecutionResult(message.NewHumanMessageFromText("Message"), "", ""),
 		})
 	}
 
 	for b.Loop() {
-		_ = state.EventsSnapshot()
+		_ = state.MessagesSnapshot()
 	}
 }
 
@@ -126,8 +127,8 @@ func BenchmarkState_MessagesWithCompaction(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	msgs := []graph.ExecutionResult{
-		*graph.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
+	msgs := []stateif.ExecutionResult{
+		*stateif.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
 	}
 
 	for b.Loop() {
@@ -207,7 +208,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 
 		g.AddNode(&graph.Node{
 			Name: "increment",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				count, _ := s.Get("count").(int)
 				return &graph.NodeResult{Updates: map[string]any{"count": count + 1}}, nil
 			},
@@ -242,7 +243,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			name := string(rune('a' + i%26))
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					val, _ := s.Get("value").(int)
 					return &graph.NodeResult{Updates: map[string]any{"value": val + 1}}, nil
 				},
@@ -310,7 +311,7 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 
 		g.AddNode(&graph.Node{
 			Name: "start",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -320,7 +321,7 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 			idx := i
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					return &graph.NodeResult{Updates: map[string]any{"results": []int{idx}}}, nil
 				},
 			})
@@ -373,27 +374,27 @@ func BenchmarkGraph_ConditionalRouting(b *testing.B) {
 
 		g.AddNode(&graph.Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 
 		g.AddNode(&graph.Node{
 			Name: "left",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{Updates: map[string]any{"result": "left"}}, nil
 			},
 		})
 
 		g.AddNode(&graph.Node{
 			Name: "right",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{Updates: map[string]any{"result": "right"}}, nil
 			},
 		})
 
 		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s graph.StateReader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
 			route, _ := s.Get("route").(string)
 			return []string{route}
 		}, []string{"left", "right"})
@@ -452,7 +453,7 @@ func BenchmarkGraph_Compile(b *testing.B) {
 			name := string(rune('a' + i))
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					return &graph.NodeResult{}, nil
 				},
 			})

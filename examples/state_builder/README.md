@@ -64,7 +64,7 @@ gph := graph.NewGraph(state)
 
 gph.AddNode(&graph.Node{
     Name: "init",
-    RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
         return &graph.NodeResult{
             Updates: map[string]any{
                 "phase": "processing",

@@ -42,7 +42,7 @@ Workflow complete!
 
 ### 1. Create Pause Node
 ```go
-builder.Node("human_review", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("human_review", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     draft, _ := s.Get("draft").(string)
     
     fmt.Printf("⏸️  Pausing for review\n")
@@ -73,7 +73,7 @@ compiled.Invoke(ctx, nil,
 
 ### 3. Process Human Decision
 ```go
-builder.Node("process_approval", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("process_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     decision, _ := s.Get("human_input").(string)
     
     if decision == "approved" {

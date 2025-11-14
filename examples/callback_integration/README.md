@@ -144,7 +144,7 @@ cbManager := callbacks.NewManager()
 
 ### 2. Define Request Validator
 ```go
-validateRequest := func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+validateRequest := func(ctx context.Context, s state.Writer) (message.Message, error) {
     messages := s.MessagesSnapshot()
     // Validate request...
     return nil, nil // Continue to model
@@ -153,7 +153,7 @@ validateRequest := func(ctx context.Context, s graph.StateWriter) (message.Messa
 
 ### 3. Define Response Sanitizer
 ```go
-sanitizeResponse := func(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+sanitizeResponse := func(ctx context.Context, s state.Writer) (message.Message, error) {
     // Get last message
     messages := s.MessagesSnapshot()
     lastMsg := messages[len(messages)-1]

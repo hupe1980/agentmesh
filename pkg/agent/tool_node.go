@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -118,8 +120,8 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 	return &graph.Node{
 		Name: config.nodeName,
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			events := s.EventsSnapshot()
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			events := s.MessagesSnapshot()
 			if len(events) == 0 {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			}
@@ -210,7 +212,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 // handleToolError processes tool execution errors with plugins and fallbacks.
 // Returns error messages (if continuing on error) and error (nil if handled).
-func handleToolError(ctx context.Context, _ graph.StateWriter, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
+func handleToolError(ctx context.Context, _ state.Writer, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
 	err := execErr
 
 	// Execute OnToolError plugins
@@ -240,7 +242,7 @@ func handleToolError(ctx context.Context, _ graph.StateWriter, call message.Tool
 
 // handleBeforeToolCallback executes before-tool plugins.
 // Returns error if plugin fails.
-func handleBeforeToolCallback(ctx context.Context, _ graph.StateWriter, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
+func handleBeforeToolCallback(ctx context.Context, _ state.Writer, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
 	if config.callbacks == nil || !config.callbacks.HasPlugins() {
 		return nil, nil
 	}
@@ -270,7 +272,7 @@ func handleBeforeToolCallback(ctx context.Context, _ graph.StateWriter, call mes
 
 // handleAfterToolCallback executes after-tool plugins.
 // Returns error if plugin fails.
-func handleAfterToolCallback(ctx context.Context, _ graph.StateWriter, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
+func handleAfterToolCallback(ctx context.Context, _ state.Writer, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
 	if config.callbacks == nil || !config.callbacks.HasPlugins() {
 		return result, nil, nil
 	}

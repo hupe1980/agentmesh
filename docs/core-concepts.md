@@ -67,7 +67,7 @@ if err != nil {
 Nodes are functions that receive state and return updates:
 
 ```go
-func processDataFunc(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+func processDataFunc(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     // Read from state
     data := state.Get("raw_data")
     messages := state.MessagesSnapshot()
@@ -122,7 +122,7 @@ State is shared across all nodes and flows through the graph using **channels**.
 Nodes receive immutable state snapshots:
 
 ```go
-func myNode(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+func myNode(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     // Read values
     counter := state.Get("counter").(int)
     status := state.Get("status").(string)
@@ -215,7 +215,7 @@ builder.AddEdge("fetch_c", "aggregator")
 Unlike DAG-based systems, AgentMesh supports **cycles** for iterative workflows:
 
 ```go
-builder.Node("writer", func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+builder.Node("writer", func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     draft := generateDraft()
     return &graph.NodeResult{
         Updates: map[string]any{"draft": draft},
@@ -223,7 +223,7 @@ builder.Node("writer", func(ctx context.Context, state graph.StateReader) (*grap
     }, nil
 })
 
-builder.Node("evaluator", func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+builder.Node("evaluator", func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     draft := state.Get("draft")
     if isGoodEnough(draft) {
         return &graph.NodeResult{NextNodes: []string{"END"}}, nil

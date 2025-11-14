@@ -8,6 +8,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // State Management Architecture
@@ -18,10 +19,12 @@ import (
 //
 // Current Design (Refactored):
 //
-// 1. StateReader (4 methods) - Read-only access for node execution
+// 1. Reader (4 methods) - Read-only access for node execution
+//    Defined in pkg/state to break circular dependencies with pkg/tool
 //    Use case: Pass to node RunFunc to prevent direct state mutations
 //
-// 2. StateWriter (2 methods) - Extends StateReader with write capabilities
+// 2. Writer (2 methods) - Extends Reader with write capabilities
+//    Defined in pkg/state to break circular dependencies with pkg/tool
 //    Use case: Pass to nodes that need to update state or contribute to aggregates
 //
 // 3. ChannelManager (7 methods) - Channel lifecycle management
@@ -46,48 +49,15 @@ import (
 // Implementation:
 // - State struct implements all interfaces
 // - No breaking changes to State struct itself
-// - Nodes receive StateReader or StateWriter (not full StateManager)
+// - Nodes receive Reader or Writer (not full StateManager)
 // - Runtime uses StateManager for full control
 
 // =============================================================================
 // Focused State Interfaces (Interface Segregation Principle)
 // =============================================================================
 
-// StateReader provides read-only access to graph state for deterministic node execution.
-// Nodes receive this interface to prevent direct state mutations, ensuring all updates
-// go through the NodeResult return value for atomic application between supersteps.
-//
-// Use Case: Pass to node RunFunc for read-only state access.
-type StateReader interface {
-	// Get retrieves the current value from a named channel.
-	Get(key string) any
-
-	// GetAll returns a snapshot of all channel values.
-	GetAll() map[string]any
-
-	// EventsSnapshot returns message events from the "messages" channel.
-	EventsSnapshot() []ExecutionResult
-
-	// AggregatesSnapshot returns a copy of global aggregates from the previous superstep.
-	AggregatesSnapshot() map[string]any
-}
-
-// StateWriter extends StateReader with write capabilities for state mutations.
-// This allows nodes to update state values and contribute to aggregators.
-//
-// Use Case: Pass to node RunFunc when write access is needed.
-type StateWriter interface {
-	StateReader
-
-	// Set updates or creates a channel value.
-	Set(key string, value any) error
-
-	// Aggregate contributes a value to a named aggregator for the current superstep.
-	Aggregate(name string, value any) error
-}
-
 // ChannelManager handles channel lifecycle and batch operations.
-// Separated from StateReader/Writer for clear responsibility boundaries.
+// Separated from state.Reader/Writer for clear responsibility boundaries.
 //
 // Use Case: Internal graph runtime management of channels.
 type ChannelManager interface {
@@ -107,10 +77,10 @@ type ChannelManager interface {
 	UpdateChannels(ctx context.Context, updates map[string]any) error
 
 	// AddMessages appends messages to the "messages" channel.
-	AddMessages(messages []ExecutionResult)
+	AddMessages(messages []state.ExecutionResult)
 
 	// ApplyUpdates applies channel updates and messages in a single operation.
-	ApplyUpdates(values map[string]any, messages []ExecutionResult)
+	ApplyUpdates(values map[string]any, messages []state.ExecutionResult)
 }
 
 // AggregateManager handles aggregate value management for cross-node reductions.
@@ -157,7 +127,7 @@ type CheckpointManager interface {
 // It provides full control over channels, checkpoints, aggregates, and state access.
 //
 // Interface Composition:
-//   - StateReader: Read-only state access
+//   - state.Reader: Read-only state access
 //   - ChannelManager: Channel lifecycle and updates
 //   - AggregateManager: Cross-node aggregate management
 //   - CheckpointManager: State persistence and restoration
@@ -175,7 +145,7 @@ type CheckpointManager interface {
 //
 // Use Case: Internal use by graphRuntime for full state coordination.
 type StateManager interface {
-	StateReader
+	state.Reader
 	ChannelManager
 	AggregateManager
 	CheckpointManager
@@ -295,8 +265,9 @@ func (s *ChannelState) GetAll() map[string]any {
 	return values
 }
 
-// EventsSnapshot returns a copy of current message events with metadata.
-func (s *ChannelState) EventsSnapshot() []ExecutionResult {
+// MessagesSnapshot returns a copy of current message history with metadata.
+// Returns []state.ExecutionResult containing messages with node/timestamp metadata.
+func (s *ChannelState) MessagesSnapshot() []state.ExecutionResult {
 	ch, ok := s.GetChannel("messages")
 	if !ok {
 		return nil
@@ -307,19 +278,19 @@ func (s *ChannelState) EventsSnapshot() []ExecutionResult {
 		return nil
 	}
 
-	// Convert []any to []ExecutionResult
+	// Convert []any to []state.ExecutionResult
 	values, ok := val.([]any)
 	if !ok || len(values) == 0 {
 		return nil
 	}
 
-	events := make([]ExecutionResult, 0, len(values))
+	results := make([]state.ExecutionResult, 0, len(values))
 	for _, v := range values {
-		if evt, ok := v.(ExecutionResult); ok {
-			events = append(events, evt)
+		if evt, ok := v.(state.ExecutionResult); ok {
+			results = append(results, evt)
 		}
 	}
-	return events
+	return results
 }
 
 // =============================================================================
@@ -542,7 +513,7 @@ func (s *ChannelState) SetCheckpointer(checkpointer checkpoint.Checkpointer) {
 // =============================================================================
 
 // AddMessages appends messages to the state's message history.
-func (s *ChannelState) AddMessages(messages []ExecutionResult) {
+func (s *ChannelState) AddMessages(messages []state.ExecutionResult) {
 	if len(messages) == 0 {
 		return
 	}
@@ -594,7 +565,7 @@ func (s *ChannelState) SetMaxMessages(maxMessages int) {
 }
 
 // ApplyUpdates applies state updates and messages to the state manager.
-func (s *ChannelState) ApplyUpdates(values map[string]any, messages []ExecutionResult) {
+func (s *ChannelState) ApplyUpdates(values map[string]any, messages []state.ExecutionResult) {
 	ctx := context.Background()
 
 	// No lock needed - Set methods handle their own locking
@@ -694,7 +665,7 @@ var _ StateManager = (*ChannelState)(nil)
 // State Adapters
 // =============================================================================
 
-// StateReaderAdapter adapts StateManager to StateReader interface.
+// StateReaderAdapter adapts StateManager to Reader interface.
 // This provides a read-only view of the state, preventing nodes from
 // directly mutating state outside of the BSP model (updates must go
 // through NodeResult).
@@ -718,9 +689,9 @@ func (sr *StateReaderAdapter) GetAll() map[string]any {
 	return sr.manager.GetAll()
 }
 
-// EventsSnapshot returns current message events.
-func (sr *StateReaderAdapter) EventsSnapshot() []ExecutionResult {
-	return sr.manager.EventsSnapshot()
+// MessagesSnapshot returns current message history.
+func (sr *StateReaderAdapter) MessagesSnapshot() []state.ExecutionResult {
+	return sr.manager.MessagesSnapshot()
 }
 
 // AggregatesSnapshot returns aggregate values.
@@ -728,8 +699,8 @@ func (sr *StateReaderAdapter) AggregatesSnapshot() map[string]any {
 	return sr.manager.GetAggregatesSnapshot()
 }
 
-// StateWriterAdapter adapts StateManager to StateWriter interface.
-// This extends StateReader with aggregation capabilities, allowing
+// StateWriterAdapter adapts StateManager to Writer interface.
+// This extends Reader with aggregation capabilities, allowing
 // nodes to contribute to global aggregators during execution.
 type StateWriterAdapter struct {
 	*StateReaderAdapter
@@ -760,7 +731,7 @@ func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 // bufferedStateWriter - Internal BSP helper
 // =============================================================================
 
-// bufferedStateWriter wraps a StateReader and buffers all Aggregate() calls.
+// bufferedStateWriter wraps a state.Reader and buffers all Aggregate() calls.
 // This ensures mutations are not visible within the same superstep, maintaining
 // Pregel's BSP (Bulk Synchronous Parallel) semantics where all updates become
 // visible only after the superstep barrier.
@@ -772,12 +743,12 @@ func (sw *StateWriterAdapter) Aggregate(name string, value any) error {
 // The buffered aggregates are flushed at the end of node execution and applied
 // to the runtime's aggregator state for the next superstep.
 type bufferedStateWriter struct {
-	reader            StateReader
+	reader            state.Reader
 	pendingAggregates map[string][]any
 	mu                sync.Mutex
 }
 
-func newBufferedStateWriter(reader StateReader) *bufferedStateWriter {
+func newBufferedStateWriter(reader state.Reader) *bufferedStateWriter {
 	return &bufferedStateWriter{
 		reader:            reader,
 		pendingAggregates: make(map[string][]any),
@@ -792,8 +763,8 @@ func (bsw *bufferedStateWriter) GetAll() map[string]any {
 	return bsw.reader.GetAll()
 }
 
-func (bsw *bufferedStateWriter) EventsSnapshot() []ExecutionResult {
-	return bsw.reader.EventsSnapshot()
+func (bsw *bufferedStateWriter) MessagesSnapshot() []state.ExecutionResult {
+	return bsw.reader.MessagesSnapshot()
 }
 
 func (bsw *bufferedStateWriter) AggregatesSnapshot() map[string]any {

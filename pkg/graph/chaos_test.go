@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"errors"
 	"sync"
@@ -17,7 +18,7 @@ func TestNodePanicRecovery(t *testing.T) {
 	t.Run("BasicPanicRecovery", func(t *testing.T) {
 		builder, err := NewBuilder()
 		require.NoError(t, err)
-		builder.Node("panicky", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("panicky", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			panic("intentional panic")
 		})
 		builder.AddEdge(StartNode, "panicky")
@@ -57,7 +58,7 @@ func TestNodePanicRecovery(t *testing.T) {
 	t.Run("PanicWithEvents", func(t *testing.T) {
 		builder, err := NewBuilder()
 		require.NoError(t, err)
-		builder.Node("panicky", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("panicky", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			panic("stream panic test")
 		})
 		builder.AddEdge(StartNode, "panicky")
@@ -71,7 +72,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		// Collect stream events
 		seq := compiled.Run(context.Background(), []message.Message{})
 
-		var events []ExecutionResult
+		var events []stateif.ExecutionResult
 		var errorFound bool
 		for event, err := range seq {
 			if err != nil {
@@ -89,10 +90,10 @@ func TestNodePanicRecovery(t *testing.T) {
 		// Verify multiple panicking nodes are handled independently
 		builder, err := NewBuilder()
 		require.NoError(t, err)
-		builder.Node("panic1", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("panic1", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			panic("first panic")
 		})
-		builder.Node("panic2", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builder.Node("panic2", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			panic("second panic")
 		})
 		builder.AddEdge(StartNode, "panic1")
@@ -135,7 +136,7 @@ func TestContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeExecuted := false
-	builder.Node("node", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("node", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		nodeExecuted = true
 		// Check if context is already done
 		select {
@@ -208,7 +209,7 @@ func TestConcurrentInvoke(t *testing.T) {
 		require.NoError(t, err)
 		builders[i] = builder
 
-		builders[i].Node("test", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		builders[i].Node("test", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{Updates: map[string]any{"executed": true}}, nil
 		})
 		builders[i].AddEdge(StartNode, "test")
@@ -251,7 +252,7 @@ func TestLargeStateStress(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 
-	builder.Node("stress", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("stress", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		updates := make(map[string]any)
 		// Create 1000 keys
 		for i := 0; i < 1000; i++ {
@@ -295,7 +296,7 @@ func TestManyMessages(t *testing.T) {
 	require.NoError(t, err)
 	builder.WithState(state)
 
-	builder.Node("producer", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("producer", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		messages := make([]message.Message, 1000)
 		for i := 0; i < 1000; i++ {
 			messages[i] = message.NewHumanMessageFromText("msg")
@@ -315,7 +316,7 @@ func TestManyMessages(t *testing.T) {
 		t.Errorf("Many messages test failed: %v", err)
 	}
 
-	snapshot := compiled.State().EventsSnapshot()
+	snapshot := compiled.State().MessagesSnapshot()
 	if len(snapshot) != 1000 {
 		t.Errorf("Expected 1000 messages, got %d", len(snapshot))
 	}
@@ -327,7 +328,7 @@ func TestNodeErrorPropagation(t *testing.T) {
 
 	builder, err := NewBuilder()
 	require.NoError(t, err)
-	builder.Node("failing", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("failing", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		return nil, testErr
 	})
 	builder.AddEdge(StartNode, "failing")
@@ -359,7 +360,7 @@ func TestRapidRetry(t *testing.T) {
 	require.NoError(t, err)
 	builder.AddNode(&Node{
 		Name: "flaky",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			mu.Lock()
 			attempts++
 			current := attempts
@@ -403,7 +404,7 @@ func TestDeadlineExceeded(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 
-	builder.Node("delayed", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("delayed", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		// Check for deadline periodically
 		for i := 0; i < 10; i++ {
 			select {
@@ -446,7 +447,7 @@ func TestParallelNodeExecution(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 
-	builder.Node("node1", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("node1", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		time.Sleep(50 * time.Millisecond)
 		mu.Lock()
 		node1Time = time.Now()
@@ -454,7 +455,7 @@ func TestParallelNodeExecution(t *testing.T) {
 		return &NodeResult{Updates: map[string]any{"node1": true}}, nil
 	})
 
-	builder.Node("node2", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+	builder.Node("node2", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 		time.Sleep(50 * time.Millisecond)
 		mu.Lock()
 		node2Time = time.Now()

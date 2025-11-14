@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestGraphAggregatorsAccessible(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&Node{
 		Name: "count",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			snap := s.AggregatesSnapshot()
 			if snap != nil {
 				assert.Equal(t, 0, snap["total"])
@@ -40,7 +41,7 @@ func TestGraphAggregatorsAccessible(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&Node{
 		Name: "report",
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			snap := s.AggregatesSnapshot()
 			total, _ := snap["total"].(int)
 			return &NodeResult{Updates: map[string]any{"observed": total}}, nil
@@ -219,7 +220,7 @@ func TestAvgAggregator_Integration(t *testing.T) {
 		nodeName := fmt.Sprintf("node%d", i+1)
 		require.NoError(t, g.AddNode(&Node{
 			Name: nodeName,
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, s.Aggregate("avg_value", v)
 			},
 		}))
@@ -260,7 +261,7 @@ func TestVarianceAggregator_Integration(t *testing.T) {
 		nodeName := fmt.Sprintf("node%d", i+1)
 		require.NoError(t, g.AddNode(&Node{
 			Name: nodeName,
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return nil, s.Aggregate("variance", v)
 			},
 		}))

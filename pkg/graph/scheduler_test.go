@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 func noopNode(name string) *Node {
 	return &Node{
 		Name: name,
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return nil, nil
 		},
 	}
@@ -109,7 +110,7 @@ func TestVertexSchedulerStartConditionals(t *testing.T) {
 	mustAddNode(t, g, noopNode("taskB"))
 	g.AddEdge(StartNode, "taskA")
 	g.AddEdge(StartNode, "taskB")
-	g.AddConditionalEdges(StartNode, func(_ context.Context, gs StateReader) []string {
+	g.AddConditionalEdges(StartNode, func(_ context.Context, gs stateif.Reader) []string {
 		if gs == nil {
 			return nil
 		}
@@ -188,7 +189,7 @@ func TestVertexSchedulerConditionalSelectionDedup(t *testing.T) {
 	mustAddNode(t, g, noopNode("selector"))
 	g.AddEdge(StartNode, "selector")
 	g.AddEdge("selector", "next")
-	g.AddConditionalEdges("selector", func(_ context.Context, gs StateReader) []string { return []string{"next"} }, []string{"next"})
+	g.AddConditionalEdges("selector", func(_ context.Context, gs stateif.Reader) []string { return []string{"next"} }, []string{"next"})
 
 	cg := mustCompileGraph(t, g)
 

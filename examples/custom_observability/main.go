@@ -8,6 +8,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log/slog"
@@ -59,7 +60,7 @@ func main() {
 	// Node 1: Data Ingestion - demonstrates logger usage
 	if err := g.AddNode(&graph.Node{
 		Name: "ingest_data",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -87,7 +88,7 @@ func main() {
 	// Node 2: Data Processing - demonstrates tracer usage
 	if err := g.AddNode(&graph.Node{
 		Name: "process_data",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -133,7 +134,7 @@ func main() {
 	// Node 3: Data Validation - demonstrates metrics usage
 	if err := g.AddNode(&graph.Node{
 		Name: "validate_data",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -201,7 +202,7 @@ func main() {
 	// Node 4: Summary - demonstrates all providers together
 	if err := g.AddNode(&graph.Node{
 		Name: "generate_summary",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)

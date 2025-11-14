@@ -9,6 +9,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
 )
@@ -49,7 +50,7 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 	// Add three sequential nodes
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			counter, _ := s.Get("counter").(int)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -62,7 +63,7 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node2",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			counter, _ := s.Get("counter").(int)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -75,7 +76,7 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node3",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			counter, _ := s.Get("counter").(int)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -156,7 +157,7 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 		nodeNum := i
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("worker%d", nodeNum),
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				time.Sleep(10 * time.Millisecond)
 				return &graph.NodeResult{
 					Updates: map[string]any{
@@ -170,7 +171,7 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 	// Add aggregator
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{}}, nil
 		},
 	}))
@@ -227,14 +228,14 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "start",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{}}, nil
 		},
 	}))
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "positive",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			path, _ := s.Get("path").(string)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -246,7 +247,7 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "negative",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			path, _ := s.Get("path").(string)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -258,7 +259,7 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "end",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			path, _ := s.Get("path").(string)
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -270,7 +271,7 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 
 	// Build topology with conditional routing
 	g.AddEdge(graph.StartNode, "start")
-	g.AddConditionalEdges("start", func(ctx context.Context, s graph.StateReader) []string {
+	g.AddConditionalEdges("start", func(ctx context.Context, s stateif.Reader) []string {
 		value, _ := s.Get("value").(int)
 		if value > 0 {
 			return []string{"positive"}

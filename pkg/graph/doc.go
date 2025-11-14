@@ -24,7 +24,7 @@ Create graphs using the fluent builder API:
 	builder := graph.NewBuilder()
 	builder.AddNode(&graph.Node{
 		Name: "agent",
-		RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
 			messages := state.MessagesSnapshot()
 			// Process messages...
 			return &graph.NodeResult{
@@ -187,7 +187,7 @@ Core files in pkg/graph:
   - node.go: Node definitions and execution
   - state_manager.go: State management (StateManager, State, bufferedStateWriter)
   - pregel.go: BSP execution adapter (ChannelMessage, graphRuntime, nodeAdapter)
-  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, ExecutionResult)
+  - compiled_graph.go: Compiled graph runtime (ConditionalEvaluator, state.ExecutionResult)
   - executor.go: Execution abstractions (Executor, ExecutionTracker, executionState)
   - scheduler.go: Topology-based node scheduling (vertexScheduler, TopologyScheduler)
   - options.go: Run options (checkpoint, retry, rate-limit configuration)

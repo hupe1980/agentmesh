@@ -46,7 +46,7 @@ go run main.go
 
 ### 1. Define Router Function
 ```go
-func routeByChoice(ctx context.Context, s graph.StateReader) (string, error) {
+func routeByChoice(ctx context.Context, s state.Reader) (string, error) {
     choice, _ := s.Get("choice").(string)
     
     switch choice {
@@ -67,7 +67,7 @@ builder.AddConditionalEdges("router", routeByChoice)
 
 ### 3. Create Branch Nodes
 ```go
-builder.Node("path_a_handler", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("path_a_handler", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     fmt.Println("Processing path A")
     return &graph.NodeResult{
         Updates: map[string]any{
@@ -83,7 +83,7 @@ builder.Node("path_b_handler", /* similar */)
 
 ### Simple If-Else
 ```go
-func simpleRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func simpleRoute(ctx context.Context, s state.Reader) (string, error) {
     value, _ := s.Get("value").(int)
     if value > 10 {
         return "high_value_handler", nil
@@ -94,7 +94,7 @@ func simpleRoute(ctx context.Context, s graph.StateReader) (string, error) {
 
 ### Multi-Way Branch
 ```go
-func multiRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func multiRoute(ctx context.Context, s state.Reader) (string, error) {
     status, _ := s.Get("status").(string)
     switch status {
     case "pending":
@@ -111,7 +111,7 @@ func multiRoute(ctx context.Context, s graph.StateReader) (string, error) {
 
 ### Data-Driven Routing
 ```go
-func dataRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func dataRoute(ctx context.Context, s state.Reader) (string, error) {
     data, _ := s.Get("data").(map[string]any)
     
     if data["urgent"] == true {
@@ -135,7 +135,7 @@ func dataRoute(ctx context.Context, s graph.StateReader) (string, error) {
 
 ### Error Handling
 ```go
-func errorRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func errorRoute(ctx context.Context, s state.Reader) (string, error) {
     if err := s.Get("error"); err != nil {
         return "error_handler", nil
     }
@@ -145,7 +145,7 @@ func errorRoute(ctx context.Context, s graph.StateReader) (string, error) {
 
 ### Content Routing
 ```go
-func contentRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func contentRoute(ctx context.Context, s state.Reader) (string, error) {
     contentType, _ := s.Get("content_type").(string)
     return contentType + "_processor", nil
 }
@@ -153,7 +153,7 @@ func contentRoute(ctx context.Context, s graph.StateReader) (string, error) {
 
 ### Priority Queue
 ```go
-func priorityRoute(ctx context.Context, s graph.StateReader) (string, error) {
+func priorityRoute(ctx context.Context, s state.Reader) (string, error) {
     priority, _ := s.Get("priority").(int)
     if priority >= 9 {
         return "urgent", nil

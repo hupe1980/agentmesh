@@ -3,6 +3,8 @@ package graph
 import (
 	"context"
 	"fmt"
+
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Builder provides a fluent API for constructing graphs.
@@ -136,11 +138,11 @@ func (b *Builder) AddNode(node *Node) *Builder {
 //
 // Example:
 //
-//	builder.Node("process", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+//	builder.Node("process", func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 //	    // process logic
 //	    return &NodeResult{Updates: map[string]any{"done": true}}, nil
 //	})
-func (b *Builder) Node(name string, runFunc func(context.Context, StateWriter) (*NodeResult, error)) *Builder {
+func (b *Builder) Node(name string, runFunc func(context.Context, state.Writer) (*NodeResult, error)) *Builder {
 	return b.AddNode(&Node{Name: name, RunFunc: runFunc})
 }
 
@@ -169,7 +171,7 @@ func (b *Builder) AddEdges(from string, targets []string) *Builder {
 }
 
 // AddConditionalEdges adds conditional branching from a node.
-func (b *Builder) AddConditionalEdges(from string, condition func(context.Context, StateReader) []string, targets []string) *Builder {
+func (b *Builder) AddConditionalEdges(from string, condition func(context.Context, state.Reader) []string, targets []string) *Builder {
 	if b.err != nil {
 		return b
 	}
@@ -182,17 +184,17 @@ func (b *Builder) AddConditionalEdges(from string, condition func(context.Contex
 //
 // Example:
 //
-//	builder.ConditionalRoute("router", func(ctx context.Context, s StateReader) (string, error) {
+//	builder.ConditionalRoute("router", func(ctx context.Context, s state.Reader) (string, error) {
 //	    if s.Get("valid").(bool) {
 //	        return "success", nil
 //	    }
 //	    return "failure", nil
 //	}, []string{"success", "failure"})
-func (b *Builder) ConditionalRoute(from string, condition func(context.Context, StateReader) (string, error), targets []string) *Builder {
+func (b *Builder) ConditionalRoute(from string, condition func(context.Context, state.Reader) (string, error), targets []string) *Builder {
 	if b.err != nil {
 		return b
 	}
-	wrappedCondition := func(ctx context.Context, s StateReader) []string {
+	wrappedCondition := func(ctx context.Context, s state.Reader) []string {
 		target, err := condition(ctx, s)
 		if err != nil {
 			// Default to first target or empty

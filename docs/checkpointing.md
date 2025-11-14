@@ -816,7 +816,7 @@ seq := compiled.Run(ctx, messages,
 )
 
 // 2. Exclude large state values
-builder.Node("process", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Don't persist large binary data
     largeData := processData()  // Use locally
     

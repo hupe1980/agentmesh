@@ -13,6 +13,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
@@ -52,7 +53,7 @@ func wrapTimeoutError(ctx context.Context, err error) error {
 // It contains actual data to be communicated between nodes via channels.
 type ChannelMessage struct {
 	// Messages contains message events with execution metadata
-	Messages []ExecutionResult `json:"messages,omitzero"`
+	Messages []stateif.ExecutionResult `json:"messages,omitzero"`
 
 	// Updates contains key-value state updates to be applied to channels
 	Updates map[string]any `json:"updates,omitzero"`
@@ -62,7 +63,7 @@ type ChannelMessage struct {
 }
 
 // NewChannelMessage creates a new channel message with the given message events and updates.
-func NewChannelMessage(messages []ExecutionResult, updates map[string]any) ChannelMessage {
+func NewChannelMessage(messages []stateif.ExecutionResult, updates map[string]any) ChannelMessage {
 	return ChannelMessage{
 		Messages: messages,
 		Updates:  updates,
@@ -115,7 +116,7 @@ func (cm ChannelMessage) Clone() ChannelMessage {
 	}
 
 	if len(cm.Messages) > 0 {
-		clone.Messages = make([]ExecutionResult, len(cm.Messages))
+		clone.Messages = make([]stateif.ExecutionResult, len(cm.Messages))
 		copy(clone.Messages, cm.Messages)
 	}
 
@@ -169,7 +170,7 @@ type graphRuntime struct {
 	cg      *Compiled
 	cancel  context.CancelFunc
 	options runOptions
-	yield   func(ExecutionResult, error) bool // Iterator yield function for emitting execution results
+	yield   func(stateif.ExecutionResult, error) bool // Iterator yield function for emitting execution results
 
 	scheduler       *vertexScheduler                              // Graph topology & routing
 	engine          *pregel.Runtime[StateManager, ChannelMessage] // BSP execution engine
@@ -211,9 +212,9 @@ type nodeAdapter struct {
 	node    *Node
 }
 
-// wrapMessagesAsEvents wraps raw messages from node execution in ExecutionResult structs
+// wrapMessagesAsEvents wraps raw messages from node execution in stateif.ExecutionResult structs
 // with execution metadata (graphID, nodeName, timestamp, UUID).
-func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []ExecutionResult {
+func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []stateif.ExecutionResult {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -223,15 +224,15 @@ func (n *nodeAdapter) wrapMessagesAsEvents(messages []message.Message) []Executi
 		graphID = n.runtime.options.runID
 	}
 
-	events := make([]ExecutionResult, len(messages))
+	events := make([]stateif.ExecutionResult, len(messages))
 	for i, msg := range messages {
-		events[i] = *NewExecutionResult(msg, graphID, n.name)
+		events[i] = *stateif.NewExecutionResult(msg, graphID, n.name)
 	}
 
 	return events
 }
 
-func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(ExecutionResult, error) bool, instrumentation *Instrumentation) *graphRuntime {
+func newPregelRuntime(cg *Compiled, cancel context.CancelFunc, options runOptions, yield func(stateif.ExecutionResult, error) bool, instrumentation *Instrumentation) *graphRuntime {
 	scheduler := newVertexScheduler(cg)
 
 	gr := &graphRuntime{
@@ -523,7 +524,7 @@ func (gr *graphRuntime) onVertexCompleted(ctx context.Context, name string) ([]s
 	return gr.scheduler.OnVertexCompleted(ctx, name)
 }
 
-func (gr *graphRuntime) emit(event ExecutionResult) {
+func (gr *graphRuntime) emit(event stateif.ExecutionResult) {
 	if gr.yield == nil {
 		return
 	}
@@ -550,7 +551,7 @@ func (gr *graphRuntime) fail(err error) {
 		return
 	}
 	gr.errOnce.Do(func() {
-		gr.emit(ExecutionResult{Err: err})
+		gr.emit(stateif.ExecutionResult{Err: err})
 		if gr.cancel != nil {
 			gr.cancel()
 		}
@@ -561,7 +562,7 @@ func (gr *graphRuntime) emitError(err error) {
 	if err == nil {
 		return
 	}
-	gr.emit(ExecutionResult{Err: err})
+	gr.emit(stateif.ExecutionResult{Err: err})
 }
 
 // compiledPregelGraph implements the pregel interfaces for Compiled.
@@ -596,7 +597,7 @@ func (g *compiledPregelGraph) State() StateManager {
 func (n *nodeAdapter) Name() string { return n.name }
 
 // handleScheduledDelivery handles message delivery to scheduled next nodes.
-func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []ExecutionResult, updates map[string]any) error {
+func (n *nodeAdapter) handleScheduledDelivery(ctx context.Context, messages []stateif.ExecutionResult, updates map[string]any) error {
 	if n.runtime == nil || n.runtime.scheduler == nil {
 		return nil
 	}
@@ -664,16 +665,16 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		if result == nil {
 			return
 		}
-		// Emit one ExecutionResult per message
+		// Emit one stateif.ExecutionResult per message
 		if len(result.Messages) == 0 {
 			// No messages: emit a single result with just Updates
-			n.runtime.emit(ExecutionResult{
+			n.runtime.emit(stateif.ExecutionResult{
 				Node:    n.name,
 				Updates: result.Updates,
 			})
 		} else {
 			for i, msg := range result.Messages {
-				evt := NewExecutionResult(msg, n.runtime.options.runID, n.name)
+				evt := stateif.NewExecutionResult(msg, n.runtime.options.runID, n.name)
 				// Include Updates only in the first result
 				if i == 0 {
 					evt.Updates = result.Updates
@@ -686,7 +687,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 
 	// Create buffered state writer to prevent mutations from being visible
 	// within the same superstep (maintains BSP semantics)
-	var bufferedState StateWriter
+	var bufferedState stateif.Writer
 	if vertex.State != nil {
 		vertex.State.SetAggregates(vertex.Aggregates)
 		vertex.State.SetAggregateFn(vertex.Aggregate)
@@ -725,7 +726,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 				"superstep", n.runtime.engine.CurrentSuperstep())
 			n.runtime.cg.markPaused(n.name)
 			n.runtime.setPaused(n.name)
-			n.runtime.emit(ExecutionResult{Node: n.name, Err: ErrHumanInterrupt})
+			n.runtime.emit(stateif.ExecutionResult{Node: n.name, Err: ErrHumanInterrupt})
 			return nil
 		}
 		logger.Error("node execution failed",
@@ -733,7 +734,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 			"superstep", n.runtime.engine.CurrentSuperstep(),
 			"duration_ms", time.Since(startTime).Milliseconds(),
 			"error", err)
-		n.runtime.emit(ExecutionResult{Node: n.name, Err: err})
+		n.runtime.emit(stateif.ExecutionResult{Node: n.name, Err: err})
 		return &NodeExecutionError{
 			Node:      n.name,
 			Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -747,7 +748,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		"duration_ms", time.Since(startTime).Milliseconds())
 
 	var updates map[string]any
-	var messages []ExecutionResult
+	var messages []stateif.ExecutionResult
 	if result != nil {
 		updates = result.Updates
 		// Framework automatically wraps plain messages with execution metadata
@@ -769,7 +770,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 							"aggregator", name,
 							"superstep", n.runtime.engine.CurrentSuperstep(),
 							"error", err)
-						n.runtime.emit(ExecutionResult{Node: n.name, Err: aggErr})
+						n.runtime.emit(stateif.ExecutionResult{Node: n.name, Err: aggErr})
 						return &NodeExecutionError{
 							Node:      n.name,
 							Superstep: n.runtime.engine.CurrentSuperstep(),
@@ -781,7 +782,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 		}
 	}
 
-	// Emit one ExecutionResult per message
+	// Emit one stateif.ExecutionResult per message
 	for i := range messages {
 		// Include Updates only in the first result
 		if i == 0 {
@@ -816,7 +817,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 // executeWithRetry runs the node with retry logic if a RetryPolicy is configured.
 //
 //nolint:gocyclo // Retry logic with error handling requires multiple conditions
-func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (*NodeResult, error) {
+func (n *nodeAdapter) executeWithRetry(ctx context.Context, state stateif.Writer) (*NodeResult, error) {
 	// Capture configured timeout duration at the start.
 	// This ensures NodeTimeoutError.Timeout reflects the actual timeout budget,
 	// not the time elapsed since timeout (which could be negative or zero).
@@ -916,7 +917,7 @@ func (n *nodeAdapter) executeWithRetry(ctx context.Context, state StateWriter) (
 			if backoff > MaxRetryBackoff {
 				requestedBackoff := backoff
 				backoff = MaxRetryBackoff
-				n.runtime.emit(ExecutionResult{
+				n.runtime.emit(stateif.ExecutionResult{
 					Node: n.name,
 					Err:  fmt.Errorf("retry backoff capped at %v (requested %v)", MaxRetryBackoff, requestedBackoff),
 				})

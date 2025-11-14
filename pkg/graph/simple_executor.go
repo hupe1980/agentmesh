@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"iter"
@@ -44,12 +45,12 @@ func (e *SimpleGraphExecutor) Run(
 	stateManager StateManager,
 	initialMessages []message.Message,
 	options *RunOptions,
-) iter.Seq2[ExecutionResult, error] {
+) iter.Seq2[state.ExecutionResult, error] {
 	e.topology = topology
 	e.stateManager = stateManager
 	e.currentStep.Store(0)
 
-	return func(yield func(ExecutionResult, error) bool) {
+	return func(yield func(state.ExecutionResult, error) bool) {
 		// Initialize state with starting messages
 		runID := options.RunID
 		if runID == "" {
@@ -57,9 +58,9 @@ func (e *SimpleGraphExecutor) Run(
 		}
 
 		// Add initial messages to state
-		events := make([]ExecutionResult, len(initialMessages))
+		events := make([]state.ExecutionResult, len(initialMessages))
 		for i, msg := range initialMessages {
-			events[i] = ExecutionResult{
+			events[i] = state.ExecutionResult{
 				Message:   msg,
 				ID:        uuid.New().String(),
 				GraphID:   runID,
@@ -74,7 +75,7 @@ func (e *SimpleGraphExecutor) Run(
 
 		// Start execution from START node
 		if err := e.executeFromNode(ctx, topology.StartKey, yield, options); err != nil {
-			yield(ExecutionResult{}, err)
+			yield(state.ExecutionResult{}, err)
 			return
 		}
 	}
@@ -84,7 +85,7 @@ func (e *SimpleGraphExecutor) Run(
 func (e *SimpleGraphExecutor) executeFromNode(
 	ctx context.Context,
 	startNode string,
-	yield func(ExecutionResult, error) bool,
+	yield func(state.ExecutionResult, error) bool,
 	options *RunOptions,
 ) error {
 	visited := make(map[string]bool)
@@ -128,7 +129,7 @@ func (e *SimpleGraphExecutor) executeFromNode(
 		// Execute node and get result
 		result, err := e.executeNode(ctx, node)
 		if err != nil {
-			event := ExecutionResult{
+			event := state.ExecutionResult{
 				ID:        uuid.New().String(),
 				GraphID:   options.RunID,
 				Node:      currentNode,
@@ -142,7 +143,7 @@ func (e *SimpleGraphExecutor) executeFromNode(
 		}
 
 		// Emit event for successful execution
-		event := ExecutionResult{
+		event := state.ExecutionResult{
 			ID:        uuid.New().String(),
 			GraphID:   options.RunID,
 			Node:      currentNode,
@@ -156,9 +157,9 @@ func (e *SimpleGraphExecutor) executeFromNode(
 			event.Message = result.Messages[len(result.Messages)-1]
 
 			// Add all messages to state
-			msgEvents := make([]ExecutionResult, len(result.Messages))
+			msgEvents := make([]state.ExecutionResult, len(result.Messages))
 			for i, msg := range result.Messages {
-				msgEvents[i] = ExecutionResult{
+				msgEvents[i] = state.ExecutionResult{
 					Message:   msg,
 					ID:        uuid.New().String(),
 					GraphID:   options.RunID,

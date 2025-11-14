@@ -1,6 +1,10 @@
 package graph
 
-import "fmt"
+import (
+	"fmt"
+
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
+)
 
 // StateStore defines the interface for persisting and retrieving graph state.
 // This abstraction enables checkpointing, state snapshots, and distributed execution.
@@ -38,8 +42,8 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *ChannelState) erro
 
 	// Create a deep copy with snapshots of all channels
 	snapshot := state.SnapshotAll()
-	events := state.EventsSnapshot()
-	msgs := make([]ExecutionResult, len(events))
+	events := state.MessagesSnapshot()
+	msgs := make([]stateif.ExecutionResult, len(events))
 	for i := range events {
 		msgs[i] = *events[i].Clone()
 	}
@@ -75,8 +79,8 @@ func (s *InMemoryStateStore) Load(checkpointID string) (*ChannelState, error) {
 
 	// Return a copy to prevent mutations
 	snapshot := state.SnapshotAll()
-	events := state.EventsSnapshot()
-	msgs := make([]ExecutionResult, len(events))
+	events := state.MessagesSnapshot()
+	msgs := make([]stateif.ExecutionResult, len(events))
 	for i := range events {
 		msgs[i] = *events[i].Clone()
 	}

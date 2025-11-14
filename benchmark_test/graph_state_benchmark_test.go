@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // BenchmarkGraphExecution measures performance of basic graph execution
@@ -28,7 +29,7 @@ func BenchmarkGraphExecution(b *testing.B) {
 				nodeNum := i
 				err := g.AddNode(&graph.Node{
 					Name: fmt.Sprintf("node_%d", nodeNum),
-					RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+					RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 						// Simple computation
 						val := s.Get("counter")
 						count, ok := val.(int)
@@ -89,7 +90,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 				nodeNum := i
 				err := g.AddNode(&graph.Node{
 					Name: fmt.Sprintf("parallel_%d", nodeNum),
-					RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+					RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 						// Simulate some work
 						sum := 0
 						for j := range 1000 {
@@ -181,7 +182,7 @@ func BenchmarkScheduler(b *testing.B) {
 	for i := range 50 {
 		err := g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("node_%d", i),
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			},
 		})

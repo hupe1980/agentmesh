@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/pregel"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +20,7 @@ func TestMaxIterations(t *testing.T) {
 		// Create a self-loop that increments counter
 		if err := g.AddNode(&Node{
 			Name: "looper",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				counter, _ := s.Get("counter").(int)
 				return &NodeResult{
 					Updates: map[string]any{"counter": counter + 1},
@@ -66,7 +67,7 @@ func TestMaxIterations(t *testing.T) {
 
 		if err := g.AddNode(&Node{
 			Name: "simple",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{
 					Updates: map[string]any{"count": 42},
 				}, nil
@@ -105,7 +106,7 @@ func TestMaxIterations(t *testing.T) {
 
 		if err := g.AddNode(&Node{
 			Name: "simple",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		}); err != nil {

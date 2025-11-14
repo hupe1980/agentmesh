@@ -6,6 +6,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +34,7 @@ func TestStateCloneDeepCopy(t *testing.T) {
 		t.Fatalf("clone should retain original status, got %v", got)
 	}
 
-	clonedMessages := cloned.EventsSnapshot()
+	clonedMessages := cloned.MessagesSnapshot()
 	if len(clonedMessages) != 1 {
 		t.Fatalf("expected 1 message in clone, got %d", len(clonedMessages))
 	}
@@ -66,7 +67,7 @@ func TestStateSetMaxMessages(t *testing.T) {
 
 	state.SetMaxMessages(3)
 
-	messages := state.EventsSnapshot()
+	messages := state.MessagesSnapshot()
 	if len(messages) != 3 {
 		t.Fatalf("expected 3 messages retained, got %d", len(messages))
 	}
@@ -92,10 +93,10 @@ func TestStateSetMaxMessages(t *testing.T) {
 	}
 }
 
-func wrapTestMessages(msgs []message.Message) []ExecutionResult {
-	events := make([]ExecutionResult, len(msgs))
+func wrapTestMessages(msgs []message.Message) []stateif.ExecutionResult {
+	events := make([]stateif.ExecutionResult, len(msgs))
 	for i, msg := range msgs {
-		events[i] = *NewExecutionResult(msg, "", "test")
+		events[i] = *stateif.NewExecutionResult(msg, "", "test")
 	}
 	return events
 }

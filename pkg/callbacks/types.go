@@ -3,15 +3,15 @@ package callbacks
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // BeforeModelCallback allows interception of model requests prior to execution.
 // Returning a non-nil message.Message short-circuits the model invocation and
 // uses that message as the final output. Return nil to continue normal flow.
 //
-// The StateWriter provides full access to the graph state, including messages
+// The Writer provides full access to the graph state, including messages
 // (via s.MessagesSnapshot()), custom state fields, and the ability to mutate state.
 //
 // Use cases:
@@ -24,7 +24,7 @@ import (
 //
 // Example - Simple cache:
 //
-//	func CacheCheck(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+//	func CacheCheck(ctx context.Context, s state.Writer) (message.Message, error) {
 //	    messages := s.MessagesSnapshot()
 //	    key := hashMessages(messages)
 //	    if cached := cache.Get(key); cached != nil {
@@ -35,7 +35,7 @@ import (
 //
 // Example - Stateful rate limiting:
 //
-//	func RateLimit(ctx context.Context, s graph.StateWriter) (message.Message, error) {
+//	func RateLimit(ctx context.Context, s state.Writer) (message.Message, error) {
 //	    count := s.Get("request_count").(int)
 //	    if count > 10 {
 //	        return message.NewAI("Rate limit exceeded"), nil
@@ -43,13 +43,13 @@ import (
 //	    s.Set("request_count", count+1)
 //	    return nil, nil  // Continue
 //	}
-type BeforeModelCallback func(ctx context.Context, s graph.StateWriter) (message.Message, error)
+type BeforeModelCallback func(ctx context.Context, s state.Writer) (message.Message, error)
 
 // AfterModelCallback allows post-processing of model responses before they
 // are returned to the graph. Returning a non-nil message.Message replaces
 // the original response; returning nil keeps the original.
 //
-// The StateWriter provides access to conversation history and custom state.
+// The Writer provides access to conversation history and custom state.
 // Callbacks can read state for context-aware transformations or write state
 // to track conversation metadata.
 //
@@ -64,7 +64,7 @@ type BeforeModelCallback func(ctx context.Context, s graph.StateWriter) (message
 //
 // Example - Content filter:
 //
-//	func FilterToxicity(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
+//	func FilterToxicity(ctx context.Context, s state.Writer, response message.Message) (message.Message, error) {
 //	    if containsToxicity(response.Parts().Text()) {
 //	        return message.NewAI("[Content filtered]"), nil
 //	    }
@@ -73,13 +73,13 @@ type BeforeModelCallback func(ctx context.Context, s graph.StateWriter) (message
 //
 // Example - Track topics:
 //
-//	func TrackTopics(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error) {
+//	func TrackTopics(ctx context.Context, s state.Writer, response message.Message) (message.Message, error) {
 //	    topics := extractTopics(response)
 //	    existing := s.Get("discussed_topics").([]string)
 //	    s.Set("discussed_topics", append(existing, topics...))
 //	    return nil, nil  // Keep original
 //	}
-type AfterModelCallback func(ctx context.Context, s graph.StateWriter, response message.Message) (message.Message, error)
+type AfterModelCallback func(ctx context.Context, s state.Writer, response message.Message) (message.Message, error)
 
 // OnModelErrorCallback handles model invocation failures.
 // It may return a fallback message or propagate the error.
@@ -90,7 +90,7 @@ type AfterModelCallback func(ctx context.Context, s graph.StateWriter, response 
 // error. Returning nil with a nil error leaves the error as-is.
 // Returning a non-nil error propagates or transforms the failure.
 //
-// The StateWriter allows accessing conversation context and state for intelligent
+// The Writer allows accessing conversation context and state for intelligent
 // error handling, such as checking retry counts or fallback model selection.
 //
 // Use cases:
@@ -104,7 +104,7 @@ type AfterModelCallback func(ctx context.Context, s graph.StateWriter, response 
 //
 // Example - Fallback model:
 //
-//	func FallbackModel(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
+//	func FallbackModel(ctx context.Context, s state.Writer, err error) (message.Message, error) {
 //	    if errors.Is(err, ErrRateLimited) {
 //	        messages := s.MessagesSnapshot()
 //	        // Use a simpler fallback model
@@ -115,7 +115,7 @@ type AfterModelCallback func(ctx context.Context, s graph.StateWriter, response 
 //
 // Example - Retry tracking:
 //
-//	func RetryHandler(ctx context.Context, s graph.StateWriter, err error) (message.Message, error) {
+//	func RetryHandler(ctx context.Context, s state.Writer, err error) (message.Message, error) {
 //	    retries := s.Get("retry_count").(int)
 //	    if retries < 3 {
 //	        s.Set("retry_count", retries+1)
@@ -123,13 +123,13 @@ type AfterModelCallback func(ctx context.Context, s graph.StateWriter, response 
 //	    }
 //	    return message.NewAI("Service unavailable"), nil  // Fallback
 //	}
-type OnModelErrorCallback func(ctx context.Context, s graph.StateWriter, err error) (message.Message, error)
+type OnModelErrorCallback func(ctx context.Context, s state.Writer, err error) (message.Message, error)
 
 // BeforeToolCallback intercepts tool invocations prior to execution.
 // Returning a non-nil result skips the actual tool call and uses
 // the returned value instead. The result should match the tool's expected output type.
 //
-// The StateWriter allows callbacks to enforce policies based on conversation state,
+// The Writer allows callbacks to enforce policies based on conversation state,
 // such as checking permissions, quota limits, or tool usage patterns.
 //
 // Use cases:
@@ -142,7 +142,7 @@ type OnModelErrorCallback func(ctx context.Context, s graph.StateWriter, err err
 //
 // Example - Access control:
 //
-//	func CheckPermissions(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
+//	func CheckPermissions(ctx context.Context, s state.Writer, call message.ToolCall) (any, error) {
 //	    userRole := s.Get("user_role").(string)
 //	    if !hasPermission(userRole, call.Name) {
 //	        return nil, fmt.Errorf("permission denied for tool: %s", call.Name)
@@ -152,7 +152,7 @@ type OnModelErrorCallback func(ctx context.Context, s graph.StateWriter, err err
 //
 // Example - Tool quota:
 //
-//	func EnforceQuota(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error) {
+//	func EnforceQuota(ctx context.Context, s state.Writer, call message.ToolCall) (any, error) {
 //	    used := s.Get("tools_used").(int)
 //	    if used >= 10 {
 //	        return "Tool quota exceeded", nil
@@ -160,12 +160,12 @@ type OnModelErrorCallback func(ctx context.Context, s graph.StateWriter, err err
 //	    s.Set("tools_used", used+1)
 //	    return nil, nil
 //	}
-type BeforeToolCallback func(ctx context.Context, s graph.StateWriter, call message.ToolCall) (any, error)
+type BeforeToolCallback func(ctx context.Context, s state.Writer, call message.ToolCall) (any, error)
 
 // AfterToolCallback allows inspection and mutation of tool responses.
 // Returning a non-nil result replaces the original tool output.
 //
-// The StateWriter enables callbacks to track tool usage patterns, store results
+// The Writer enables callbacks to track tool usage patterns, store results
 // in state for later reference, or make decisions based on conversation history.
 //
 // Use cases:
@@ -179,7 +179,7 @@ type BeforeToolCallback func(ctx context.Context, s graph.StateWriter, call mess
 //
 // Example - Result validation:
 //
-//	func ValidateToolOutput(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
+//	func ValidateToolOutput(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error) {
 //	    if err := validateOutput(result); err != nil {
 //	        return nil, fmt.Errorf("invalid tool output: %w", err)
 //	    }
@@ -188,18 +188,18 @@ type BeforeToolCallback func(ctx context.Context, s graph.StateWriter, call mess
 //
 // Example - Store result:
 //
-//	func StoreToolResult(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error) {
+//	func StoreToolResult(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error) {
 //	    results := s.Get("tool_results").(map[string]any)
 //	    results[call.Name] = result
 //	    s.Set("tool_results", results)
 //	    return nil, nil
 //	}
-type AfterToolCallback func(ctx context.Context, s graph.StateWriter, call message.ToolCall, result any) (any, error)
+type AfterToolCallback func(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error)
 
 // OnToolErrorCallback handles tool invocation failures.
 // It may return a fallback result or propagate the error.
 //
-// The StateWriter enables intelligent error handling based on conversation state,
+// The Writer enables intelligent error handling based on conversation state,
 // such as checking error counts, implementing backoff strategies, or providing
 // context-aware fallback responses.
 //
@@ -213,7 +213,7 @@ type AfterToolCallback func(ctx context.Context, s graph.StateWriter, call messa
 //
 // Example - Fallback:
 //
-//	func FallbackResponse(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
+//	func FallbackResponse(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error) {
 //	    if errors.Is(err, ErrTimeout) {
 //	        return "Service temporarily unavailable", nil
 //	    }
@@ -222,7 +222,7 @@ type AfterToolCallback func(ctx context.Context, s graph.StateWriter, call messa
 //
 // Example - Circuit breaker:
 //
-//	func CircuitBreaker(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error) {
+//	func CircuitBreaker(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error) {
 //	    failures := s.Get("tool_failures").(int)
 //	    s.Set("tool_failures", failures+1)
 //	    if failures >= 5 {
@@ -231,4 +231,4 @@ type AfterToolCallback func(ctx context.Context, s graph.StateWriter, call messa
 //	    }
 //	    return nil, err
 //	}
-type OnToolErrorCallback func(ctx context.Context, s graph.StateWriter, call message.ToolCall, err error) (any, error)
+type OnToolErrorCallback func(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error)

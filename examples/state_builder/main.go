@@ -2,6 +2,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 
@@ -33,7 +34,7 @@ func main() {
 
 	gph.AddNode(&graph.Node{
 		Name: "init",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("[init] Initializing...")
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -47,7 +48,7 @@ func main() {
 
 	gph.AddNode(&graph.Node{
 		Name: "process",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("[process] Processing...")
 			return &graph.NodeResult{
 				Updates: map[string]any{

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -82,18 +84,16 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 
 	return &graph.Node{
 		Name: config.nodeName,
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// Get messages for model invocation
-			events := s.EventsSnapshot()
+			events := s.MessagesSnapshot()
 
 			// Create request
 			req := &model.Request{
-				Messages:     graph.ExtractMessages(events),
+				Messages:     state.ExtractMessages(events),
 				SystemPrompt: config.systemPrompt,
 				Tools:        config.tools,
-			}
-
-			// Execute BeforeModel plugins
+			} // Execute BeforeModel plugins
 			if config.callbacks != nil && config.callbacks.HasPlugins() {
 				resp, err := config.callbacks.ExecuteBeforeModel(ctx, req)
 				if err != nil {

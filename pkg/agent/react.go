@@ -48,7 +48,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 	// Combine static tools with toolset if provided
 	if config.toolset != nil {
 		// Fetch tools from toolset with nil state (toolset can use defaults)
-		// Note: toolset.ListTools requires a context and StateReader
+		// Note: toolset.ListTools requires a context and Reader
 		// We'll use an empty state snapshot for initialization
 		ctx := context.Background()
 		emptyState, err := graph.NewStateManager(0)

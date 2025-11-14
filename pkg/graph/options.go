@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -404,7 +406,7 @@ func WithFailOnCheckpointError(fail bool) RunOption {
 //
 // In node RunFunc:
 //
-//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 //	    log := logging.FromContext(ctx) // Retrieves the configured logger
 //	    log.Info("Processing node", "name", "my_node")
 //	    // ...
@@ -434,7 +436,7 @@ func WithLogger(logger logging.Logger) RunOption {
 //
 // In node RunFunc:
 //
-//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 //	    tp := trace.FromContext(ctx)
 //	    tracer := tp.Tracer("my-service")
 //	    ctx, span := tracer.Start(ctx, "operation")
@@ -465,7 +467,7 @@ func WithTracer(tracer trace.Provider) RunOption {
 //
 // In node RunFunc:
 //
-//	func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+//	func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 //	    mp := metrics.FromContext(ctx)
 //	    counter := mp.Counter("operations.count")
 //	    counter.Add(ctx, 1, metrics.Attr{Key: "node", Value: "my_node"})
@@ -503,8 +505,8 @@ func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map
 	}
 
 	// Extract messages from events for checkpoint serialization
-	// TODO: Phase 3 - Update checkpoint to store full ExecutionResult with metadata
-	events := cg.stateManager.EventsSnapshot()
+	// TODO: Phase 3 - Update checkpoint to store full state.ExecutionResult with metadata
+	events := cg.stateManager.MessagesSnapshot()
 	messages := make([]message.Message, len(events))
 	for i := range events {
 		messages[i] = events[i].Message
@@ -540,10 +542,10 @@ func (cg *Compiled) restoreCheckpoint(chkpt *checkpoint.Checkpoint) error {
 	// Restore state
 	if cg.stateManager != nil {
 		// Wrap checkpoint messages as ExecutionResults
-		// TODO: Phase 3 - Checkpoint should store full ExecutionResult metadata
-		events := make([]ExecutionResult, len(chkpt.Messages))
+		// TODO: Phase 3 - Checkpoint should store full state.ExecutionResult metadata
+		events := make([]state.ExecutionResult, len(chkpt.Messages))
 		for i, msg := range chkpt.Messages {
-			events[i] = *NewExecutionResult(msg, chkpt.RunID, "__restored__")
+			events[i] = *state.NewExecutionResult(msg, chkpt.RunID, "__restored__")
 		}
 
 		cg.stateManager.ApplyUpdates(chkpt.State, events)

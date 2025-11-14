@@ -194,7 +194,7 @@ func TestAgent_BasicExecution(t *testing.T) {
 	_, err = graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	events := compiled.State().EventsSnapshot()
+	events := compiled.State().MessagesSnapshot()
 	require.NotNil(t, events)
 	assert.GreaterOrEqual(t, len(events), 3) // System + Human + AI
 }
@@ -243,7 +243,7 @@ func TestAgent_ToolCalling(t *testing.T) {
 	_, err = graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	events := compiled.State().EventsSnapshot()
+	events := compiled.State().MessagesSnapshot()
 	require.NotNil(t, events)
 
 	// Should have: Human + AI (with tool call) + Tool result + AI (final response)

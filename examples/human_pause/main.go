@@ -3,6 +3,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"time"
@@ -42,7 +43,7 @@ func main() {
 
 	mustAddNode(&graph.Node{
 		Name: "research",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("research")
 			topic, _ := s.Get("current_task").(string)
 			return &graph.NodeResult{
@@ -59,7 +60,7 @@ func main() {
 
 	mustAddNode(&graph.Node{
 		Name: "write",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("write")
 			if s.Get("human_input") == nil {
 				fmt.Println("write paused: awaiting human approval")
@@ -77,7 +78,7 @@ func main() {
 
 	mustAddNode(&graph.Node{
 		Name: "review",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("review")
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -88,7 +89,7 @@ func main() {
 		},
 	})
 
-	g.AddConditionalEdges("write", func(_ context.Context, s graph.StateReader) []string {
+	g.AddConditionalEdges("write", func(_ context.Context, s graphstate.Reader) []string {
 		if _, ok := s.Get("draft").(string); ok {
 			return []string{"review"}
 		}

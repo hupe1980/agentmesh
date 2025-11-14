@@ -89,7 +89,7 @@ All metrics include relevant labels like `node.name`, `superstep`, `error.type`.
 All providers are automatically attached to context for node RunFuncs:
 
 ```go
-func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     log := logging.FromContext(ctx)
     tp := trace.FromContext(ctx)
     mp := metrics.FromContext(ctx)

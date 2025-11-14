@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -147,7 +148,7 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 
 		node1 := &Node{
 			Name: "node1",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				// Read current value
 				current := s.Get("value")
 				return &NodeResult{
@@ -158,7 +159,7 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 
 		node2 := &Node{
 			Name: "node2",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				// Read current value
 				current := s.Get("value")
 				return &NodeResult{

@@ -64,7 +64,7 @@ state.AddChannel(channel.NewTopicChannel("messages", 100))
 
 ### 3. Create Parallel Nodes
 ```go
-builder.Node("task_a", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("task_a", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     time.Sleep(2 * time.Second) // Simulate work
     return &graph.NodeResult{
         Updates: map[string]any{
@@ -86,7 +86,7 @@ builder.AddEdge("start", "task_c")
 
 ### 5. Add Merge Node for Fan-In
 ```go
-builder.Node("merge", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("merge", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     results, _ := s.Get("results").(map[string]any)
     fmt.Printf("Merged results: %v\n", results)
     return nil, nil
@@ -182,7 +182,7 @@ compiled, _ := builder.Compile(
 ### Error Handling
 ```go
 // Parallel tasks with retry
-builder.Node("task_a", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("task_a", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     result, err := performWork()
     if err != nil {
         return nil, fmt.Errorf("task_a failed: %w", err)
@@ -196,7 +196,7 @@ builder.Node("task_a", func(ctx context.Context, s graph.StateWriter) (*graph.No
 // Use semaphore for external resource limits
 sem := make(chan struct{}, 5) // Max 5 concurrent API calls
 
-builder.Node("api_call", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+builder.Node("api_call", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     sem <- struct{}{}        // Acquire
     defer func() { <-sem }() // Release
     

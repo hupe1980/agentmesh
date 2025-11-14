@@ -3,6 +3,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
@@ -30,7 +31,7 @@ func main() {
 		}
 
 		// Step 1: Double the value
-		builder.Node("double", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		builder.Node("double", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			value, _ := s.Get("value").(int)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
@@ -40,7 +41,7 @@ func main() {
 		})
 
 		// Step 2: Add 10
-		builder.Node("add_ten", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		builder.Node("add_ten", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			value, _ := s.Get("value").(int)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
@@ -50,7 +51,7 @@ func main() {
 		})
 
 		// Step 3: Multiply by 3
-		builder.Node("multiply_three", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		builder.Node("multiply_three", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 			value, _ := s.Get("value").(int)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +23,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	// Node A sends updates to Node B
 	builder.AddNode(&graph.Node{
 		Name: "node_a",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// Send data to node_b
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -39,11 +40,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	// Node B receives updates from Node A
 	builder.AddNode(&graph.Node{
 		Name: "node_b",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			// Verify we received the update from node_a
 			fromA := s.Get("from_a")
 			counter := s.Get("counter")
-			msgs := s.EventsSnapshot()
+			msgs := s.MessagesSnapshot()
 
 			// These should be available after node_a completes
 			require.NotNil(t, fromA, "Should receive update from node_a")
@@ -94,7 +95,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	// Two parallel nodes sending to the same target
 	builder.AddNode(&graph.Node{
 		Name: "parallel_a",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_a": "data_a"},
 			}, nil
@@ -103,7 +104,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 
 	builder.AddNode(&graph.Node{
 		Name: "parallel_b",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_b": "data_b"},
 			}, nil
@@ -113,7 +114,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	// Aggregator node receives from both parallel nodes
 	builder.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			dataA := s.Get("from_parallel_a")
 			dataB := s.Get("from_parallel_b")
 
@@ -162,7 +163,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 1: Sets initial values
 	builder.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{
 					"step": 1,
@@ -175,7 +176,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 2: Reads from node 1, adds its own data
 	builder.AddNode(&graph.Node{
 		Name: "node_2",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			step := s.Get("step")
 			data := s.Get("data")
 
@@ -195,7 +196,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 3: Reads from node 2, verifies propagation
 	builder.AddNode(&graph.Node{
 		Name: "node_3",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			step := s.Get("step")
 			data := s.Get("data")
 

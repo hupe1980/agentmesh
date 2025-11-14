@@ -6,6 +6,8 @@ import (
 	"maps"
 	"sort"
 	"sync"
+
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 const (
@@ -100,7 +102,7 @@ func (g *Graph) AddEdge(from, to string) {
 }
 
 // AddConditionalEdges creates dynamic edges based on runtime conditions.
-func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, StateReader) []string, targets []string) {
+func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, state.Reader) []string, targets []string) {
 	if len(targets) == 0 {
 		return
 	}

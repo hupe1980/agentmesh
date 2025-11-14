@@ -10,6 +10,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +38,7 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 			nodeNum := i
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					counter := s.Get("counter")
 					if counter == nil {
 						counter = 0
@@ -153,7 +154,7 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 			nodeNum := i
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					// Fail on node 3 if we haven't set retry_allowed flag yet
 					if nodeNum == 3 {
 						retryAllowed := s.Get("retry_allowed")
@@ -274,7 +275,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node A sets value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_a",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_a")
 				logMu.Store(log)
@@ -291,7 +292,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node B multiplies value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_b",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_b")
 				logMu.Store(log)
@@ -312,7 +313,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node C adds to value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_c",
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_c")
 				logMu.Store(log)
@@ -406,7 +407,7 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"data": "checkpoint_data"},
 			}, nil
@@ -484,7 +485,7 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 		nodeNum := i
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("step_%d", i),
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				return &graph.NodeResult{
 					Updates: map[string]any{
 						"step":                                nodeNum,
@@ -580,7 +581,7 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: "work",
-				RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 					time.Sleep(10 * time.Millisecond) // Simulate work
 					return &graph.NodeResult{
 						Updates: map[string]any{
@@ -652,7 +653,7 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"executed": true},
 			}, nil

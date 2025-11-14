@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -191,7 +193,7 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 //
 // If a custom Executor is configured, execution is delegated to it.
 // Otherwise, uses the default Pregel BSP execution.
-func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[ExecutionResult, error] {
+func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[state.ExecutionResult, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -217,7 +219,7 @@ func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns 
 // ApplyState synchronously merges values and messages into the committed graph state.
 // Intended for external systems (e.g., human-in-the-loop workflows) to inject
 // updates between supersteps without bypassing the staged execution pipeline.
-func (cg *Compiled) ApplyState(values map[string]any, messages []ExecutionResult) {
+func (cg *Compiled) ApplyState(values map[string]any, messages []state.ExecutionResult) {
 	if cg == nil || cg.stateManager == nil {
 		return
 	}
@@ -230,7 +232,7 @@ func (cg *Compiled) ApplyState(values map[string]any, messages []ExecutionResult
 func (cg *Compiled) AsNode(name string) *Node {
 	return &Node{
 		Name: name,
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 			// Sync parent state into subgraph state before execution
 			parentValues := s.GetAll()
 			if parentValues != nil {
@@ -238,7 +240,7 @@ func (cg *Compiled) AsNode(name string) *Node {
 			}
 
 			// Get parent messages to pass to subgraph
-			parentMessages := ExtractMessages(s.EventsSnapshot())
+			parentMessages := state.ExtractMessages(s.MessagesSnapshot())
 
 			// Execute the subgraph with parent messages and get final event
 			_, err := Last(cg.Run(ctx, parentMessages))
@@ -249,7 +251,7 @@ func (cg *Compiled) AsNode(name string) *Node {
 			// Return the subgraph's final state as updates
 			// Get all accumulated events from state and convert to messages
 			updates := cg.State().GetAll()
-			events := cg.State().EventsSnapshot()
+			events := cg.State().MessagesSnapshot()
 			msgs := make([]message.Message, len(events))
 			for i := range events {
 				msgs[i] = events[i].Message
@@ -268,15 +270,15 @@ func (cg *Compiled) AsNode(name string) *Node {
 // mapOutput transforms subgraph output state into parent updates.
 func (cg *Compiled) AsNodeWithStateMapping(
 	name string,
-	mapInput func(StateReader) (map[string]any, []ExecutionResult),
-	mapOutput func(StateReader) (map[string]any, []ExecutionResult),
+	mapInput func(state.Reader) (map[string]any, []state.ExecutionResult),
+	mapOutput func(state.Reader) (map[string]any, []state.ExecutionResult),
 ) *Node {
 	return &Node{
 		Name: name,
-		RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 			// Map parent state to subgraph input
 			var inputValues map[string]any
-			var inputMessages []ExecutionResult
+			var inputMessages []state.ExecutionResult
 			var messagesToInvoke []message.Message
 
 			if mapInput != nil {
@@ -285,13 +287,11 @@ func (cg *Compiled) AsNodeWithStateMapping(
 					cg.ApplyState(inputValues, inputMessages)
 				}
 				// Extract messages for Invoke
-				messagesToInvoke = ExtractMessages(inputMessages)
+				messagesToInvoke = state.ExtractMessages(inputMessages)
 			} else {
 				// Get parent messages
-				messagesToInvoke = ExtractMessages(s.EventsSnapshot())
-			}
-
-			// Execute subgraph with messages and get final event
+				messagesToInvoke = state.ExtractMessages(s.MessagesSnapshot())
+			} // Execute subgraph with messages and get final event
 			_, err := Last(cg.Run(ctx, messagesToInvoke))
 			if err != nil {
 				return nil, fmt.Errorf("subgraph %q: %w", name, err)
@@ -301,7 +301,7 @@ func (cg *Compiled) AsNodeWithStateMapping(
 			var updates map[string]any
 			var messages []message.Message
 			if mapOutput != nil {
-				var events []ExecutionResult
+				var events []state.ExecutionResult
 				updates, events = mapOutput(cg.State())
 				// Convert events to []message.Message
 				messages = make([]message.Message, len(events))
@@ -311,22 +311,19 @@ func (cg *Compiled) AsNodeWithStateMapping(
 			} else {
 				updates = cg.State().GetAll()
 				// Get all accumulated events from state and convert to messages
-				events := cg.State().EventsSnapshot()
+				events := cg.State().MessagesSnapshot()
 				messages = make([]message.Message, len(events))
 				for i := range events {
 					messages[i] = events[i].Message
 				}
 			}
-
 			return &NodeResult{
 				Updates:  updates,
 				Messages: messages,
 			}, nil
 		},
 	}
-}
-
-// restoreFromCheckpoint loads and restores checkpoint if configured.
+} // restoreFromCheckpoint loads and restores checkpoint if configured.
 // Returns the initial superstep to resume from, or 0 if no checkpoint was loaded.
 func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptions, instrumentation *Instrumentation) (int64, error) {
 	if options.checkpointer == nil || options.runID == "" || !options.autoRestore {
@@ -532,9 +529,9 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 
 	// Wrap input messages as ExecutionResults for internal processing
 	if len(messages) > 0 {
-		events := make([]ExecutionResult, len(messages))
+		events := make([]state.ExecutionResult, len(messages))
 		for i, msg := range messages {
-			events[i] = *NewExecutionResult(msg, options.runID, "__input__")
+			events[i] = *state.NewExecutionResult(msg, options.runID, "__input__")
 		}
 		if cg.stateManager != nil {
 			cg.stateManager.ApplyUpdates(nil, events)
@@ -559,11 +556,11 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 	return ctx, instrumentation, nil
 }
 
-func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[ExecutionResult, error] {
-	return func(yield func(ExecutionResult, error) bool) {
+func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[state.ExecutionResult, error] {
+	return func(yield func(state.ExecutionResult, error) bool) {
 		runCtx, instrumentation, err := cg.setupRun(ctx, messages, &options)
 		if err != nil {
-			yield(ExecutionResult{}, err)
+			yield(state.ExecutionResult{}, err)
 			return
 		}
 

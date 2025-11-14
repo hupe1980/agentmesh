@@ -1,6 +1,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,7 @@ func main() {
 	}
 
 	// Add nodes
-	builder.Node("input_validator", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("input_validator", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("✓ Validating input...")
 		return &graph.NodeResult{
 			Updates: map[string]any{
@@ -39,26 +40,26 @@ func main() {
 		}, nil
 	})
 
-	builder.Node("router", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("✓ Routing request...")
 		return &graph.NodeResult{}, nil
 	})
 
-	builder.Node("high_priority_handler", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("high_priority_handler", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("✓ Handling high priority request...")
 		return &graph.NodeResult{
 			Updates: map[string]any{"processed": true},
 		}, nil
 	})
 
-	builder.Node("normal_handler", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("normal_handler", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("✓ Handling normal request...")
 		return &graph.NodeResult{
 			Updates: map[string]any{"processed": true},
 		}, nil
 	})
 
-	builder.Node("aggregator", func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+	builder.Node("aggregator", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
 		fmt.Println("✓ Aggregating results...")
 		return &graph.NodeResult{
 			Updates: map[string]any{"complete": true},
@@ -70,7 +71,7 @@ func main() {
 	builder.AddEdge("input_validator", "router")
 
 	// Conditional routing based on priority
-	builder.AddConditionalEdges("router", func(ctx context.Context, s graph.StateReader) []string {
+	builder.AddConditionalEdges("router", func(ctx context.Context, s graphstate.Reader) []string {
 		priority := s.Get("priority")
 		if priority == "high" {
 			return []string{"high_priority_handler"}

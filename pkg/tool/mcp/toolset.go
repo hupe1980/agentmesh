@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -39,7 +39,7 @@ func NewToolset(sessionFactory SessionFactory, optFns ...func(*ToolsetOptions)) 
 // ListTools connects (or reuses a pooled connection) to the MCP server and
 // streams available tools, converting each MCP tool descriptor into a
 // tool.Tool proxy. The returned tools execute remotely via MCP when called.
-func (t *toolset) ListTools(ctx context.Context, state graph.StateReader) ([]tool.Tool, error) {
+func (t *toolset) ListTools(ctx context.Context, state state.Reader) ([]tool.Tool, error) {
 	session, err := t.sessionManager.CreateSession(ctx, state, nil)
 	if err != nil {
 		return nil, err

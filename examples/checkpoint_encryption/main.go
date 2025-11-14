@@ -1,6 +1,7 @@
 package main
 
 import (
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -67,7 +68,7 @@ func basicEncryptionExample(ctx context.Context) {
 
 	g.AddNode(&graph.Node{
 		Name: "secure_node",
-		RunFunc: func(ctx context.Context, state graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, state graphstate.Writer) (*graph.NodeResult, error) {
 			fmt.Println("  Processing sensitive data...")
 			return &graph.NodeResult{
 				Updates: map[string]any{

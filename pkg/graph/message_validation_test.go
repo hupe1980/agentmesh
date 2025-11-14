@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"errors"
 	"strings"
@@ -17,7 +18,7 @@ func TestMessageValidation_MaxMessageSize(t *testing.T) {
 	require.NoError(t, err)
 
 	builder.
-		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
 		AddEdge(StartNode, "start").
@@ -104,7 +105,7 @@ func TestMessageValidation_MaxInputMessages(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 	builder.
-		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
 		AddEdge(StartNode, "start").
@@ -176,7 +177,7 @@ func TestMessageValidation_MaxTotalSize(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 	builder.
-		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
 		AddEdge(StartNode, "start").
@@ -246,7 +247,7 @@ func TestMessageValidation_CombinedLimits(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 	builder.
-		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
 		AddEdge(StartNode, "start").
@@ -340,7 +341,7 @@ func TestMessageValidation_DifferentMessageTypes(t *testing.T) {
 	builder, err := NewBuilder()
 	require.NoError(t, err)
 	builder.
-		Node("start", func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+		Node("start", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		}).
 		AddEdge(StartNode, "start").

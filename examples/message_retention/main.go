@@ -28,6 +28,8 @@ import (
 	"fmt"
 	"log"
 
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -45,8 +47,8 @@ func main() {
 	// Create a simple echo node
 	err = g.AddNode(&graph.Node{
 		Name: "echo",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
-			events := s.EventsSnapshot()
+		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+			events := s.MessagesSnapshot()
 			lastMsg := events[len(events)-1].Message
 
 			return &graph.NodeResult{
@@ -78,7 +80,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events1 := compiled.State().EventsSnapshot()
+	events1 := compiled.State().MessagesSnapshot()
 	fmt.Printf("Messages retained: %d\n\n", len(events1))
 
 	// Example 2: Limit to 2 messages
@@ -91,7 +93,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events2 := compiled.State().EventsSnapshot()
+	events2 := compiled.State().MessagesSnapshot()
 	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(events2))
 
 	// Example 3: Recommended for long-running agents

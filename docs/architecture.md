@@ -172,7 +172,7 @@ return &graph.NodeResult{
 }, nil
 
 // Superstep 1: Node B receives message in its mailbox
-// The message is available via the StateReader
+// The message is available via the Reader
 ```
 
 **Mailbox Bounds**: To prevent memory exhaustion, mailboxes can be configured with size limits:
@@ -225,7 +225,7 @@ Traditional agent frameworks use **sequential DAG execution**, which limits expr
 ```go
 builder.AddNode(&graph.Node{
     Name: "writer",
-    RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
         draft := generateDraft()
         return &graph.NodeResult{
             Updates: map[string]any{"draft": draft},
@@ -236,7 +236,7 @@ builder.AddNode(&graph.Node{
 
 builder.AddNode(&graph.Node{
     Name: "evaluator",
-    RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
         draft := state.Get("draft")
         if isGoodEnough(draft) {
             return &graph.NodeResult{NextNodes: []string{"END"}}, nil
@@ -260,7 +260,7 @@ builder := graph.NewBuilder()
 // Nodes execute in parallel when possible
 builder.AddNode(&graph.Node{
     Name: "fetch_data",
-    RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
         // Fetch from API...
         return &graph.NodeResult{
             Updates: map[string]any{"data": result},
@@ -270,7 +270,7 @@ builder.AddNode(&graph.Node{
 
 builder.AddNode(&graph.Node{
     Name: "process",
-    RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
         data := state.Get("data")
         // Process...
         return &graph.NodeResult{
@@ -478,7 +478,7 @@ type ConditionalEvaluator struct {
 ```go
 builder.AddNode(&graph.Node{
     Name: "classifier",
-    RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
         category := analyzeInput(state.MessagesSnapshot())
         
         // Dynamic routing based on classification
@@ -887,7 +887,7 @@ func (a *ErrorAggregator) Aggregate(ctx context.Context, state *State, prev floa
 }
 
 // Use in node
-RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     globalError := state.GetAggregate("error").(float64)
     if globalError < 0.01 {
         return &graph.NodeResult{NextNodes: []string{"END"}}, nil
@@ -1094,7 +1094,7 @@ This architecture ensures correctness while optimizing for the common single-pro
 
 ### Aggregate Snapshot Caching (Phase 3 Optimization)
 
-Aggregates are global values computed across all nodes (e.g., sums, averages, max values). Each node can read aggregates from previous supersteps via `StateReader.AggregatesSnapshot()`.
+Aggregates are global values computed across all nodes (e.g., sums, averages, max values). Each node can read aggregates from previous supersteps via `Reader.AggregatesSnapshot()`.
 
 **Problem**: Original implementation copied the entire aggregate map on every snapshot call:
 ```go
@@ -1180,7 +1180,7 @@ state.AddChannel(channel.NewBinaryOpChannel("counter", func(a, b any) any {
 Nodes receive immutable state snapshots:
 
 ```go
-RunFunc: func(ctx context.Context, state graph.StateReader) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
     // Read values
     status := state.Get("status")
     messages := state.MessagesSnapshot()

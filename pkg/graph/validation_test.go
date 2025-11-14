@@ -1,6 +1,7 @@
 package graph
 
 import (
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "reachable",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -25,7 +26,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "unreachable",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -49,7 +50,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "step1",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -57,7 +58,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "step2",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -79,7 +80,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -87,7 +88,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "path_a",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
@@ -95,14 +96,14 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "path_b",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})
 		require.NoError(t, err)
 
 		g.AddEdge(StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s StateReader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
 			return []string{"path_a"}
 		}, []string{"path_a", "path_b"})
 		g.AddEdge("path_a", EndNode)
@@ -121,7 +122,7 @@ func TestGraphValidation(t *testing.T) {
 
 		err = g.AddNode(&Node{
 			Name: "existing",
-			RunFunc: func(ctx context.Context, s StateWriter) (*NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
 				return &NodeResult{}, nil
 			},
 		})

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +51,7 @@ func TestPageRank(t *testing.T) {
 		v := vertex // capture loop variable
 		err = g.AddNode(&graph.Node{
 			Name: v,
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				// Get outgoing edges
 				outgoing := s.Get(fmt.Sprintf("outgoing_%s", v))
 				outgoingEdges, ok := outgoing.([]string)
@@ -165,7 +166,7 @@ func TestShortestPath(t *testing.T) {
 		v := vertex
 		err = g.AddNode(&graph.Node{
 			Name: v,
-			RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 				currentDist := s.Get(fmt.Sprintf("dist_%s", v))
 				dist, ok := currentDist.(int)
 				if !ok || dist == math.MaxInt32 {
@@ -236,7 +237,7 @@ func TestGraphConvergence(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "incrementer",
-		RunFunc: func(ctx context.Context, s graph.StateWriter) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
 			counter := s.Get("counter")
 			count, ok := counter.(int)
 			if !ok {
