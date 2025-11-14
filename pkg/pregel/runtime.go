@@ -354,39 +354,68 @@ func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
 	return frontier, nil
 }
 
-//nolint:gocyclo // Superstep execution requires coordinating many runtime conditions
+// runSuperstep executes a single superstep for all vertices in the frontier.
+// The function orchestrates parallel execution with configurable worker pool size.
 func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]struct{}, superstep int64) error {
 	if len(frontier) == 0 {
 		return nil
 	}
 
+	// Setup execution context and drain mailboxes
 	superCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	names := r.sortedFrontierNames(frontier)
+	incoming, err := r.drainMailboxesForFrontier(names)
+	if err != nil {
+		return err
+	}
+
+	// Execute vertices in parallel
+	if err := r.executeVerticesParallel(superCtx, names, incoming, superstep, cancel); err != nil {
+		return err
+	}
+
+	// Finalize aggregators after all vertices complete
+	r.finalizeAggregators()
+
+	return ctx.Err()
+}
+
+// sortedFrontierNames extracts and sorts vertex names from the frontier.
+func (r *Runtime[S, M]) sortedFrontierNames(frontier map[string]struct{}) []string {
 	names := make([]string, 0, len(frontier))
 	for name := range frontier {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	return names
+}
 
+// drainMailboxesForFrontier drains mailboxes for all vertices in the frontier.
+func (r *Runtime[S, M]) drainMailboxesForFrontier(names []string) (map[string][]Message[M], error) {
 	incoming := make(map[string][]Message[M], len(names))
 	for _, name := range names {
 		msgs, err := r.drainMailbox(name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		incoming[name] = msgs
 	}
+	return incoming, nil
+}
 
-	workers := r.opts.MaxWorkers
-	if workers <= 0 {
-		workers = 1
-	}
-	if workers > len(names) {
-		workers = len(names)
-	}
-
+// executeVerticesParallel executes all vertices in parallel using a worker pool.
+func (r *Runtime[S, M]) executeVerticesParallel(
+	ctx context.Context,
+	names []string,
+	incoming map[string][]Message[M],
+	superstep int64,
+	cancel context.CancelFunc,
+) error {
+	workers := r.calculateWorkerCount(len(names))
 	tasks := make(chan string)
+
 	var wg sync.WaitGroup
 	var once sync.Once
 	var runErr error
@@ -401,47 +430,81 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 		})
 	}
 
+	// Start worker pool
+	r.startWorkerPool(ctx, &wg, workers, tasks, incoming, superstep, recordErr)
+
+	// Schedule tasks
+	r.scheduleTasks(ctx, tasks, names)
+
+	// Wait for completion
+	wg.Wait()
+
+	return runErr
+}
+
+// calculateWorkerCount determines the optimal number of workers based on configuration and frontier size.
+func (r *Runtime[S, M]) calculateWorkerCount(frontierSize int) int {
+	workers := r.opts.MaxWorkers
+	if workers <= 0 {
+		workers = 1
+	}
+	if workers > frontierSize {
+		workers = frontierSize
+	}
+	return workers
+}
+
+// startWorkerPool starts the configured number of worker goroutines.
+func (r *Runtime[S, M]) startWorkerPool(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	workers int,
+	tasks <-chan string,
+	incoming map[string][]Message[M],
+	superstep int64,
+	recordErr func(error),
+) {
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-superCtx.Done():
-					return
-				case name, ok := <-tasks:
-					if !ok {
-						return
-					}
-					if err := r.executeVertex(superCtx, name, incoming[name], superstep); err != nil {
-						recordErr(err)
-					}
-				}
-			}
-		}()
+		go r.workerLoop(ctx, wg, tasks, incoming, superstep, recordErr)
 	}
+}
 
-schedule:
+// workerLoop is the main loop for a worker goroutine.
+func (r *Runtime[S, M]) workerLoop(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	tasks <-chan string,
+	incoming map[string][]Message[M],
+	superstep int64,
+	recordErr func(error),
+) {
+	defer wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case name, ok := <-tasks:
+			if !ok {
+				return
+			}
+			if err := r.executeVertex(ctx, name, incoming[name], superstep); err != nil {
+				recordErr(err)
+			}
+		}
+	}
+}
+
+// scheduleTasks sends all tasks to the worker pool, respecting context cancellation.
+func (r *Runtime[S, M]) scheduleTasks(ctx context.Context, tasks chan<- string, names []string) {
+	defer close(tasks)
 	for _, name := range names {
 		select {
-		case <-superCtx.Done():
-			break schedule
+		case <-ctx.Done():
+			return
 		case tasks <- name:
 		}
 	}
-	close(tasks)
-	wg.Wait()
-
-	if runErr != nil {
-		return runErr
-	}
-
-	r.finalizeAggregators()
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {

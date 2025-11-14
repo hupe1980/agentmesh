@@ -349,6 +349,7 @@ func (gr *graphRuntime) stopCheckpointWorker() {
 	gr.checkpointQueue = nil
 }
 
+// run executes the graph runtime, coordinating checkpointing, tracing, and execution.
 func (gr *graphRuntime) run(ctx context.Context) error {
 	logger := logging.FromContext(ctx)
 	startTime := time.Now()
@@ -357,27 +358,56 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 		"run_id", gr.options.runID,
 		"checkpoint_interval", gr.options.checkpointInterval)
 
-	// Start checkpoint worker with this request's context
-	gr.startCheckpointWorker(ctx)
-	defer gr.stopCheckpointWorker()
+	// Setup checkpoint worker and tracing
+	ctx, cleanup := gr.setupExecution(ctx)
+	defer cleanup()
 
-	// Start runtime trace span
-	var span trace.Span
-	if gr.instrumentation != nil {
-		ctx, span = gr.instrumentation.TraceGraphExecution(ctx, "runtime.run")
-		defer span.End(nil)
-	}
-
+	// Bootstrap and run engine
 	if gr.cg != nil {
 		gr.cg.bootstrapScheduler(ctx, gr.scheduler)
 	}
 
 	err := gr.engine.Run(ctx)
+
 	if gr.cg != nil {
 		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
 	}
 
+	// Finalize execution and log results
+	return gr.finalizeExecution(ctx, err, logger, startTime)
+}
+
+// setupExecution prepares the runtime for execution by starting checkpoint worker and tracing.
+// Returns the traced context and a cleanup function that must be called when done.
+func (gr *graphRuntime) setupExecution(ctx context.Context) (context.Context, func()) {
+	// Start checkpoint worker with this request's context
+	gr.startCheckpointWorker(ctx)
+
+	// Start runtime trace span
+	var span trace.Span
+	if gr.instrumentation != nil {
+		ctx, span = gr.instrumentation.TraceGraphExecution(ctx, "runtime.run")
+	}
+
+	cleanup := func() {
+		if span != nil {
+			span.End(nil)
+		}
+		gr.stopCheckpointWorker()
+	}
+
+	return ctx, cleanup
+}
+
+// finalizeExecution handles post-execution tasks: aggregate transfer, error wrapping, and logging.
+func (gr *graphRuntime) finalizeExecution(
+	ctx context.Context,
+	err error,
+	logger logging.Logger,
+	startTime time.Time,
+) error {
 	duration := time.Since(startTime)
+	stats := gr.engine.Stats()
 
 	// Transfer final aggregates to graph state
 	if err == nil || errors.Is(err, context.Canceled) {
@@ -386,31 +416,37 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 		}
 	}
 
-	// The Pregel engine can return context.DeadlineExceeded directly from ctx.Err().
-	// Wrap it here to ensure consistent error types. Node-level timeouts are already
-	// wrapped by the node adapter, but runtime-level timeouts need wrapping here.
+	// Wrap timeout errors for consistency
 	err = wrapTimeoutError(ctx, err)
+
+	// Log execution result
+	gr.logExecutionResult(logger, err, stats.Supersteps, duration)
+
+	return err
+}
+
+// logExecutionResult logs the appropriate message based on execution outcome.
+func (gr *graphRuntime) logExecutionResult(
+	logger logging.Logger,
+	err error,
+	supersteps int64,
+	duration time.Duration,
+) {
+	logFields := []any{
+		"run_id", gr.options.runID,
+		"supersteps", supersteps,
+		"duration_ms", duration.Milliseconds(),
+	}
 
 	switch {
 	case err != nil && !errors.Is(err, context.Canceled):
-		logger.Error("graph execution failed",
-			"run_id", gr.options.runID,
-			"supersteps", gr.engine.Stats().Supersteps,
-			"duration_ms", duration.Milliseconds(),
-			"error", err)
+		logger.Error("graph execution failed", append(logFields, "error", err)...)
 		gr.fail(err)
 	case errors.Is(err, context.Canceled):
-		logger.Warn("graph execution canceled",
-			"run_id", gr.options.runID,
-			"supersteps", gr.engine.Stats().Supersteps,
-			"duration_ms", duration.Milliseconds())
+		logger.Warn("graph execution canceled", logFields...)
 	default:
-		logger.Info("graph execution completed successfully",
-			"run_id", gr.options.runID,
-			"supersteps", gr.engine.Stats().Supersteps,
-			"duration_ms", duration.Milliseconds())
+		logger.Info("graph execution completed successfully", logFields...)
 	}
-	return err
 }
 
 func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {

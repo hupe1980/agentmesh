@@ -130,77 +130,139 @@ func (bus *InMemoryMessageBus[M]) Send(ctx context.Context, messages []Message[M
 // sendOne delivers a single message with backpressure handling.
 // Uses sharded locks for reduced contention.
 func (bus *InMemoryMessageBus[M]) sendOne(ctx context.Context, msg Message[M]) error {
-	// Check if bus is closed (global check without shard lock)
-	bus.globalMu.Lock()
-	if bus.closed {
-		bus.globalMu.Unlock()
-		return fmt.Errorf("message bus is closed")
+	// Check if bus is closed before attempting delivery
+	if err := bus.checkClosed(); err != nil {
+		return err
 	}
+
+	// Route message to appropriate shard
+	shard := bus.getShardForVertex(msg.To)
+
+	// Deliver message using either unbounded or bounded strategy
+	if bus.maxSize == 0 {
+		return bus.sendToUnboundedMailbox(shard, msg)
+	}
+	return bus.sendToBoundedMailbox(ctx, shard, msg)
+}
+
+// checkClosed returns an error if the message bus is closed.
+func (bus *InMemoryMessageBus[M]) checkClosed() error {
+	bus.globalMu.Lock()
+	closed := bus.closed
 	bus.globalMu.Unlock()
 
-	// Get shard for this vertex
-	shardIdx := bus.shardIndex(msg.To)
-	shard := &bus.shards[shardIdx]
+	if closed {
+		return fmt.Errorf("message bus is closed")
+	}
+	return nil
+}
 
+// getShardForVertex returns the shard responsible for the given vertex.
+func (bus *InMemoryMessageBus[M]) getShardForVertex(vertex string) *messageShard[M] {
+	shardIdx := bus.shardIndex(vertex)
+	return &bus.shards[shardIdx]
+}
+
+// sendToUnboundedMailbox delivers a message to an unbounded buffer, applying combiner if configured.
+func (bus *InMemoryMessageBus[M]) sendToUnboundedMailbox(shard *messageShard[M], msg Message[M]) error {
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+
+	// Mark vertex for next frontier
+	shard.nextFrontier[msg.To] = struct{}{}
+
+	// Try to combine with existing message if combiner is configured
+	if bus.combiner != nil {
+		if existing := shard.buffer[msg.To]; len(existing) > 0 {
+			combined := bus.combiner(existing[0], msg)
+			shard.buffer[msg.To] = []Message[M]{combined}
+			return nil
+		}
+	}
+
+	// Append to unbounded buffer
+	shard.buffer[msg.To] = append(shard.buffer[msg.To], msg)
+	return nil
+}
+
+// sendToBoundedMailbox delivers a message to a bounded channel with backpressure handling.
+func (bus *InMemoryMessageBus[M]) sendToBoundedMailbox(
+	ctx context.Context,
+	shard *messageShard[M],
+	msg Message[M],
+) error {
 	shard.mu.Lock()
 
 	// Mark vertex for next frontier
 	shard.nextFrontier[msg.To] = struct{}{}
 
-	// Handle unbounded mailboxes (maxSize = 0)
-	if bus.maxSize == 0 {
-		// Apply combiner if configured
-		if bus.combiner != nil {
-			if existing := shard.buffer[msg.To]; len(existing) > 0 {
-				combined := bus.combiner(existing[0], msg)
-				shard.buffer[msg.To] = []Message[M]{combined}
-				shard.mu.Unlock()
-				return nil
-			}
-		}
+	// Get or create bounded channel
+	ch := bus.getOrCreateChannel(shard, msg.To)
 
-		// Append to unbounded buffer
-		shard.buffer[msg.To] = append(shard.buffer[msg.To], msg)
-		shard.mu.Unlock()
-		return nil
-	}
-
-	// Handle bounded mailboxes with backpressure
-	ch, exists := shard.mailbox[msg.To]
-	if !exists {
-		// Create new bounded channel
-		ch = make(chan Message[M], bus.maxSize)
-		shard.mailbox[msg.To] = ch
-	}
-
-	// Apply combiner when channel is approaching capacity
-	// This reduces backpressure by merging messages instead of blocking
-	if bus.combiner != nil && len(ch) > 0 {
-		threshold := (bus.maxSize * 3) / 4 // 75% capacity
-		if len(ch) >= threshold {
-			// Try to drain last message and combine with incoming
-			select {
-			case lastMsg := <-ch:
-				// Combine messages
-				combined := bus.combiner(lastMsg, msg)
-				shard.mu.Unlock()
-
-				// Send combined message (non-blocking, space guaranteed)
-				select {
-				case ch <- combined:
-					return nil
-				case <-ctx.Done():
-					return fmt.Errorf("failed to send combined message to %q: %w", msg.To, ctx.Err())
-				}
-			default:
-				// Another goroutine drained it, continue with normal send
-			}
+	// Try to combine messages when channel is near capacity
+	if bus.shouldCombine(ch) {
+		if attempted, err := bus.tryCombineWithLastMessage(ctx, shard, ch, msg); attempted {
+			return err
 		}
 	}
 
 	shard.mu.Unlock()
 
 	// Blocking send with context support
+	return bus.blockingSend(ctx, ch, msg)
+}
+
+// getOrCreateChannel returns the channel for a vertex, creating it if necessary.
+func (bus *InMemoryMessageBus[M]) getOrCreateChannel(
+	shard *messageShard[M],
+	vertex string,
+) chan Message[M] {
+	ch, exists := shard.mailbox[vertex]
+	if !exists {
+		ch = make(chan Message[M], bus.maxSize)
+		shard.mailbox[vertex] = ch
+	}
+	return ch
+}
+
+// shouldCombine determines if message combination should be attempted based on channel capacity.
+func (bus *InMemoryMessageBus[M]) shouldCombine(ch chan Message[M]) bool {
+	if bus.combiner == nil || len(ch) == 0 {
+		return false
+	}
+	threshold := (bus.maxSize * 3) / 4 // 75% capacity
+	return len(ch) >= threshold
+}
+
+// tryCombineWithLastMessage attempts to combine the incoming message with the last message in the channel.
+// Returns (true, error) if combination was attempted, (false, nil) if combination was not possible.
+func (bus *InMemoryMessageBus[M]) tryCombineWithLastMessage(
+	ctx context.Context,
+	shard *messageShard[M],
+	ch chan Message[M],
+	msg Message[M],
+) (bool, error) {
+	// Try to drain last message and combine with incoming
+	select {
+	case lastMsg := <-ch:
+		// Combine messages
+		combined := bus.combiner(lastMsg, msg)
+		shard.mu.Unlock()
+
+		// Send combined message (non-blocking, space guaranteed)
+		return true, bus.blockingSend(ctx, ch, combined)
+	default:
+		// Another goroutine drained it, continue with normal send
+		return false, nil
+	}
+}
+
+// blockingSend sends a message to a channel with context cancellation support.
+func (bus *InMemoryMessageBus[M]) blockingSend(
+	ctx context.Context,
+	ch chan Message[M],
+	msg Message[M],
+) error {
 	select {
 	case ch <- msg:
 		return nil
