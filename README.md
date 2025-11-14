@@ -569,17 +569,34 @@ compiled, _ := builder.Compile(
 
 ### 🔁 Retry Policies
 
-Resilient execution with exponential backoff:
+Resilient execution with fluent builder API:
 
 ```go
 builder.Node("flaky_api", apiCallFunc)
-builder.SetRetryPolicy("flaky_api", &graph.RetryPolicy{
-    MaxAttempts:    3,
-    InitialBackoff: 100 * time.Millisecond,
-    MaxBackoff:     1 * time.Second,
-    Multiplier:     2.0,
-})
+
+// Simple retry with defaults (3 attempts, exponential backoff)
+builder.SetRetryPolicy("flaky_api", graph.NewRetryPolicy().Build())
+
+// Customized retry strategy
+builder.SetRetryPolicy("external_service", graph.NewRetryPolicy().
+    WithMaxAttempts(5).
+    WithExponentialBackoff(time.Second, 2.0).
+    WithRetryableErrors(ErrTransient, ErrTimeout).
+    Build())
+
+// Advanced: Capped exponential with jitter
+policy := graph.NewRetryPolicy().
+    WithMaxAttempts(10).
+    WithCustomBackoff(graph.JitteredExponentialBackoff(time.Second, 2.0, 0.1)).
+    Build()
 ```
+
+**Available backoff strategies:**
+- `WithExponentialBackoff(base, multiplier)` - 1s, 2s, 4s, 8s, ...
+- `WithLinearBackoff(base)` - 1s, 2s, 3s, 4s, ...
+- `WithConstantBackoff(duration)` - 1s, 1s, 1s, ...
+- `CappedExponentialBackoff()` - Exponential with max cap
+- `JitteredExponentialBackoff()` - Prevents thundering herd
 
 ### 💾 Checkpointing
 

@@ -32,10 +32,10 @@ func TestRetryPolicy(t *testing.T) {
 				attempts++
 				return &NodeResult{Updates: map[string]any{"result": "ok"}}, nil
 			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 3,
-				Backoff:     func(n int) time.Duration { return time.Millisecond },
-			},
+			RetryPolicy: NewRetryPolicy().
+				WithMaxAttempts(3).
+				WithConstantBackoff(time.Millisecond).
+				Build(),
 		})
 		require.NoError(t, err)
 
@@ -69,10 +69,10 @@ func TestRetryPolicy(t *testing.T) {
 				}
 				return &NodeResult{Updates: map[string]any{"attempts": attempts}}, nil
 			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 5,
-				Backoff:     func(n int) time.Duration { return time.Millisecond },
-			},
+			RetryPolicy: NewRetryPolicy().
+				WithMaxAttempts(5).
+				WithConstantBackoff(time.Millisecond).
+				Build(),
 		})
 		require.NoError(t, err)
 

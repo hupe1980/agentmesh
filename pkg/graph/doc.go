@@ -210,18 +210,41 @@ Nodes can return errors which will halt execution:
 		Message: "required field missing",
 	}
 
-Retries can be configured per-node:
+Retries can be configured per-node using the fluent builder API:
 
-	node.RetryPolicy = &graph.RetryPolicy{
-		MaxAttempts: 3,
-		Backoff: func(attempt int) time.Duration {
-			return time.Duration(attempt) * 100 * time.Millisecond
-		},
-		Retryable: func(err error) bool {
-			// Only retry transient errors
-			return errors.Is(err, ErrTemporaryFailure)
-		},
+	node.RetryPolicy = graph.NewRetryPolicy().
+		WithMaxAttempts(5).
+		WithExponentialBackoff(time.Second, 2.0).
+		WithRetryableErrors(ErrTransient, ErrTimeout).
+		Build()
+
+Advanced backoff strategies are available:
+
+	// Linear backoff: 1s, 2s, 3s, 4s, ...
+	graph.NewRetryPolicy().WithLinearBackoff(time.Second)
+
+	// Constant backoff: 1s, 1s, 1s, ...
+	graph.NewRetryPolicy().WithConstantBackoff(time.Second)
+
+	// Capped exponential: max 30 seconds
+	policy := &graph.RetryPolicy{
+		MaxAttempts: 10,
+		Backoff: graph.CappedExponentialBackoff(time.Second, 2.0, 30*time.Second),
 	}
+
+	// Jittered exponential: prevents thundering herd
+	policy := &graph.RetryPolicy{
+		MaxAttempts: 5,
+		Backoff: graph.JitteredExponentialBackoff(time.Second, 2.0, 0.1),
+	}
+
+Custom retry logic with flexible error matching:
+
+	graph.NewRetryPolicy().
+		WithRetryableFunc(func(err error) bool {
+			var apiErr *APIError
+			return errors.As(err, &apiErr) && apiErr.StatusCode >= 500
+		})
 
 # Input Validation
 
