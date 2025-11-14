@@ -157,6 +157,8 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Observability** (`pkg/metrics`, `pkg/trace`, `pkg/callbacks`)
 - OpenTelemetry metrics and tracing
 - Callback system for interception
+- Semantic caching with embeddings (`pkg/cache`)
+- Exact-match and similarity-based caching strategies
 
 **Key Design Principles:**
 - **Separation of Concerns**: State, execution, and topology are independent
@@ -783,7 +785,95 @@ compiled, _ := agent.NewReActAgent(
 - **Composable** - Embed `NoopPlugin` and override only what you need
 - **Request/Response based** - Model hooks use `model.Request/Response` for short-circuiting
 
-### 📊 Observability
+### � Semantic Caching
+
+AgentMesh provides two caching strategies to reduce API costs and improve response times:
+
+**1. Exact-Match Cache** (Simple & Fast)
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+
+// Create exact-match cache (SHA256 hashing)
+cache := plugins.NewCachePlugin(1000) // maxSize: 1000 entries
+
+// Register with plugin manager
+pm := callbacks.NewPluginManager()
+pm.Register(ctx, cache)
+
+// Use with agents
+agent, _ := agent.NewReActAgent(model, tools,
+    agent.WithModelCallbacks(pm))
+
+// Cache hits for identical queries
+// "What is Python?" == "What is Python?" ✓
+// "What is Python?" != "Tell me about Python" ✗
+```
+
+**2. Semantic Cache** (Smart & Flexible)
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/cache"
+    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
+)
+
+// Create embedder for semantic similarity
+embedder := openai.NewEmbedder(client)
+
+// Create semantic cache with memory backend
+memCache := cache.NewMemory(embedder,
+    cache.WithSimilarityThreshold(0.85), // 85% similar = cache hit
+    cache.WithTTL(time.Hour),            // expire after 1 hour
+    cache.WithMaxSize(1000))             // LRU eviction
+
+// Create semantic cache plugin
+semanticCache := plugins.NewSemanticCachePlugin(memCache)
+
+// Register with plugin manager
+pm := callbacks.NewPluginManager()
+pm.Register(ctx, semanticCache)
+
+// Cache hits for semantically similar queries
+// "What is Python?" ~87% similar to "Tell me about Python" ✓
+// "What is Python?" ~84% similar to "Explain Python" ✓
+```
+
+**Redis Backend** (Distributed Caching)
+
+```go
+import (
+    redisCache "github.com/hupe1980/agentmesh/pkg/cache/redis"
+    "github.com/redis/go-redis/v9"
+)
+
+// Create Redis client
+redisClient := redis.NewClient(&redis.Options{
+    Addr: "localhost:6379",
+})
+
+// Create distributed semantic cache
+cache := redisCache.NewCache(redisClient, embedder,
+    cache.WithSimilarityThreshold(0.85),
+    redisCache.WithKeyPrefix("myapp:llm:"))
+
+plugin := plugins.NewSemanticCachePlugin(cache)
+```
+
+**When to Use Which?**
+
+| Feature | Exact-Match | Semantic |
+|---------|------------|----------|
+| **Speed** | Instant (hash) | Fast (embedding) |
+| **Memory** | Low | Medium |
+| **Dependencies** | None | Embedder |
+| **Cache Hit Rate** | Lower | Higher |
+| **Best For** | FAQs, tests | Chatbots, support |
+
+See [examples/semantic_caching](examples/semantic_caching) for a complete demonstration.
+
+### �📊 Observability
 
 Built-in OpenTelemetry integration:
 
