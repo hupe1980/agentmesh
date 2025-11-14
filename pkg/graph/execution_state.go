@@ -146,7 +146,7 @@ type executionState struct {
 	mu        sync.Mutex
 	completed map[string]bool
 	paused    map[string]bool
-	superstep int64
+	superstep atomic.Int64
 }
 
 func newExecutionState() *executionState {
@@ -157,7 +157,7 @@ func newExecutionState() *executionState {
 }
 
 func (s *executionState) markCompleted(name string) {
-	if s == nil || name == "" {
+	if name == "" {
 		return
 	}
 	s.mu.Lock()
@@ -167,7 +167,7 @@ func (s *executionState) markCompleted(name string) {
 }
 
 func (s *executionState) markPaused(name string) {
-	if s == nil || name == "" {
+	if name == "" {
 		return
 	}
 	s.mu.Lock()
@@ -176,7 +176,7 @@ func (s *executionState) markPaused(name string) {
 }
 
 func (s *executionState) clearPaused(name string) {
-	if s == nil || name == "" {
+	if name == "" {
 		return
 	}
 	s.mu.Lock()
@@ -185,9 +185,6 @@ func (s *executionState) clearPaused(name string) {
 }
 
 func (s *executionState) completedNames() []string {
-	if s == nil {
-		return nil
-	}
 	s.mu.Lock()
 	if len(s.completed) == 0 {
 		s.mu.Unlock()
@@ -205,9 +202,6 @@ func (s *executionState) completedNames() []string {
 }
 
 func (s *executionState) pausedNames() []string {
-	if s == nil {
-		return nil
-	}
 	s.mu.Lock()
 	if len(s.paused) == 0 {
 		s.mu.Unlock()
@@ -225,20 +219,9 @@ func (s *executionState) pausedNames() []string {
 }
 
 func (s *executionState) setSuperstep(step int64) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.superstep = step
-	s.mu.Unlock()
+	s.superstep.Store(step)
 }
 
 func (s *executionState) currentSuperstep() int64 {
-	if s == nil {
-		return 0
-	}
-	s.mu.Lock()
-	step := s.superstep
-	s.mu.Unlock()
-	return step
+	return s.superstep.Load()
 }
