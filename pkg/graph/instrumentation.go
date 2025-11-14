@@ -80,10 +80,6 @@ func (noopSpan) End(error) {}
 
 // RecordNodeExecution records metrics for a completed node execution.
 func (i *Instrumentation) RecordNodeExecution(ctx context.Context, nodeName string, duration time.Duration, err error) {
-	if i == nil {
-		return
-	}
-
 	attrs := []metrics.Attr{
 		{Key: "node.name", Value: nodeName},
 	}
@@ -100,10 +96,6 @@ func (i *Instrumentation) RecordNodeExecution(ctx context.Context, nodeName stri
 
 // RecordSuperstep records metrics for a completed superstep.
 func (i *Instrumentation) RecordSuperstep(ctx context.Context, superstep int64, duration time.Duration, nodeCount int) {
-	if i == nil {
-		return
-	}
-
 	attrs := []metrics.Attr{
 		{Key: "superstep", Value: superstep},
 		{Key: "node_count", Value: nodeCount},
@@ -114,10 +106,6 @@ func (i *Instrumentation) RecordSuperstep(ctx context.Context, superstep int64, 
 
 // RecordGraphExecution records metrics for a completed graph execution.
 func (i *Instrumentation) RecordGraphExecution(ctx context.Context, graphName string, duration time.Duration, success bool) {
-	if i == nil {
-		return
-	}
-
 	attrs := []metrics.Attr{
 		{Key: "graph.name", Value: graphName},
 		{Key: "success", Value: success},

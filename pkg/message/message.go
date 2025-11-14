@@ -358,9 +358,6 @@ func NewBaseMessageChunk(msgType Type, text string, opts ...Option) *BaseMessage
 
 // Type returns the message type.
 func (c *BaseMessageChunk) Type() Type {
-	if c == nil {
-		return ""
-	}
 	return c.msgType
 }
 

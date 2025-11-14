@@ -21,17 +21,17 @@ import (
 //   - Component methods (topology, evaluator, tracker) have internal locking
 //   - Safe for concurrent calls to Ready(), MarkExecuted(), etc.
 type vertexScheduler struct {
-	cg        *Compiled
+	cg        Structure
 	mu        sync.RWMutex
 	topology  *TopologyScheduler
 	evaluator *ConditionalEvaluator
 	tracker   *ExecutionTracker
 }
 
-func newVertexScheduler(cg *Compiled) *vertexScheduler {
+func newVertexScheduler(cg Structure) *vertexScheduler {
 	sched := &vertexScheduler{
 		cg:        cg,
-		topology:  NewTopologyScheduler(cg.incoming),
+		topology:  NewTopologyScheduler(cg.Incoming()),
 		evaluator: NewConditionalEvaluator(cg),
 		tracker:   NewExecutionTracker(),
 	}
@@ -74,7 +74,7 @@ func (s *vertexScheduler) Bootstrap(ctx context.Context, completed, paused []str
 
 	// Set executed state in all components
 	s.tracker.SetExecuted(completed)
-	s.topology.SetExecuted(completed, s.cg.outgoing)
+	s.topology.SetExecuted(completed, s.cg.Outgoing())
 	s.evaluator.BootstrapOpenGates(completed)
 
 	// Apply completion logic for bootstrap
@@ -91,7 +91,7 @@ func (s *vertexScheduler) MarkExecuted(name string) {
 	defer s.mu.Unlock()
 
 	s.tracker.MarkExecuted(name)
-	s.topology.MarkExecuted(name, s.cg.outgoing[name])
+	s.topology.MarkExecuted(name, s.cg.Outgoing()[name])
 	s.tracker.UnpauseVertex(name)
 }
 
@@ -110,7 +110,7 @@ func (s *vertexScheduler) OnVertexCompleted(ctx context.Context, name string) ([
 	defer s.mu.Unlock()
 
 	// Get downstream vertices (regular edges)
-	downstream := s.cg.outgoing[name]
+	downstream := s.cg.Outgoing()[name]
 
 	// Mark topology dependencies satisfied
 	s.topology.MarkExecuted(name, downstream)
@@ -163,7 +163,7 @@ func (s *vertexScheduler) Snapshot() map[string]SchedulerState {
 		readySet[name] = true
 	}
 
-	for _, name := range s.cg.nodeNames {
+	for _, name := range s.cg.NodeNames() {
 		snapshot[name] = SchedulerState{
 			TopologyReady: readySet[name],
 			GateOpen:      s.evaluator.IsGateOpen(name),
@@ -193,7 +193,7 @@ func (s *vertexScheduler) Reset() {
 	s.tracker.Reset()
 
 	// Mark START node as executed to activate its downstream vertices
-	downstream := s.cg.outgoing[StartNode]
+	downstream := s.cg.Outgoing()[StartNode]
 	if len(downstream) > 0 {
 		s.topology.MarkExecuted(StartNode, downstream)
 	}
@@ -201,7 +201,7 @@ func (s *vertexScheduler) Reset() {
 
 // EnsureVertexExists reports whether a vertex is tracked by the scheduler.
 func (s *vertexScheduler) EnsureVertexExists(name string) bool {
-	for _, n := range s.cg.nodeNames {
+	for _, n := range s.cg.NodeNames() {
 		if n == name {
 			return true
 		}
@@ -211,7 +211,7 @@ func (s *vertexScheduler) EnsureVertexExists(name string) bool {
 
 // applyCompletionForBootstrap processes a completed vertex's downstream during bootstrap.
 func (s *vertexScheduler) applyCompletionForBootstrap(ctx context.Context, name string) {
-	targets := s.cg.outgoing[name]
+	targets := s.cg.Outgoing()[name]
 	for _, target := range targets {
 		// No need to mark executed, just ensure downstream can proceed
 		_ = target

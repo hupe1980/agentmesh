@@ -17,6 +17,67 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
+// Structure defines the interface for accessing graph structure.
+// This interface decouples runtime components (graphRuntime, vertexScheduler, ConditionalEvaluator)
+// from the concrete Compiled type, enabling better testability and extensibility.
+//
+// The interface provides read-only access to:
+//   - Node registry (nodes by name)
+//   - Edge topology (incoming/outgoing edges)
+//   - Conditional routing (conditional edges and gates)
+//   - Graph metadata (start/end nodes, node names)
+//   - State management (access to StateManager)
+//   - Execution tracking (mark completed/paused, superstep management)
+type Structure interface {
+	// Nodes returns the node with the given name, or nil if not found.
+	Nodes() map[string]*Node
+
+	// Outgoing returns the outgoing edges for the given node name.
+	Outgoing() map[string][]string
+
+	// Incoming returns the incoming edge count for each node.
+	Incoming() map[string]int
+
+	// ConditionalByFrom returns conditional edges grouped by source node.
+	ConditionalByFrom() map[string][]ConditionalEdges
+
+	// ConditionalGate returns whether a node is behind a conditional gate.
+	ConditionalGate() map[string]bool
+
+	// NodeNames returns the sorted list of all node names.
+	NodeNames() []string
+
+	// StartKey returns the start node name.
+	StartKey() string
+
+	// EndKey returns the end node name.
+	EndKey() string
+
+	// StateManager returns the graph's state manager.
+	StateManager() StateManager
+
+	// HasExecutable checks if a node with the given name exists.
+	HasExecutable(name string) bool
+
+	// MarkCompleted marks a node as completed.
+	MarkCompleted(name string)
+
+	// MarkPaused marks a node as paused.
+	MarkPaused(name string)
+
+	// ClearPaused clears the paused state for a node.
+	ClearPaused(name string)
+
+	// SetCurrentSuperstep sets the current execution superstep.
+	SetCurrentSuperstep(step int64)
+
+	// CreateCheckpoint creates a checkpoint snapshot.
+	CreateCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint
+
+	// BootstrapScheduler initializes the scheduler with persisted state.
+	BootstrapScheduler(ctx context.Context, s *vertexScheduler)
+}
+
 // Compiled is an immutable, validated graph ready for execution.
 // It contains the topology (nodes, edges, conditionals) and runtime execution state.
 // Compiled is safe for concurrent use across multiple goroutines.
@@ -587,16 +648,16 @@ func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Messa
 // It evaluates condition functions and activates target vertices.
 type ConditionalEvaluator struct {
 	mu            sync.RWMutex
-	cg            *Compiled
+	cg            Structure
 	gatedVertices map[string]bool // vertices behind conditional edges
 	openGates     map[string]bool // gates that have been opened
 }
 
 // NewConditionalEvaluator creates an evaluator for the given graph.
-func NewConditionalEvaluator(cg *Compiled) *ConditionalEvaluator {
+func NewConditionalEvaluator(cg Structure) *ConditionalEvaluator {
 	gated := make(map[string]bool)
-	for name := range cg.conditionalGate {
-		if cg.conditionalGate[name] {
+	for name := range cg.ConditionalGate() {
+		if cg.ConditionalGate()[name] {
 			gated[name] = true
 		}
 	}
@@ -611,7 +672,7 @@ func NewConditionalEvaluator(cg *Compiled) *ConditionalEvaluator {
 // EvaluateFrom evaluates all conditional edges originating from the given vertex.
 // Returns the list of newly activated target vertices.
 func (ce *ConditionalEvaluator) EvaluateFrom(ctx context.Context, source string) ([]string, error) {
-	conditionals := ce.cg.conditionalByFrom[source]
+	conditionals := ce.cg.ConditionalByFrom()[source]
 	if len(conditionals) == 0 {
 		return nil, nil
 	}
@@ -622,7 +683,7 @@ func (ce *ConditionalEvaluator) EvaluateFrom(ctx context.Context, source string)
 			continue
 		}
 
-		selected := conditional.Condition(ctx, ce.cg.stateManager)
+		selected := conditional.Condition(ctx, ce.cg.StateManager())
 		for _, target := range selected {
 			if target == "" {
 				continue
@@ -636,7 +697,7 @@ func (ce *ConditionalEvaluator) EvaluateFrom(ctx context.Context, source string)
 				}
 			}
 			// Only activate executable nodes (not END)
-			if validTarget && ce.cg.hasExecutable(target) {
+			if validTarget && ce.cg.HasExecutable(target) {
 				activated[target] = struct{}{}
 			}
 		}
@@ -689,4 +750,88 @@ func (ce *ConditionalEvaluator) BootstrapOpenGates(vertices []string) {
 			ce.openGates[v] = true
 		}
 	}
+}
+
+// =============================================================================
+// GraphTopology Interface Implementation
+// =============================================================================
+
+// Nodes returns the node registry map.
+func (cg *Compiled) Nodes() map[string]*Node {
+	return cg.nodes
+}
+
+// Outgoing returns the outgoing edges map.
+func (cg *Compiled) Outgoing() map[string][]string {
+	return cg.outgoing
+}
+
+// Incoming returns the incoming edges count map.
+func (cg *Compiled) Incoming() map[string]int {
+	return cg.incoming
+}
+
+// ConditionalByFrom returns conditional edges grouped by source node.
+func (cg *Compiled) ConditionalByFrom() map[string][]ConditionalEdges {
+	return cg.conditionalByFrom
+}
+
+// ConditionalGate returns the conditional gate map.
+func (cg *Compiled) ConditionalGate() map[string]bool {
+	return cg.conditionalGate
+}
+
+// NodeNames returns the sorted list of node names.
+func (cg *Compiled) NodeNames() []string {
+	return cg.nodeNames
+}
+
+// StartKey returns the start node name.
+func (cg *Compiled) StartKey() string {
+	return cg.startKey
+}
+
+// EndKey returns the end node name.
+func (cg *Compiled) EndKey() string {
+	return cg.endKey
+}
+
+// StateManager returns the graph's state manager.
+func (cg *Compiled) StateManager() StateManager {
+	return cg.stateManager
+}
+
+// HasExecutable checks if a node with the given name exists.
+func (cg *Compiled) HasExecutable(name string) bool {
+	return cg.hasExecutable(name)
+}
+
+// MarkCompleted marks a node as completed in the execution state.
+func (cg *Compiled) MarkCompleted(name string) {
+	cg.markCompleted(name)
+}
+
+// MarkPaused marks a node as paused in the execution state.
+func (cg *Compiled) MarkPaused(name string) {
+	cg.markPaused(name)
+}
+
+// ClearPaused clears the paused state for a node.
+func (cg *Compiled) ClearPaused(name string) {
+	cg.clearPaused(name)
+}
+
+// SetCurrentSuperstep sets the current execution superstep.
+func (cg *Compiled) SetCurrentSuperstep(step int64) {
+	cg.setCurrentSuperstep(step)
+}
+
+// CreateCheckpoint creates a checkpoint snapshot.
+func (cg *Compiled) CreateCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
+	return cg.createCheckpoint(runID, superstep, metadata)
+}
+
+// BootstrapScheduler initializes the scheduler with persisted state.
+func (cg *Compiled) BootstrapScheduler(ctx context.Context, s *vertexScheduler) {
+	cg.bootstrapScheduler(ctx, s)
 }

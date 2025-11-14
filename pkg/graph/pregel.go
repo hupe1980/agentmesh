@@ -385,7 +385,7 @@ func (ee *eventEmitter) traceCheckpoint(ctx context.Context, operation, runID st
 //   - stateCoordinator: Checkpoint persistence and async saves
 //   - eventEmitter: Event emission, yield management, and observability tracing
 type graphRuntime struct {
-	cg      *Compiled
+	cg      Structure
 	options runOptions
 
 	scheduler        *vertexScheduler                              // Graph topology & routing
@@ -544,13 +544,13 @@ func (gr *graphRuntime) run(ctx context.Context) error {
 
 	// Bootstrap and run engine
 	if gr.cg != nil {
-		gr.cg.bootstrapScheduler(ctx, gr.scheduler)
+		gr.cg.BootstrapScheduler(ctx, gr.scheduler)
 	}
 
 	err := gr.engine.Run(ctx)
 
 	if gr.cg != nil {
-		gr.cg.setCurrentSuperstep(gr.engine.Stats().Supersteps)
+		gr.cg.SetCurrentSuperstep(gr.engine.Stats().Supersteps)
 	}
 
 	// Finalize execution and log results
@@ -589,7 +589,7 @@ func (gr *graphRuntime) finalizeExecution(
 	// Transfer final aggregates to graph state
 	if err == nil || errors.Is(err, context.Canceled) {
 		if aggregates := gr.engine.Aggregates(); len(aggregates) > 0 {
-			gr.cg.stateManager.SetAggregates(aggregates)
+			gr.cg.StateManager().SetAggregates(aggregates)
 		}
 	}
 
@@ -649,7 +649,7 @@ func (gr *graphRuntime) saveCheckpoint(ctx context.Context, superstep int64) {
 	}
 
 	// Create checkpoint from current state
-	checkpoint := gr.cg.createCheckpoint(gr.options.runID, superstep, nil)
+	checkpoint := gr.cg.CreateCheckpoint(gr.options.runID, superstep, nil)
 	if checkpoint == nil {
 		logger.Warn("failed to create checkpoint snapshot",
 			"run_id", gr.options.runID,
@@ -701,7 +701,7 @@ func (gr *graphRuntime) setPaused(name string) {
 		gr.scheduler.MarkPaused(name)
 	}
 	if gr.cg != nil && gr.engine != nil {
-		gr.cg.setCurrentSuperstep(gr.engine.CurrentSuperstep())
+		gr.cg.SetCurrentSuperstep(gr.engine.CurrentSuperstep())
 	}
 }
 
@@ -737,24 +737,24 @@ func (g *compiledPregelGraph) RootNodes() []string {
 }
 
 func (g *compiledPregelGraph) Outgoing(node string) []string {
-	if targets := g.runtime.cg.outgoing[node]; len(targets) > 0 {
+	if targets := g.runtime.cg.Outgoing()[node]; len(targets) > 0 {
 		return append([]string(nil), targets...)
 	}
 	return nil
 }
 
 func (g *compiledPregelGraph) NodeByName(name string) pregel.Node[StateManager, ChannelMessage] {
-	if node, ok := g.runtime.cg.nodes[name]; ok {
+	if node, ok := g.runtime.cg.Nodes()[name]; ok {
 		return &nodeAdapter{runtime: g.runtime, name: name, node: node}
 	}
 	return nil
 }
 
 func (g *compiledPregelGraph) State() StateManager {
-	if g.runtime.cg.stateManager == nil {
+	if g.runtime.cg.StateManager() == nil {
 		return nil
 	}
-	return g.runtime.cg.stateManager
+	return g.runtime.cg.StateManager()
 }
 
 // nodeAdapter executes both standard and command-style nodes within the Pregel runtime.
@@ -872,7 +872,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 	//
 	// TODO: Add explicit distributed mode flag instead of this heuristic
 	isDistributed := n.runtime != nil && n.runtime.cg != nil &&
-		n.runtime.cg.stateManager != nil && vertex.State != n.runtime.cg.stateManager
+		n.runtime.cg.StateManager() != nil && vertex.State != n.runtime.cg.StateManager()
 
 	if isDistributed && len(incoming) > 0 && vertex.State != nil {
 		for _, msg := range incoming {
@@ -891,7 +891,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 			logger.Info("node paused for human input",
 				"node", n.name,
 				"superstep", n.runtime.engine.CurrentSuperstep())
-			n.runtime.cg.markPaused(n.name)
+			n.runtime.cg.MarkPaused(n.name)
 			n.runtime.setPaused(n.name)
 			n.runtime.emit(stateif.ExecutionResult{Node: n.name, Err: ErrHumanInterrupt})
 			return nil
@@ -962,12 +962,12 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 	// Apply updates immediately to local state (for in-memory efficiency)
 	// AND send them in messages (for distributed execution).
 	// Downstream nodes check if updates are already applied to avoid double-application.
-	if n.runtime != nil && n.runtime.cg != nil && n.runtime.cg.stateManager != nil {
-		n.runtime.cg.stateManager.ApplyUpdates(updates, messages)
+	if n.runtime != nil && n.runtime.cg != nil && n.runtime.cg.StateManager() != nil {
+		n.runtime.cg.StateManager().ApplyUpdates(updates, messages)
 	}
 
-	n.runtime.cg.clearPaused(n.name)
-	n.runtime.cg.markCompleted(n.name)
+	n.runtime.cg.ClearPaused(n.name)
+	n.runtime.cg.MarkCompleted(n.name)
 	n.runtime.markExecuted(n.name)
 
 	if err := n.handleScheduledDelivery(ctx, messages, updates); err != nil {
@@ -975,7 +975,7 @@ func (n *nodeAdapter) Run(ctx context.Context, vertex pregel.VertexContext[State
 	}
 
 	if n.runtime != nil && n.runtime.engine != nil {
-		n.runtime.cg.setCurrentSuperstep(n.runtime.engine.CurrentSuperstep())
+		n.runtime.cg.SetCurrentSuperstep(n.runtime.engine.CurrentSuperstep())
 	}
 
 	return nil

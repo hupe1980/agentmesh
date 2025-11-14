@@ -93,10 +93,6 @@ func New(templateStr string) *Template {
 //	    "Count": 5,
 //	})
 func (t *Template) Render(data map[string]any) (string, error) {
-	if t == nil {
-		return "", fmt.Errorf("template: cannot render nil template")
-	}
-
 	// Fast path: no template
 	if t.tmpl == nil {
 		return t.raw, nil
@@ -140,10 +136,6 @@ func (t *Template) MustRender(data map[string]any) string {
 //	    "Greeting": "Hello",
 //	})
 func (t *Template) RenderOrDefault(data map[string]any, defaults map[string]any) string {
-	if t == nil {
-		return ""
-	}
-
 	merged := make(map[string]any)
 
 	// Copy defaults first
@@ -162,8 +154,5 @@ func (t *Template) RenderOrDefault(data map[string]any, defaults map[string]any)
 
 // String returns the original template string.
 func (t *Template) String() string {
-	if t == nil {
-		return ""
-	}
 	return t.raw
 }
