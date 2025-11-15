@@ -325,7 +325,7 @@ builder.AddEdge("START", "fetch_data")
 builder.AddEdge("fetch_data", "process")
 builder.AddEdge("process", "END")
 
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 ```
 
 ---
@@ -1010,7 +1010,7 @@ builder.AddEdge("START", "agent")
 builder.AddEdge("agent", "END")
 
 // Compile into executable graph
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 ```
 
 ### Conditional routing
@@ -1196,7 +1196,7 @@ builder := graph.NewBuilder()
 builder.SetStateManager(state)
 
 // Compiled.State() returns StateManager interface
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 stateReader := compiled.State()
 ```
 
@@ -1347,7 +1347,7 @@ return &graph.NodeResult{
 ### 1. Initialization
 
 ```go
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 ```
 
 The compiler validates the graph topology, checks for cycles, and prepares the execution scheduler.

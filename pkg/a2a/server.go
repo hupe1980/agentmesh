@@ -62,13 +62,13 @@ func (e *Executor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q 
 	return nil
 }
 
-// StreamingExecutor wraps an AgentMesh Compiled with streaming support.
+// StreamingExecutor wraps an AgentMesh MessageRunnable with streaming support.
 type StreamingExecutor struct {
-	compiled *graph.Compiled
+	compiled graph.MessageRunnable
 }
 
 // NewStreamingExecutor creates a new streaming A2A executor.
-func NewStreamingExecutor(compiled *graph.Compiled) *StreamingExecutor {
+func NewStreamingExecutor(compiled graph.MessageRunnable) *StreamingExecutor {
 	return &StreamingExecutor{compiled: compiled}
 }
 

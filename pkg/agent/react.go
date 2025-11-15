@@ -4,9 +4,14 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
+
+// Type alias for cleaner generic type parameters
+type executionResult = state.ExecutionResult
 
 // NewReActAgent creates a Reasoning and Acting (ReAct) agent that iteratively:
 //  1. Reasons about the task
@@ -99,11 +104,15 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 
 	g.AddEdge("tool", "model")
 
-	// Compile the graph
-	compiled, err := g.Compile()
+	// Compile the graph with generic compilation for type safety
+	// Compile with generic type safety
+	inner, err := g.Compile()
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}
+
+	// Wrap with generic type-safe compiled graph
+	compiled := graph.NewCompiled[[]message.Message, executionResult](inner)
 
 	return compiled, nil
 }

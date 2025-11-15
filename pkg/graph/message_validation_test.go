@@ -24,7 +24,7 @@ func TestMessageValidation_MaxMessageSize(t *testing.T) {
 		AddEdge(StartNode, "start").
 		AddEdge("start", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -111,7 +111,7 @@ func TestMessageValidation_MaxInputMessages(t *testing.T) {
 		AddEdge(StartNode, "start").
 		AddEdge("start", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -183,7 +183,7 @@ func TestMessageValidation_MaxTotalSize(t *testing.T) {
 		AddEdge(StartNode, "start").
 		AddEdge("start", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -253,7 +253,7 @@ func TestMessageValidation_CombinedLimits(t *testing.T) {
 		AddEdge(StartNode, "start").
 		AddEdge("start", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	t.Run("all limits enforced", func(t *testing.T) {
@@ -347,7 +347,7 @@ func TestMessageValidation_DifferentMessageTypes(t *testing.T) {
 		AddEdge(StartNode, "start").
 		AddEdge("start", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	t.Run("function call message", func(t *testing.T) {

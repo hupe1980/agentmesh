@@ -134,7 +134,7 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 }
 
 // Compile validates and prepares the graph for execution.
-func (g *Graph) Compile() (*Compiled, error) {
+func (g *Graph) Compile() (*compiledImpl, error) {
 	if err := g.Validate(); err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (g *Graph) Compile() (*Compiled, error) {
 		executor = NewPregelExecutor() // Use Pregel BSP as default
 	}
 
-	cg := &Compiled{
+	cg := &compiledImpl{
 		stateManager:      stateManager,
 		executor:          executor,
 		runtime:           runtime,
@@ -207,7 +207,7 @@ func (g *Graph) Compile() (*Compiled, error) {
 
 // MustCompile compiles the graph into an immutable executable form.
 // Panics if validation fails. Use this in tests or when you're certain the graph is valid.
-func (g *Graph) MustCompile() *Compiled {
+func (g *Graph) MustCompile() *compiledImpl {
 	cg, err := g.Compile()
 	if err != nil {
 		panic(fmt.Errorf("graph compilation failed: %w", err))

@@ -26,7 +26,7 @@ Use `Stream()` instead of `Invoke()` to execute graphs with real-time event stre
 
 ```go
 // Create and compile your graph
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 if err != nil {
     log.Fatal(err)
 }
@@ -211,7 +211,7 @@ func main() {
     builder.AddEdge("data_processor", "analyzer")
     builder.AddEdge("analyzer", graph.EndNode)
     
-    compiled, _ := builder.Compile()
+    compiled, _ := builder.CompileMessageRunnable()
     
     // Execute with streaming
     seq := compiled.Run(context.Background(), nil)

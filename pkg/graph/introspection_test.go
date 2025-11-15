@@ -27,7 +27,7 @@ func TestGetNodes(t *testing.T) {
 	builder.AddEdge("b", "c")
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	nodes := compiled.GetNodes()
@@ -51,7 +51,7 @@ func TestGetNodeInfo(t *testing.T) {
 	builder.AddEdge("node1", "node2")
 	builder.AddEdge("node2", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	t.Run("valid node", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestGetAllNodeInfo(t *testing.T) {
 	builder.AddEdge("a", "b")
 	builder.AddEdge("b", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	infos := compiled.GetAllNodeInfo()
@@ -150,7 +150,7 @@ func TestGetEdges(t *testing.T) {
 	}, []string{"c", EndNode})
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	edges := compiled.GetEdges()
@@ -188,7 +188,7 @@ func TestGetTopology(t *testing.T) {
 	builder.AddEdge("middle", "exit")
 	builder.AddEdge("exit", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	topo := compiled.GetTopology()
@@ -220,7 +220,7 @@ func TestGetTopology_WithConditionals(t *testing.T) {
 	builder.AddEdge("path_a", EndNode)
 	builder.AddEdge("path_b", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	topo := compiled.GetTopology()
@@ -247,7 +247,7 @@ func TestGetMetrics(t *testing.T) {
 	builder.AddEdge("b", EndNode)
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	metrics := compiled.GetMetrics()
@@ -276,7 +276,7 @@ func TestGetDependencies(t *testing.T) {
 	builder.AddEdge("b", "c")
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	t.Run("middle node", func(t *testing.T) {
@@ -317,7 +317,7 @@ func TestGetExecutionPath(t *testing.T) {
 	builder.AddEdge("a", "b")
 	builder.AddEdge("b", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	paths := compiled.GetExecutionPath(10)
@@ -354,7 +354,7 @@ func TestGetExecutionPath_WithBranching(t *testing.T) {
 	builder.AddEdge("path_a", EndNode)
 	builder.AddEdge("path_b", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	paths := compiled.GetExecutionPath(10)
@@ -380,7 +380,7 @@ func TestCalculateDepth(t *testing.T) {
 	builder.AddEdge("b", "c")
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, compiled.calculateDepth("a"))
@@ -411,7 +411,7 @@ func TestFindAllPredecessors(t *testing.T) {
 	builder.AddEdge("d", "c")
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	predecessors := compiled.findAllPredecessors("c")
@@ -438,7 +438,7 @@ func TestFindAllSuccessors(t *testing.T) {
 	builder.AddEdge("b", "c")
 	builder.AddEdge("c", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	successors := compiled.findAllSuccessors("a")
@@ -462,7 +462,7 @@ func TestCyclomaticComplexity(t *testing.T) {
 		builder.AddEdge("a", "b")
 		builder.AddEdge("b", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		require.NoError(t, err)
 
 		metrics := compiled.GetMetrics()
@@ -489,7 +489,7 @@ func TestCyclomaticComplexity(t *testing.T) {
 		builder.AddEdge("b", EndNode)
 		builder.AddEdge("c", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		require.NoError(t, err)
 
 		metrics := compiled.GetMetrics()

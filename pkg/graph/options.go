@@ -429,7 +429,7 @@ func WithMetrics(metricsProvider metrics.Provider) RunOption {
 // =============================================================================
 
 // createCheckpoint builds a checkpoint from current graph state
-func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
+func (cg *compiledImpl) createCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
 	if cg == nil || cg.stateManager == nil {
 		return nil
 	}

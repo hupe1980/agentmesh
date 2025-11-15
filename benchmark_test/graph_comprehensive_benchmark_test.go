@@ -63,7 +63,7 @@ func BenchmarkComprehensiveWorkflow(b *testing.B) {
 	builder.AddEdge("validate", "aggregate")
 	builder.AddEdge("aggregate", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func BenchmarkDeepChain(b *testing.B) {
 				}
 			}
 
-			compiled, err := builder.Compile()
+			compiled, err := builder.CompileMessageRunnable()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -162,7 +162,7 @@ func BenchmarkWideParallel(b *testing.B) {
 				builder.AddEdge(nodeName, graph.EndNode)
 			}
 
-			compiled, err := builder.Compile()
+			compiled, err := builder.CompileMessageRunnable()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -221,7 +221,7 @@ func BenchmarkConditionalBranching(b *testing.B) {
 	builder.AddEdge("branch_a", graph.EndNode)
 	builder.AddEdge("branch_b", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func BenchmarkMessageThroughput(b *testing.B) {
 			builder.AddEdge(graph.StartNode, "processor")
 			builder.AddEdge("processor", graph.EndNode)
 
-			compiled, err := builder.Compile()
+			compiled, err := builder.CompileMessageRunnable()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -325,7 +325,7 @@ func BenchmarkStateUpdates(b *testing.B) {
 			builder.AddEdge("writer", "reader")
 			builder.AddEdge("reader", graph.EndNode)
 
-			compiled, err := builder.Compile()
+			compiled, err := builder.CompileMessageRunnable()
 			if err != nil {
 				b.Fatal(err)
 			}

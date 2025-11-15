@@ -33,7 +33,7 @@ func main() {
 		AddEdge(graph.StartNode, "echo").
 		AddEdge("echo", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		log.Fatalf("Failed to compile graph: %v", err)
 	}

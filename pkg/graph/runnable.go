@@ -72,3 +72,15 @@ type StateRunnable = Runnable[map[string]any, state.ExecutionResult]
 // StringRunnable processes text input and returns text output.
 // Useful for simple text-to-text transformations.
 type StringRunnable = Runnable[string, string]
+
+// StatefulRunnable extends Runnable with state access capabilities.
+// This interface is useful for tests and debugging that need to inspect graph state.
+type StatefulRunnable[I, O any] interface {
+	Runnable[I, O]
+
+	// State returns the state manager for inspection and testing.
+	State() StateManager
+
+	// CurrentSuperstep returns the current execution superstep.
+	CurrentSuperstep() int64
+}

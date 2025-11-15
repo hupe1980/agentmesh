@@ -3,13 +3,14 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // This example demonstrates time-travel debugging using the checkpoint API.
@@ -24,7 +25,7 @@ func main() {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Build a simple mathematical workflow
-	buildWorkflow := func() *graph.Compiled {
+	buildWorkflow := func() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
 		builder, err := graph.NewBuilder()
 		if err != nil {
 			panic(err)
@@ -65,7 +66,7 @@ func main() {
 		builder.AddEdge("add_ten", "multiply_three")
 		builder.AddEdge("multiply_three", graph.EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		if err != nil {
 			log.Fatal(err)
 		}

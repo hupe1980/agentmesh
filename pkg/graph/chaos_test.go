@@ -1,7 +1,6 @@
 package graph
 
 import (
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"errors"
 	"sync"
@@ -9,6 +8,8 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		builder.AddEdge(StartNode, "panicky")
 		builder.AddEdge("panicky", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		if err != nil {
 			t.Fatalf("Failed to compile: %v", err)
 		}
@@ -64,7 +65,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		builder.AddEdge(StartNode, "panicky")
 		builder.AddEdge("panicky", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		if err != nil {
 			t.Fatalf("Failed to compile: %v", err)
 		}
@@ -101,7 +102,7 @@ func TestNodePanicRecovery(t *testing.T) {
 		builder.AddEdge("panic1", EndNode)
 		builder.AddEdge("panic2", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		if err != nil {
 			t.Fatalf("Failed to compile: %v", err)
 		}
@@ -159,7 +160,7 @@ func TestContextCancellation(t *testing.T) {
 	builder.AddEdge(StartNode, "node")
 	builder.AddEdge("node", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestContextCancellation(t *testing.T) {
 func TestConcurrentInvoke(t *testing.T) {
 	// Create separate Compiled instances for true concurrent execution
 	builders := make([]*Builder, 10)
-	compileds := make([]*Compiled, 10)
+	compileds := make([]*Compiled[[]message.Message, state.ExecutionResult], 10)
 
 	for i := 0; i < 10; i++ {
 		builder, err := NewBuilder()
@@ -215,7 +216,7 @@ func TestConcurrentInvoke(t *testing.T) {
 		builders[i].AddEdge(StartNode, "test")
 		builders[i].AddEdge("test", EndNode)
 
-		compileds[i], err = builders[i].Compile()
+		compileds[i], err = builders[i].CompileMessageRunnable()
 		if err != nil {
 			t.Fatalf("Failed to compile graph %d: %v", i, err)
 		}
@@ -264,7 +265,7 @@ func TestLargeStateStress(t *testing.T) {
 	builder.AddEdge(StartNode, "stress")
 	builder.AddEdge("stress", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -306,7 +307,7 @@ func TestManyMessages(t *testing.T) {
 	builder.AddEdge(StartNode, "producer")
 	builder.AddEdge("producer", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -334,7 +335,7 @@ func TestNodeErrorPropagation(t *testing.T) {
 	builder.AddEdge(StartNode, "failing")
 	builder.AddEdge("failing", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -381,7 +382,7 @@ func TestRapidRetry(t *testing.T) {
 	builder.AddEdge(StartNode, "flaky")
 	builder.AddEdge("flaky", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -419,7 +420,7 @@ func TestDeadlineExceeded(t *testing.T) {
 	builder.AddEdge(StartNode, "delayed")
 	builder.AddEdge("delayed", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -468,7 +469,7 @@ func TestParallelNodeExecution(t *testing.T) {
 	builder.AddEdge("node1", EndNode)
 	builder.AddEdge("node2", EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

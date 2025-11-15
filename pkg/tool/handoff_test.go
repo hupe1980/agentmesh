@@ -1,12 +1,12 @@
 package tool
 
 import (
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -174,7 +174,7 @@ func TestIsValidResult(t *testing.T) {
 }
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled {
+func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled[[]message.Message, stateif.ExecutionResult] {
 	state, err := graph.NewStateManager(0)
 	require.NoError(t, err)
 	g, err := graph.NewGraph(state)
@@ -192,7 +192,7 @@ func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled {
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiledImpl, err := g.Compile()
 	require.NoError(t, err)
-	return compiled
+	return graph.NewCompiled[[]message.Message, stateif.ExecutionResult](compiledImpl)
 }

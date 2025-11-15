@@ -177,7 +177,7 @@ func main() {
 	builder.AddEdge("llm_call", "analyzer")
 	builder.AddEdge("analyzer", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		log.Fatalf("Failed to compile graph: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func TestNewSupervisorAgent_Basic(t *testing.T) {
@@ -40,15 +41,15 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 	// The supervisor will have a default system prompt but it won't appear
 	// in the initial state - it's sent with each model invocation.
 
-	// Type assert to access State() for testing
-	compiledGraph, ok := supervisor.(*graph.Compiled)
+	// Verify it implements StatefulRunnable
+	stateful, ok := supervisor.(graph.StatefulRunnable[[]message.Message, state.ExecutionResult])
 	if !ok {
-		t.Fatal("Expected supervisor to be *graph.Compiled")
+		t.Fatal("Expected supervisor to implement StatefulRunnable")
 	}
 
 	// Verify supervisor state is initialized
-	state := compiledGraph.State()
-	messages := state.MessagesSnapshot()
+	stateManager := stateful.State()
+	messages := stateManager.MessagesSnapshot()
 
 	// State should be empty initially (system prompt sent per-request)
 	if len(messages) != 0 {
@@ -118,15 +119,15 @@ func TestNewSupervisorAgent(t *testing.T) {
 		t.Fatal("Expected supervisor to be created")
 	}
 
-	// Type assert to access State() for testing
-	compiledGraph, ok := supervisor.(*graph.Compiled)
+	// Verify it implements StatefulRunnable
+	stateful, ok := supervisor.(graph.StatefulRunnable[[]message.Message, state.ExecutionResult])
 	if !ok {
-		t.Fatal("Expected supervisor to be *graph.Compiled")
+		t.Fatal("Expected supervisor to implement StatefulRunnable")
 	}
 
 	// Verify custom system prompt
-	state := compiledGraph.State()
-	events := state.MessagesSnapshot()
+	stateManager := stateful.State()
+	events := stateManager.MessagesSnapshot()
 
 	if len(events) > 0 {
 		if sysMsg, ok := events[0].Message.(*message.SystemMessage); ok {

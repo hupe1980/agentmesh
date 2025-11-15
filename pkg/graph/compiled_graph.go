@@ -18,7 +18,7 @@ import (
 
 // Structure defines the interface for accessing graph structure.
 // This interface decouples runtime components (graphRuntime, vertexScheduler, ConditionalEvaluator)
-// from the concrete Compiled type, enabling better testability and extensibility.
+// from the concrete compiled implementation, enabling better testability and extensibility.
 //
 // The interface provides read-only access to:
 //   - Node registry (nodes by name)
@@ -77,9 +77,9 @@ type Structure interface {
 	BootstrapScheduler(ctx context.Context, s *vertexScheduler)
 }
 
-// Compiled is an immutable, validated graph ready for execution.
+// compiledImpl is an immutable, validated graph ready for execution.
 // It contains the topology (nodes, edges, conditionals) and runtime execution state.
-// Compiled is safe for concurrent use across multiple goroutines.
+// compiledImpl is safe for concurrent use across multiple goroutines.
 //
 // Concurrency Model:
 //   - Multiple concurrent Run() calls are allowed (each gets independent state)
@@ -103,15 +103,20 @@ type Structure interface {
 //   - Never acquire invokeMu while holding runtimeMu
 //   - Never call external callbacks while holding any mutex
 //
-// Compiled implements the MessageRunnable interface, enabling type-safe
-// composition with other agents and graphs. All agent constructors
-// (NewReActAgent, NewSupervisorAgent, NewRAGAgent) return MessageRunnable.
+// Architecture Note:
 //
-// Key Methods:
-//   - Run: Execute graph and return an iterator over execution events
+// This is the internal implementation that handles all graph execution logic.
+// User-facing code interacts with Compiled[I, O], which is a generic wrapper
+// providing type-safe input/output conversion.
 //
-// Created by Builder.Compile() after graph construction.
-type Compiled struct {
+// Why two layers?
+//  1. Go limitation: Methods can't have type parameters, so we need standalone Compile[I,O]()
+//  2. Agent APIs: Agents return compiledImpl as MessageRunnable without exposing generics
+//  3. Internal sharing: Components work with concrete types, no forced generics
+//  4. Separation of concerns: Type conversion (wrapper) vs execution (this implementation)
+//
+// See GENERICS.md for detailed rationale.
+type compiledImpl struct {
 	stateManager      StateManager
 	executor          Executor // Execution strategy (PregelExecutor, SimpleGraphExecutor, etc.)
 	runtime           *executionState
@@ -129,10 +134,10 @@ type Compiled struct {
 	endKey            string
 }
 
-// Compile-time check that Compiled implements MessageRunnable.
-var _ MessageRunnable = (*Compiled)(nil)
+// Compile-time check that compiledImpl implements MessageRunnable.
+var _ MessageRunnable = (*compiledImpl)(nil)
 
-func (cg *Compiled) hasExecutable(name string) bool {
+func (cg *compiledImpl) hasExecutable(name string) bool {
 	if name == "" {
 		return false
 	}
@@ -142,7 +147,7 @@ func (cg *Compiled) hasExecutable(name string) bool {
 	return false
 }
 
-func (cg *Compiled) markCompleted(name string) {
+func (cg *compiledImpl) markCompleted(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -151,7 +156,7 @@ func (cg *Compiled) markCompleted(name string) {
 	}
 }
 
-func (cg *Compiled) markPaused(name string) {
+func (cg *compiledImpl) markPaused(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -160,7 +165,7 @@ func (cg *Compiled) markPaused(name string) {
 	}
 }
 
-func (cg *Compiled) clearPaused(name string) {
+func (cg *compiledImpl) clearPaused(name string) {
 	cg.runtimeMu.RLock()
 	runtime := cg.runtime
 	cg.runtimeMu.RUnlock()
@@ -169,7 +174,7 @@ func (cg *Compiled) clearPaused(name string) {
 	}
 }
 
-func (cg *Compiled) setCurrentSuperstep(step int64) {
+func (cg *compiledImpl) setCurrentSuperstep(step int64) {
 	cg.runtimeMu.Lock()
 	defer cg.runtimeMu.Unlock()
 	cg.runtime = ensureExecutionState(cg.runtime)
@@ -177,7 +182,7 @@ func (cg *Compiled) setCurrentSuperstep(step int64) {
 }
 
 // CurrentSuperstep returns the current execution superstep.
-func (cg *Compiled) CurrentSuperstep() int64 {
+func (cg *compiledImpl) CurrentSuperstep() int64 {
 	cg.runtimeMu.RLock()
 	defer cg.runtimeMu.RUnlock()
 	if cg.runtime == nil {
@@ -188,14 +193,14 @@ func (cg *Compiled) CurrentSuperstep() int64 {
 
 // State returns the current graph state (for testing and diagnostics).
 // In v2.0, this returns the StateManager interface instead of *State.
-func (cg *Compiled) State() StateManager {
+func (cg *compiledImpl) State() StateManager {
 	return cg.stateManager
 }
 
 // topology creates an ExecutorTopology snapshot for executors.
 // This provides a clean abstraction of the graph structure without exposing
 // internal Compiled fields.
-func (cg *Compiled) topology() *ExecutorTopology {
+func (cg *compiledImpl) topology() *ExecutorTopology {
 	return &ExecutorTopology{
 		Nodes:             cg.nodes,
 		Edges:             cg.edges,
@@ -242,7 +247,7 @@ func createInstrumentation(options runOptions) *Instrumentation {
 	return newInstrumentation(options.metricsProvider, options.tracer)
 }
 
-func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) {
+func (cg *compiledImpl) bootstrapScheduler(ctx context.Context, s *vertexScheduler) {
 	cg.runtimeMu.Lock()
 	cg.runtime = ensureExecutionState(cg.runtime)
 	runtime := cg.runtime
@@ -309,7 +314,7 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 // Or collect all results:
 //
 //	results, err := Collect(compiled.Run(ctx, messages))
-func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[state.ExecutionResult, error] {
+func (cg *compiledImpl) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[state.ExecutionResult, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
@@ -334,7 +339,7 @@ func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns 
 // ApplyState synchronously merges values and messages into the committed graph state.
 // Intended for external systems (e.g., human-in-the-loop workflows) to inject
 // updates between supersteps without bypassing the staged execution pipeline.
-func (cg *Compiled) ApplyState(values map[string]any, messages []state.ExecutionResult) {
+func (cg *compiledImpl) ApplyState(values map[string]any, messages []state.ExecutionResult) {
 	if cg == nil || cg.stateManager == nil {
 		return
 	}
@@ -344,7 +349,7 @@ func (cg *Compiled) ApplyState(values map[string]any, messages []state.Execution
 // AsNode wraps this Compiled as a Node that can be embedded in another graph.
 // This enables subgraph composition and modular workflow construction.
 // The subgraph's state is synchronized with the parent state before execution.
-func (cg *Compiled) AsNode(name string) *Node {
+func (cg *compiledImpl) AsNode(name string) *Node {
 	return &Node{
 		Name: name,
 		RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
@@ -383,7 +388,7 @@ func (cg *Compiled) AsNode(name string) *Node {
 // AsNodeWithStateMapping wraps this Compiled as a Node with custom state mapping.
 // mapInput transforms parent state into subgraph input state.
 // mapOutput transforms subgraph output state into parent updates.
-func (cg *Compiled) AsNodeWithStateMapping(
+func (cg *compiledImpl) AsNodeWithStateMapping(
 	name string,
 	mapInput func(state.Reader) (map[string]any, []state.ExecutionResult),
 	mapOutput func(state.Reader) (map[string]any, []state.ExecutionResult),
@@ -804,81 +809,381 @@ func (ce *ConditionalEvaluator) BootstrapOpenGates(vertices []string) {
 // =============================================================================
 
 // Nodes returns the node registry map.
-func (cg *Compiled) Nodes() map[string]*Node {
+func (cg *compiledImpl) Nodes() map[string]*Node {
 	return cg.nodes
 }
 
 // Outgoing returns the outgoing edges map.
-func (cg *Compiled) Outgoing() map[string][]string {
+func (cg *compiledImpl) Outgoing() map[string][]string {
 	return cg.outgoing
 }
 
 // Incoming returns the incoming edges count map.
-func (cg *Compiled) Incoming() map[string]int {
+func (cg *compiledImpl) Incoming() map[string]int {
 	return cg.incoming
 }
 
 // ConditionalByFrom returns conditional edges grouped by source node.
-func (cg *Compiled) ConditionalByFrom() map[string][]ConditionalEdges {
+func (cg *compiledImpl) ConditionalByFrom() map[string][]ConditionalEdges {
 	return cg.conditionalByFrom
 }
 
 // ConditionalGate returns the conditional gate map.
-func (cg *Compiled) ConditionalGate() map[string]bool {
+func (cg *compiledImpl) ConditionalGate() map[string]bool {
 	return cg.conditionalGate
 }
 
 // NodeNames returns the sorted list of node names.
-func (cg *Compiled) NodeNames() []string {
+func (cg *compiledImpl) NodeNames() []string {
 	return cg.nodeNames
 }
 
 // StartKey returns the start node name.
-func (cg *Compiled) StartKey() string {
+func (cg *compiledImpl) StartKey() string {
 	return cg.startKey
 }
 
 // EndKey returns the end node name.
-func (cg *Compiled) EndKey() string {
+func (cg *compiledImpl) EndKey() string {
 	return cg.endKey
 }
 
 // StateManager returns the graph's state manager.
-func (cg *Compiled) StateManager() StateManager {
+func (cg *compiledImpl) StateManager() StateManager {
 	return cg.stateManager
 }
 
 // HasExecutable checks if a node with the given name exists.
-func (cg *Compiled) HasExecutable(name string) bool {
+func (cg *compiledImpl) HasExecutable(name string) bool {
 	return cg.hasExecutable(name)
 }
 
 // MarkCompleted marks a node as completed in the execution state.
-func (cg *Compiled) MarkCompleted(name string) {
+func (cg *compiledImpl) MarkCompleted(name string) {
 	cg.markCompleted(name)
 }
 
 // MarkPaused marks a node as paused in the execution state.
-func (cg *Compiled) MarkPaused(name string) {
+func (cg *compiledImpl) MarkPaused(name string) {
 	cg.markPaused(name)
 }
 
 // ClearPaused clears the paused state for a node.
-func (cg *Compiled) ClearPaused(name string) {
+func (cg *compiledImpl) ClearPaused(name string) {
 	cg.clearPaused(name)
 }
 
 // SetCurrentSuperstep sets the current execution superstep.
-func (cg *Compiled) SetCurrentSuperstep(step int64) {
+func (cg *compiledImpl) SetCurrentSuperstep(step int64) {
 	cg.setCurrentSuperstep(step)
 }
 
-// CreateCheckpoint creates a checkpoint snapshot.
-func (cg *Compiled) CreateCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
+// CreateCheckpoint creates a checkpoint snapshot (delegates to createCheckpoint implementation in options.go).
+func (cg *compiledImpl) CreateCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
+	// The actual implementation is in options.go as compiledImpl.createCheckpoint
+	// This public method provides Structure interface compatibility
 	return cg.createCheckpoint(runID, superstep, metadata)
 }
 
 // BootstrapScheduler initializes the scheduler with persisted state.
-func (cg *Compiled) BootstrapScheduler(ctx context.Context, s *vertexScheduler) {
+func (cg *compiledImpl) BootstrapScheduler(ctx context.Context, s *vertexScheduler) {
 	cg.bootstrapScheduler(ctx, s)
+}
+
+// Compiled is a generic compiled graph providing end-to-end type safety.
+//
+// Architecture:
+//
+//	Compiled[I, O] is a thin type-safe wrapper around compiledImpl.
+//	It provides compile-time type checking for inputs/outputs while delegating
+//	all execution logic to the internal implementation.
+//
+//	Why this design? See GENERICS.md "Architecture Analysis: Why Two Layers?"
+//	TL;DR: Go's type system requires this pattern for clean APIs with generic methods.
+//
+// Type Parameters:
+//   - I: Input type passed to Run(). Common types:
+//   - []message.Message (for message-based agents)
+//   - map[string]any (for state-based graphs)
+//   - string (for simple text processing)
+//   - O: Output type returned by Run(). Common types:
+//   - state.ExecutionResult (for agent responses)
+//   - message.Message (for single message output)
+//   - string (for text output)
+//
+// Compiled implements the Runnable[I, O] interface with full compile-time type checking.
+//
+// Example usage:
+//
+//	// Common case: Use the helper method
+//	builder := graph.NewBuilder()
+//	// ... configure graph
+//	compiled, err := builder.CompileMessageRunnable()
+//
+//	// Custom types: Use standalone generic function
+//	compiled, err := graph.Compile[MyInput, MyOutput](builder)
+//
+//	// Type-safe execution - no type assertions needed
+//	messages := []message.Message{message.NewUserMessage("Hello")}
+//	for result, err := range compiled.Run(ctx, messages) {
+//	    // result is state.ExecutionResult (not any)
+//	}
+//
+// Thread Safety:
+//
+//	Compiled is safe for concurrent use. Multiple goroutines can call
+//	Run() simultaneously - each execution gets independent state.
+type Compiled[I, O any] struct {
+	inner *compiledImpl // Internal implementation
+
+	// Type conversion functions
+	inputConverter  func(I) ([]message.Message, error)
+	outputConverter func(state.ExecutionResult) (O, error)
+}
+
+// Run executes the graph with the given input and returns a type-safe iterator.
+// Unlike Compiled.Run(), this method requires no type assertions on input or output.
+//
+// The input type I is enforced at compile time, eliminating runtime type errors.
+// The output type O is guaranteed by the type system.
+//
+// Example:
+//
+//	compiled, _ := builder.Compile[[]message.Message, state.ExecutionResult]()
+//	messages := []message.Message{...}
+//	for result, err := range compiled.Run(ctx, messages) {
+//	    if err != nil {
+//	        return err
+//	    }
+//	    // result is state.ExecutionResult - no casting needed!
+//	    fmt.Println(result.Messages)
+//	}
+func (cg *Compiled[I, O]) Run(ctx context.Context, input I, optFns ...RunOption) iter.Seq2[O, error] {
+	return func(yield func(O, error) bool) {
+		// Convert input using type-safe converter
+		messages, err := cg.inputConverter(input)
+		if err != nil {
+			var zero O
+			yield(zero, fmt.Errorf("input conversion failed: %w", err))
+			return
+		}
+
+		// Execute inner compiled graph
+		for result, err := range cg.inner.Run(ctx, messages, optFns...) {
+			if err != nil {
+				var zero O
+				if !yield(zero, err) {
+					return
+				}
+				continue
+			}
+
+			// Convert output using type-safe converter
+			output, err := cg.outputConverter(result)
+			if err != nil {
+				var zero O
+				if !yield(zero, fmt.Errorf("output conversion failed: %w", err)) {
+					return
+				}
+				continue
+			}
+
+			if !yield(output, nil) {
+				return
+			}
+		}
+	}
+}
+
+// State returns the current graph state manager.
+// This provides access to state for testing and diagnostics.
+func (cg *Compiled[I, O]) State() StateManager {
+	return cg.inner.State()
+}
+
+// CurrentSuperstep returns the current execution superstep.
+func (cg *Compiled[I, O]) CurrentSuperstep() int64 {
+	return cg.inner.CurrentSuperstep()
+}
+
+// ApplyState synchronously merges values and messages into the committed graph state.
+func (cg *Compiled[I, O]) ApplyState(values map[string]any, messages []state.ExecutionResult) {
+	cg.inner.ApplyState(values, messages)
+}
+
+// AsNode wraps this CompiledGeneric as a Node for subgraph composition.
+func (cg *Compiled[I, O]) AsNode(name string) *Node {
+	return cg.inner.AsNode(name)
+}
+
+// AsNodeWithStateMapping wraps this CompiledGeneric as a Node with custom state mapping.
+func (cg *Compiled[I, O]) AsNodeWithStateMapping(
+	name string,
+	mapInput func(state.Reader) (map[string]any, []state.ExecutionResult),
+	mapOutput func(state.Reader) (map[string]any, []state.ExecutionResult),
+) *Node {
+	return cg.inner.AsNodeWithStateMapping(name, mapInput, mapOutput)
+}
+
+// Nodes returns the node registry (implements Structure interface).
+func (cg *Compiled[I, O]) Nodes() map[string]*Node {
+	return cg.inner.Nodes()
+}
+
+// Outgoing returns outgoing edges (implements Structure interface).
+func (cg *Compiled[I, O]) Outgoing() map[string][]string {
+	return cg.inner.Outgoing()
+}
+
+// Incoming returns incoming edge counts (implements Structure interface).
+func (cg *Compiled[I, O]) Incoming() map[string]int {
+	return cg.inner.Incoming()
+}
+
+// ConditionalByFrom returns conditional edges grouped by source (implements Structure interface).
+func (cg *Compiled[I, O]) ConditionalByFrom() map[string][]ConditionalEdges {
+	return cg.inner.ConditionalByFrom()
+}
+
+// ConditionalGate returns conditional gate status (implements Structure interface).
+func (cg *Compiled[I, O]) ConditionalGate() map[string]bool {
+	return cg.inner.ConditionalGate()
+}
+
+// NodeNames returns sorted node names (implements Structure interface).
+func (cg *Compiled[I, O]) NodeNames() []string {
+	return cg.inner.NodeNames()
+}
+
+// StartKey returns the start node name (implements Structure interface).
+func (cg *Compiled[I, O]) StartKey() string {
+	return cg.inner.StartKey()
+}
+
+// EndKey returns the end node name (implements Structure interface).
+func (cg *Compiled[I, O]) EndKey() string {
+	return cg.inner.EndKey()
+}
+
+// StateManager returns the state manager (implements Structure interface).
+func (cg *Compiled[I, O]) StateManager() StateManager {
+	return cg.inner.StateManager()
+}
+
+// HasExecutable checks if a node exists (implements Structure interface).
+func (cg *Compiled[I, O]) HasExecutable(name string) bool {
+	return cg.inner.HasExecutable(name)
+}
+
+// MarkCompleted marks a node as completed (implements Structure interface).
+func (cg *Compiled[I, O]) MarkCompleted(name string) {
+	cg.inner.MarkCompleted(name)
+}
+
+// MarkPaused marks a node as paused (implements Structure interface).
+func (cg *Compiled[I, O]) MarkPaused(name string) {
+	cg.inner.MarkPaused(name)
+}
+
+// ClearPaused clears the paused state (implements Structure interface).
+func (cg *Compiled[I, O]) ClearPaused(name string) {
+	cg.inner.ClearPaused(name)
+}
+
+// SetCurrentSuperstep sets the superstep (implements Structure interface).
+func (cg *Compiled[I, O]) SetCurrentSuperstep(step int64) {
+	cg.inner.SetCurrentSuperstep(step)
+}
+
+// CreateCheckpoint creates a checkpoint snapshot (implements Structure interface).
+func (cg *Compiled[I, O]) CreateCheckpoint(runID string, superstep int64, metadata map[string]any) *checkpoint.Checkpoint {
+	return cg.inner.CreateCheckpoint(runID, superstep, metadata)
+}
+
+// BootstrapScheduler initializes the scheduler (implements Structure interface).
+func (cg *Compiled[I, O]) BootstrapScheduler(ctx context.Context, s *vertexScheduler) {
+	cg.inner.BootstrapScheduler(ctx, s)
+}
+
+// Compile-time checks that Compiled[I, O] implements Runnable[I, O] for common types.
+// These ensure the interface is correctly implemented during compilation.
+var (
+	_ MessageRunnable = (*Compiled[[]message.Message, state.ExecutionResult])(nil)
+	_ StateRunnable   = (*Compiled[map[string]any, state.ExecutionResult])(nil)
+	_ StringRunnable  = (*Compiled[string, string])(nil)
+
+	// Verify StatefulRunnable implementation
+	_ StatefulRunnable[[]message.Message, state.ExecutionResult] = (*Compiled[[]message.Message, state.ExecutionResult])(nil)
+)
+
+// NewCompiled creates a Compiled[I, O] from an internal compiled implementation.
+// This is used internally by compilation functions to wrap the implementation with type safety.
+func NewCompiled[I, O any](inner *compiledImpl) *Compiled[I, O] {
+	return &Compiled[I, O]{
+		inner:           inner,
+		inputConverter:  createInputConverter[I](),
+		outputConverter: createOutputConverter[O](),
+	}
+}
+
+// =============================================================================
+// Introspection Methods - Delegate to inner implementation
+// =============================================================================
+
+// GetNodes returns the list of all node names in the graph.
+func (cg *Compiled[I, O]) GetNodes() []string {
+	return cg.inner.GetNodes()
+}
+
+// GetNodeInfo returns detailed information about a specific node.
+func (cg *Compiled[I, O]) GetNodeInfo(name string) (*NodeInfo, error) {
+	return cg.inner.GetNodeInfo(name)
+}
+
+// GetAllNodeInfo returns information about all nodes in the graph.
+func (cg *Compiled[I, O]) GetAllNodeInfo() []NodeInfo {
+	return cg.inner.GetAllNodeInfo()
+}
+
+// GetEdges returns information about all edges in the graph.
+func (cg *Compiled[I, O]) GetEdges() []EdgeInfo {
+	return cg.inner.GetEdges()
+}
+
+// GetTopology returns the complete graph topology.
+func (cg *Compiled[I, O]) GetTopology() *Topology {
+	return cg.inner.GetTopology()
+}
+
+// GetMetrics returns graph metrics.
+func (cg *Compiled[I, O]) GetMetrics() *Metrics {
+	return cg.inner.GetMetrics()
+}
+
+// GetDependencies returns the dependencies for a specific node.
+func (cg *Compiled[I, O]) GetDependencies(name string) (*NodeDependencies, error) {
+	return cg.inner.GetDependencies(name)
+}
+
+// GetExecutionPath returns possible execution paths through the graph.
+func (cg *Compiled[I, O]) GetExecutionPath(maxPaths int) [][]string {
+	return cg.inner.GetExecutionPath(maxPaths)
+}
+
+// GenerateMermaidFlowchart generates a Mermaid flowchart diagram of the graph.
+func (cg *Compiled[I, O]) GenerateMermaidFlowchart(direction string) string {
+	return cg.inner.GenerateMermaidFlowchart(direction)
+}
+
+// Test helpers - delegate to inner for test-only methods
+func (cg *Compiled[I, O]) calculateDepth(name string) int {
+	return cg.inner.calculateDepth(name)
+}
+
+func (cg *Compiled[I, O]) findAllPredecessors(name string) []string {
+	return cg.inner.findAllPredecessors(name)
+}
+
+func (cg *Compiled[I, O]) findAllSuccessors(name string) []string {
+	return cg.inner.findAllSuccessors(name)
 }

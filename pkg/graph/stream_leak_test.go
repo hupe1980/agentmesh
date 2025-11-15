@@ -36,7 +36,7 @@ func TestStream_NoLeakOnEarlyTermination(t *testing.T) {
 		})
 		builder.AddEdge(StartNode, name)
 	}
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	// Start streaming but only read one event
@@ -108,7 +108,7 @@ func TestStream_CancelStopsExecution(t *testing.T) {
 		}
 	}
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

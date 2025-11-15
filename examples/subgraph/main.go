@@ -3,13 +3,14 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
 	"maps"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Example: Multi-stage data processing pipeline using subgraphs
@@ -20,24 +21,27 @@ func main() {
 
 	// Create validation subgraph
 	validationSub := createValidationSubgraph()
-	compiledValidation, err := validationSub.Compile()
+	compiledValidationImpl, err := validationSub.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile validation subgraph: %v", err)
 	}
+	compiledValidation := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledValidationImpl)
 
 	// Create enrichment subgraph
 	enrichmentSub := createEnrichmentSubgraph()
-	compiledEnrichment, err := enrichmentSub.Compile()
+	compiledEnrichmentImpl, err := enrichmentSub.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile enrichment subgraph: %v", err)
 	}
+	compiledEnrichment := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledEnrichmentImpl)
 
 	// Create analysis subgraph with state mapping
 	analysisSub := createAnalysisSubgraph()
-	compiledAnalysis, err := analysisSub.Compile()
+	compiledAnalysisImpl, err := analysisSub.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile analysis subgraph: %v", err)
 	}
+	compiledAnalysis := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledAnalysisImpl)
 
 	// Create main pipeline
 	pipeline := createPipeline(compiledValidation, compiledEnrichment, compiledAnalysis)
@@ -45,6 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to compile pipeline: %v", err)
 	}
+	compiledPipeline := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiled)
 
 	// Execute pipeline with sample data
 	initialState := map[string]any{
@@ -55,19 +60,19 @@ func main() {
 		},
 	}
 
-	compiled.ApplyState(initialState, nil)
+	compiledPipeline.ApplyState(initialState, nil)
 
-	_, err = graph.Last(compiled.Run(ctx, nil))
+	_, err = graph.Last(compiledPipeline.Run(ctx, nil))
 	if err != nil {
 		log.Fatalf("Pipeline execution failed: %v", err)
 	}
 
 	// Print results
 	fmt.Println("\n=== Pipeline Results ===")
-	fmt.Printf("Valid: %v\n", compiled.State().Get("valid"))
-	fmt.Printf("Enriched Data: %+v\n", compiled.State().Get("enriched_data"))
-	fmt.Printf("Analysis: %+v\n", compiled.State().Get("analysis"))
-	fmt.Printf("Report: %s\n", compiled.State().Get("report"))
+	fmt.Printf("Valid: %v\n", compiledPipeline.State().Get("valid"))
+	fmt.Printf("Enriched Data: %+v\n", compiledPipeline.State().Get("enriched_data"))
+	fmt.Printf("Analysis: %+v\n", compiledPipeline.State().Get("analysis"))
+	fmt.Printf("Report: %s\n", compiledPipeline.State().Get("report"))
 }
 
 // createValidationSubgraph validates input data
@@ -243,7 +248,7 @@ func createAnalysisSubgraph() *graph.Graph {
 }
 
 // createPipeline assembles subgraphs into a processing pipeline
-func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
+func createPipeline(validation, enrichment, analysis *graph.Compiled[[]message.Message, graphstate.ExecutionResult]) *graph.Graph {
 	state, err := graph.NewStateManager(0)
 	if err != nil {
 		panic(err)

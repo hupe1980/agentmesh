@@ -174,7 +174,7 @@ func TestGraph_DeterministicExecution(t *testing.T) {
 		builder.AddEdge("node1", EndNode)
 		builder.AddEdge("node2", EndNode)
 
-		compiled, err := builder.Compile()
+		compiled, err := builder.CompileMessageRunnable()
 		if err != nil {
 			t.Fatalf("Failed to compile: %v", err)
 		}

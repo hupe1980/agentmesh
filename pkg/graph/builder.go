@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -292,10 +293,19 @@ func (b *Builder) Parallel(source string, tasks []string, destination string) *B
 	return b
 }
 
-// AddSubgraph embeds a compiled subgraph as a node.
-// Convenience method wrapping Compiled.AsNode().
-func (b *Builder) AddSubgraph(name string, subgraph *Compiled) *Builder {
-	return b.AddNode(subgraph.AsNode(name))
+// AddSubgraphNode embeds a compiled subgraph as a node.
+// Convenience method that takes a Node created from Compiled[I, O].AsNode().
+//
+// Example:
+//
+//	subgraph, _ := subBuilder.Compile[[]message.Message, state.ExecutionResult]()
+//	builder.AddSubgraphNode("my_subgraph", subgraph.AsNode("my_subgraph"))
+//
+// Or more simply:
+//
+//	builder.AddNode(subgraph.AsNode("my_subgraph"))
+func (b *Builder) AddSubgraphNode(node *Node) *Builder {
+	return b.AddNode(node)
 }
 
 // Graph returns the underlying graph being built.
@@ -304,19 +314,86 @@ func (b *Builder) Graph() *Graph {
 	return b.graph
 }
 
-// Compile validates and compiles the graph, returning a Compiled.
-// Returns any accumulated error from previous builder operations.
-func (b *Builder) Compile() (*Compiled, error) {
+// CompileMessageRunnable compiles the graph with the default MessageRunnable type.
+// This is a convenience method equivalent to Compile[[]message.Message, state.ExecutionResult](b).
+// Use this for agent-based graphs that work with messages.
+func (b *Builder) CompileMessageRunnable() (*Compiled[[]message.Message, state.ExecutionResult], error) {
+	return Compile[[]message.Message, state.ExecutionResult](b)
+}
+
+// MustCompileMessageRunnable is like CompileMessageRunnable but panics on error.
+func (b *Builder) MustCompileMessageRunnable() *Compiled[[]message.Message, state.ExecutionResult] {
+	return MustCompile[[]message.Message, state.ExecutionResult](b)
+}
+
+// Compile creates a generic compiled graph with type-safe input/output handling.
+//
+// Why a standalone function?
+//
+//	Go methods cannot have type parameters. To provide generic compilation,
+//	we need a standalone function. This is a language limitation, not a design choice.
+//
+//	// ❌ NOT POSSIBLE: Methods can't have type parameters
+//	func (b *Builder) Compile[I, O any]() (*Compiled[I, O], error)
+//
+//	// ✅ REQUIRED: Must be standalone function
+//	func Compile[I, O any](b *Builder) (*Compiled[I, O], error)
+//
+// For convenience, use builder.CompileMessageRunnable() for the common case
+// ([]message.Message → state.ExecutionResult).
+//
+// Type Parameters:
+//   - I: Input type for Run(). Common types:
+//   - []message.Message (for message-based agents)
+//   - map[string]any (for state-based graphs)
+//   - string (for simple text processing)
+//   - O: Output type from Run(). Common types:
+//   - state.ExecutionResult (for agent responses)
+//   - message.Message (for single message output)
+//   - string (for text output)
+//
+// The function uses type-specific converters to transform between user types and
+// internal graph representation. For standard types ([]message.Message, state.ExecutionResult),
+// converters are identity functions with zero overhead.
+//
+// Example usage:
+//
+//	builder, _ := graph.NewBuilder()
+//	// ... configure graph
+//
+//	// Common case: Use the helper
+//	compiled, err := builder.CompileMessageRunnable()
+//
+//	// Custom types: Use this generic function
+//	compiled, err := graph.Compile[MyInput, MyOutput](builder)
+//
+//	// Message-based agent
+//	compiled, err := graph.Compile[[]message.Message, state.ExecutionResult](builder)
+//
+//	// Simple text processing
+//	compiled, err := graph.Compile[string, string](builder)
+//
+// Thread Safety:
+//
+//	The returned Compiled is safe for concurrent use.
+func Compile[I, O any](b *Builder) (*Compiled[I, O], error) {
 	if b.err != nil {
 		return nil, b.err
 	}
-	return b.graph.Compile()
+
+	// Compile inner graph
+	inner, err := b.graph.Compile()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCompiled[I, O](inner), nil
 }
 
 // MustCompile is like Compile but panics on error.
 // Useful for static graph construction where errors indicate programmer mistakes.
-func (b *Builder) MustCompile() *Compiled {
-	compiled, err := b.Compile()
+func MustCompile[I, O any](b *Builder) *Compiled[I, O] {
+	compiled, err := Compile[I, O](b)
 	if err != nil {
 		panic(err)
 	}

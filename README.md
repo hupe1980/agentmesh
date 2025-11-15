@@ -480,13 +480,20 @@ builder.AddEdge(graph.StartNode, "step1")
 builder.AddEdge("step1", "step2")
 builder.AddEdge("step2", graph.EndNode)
 
-// Compile and run
-compiled, err := builder.Compile()
+// Compile with type-safe API (Go 1.24+ generics)
+compiled, err := builder.CompileMessageRunnable()
 if err != nil {
     log.Fatal(err)
 }
-events, _ := graph.Collect(compiled.Run(context.Background(), initialMessages))
-messages := graph.ExtractMessages(events)
+
+// Run with type-safe results (no casting needed)
+for result, err := range compiled.Run(context.Background(), initialMessages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // result is state.ExecutionResult - fully typed!
+    fmt.Println(result.Messages)
+}
 ```
 
 ### 🔄 Pregel-Style Execution
@@ -572,7 +579,7 @@ executor := graph.NewPregelExecutor(
     graph.WithPregelMaxIterations(1000),
 )
 g.WithExecutor(executor)
-compiled, _ := g.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 ```
 
 ### ⚙️ Pregel Executor Configuration
@@ -610,15 +617,21 @@ executor := graph.NewPregelExecutor(
 )
 
 // Apply executor to graph
-g := graph.New()
+builder := graph.NewBuilder()
 // ... build graph ...
-g.WithExecutor(executor)
-compiled, _ := g.Compile()
+builder.WithExecutor(executor)
+compiled, _ := builder.CompileMessageRunnable()
 
 // Access aggregated values after execution
-result, _ := graph.Last(compiled.Run(ctx, initialMessages))
-totalCost := result.Aggregates["total_cost"]  // Sum across all nodes
-avgConf := result.Aggregates["avg_confidence"] // Average confidence
+var lastResult state.ExecutionResult
+for result, err := range compiled.Run(ctx, initialMessages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    lastResult = result
+}
+totalCost := lastResult.Aggregates["total_cost"]  // Sum across all nodes
+avgConf := lastResult.Aggregates["avg_confidence"] // Average confidence
 ```
 
 **Available Aggregators:**
@@ -675,23 +688,33 @@ import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 // Create checkpointer
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-// Compile graph
-compiled, _ := builder.Compile()
+// Compile graph (type-safe)
+compiled, _ := builder.CompileMessageRunnable()
 
 // Execute - state is automatically saved
 runID := "conversation-123"
-events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
+for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
     graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(result.Messages)
+}
 
 // Resume from checkpoint after failure
-events, _ = graph.Collect(compiled.Run(ctx, initialMessages,
+for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
     graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(result.Messages)
+}
 ```
 
 ### 🕰️ Time Travel Debugging
@@ -975,15 +998,20 @@ metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
 // Automatic instrumentation - structured logs throughout execution!
-events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
+for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithLogger(logger),          // Structured logging (JSON/text)
     graph.WithTracer(traceProvider),   // Distributed tracing
     graph.WithMetrics(metricsProvider), // Metrics collection
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Process result
+}
 ```
 
 
-### �📊 Observability
+### 📊 Observability
 
 Built-in OpenTelemetry integration:
 
@@ -1001,11 +1029,16 @@ metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
 // Automatic instrumentation - structured logs throughout execution!
-events, _ := graph.Collect(compiled.Run(ctx, initialMessages,
+for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithLogger(logger),          // Structured logging (JSON/text)
     graph.WithTracer(traceProvider),   // Distributed tracing
     graph.WithMetrics(metricsProvider), // Metrics collection
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Process result
+}
 ```
 
 **Automatically Tracked:**
@@ -1271,14 +1304,13 @@ result, err := weatherTool.Call(ctx, `{"location": "Boston"}`)
 result, err := node.Run(ctx, state)
 
 // Graphs use Run() - high-level streaming API (returns iterator)
-seq := compiled.Run(ctx, initialMessages)
-for result, err := range seq {
-    // handle result and error
+for result, err := range compiled.Run(ctx, initialMessages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // result is state.ExecutionResult - fully typed!
+    fmt.Println(result.Messages)
 }
-
-// Helper: Collect all results for blocking-style execution
-results, err := graph.Collect(compiled.Run(ctx, initialMessages))
-messages := graph.ExtractMessages(results)
 
 // Executors use Execute() - strategy implementation
 result, err := executor.Execute(ctx, messages, options)

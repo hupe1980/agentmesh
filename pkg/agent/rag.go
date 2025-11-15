@@ -125,7 +125,13 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	builder.AddEdge("retrieve", "generate")
 	builder.AddEdge("generate", graph.EndNode)
 
-	return builder.Compile()
+	// Compile with generic type safety
+	compiled, err := graph.Compile[[]message.Message, executionResult](builder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile graph: %w", err)
+	}
+
+	return compiled, nil
 }
 
 // ragOptions holds configuration for RAG agents.

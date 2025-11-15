@@ -3,7 +3,6 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -188,7 +189,7 @@ func runDemo(ctx context.Context) {
 	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *graph.Compiled {
+func buildWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
 	builder, err := graph.NewBuilder()
 	if err != nil {
 		panic(err)
@@ -223,14 +224,14 @@ func buildWorkflow() *graph.Compiled {
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}
 	return compiled
 }
 
-func buildFailingWorkflow() *graph.Compiled {
+func buildFailingWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
 	builder, err := graph.NewBuilder()
 	if err != nil {
 		panic(err)
@@ -259,11 +260,11 @@ func buildFailingWorkflow() *graph.Compiled {
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, _ := builder.Compile()
+	compiled, _ := builder.CompileMessageRunnable()
 	return compiled
 }
 
-func buildFixedWorkflow() *graph.Compiled {
+func buildFixedWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
 	builder, err := graph.NewBuilder()
 	if err != nil {
 		panic(err)
@@ -295,6 +296,6 @@ func buildFixedWorkflow() *graph.Compiled {
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, _ := builder.Compile()
+	compiled, _ := builder.CompileMessageRunnable()
 	return compiled
 }

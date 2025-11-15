@@ -424,7 +424,7 @@ Persist memory alongside graph state:
 mem.Store(ctx, sessionID, messages)
 
 // Also checkpoint for resumability
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 
 seq := compiled.Run(ctx, messages,
     graph.WithRunID(sessionID),

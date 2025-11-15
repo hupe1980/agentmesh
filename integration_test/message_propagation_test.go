@@ -66,7 +66,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	builder.AddEdge("node_a", "node_b")
 	builder.AddEdge("node_b", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	// Execute the graph
@@ -136,7 +136,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	builder.AddEdge("parallel_b", "aggregator")
 	builder.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -218,7 +218,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	builder.AddEdge("node_2", "node_3")
 	builder.AddEdge("node_3", graph.EndNode)
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	ctx := context.Background()

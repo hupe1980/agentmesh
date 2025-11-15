@@ -84,7 +84,7 @@ func main() {
 	builder.AddEdge("aggregator", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		log.Fatal(err)
 	}

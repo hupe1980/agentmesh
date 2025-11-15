@@ -1,9 +1,10 @@
 package graph
 
 import (
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
+
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 		}).
 		AddEdge(StartNode, "increment").
 		AddEdge("increment", EndNode).
-		Compile()
+		CompileMessageRunnable()
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
@@ -59,7 +60,7 @@ func TestBuilder_WithMaxMessagesPreservesExistingChannels(t *testing.T) {
 	builder.StartTo("noop")
 	builder.ToEnd("noop")
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	_, err = Last(compiled.Run(context.Background(), nil))
@@ -104,7 +105,7 @@ func TestBuilder_Chain(t *testing.T) {
 		return &NodeResult{Updates: map[string]any{"value": val * val}}, nil
 	})
 
-	compiled := builder.Chain("double", "add_ten", "square").MustCompile()
+	compiled := builder.Chain("double", "add_ten", "square").MustCompileMessageRunnable()
 
 	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)
@@ -155,7 +156,7 @@ func TestBuilder_Parallel(t *testing.T) {
 	builder.Parallel("start", []string{"task_a", "task_b", "task_c"}, "aggregate")
 	builder.ToEnd("aggregate")
 
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	require.NoError(t, err)
 
 	_, err = Last(compiled.Run(context.Background(), nil))
@@ -202,7 +203,7 @@ func TestBuilder_ConditionalRoute(t *testing.T) {
 	builder.ToEnd("pass")
 	builder.ToEnd("fail")
 
-	compiled := builder.MustCompile()
+	compiled := builder.MustCompileMessageRunnable()
 
 	_, err = Last(compiled.Run(context.Background(), nil))
 	require.NoError(t, err)

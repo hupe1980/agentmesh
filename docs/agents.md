@@ -302,7 +302,7 @@ builder.AddEdge("handle_support", "END")
 builder.AddEdge("handle_sales", "END")
 
 // Compile and execute
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)

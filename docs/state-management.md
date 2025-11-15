@@ -44,7 +44,7 @@ import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // Enable checkpointing
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 
 // Execute with run ID for persistence
 seq := compiled.Run(ctx, messages,

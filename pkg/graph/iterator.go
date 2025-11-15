@@ -1,8 +1,9 @@
 package graph
 
 import (
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"iter"
+
+	"github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -33,6 +34,24 @@ func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, e
 // and debugging to inspect the full execution trace.
 func Collect(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
 	results := make([]state.ExecutionResult, 0)
+	var lastErr error
+
+	for result, err := range seq {
+		if err != nil {
+			lastErr = err
+			break
+		}
+		results = append(results, result)
+	}
+
+	return results, lastErr
+}
+
+// CollectGeneric gathers all values from a generic iterator into a slice.
+// This works with any Runnable[I, O] type, not just state.ExecutionResult.
+// The final error (if any) is returned separately.
+func CollectGeneric[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	results := make([]T, 0)
 	var lastErr error
 
 	for result, err := range seq {

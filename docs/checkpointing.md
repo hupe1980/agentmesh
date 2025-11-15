@@ -45,7 +45,7 @@ import (
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // Compile graph
-compiled, err := builder.Compile()
+compiled, err := builder.CompileMessageRunnable()
 if err != nil {
     log.Fatal(err)
 }
@@ -165,7 +165,7 @@ import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
@@ -192,7 +192,7 @@ seq := compiled.Run(ctx, messages,
 ```go
 func TestGraphCheckpointing(t *testing.T) {
     checkpointer := checkpoint.NewInMemoryCheckpointer()
-    compiled, _ := builder.Compile()
+    compiled, _ := builder.CompileMessageRunnable()
     
     // Run workflow
     seq := compiled.Run(ctx, messages,
@@ -236,7 +236,7 @@ store := checkpointdb.NewCheckpointer(client,
 // Auto-create table if needed
 err := store.CreateTable(ctx)
 
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
@@ -337,7 +337,7 @@ store, _ := checkpointsql.NewPostgreSQLCheckpointer(ctx, db)
 db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/agentmesh")
 store, _ := checkpointsql.NewMySQLCheckpointer(ctx, db)
 
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
@@ -435,7 +435,7 @@ checkpointer := checkpoint.NewInMemoryCheckpointer(
 )
 
 // Checkpoints are now automatically signed
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 seq := compiled.Run(ctx, messages,
     graph.WithRunID("secure-workflow"),
     graph.WithCheckpointer(checkpointer),
@@ -530,7 +530,7 @@ func main() {
         log.Fatalf("Checkpointer setup failed: %v", err)
     }
     
-    compiled, _ := builder.Compile()
+    compiled, _ := builder.CompileMessageRunnable()
     
     // All checkpoints are cryptographically signed
     seq := compiled.Run(ctx, messages,
@@ -762,14 +762,14 @@ Balance between recovery granularity and overhead:
 
 ```go
 // Fine-grained (every step) - Best for critical workflows
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
     graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),  // Save every superstep
 )
 
 // Coarse-grained (every 5 steps) - Better performance
-compiled, _ := builder.Compile()
+compiled, _ := builder.CompileMessageRunnable()
 seq = compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
     graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 5}),  // Save every 5 supersteps
