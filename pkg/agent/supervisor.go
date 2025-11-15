@@ -10,9 +10,9 @@ import (
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string          // Unique identifier for the worker
-	Description string          // Description of the worker's expertise
-	Agent       *graph.Compiled // The actual agent graph
+	Name        string                // Unique identifier for the worker
+	Description string                // Description of the worker's expertise
+	Agent       graph.MessageRunnable // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -29,7 +29,8 @@ type supervisorOptions struct {
 type SupervisorOption func(*supervisorOptions)
 
 // WithWorker adds a worker agent to the supervisor.
-func WithWorker(name, description string, agent *graph.Compiled) SupervisorOption {
+// The agent must implement graph.MessageRunnable (e.g., created via NewReActAgent).
+func WithWorker(name, description string, agent graph.MessageRunnable) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -95,6 +96,9 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 // NewSupervisorAgent creates a supervisor agent that routes tasks to specialized worker agents.
 // The supervisor uses tool-based handoffs to delegate work to the most appropriate specialist.
 //
+// Returns a graph.MessageRunnable interface that enables type-safe composition with other agents.
+// Worker agents must also implement graph.MessageRunnable.
+//
 // Example:
 //
 //	supervisor, err := agent.NewSupervisorAgent(
@@ -105,7 +109,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.Compiled, error) {
+func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (graph.MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}

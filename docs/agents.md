@@ -55,15 +55,15 @@ import (
 searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
 calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
 
-// Create ReAct agent
-compiled, err := agent.NewReActAgent(
+// Create ReAct agent (returns graph.MessageRunnable)
+agent, err := agent.NewReActAgent(
     openai.NewModel(),
-    []tool.Tool{searchTool, calcTool},
+    agent.WithTools(searchTool, calcTool),
     agent.WithMaxIterations(5),
 )
 
 // Execute and collect messages
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+messages, err := graph.CollectMessages(agent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }

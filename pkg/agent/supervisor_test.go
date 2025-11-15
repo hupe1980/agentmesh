@@ -40,8 +40,14 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 	// The supervisor will have a default system prompt but it won't appear
 	// in the initial state - it's sent with each model invocation.
 
+	// Type assert to access State() for testing
+	compiledGraph, ok := supervisor.(*graph.Compiled)
+	if !ok {
+		t.Fatal("Expected supervisor to be *graph.Compiled")
+	}
+
 	// Verify supervisor state is initialized
-	state := supervisor.State()
+	state := compiledGraph.State()
 	messages := state.MessagesSnapshot()
 
 	// State should be empty initially (system prompt sent per-request)
@@ -112,8 +118,14 @@ func TestNewSupervisorAgent(t *testing.T) {
 		t.Fatal("Expected supervisor to be created")
 	}
 
+	// Type assert to access State() for testing
+	compiledGraph, ok := supervisor.(*graph.Compiled)
+	if !ok {
+		t.Fatal("Expected supervisor to be *graph.Compiled")
+	}
+
 	// Verify custom system prompt
-	state := supervisor.State()
+	state := compiledGraph.State()
 	events := state.MessagesSnapshot()
 
 	if len(events) > 0 {
@@ -145,7 +157,7 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 }
 
 // createMockWorker creates a simple mock worker agent for testing
-func createMockWorker(expertise string) (*graph.Compiled, error) {
+func createMockWorker(expertise string) (graph.MessageRunnable, error) {
 	mockModel := &testutil.MockModel{
 		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("worker response: " + expertise), nil

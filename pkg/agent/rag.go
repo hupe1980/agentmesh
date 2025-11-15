@@ -88,6 +88,8 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //  1. Retrieves relevant context from a knowledge base
 //  2. Generates a response using both the query and retrieved context
 //
+// Returns a graph.MessageRunnable interface for type-safe composition.
+//
 // This pattern is ideal for question-answering over large document collections.
 //
 // Example:
@@ -97,7 +99,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.Compiled, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (graph.MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}

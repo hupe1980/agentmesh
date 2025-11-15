@@ -74,10 +74,10 @@ func main() {
         log.Fatal(err)
     }
 
-    // Create a ReAct agent
-    compiled, err := agent.NewReActAgent(
+    // Create a ReAct agent (returns graph.MessageRunnable interface)
+    agent, err := agent.NewReActAgent(
         openai.NewModel(),
-        []tool.Tool{weatherTool},
+        agent.WithTools(weatherTool),
     )
     if err != nil {
         log.Fatal(err)
@@ -91,7 +91,7 @@ func main() {
     }
 
     // Execute and collect messages
-    results, err := graph.CollectMessages(compiled.Run(ctx, messages))
+    results, err := graph.CollectMessages(agent.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }

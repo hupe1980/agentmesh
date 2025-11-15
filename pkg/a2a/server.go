@@ -10,16 +10,16 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// Executor wraps an AgentMesh Compiled as an A2A AgentExecutor.
-// It implements the a2asrv.AgentExecutor interface, allowing AgentMesh
+// Executor implements a2asrv.AgentExecutor and provides A2A protocol integration for compiled
 // graphs to be exposed as A2A-compliant services.
 type Executor struct {
-	compiled *graph.Compiled
+	runnable graph.MessageRunnable
 }
 
-// NewExecutor creates a new A2A executor that wraps an AgentMesh compiled graph.
-func NewExecutor(compiled *graph.Compiled) *Executor {
-	return &Executor{compiled: compiled}
+// NewExecutor creates a new A2A executor that wraps an AgentMesh agent or compiled graph.
+// Accepts any graph.MessageRunnable (agents, compiled graphs, etc.).
+func NewExecutor(runnable graph.MessageRunnable) *Executor {
+	return &Executor{runnable: runnable}
 }
 
 // Execute implements a2asrv.AgentExecutor.Execute.
@@ -32,8 +32,8 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 		return fmt.Errorf("failed to convert A2A message: %w", err)
 	}
 
-	// Execute the graph
-	events, err := graph.Collect(e.compiled.Run(ctx, messages))
+	// Execute the agent/graph
+	events, err := graph.Collect(e.runnable.Run(ctx, messages))
 	if err != nil {
 		return fmt.Errorf("graph execution failed: %w", err)
 	}

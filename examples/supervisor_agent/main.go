@@ -15,8 +15,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
-
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -56,7 +54,8 @@ func main() {
 			continue
 		}
 
-		_, err = graph.Last(supervisor.Run(ctx, []message.Message{
+		// Execute and collect messages
+		messages, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
 			message.NewHumanMessageFromText(query),
 		}))
 		if err != nil {
@@ -65,13 +64,12 @@ func main() {
 		}
 
 		// Display conversation transcript
-		events := supervisor.State().MessagesSnapshot()
-		displayTranscript(query, events)
+		displayTranscript(query, messages)
 	}
 }
 
 // createSupervisor creates a supervisor agent with specialized workers
-func createSupervisor() (*graph.Compiled, error) {
+func createSupervisor() (graph.MessageRunnable, error) {
 	model := openai.NewModel()
 
 	// Create specialized worker agents
@@ -109,7 +107,7 @@ Always provide the full task context when delegating.`),
 }
 
 // createMathAgent creates a specialized agent for mathematical problem solving
-func createMathAgent() (*graph.Compiled, error) {
+func createMathAgent() (graph.MessageRunnable, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -124,7 +122,7 @@ func createMathAgent() (*graph.Compiled, error) {
 }
 
 // createHistoryAgent creates a specialized agent for historical questions
-func createHistoryAgent() (*graph.Compiled, error) {
+func createHistoryAgent() (graph.MessageRunnable, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -139,7 +137,7 @@ func createHistoryAgent() (*graph.Compiled, error) {
 }
 
 // createCodeAgent creates a specialized agent for programming tasks
-func createCodeAgent() (*graph.Compiled, error) {
+func createCodeAgent() (graph.MessageRunnable, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -155,13 +153,11 @@ func createCodeAgent() (*graph.Compiled, error) {
 }
 
 // displayTranscript shows the conversation flow including tool calls
-func displayTranscript(query string, events []state.ExecutionResult) {
+func displayTranscript(query string, messages []message.Message) {
 	// Print the user query at the top only
 	fmt.Printf("👤 User:\n   %s\n", query)
 
-	for i, evt := range events {
-		msg := evt.Message
-
+	for i, msg := range messages {
 		switch m := msg.(type) {
 		case *message.AIMessage:
 			// Check if this is supervisor routing or final response
@@ -213,7 +209,7 @@ func displayTranscript(query string, events []state.ExecutionResult) {
 		}
 
 		// Add spacing between messages
-		if i < len(events)-1 {
+		if i < len(messages)-1 {
 			fmt.Println()
 		}
 	}

@@ -13,6 +13,8 @@ hero:
     label: Architecture deep dive →
     href: "/architecture/"
 sidebar:
+  - title: Runnable interface
+    url: "#runnable-interface"
   - title: Graphs and nodes
     url: "#graphs-and-nodes"
   - title: State management
@@ -23,6 +25,98 @@ sidebar:
     url: "#messages"
   - title: Channels
     url: "#channels"
+---
+
+## Runnable interface {#runnable-interface}
+
+The `Runnable[I, O]` interface is the core abstraction for executable components in AgentMesh. All agents, graphs, and tools implement this interface, enabling type-safe composition and testability.
+
+### Interface definition
+
+```go
+type Runnable[I, O any] interface {
+    Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
+}
+```
+
+**Type parameters:**
+- `I` - Input type (e.g., `[]message.Message`, `map[string]any`, `string`)
+- `O` - Output type (e.g., `state.ExecutionResult`, `message.Message`)
+
+### Common type aliases
+
+For convenience, AgentMesh provides type aliases for common use cases:
+
+```go
+// MessageRunnable processes message sequences (most common)
+type MessageRunnable = Runnable[[]message.Message, state.ExecutionResult]
+
+// StateRunnable processes arbitrary state maps
+type StateRunnable = Runnable[map[string]any, state.ExecutionResult]
+
+// StringRunnable processes text input/output
+type StringRunnable = Runnable[string, string]
+```
+
+### Usage example
+
+All agent constructors return `MessageRunnable`:
+
+```go
+// Agent constructors return MessageRunnable interface
+var agent graph.MessageRunnable
+agent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
+
+// Execute with type-safe interface
+for result, err := range agent.Run(ctx, messages) {
+    if err != nil {
+        return err
+    }
+    // Process result
+}
+```
+
+### Benefits
+
+**Compile-time type safety:**
+```go
+// ✅ Type-safe: MessageRunnable accepts []message.Message
+agent.Run(ctx, messages)
+
+// ❌ Compile error: won't accept wrong input type
+agent.Run(ctx, "invalid input")
+```
+
+**Easy mocking for tests:**
+```go
+type mockAgent struct {
+    responses []state.ExecutionResult
+}
+
+func (m *mockAgent) Run(ctx context.Context, input []message.Message, opts ...RunOption) iter.Seq2[state.ExecutionResult, error] {
+    return func(yield func(state.ExecutionResult, error) bool) {
+        for _, resp := range m.responses {
+            if !yield(resp, nil) {
+                return
+            }
+        }
+    }
+}
+
+// Use mock in tests
+var agent graph.MessageRunnable = &mockAgent{...}
+```
+
+**Composition:**
+```go
+// All components share the same interface
+var agent1 graph.MessageRunnable = agent.NewReActAgent(model)
+var agent2 graph.MessageRunnable = agent.NewSupervisorAgent(model)
+var compiled graph.MessageRunnable = builder.Compile()
+
+// Swap implementations without changing client code
+```
+
 ---
 
 ## Graphs and nodes {#graphs-and-nodes}

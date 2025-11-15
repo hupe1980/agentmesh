@@ -14,6 +14,10 @@ import (
 //  3. Observes the result
 //  4. Repeats until the answer is found
 //
+// Returns a graph.MessageRunnable interface that processes message sequences
+// and streams execution results. This interface enables type-safe composition,
+// easy mocking in tests, and swappable implementations.
+//
 // This pattern is effective for multi-step problem solving with tool use.
 //
 // You can provide tools in two ways:
@@ -32,7 +36,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}

@@ -103,6 +103,10 @@ type Structure interface {
 //   - Never acquire invokeMu while holding runtimeMu
 //   - Never call external callbacks while holding any mutex
 //
+// Compiled implements the MessageRunnable interface, enabling type-safe
+// composition with other agents and graphs. All agent constructors
+// (NewReActAgent, NewSupervisorAgent, NewRAGAgent) return MessageRunnable.
+//
 // Key Methods:
 //   - Run: Execute graph and return an iterator over execution events
 //
@@ -124,6 +128,9 @@ type Compiled struct {
 	startKey          string
 	endKey            string
 }
+
+// Compile-time check that Compiled implements MessageRunnable.
+var _ MessageRunnable = (*Compiled)(nil)
 
 func (cg *Compiled) hasExecutable(name string) bool {
 	if name == "" {

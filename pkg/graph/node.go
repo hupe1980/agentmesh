@@ -9,9 +9,11 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Runnable represents a graph node that can execute logic.
+// NodeRunnable represents a graph node that can execute logic.
 // This interface allows custom node implementations beyond the standard Node type.
-type Runnable interface {
+// Note: This is different from the generic Runnable[I, O] interface which is
+// used for composable agents and graphs.
+type NodeRunnable interface {
 	Run(ctx context.Context, s state.Reader) (*NodeResult, error)
 }
 
@@ -75,7 +77,7 @@ type Edge struct {
 // ConditionalEdges represents dynamic routing based on node output.
 // The Condition function evaluates the graph state to determine which target nodes to execute.
 type ConditionalEdges struct {
-	From      string                                            // Source node name
-	Targets   []string                                          // Possible target node names
+	From      string                                       // Source node name
+	Targets   []string                                     // Possible target node names
 	Condition func(context.Context, state.Reader) []string // Function determining which targets to activate
 }

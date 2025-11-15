@@ -22,7 +22,10 @@ func TestNew_BasicAgent(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
-	assert.NotNil(t, compiled.State())
+	// Type assert to access State() method for testing
+	compiledGraph, ok := compiled.(*graph.Compiled)
+	require.True(t, ok, "agent should return *graph.Compiled")
+	assert.NotNil(t, compiledGraph.State())
 }
 
 func TestNew_WithTools(t *testing.T) {
@@ -116,12 +119,12 @@ func TestAgent_BasicExecution(t *testing.T) {
 		message.NewHumanMessageFromText("Hello!"),
 	}
 
-	_, err = graph.Collect(compiled.Run(ctx, input))
+	messages, err := graph.CollectMessages(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	events := compiled.State().MessagesSnapshot()
-	require.NotNil(t, events)
-	assert.GreaterOrEqual(t, len(events), 3) // System + Human + AI
+	require.NotNil(t, messages)
+	// CollectMessages returns messages from ExecutionResults (AI responses)
+	assert.GreaterOrEqual(t, len(messages), 1) // At least one AI response
 }
 
 func TestAgent_ToolCalling(t *testing.T) {
@@ -165,14 +168,14 @@ func TestAgent_ToolCalling(t *testing.T) {
 		message.NewHumanMessageFromText("What's the weather in Berlin?"),
 	}
 
-	_, err = graph.Collect(compiled.Run(ctx, input))
+	messages, err := graph.CollectMessages(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
-	events := compiled.State().MessagesSnapshot()
-	require.NotNil(t, events)
+	require.NotNil(t, messages)
 
-	// Should have: Human + AI (with tool call) + Tool result + AI (final response)
-	assert.GreaterOrEqual(t, len(events), 4)
+	// CollectMessages returns messages from ExecutionResults
+	// Should have: AI (with tool call) + Tool result + AI (final response)
+	assert.GreaterOrEqual(t, len(messages), 2) // At least tool call and response
 
 	// Verify model was called twice (once for tool request, once after tool result)
 	assert.GreaterOrEqual(t, callCount, 1, "Model should be called at least once")
