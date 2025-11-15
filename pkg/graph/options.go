@@ -11,47 +11,34 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
-	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-// Aggregator is defined in pregel.Aggregator.
-// Import pregel.Aggregator directly to implement custom aggregators.
-// See aggregators.go for built-in implementations (SumAggregator, MaxAggregator, etc.).
-
-// SchedulingMessage describes an activation message between graph vertices.
-// Used in distributed scheduling to propagate computation across nodes.
-type SchedulingMessage struct {
-	From string
-	To   string
-}
-
-// Combiner merges multiple scheduling messages for the same target.
-// Used to optimize message passing by reducing redundant activations.
-type Combiner func(existing, incoming SchedulingMessage) SchedulingMessage
+// NOTE: SchedulingMessage and Combiner have been moved to pregel_executor.go
+// since they are Pregel-specific concepts.
 
 type runOptions struct {
 	maxConcurrency        int
 	initialSuperstep      int64
-	maxIterations         int
-	maxMessages           int // Maximum number of messages to retain (0 = unlimited)
-	maxMessageSize        int // Maximum size of a single message in bytes (0 = unlimited)
-	maxInputMessages      int // Maximum number of input messages allowed (0 = unlimited)
-	maxTotalSize          int // Maximum total size of all input messages in bytes (0 = unlimited)
-	eventBufferSize       int // Size of event channel for streaming (default = 100)
-	aggregators           map[string]pregel.Aggregator
-	combiner              Combiner
-	messageBus            pregel.MessageBus[ChannelMessage] // Custom message bus for distributed execution
-	checkpointer          checkpoint.Checkpointer           // Checkpoint storage backend
-	checkpointInterval    int                               // Save every N supersteps (0 = every superstep)
-	autoRestore           bool                              // Automatically restore from last checkpoint
-	failOnCheckpointError bool                              // Fail execution on checkpoint errors (default: false, just log)
-	logger                logging.Logger                    // Logger for observability (attached to context and used for instrumentation)
-	tracer                trace.Provider                    // Trace provider for observability (attached to context and used for instrumentation)
-	metricsProvider       metrics.Provider                  // Metrics provider for observability (attached to context and used for instrumentation)
-	runID                 string                            // Unique identifier for this execution run
-	resume                bool                              // Resume from checkpoint
-	resumeFrom            int64                             // Superstep to resume from (0 = most recent)
+	maxIterations         int                     // INTERNAL: Set by PregelExecutor
+	maxMessages           int                     // Maximum number of messages to retain (0 = unlimited)
+	maxMessageSize        int                     // Maximum size of a single message in bytes (0 = unlimited)
+	maxInputMessages      int                     // Maximum number of input messages allowed (0 = unlimited)
+	maxTotalSize          int                     // Maximum total size of all input messages in bytes (0 = unlimited)
+	eventBufferSize       int                     // Size of event channel for streaming (default = 100)
+	aggregators           map[string]interface{}  // INTERNAL: Set by PregelExecutor (pregel.Aggregator)
+	combiner              interface{}             // INTERNAL: Set by PregelExecutor (Combiner func)
+	messageBus            interface{}             // INTERNAL: Set by PregelExecutor (pregel.MessageBus)
+	checkpointer          checkpoint.Checkpointer // Checkpoint storage backend
+	checkpointInterval    int                     // Save every N supersteps (0 = every superstep)
+	autoRestore           bool                    // Automatically restore from last checkpoint
+	failOnCheckpointError bool                    // Fail execution on checkpoint errors (default: false, just log)
+	logger                logging.Logger          // Logger for observability (attached to context and used for instrumentation)
+	tracer                trace.Provider          // Trace provider for observability (attached to context and used for instrumentation)
+	metricsProvider       metrics.Provider        // Metrics provider for observability (attached to context and used for instrumentation)
+	runID                 string                  // Unique identifier for this execution run
+	resume                bool                    // Resume from checkpoint
+	resumeFrom            int64                   // Superstep to resume from (0 = most recent)
 }
 
 // RunOption configures graph execution behavior.
@@ -100,66 +87,35 @@ func WithInitialSuperstep(superstep int64) RunOption {
 	}
 }
 
-// WithAggregators configures global aggregators for distributed reductions.
-// Aggregators collect values from all nodes in each superstep and make the
-// result available in the next superstep via state.AggregatesSnapshot().
+// WithMaxIterations sets the maximum number of supersteps/iterations for this specific run.
+// This is useful for dynamic per-run control of iteration limits.
 //
-// Example:
+// For compile-time configuration, use PregelExecutor:
 //
-//	compiled.Invoke(ctx, messages, graph.WithAggregators(map[string]pregel.Aggregator{
-//	    "total_cost": &graph.SumAggregator{},
-//	    "max_priority": &graph.MaxAggregator{},
-//	}))
-func WithAggregators(aggregators map[string]pregel.Aggregator) RunOption {
-	return func(opts *runOptions) {
-		if opts == nil {
-			return
-		}
-		if len(aggregators) == 0 {
-			opts.aggregators = nil
-			return
-		}
-		aggCopy := make(map[string]pregel.Aggregator, len(aggregators))
-		for name, agg := range aggregators {
-			if name == "" || agg == nil {
-				continue
-			}
-			aggCopy[name] = agg
-		}
-		opts.aggregators = aggCopy
-	}
-}
-
-// WithCombiner sets a function to merge multiple messages targeting the same node.
-// This optimization can reduce redundant activations in highly connected graphs.
-// The combiner receives existing and incoming messages and returns the merged result.
+//	executor := graph.NewPregelExecutor(
+//	    graph.WithPregelMaxIterations(1000),
+//	)
+//	g.WithExecutor(executor)
 //
-// Example:
-//
-//	compiled.Invoke(ctx, messages, graph.WithCombiner(func(existing, incoming SchedulingMessage) SchedulingMessage {
-//	    // Custom merge logic
-//	    return incoming  // Simple: last message wins
-//	}))
-func WithCombiner(combiner Combiner) RunOption {
-	return func(opts *runOptions) {
-		if opts == nil {
-			return
-		}
-		opts.combiner = combiner
-	}
-}
-
-// WithMaxIterations sets the maximum number of supersteps allowed before terminating execution.
-// This prevents infinite loops in cyclic graphs. A value <= 0 means unlimited (default).
-// This is critical for production use with agent feedback loops.
+// The per-run value (if provided) takes precedence over the PregelExecutor value.
 func WithMaxIterations(n int) RunOption {
 	return func(opts *runOptions) {
-		if opts == nil {
-			return
+		if n > 0 {
+			opts.maxIterations = n
 		}
-		opts.maxIterations = n
 	}
 }
+
+// NOTE: WithAggregators and WithCombiner have been REMOVED.
+// These are Pregel-specific and must be configured at compile-time on PregelExecutor:
+//
+//   executor := graph.NewPregelExecutor(
+//       graph.WithPregelAggregators(aggregators),
+//       graph.WithPregelCombiner(combiner),
+//   )
+//   g.WithExecutor(executor)
+//
+// See pkg/graph/pregel_executor.go for Pregel-specific configuration.
 
 // WithMaxMessages limits the number of messages retained in state.
 // When the limit is reached, oldest messages are discarded.
@@ -251,28 +207,14 @@ func WithEventBufferSize(size int) RunOption {
 	}
 }
 
-// WithPregelMessageBus sets a custom message bus for distributed graph execution.
-// This enables multi-process or multi-node execution of the graph using a shared
-// message delivery backend (e.g., Redis, Kafka).
+// NOTE: WithPregelMessageBus has been REMOVED.
+// MessageBus is now configured on PregelExecutor:
 //
-// The message bus handles communication between vertices during Pregel-style
-// iterative computation. If not provided, an in-memory message bus is used.
+//   bus := redis.NewMessageBus[graph.ChannelMessage]("localhost:6379", "", 0, nil)
+//   executor := graph.NewPregelExecutor(graph.WithMessageBus(bus))
+//   compiled := builder.Compile(graph.WithExecutor(executor))
 //
-// Example with Redis:
-//
-//	bus := redis.NewMessageBus[graph.ChannelMessage]("localhost:6379", "", 0, &redis.Options{
-//	    Namespace: "my-graph-execution",
-//	})
-//	defer bus.Close()
-//	compiled.Invoke(ctx, messages, graph.WithPregelMessageBus(bus))
-func WithPregelMessageBus(bus pregel.MessageBus[ChannelMessage]) RunOption {
-	return func(opts *runOptions) {
-		if opts == nil {
-			return
-		}
-		opts.messageBus = bus
-	}
-}
+// See pkg/graph/pregel_executor.go for MessageBus configuration.
 
 // =============================================================================
 // Checkpoint Options
@@ -526,50 +468,34 @@ func (cg *Compiled) createCheckpoint(runID string, superstep int64, metadata map
 }
 
 // restoreCheckpoint applies a checkpoint to the current graph state
-func (cg *Compiled) restoreCheckpoint(chkpt *checkpoint.Checkpoint) error {
-	if cg == nil || chkpt == nil {
+func restoreCheckpointState(stateManager StateManager, chkpt *checkpoint.Checkpoint) error {
+	if stateManager == nil || chkpt == nil {
 		return nil
 	}
 
 	// Validate checkpoint version (detect corruption or sequence errors)
-	if cg.stateManager != nil {
-		currentVersion := cg.stateManager.Version()
-		if chkpt.Version > 0 && currentVersion > chkpt.Version {
-			return fmt.Errorf("checkpoint version mismatch: current state version %d is ahead of checkpoint version %d (possible concurrent modification or restore out of sequence)", currentVersion, chkpt.Version)
-		}
+	currentVersion := stateManager.Version()
+	if chkpt.Version > 0 && currentVersion > chkpt.Version {
+		return fmt.Errorf("checkpoint version mismatch: current state version %d is ahead of checkpoint version %d (possible concurrent modification or restore out of sequence)", currentVersion, chkpt.Version)
 	}
 
 	// Restore state
-	if cg.stateManager != nil {
-		// Wrap checkpoint messages as ExecutionResults
-		// TODO: Phase 3 - Checkpoint should store full state.ExecutionResult metadata
-		events := make([]state.ExecutionResult, len(chkpt.Messages))
-		for i, msg := range chkpt.Messages {
-			events[i] = *state.NewExecutionResult(msg, chkpt.RunID, "__restored__")
-		}
-
-		cg.stateManager.ApplyUpdates(chkpt.State, events)
-		// Restore version from checkpoint
-		if gs, ok := cg.stateManager.(*ChannelState); ok {
-			gs.setVersion(chkpt.Version)
-		}
+	// Wrap checkpoint messages as ExecutionResults
+	// TODO: Phase 3 - Checkpoint should store full state.ExecutionResult metadata
+	events := make([]state.ExecutionResult, len(chkpt.Messages))
+	for i, msg := range chkpt.Messages {
+		events[i] = *state.NewExecutionResult(msg, chkpt.RunID, "__restored__")
 	}
 
-	// Restore runtime execution state
-	cg.runtimeMu.Lock()
-	cg.runtime = ensureExecutionState(cg.runtime)
-	cg.runtime.setSuperstep(chkpt.Superstep)
-
-	// Restore completed nodes
-	for _, nodeName := range chkpt.CompletedNodes {
-		cg.runtime.markCompleted(nodeName)
+	stateManager.ApplyUpdates(chkpt.State, events)
+	// Restore version from checkpoint
+	if gs, ok := stateManager.(*ChannelState); ok {
+		gs.setVersion(chkpt.Version)
 	}
 
-	// Restore paused nodes
-	for _, nodeName := range chkpt.PausedNodes {
-		cg.runtime.markPaused(nodeName)
-	}
-	cg.runtimeMu.Unlock()
+	// Note: Runtime execution state (completed/paused nodes, superstep) is restored
+	// by the executor's runtime initialization, not here. This keeps state restoration
+	// decoupled from execution concerns.
 
 	return nil
 }

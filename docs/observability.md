@@ -140,7 +140,7 @@ All logs include structured attributes like `run_id`, `superstep`, `node`, `dura
 
 ### 2. Creates Trace Spans
 
-- **Graph execution** - Overall `Invoke()` or `Stream()` duration
+- **Graph execution** - Overall `Run()` duration
 - **Node execution** - Every node that runs, including timing
 - **Checkpoint operations** - Save and restore operations
 

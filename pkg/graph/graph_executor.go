@@ -8,20 +8,41 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Executor is an internal interface for graph execution strategies.
-// This is used internally by Compiled to delegate execution to different
-// backends (Pregel BSP, Sequential, etc.).
+// Executor is the interface for graph execution strategies.
+// This allows pluggable execution backends while maintaining a consistent API.
 //
-// Design Goals:
+// EXECUTION STRATEGIES:
+//
+//  1. Pregel BSP Execution (DEFAULT)
+//     The default execution uses the Pregel bulk-synchronous parallel (BSP) runtime
+//     for distributed, parallel execution with worker pools and message passing.
+//     This is implemented internally via runWithOptions() in Compiled.
+//     Benefits: High performance, distributed execution, worker pools, aggregators
+//
+//  2. SimpleGraphExecutor (DEBUGGING)
+//     A sequential, single-threaded executor for debugging and testing.
+//     Use WithExecutor(NewSimpleGraphExecutor()) when compiling to enable.
+//     Benefits: Deterministic execution order, easier debugging, simpler traces
+//
+//  3. Custom Executors
+//     Users can implement their own execution strategies by implementing this interface.
+//     Examples: distributed executors with Kafka/Redis, specialized schedulers, etc.
+//
+// DESIGN GOALS:
 //   - Clean separation between graph topology (Compiled) and execution strategy
 //   - Pluggable backends without changing Compiled API
-//   - No direct Pregel coupling in Compiled
+//   - Users interact with Compiled.Run() - executor choice is transparent
 //
-// Implementations:
-//   - SimpleGraphExecutor: Sequential topological execution for debugging
-//   - Custom executors: Users can implement their own strategies
+// USAGE:
 //
-// Note: This is an internal interface. Users interact with Compiled.Run() directly.
+//	// Default Pregel BSP execution (parallel, worker pools)
+//	compiled, _ := builder.Compile()
+//
+//	// Switch to SimpleGraphExecutor for debugging (sequential)
+//	compiled, _ := builder.Compile(WithExecutor(NewSimpleGraphExecutor()))
+//
+//	// Custom executor
+//	compiled, _ := builder.Compile(WithExecutor(myCustomExecutor))
 type Executor interface {
 	// Run executes the graph and returns an iterator of execution events.
 	// The executor is responsible for:
@@ -95,7 +116,8 @@ type ExecutorTopology struct {
 }
 
 // RunOptions contains execution configuration.
-// This is an internal structure matching the external ExecuteOptions.
+// This is the public API for executor configuration.
+// Contains a subset of runOptions fields plus internal reference for full config.
 type RunOptions struct {
 	MaxIterations      int
 	MaxConcurrency     int
@@ -103,4 +125,9 @@ type RunOptions struct {
 	RecursionLimit     int
 	CheckpointInterval int
 	Checkpointer       interface{} // checkpoint.Checkpointer
+
+	// internal carries the full runOptions from Compiled.Run()
+	// This allows executors to access all configuration (validation limits, observability, etc.)
+	// without exposing internal details in the public API
+	internal *runOptions
 }

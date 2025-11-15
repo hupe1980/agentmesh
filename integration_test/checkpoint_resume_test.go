@@ -136,7 +136,7 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	runID := "test-resume-partial"
+	runID := "test-partial-resume"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create workflow that fails on node 3 ONLY on first attempt
@@ -155,20 +155,20 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: fmt.Sprintf("step_%d", i),
 				RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
-					// Fail on node 3 if we haven't set retry_allowed flag yet
+					// Check if this step should fail
 					if nodeNum == 3 {
-						retryAllowed := s.Get("retry_allowed")
-						if retryAllowed == nil || !retryAllowed.(bool) {
-							// First attempt - fail to simulate error
+						// Step 3 fails on first attempt unless retry_allowed is set
+						if s.Get("retry_allowed") == nil {
 							return nil, fmt.Errorf("simulated failure at step %d", nodeNum)
 						}
 					}
 
-					counter := s.Get("counter")
-					if counter == nil {
-						counter = 0
+					// Increment counter
+					counter := 0
+					if val := s.Get("counter"); val != nil {
+						counter = val.(int)
 					}
-					newCounter := counter.(int) + 1
+					newCounter := counter + 1
 
 					return &graph.NodeResult{
 						Updates: map[string]any{

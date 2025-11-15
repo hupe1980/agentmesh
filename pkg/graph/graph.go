@@ -23,7 +23,7 @@ type Graph struct {
 	Edges        []Edge
 	Branches     []ConditionalEdges
 	stateManager StateManager
-	executor     Executor
+	executor     Executor // Execution strategy (PregelExecutor, SimpleGraphExecutor, etc.)
 	runtime      *executionState
 
 	mu       sync.Mutex
@@ -62,7 +62,28 @@ func (g *Graph) StateManager() StateManager {
 	return g.stateManager
 }
 
-// AddNode registers a node in the graph.
+// WithExecutor sets the executor for this graph and returns the graph for method chaining.
+// The executor must implement the Executor interface.
+//
+// Common executors:
+//   - NewPregelExecutor() - Pregel BSP with typed configuration (default)
+//   - Custom Executor implementations
+//
+// Must be called before Compile(). After compilation, the executor cannot be changed.
+// Returns error if called after compilation.
+func (g *Graph) WithExecutor(executor Executor) (*Graph, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.compiled {
+		return nil, fmt.Errorf("cannot set executor after graph has been compiled")
+	}
+
+	g.executor = executor
+	return g, nil
+}
+
+// AddNode adds a node to the graph.
 func (g *Graph) AddNode(n *Node) error {
 	if n == nil {
 		return ErrNilNode
@@ -159,9 +180,15 @@ func (g *Graph) Compile() (*Compiled, error) {
 		conditionalByFrom[from] = copyEdges
 	}
 
+	// Default to PregelExecutor if no custom executor is set
+	executor := g.executor
+	if executor == nil {
+		executor = NewPregelExecutor() // Use Pregel BSP as default
+	}
+
 	cg := &Compiled{
 		stateManager:      stateManager,
-		executor:          g.executor, // Use custom executor if set, otherwise defaults to Pregel
+		executor:          executor,
 		runtime:           runtime,
 		nodes:             nodes,
 		edges:             topo.edges,
@@ -362,7 +389,24 @@ func computeTopology(nodes map[string]*Node, edges []Edge, branches []Conditiona
 			if target == "" {
 				continue
 			}
-			topo.conditionalGate[target] = true
+
+			// Only gate vertices that are EXCLUSIVELY behind conditional edges.
+			// If a vertex has static incoming edges (including from START), it should
+			// NOT be gated because it can be activated normally. Only vertices that
+			// are reachable ONLY through conditional evaluation should be gated.
+			hasStaticIncoming := false
+			for _, edge := range edges {
+				if edge.To == target {
+					hasStaticIncoming = true
+					break
+				}
+			}
+
+			// Gate only if no static edges lead to this target
+			if !hasStaticIncoming {
+				topo.conditionalGate[target] = true
+			}
+
 			if _, ok := topo.incoming[target]; !ok {
 				topo.incoming[target] = 0
 			}

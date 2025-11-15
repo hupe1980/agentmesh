@@ -11,13 +11,46 @@ import (
 )
 
 func TestMaxIterations(t *testing.T) {
-	t.Run("terminates cyclic graph at max iterations", func(t *testing.T) {
+	t.Run("simple execution works", func(t *testing.T) {
 		state, err := NewStateManager(0)
 		require.NoError(t, err)
 		g, err := NewGraph(state)
 		require.NoError(t, err)
 
-		// Create a self-loop that increments counter
+		executed := false
+		if err := g.AddNode(&Node{
+			Name: "simple",
+			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
+				executed = true
+				return &NodeResult{}, nil
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		g.AddEdge(StartNode, "simple")
+
+		// Try with custom executor
+		executor := NewPregelExecutor(WithPregelMaxIterations(10))
+		g, err = g.WithExecutor(executor)
+		require.NoError(t, err)
+
+		compiled, err := g.Compile()
+		require.NoError(t, err)
+
+		_, err = Last(compiled.Run(context.Background(), nil))
+		require.NoError(t, err)
+		require.True(t, executed, "Node should have executed")
+	})
+
+	t.Run("terminates cyclic graph at max iterations", func(t *testing.T) {
+		state, err := NewStateManager(0)
+		require.NoError(t, err)
+		state.Set("counter", 0) // Initialize counter
+		g, err := NewGraph(state)
+		require.NoError(t, err)
+
+		// Create a node that loops via conditional edge
 		if err := g.AddNode(&Node{
 			Name: "looper",
 			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
@@ -30,9 +63,17 @@ func TestMaxIterations(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Self-loop: looper -> looper (infinite without max iterations)
+		// Start -> looper, then looper conditionally goes back to itself
 		g.AddEdge(StartNode, "looper")
-		g.AddEdge("looper", "looper")
+		g.AddConditionalEdges("looper", func(ctx context.Context, s stateif.Reader) []string {
+			// Loop back to self to create infinite loop (would run forever without max iterations)
+			return []string{"looper"}
+		}, []string{"looper"})
+
+		// Configure executor with max iterations to prevent infinite loop
+		executor := NewPregelExecutor(WithPregelMaxIterations(5))
+		g, err = g.WithExecutor(executor)
+		require.NoError(t, err)
 
 		compiled, err := g.Compile()
 		if err != nil {
@@ -40,22 +81,24 @@ func TestMaxIterations(t *testing.T) {
 		}
 
 		// Should terminate after 5 iterations
-		_, err = Last(compiled.Run(context.Background(), nil, WithMaxIterations(5)))
-		if err == nil {
-			t.Fatal("expected ErrMaxIterationsExceeded, got nil")
-		}
-		if !errors.Is(err, ErrMaxIterationsExceeded) && !errors.Is(err, pregel.ErrMaxIterationsExceeded) {
-			t.Fatalf("expected ErrMaxIterationsExceeded, got %v", err)
+		ctx := context.Background()
+		var lastErr error
+		for event := range compiled.Run(ctx, nil) {
+			if event.Err != nil {
+				lastErr = event.Err
+			}
 		}
 
-		// Counter should have incremented 5 times
+		// Should have hit max iterations error
+		require.Error(t, lastErr, "expected error for max iterations exceeded")
+		require.True(t,
+			errors.Is(lastErr, ErrMaxIterationsExceeded) || errors.Is(lastErr, pregel.ErrMaxIterationsExceeded),
+			"expected ErrMaxIterationsExceeded, got %v", lastErr)
+
+		// Counter should have incremented 5 times (one per superstep)
 		counter, ok := compiled.State().Get("counter").(int)
-		if !ok {
-			t.Fatal("counter not found")
-		}
-		if counter != 5 {
-			t.Errorf("expected counter=5, got %d", counter)
-		}
+		require.True(t, ok, "counter should exist")
+		require.Equal(t, 5, counter, "counter should be 5 after 5 iterations")
 	})
 
 	t.Run("unlimited iterations when not specified", func(t *testing.T) {
@@ -115,13 +158,19 @@ func TestMaxIterations(t *testing.T) {
 
 		g.AddEdge(StartNode, "simple")
 
+		// Configure PregelExecutor with max iterations
+		executor := NewPregelExecutor(WithPregelMaxIterations(100))
+		if _, err := g.WithExecutor(executor); err != nil {
+			t.Fatal(err)
+		}
+
 		compiled, err := g.Compile()
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Max iterations is 100 but should complete in 1 iteration
-		_, err = Last(compiled.Run(context.Background(), nil, WithMaxIterations(100)))
+		_, err = Last(compiled.Run(context.Background(), nil))
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}

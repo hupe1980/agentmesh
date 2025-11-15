@@ -51,12 +51,17 @@ func TestGraphAggregatorsAccessible(t *testing.T) {
 	g.AddEdge(StartNode, "count")
 	g.AddEdge("count", "report")
 
+	// Configure PregelExecutor with aggregators
+	executor := NewPregelExecutor(WithPregelAggregators(map[string]pregel.Aggregator{
+		"total": sumAggregator{},
+	}))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = Last(cg.Run(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{
-		"total": sumAggregator{},
-	})))
+	_, err = Last(cg.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	// v2.0: Use cg.State() instead of original state variable
@@ -228,14 +233,17 @@ func TestAvgAggregator_Integration(t *testing.T) {
 		g.AddEdge(nodeName, EndNode)
 	}
 
+	// Configure PregelExecutor with aggregators
+	executor := NewPregelExecutor(WithPregelAggregators(map[string]pregel.Aggregator{
+		"avg_value": &AvgAggregator{},
+	}))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = Last(cg.Run(context.Background(), nil,
-		WithAggregators(map[string]pregel.Aggregator{
-			"avg_value": &AvgAggregator{},
-		}),
-	))
+	_, err = Last(cg.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	// Check aggregates after graph completes
@@ -269,12 +277,17 @@ func TestVarianceAggregator_Integration(t *testing.T) {
 		g.AddEdge(nodeName, EndNode)
 	}
 
+	// Configure PregelExecutor with aggregators
+	executor := NewPregelExecutor(WithPregelAggregators(map[string]pregel.Aggregator{
+		"variance": &VarianceAggregator{},
+	}))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	cg, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = Last(cg.Run(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{
-		"variance": &VarianceAggregator{},
-	})))
+	_, err = Last(cg.Run(context.Background(), nil))
 	require.NoError(t, err)
 
 	aggregates := cg.State().AggregatesSnapshot()

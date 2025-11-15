@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -14,6 +13,10 @@ type ToolsetOptions struct {
 	// This can be useful to avoid name collisions when multiple MCP toolsets
 	// are used in the same agent.
 	NamePrefix string
+
+	// Headers are HTTP headers passed to the MCP server for authentication
+	// or session management. These headers are used when creating sessions.
+	Headers map[string]string
 }
 
 type toolset struct {
@@ -39,8 +42,8 @@ func NewToolset(sessionFactory SessionFactory, optFns ...func(*ToolsetOptions)) 
 // ListTools connects (or reuses a pooled connection) to the MCP server and
 // streams available tools, converting each MCP tool descriptor into a
 // tool.Tool proxy. The returned tools execute remotely via MCP when called.
-func (t *toolset) ListTools(ctx context.Context, state state.Reader) ([]tool.Tool, error) {
-	session, err := t.sessionManager.CreateSession(ctx, state, nil)
+func (t *toolset) ListTools(ctx context.Context) ([]tool.Tool, error) {
+	session, err := t.sessionManager.CreateSession(ctx, t.opts.Headers)
 	if err != nil {
 		return nil, err
 	}
@@ -69,4 +72,32 @@ func (t *toolset) ListTools(ctx context.Context, state state.Reader) ([]tool.Too
 // Close shuts down the internal SessionManager and closes any active sessions.
 func (t *toolset) Close() error {
 	return t.sessionManager.Close(context.Background())
+}
+
+// WithNamePrefix sets a prefix for all tool names discovered from the MCP server.
+// This is useful to avoid name collisions when using multiple toolsets.
+//
+// Example:
+//
+//	toolset := mcp.NewToolset(factory, mcp.WithNamePrefix("server1"))
+//	// Tools will be named: server1_toolname
+func WithNamePrefix(prefix string) func(*ToolsetOptions) {
+	return func(opts *ToolsetOptions) {
+		opts.NamePrefix = prefix
+	}
+}
+
+// WithHeaders sets HTTP headers to be sent when creating MCP sessions.
+// Useful for authentication or passing session-specific metadata.
+//
+// Example:
+//
+//	toolset := mcp.NewToolset(factory, mcp.WithHeaders(map[string]string{
+//	    "Authorization": "Bearer token123",
+//	    "X-Session-ID": "abc-def",
+//	}))
+func WithHeaders(headers map[string]string) func(*ToolsetOptions) {
+	return func(opts *ToolsetOptions) {
+		opts.Headers = headers
+	}
 }

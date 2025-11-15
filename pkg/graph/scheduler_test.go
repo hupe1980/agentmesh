@@ -1,9 +1,10 @@
 package graph
 
 import (
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
+
+	stateif "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/stretchr/testify/require"
 )
@@ -106,11 +107,17 @@ func TestVertexSchedulerStartConditionals(t *testing.T) {
 	state.Set("branch", "taskB") // Initialize branch value
 	g, err := NewGraph(state)
 	require.NoError(t, err)
+
+	// Add an entry node that always executes
+	mustAddNode(t, g, noopNode("entry"))
+	g.AddEdge(StartNode, "entry")
+
+	// taskA and taskB are ONLY reachable via conditional edges (gated)
 	mustAddNode(t, g, noopNode("taskA"))
 	mustAddNode(t, g, noopNode("taskB"))
-	g.AddEdge(StartNode, "taskA")
-	g.AddEdge(StartNode, "taskB")
-	g.AddConditionalEdges(StartNode, func(_ context.Context, gs stateif.Reader) []string {
+
+	// Conditional edges from entry (not START) to choose between taskA and taskB
+	g.AddConditionalEdges("entry", func(_ context.Context, gs stateif.Reader) []string {
 		if gs == nil {
 			return nil
 		}
@@ -127,7 +134,8 @@ func TestVertexSchedulerStartConditionals(t *testing.T) {
 	sched := newVertexScheduler(cg)
 	cg.bootstrapScheduler(context.Background(), sched)
 
-	require.Equal(t, []string{"taskB"}, sched.Ready())
+	// Only entry should be ready initially (taskA and taskB are gated)
+	require.Equal(t, []string{"entry"}, sched.Ready())
 }
 
 func TestVertexSchedulerSnapshot(t *testing.T) {

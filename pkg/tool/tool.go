@@ -2,8 +2,6 @@ package tool
 
 import (
 	"context"
-
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // FunctionDefinition describes an individual function (tool) exposed to the model.
@@ -30,6 +28,6 @@ type Tool interface {
 
 // Toolset defines a collection of tools that can be managed together.
 type Toolset interface {
-	ListTools(ctx context.Context, s state.Reader) ([]Tool, error)
+	ListTools(ctx context.Context) ([]Tool, error)
 	Close() error
 }

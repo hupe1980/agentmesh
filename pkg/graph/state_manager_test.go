@@ -93,6 +93,37 @@ func TestStateSetMaxMessages(t *testing.T) {
 	}
 }
 
+func TestStateManager_SetNilValue(t *testing.T) {
+	state, err := NewStateManager(0)
+	require.NoError(t, err)
+
+	// Test that setting nil value returns an error
+	err = state.Set("key", nil)
+	if err == nil {
+		t.Fatal("Expected error when setting nil value, got nil")
+	}
+	if err != channel.ErrNilValue {
+		t.Errorf("Expected ErrNilValue, got %v", err)
+	}
+
+	// Verify the key doesn't exist
+	val := state.Get("key")
+	if val != nil {
+		t.Errorf("Expected nil value, got %v", val)
+	}
+
+	// Test that setting a valid value after failed nil write works
+	err = state.Set("key", "valid")
+	if err != nil {
+		t.Fatalf("Expected no error when setting valid value, got %v", err)
+	}
+
+	val = state.Get("key")
+	if val != "valid" {
+		t.Errorf("Expected 'valid', got %v", val)
+	}
+}
+
 func wrapTestMessages(msgs []message.Message) []stateif.ExecutionResult {
 	events := make([]stateif.ExecutionResult, len(msgs))
 	for i, msg := range msgs {

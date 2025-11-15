@@ -105,6 +105,33 @@ func TestLastValueChannel(t *testing.T) {
 	}
 }
 
+func TestLastValueChannel_NilValue(t *testing.T) {
+	ctx := context.Background()
+	lvc := NewLastValueChannel("test")
+
+	// Test that writing nil returns an error
+	err := lvc.Write(ctx, nil)
+	if err == nil {
+		t.Fatal("Expected error when writing nil, got nil")
+	}
+	if err != ErrNilValue {
+		t.Errorf("Expected ErrNilValue, got %v", err)
+	}
+
+	// Verify channel state unchanged
+	if lvc.HasValue() {
+		t.Error("Expected HasValue() = false after failed nil write")
+	}
+
+	val, err := lvc.Read(ctx)
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if val != nil {
+		t.Errorf("Expected nil value, got %v", val)
+	}
+}
+
 func TestBinaryOpChannel(t *testing.T) {
 	ctx := context.Background()
 

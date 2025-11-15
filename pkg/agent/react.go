@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -43,33 +42,9 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 		opt(&config)
 	}
 
-	var allTools []tool.Tool
-
-	// Combine static tools with toolset if provided
-	if config.toolset != nil {
-		// Fetch tools from toolset with nil state (toolset can use defaults)
-		// Note: toolset.ListTools requires a context and Reader
-		// We'll use an empty state snapshot for initialization
-		ctx := context.Background()
-		emptyState, err := graph.NewStateManager(0)
-		if err != nil {
-			return nil, fmt.Errorf("react agent: failed to create state manager: %w", err)
-		}
-
-		toolsetTools, err := config.toolset.ListTools(ctx, emptyState)
-		if err != nil {
-			return nil, fmt.Errorf("react agent: failed to list tools from toolset: %w", err)
-		}
-
-		allTools = append(allTools, toolsetTools...)
-	}
-
-	// Add tools from WithTools option
-	allTools = append(allTools, config.tools...)
-
 	// Build tool registry
-	toolRegistry := make(map[string]tool.Tool, len(allTools))
-	for _, t := range allTools {
+	toolRegistry := make(map[string]tool.Tool, len(config.tools))
+	for _, t := range config.tools {
 		if t == nil {
 			continue
 		}
@@ -132,16 +107,14 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.Compiled, error
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
 	maxIterations int
-	tools         []tool.Tool  // Optional static tools via WithTools option
-	toolset       tool.Toolset // Optional dynamic toolset for runtime tool discovery
-	systemPrompt  string       // Optional system prompt prepended to all invocations
+	tools         []tool.Tool // Optional static tools via WithTools option
+	systemPrompt  string      // Optional system prompt prepended to all invocations
 }
 
 func defaultReActOptions() reActOptions {
 	return reActOptions{
 		maxIterations: 10,
 		tools:         nil,
-		toolset:       nil,
 		systemPrompt:  "",
 	}
 }
@@ -165,17 +138,6 @@ func WithMaxIterations(n int) ReActOption {
 func WithTools(tools ...tool.Tool) ReActOption {
 	return func(c *reActOptions) {
 		c.tools = append(c.tools, tools...)
-	}
-}
-
-// WithToolset provides a dynamic toolset that discovers tools at runtime.
-// When provided, the toolset's ListTools method will be called during graph
-// execution to get the available tools based on the current state.
-// This is useful for MCP (Model Context Protocol) toolsets or any scenario
-// where tools need to be discovered dynamically.
-func WithToolset(ts tool.Toolset) ReActOption {
-	return func(c *reActOptions) {
-		c.toolset = ts
 	}
 }
 

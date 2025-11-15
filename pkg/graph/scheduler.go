@@ -72,16 +72,31 @@ func (s *vertexScheduler) Bootstrap(ctx context.Context, completed, paused []str
 	// Set paused state in tracker
 	s.tracker.SetPaused(paused)
 
-	// Set executed state in all components
-	s.tracker.SetExecuted(completed)
-	s.topology.SetExecuted(completed, s.cg.Outgoing())
-	s.evaluator.BootstrapOpenGates(completed)
+	if len(completed) > 0 {
+		// Resuming from checkpoint: mark START and all completed nodes as executed
+		s.tracker.MarkExecuted(StartNode)
+		s.topology.MarkExecuted(StartNode, s.cg.Outgoing()[StartNode])
 
-	// Apply completion logic for bootstrap
-	for _, name := range completed {
-		s.applyCompletionForBootstrap(ctx, name)
+		// Set executed state in all components
+		s.tracker.SetExecuted(completed)
+		s.topology.SetExecuted(completed, s.cg.Outgoing())
+		s.evaluator.BootstrapOpenGates(completed)
+
+		// Apply completion logic for bootstrap
+		for _, name := range completed {
+			s.applyCompletionForBootstrap(ctx, name)
+		}
+	} else {
+		// Normal execution (not resuming): activate START's downstream nodes
+		// This is the same logic as Reset() - mark START as executed to activate its children
+		downstream := s.cg.Outgoing()[StartNode]
+		if len(downstream) > 0 {
+			s.topology.MarkExecuted(StartNode, downstream)
+		}
+
+		// Also activate START conditionals
+		s.activateStartConditionals(ctx)
 	}
-	s.activateStartConditionals(ctx)
 }
 
 // MarkExecuted records that the vertex finished successfully.

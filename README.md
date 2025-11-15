@@ -87,7 +87,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 ┌──────────────────────────────────────────────────────────────┐
 │               CompiledGraph (Coordinator)                    │
 │  • Immutable graph topology (nodes, edges, conditionals)     │
-│  • Public API (Invoke, Stream, Pause, Resume)                │
+│  • Public API: Run() with iterator pattern                   │
 │  • Coordinates StateManager ↔ Executor                       │
 │  • Rate limiting & retry policies                            │
 └────────────────┬─────────────────────────┬───────────────────┘
@@ -562,10 +562,77 @@ go run main.go
 Prevent infinite loops in cyclic graphs:
 
 ```go
-compiled, _ := builder.Compile(
+// Per-run iteration limit
+compiled.Run(ctx, msgs, 
     graph.WithMaxIterations(10),
 )
+
+// Or configure at compile-time via PregelExecutor
+executor := graph.NewPregelExecutor(
+    graph.WithPregelMaxIterations(1000),
+)
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
 ```
+
+### ⚙️ Pregel Executor Configuration
+
+Configure Pregel BSP execution engine with aggregators, combiners, and message buses:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/pregel"
+)
+
+// Create Pregel executor with configuration
+executor := graph.NewPregelExecutor(
+    // Aggregators: Global reductions across all nodes
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "total_cost": pregel.SumAggregator{},
+        "avg_confidence": pregel.AvgAggregator{},
+    }),
+    
+    // Combiner: Reduce messages before delivery
+    graph.WithPregelCombiner(func(messages []graph.ChannelMessage) []graph.ChannelMessage {
+        // Merge or deduplicate messages
+        return messages
+    }),
+    
+    // Message Bus: Pluggable backend (Redis, Kafka, etc.)
+    graph.WithMessageBus(redisMessageBus),
+    
+    // Workers: Parallel execution
+    graph.WithMaxWorkers(8),
+    
+    // Max iterations
+    graph.WithPregelMaxIterations(1000),
+)
+
+// Apply executor to graph
+g := graph.New()
+// ... build graph ...
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
+
+// Access aggregated values after execution
+result, _ := graph.Last(compiled.Run(ctx, initialMessages))
+totalCost := result.Aggregates["total_cost"]  // Sum across all nodes
+avgConf := result.Aggregates["avg_confidence"] // Average confidence
+```
+
+**Available Aggregators:**
+- `pregel.SumAggregator{}` - Sum numeric values
+- `pregel.AvgAggregator{}` - Compute average
+- `pregel.MaxAggregator{}` - Find maximum
+- `pregel.MinAggregator{}` - Find minimum
+- Custom aggregators implementing `pregel.Aggregator`
+
+**Use Cases:**
+- 📊 **Global Metrics**: Track total cost, request count, error rates
+- 🎯 **Convergence Detection**: Monitor average changes for iterative algorithms
+- 🔍 **Distributed Coordination**: Share global state across nodes
+- 📈 **Real-time Analytics**: Aggregate data streams from parallel workers
 
 ### 🔁 Retry Policies
 

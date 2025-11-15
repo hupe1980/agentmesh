@@ -2,8 +2,15 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
+)
+
+var (
+	// ErrNilValue is returned when attempting to write a nil value to a LastValueChannel.
+	// LastValueChannel uses atomic.Value which cannot store nil values.
+	ErrNilValue = errors.New("channel: cannot write nil value to LastValueChannel")
 )
 
 // Channel is the user-facing abstraction for data flow between nodes.
@@ -230,6 +237,10 @@ func (tc *TopicChannel) Clone() VersionedChannel {
 // Thread-safety: Uses atomic.Value for lock-free reads and atomic operations
 // for version tracking. This eliminates the data race that occurred with the
 // previous readCached implementation.
+//
+// Nil Value Handling: Write() returns ErrNilValue if attempting to store nil.
+// This is a limitation of atomic.Value which cannot store nil values in Go.
+// To clear a value, delete the channel instead or use a sentinel value pattern.
 type LastValueChannel struct {
 	name     string
 	value    atomic.Value // Stores the actual value
@@ -256,7 +267,12 @@ func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
 	return lvc.value.Load(), nil
 }
 
+// Write stores a new value, replacing any previous value.
+// Returns ErrNilValue if value is nil, as atomic.Value cannot store nil.
 func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
+	if value == nil {
+		return ErrNilValue
+	}
 	lvc.value.Store(value)
 	lvc.hasValue.Store(true)
 	lvc.version.Add(1)

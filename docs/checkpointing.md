@@ -702,7 +702,11 @@ newCheckpoint := &checkpoint.Checkpoint{
 store.Save(ctx, newCheckpoint)
 
 // Resume execution with modified state
-result, _ := compiled.InvokeFromCheckpoint(ctx, newThreadID)
+result, _ := graph.Collect(compiled.Run(ctx, messages,
+    graph.WithCheckpointer(store),
+    graph.WithRunID(newThreadID),
+    graph.WithAutoRestore(true),
+))
 ```
 
 ### Checkpoint Statistics
@@ -904,17 +908,17 @@ By default, checkpoint save errors are logged but don't stop execution. This all
 
 ```go
 // Default: Log checkpoint errors but continue execution
-_, err := compiled.Invoke(ctx, messages,
+_, err := graph.Collect(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("user-session-123"),
-)
+))
 
 // For critical workflows: Fail immediately if checkpoints can't be saved
-_, err := compiled.Invoke(ctx, messages,
+_, err := graph.Collect(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("user-session-123"),
     graph.WithFailOnCheckpointError(true),  // Stop execution on checkpoint errors
-)
+))
 ```
 
 **When to use `WithFailOnCheckpointError(true)`:**
@@ -1237,7 +1241,11 @@ func TestCheckpointRecovery(t *testing.T) {
     require.NotNil(t, cp)
     
     // Resume execution
-    result, err := compiled.InvokeFromCheckpoint(ctx, threadID)
+    result, err := graph.Collect(compiled.Run(ctx, messages,
+        graph.WithCheckpointer(store),
+        graph.WithRunID(threadID),
+        graph.WithAutoRestore(true),
+    ))
     require.NoError(t, err)
     require.NotNil(t, result)
 }

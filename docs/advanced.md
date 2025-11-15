@@ -156,13 +156,22 @@ AgentMesh provides several built-in aggregators for common use cases:
 Accumulates numeric values across all node contributions:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/graph"
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/pregel"
+)
 
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "total_processed": &graph.SumAggregator{},
+// Configure aggregators via PregelExecutor
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "total_processed": pregel.SumAggregator{},
     }),
 )
+
+g := graph.New()
+// ... build graph ...
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
 ```
 
 **Returns**: `float64` - Sum of all contributed values
@@ -172,9 +181,9 @@ compiled, err := builder.Compile(
 Tracks the minimum value across all nodes:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "min_cost": &graph.MinAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "min_cost": pregel.MinAggregator{},
     }),
 )
 ```
@@ -186,9 +195,9 @@ compiled, err := builder.Compile(
 Tracks the maximum value across all nodes:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "max_priority": &graph.MaxAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "max_priority": pregel.MaxAggregator{},
     }),
 )
 ```
@@ -200,9 +209,9 @@ compiled, err := builder.Compile(
 Computes the running average of numeric values using Welford's algorithm for numerical stability:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "avg_latency": &graph.AvgAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "avg_latency": pregel.AvgAggregator{},
     }),
 )
 
@@ -211,21 +220,21 @@ s.Aggregate("avg_latency", responseTime)
 
 // Read result
 snap := s.AggregatesSnapshot()
-avgState := snap["avg_latency"].(graph.avgState)
+avgState := snap["avg_latency"].(pregel.AvgState)
 average := avgState.Mean
 count := avgState.Count
 ```
 
-**Returns**: `avgState{Mean: float64, Count: int64}` - Running mean and sample count
+**Returns**: `AvgState{Mean: float64, Count: int64}` - Running mean and sample count
 
 #### VarianceAggregator
 
 Computes the variance of numeric values using Welford's algorithm:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "latency_variance": &graph.VarianceAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "latency_variance": pregel.VarianceAggregator{},
     }),
 )
 
@@ -234,21 +243,21 @@ s.Aggregate("latency_variance", responseTime)
 
 // Read result
 snap := s.AggregatesSnapshot()
-varState := snap["latency_variance"].(graph.varianceState)
+varState := snap["latency_variance"].(pregel.VarianceState)
 variance := varState.M2 / float64(varState.Count)
 stdDev := math.Sqrt(variance)
 ```
 
-**Returns**: `varianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
+**Returns**: `VarianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
 
 #### CountAggregator
 
 Counts non-nil contributions:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "active_nodes": &graph.CountAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "active_nodes": pregel.CountAggregator{},
     }),
 )
 
@@ -263,12 +272,13 @@ s.Aggregate("active_nodes", true) // Any non-nil value increments
 Boolean aggregators for convergence detection and monitoring:
 
 ```go
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "all_converged": &graph.AllTrueAggregator{},
-        "has_errors":    &graph.AnyTrueAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "all_converged": pregel.AllTrueAggregator{},
+        "has_errors":    pregel.AnyTrueAggregator{},
     }),
 )
+g.WithExecutor(executor)
 
 // Check after superstep
 if snap["all_converged"].(bool) {
@@ -361,11 +371,13 @@ func (a *MedianAggregator) Aggregate(current, value any) any {
 }
 
 // Usage
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
         "latency_median": &MedianAggregator{},
     }),
 )
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
 ```
 
 #### Example: Histogram Aggregator
@@ -456,13 +468,15 @@ Track statistics across parallel branches:
 
 ```go
 // Set up counters
-compiled, err := builder.Compile(
-    graph.WithAggregators(map[string]pregel.Aggregator{
-        "success_count": &graph.SumAggregator{},
-        "failure_count": &graph.SumAggregator{},
-        "total_latency": &graph.SumAggregator{},
+executor := graph.NewPregelExecutor(
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "success_count": pregel.SumAggregator{},
+        "failure_count": pregel.SumAggregator{},
+        "total_latency": pregel.SumAggregator{},
     }),
 )
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
 
 // In each parallel node
 RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {

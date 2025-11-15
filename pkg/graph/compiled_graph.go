@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"sort"
@@ -110,7 +109,7 @@ type Structure interface {
 // Created by Builder.Compile() after graph construction.
 type Compiled struct {
 	stateManager      StateManager
-	executor          Executor // Pluggable execution strategy
+	executor          Executor // Execution strategy (PregelExecutor, SimpleGraphExecutor, etc.)
 	runtime           *executionState
 	runtimeMu         sync.RWMutex // Protects runtime state pointer
 	invokeMu          sync.Mutex   // Serializes Run calls
@@ -206,7 +205,7 @@ func (cg *Compiled) topology() *ExecutorTopology {
 
 // attachProvidersToContext attaches observability providers from options to context.
 // This ensures providers are available to node RunFuncs via FromContext() helpers.
-func (cg *Compiled) attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
+func attachProvidersToContext(ctx context.Context, options runOptions) context.Context {
 	// Attach logger if configured
 	if options.logger != nil {
 		ctx = logging.WithLogger(ctx, options.logger)
@@ -227,7 +226,7 @@ func (cg *Compiled) attachProvidersToContext(ctx context.Context, options runOpt
 
 // createInstrumentation builds an Instrumentation from the configured providers.
 // Returns nil if no providers configured (noop behavior).
-func (cg *Compiled) createInstrumentation(options runOptions) *Instrumentation {
+func createInstrumentation(options runOptions) *Instrumentation {
 	// Only create instrumentation if at least one provider is configured
 	if options.tracer == nil && options.metricsProvider == nil {
 		return nil
@@ -245,36 +244,84 @@ func (cg *Compiled) bootstrapScheduler(ctx context.Context, s *vertexScheduler) 
 	completed := runtime.completedNames()
 	paused := runtime.pausedNames()
 
-	s.Reset()
+	// If resuming from checkpoint (has completed nodes), don't reset the scheduler.
+	// The completed nodes define the frontier to resume from.
+	// If starting fresh (no completed nodes), reset to start from START node.
+	if len(completed) == 0 && len(paused) == 0 {
+		s.Reset()
+	}
+
 	s.Bootstrap(ctx, completed, paused)
 }
 
 // Run executes the graph with the given initial messages and returns an iterator
 // of execution events. This is the primary API for graph execution.
 //
-// If a custom Executor is configured, execution is delegated to it.
-// Otherwise, uses the default Pregel BSP execution.
+// EXECUTION STRATEGY:
+//
+// By default, Run uses the Pregel BSP (Bulk Synchronous Parallel) execution engine,
+// which provides:
+//   - Parallel execution with configurable worker pools
+//   - Message passing between nodes across supersteps
+//   - Support for distributed execution via pluggable message buses
+//   - Global aggregators for cross-node coordination
+//   - Efficient combiner functions to reduce message volume
+//
+// You can override the execution strategy by providing a custom Executor via
+// WithExecutor() when compiling:
+//
+//	// Default: Pregel BSP execution (parallel, high performance)
+//	compiled, _ := builder.Compile()
+//	results := compiled.Run(ctx, initialMessages)
+//
+//	// Alternative: SimpleGraphExecutor (sequential, for debugging)
+//	compiled, _ := builder.Compile(WithExecutor(NewSimpleGraphExecutor()))
+//	results := compiled.Run(ctx, initialMessages)
+//
+// CONCURRENCY:
+//
+// Run() serializes execution via invokeMu (one invocation at a time per Compiled instance).
+// This ensures state consistency but prevents concurrent runs on the same Compiled.
+// For concurrent execution, either:
+//   - Clone the state before each run
+//   - Create separate Compiled instances
+//   - Use distributed execution with external state management
+//
+// ITERATOR PROTOCOL:
+//
+// Returns an iterator (iter.Seq2) that yields (ExecutionResult, error) pairs.
+// The iterator is lazy and executes the graph as you consume events:
+//
+//	for event, err := range compiled.Run(ctx, messages) {
+//	    if err != nil {
+//	        // Handle error
+//	    }
+//	    // Process event
+//	}
+//
+// Or collect all results:
+//
+//	results, err := Collect(compiled.Run(ctx, messages))
 func (cg *Compiled) Run(ctx context.Context, messages []message.Message, optFns ...RunOption) iter.Seq2[state.ExecutionResult, error] {
 	cg.invokeMu.Lock()
 	defer cg.invokeMu.Unlock()
 
+	// Build runOptions from RunOption functions
 	options := defaultRunOptions()
 	for _, optFn := range optFns {
 		optFn(&options)
 	}
 
-	// If custom executor is configured, delegate to it
-	if cg.executor != nil {
-		runOpts := &RunOptions{
-			MaxIterations:  options.maxIterations,
-			MaxConcurrency: options.maxConcurrency,
-			RunID:          options.runID,
-		}
-		return cg.executor.Run(ctx, cg.topology(), cg.stateManager, messages, runOpts)
+	// Convert to executor RunOptions (public API)
+	// Pass internal runOptions as opaque data through RunOptions
+	runOpts := &RunOptions{
+		MaxIterations:  options.maxIterations,
+		MaxConcurrency: options.maxConcurrency,
+		RunID:          options.runID,
+		internal:       &options, // Pass full options to executor
 	}
 
-	// Default: use built-in Pregel BSP execution
-	return cg.runWithOptions(ctx, messages, options)
+	return cg.executor.Run(ctx, cg.topology(), cg.stateManager, messages, runOpts)
 }
 
 // ApplyState synchronously merges values and messages into the committed graph state.
@@ -384,11 +431,20 @@ func (cg *Compiled) AsNodeWithStateMapping(
 			}, nil
 		},
 	}
-} // restoreFromCheckpoint loads and restores checkpoint if configured.
-// Returns the initial superstep to resume from, or 0 if no checkpoint was loaded.
-func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptions, instrumentation *Instrumentation) (int64, error) {
+}
+
+// checkpointResume holds execution state restored from a checkpoint.
+type checkpointResume struct {
+	superstep      int64
+	completedNodes []string
+	pausedNodes    []string
+}
+
+// restoreFromCheckpoint loads and restores checkpoint if configured.
+// Returns execution state to resume from, or nil if no checkpoint was loaded.
+func restoreFromCheckpoint(ctx context.Context, stateManager StateManager, options *runOptions, instrumentation *Instrumentation) (*checkpointResume, error) {
 	if options.checkpointer == nil || options.runID == "" || !options.autoRestore {
-		return 0, nil
+		return nil, nil
 	}
 
 	logger := logging.FromContext(ctx)
@@ -412,26 +468,28 @@ func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptio
 		logger.Error("failed to load checkpoint",
 			"run_id", options.runID,
 			"error", err)
-		return 0, fmt.Errorf("failed to load checkpoint: %w", err)
+		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
 	}
 
 	if chkpt == nil {
-		return 0, nil
+		return nil, nil
 	}
 
 	logger.Info("restoring from checkpoint",
 		"run_id", options.runID,
 		"superstep", chkpt.Superstep,
-		"version", chkpt.Version)
+		"version", chkpt.Version,
+		"completed_nodes", len(chkpt.CompletedNodes),
+		"paused_nodes", len(chkpt.PausedNodes))
 
 	// Trace checkpoint restore operation (if instrumentation configured)
 	if instrumentation != nil {
 		restoreCtx, restoreSpan := instrumentation.TraceCheckpoint(ctx, "restore", options.runID, chkpt.Superstep)
-		err = cg.restoreCheckpoint(chkpt)
+		err = restoreCheckpointState(stateManager, chkpt)
 		restoreSpan.End(err)
 		_ = restoreCtx // Context not used further
 	} else {
-		err = cg.restoreCheckpoint(chkpt)
+		err = restoreCheckpointState(stateManager, chkpt)
 	}
 
 	if err != nil {
@@ -439,7 +497,7 @@ func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptio
 			"run_id", options.runID,
 			"superstep", chkpt.Superstep,
 			"error", err)
-		return 0, fmt.Errorf("failed to restore checkpoint: %w", err)
+		return nil, fmt.Errorf("failed to restore checkpoint: %w", err)
 	}
 
 	logger.Info("checkpoint restored successfully",
@@ -447,7 +505,11 @@ func (cg *Compiled) restoreFromCheckpoint(ctx context.Context, options *runOptio
 		"superstep", chkpt.Superstep,
 		"version", chkpt.Version)
 
-	return chkpt.Superstep, nil
+	return &checkpointResume{
+		superstep:      chkpt.Superstep,
+		completedNodes: chkpt.CompletedNodes,
+		pausedNodes:    chkpt.PausedNodes,
+	}, nil
 }
 
 // calculateMessageSize calculates the approximate size in bytes of a message
@@ -528,7 +590,7 @@ func calculateFunctionResponsePartSize(p message.FunctionResponsePart) int {
 
 // validateMessages validates input messages against configured size and count limits.
 // Returns a MessageValidationError if any limits are exceeded.
-func (cg *Compiled) validateMessages(messages []message.Message, options *runOptions) error {
+func validateMessages(messages []message.Message, options *runOptions) error {
 	// Validate message count
 	if options.maxInputMessages > 0 && len(messages) > options.maxInputMessages {
 		return &MessageValidationError{
@@ -575,17 +637,18 @@ func (cg *Compiled) validateMessages(messages []message.Message, options *runOpt
 
 // setupRun prepares the execution context, instrumentation, and state for a graph run.
 // It handles context validation, message preparation, checkpoint restoration, and provider setup.
-func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, options *runOptions) (context.Context, *Instrumentation, error) {
+// This is a package-level function to avoid circular dependencies between Compiled and executors.
+func setupRun(ctx context.Context, stateManager StateManager, messages []message.Message, options *runOptions) (context.Context, *Instrumentation, *checkpointResume, error) {
 	if ctx == nil {
-		return nil, nil, fmt.Errorf("%w", ErrNilContext)
+		return nil, nil, nil, fmt.Errorf("%w", ErrNilContext)
 	}
 	if options.maxConcurrency < 1 {
 		options.maxConcurrency = 1
 	}
 
 	// Validate input messages against configured limits
-	if err := cg.validateMessages(messages, options); err != nil {
-		return nil, nil, err
+	if err := validateMessages(messages, options); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Wrap input messages as ExecutionResults for internal processing
@@ -594,50 +657,27 @@ func (cg *Compiled) setupRun(ctx context.Context, messages []message.Message, op
 		for i, msg := range messages {
 			events[i] = *state.NewExecutionResult(msg, options.runID, "__input__")
 		}
-		if cg.stateManager != nil {
-			cg.stateManager.ApplyUpdates(nil, events)
+		if stateManager != nil {
+			stateManager.ApplyUpdates(nil, events)
 		}
 	}
 
 	// Attach observability providers to context
-	ctx = cg.attachProvidersToContext(ctx, *options)
+	ctx = attachProvidersToContext(ctx, *options)
 
 	// Create instrumentation from providers
-	instrumentation := cg.createInstrumentation(*options)
+	instrumentation := createInstrumentation(*options)
 
 	// Attempt to restore from checkpoint
-	initialSuperstep, err := cg.restoreFromCheckpoint(ctx, options, instrumentation)
+	resume, err := restoreFromCheckpoint(ctx, stateManager, options, instrumentation)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if initialSuperstep > 0 {
-		options.initialSuperstep = initialSuperstep
+	if resume != nil {
+		options.initialSuperstep = resume.superstep
 	}
 
-	return ctx, instrumentation, nil
-}
-
-func (cg *Compiled) runWithOptions(ctx context.Context, messages []message.Message, options runOptions) iter.Seq2[state.ExecutionResult, error] {
-	return func(yield func(state.ExecutionResult, error) bool) {
-		runCtx, instrumentation, err := cg.setupRun(ctx, messages, &options)
-		if err != nil {
-			yield(state.ExecutionResult{}, err)
-			return
-		}
-
-		derivedCtx, cancel := context.WithCancel(runCtx)
-		defer cancel()
-
-		// Create runtime with yield function directly
-		rt := newPregelRuntime(cg, cancel, options, yield, instrumentation)
-		_ = rt.run(derivedCtx)
-
-		// Don't emit deadline exceeded errors here - they're already wrapped and emitted
-		// by the node adapter with the specific node name. Only emit unexpected context errors.
-		if err := derivedCtx.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			rt.emitError(err)
-		}
-	}
+	return ctx, instrumentation, resume, nil
 }
 
 // =============================================================================

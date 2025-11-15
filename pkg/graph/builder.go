@@ -105,14 +105,36 @@ func (b *Builder) WithInitialChannels(configFn func(*ChannelState)) *Builder {
 }
 
 // WithExecutor sets a custom execution strategy for the graph.
-// By default, graphs use Pregel BSP parallel execution. Use this to:
-//   - Switch to SimpleGraphExecutor for debugging (sequential, single-threaded)
-//   - Implement custom execution strategies
-//   - Use alternative distributed execution backends
 //
-// Example:
+// DEFAULT EXECUTION:
+// By default, graphs use the Pregel BSP (Bulk Synchronous Parallel) execution engine,
+// which provides parallel execution with worker pools, message passing, and distributed
+// execution capabilities via pluggable message buses.
 //
-//	builder.WithExecutor(graph.NewSimpleGraphExecutor()) // Sequential debugging mode
+// ALTERNATIVE EXECUTORS:
+//
+//  1. SimpleGraphExecutor - Sequential execution for debugging
+//     Use when you need deterministic, single-threaded execution to debug complex workflows:
+//
+//     builder.WithExecutor(NewSimpleGraphExecutor())
+//
+//  2. Custom Executors - Implement your own execution strategy
+//     Implement the Executor interface for specialized execution models:
+//
+//     type MyExecutor struct{ ... }
+//     func (e *MyExecutor) Run(...) iter.Seq2[state.ExecutionResult, error] { ... }
+//     builder.WithExecutor(myExecutor)
+//
+// WHY CHANGE THE EXECUTOR:
+//   - Debugging: SimpleGraphExecutor provides predictable, sequential execution
+//   - Testing: Easier to write deterministic tests with sequential execution
+//   - Custom backends: Implement distributed execution with Kafka, Redis, etc.
+//   - Specialized scheduling: Custom execution order or prioritization logic
+//
+// ARCHITECTURE NOTE:
+// The Executor interface cleanly separates graph topology (what to execute) from
+// execution strategy (how to execute), enabling pluggable backends without changing
+// the graph definition or Compiled.Run() API.
 func (b *Builder) WithExecutor(executor Executor) *Builder {
 	if b.err != nil {
 		return b

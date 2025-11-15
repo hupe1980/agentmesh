@@ -296,10 +296,15 @@ func TestRetryPolicy(t *testing.T) {
 		g.AddEdge("retry-aggregate", "report")
 		g.AddEdge("report", EndNode)
 
+		// Configure PregelExecutor with aggregators
+		executor := NewPregelExecutor(WithPregelAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}}))
+		_, err = g.WithExecutor(executor)
+		require.NoError(t, err)
+
 		compiled, err := g.Compile()
 		require.NoError(t, err)
 
-		_, err = Last(compiled.Run(context.Background(), nil, WithAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}})))
+		_, err = Last(compiled.Run(context.Background(), nil))
 		require.NoError(t, err)
 
 		assert.Equal(t, 2, attempts)

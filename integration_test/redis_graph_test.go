@@ -93,12 +93,17 @@ func TestRedisMessageBus_GraphExecution(t *testing.T) {
 	g.AddEdge("node2", "node3")
 	g.AddEdge("node3", graph.EndNode)
 
+	// Set PregelExecutor configured with Redis message bus
+	executor := graph.NewPregelExecutor(graph.WithMessageBus(bus))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	// Compile graph
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	// Execute with Redis message bus
-	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
+	// Execute with Redis message bus (configured via PregelExecutor)
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify state updates
@@ -183,10 +188,15 @@ func TestRedisMessageBus_ParallelNodes(t *testing.T) {
 	}
 	g.AddEdge("aggregator", graph.EndNode)
 
+	// Set PregelExecutor configured with Redis message bus
+	executor := graph.NewPregelExecutor(graph.WithMessageBus(bus))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify all workers completed
@@ -282,10 +292,15 @@ func TestRedisMessageBus_ConditionalEdges(t *testing.T) {
 	g.AddEdge("negative", "end")
 	g.AddEdge("end", graph.EndNode)
 
+	// Set PregelExecutor configured with Redis message bus
+	executor := graph.NewPregelExecutor(graph.WithMessageBus(bus))
+	_, err = g.WithExecutor(executor)
+	require.NoError(t, err)
+
 	compiled, err := g.Compile()
 	require.NoError(t, err)
 
-	_, err = graph.Last(compiled.Run(ctx, nil, graph.WithPregelMessageBus(bus)))
+	_, err = graph.Last(compiled.Run(ctx, nil))
 	require.NoError(t, err)
 
 	// Verify it took the positive path (value=42 > 0)

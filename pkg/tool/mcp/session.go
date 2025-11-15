@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -59,7 +58,6 @@ type HTTPOptions struct {
 // per session (e.g., to inject authentication headers or override the MCP client).
 type SessionFactory func(
 	ctx context.Context,
-	state state.Reader,
 	optFns ...func(o *SessionFactoryOptions),
 ) (*mcp.ClientSession, error)
 
@@ -68,7 +66,6 @@ type SessionFactory func(
 func NewInMemorySessionFactory(transport *mcp.InMemoryTransport) SessionFactory {
 	return func(
 		ctx context.Context,
-		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -99,7 +96,6 @@ func NewStdioSessionFactory(command string, args []string, optFns ...func(o *Exe
 
 	return func(
 		ctx context.Context,
-		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -211,7 +207,6 @@ func newHTTPSessionFactory(
 
 	return func(
 		ctx context.Context,
-		state state.Reader,
 		optFns ...func(o *SessionFactoryOptions),
 	) (*mcp.ClientSession, error) {
 		opts := SessionFactoryOptions{
@@ -284,7 +279,6 @@ func NewSessionManager(factory SessionFactory) *SessionManager {
 // transports can apply them (e.g., for HTTP authentication).
 func (m *SessionManager) CreateSession(
 	ctx context.Context,
-	state state.Reader,
 	headers map[string]string,
 ) (*mcp.ClientSession, error) {
 	key, err := sessionKeyFromHeaders(headers)
@@ -311,7 +305,7 @@ func (m *SessionManager) CreateSession(
 	m.mu.Unlock()
 
 	// create a new session via factory
-	sess, err := m.factory(ctx, state, func(o *SessionFactoryOptions) {
+	sess, err := m.factory(ctx, func(o *SessionFactoryOptions) {
 		o.Headers = headers
 	})
 	if err != nil {

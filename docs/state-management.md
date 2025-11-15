@@ -193,7 +193,11 @@ for _, cp := range checkpoints {
 
 ```go
 // Resume from superstep 5
-results, err := compiled.InvokeFromSuperstep(ctx, "workflow-123", 5, newMessages)
+results, err := graph.Collect(compiled.Run(ctx, newMessages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID("workflow-123"),
+    graph.WithResumeFromSuperstep(5),
+))
 ```
 
 ### Debugging workflow
@@ -209,7 +213,11 @@ results, err := compiled.InvokeFromSuperstep(ctx, "workflow-123", 5, newMessages
 // Original execution failed at superstep 10
 // Resume from superstep 8 with debug logging enabled
 ctx = context.WithValue(ctx, "debug", true)
-results, err := compiled.InvokeFromSuperstep(ctx, threadID, 8, messages)
+results, err := graph.Collect(compiled.Run(ctx, messages,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID(threadID),
+    graph.WithResumeFromSuperstep(8),
+))
 ```
 
 See `examples/time_travel` for a complete demonstration.
@@ -302,11 +310,18 @@ for event, err := range seq {
 // Human reviews and provides input
 // ...
 
-// Resume execution with approval
-seq = compiled.Resume(ctx, "approval-flow", map[string]any{
+// Apply human input to state
+compiled.ApplyState(map[string]any{
     "approved": true,
     "reviewer": "alice@example.com",
-})
+}, nil)
+
+// Resume execution
+seq = compiled.Run(ctx, messages,
+    graph.WithRunID("approval-flow"),
+    graph.WithCheckpointer(checkpointer),
+    graph.WithAutoRestore(true),
+)
 ```
 
 ### Use cases

@@ -86,7 +86,7 @@ func (t *mcpToolImpl) RawTool() *mcp.Tool {
 //
 // Errors from session creation or the MCP invocation are propagated unchanged.
 func (t *mcpToolImpl) Call(ctx context.Context, args string) (any, error) {
-	session, err := t.sessionManager.CreateSession(ctx, nil, nil) // TODO: pass state and headers
+	session, err := t.sessionManager.CreateSession(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

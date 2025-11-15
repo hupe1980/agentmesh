@@ -37,7 +37,7 @@ AgentMesh is built on a Pregel-inspired bulk-synchronous parallel (BSP) graph ex
 
 ## Component Architecture Overview {#component-overview}
 
-AgentMesh follows a **component-based architecture** with clean separation of concerns:
+AgentMesh follows a **clean, interface-based architecture** with strict separation of concerns:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -49,49 +49,91 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                            │ builds on
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    Compiled (Coordinator)                │
-│  • Immutable graph topology (nodes, edges, conditionals)      │
-│  • Public API (Invoke, Stream, Pause, Resume)                │
-│  • Coordinates StateManager ↔ Executor                        │
-│  • Rate limiting & retry policies                             │
+│                         Graph                                 │
+│  • Builder API for graph construction                         │
+│  • Validates topology (nodes, edges, conditionals)            │
+│  • Attaches Executor during construction                      │
+│  • Compile() → Compiled                                       │
+└────────────────────────┬─────────────────────────────────────┘
+                         │ compile()
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Compiled (Pure Coordinator)                │
+│  • Immutable topology (implements Structure interface)        │
+│  • Public API: Run(ctx, messages) → event iterator           │
+│  • StateManager: Manages state, messages, checkpoints        │
+│  • Executor: Injected execution strategy                      │
+│  • NO execution logic - pure delegation                       │
 └────────────────┬─────────────────────────┬───────────────────┘
                  │                         │
-                 │ delegates to            │ delegates to
+                 │ provides to executor    │ delegates to
                  ▼                         ▼
     ┌────────────────────────┐  ┌────────────────────────────┐
-    │    StateManager        │  │       Executor             │
+    │    Structure           │  │       Executor             │
     │    (Interface)         │  │       (Interface)          │
     │                        │  │                            │
-    │  • Channels            │  │  • Execution Strategy      │
-    │  • Checkpoints         │  │  • Superstep Coordination  │
-    │  • Aggregates          │  │  • Event Streaming         │
-    │  • Thread-safe access  │  │  • Pause/Resume Control    │
-    │  • State versioning    │  │  • Execution Statistics    │
+    │  • Nodes/edges         │  │  Run(ctx, topology,        │
+    │  • Topology queries    │  │      stateManager,         │
+    │  • StateManager access │  │      messages, options)    │
+    │  • Mark completed      │  │  CurrentSuperstep()        │
+    │  • Pause/resume        │  │  Pause/Resume/IsPaused()   │
+    │  • Superstep tracking  │  │                            │
     └────────────────────────┘  └──────────┬─────────────────┘
                                            │
                          ┌─────────────────┴─────────────────┐
-                         │ implements                        │ implements
+                         │                                   │
                          ▼                                   ▼
             ┌─────────────────────────┐      ┌─────────────────────────┐
-            │ Built-in Pregel BSP     │      │ SimpleGraphExecutor     │
-            │ (graphRuntime + pregel) │      │ (sequential)            │
+            │   PregelExecutor        │      │ SimpleGraphExecutor     │
+            │   (Default)             │      │ (Future)                │
             │                         │      │                         │
             │ • BSP Supersteps        │      │ • Topological order     │
-            │ • Parallel execution    │      │ • Single-threaded       │
-            │ • Worker Pool           │      │ • No synchronization    │
-            │ • Mailbox System        │      │ • For debugging         │
+            │ • Parallel workers      │      │ • Single-threaded       │
+            │ • Message bus           │      │ • No synchronization    │
+            │ • Aggregators           │      │ • For debugging         │
+            │ • Combiners             │      │                         │
+            │ • Checkpoint callbacks  │      │                         │
+            │                         │      │                         │
+            │ Uses:                   │      │                         │
+            │ • graphRuntime          │      │                         │
             │ • pkg/pregel runtime    │      │                         │
+            │ • vertexScheduler       │      │                         │
+            │ • stateCoordinator      │      │                         │
+            │ • eventEmitter          │      │                         │
             └─────────────────────────┘      └─────────────────────────┘
 ```
 
 **Key Design Principles:**
-- **Separation of Concerns**: State, execution, and topology are independent
-- **Interface-Based**: StateManager and Executor are interfaces for testability
-- **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
-- **Extensibility**: Public `pkg/pregel` API for custom backends
-- **Layered Abstraction**: High-level agents build on low-level graph primitives
 
-The rest of this document explores the **Pregel BSP execution engine** that powers the framework.
+1. **Clean Architecture**: No special cases or type switching
+   - `Compiled.Run()` simply delegates to `executor.Run()`
+   - All executors treated uniformly through interface
+   - No coupling between Compiled and specific executor implementations
+
+2. **Interface-Based Design**: Both State and Execution are abstracted
+   - `Structure`: Read-only topology access for executors
+   - `StateManager`: Mutable state management
+   - `Executor`: Pluggable execution strategies
+
+3. **Self-Contained Executors**: Each executor owns its execution logic
+   - PregelExecutor manages BSP coordination, workers, message bus
+   - SimpleGraphExecutor would manage sequential execution
+   - No shared execution state between executor types
+
+4. **Separation of Concerns**:
+   - **Graph**: Construction and validation
+   - **Compiled**: Topology storage and coordination
+   - **Executor**: Execution strategy and runtime management
+   - **StateManager**: State persistence and message handling
+
+5. **Extensibility**: Easy to add new execution strategies
+   - Implement `Executor` interface
+   - No changes to Compiled or Graph needed
+   - Full access to topology via Structure interface
+
+> **📖 For detailed executor architecture and implementation guide, see [EXECUTOR.md](/docs/EXECUTOR.md)**
+
+The rest of this document explores the **Pregel BSP execution engine** (PregelExecutor) that powers the framework.
 
 ---
 
@@ -540,8 +582,11 @@ type vertexScheduler struct {
 **Usage**:
 
 ```go
-// Pause execution before a node
-compiled.Pause("review_node")
+// Pause is handled via the executor interface
+executor := compiled.executor // internal access
+
+// Pause execution before a node (typically set before Run)
+executor.Pause("review_node")
 
 // Execute graph (will stop before review_node)
 _, err := graph.CollectMessages(compiled.Run(ctx, messages))
@@ -553,12 +598,14 @@ if err != nil {
 // ...
 
 // Resume execution
-compiled.Resume("review_node")
+executor.Resume("review_node")
 messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
 ```
+
+**Note**: Pause/Resume is currently part of the internal executor interface, not exposed as public methods on Compiled. For human-in-the-loop workflows, nodes can return `ErrHumanInterrupt` to pause execution naturally.
 
 **Use cases**:
 
@@ -1008,38 +1055,127 @@ AgentMesh uses the **Executor interface** to abstract execution strategies:
 
 ```go
 type Executor interface {
-    Execute(ctx context.Context, initialMessages []Message, opts ExecuteOptions) (*InvokeResult, error)
-    Stream(ctx context.Context, initialMessages []Message, opts StreamOptions) <-chan StreamEvent
-    Pause(nodeName string) error
-    Resume(nodeName string) error
-    IsPaused(nodeName string) bool
+    Run(ctx context.Context, topology *ExecutorTopology, ...) iter.Seq2[state.ExecutionResult, error]
     CurrentSuperstep() int64
-    Stats() ExecutionStats
+    Pause(nodeName string)
+    Resume(nodeName string)
+    IsPaused(nodeName string) bool
 }
 ```
 
-### PregelExecutor Implementation
+### Default Execution: Pregel BSP
 
-The default implementation uses **composition over inheritance**:
+**By default**, `Compiled.Run()` uses the **Pregel BSP execution engine** (parallel, distributed-ready):
 
 ```go
-type PregelExecutor struct {
-    cg *Compiled  // Wraps Compiled
+// Default: Uses Pregel BSP execution automatically
+g := graph.New()
+// ... build graph ...
+compiled, _ := g.Compile()
+results := compiled.Run(ctx, initialMessages)  // Parallel execution via Pregel
+```
+
+The Pregel execution is implemented through `pkg/graph/pregel.go`, which integrates the `pkg/pregel` BSP runtime:
+- **Parallel execution** via worker pools
+- **Bulk-Synchronous Parallel** (BSP) superstep coordination
+- **Message passing** between nodes
+- **Distributed-ready** for future MessageBus backends
+
+### Configuring Pregel Execution: PregelExecutor
+
+**PregelExecutor** provides typed configuration for Pregel-specific features without polluting the graph package API:
+
+```go
+// Configure Pregel BSP execution engine
+executor := graph.NewPregelExecutor(
+    // Aggregators: Global state aggregation across all nodes
+    graph.WithPregelAggregators(map[string]pregel.Aggregator{
+        "total_cost": pregel.SumAggregator{},
+        "max_latency": pregel.MaxAggregator{},
+    }),
+    
+    // Combiner: Message optimization before delivery
+    graph.WithPregelCombiner(func(messages []graph.ChannelMessage) []graph.ChannelMessage {
+        // Merge, deduplicate, or filter messages
+        return messages
+    }),
+    
+    // Message Bus: Pluggable backend for distributed messaging
+    graph.WithMessageBus(redisMessageBus),  // Redis, Kafka, etc.
+    
+    // Workers: Parallel execution configuration
+    graph.WithMaxWorkers(8),
+    
+    // Max Iterations: Prevent infinite loops
+    graph.WithPregelMaxIterations(1000),
+)
+
+// Apply configuration before compilation
+g := graph.New()
+// ... build graph ...
+g.WithExecutor(executor)
+compiled, _ := g.Compile()
+
+// Run with configured Pregel executor
+result, _ := graph.Last(compiled.Run(ctx, initialMessages))
+
+// Access aggregated values
+totalCost := result.Aggregates["total_cost"]    // Global sum
+maxLatency := result.Aggregates["max_latency"]  // Global max
+```
+
+**Key Design Principles:**
+- **Compile-Time Configuration**: Aggregators and combiners are part of graph structure
+- **Clean Separation**: Pregel concerns isolated from graph package
+- **Type Safety**: Typed options at configuration time
+- **Runtime Overrides**: Per-run `WithMaxIterations()` still available
+
+**Architecture:**
+```
+User Code → PregelExecutor (typed config)
+    ↓
+Graph.SetExecutor() → Compiled.Run()
+    ↓
+runOptions (interface{} bridge) → pregel.Runtime (typed execution)
+```
+
+The bridging pattern allows clean separation while maintaining type safety at both configuration and execution time.
+
+### Alternative: SimpleGraphExecutor
+
+For **debugging** or **testing**, you can override with `SimpleGraphExecutor` (sequential, single-threaded):
+
+```go
+// Override for debugging: Sequential execution
+compiled := graph.NewCompiledGraph(...).
+    WithExecutor(graph.NewSimpleExecutor())
+
+results := compiled.Run(ctx, initialMessages)  // Sequential execution
+```
+
+### Custom Executors
+
+You can implement custom execution strategies by satisfying the `Executor` interface:
+
+```go
+type CustomExecutor struct { ... }
+
+func (e *CustomExecutor) Run(ctx context.Context, topology *ExecutorTopology, ...) iter.Seq2[state.ExecutionResult, error] {
+    // Custom execution logic
 }
 
-// Delegates to proven Compiled methods
-func (e *PregelExecutor) Execute(ctx context.Context, messages []Message, opts ExecuteOptions) (*InvokeResult, error) {
-    return e.cg.invokeWithOptions(ctx, messages, convertOptions(opts))
-}
+// Use custom executor
+compiled := graph.NewCompiledGraph(...).
+    WithExecutor(NewCustomExecutor())
 ```
 
 **Architecture Benefits**:
-- ✅ **Clean Separation**: Executor doesn't modify Compiled internals
-- ✅ **No Circular Dependencies**: Composition pattern prevents cycles
-- ✅ **Extensibility**: Can implement custom execution strategies
-- ✅ **Testability**: Mock executors for unit tests
+- ✅ **Default Performance**: Pregel BSP execution out-of-the-box
+- ✅ **Pluggable Design**: Switch execution strategies via `WithExecutor()`
+- ✅ **Extensibility**: Implement custom executors for specialized needs
+- ✅ **Testing Support**: Use SimpleGraphExecutor for deterministic debugging
 
-This pattern allows for future execution strategies (e.g., distributed executor, streaming executor) without changing the core graph engine.
+This pattern allows for different execution strategies (parallel, sequential, distributed) without changing the core graph topology or node implementations.
 
 ---
 

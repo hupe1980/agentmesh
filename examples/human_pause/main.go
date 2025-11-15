@@ -3,10 +3,11 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"time"
+
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -19,10 +20,12 @@ func main() {
 	}
 
 	// Initialize state values using LastValueChannel (auto-created by Set)
-	state.Set("current_task", "Impact of AI on climate change")
-	state.Set("human_input", nil)
-	state.Set("draft", nil)
-	state.Set("final_report", nil)
+	if err := state.Set("current_task", "Impact of AI on climate change"); err != nil {
+		panic(err)
+	}
+	// Note: Don't initialize optional fields to nil - they'll be nil by default
+	// when reading from non-existent channels. Setting nil values will return an error
+	// because LastValueChannel uses atomic.Value which cannot store nil.
 
 	// For action_history, we want accumulation behavior (append semantics)
 	// Use TopicChannel for this instead of a reducer
