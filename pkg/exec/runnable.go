@@ -122,8 +122,8 @@ func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable,
 		return nil, errors.New("graph cannot be nil")
 	}
 
-	// Step 1: Compile topology using pkg/compile
-	compiled, err := compile.Compile(g, g.StateManager())
+	// Step 1: Compile topology using pkg/compile with validation options
+	compiled, err := compile.Compile(g, g.StateManager(), cfg.compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %w", err)
 	}
@@ -143,7 +143,8 @@ type CompileOption func(*compileConfig)
 
 // compileConfig holds compilation configuration.
 type compileConfig struct {
-	executor Executor
+	executor    Executor
+	compileOpts []compile.CompileOption
 }
 
 // setupCompilation extracts configuration setup (SRP: single responsibility).
@@ -162,6 +163,33 @@ func setupCompilation(opts []CompileOption) *compileConfig {
 func WithExecutor(executor Executor) CompileOption {
 	return func(cfg *compileConfig) {
 		cfg.executor = executor
+	}
+}
+
+// WithValidation sets custom validation options for graph compilation.
+func WithValidation(opts compile.ValidationOptions) CompileOption {
+	return func(cfg *compileConfig) {
+		cfg.compileOpts = append(cfg.compileOpts, compile.WithValidation(opts))
+	}
+}
+
+// WithStrictValidation enables strict validation mode.
+// This enforces:
+//   - No unreachable nodes
+//   - No dead-end nodes
+//   - No cycles
+//   - Required START and END connections
+func WithStrictValidation() CompileOption {
+	return func(cfg *compileConfig) {
+		cfg.compileOpts = append(cfg.compileOpts, compile.WithStrictValidation())
+	}
+}
+
+// WithoutValidation disables validation (use with caution).
+// Only use this for trusted graphs or when validation overhead is unacceptable.
+func WithoutValidation() CompileOption {
+	return func(cfg *compileConfig) {
+		cfg.compileOpts = append(cfg.compileOpts, compile.WithoutValidation())
 	}
 }
 

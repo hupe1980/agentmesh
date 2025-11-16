@@ -1,6 +1,9 @@
 package compile
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -33,11 +36,27 @@ type CompiledGraph struct {
 
 // Compile takes a graph and compiles it into an executable form.
 // This validates the graph structure and computes topology information.
-func Compile(g *graph.Graph, stateManager state.StateManager) (*CompiledGraph, error) {
-	// TODO: Add validation
-	// - Check for cycles
-	// - Verify all edge endpoints exist
-	// - Validate start/end nodes
+//
+// Validation checks include:
+//   - Basic structure (nodes, edges, conditionals)
+//   - Edge references (all nodes exist)
+//   - Topology (cycles, reachability, dead ends)
+//
+// Use CompileOptions to customize validation behavior.
+func Compile(g *graph.Graph, stateManager state.StateManager, opts ...CompileOption) (*CompiledGraph, error) {
+	cfg := &compileConfig{
+		validationOpts: DefaultValidationOptions(),
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	// Validate graph structure
+	validator := NewValidator(cfg.validationOpts)
+	errors := validator.Validate(g)
+	if len(errors) > 0 {
+		return nil, formatValidationErrors(errors)
+	}
 
 	// Compute topology (graph.Graph uses Branches, not Conditionals)
 	topo := computeTopology(g.Nodes, g.Edges, g.Branches)
@@ -46,9 +65,55 @@ func Compile(g *graph.Graph, stateManager state.StateManager) (*CompiledGraph, e
 		Graph:        g,
 		Topology:     topo,
 		StateManager: stateManager,
-		StartNode:    StartNode, // Use constant, not field
-		EndNode:      EndNode,   // Use constant, not field
+		StartNode:    StartNode,
+		EndNode:      EndNode,
 	}, nil
+}
+
+// compileConfig holds compilation configuration.
+type compileConfig struct {
+	validationOpts ValidationOptions
+}
+
+// CompileOption configures compilation behavior.
+type CompileOption func(*compileConfig)
+
+// WithValidation sets custom validation options.
+func WithValidation(opts ValidationOptions) CompileOption {
+	return func(c *compileConfig) {
+		c.validationOpts = opts
+	}
+}
+
+// WithStrictValidation enables strict validation mode.
+func WithStrictValidation() CompileOption {
+	return func(c *compileConfig) {
+		c.validationOpts = StrictValidationOptions()
+	}
+}
+
+// WithoutValidation disables validation (use with caution).
+// Only use this for trusted graphs or when validation overhead is unacceptable.
+func WithoutValidation() CompileOption {
+	return func(c *compileConfig) {
+		c.validationOpts = ValidationOptions{
+			SkipValidation: true,
+		}
+	}
+}
+
+// formatValidationErrors formats validation errors into a single error message.
+func formatValidationErrors(errors []ValidationError) error {
+	if len(errors) == 0 {
+		return nil
+	}
+
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("graph validation failed with %d error(s):\n", len(errors)))
+	for i, err := range errors {
+		msg.WriteString(fmt.Sprintf("  %d. %s\n", i+1, err.Error()))
+	}
+	return fmt.Errorf("%s", msg.String())
 }
 
 // Nodes returns all nodes in the graph.

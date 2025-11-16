@@ -24,6 +24,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🎭 Subgraph Support** - Compose complex workflows from reusable graph components
 
 ### 📊 Production Features
+- **✅ Graph Validation** - Comprehensive pre-execution validation catches errors at compile time (missing nodes, cycles, unreachable nodes)
 - **📈 Observability** - Built-in OpenTelemetry metrics and distributed tracing
 - **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities
 - **🔐 Checkpoint Signing** - HMAC-SHA256 signatures prevent state tampering and ensure integrity
@@ -532,6 +533,7 @@ Explore **19 comprehensive examples** demonstrating different use cases and patt
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
 | 🔐 [checkpoint_signing](examples/checkpoint_signing) | HMAC-SHA256 checkpoint integrity | Tamper detection, cryptographic signing, security |
 | 🛡️ [input_validation](examples/input_validation) | Message size/count validation | DoS prevention, resource limits, security |
+| ✅ [graph_validation](examples/graph_validation) | Pre-execution graph validation | Compile-time error detection, validation modes, topology checks |
 | 📞 [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
 | 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
 | 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |
@@ -1344,7 +1346,7 @@ We welcome contributions! Here's how to get started:
 ## 📖 Documentation
 
 - 📘 **[API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh)** - Complete godoc documentation
-- 📗 **[Examples](examples/)** - 17 comprehensive runnable examples
+- 📗 **[Examples](examples/)** - 18 comprehensive runnable examples
 - 📙 **[Getting Started Guide](docs/getting-started.md)** - Quick start tutorial
 - � **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
 - � **[Callbacks Guide](docs/callbacks.md)** - Intercepting model/tool invocations
