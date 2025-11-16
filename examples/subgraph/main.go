@@ -62,9 +62,9 @@ func main() {
 			return nil, err
 		}
 		// Run and consume all events
-		for event := range compiled.Run(ctx, nil) {
-			if event.Err != nil {
-				return nil, event.Err
+		for _, err := range compiled.Run(ctx, nil) {
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -88,9 +88,9 @@ func main() {
 			return nil, err
 		}
 		// Run and consume all events
-		for event := range compiled.Run(ctx, nil) {
-			if event.Err != nil {
-				return nil, event.Err
+		for _, err := range compiled.Run(ctx, nil) {
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -114,9 +114,9 @@ func main() {
 			return nil, err
 		}
 		// Run and consume all events
-		for event := range compiled.Run(ctx, nil) {
-			if event.Err != nil {
-				return nil, event.Err
+		for _, err := range compiled.Run(ctx, nil) {
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -142,9 +142,9 @@ func main() {
 	}
 
 	// Run pipeline and consume all events
-	for event := range compiled.Run(ctx, nil) {
-		if event.Err != nil {
-			log.Fatalf("Pipeline execution failed: %v", event.Err)
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			log.Fatalf("Pipeline execution failed: %v", err)
 		}
 	}
 

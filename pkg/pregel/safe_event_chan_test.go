@@ -25,7 +25,7 @@ func TestSafeEventChan_ConcurrentSendAndClose(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 			for j := 0; j < sendsPerWorker; j++ {
-				ch.Send(Event[any]{Node: "test"})
+				ch.Send(Event[any]{Node: "test"}, nil)
 			}
 		}(i)
 	}
@@ -43,7 +43,7 @@ func TestSafeEventChan_ConcurrentSendAndClose(t *testing.T) {
 	}
 
 	// Additional sends should return false
-	if ch.Send(Event[any]{Node: "after-close"}) {
+	if ch.Send(Event[any]{Node: "after-close"}, nil) {
 		t.Error("Send should return false after close")
 	}
 }
@@ -67,13 +67,13 @@ func TestSafeEventChan_SendTimeout(t *testing.T) {
 	ch := newSafeEventChan[any](1)
 
 	// Fill the buffer
-	if !ch.Send(Event[any]{Node: "first"}) {
+	if !ch.Send(Event[any]{Node: "first"}, nil) {
 		t.Fatal("First send should succeed")
 	}
 
 	// This should timeout since no one is receiving
 	start := time.Now()
-	result := ch.Send(Event[any]{Node: "second"})
+	result := ch.Send(Event[any]{Node: "second"}, nil)
 	elapsed := time.Since(start)
 
 	if result {
@@ -92,7 +92,7 @@ func TestSafeEventChan_NormalUsage(t *testing.T) {
 
 	// Send some events
 	for i := 0; i < 5; i++ {
-		if !ch.Send(Event[any]{Superstep: int64(i)}) {
+		if !ch.Send(Event[any]{Superstep: int64(i)}, nil) {
 			t.Fatalf("Send %d failed", i)
 		}
 	}
@@ -105,10 +105,10 @@ func TestSafeEventChan_NormalUsage(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		for evt := range ch.Chan() {
+		for eoe := range ch.Chan() {
 			receivedMu.Lock()
-			if evt.Superstep != int64(received) {
-				t.Errorf("Expected superstep %d, got %d", received, evt.Superstep)
+			if eoe.event.Superstep != int64(received) {
+				t.Errorf("Expected superstep %d, got %d", received, eoe.event.Superstep)
 			}
 			received++
 			receivedMu.Unlock()
@@ -167,7 +167,7 @@ func TestRuntime_RaceConditionFix_ConcurrentEmit(t *testing.T) {
 			defer wg.Done()
 			// Continuously emit events
 			for j := 0; j < 100; j++ {
-				rt.emitEvent(Event[mockMessage]{Node: "test-worker", Superstep: int64(j)})
+				rt.emitEvent(Event[mockMessage]{Node: "test-worker", Superstep: int64(j)}, nil)
 				time.Sleep(time.Microsecond)
 			}
 		}(i)
@@ -222,14 +222,14 @@ func TestRuntime_EmitEventAfterClose(t *testing.T) {
 	}
 
 	// Try to emit after run completed - should return false, not panic
-	result := rt.emitEvent(Event[mockMessage]{Node: "after-close"})
+	result := rt.emitEvent(Event[mockMessage]{Node: "after-close"}, nil)
 	if result {
 		t.Error("emitEvent should return false after runtime closed")
 	}
 
 	// Multiple calls should also be safe
 	for i := 0; i < 10; i++ {
-		if rt.emitEvent(Event[mockMessage]{Node: "test"}) {
+		if rt.emitEvent(Event[mockMessage]{Node: "test"}, nil) {
 			t.Error("emitEvent should return false after runtime closed")
 		}
 	}

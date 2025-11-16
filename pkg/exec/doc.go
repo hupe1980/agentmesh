@@ -19,6 +19,33 @@
 // pkg/compile  - Compilation & topology
 // pkg/exec     - Execution strategies (THIS PACKAGE)
 //
+// ERROR HANDLING:
+//
+// Executors follow the Go iterator convention with error wrapping:
+//
+//   - All errors returned in second return value (err)
+//   - Node execution failures wrapped with state.ErrNodeExecution
+//   - Use errors.Is() to distinguish error types
+//
+// Example error handling:
+//
+//	import "errors"
+//
+//	for result, err := range executor.Run(ctx, compiled, messages) {
+//	    if err != nil {
+//	        // Check if it's a node execution error
+//	        if errors.Is(err, state.ErrNodeExecution) {
+//	            // Node failed - may be recoverable
+//	            log.Printf("Node execution failed: %v", err)
+//	            continue // or implement retry logic
+//	        }
+//	        // Fatal error - execution stopped
+//	        // Examples: context canceled, max iterations, quota exceeded
+//	        return fmt.Errorf("execution failed: %w", err)
+//	    }
+//	    // Process successful result
+//	}
+//
 // EXAMPLE:
 //
 // // Build and compile graph
@@ -31,12 +58,15 @@
 // stateManager := state.NewStateManager(...)
 // compiled, _ := compile.Compile(g, stateManager)
 //
-// // Execute with sequential executor
-// executor := exec.NewSequential()
-// for result, err := range executor.Run(ctx, compiled, nil) {
-// Applications/if err != nil {
-// Library// Handle error
-// Applications/}
-// Applications// Process result
-// }
+// // Execute with pregel executor
+// executor := exec.NewPregelExecutor()
+//
+//	for result, err := range executor.Run(ctx, compiled, nil) {
+//	    if err != nil {
+//	        log.Printf("Fatal error: %v", err)
+//	        break
+//	    }
+//	    // Process result
+//	    fmt.Printf("Node %s: %v\n", result.Node, result.Message)
+//	}
 package exec

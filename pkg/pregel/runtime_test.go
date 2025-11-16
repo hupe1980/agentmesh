@@ -286,13 +286,9 @@ func TestRuntime_NodeErrorPropagation(t *testing.T) {
 
 	var observed bool
 	for evt, err := range rt.Run(context.Background()) {
-		if err != nil || evt.Error != nil {
+		if err != nil {
 			observed = true
-			errorToCheck := err
-			if errorToCheck == nil {
-				errorToCheck = evt.Error
-			}
-			assert.Contains(t, errorToCheck.Error(), "intentional failure")
+			assert.Contains(t, err.Error(), "intentional failure")
 			assert.Equal(t, int64(1), evt.Superstep)
 		}
 	}
@@ -322,12 +318,9 @@ func TestRuntime_NodePanicRecovery(t *testing.T) {
 	var lastErr error
 	var foundDiagnostics bool
 	for evt, err := range rt.Run(context.Background()) {
-		if err != nil || evt.Error != nil {
+		if err != nil {
 			observed = true
 			lastErr = err
-			if lastErr == nil {
-				lastErr = evt.Error
-			}
 			assert.Equal(t, int64(1), evt.Superstep)
 			assert.Contains(t, lastErr.Error(), "panicked")
 			if evt.Diagnostics != nil {

@@ -19,8 +19,27 @@ import (
 //   - Use Collect() to gather all results from the iterator
 //   - Or access Reader.MessagesSnapshot() after execution
 //
-// ERROR RESULTS:
-//   - Message is nil, only Err is set
+// ERROR HANDLING CONTRACT:
+//
+// All errors are returned in the iterator's second return value (err).
+// Node-level failures are wrapped with state.ErrNodeExecution:
+//
+//	for result, err := range compiled.Run(ctx, messages) {
+//	    if err != nil {
+//	        // Check if it's a node execution error
+//	        if errors.Is(err, state.ErrNodeExecution) {
+//	            // Node failed - may be recoverable
+//	            log.Printf("Node execution failed: %v", err)
+//	            continue // or implement retry logic
+//	        }
+//	        // Fatal error - iteration terminated
+//	        // Examples: context canceled, max iterations, quota exceeded
+//	        return fmt.Errorf("execution failed: %w", err)
+//	    }
+//	    // Process successful result
+//	}
+//
+// This follows Go's standard error handling convention with errors.Is() for type checking.
 type ExecutionResult struct {
 	// Single message content (one message per result)
 	Message message.Message
@@ -33,7 +52,6 @@ type ExecutionResult struct {
 
 	// Node execution results
 	Updates map[string]any // State updates from the node
-	Err     error          // Error if node execution failed
 	Partial bool           // True if this is an intermediate streaming result (not applied to state)
 }
 
@@ -65,7 +83,6 @@ func (e *ExecutionResult) Clone() *ExecutionResult {
 		GraphID:   e.GraphID,
 		Node:      e.Node,
 		Timestamp: e.Timestamp,
-		Err:       e.Err,
 	}
 	if e.Message != nil {
 		clone.Message = e.Message.Clone()

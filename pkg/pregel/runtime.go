@@ -282,6 +282,20 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 
 // Run executes all supersteps until the computation quiesces.
 // Returns an iterator that yields events as the computation progresses.
+//
+// ERROR HANDLING:
+//   - Fatal errors (context canceled, max iterations, quota exceeded) are returned
+//     in the second return value (err) following Go iterator convention
+//   - When err != nil, iteration stops and no more events are yielded
+//
+// Example:
+//
+//	for evt, err := range runtime.Run(ctx) {
+//	    if err != nil {
+//	        return fmt.Errorf("BSP execution failed: %w", err)
+//	    }
+//	    // Process event...
+//	}
 func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 	return func(yield func(Event[M], error) bool) {
 		// Create thread-safe event channel wrapper
@@ -317,8 +331,8 @@ func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 		}()
 
 		// Yield events from single goroutine (satisfies iter.Seq2 contract)
-		for evt := range ch {
-			if !yield(evt, evt.Error) {
+		for eoe := range ch {
+			if !yield(eoe.event, eoe.err) {
 				// Consumer stopped iteration - drain remaining events to prevent deadlock
 				go func() {
 					//nolint:revive // Need to drain channel to prevent goroutine leak
@@ -355,7 +369,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		// Check context cancellation
 		if err := ctx.Err(); err != nil {
 			logger.Warn("pregel runtime canceled", "superstep", superstep, "error", err)
-			r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+			r.emitEvent(Event[M]{Superstep: superstep}, err)
 			return
 		}
 
@@ -364,13 +378,13 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			// Check memory
 			if err := r.quotaManager.CheckMemory(ctx); err != nil {
 				logger.Error("memory quota exceeded", "superstep", superstep, "error", err)
-				r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+				r.emitEvent(Event[M]{Superstep: superstep}, err)
 				return
 			}
 			// Check execution time
 			if err := r.quotaManager.CheckTime(ctx); err != nil {
 				logger.Error("time quota exceeded", "superstep", superstep, "error", err)
-				r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+				r.emitEvent(Event[M]{Superstep: superstep}, err)
 				return
 			}
 		}
@@ -380,7 +394,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			logger.Warn("max iterations exceeded",
 				"max_iterations", r.opts.MaxIterations,
 				"superstep", superstep)
-			r.emitEvent(Event[M]{Superstep: superstep, Error: ErrMaxIterationsExceeded})
+			r.emitEvent(Event[M]{Superstep: superstep}, ErrMaxIterationsExceeded)
 			return
 		}
 		iterationCount++
@@ -396,7 +410,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			logger.Error("superstep execution failed",
 				"superstep", nextSuperstep,
 				"error", err)
-			r.emitEvent(Event[M]{Superstep: nextSuperstep, Error: err})
+			r.emitEvent(Event[M]{Superstep: nextSuperstep}, err)
 			return
 		}
 		superstep = nextSuperstep
@@ -411,7 +425,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			logger.Error("failed to consume next frontier",
 				"superstep", superstep,
 				"error", err)
-			r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+			r.emitEvent(Event[M]{Superstep: superstep}, err)
 			return
 		}
 
@@ -450,7 +464,8 @@ func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
 	pending, err := r.messageBus.Pending()
 	if err != nil {
 		// Propagate message bus errors instead of swallowing them
-		r.emitEvent(Event[M]{Error: fmt.Errorf("message bus pending failed: %w", err)})
+		err = fmt.Errorf("message bus pending failed: %w", err)
+		r.emitEvent(Event[M]{}, err)
 		return nil, fmt.Errorf("consume next frontier: %w", err)
 	}
 
@@ -636,7 +651,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	node := r.graph.NodeByName(name)
 	if node == nil {
 		err := fmt.Errorf("superstep %d: node %q: %w", superstep, name, ErrUnknownNode)
-		r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
+		r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
 		return err
 	}
 
@@ -670,7 +685,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		if rec := recover(); rec != nil {
 			stack := debug.Stack()
 			recovered := fmt.Errorf("superstep %d: node %q: %w: %v", superstep, name, ErrNodePanicked, rec)
-			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Diagnostics: stack, Error: recovered})
+			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Diagnostics: stack}, recovered)
 			err = recovered
 		}
 	}()
@@ -678,7 +693,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	runErr := node.Run(vertexCtx, vertex, incoming)
 	if runErr != nil {
 		err = fmt.Errorf("superstep %d: node %q failed: %w", superstep, name, runErr)
-		r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
+		r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
 		return err
 	}
 
@@ -688,12 +703,12 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		if deliverErr := r.recordDeliveries(ctx, sent); deliverErr != nil {
 			// If message delivery fails due to backpressure/timeout, treat as error
 			err = fmt.Errorf("superstep %d: node %q: failed to deliver messages: %w", superstep, name, deliverErr)
-			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})
+			r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
 			return err
 		}
 	}
 
-	r.emitEvent(Event[M]{Node: name, Superstep: superstep})
+	r.emitEvent(Event[M]{Node: name, Superstep: superstep}, nil)
 	return nil
 }
 
@@ -706,9 +721,7 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 	err := r.messageBus.Send(ctx, msgs)
 	if err != nil {
 		// Emit error event
-		r.emitEvent(Event[M]{
-			Error: fmt.Errorf("failed to deliver messages: %w", err),
-		})
+		r.emitEvent(Event[M]{}, fmt.Errorf("failed to deliver messages: %w", err))
 		return err
 	}
 
@@ -718,7 +731,8 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 	msgs, err := r.messageBus.Receive(node)
 	if err != nil {
-		r.emitEvent(Event[M]{Error: fmt.Errorf("message bus receive failed for node %s: %w", node, err)})
+		err = fmt.Errorf("message bus receive failed for node %s: %w", node, err)
+		r.emitEvent(Event[M]{}, err)
 		return nil, fmt.Errorf("drain mailbox for %s: %w", node, err)
 	}
 	if len(msgs) == 0 {
@@ -732,12 +746,12 @@ func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 // Returns true if the event was sent successfully, false if the channel is closed
 // or the send timed out. Failed sends are not errors - they occur during normal
 // shutdown or when the consumer is slow.
-func (r *Runtime[S, M]) emitEvent(event Event[M]) bool {
+func (r *Runtime[S, M]) emitEvent(event Event[M], err error) bool {
 	r.eventChanMu.RLock()
 	defer r.eventChanMu.RUnlock()
 
 	if r.eventChan == nil {
 		return false
 	}
-	return r.eventChan.Send(event)
+	return r.eventChan.Send(event, err)
 }

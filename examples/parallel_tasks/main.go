@@ -171,9 +171,9 @@ func main() {
 
 	started := time.Now()
 	// Run the graph and consume all events (nodes don't produce messages, only state updates)
-	for event := range compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2)) {
-		if event.Err != nil {
-			fmt.Printf("❌ Execution error: %v\n", event.Err)
+	for _, err := range compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2)) {
+		if err != nil {
+			fmt.Printf("❌ Execution error: %v\n", err)
 			return
 		}
 	}

@@ -49,11 +49,26 @@ type Message[M any] struct {
 	Data M
 }
 
-// Event can be used to observe runtime progress.
+// Event can be used to observe runtime progress during BSP execution.
+//
+// ERROR HANDLING CONTRACT:
+//
+// When iterating over runtime events:
+//
+//	for evt, err := range runtime.Run(ctx) {
+//	    if err != nil {
+//	        // Fatal error - BSP execution terminated
+//	        // Examples: context canceled, max iterations exceeded, quota exceeded
+//	        return err
+//	    }
+//	    // Process event (superstep progress, node output, diagnostics)
+//	}
+//
+// For non-fatal node-level errors (where execution should continue),
+// use evt.Output to pass error information rather than the iterator's error return.
 type Event[M any] struct {
 	Node        string
 	Superstep   int64
-	Output      any
-	Diagnostics any
-	Error       error
+	Output      any // Node output (can include error information for non-fatal failures)
+	Diagnostics any // Debug/diagnostic information
 }

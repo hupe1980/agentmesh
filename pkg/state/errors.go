@@ -15,4 +15,8 @@ var (
 
 	// ErrInvalidState indicates state is nil or invalid
 	ErrInvalidState = errors.New("invalid state")
+
+	// ErrNodeExecution indicates a node execution failed
+	// Use errors.Is(err, ErrNodeExecution) to check for node-level failures
+	ErrNodeExecution = errors.New("node execution failed")
 )

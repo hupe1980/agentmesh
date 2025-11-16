@@ -270,13 +270,13 @@ func main() {
 	// The graph will automatically attach providers to context for all nodes
 	ctx := context.Background()
 	start := time.Now()
-	for event := range compiled.Run(ctx, nil,
+	for _, err := range compiled.Run(ctx, nil,
 		graph.WithLogger(logger),
 		graph.WithTracer(traceProvider),
 		graph.WithMetrics(metricsProvider),
 	) {
-		if event.Err != nil {
-			panic(event.Err)
+		if err != nil {
+			panic(fmt.Sprintf("Execution failed: %v", err))
 		}
 	}
 	duration := time.Since(start)

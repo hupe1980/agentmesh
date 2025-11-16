@@ -134,9 +134,9 @@ func runScenario(choice string) {
 	}
 
 	// Execute the graph - routing will happen automatically based on state
-	for event := range compiled.Run(context.Background(), nil) {
-		if event.Err != nil {
-			fmt.Printf("❌ Execution error: %v\n", event.Err)
+	for _, err := range compiled.Run(context.Background(), nil) {
+		if err != nil {
+			fmt.Printf("❌ Execution error: %v\n", err)
 			return
 		}
 	}

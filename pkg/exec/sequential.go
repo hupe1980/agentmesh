@@ -108,7 +108,6 @@ func (s *Sequential) executeFromNode(
 				GraphID:   runID,
 				Node:      nodeName,
 				Timestamp: time.Now(),
-				Err:       err,
 			}
 			if !yield(event, err) {
 				return nil

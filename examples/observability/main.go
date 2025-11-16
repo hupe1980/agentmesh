@@ -124,13 +124,13 @@ func main() {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	for event := range compiled.Run(ctx, nil,
+	for _, err := range compiled.Run(ctx, nil,
 		graph.WithLogger(logger),
 		graph.WithTracer(traceProvider),
 		graph.WithMetrics(metricsProvider),
 	) {
-		if event.Err != nil {
-			log.Fatal(event.Err)
+		if err != nil {
+			log.Fatalf("Execution failed: %v", err)
 		}
 	}
 

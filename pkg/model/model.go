@@ -192,20 +192,30 @@ type Model interface {
 	// For streaming, iterate over all chunks to get incremental updates.
 	// For blocking, consume only the final response using Last() or similar helpers.
 	//
+	// ERROR HANDLING:
+	//   - Fatal errors (API failures, context canceled, invalid input) are returned
+	//     in the second return value (err) as per Go iterator convention
+	//   - When err != nil, iteration stops and no more responses are yielded
+	//   - Response content is always valid when err == nil
+	//
 	// Streaming usage:
 	//   req := &model.Request{
 	//       Messages: messages,
 	//       Tools:    myTools,
 	//   }
 	//   for resp, err := range model.Generate(ctx, req) {
-	//       if err != nil { return err }
+	//       if err != nil {
+	//           return fmt.Errorf("generation failed: %w", err)
+	//       }
 	//       fmt.Print(message.Stringify(resp.Message)) // Process each chunk
 	//   }
 	//
 	// Blocking usage (helper required):
 	//   req := &model.Request{Messages: messages}
 	//   resp, err := Last(model.Generate(ctx, req))
-	//   if err != nil { return err }
+	//   if err != nil {
+	//       return fmt.Errorf("generation failed: %w", err)
+	//   }
 	//   fmt.Println(message.Stringify(resp.Message)) // Process final message
 	//   fmt.Println("Reasoning:", resp.Reasoning) // Access native reasoning
 	//   fmt.Println("Finish reason:", resp.FinishReason) // Why generation stopped
@@ -217,7 +227,6 @@ type Model interface {
 	// The iterator will yield:
 	// - Multiple responses with incremental content (streaming mode)
 	// - A single final response (blocking mode)
-	// - The last yield will contain any error encountered
 	//
 	// Context cancellation is respected and will stop iteration.
 	Generate(ctx context.Context, req *Request) iter.Seq2[*Response, error]

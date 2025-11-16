@@ -246,6 +246,45 @@ The weather in Paris is currently sunny with a temperature of 22°C.
 
 ---
 
+### Error Handling Convention
+
+AgentMesh follows the **Go iterator convention** with **error wrapping** for consistent error handling:
+
+```go
+import "errors"
+
+// All iterators use this pattern:
+for result, err := range agent.Run(ctx, messages) {
+    if err != nil {
+        // Check if it's a node execution error
+        if errors.Is(err, state.ErrNodeExecution) {
+            // Node failed - may be recoverable
+            log.Printf("Node execution failed: %v", err)
+            continue // or implement retry logic
+        }
+        // Fatal error - execution stopped
+        // Examples: context canceled, max iterations, quota exceeded
+        return fmt.Errorf("execution failed: %w", err)
+    }
+    // Process successful result
+}
+```
+
+**Key Points:**
+- **All errors** → Second return value (err)
+- **Node failures** → Wrapped with `state.ErrNodeExecution`
+- **Use `errors.Is()`** to distinguish error types
+
+This pattern applies to:
+- `agent.Run()` - Agent execution
+- `model.Generate()` - LLM responses
+- `compiled.Run()` - Graph execution
+- `runtime.Run()` - Pregel BSP execution
+
+See [pkg/exec documentation](pkg/exec/doc.go) for detailed error semantics.
+
+---
+
 ### Using Model Responses with Metadata
 
 Access reasoning traces, usage statistics, and metadata from model responses:

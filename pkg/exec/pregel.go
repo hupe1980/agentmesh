@@ -238,15 +238,16 @@ func (p *Pregel) Run(
 
 		// Execute runtime and forward events to result channel
 		for evt, err := range rt.Run(runCtx) {
-			if err != nil || evt.Error != nil {
-				// Forward error event
+			if err != nil {
+				// Fatal error - BSP execution terminated
+				// Yield error result and stop iteration
 				safeYield(state.ExecutionResult{
 					ID:        uuid.New().String(),
 					GraphID:   runID,
 					Node:      evt.Node,
 					Timestamp: time.Now(),
-					Err:       err,
 				}, err)
+				break
 			}
 		}
 
@@ -409,7 +410,8 @@ func (n *pregelNodeAdapter) Run(
 	// Execute the node with streaming support
 	result, err := node.Run(ctxWithStream, n.compiled.StateManager)
 	if err != nil {
-		return err
+		// Wrap node execution errors with sentinel for identification
+		return fmt.Errorf("%w: node %q: %v", state.ErrNodeExecution, n.nodeName, err)
 	}
 
 	if result == nil {

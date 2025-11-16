@@ -9,9 +9,20 @@ import (
 // Last returns the last element from an iterator sequence.
 // Returns an error if the sequence produces an error or is empty.
 //
+// ERROR HANDLING:
+//   - Returns immediately when iterator yields any error (err != nil)
+//   - Use errors.Is(err, state.ErrNodeExecution) to check for node failures
+//   - Use this for blocking/non-streaming execution
+//
 // Example:
 //
 //	result, err := graph.Last(runnable.Run(ctx, messages))
+//	if err != nil {
+//	    if errors.Is(err, state.ErrNodeExecution) {
+//	        log.Printf("Node execution failed: %v", err)
+//	    }
+//	    return fmt.Errorf("execution failed: %w", err)
+//	}
 func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, error) {
 	var last state.ExecutionResult
 	var lastErr error
@@ -43,9 +54,23 @@ func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, e
 // Collect collects all execution results from an iterator sequence.
 // Returns an error if the sequence produces an error.
 //
+// ERROR HANDLING:
+//   - Returns immediately on fatal error (err != nil)
+//   - Results may contain node-level errors in result.NodeError
+//   - Check both err return value AND each result.NodeError
+//
 // Example:
 //
 //	results, err := graph.Collect(runnable.Run(ctx, messages))
+//	if err != nil {
+//	    return fmt.Errorf("execution failed: %w", err)
+//	}
+//	// Check for node-level errors
+//	for _, result := range results {
+//	    if result.NodeError != nil {
+//	        log.Printf("Node %s failed: %v", result.Node, result.NodeError)
+//	    }
+//	}
 func Collect(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
 	results := make([]state.ExecutionResult, 0)
 	for result, err := range seq {

@@ -50,16 +50,21 @@ Each `state.ExecutionResult` contains:
 
 ```go
 type ExecutionResult struct {
-    Node     string              // Name of the node that produced this event
-    Updates  map[string]any      // State updates (final node result)
-    Messages []message.Message   // New messages added to state
+    Message   message.Message // Single message content (one message per result)
+    ID        string          // UUID result identifier
+    GraphID   string          // Graph run ID
+    Node      string          // Node that created this result
+    Timestamp time.Time       // Creation timestamp
+    Updates   map[string]any  // State updates from the node
+    Partial   bool            // True if intermediate streaming result
 }
 ```
 
 **Key Fields**:
+- `Message`: Single message produced by the node
 - `Node`: Name of the node that executed
 - `Updates`: State changes applied to the graph
-- `Messages`: New messages added to conversation history
+- `Partial`: Indicates intermediate streaming results (not yet applied to state)
 
 ### Iterator Pattern Benefits
 
