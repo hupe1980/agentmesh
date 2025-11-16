@@ -54,10 +54,10 @@ type MessageBus[M any] interface {
 // Memory bounds: Each vertex mailbox has a bounded channel (maxSize > 0) or unbounded buffer (maxSize = 0).
 // Combiner support: Merges messages for the same target if configured.
 //
-// Performance: Uses 32-shard map with per-shard mutex to reduce lock contention
+// Performance: Uses DefaultShardCount-shard map with per-shard mutex to reduce lock contention
 // in high-throughput scenarios with many concurrent senders.
 type InMemoryMessageBus[M any] struct {
-	shards   [32]messageShard[M]
+	shards   [DefaultShardCount]messageShard[M]
 	maxSize  int
 	combiner Combiner[M]
 	globalMu sync.Mutex // Only for Close() and global operations
@@ -79,7 +79,7 @@ type messageShard[M any] struct {
 //
 // combiner, if provided, merges messages for the same target.
 //
-// Implementation: Uses 32 shards to reduce lock contention.
+// Implementation: Uses DefaultShardCount shards to reduce lock contention.
 func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMessageBus[M] {
 	bus := &InMemoryMessageBus[M]{
 		maxSize:  maxSize,
@@ -102,7 +102,7 @@ func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMe
 func (bus *InMemoryMessageBus[M]) shardIndex(vertex string) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(vertex)) // hash.Hash.Write never returns an error
-	return int(h.Sum32() % 32)
+	return int(h.Sum32() % DefaultShardCount)
 }
 
 // Send delivers messages to their target vertices with backpressure.

@@ -23,6 +23,7 @@ import (
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -157,7 +158,7 @@ func main() {
 	gph.AddEdge("combine", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := gph.Compile()
+	compiled, err := exec.CompileGraph(gph)
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return
@@ -169,9 +170,12 @@ func main() {
 	fmt.Println()
 
 	started := time.Now()
-	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2))); err != nil {
-		fmt.Printf("❌ Execution error: %v\n", err)
-		return
+	// Run the graph and consume all events (nodes don't produce messages, only state updates)
+	for event := range compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2)) {
+		if event.Err != nil {
+			fmt.Printf("❌ Execution error: %v\n", event.Err)
+			return
+		}
 	}
 	elapsed := time.Since(started)
 

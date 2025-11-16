@@ -113,23 +113,19 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 
 	// Queue or save checkpoint
 	if worker != nil && worker.queue != nil {
-		select {
-		case worker.queue <- chkpt:
-			logger.Debug("checkpoint queued for async save",
-				"run_id", opts.RunID,
-				"superstep", superstep)
-		default:
-			logger.Warn("checkpoint queue full, saving synchronously",
-				"run_id", opts.RunID,
-				"superstep", superstep)
-			if err := p.saveCheckpointSync(ctx, opts, chkpt); err != nil {
-				logger.Error("synchronous checkpoint save failed",
-					"run_id", opts.RunID,
-					"superstep", superstep,
-					"error", err)
-			}
-		}
+		// Block if queue is full - applies backpressure to prevent checkpoint loss
+		logger.Debug("queueing checkpoint for async save",
+			"run_id", opts.RunID,
+			"superstep", superstep)
+
+		// This blocks until space is available in the queue
+		worker.queue <- chkpt
+
+		logger.Debug("checkpoint queued successfully",
+			"run_id", opts.RunID,
+			"superstep", superstep)
 	} else {
+		// No async worker - save synchronously
 		if err := p.saveCheckpointSync(ctx, opts, chkpt); err != nil {
 			logger.Error("synchronous checkpoint save failed",
 				"run_id", opts.RunID,
@@ -169,11 +165,18 @@ func (p *Pregel) startCheckpointWorker(ctx context.Context, opts graph.RunOption
 		return nil
 	}
 
+	// CheckpointQueueSize of 0 means synchronous checkpoints only
+	if opts.CheckpointQueueSize <= 0 {
+		return nil
+	}
+
 	logger := logging.FromContext(ctx)
-	logger.Debug("starting async checkpoint worker", "run_id", opts.RunID)
+	logger.Debug("starting async checkpoint worker",
+		"run_id", opts.RunID,
+		"queue_size", opts.CheckpointQueueSize)
 
 	worker := &checkpointWorker{
-		queue: make(chan *checkpoint.Checkpoint, 1),
+		queue: make(chan *checkpoint.Checkpoint, opts.CheckpointQueueSize),
 	}
 
 	// Use context.WithoutCancel to ensure worker completes all queued checkpoints

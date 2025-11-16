@@ -21,117 +21,138 @@ func main() {
 
 	// Create validation subgraph
 	validationSub := createValidationSubgraph()
-	compiledValidationImpl, err := validationSub.Compile()
-	if err != nil {
-		log.Fatalf("Failed to compile validation subgraph: %v", err)
-	}
-	compiledValidation := compiledValidationImpl.(*exec.RunnableGraph)
+	validationState := validationSub.StateManager()
 
 	// Create enrichment subgraph
 	enrichmentSub := createEnrichmentSubgraph()
-	compiledEnrichmentImpl, err := enrichmentSub.Compile()
-	if err != nil {
-		log.Fatalf("Failed to compile enrichment subgraph: %v", err)
-	}
-	compiledEnrichment := compiledEnrichmentImpl.(*exec.RunnableGraph)
+	enrichmentState := enrichmentSub.StateManager()
 
 	// Create analysis subgraph with state mapping
 	analysisSub := createAnalysisSubgraph()
-	compiledAnalysisImpl, err := analysisSub.Compile()
-	if err != nil {
-		log.Fatalf("Failed to compile analysis subgraph: %v", err)
-	}
-	compiledAnalysis := compiledAnalysisImpl.(*exec.RunnableGraph)
+	analysisState := analysisSub.StateManager()
 
-	// In Phase 2, we build a main pipeline that calls subgraphs as runnables
+	// Create main pipeline using Builder API
 	pipeline, err := exec.NewBuilder()
 	if err != nil {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}
 
-	// Wrap subgraphs as nodes that execute the compiled runnables
+	// Initial node: sets up the data for processing
+	pipeline.Node("init", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		data := map[string]any{
+			"user_id": "12345",
+			"email":   "user@example.com",
+			"score":   75,
+		}
+		return &graph.NodeResult{
+			Updates: map[string]any{"data": data},
+		}, nil
+	})
+
+	// Validation node: runs validation subgraph and copies results
 	pipeline.Node("validation", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-		// Run validation subgraph
-		_, err := graph.Last(compiledValidation.Run(ctx, nil))
+		// Copy current data to validation subgraph state
+		if data := s.Get("data"); data != nil {
+			validationState.Set("data", data)
+		}
+
+		// Compile and run validation subgraph
+		compiled, err := exec.CompileGraph(validationSub)
 		if err != nil {
 			return nil, err
 		}
-		// Copy validation results to parent state
-		valid := compiledValidation.State().Get("valid")
-		s.Set("valid", valid)
+		// Run and consume all events
+		for event := range compiled.Run(ctx, nil) {
+			if event.Err != nil {
+				return nil, event.Err
+			}
+		}
+
+		// Copy results back to parent state
+		valid := validationState.Get("valid")
 		return &graph.NodeResult{
 			Updates: map[string]any{"valid": valid},
 		}, nil
 	})
 
+	// Enrichment node: runs enrichment subgraph
 	pipeline.Node("enrichment", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-		// Run enrichment subgraph
-		_, err := graph.Last(compiledEnrichment.Run(ctx, nil))
+		// Copy data to enrichment subgraph
+		if data := s.Get("data"); data != nil {
+			enrichmentState.Set("data", data)
+		}
+
+		// Compile and run enrichment subgraph
+		compiled, err := exec.CompileGraph(enrichmentSub)
 		if err != nil {
 			return nil, err
 		}
-		// Copy enriched data to parent state
-		enrichedData := compiledEnrichment.State().Get("enriched_data")
+		// Run and consume all events
+		for event := range compiled.Run(ctx, nil) {
+			if event.Err != nil {
+				return nil, event.Err
+			}
+		}
+
+		// Copy results back
+		enrichedData := enrichmentState.Get("enriched_data")
 		return &graph.NodeResult{
 			Updates: map[string]any{"enriched_data": enrichedData},
 		}, nil
 	})
 
+	// Analysis node: runs analysis subgraph
 	pipeline.Node("analysis", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-		// Run analysis subgraph
-		_, err := graph.Last(compiledAnalysis.Run(ctx, nil))
+		// Copy enriched data as "input" for analysis subgraph
+		if enrichedData := s.Get("enriched_data"); enrichedData != nil {
+			analysisState.Set("input", enrichedData)
+		}
+
+		// Compile and run analysis subgraph
+		compiled, err := exec.CompileGraph(analysisSub)
 		if err != nil {
 			return nil, err
 		}
-		// Copy analysis results to parent state
-		analysis := compiledAnalysis.State().Get("analysis")
+		// Run and consume all events
+		for event := range compiled.Run(ctx, nil) {
+			if event.Err != nil {
+				return nil, event.Err
+			}
+		}
+
+		// Copy results (note: analysis outputs to "output" key)
+		analysis := analysisState.Get("output")
 		return &graph.NodeResult{
 			Updates: map[string]any{"analysis": analysis},
 		}, nil
 	})
 
-	pipeline.AddEdge(graph.StartNode, "validation")
+	pipeline.AddEdge(graph.StartNode, "init")
+	pipeline.AddEdge("init", "validation")
 	pipeline.AddEdge("validation", "enrichment")
 	pipeline.AddEdge("enrichment", "analysis")
 	pipeline.AddEdge("analysis", graph.EndNode)
+
+	// Get reference to the pipeline's state before compiling
+	pipelineState := pipeline.StateManager()
 
 	compiled, err := pipeline.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile pipeline: %v", err)
 	}
-	compiledPipeline := compiled.(*exec.RunnableGraph)
 
-	// Execute pipeline with sample data
-	initialState := map[string]any{
-		"data": map[string]any{
-			"user_id": "12345",
-			"email":   "user@example.com",
-			"score":   75,
-		},
+	// Run pipeline and consume all events
+	for event := range compiled.Run(ctx, nil) {
+		if event.Err != nil {
+			log.Fatalf("Pipeline execution failed: %v", event.Err)
+		}
 	}
 
-	// Set initial state in all subgraphs
-	if err := compiledValidation.ApplyState(initialState); err != nil {
-		log.Fatalf("Failed to apply state to validation: %v", err)
-	}
-	if err := compiledEnrichment.ApplyState(initialState); err != nil {
-		log.Fatalf("Failed to apply state to enrichment: %v", err)
-	}
-	if err := compiledAnalysis.ApplyState(initialState); err != nil {
-		log.Fatalf("Failed to apply state to analysis: %v", err)
-	}
-
-	_, err = graph.Last(compiledPipeline.Run(ctx, nil))
-	if err != nil {
-		log.Fatalf("Pipeline execution failed: %v", err)
-	}
-
-	// Print results
+	// Print results from final state
 	fmt.Println("\n=== Pipeline Results ===")
-	fmt.Printf("Valid: %v\n", compiledPipeline.State().Get("valid"))
-	fmt.Printf("Enriched Data: %+v\n", compiledPipeline.State().Get("enriched_data"))
-	fmt.Printf("Analysis: %+v\n", compiledPipeline.State().Get("analysis"))
-	fmt.Printf("Report: %s\n", compiledPipeline.State().Get("report"))
+	fmt.Printf("Valid: %v\n", pipelineState.Get("valid"))
+	fmt.Printf("Enriched Data: %+v\n", pipelineState.Get("enriched_data"))
+	fmt.Printf("Analysis: %+v\n", pipelineState.Get("analysis"))
 }
 
 // createValidationSubgraph validates input data

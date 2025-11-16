@@ -1,7 +1,6 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,7 +8,10 @@ import (
 	"log"
 	"os"
 
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -83,8 +85,8 @@ func basicEncryptionExample(ctx context.Context) {
 	g.AddEdge(graph.StartNode, "secure_node")
 	g.AddEdge("secure_node", graph.EndNode)
 
-	// Compile
-	compiled, err := g.Compile()
+	// Compile using exec package
+	compiled, err := exec.CompileGraph(g)
 	if err != nil {
 		log.Fatal(err)
 	}

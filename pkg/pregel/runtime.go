@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/quota"
 )
 
 // Runtime orchestrates Pregel-style bulk-synchronous parallel (BSP) execution
@@ -78,6 +79,42 @@ type Runtime[S any, M any] struct {
 	// Event emission for Run execution (channel-based to allow concurrent workers)
 	eventChanMu sync.RWMutex
 	eventChan   chan Event[M]
+
+	// Resource quota management (optional)
+	quotaManager *quota.Manager
+}
+
+// initializeAggregators creates and initializes aggregator maps from the provided configuration.
+// Filters out nil or empty-named aggregators and initializes each with its Zero value.
+// Returns nil for all maps if no valid aggregators are found.
+func initializeAggregators(optsAggregators map[string]Aggregator) (
+	aggregators map[string]Aggregator,
+	aggregates map[string]any,
+	nextAggregates map[string]any,
+) {
+	if len(optsAggregators) == 0 {
+		return nil, nil, nil
+	}
+
+	aggregators = make(map[string]Aggregator, len(optsAggregators))
+	aggregates = make(map[string]any, len(optsAggregators))
+	nextAggregates = make(map[string]any, len(optsAggregators))
+
+	for name, agg := range optsAggregators {
+		if name == "" || agg == nil {
+			continue
+		}
+		aggregators[name] = agg
+		aggregates[name] = agg.Zero()
+		nextAggregates[name] = agg.Zero()
+	}
+
+	// If all aggregators were filtered out, return nil
+	if len(aggregators) == 0 {
+		return nil, nil, nil
+	}
+
+	return aggregators, aggregates, nextAggregates
 }
 
 // NewRuntime creates a new runtime for the given graph.
@@ -99,29 +136,9 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	if opts.InitialSuperstep < 0 {
 		opts.InitialSuperstep = 0
 	}
-	var (
-		aggregators    map[string]Aggregator
-		aggregates     map[string]any
-		nextAggregates map[string]any
-	)
-	if len(opts.Aggregators) > 0 {
-		aggregators = make(map[string]Aggregator, len(opts.Aggregators))
-		aggregates = make(map[string]any, len(opts.Aggregators))
-		nextAggregates = make(map[string]any, len(opts.Aggregators))
-		for name, agg := range opts.Aggregators {
-			if name == "" || agg == nil {
-				continue
-			}
-			aggregators[name] = agg
-			aggregates[name] = agg.Zero()
-			nextAggregates[name] = agg.Zero()
-		}
-		if len(aggregators) == 0 {
-			aggregators = nil
-			aggregates = nil
-			nextAggregates = nil
-		}
-	}
+
+	// Initialize aggregators
+	aggregators, aggregates, nextAggregates := initializeAggregators(opts.Aggregators)
 
 	// Create message bus (use provided bus or default to in-memory)
 	var messageBus MessageBus[M]
@@ -131,6 +148,16 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 		messageBus = NewInMemoryMessageBus[M](opts.MaxMailboxSize, opts.Combiner)
 	}
 
+	// Create quota manager if configured
+	var quotaManager *quota.Manager
+	if opts.QuotaConfig != nil {
+		quotaManager = quota.New(quota.Config{
+			MaxMemoryBytes:   opts.QuotaConfig.MaxMemoryBytes,
+			MaxGoroutines:    opts.QuotaConfig.MaxGoroutines,
+			MaxExecutionTime: opts.QuotaConfig.MaxExecutionTime,
+		})
+	}
+
 	runtime := &Runtime[S, M]{
 		graph:          graph,
 		opts:           opts,
@@ -138,6 +165,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 		aggregators:    aggregators,
 		aggregates:     aggregates,
 		nextAggregates: nextAggregates,
+		quotaManager:   quotaManager,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
 	return runtime, nil
@@ -257,7 +285,7 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 	return func(yield func(Event[M], error) bool) {
 		// Create channel for event emission (workers can send concurrently)
-		eventChan := make(chan Event[M], 10)
+		eventChan := make(chan Event[M], DefaultEventChanBufferSize)
 		doneChan := make(chan struct{})
 
 		// Store channel for use by emitEvent
@@ -301,6 +329,11 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 	superstep := r.supersteps.Load()
 	iterationCount := int64(0)
 
+	// Start quota manager if configured
+	if r.quotaManager != nil {
+		r.quotaManager.Start()
+	}
+
 	logger.Info("pregel runtime starting",
 		"initial_frontier_size", len(frontier),
 		"initial_superstep", superstep,
@@ -314,6 +347,22 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			logger.Warn("pregel runtime canceled", "superstep", superstep, "error", err)
 			r.emitEvent(Event[M]{Superstep: superstep, Error: err})
 			return
+		}
+
+		// Check resource quotas
+		if r.quotaManager != nil {
+			// Check memory
+			if err := r.quotaManager.CheckMemory(ctx); err != nil {
+				logger.Error("memory quota exceeded", "superstep", superstep, "error", err)
+				r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+				return
+			}
+			// Check execution time
+			if err := r.quotaManager.CheckTime(ctx); err != nil {
+				logger.Error("time quota exceeded", "superstep", superstep, "error", err)
+				r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+				return
+			}
 		}
 
 		// Check max iterations limit (if configured)
@@ -502,8 +551,24 @@ func (r *Runtime[S, M]) startWorkerPool(
 	recordErr func(error),
 ) {
 	for i := 0; i < workers; i++ {
+		// Acquire goroutine quota before spawning
+		if r.quotaManager != nil {
+			if err := r.quotaManager.AcquireGoroutine(ctx); err != nil {
+				recordErr(fmt.Errorf("goroutine quota exceeded: %w", err))
+				return
+			}
+		}
+
 		wg.Add(1)
-		go r.workerLoop(ctx, wg, tasks, superstep, recordErr)
+		go func() {
+			defer func() {
+				// Release goroutine quota when done
+				if r.quotaManager != nil {
+					r.quotaManager.ReleaseGoroutine()
+				}
+			}()
+			r.workerLoop(ctx, wg, tasks, superstep, recordErr)
+		}()
 	}
 }
 
@@ -565,6 +630,14 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		return err
 	}
 
+	// Apply per-vertex timeout if configured
+	vertexCtx := ctx
+	var cancel context.CancelFunc
+	if r.opts.VertexTimeout > 0 {
+		vertexCtx, cancel = context.WithTimeout(ctx, r.opts.VertexTimeout)
+		defer cancel()
+	}
+
 	r.vertices.Add(1)
 	var sent []Message[M]
 	send := func(msg Message[M]) {
@@ -592,7 +665,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		}
 	}()
 
-	runErr := node.Run(ctx, vertex, incoming)
+	runErr := node.Run(vertexCtx, vertex, incoming)
 	if runErr != nil {
 		err = fmt.Errorf("superstep %d: node %q failed: %w", superstep, name, runErr)
 		r.emitEvent(Event[M]{Node: name, Superstep: superstep, Error: err})

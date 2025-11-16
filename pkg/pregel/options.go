@@ -3,7 +3,26 @@ package pregel
 import (
 	"context"
 	"runtime"
+	"time"
 )
+
+// QuotaConfig defines resource limits for graph execution.
+type QuotaConfig struct {
+	// MaxMemoryBytes limits heap memory usage (0 = unlimited).
+	// When exceeded, triggers GC and fails execution if still over limit.
+	// Recommended: 512MB to 2GB depending on graph size.
+	MaxMemoryBytes uint64
+
+	// MaxGoroutines limits concurrent goroutines (0 = unlimited).
+	// Applies backpressure when limit is reached.
+	// Recommended: 100-1000 depending on system capacity.
+	MaxGoroutines int
+
+	// MaxExecutionTime limits total execution duration (0 = unlimited).
+	// Prevents infinite loops and time-based DoS.
+	// Recommended: 5-30 minutes for typical workflows.
+	MaxExecutionTime time.Duration
+}
 
 // RuntimeOptions configures runtime behaviour for a Pregel computation over
 // state type S with messages of type M.
@@ -43,6 +62,18 @@ type RuntimeOptions[S any, M any] struct {
 	// OnSuperstepComplete is called after each superstep completes successfully.
 	// The callback receives the execution context and superstep number. Useful for checkpointing.
 	OnSuperstepComplete func(ctx context.Context, superstep int64)
+
+	// VertexTimeout sets the maximum execution time for a single vertex.
+	// If a vertex takes longer than this duration, its context is cancelled and
+	// execution returns an error. This prevents a single slow/hanging node from
+	// blocking the entire superstep. A value <= 0 means no timeout (default).
+	// Recommended: 30s for typical workflows, adjust based on expected node complexity.
+	VertexTimeout time.Duration
+
+	// QuotaConfig defines resource quotas (memory, goroutines, time) to prevent
+	// resource exhaustion during graph execution. If nil, no quotas are enforced.
+	// Use this to prevent runaway memory usage, goroutine leaks, and time-based DoS.
+	QuotaConfig *QuotaConfig
 }
 
 // RuntimeOption mutates runtime options.
@@ -135,6 +166,39 @@ func WithOnSuperstepComplete[S any, M any](callback func(ctx context.Context, su
 func WithMessageBus[S any, M any](bus MessageBus[M]) RuntimeOption[S, M] {
 	return func(o *RuntimeOptions[S, M]) {
 		o.MessageBus = bus
+	}
+}
+
+// WithVertexTimeout sets the maximum execution time for a single vertex.
+// If a vertex exceeds this duration, its execution is cancelled with a context
+// timeout error. This prevents hanging vertices from blocking superstep progress.
+//
+// Recommended values:
+//   - Fast operations (< 1s): 5 * time.Second
+//   - Normal workflows: 30 * time.Second (default recommendation)
+//   - Long-running tasks: 5 * time.Minute
+//   - No timeout: 0 (default, not recommended for production)
+func WithVertexTimeout[S any, M any](timeout time.Duration) RuntimeOption[S, M] {
+	return func(o *RuntimeOptions[S, M]) {
+		o.VertexTimeout = timeout
+	}
+}
+
+// WithQuotaConfig sets resource quotas to prevent memory exhaustion,
+// goroutine leaks, and runaway execution time.
+//
+// Recommended for production deployments to enforce resource limits.
+//
+// Example:
+//
+//	runtime.Run(ctx, state, graph, pregel.WithQuotaConfig(&pregel.QuotaConfig{
+//	    MaxMemoryBytes:   1024 * 1024 * 1024, // 1 GB
+//	    MaxGoroutines:    500,
+//	    MaxExecutionTime: 10 * time.Minute,
+//	}))
+func WithQuotaConfig[S any, M any](config *QuotaConfig) RuntimeOption[S, M] {
+	return func(o *RuntimeOptions[S, M]) {
+		o.QuotaConfig = config
 	}
 }
 

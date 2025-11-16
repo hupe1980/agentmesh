@@ -5,14 +5,9 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
-
-// Type alias for cleaner generic type parameters
-type executionResult = state.ExecutionResult
 
 // NewReActAgent creates a Reasoning and Acting (ReAct) agent that iteratively:
 //  1. Reasons about the task
@@ -107,14 +102,10 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 
 	// Compile the graph using the new clean architecture
 	// exec.CompileGraph bridges: graph (structure) → compile (topology) → exec (execution)
-	inner, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}
-
-	// Wrap with generic type-safe compiled graph
-	// Use exec.NewTyped instead of graph.NewCompiled (avoids import cycle)
-	compiled := exec.NewTyped[[]message.Message, executionResult](inner)
 
 	return compiled, nil
 }

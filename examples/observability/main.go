@@ -123,17 +123,17 @@ func main() {
 	ctx := context.Background()
 	startTime := time.Now()
 
-	_, err = graph.Last(compiled.Run(ctx, nil,
+	for event := range compiled.Run(ctx, nil,
 		graph.WithLogger(logger),
 		graph.WithTracer(traceProvider),
 		graph.WithMetrics(metricsProvider),
-	))
+	) {
+		if event.Err != nil {
+			log.Fatal(event.Err)
+		}
+	}
 
 	duration := time.Since(startTime)
-
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Print results
 	counter, _ := rg.State().Get("counter").(int)

@@ -15,11 +15,13 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+
 	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -125,16 +127,18 @@ func runScenario(choice string) {
 	gph.AddEdge("path_b", graph.EndNode)
 
 	// Compile the graph into executable form
-	compiled, err := gph.Compile()
+	compiled, err := exec.CompileGraph(gph)
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return
 	}
 
 	// Execute the graph - routing will happen automatically based on state
-	if _, err := graph.Last(compiled.Run(context.Background(), nil)); err != nil {
-		fmt.Printf("❌ Execution error: %v\n", err)
-		return
+	for event := range compiled.Run(context.Background(), nil) {
+		if event.Err != nil {
+			fmt.Printf("❌ Execution error: %v\n", event.Err)
+			return
+		}
 	}
 
 	// Display final state including action history

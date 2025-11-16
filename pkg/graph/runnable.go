@@ -28,6 +28,7 @@ type RunOptions struct {
 	RunID               string
 	Checkpointer        checkpoint.Checkpointer
 	CheckpointInterval  int
+	CheckpointQueueSize int // Size of async checkpoint queue (0 = synchronous only)
 	AutoRestore         bool
 	ResumeFrom          int64
 	FailOnCheckpointErr bool
@@ -37,7 +38,8 @@ func defaultRunOptions() RunOptions {
 	return RunOptions{
 		MaxIterations:       100,
 		MaxConcurrency:      4,
-		CheckpointInterval:  1, // Save every superstep by default
+		CheckpointInterval:  1,  // Save every superstep by default
+		CheckpointQueueSize: 10, // Buffer up to 10 checkpoints
 		AutoRestore:         false,
 		FailOnCheckpointErr: false,
 	}

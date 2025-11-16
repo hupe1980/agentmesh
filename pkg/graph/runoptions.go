@@ -117,6 +117,37 @@ func WithFailOnCheckpointError(fail bool) RunOption {
 	}
 }
 
+// WithCheckpointQueueSize configures the size of the asynchronous checkpoint queue.
+// When the queue is full, execution will block until a checkpoint completes,
+// applying backpressure to prevent checkpoint loss.
+//
+// Default: 10
+// Set to 0 to disable async checkpointing (all checkpoints saved synchronously)
+// Set to 1 for minimal buffering with immediate backpressure
+// Higher values (e.g., 50-100) reduce blocking but increase memory usage
+//
+// Example:
+//
+//	// Large queue for high checkpoint frequency
+//	graph.WithCheckpointQueueSize(100)
+//
+//	// Synchronous checkpoints only
+//	graph.WithCheckpointQueueSize(0)
+//
+//	// Minimal buffering with backpressure
+//	graph.WithCheckpointQueueSize(1)
+func WithCheckpointQueueSize(size int) RunOption {
+	return func(opts *RunOptions) {
+		if opts == nil {
+			return
+		}
+		if size < 0 {
+			size = 0
+		}
+		opts.CheckpointQueueSize = size
+	}
+}
+
 // WithMaxConcurrency sets the maximum number of nodes that can execute in parallel.
 // Defaults to 4. Higher values may improve throughput for I/O-bound nodes but increase
 // memory usage.

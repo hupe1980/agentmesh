@@ -171,7 +171,7 @@ executor := graph.NewPregelExecutor(
 g := graph.New()
 // ... build graph ...
 g.WithExecutor(executor)
-compiled, _ := g.Compile()
+compiled, _ := exec.CompileGraph(g)
 ```
 
 **Returns**: `float64` - Sum of all contributed values
@@ -377,7 +377,7 @@ executor := graph.NewPregelExecutor(
     }),
 )
 g.WithExecutor(executor)
-compiled, _ := g.Compile()
+compiled, _ := exec.CompileGraph(g)
 ```
 
 #### Example: Histogram Aggregator
@@ -476,7 +476,7 @@ executor := graph.NewPregelExecutor(
     }),
 )
 g.WithExecutor(executor)
-compiled, _ := g.Compile()
+compiled, _ := exec.CompileGraph(g)
 
 // In each parallel node
 RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
@@ -629,7 +629,7 @@ subGraph.AddEdge(graph.StartNode, "process")
 subGraph.AddEdge("process", graph.EndNode)
 
 // Compile the subgraph
-compiledSub, err := subGraph.Compile()
+compiledSub, err := exec.CompileGraph(subGraph)
 
 // Use as a node in parent graph
 parentState := graph.NewStateManager(0)
@@ -679,9 +679,9 @@ parent.AddNode(compiledSub.AsNodeWithStateMapping(
 **Multi-stage pipelines**:
 ```go
 // Validation -> Enrichment -> Analysis
-validationSub, _ := createValidationGraph().Compile()
-enrichmentSub, _ := createEnrichmentGraph().Compile()
-analysisSub, _ := createAnalysisGraph().Compile()
+validationSub, _ := exec.CompileGraph(createValidationGraph())
+enrichmentSub, _ := exec.CompileGraph(createEnrichmentGraph())
+analysisSub, _ := exec.CompileGraph(createAnalysisGraph())
 
 pipeline := graph.NewGraph(state)
 pipeline.AddSubgraph("validate", validationSub)
@@ -697,7 +697,7 @@ pipeline.AddEdge("analyze", graph.EndNode)
 **Reusable components**:
 ```go
 // Create reusable authentication subgraph
-authSub, _ := createAuthGraph().Compile()
+authSub, _ := exec.CompileGraph(createAuthGraph())
 
 // Use in multiple parent graphs
 apiGraph.AddSubgraph("auth", authSub)

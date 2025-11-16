@@ -1071,7 +1071,7 @@ type Executor interface {
 // Default: Uses Pregel BSP execution automatically
 g := graph.New()
 // ... build graph ...
-compiled, _ := g.Compile()
+compiled, _ := exec.CompileGraph(g)
 results := compiled.Run(ctx, initialMessages)  // Parallel execution via Pregel
 ```
 
@@ -1114,7 +1114,7 @@ executor := graph.NewPregelExecutor(
 g := graph.New()
 // ... build graph ...
 g.WithExecutor(executor)
-compiled, _ := g.Compile()
+compiled, _ := exec.CompileGraph(g)
 
 // Run with configured Pregel executor
 result, _ := graph.Last(compiled.Run(ctx, initialMessages))

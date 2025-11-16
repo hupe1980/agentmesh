@@ -55,13 +55,3 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 func (g *Graph) StateManager() state.StateManager {
 	return g.stateManager
 }
-
-// Compile compiles the graph into a MessageRunnable.
-// This method exists for API compatibility. The actual compilation
-// is handled by pkg/compile and execution by pkg/exec.
-// To use this, call exec.CompileGraph() from pkg/exec.
-func (g *Graph) Compile() (MessageRunnable, error) {
-	// This cannot be implemented here due to import cycles.
-	// Users must call exec.CompileGraph(g) instead.
-	return nil, fmt.Errorf("graph.Compile() is deprecated; use exec.CompileGraph(graph) instead")
-}
