@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -10,16 +11,16 @@ import (
 //nolint:revive // StateStore is an established API name
 type StateStore interface {
 	// Save persists the current state snapshot with the given checkpoint ID.
-	Save(checkpointID string, state *ChannelState) error
+	Save(ctx context.Context, checkpointID string, state *ChannelState) error
 
 	// Load retrieves a previously saved state snapshot.
-	Load(checkpointID string) (*ChannelState, error)
+	Load(ctx context.Context, checkpointID string) (*ChannelState, error)
 
 	// Delete removes a checkpoint from storage.
-	Delete(checkpointID string) error
+	Delete(ctx context.Context, checkpointID string) error
 
 	// List returns all available checkpoint IDs.
-	List() ([]string, error)
+	List(ctx context.Context) ([]string, error)
 }
 
 // InMemoryStateStore provides a simple in-memory implementation of StateStore.
@@ -35,7 +36,7 @@ func NewInMemoryStateStore() *InMemoryStateStore {
 }
 
 // Save stores a deep copy of the state.
-func (s *InMemoryStateStore) Save(checkpointID string, state *ChannelState) error {
+func (s *InMemoryStateStore) Save(ctx context.Context, checkpointID string, state *ChannelState) error {
 	if state == nil {
 		return ErrInvalidState
 	}
@@ -71,7 +72,7 @@ func (s *InMemoryStateStore) Save(checkpointID string, state *ChannelState) erro
 }
 
 // Load retrieves a state snapshot.
-func (s *InMemoryStateStore) Load(checkpointID string) (*ChannelState, error) {
+func (s *InMemoryStateStore) Load(ctx context.Context, checkpointID string) (*ChannelState, error) {
 	state, ok := s.checkpoints[checkpointID]
 	if !ok {
 		return nil, ErrCheckpointNotFound
@@ -104,13 +105,13 @@ func (s *InMemoryStateStore) Load(checkpointID string) (*ChannelState, error) {
 }
 
 // Delete removes a checkpoint.
-func (s *InMemoryStateStore) Delete(checkpointID string) error {
+func (s *InMemoryStateStore) Delete(ctx context.Context, checkpointID string) error {
 	delete(s.checkpoints, checkpointID)
 	return nil
 }
 
 // List returns all checkpoint IDs.
-func (s *InMemoryStateStore) List() ([]string, error) {
+func (s *InMemoryStateStore) List(ctx context.Context) ([]string, error) {
 	ids := make([]string, 0, len(s.checkpoints))
 	for id := range s.checkpoints {
 		ids = append(ids, id)
