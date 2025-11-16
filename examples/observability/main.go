@@ -23,12 +23,13 @@
 package main
 
 import (
-	"github.com/hupe1980/agentmesh/pkg/exec"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/hupe1980/agentmesh/pkg/exec"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
