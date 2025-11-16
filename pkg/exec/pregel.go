@@ -238,6 +238,16 @@ func (p *Pregel) Run(
 
 		// Execute runtime and forward events to result channel
 		for evt, err := range rt.Run(runCtx) {
+			// Check if context was cancelled (consumer stopped iterating)
+			select {
+			case <-runCtx.Done():
+				// Stop immediately when context cancelled
+				close(resultChan)
+				<-yieldDone
+				return
+			default:
+			}
+
 			if err != nil {
 				// Fatal error - BSP execution terminated
 				// Yield error result and stop iteration
