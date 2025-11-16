@@ -797,7 +797,7 @@ Each superstep follows this precise sequence:
 
 ### Worker Pool Pattern
 
-The runtime uses a **bounded worker pool** to control parallelism:
+The runtime uses a **fixed worker pool** to control parallelism and prevent unbounded goroutine creation:
 
 ```go
 // Configuration
@@ -806,30 +806,54 @@ opts := pregel.RuntimeOptions[S, M]{
 }
 
 // Execution
-vertices := scheduler.Ready()  // May return 100 vertices
+vertices := scheduler.Ready()  // May return 10,000 vertices
 
-// Only 10 execute concurrently (others queue)
-semaphore := make(chan struct{}, MaxWorkers)
+// Fixed worker pool: Creates exactly MaxWorkers goroutines (10 in this case)
+// All 10,000 vertices are processed by these 10 workers via a task queue
+tasks := make(chan string, len(vertices))
 for _, vertex := range vertices {
-    semaphore <- struct{}{}  // Acquire slot
-    go func(v string) {
-        defer func() { <-semaphore }()  // Release slot
-        executeVertex(v)
-    }(vertex)
+    tasks <- vertex  // Queue work
 }
+close(tasks)
+
+var wg sync.WaitGroup
+for i := 0; i < MaxWorkers; i++ {  // Create exactly 10 workers
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        for vertex := range tasks {  // Process from queue
+            executeVertex(vertex)
+        }
+    }()
+}
+wg.Wait()
 ```
 
 **Benefits**:
 
 - ⚡ **Parallel execution** when topology allows
-- 🔒 **Resource control** (limit memory/CPU usage)
-- 📊 **Predictable performance** (no unbounded goroutine spawning)
+- 🔒 **Resource control** - Creates exactly `MaxWorkers` goroutines, not `len(frontier)` goroutines
+- 📊 **Predictable performance** - No unbounded goroutine spawning
+- 💾 **Fixed memory usage** - Stack memory scales with `MaxWorkers`, not frontier size
+- 🎯 **Efficient scheduling** - Task queue distributes work evenly across workers
+
+**Comparison:**
+
+| Approach | Goroutines Created | Memory Usage | Suitable For |
+|----------|-------------------|--------------|--------------|
+| **Semaphore** (old) | `len(frontier)` | O(frontier) stack space | Small frontiers (<1000) |
+| **Fixed Pool** (current) | `MaxWorkers` | O(MaxWorkers) stack space | Any frontier size |
+
+For a frontier of 10,000 vertices with `MaxWorkers=10`:
+- ❌ Semaphore approach: 10,000 goroutines, ~80MB stack memory
+- ✅ Fixed pool approach: 10 goroutines, ~80KB stack memory
 
 **Tuning guidance**:
 
 - **CPU-bound nodes**: `MaxWorkers = runtime.NumCPU()`
 - **I/O-bound nodes** (API calls): `MaxWorkers = 2-4x runtime.NumCPU()`
 - **Mixed workload**: `MaxWorkers = runtime.NumCPU() + small buffer`
+- **Large graphs**: Worker pool automatically scales down to `min(MaxWorkers, len(frontier))`
 
 ### Message Passing and Mailboxes
 
