@@ -35,15 +35,28 @@ import (
 // - Batch update multiple channels atomically
 // - Maintain channel set for iteration
 //
-// Thread Safety: Uses the channel.Set's internal locking.
+// Performance Optimization:
+// - Implements copy-on-write semantics for snapshots
+// - Caches snapshot until any channel is modified
+// - Version tracking for efficient cache invalidation
+//
+// Thread Safety: Uses the channel.Set's internal locking plus snapshot cache protection.
 type channelStore struct {
 	channels *channel.Set
+
+	// Copy-on-write snapshot cache
+	mu             sync.RWMutex
+	cachedSnapshot map[string]any
+	cachedVersion  int64
+	currentVersion int64
 }
 
 // newChannelStore creates a new channel store.
 func newChannelStore() *channelStore {
 	return &channelStore{
-		channels: channel.NewSet(),
+		channels:       channel.NewSet(),
+		currentVersion: 0,
+		cachedVersion:  -1, // Ensures first snapshot creates cache
 	}
 }
 
@@ -85,21 +98,65 @@ func (cs *channelStore) updateChannel(ctx context.Context, name string, value an
 	if !ok {
 		return nil // Skip unknown channels
 	}
-	return ch.Write(ctx, value)
+	err := ch.Write(ctx, value)
+	if err == nil {
+		// Invalidate snapshot cache on successful write
+		cs.invalidateCache()
+	}
+	return err
 }
 
 // updateChannels batch-updates multiple channels atomically.
 func (cs *channelStore) updateChannels(ctx context.Context, updates map[string]any) error {
-	return cs.channels.WriteAll(ctx, updates)
+	err := cs.channels.WriteAll(ctx, updates)
+	if err == nil {
+		// Invalidate snapshot cache on successful write
+		cs.invalidateCache()
+	}
+	return err
 }
 
 // snapshot returns a complete snapshot of all channel values.
+// Implements copy-on-write semantics - returns cached snapshot if state hasn't changed.
 func (cs *channelStore) snapshot() map[string]any {
+	// Fast path: check if cache is valid (read lock)
+	cs.mu.RLock()
+	if cs.cachedVersion == cs.currentVersion && cs.cachedSnapshot != nil {
+		snapshot := cs.cachedSnapshot
+		cs.mu.RUnlock()
+		return snapshot
+	}
+	cs.mu.RUnlock()
+
+	// Slow path: create new snapshot (write lock to update cache)
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have updated)
+	if cs.cachedVersion == cs.currentVersion && cs.cachedSnapshot != nil {
+		return cs.cachedSnapshot
+	}
+
+	// Create snapshot from all channels
 	values, err := cs.channels.SnapshotAll(context.Background())
 	if err != nil {
 		return nil
 	}
+
+	// Cache the snapshot
+	cs.cachedSnapshot = values
+	cs.cachedVersion = cs.currentVersion
+
 	return values
+}
+
+// invalidateCache increments version and clears cached snapshot.
+// Must be called after any write operation.
+func (cs *channelStore) invalidateCache() {
+	cs.mu.Lock()
+	cs.currentVersion++
+	cs.cachedSnapshot = nil
+	cs.mu.Unlock()
 }
 
 // list returns the names of all channels.
@@ -116,6 +173,7 @@ func (cs *channelStore) clone() *channelStore {
 			newStore.addChannel(ch)
 		}
 	}
+	// Don't copy cache - let clone build its own
 	return newStore
 }
 
