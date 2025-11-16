@@ -510,6 +510,11 @@ builder.Node("step1", func(ctx context.Context, s state.Writer) (*graph.NodeResu
 })
 
 builder.Node("step2", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    // Recommended: Use typed keys for compile-time safety
+    // var ResultKey = state.NewKey[string]("result")
+    // result, _ := ResultKey.Get(s)
+    
+    // Or use untyped access (runtime type assertion)
     result := s.Get("result").(string)
     fmt.Println("Received:", result)
     return &graph.NodeResult{}, nil

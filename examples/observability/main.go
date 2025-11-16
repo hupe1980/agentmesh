@@ -47,12 +47,16 @@ func main() {
 	metricsProvider := metrics.Noop() // Replace with opentelemetry.New(meterProvider)
 	traceProvider := trace.Noop()     // Replace with opentelemetry.New(tracerProvider)
 
+	// Define type-safe state counter
+	var counterState = graphstate.NewCounter("counter")
+
 	// Create a simple graph
 	state, err := graphstate.NewStateManager(0) // Unlimited messages
 	if err != nil {
 		panic(err)
 	}
-	state.Set("counter", 0)
+	// Initialize counter to 0
+	_ = counterState.Set(state, 0)
 	g, err := graph.NewGraph(state)
 	if err != nil {
 		panic(err)
@@ -75,10 +79,15 @@ func main() {
 
 			// Simulate work
 			time.Sleep(10 * time.Millisecond)
-			counter, _ := s.Get("counter").(int)
+
+			// Type-safe atomic increment
+			newValue, err := counterState.Increment(s)
+			if err != nil {
+				return nil, err
+			}
 
 			return &graph.NodeResult{
-				Updates: map[string]any{"counter": counter + 1},
+				Updates: map[string]any{counterState.Name(): newValue},
 			}, nil
 		},
 	}); err != nil {
@@ -97,10 +106,19 @@ func main() {
 			counter.Add(ctx, 1, metrics.Attr{Key: "operation", Value: "step2"})
 
 			time.Sleep(15 * time.Millisecond)
-			currentCounter, _ := s.Get("counter").(int)
+
+			// Type-safe counter read and update
+			currentCounter, err := counterState.Get(s)
+			if err != nil {
+				return nil, err
+			}
+			newValue := currentCounter + 10
+			if err := counterState.Set(s, newValue); err != nil {
+				return nil, err
+			}
 
 			return &graph.NodeResult{
-				Updates: map[string]any{"counter": currentCounter + 10},
+				Updates: map[string]any{counterState.Name(): newValue},
 			}, nil
 		},
 	}); err != nil {
@@ -136,8 +154,11 @@ func main() {
 
 	duration := time.Since(startTime)
 
-	// Print results
-	counter, _ := rg.State().Get("counter").(int)
+	// Print results - type-safe read
+	counter, err := counterState.Get(rg.State())
+	if err != nil {
+		log.Fatalf("Failed to get counter: %v", err)
+	}
 	fmt.Printf("Final counter value: %d\n", counter)
 	fmt.Printf("Total execution time: %v\n", duration)
 

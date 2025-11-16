@@ -1,4 +1,4 @@
-// Package main demonstrates the Builder API for creating graphs.
+// Package main demonstrates the Builder API for creating graphs with type-safe state keys.
 package main
 
 import (
@@ -12,6 +12,14 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
+// Define typed state keys at package level for type safety and autocomplete
+var (
+	AnalysisKey = state.NewKey[string]("analysis")
+	ScoreKey    = state.NewKey[float64]("score")
+	ValidKey    = state.NewKey[bool]("valid")
+	ResultKey   = state.NewKey[string]("result")
+)
+
 func main() {
 	// Create a builder with automatic compilation support
 	builder, err := exec.NewBuilder()
@@ -19,36 +27,41 @@ func main() {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
 
-	// Build a simple workflow using fluent API
+	// Build a simple workflow using fluent API with type-safe keys
 	builder.
 		Node("analyze", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			fmt.Println("Analyzing input...")
 			return &graph.NodeResult{
 				Updates: map[string]any{
-					"analysis": "Input looks good",
-					"score":    0.95,
+					AnalysisKey.Name(): "Input looks good",
+					ScoreKey.Name():    0.95,
 				},
 			}, nil
 		}).
 		Node("validate", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			score := s.Get("score").(float64)
+			// Type-safe read - no casting needed, compile-time checked
+			score, err := ScoreKey.Get(s)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get score: %w", err)
+			}
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
 			return &graph.NodeResult{
-				Updates: map[string]any{"valid": valid},
+				Updates: map[string]any{ValidKey.Name(): valid},
 			}, nil
 		}).
 		Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			valid := s.Get("valid").(bool)
+			// Type-safe read with default value - never panics
+			valid := ValidKey.GetOr(s, false)
 			if valid {
 				fmt.Println("Processing validated input...")
 				return &graph.NodeResult{
-					Updates: map[string]any{"result": "Success!"},
+					Updates: map[string]any{ResultKey.Name(): "Success!"},
 				}, nil
 			}
 			return &graph.NodeResult{
-				Updates: map[string]any{"result": "Failed validation"},
+				Updates: map[string]any{ResultKey.Name(): "Failed validation"},
 			}, nil
 		}).
 		AddEdge(graph.StartNode, "analyze").
@@ -72,8 +85,11 @@ func main() {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	// Get final state
+	// Get final state with type safety - no casting, compile-time checked
 	finalState := builder.StateManager()
-	result := finalState.Get("result").(string)
+	result, err := ResultKey.Get(finalState)
+	if err != nil {
+		log.Fatalf("Failed to get result: %v", err)
+	}
 	fmt.Printf("\nFinal result: %s\n", result)
 }

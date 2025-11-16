@@ -18,36 +18,6 @@ type Reader interface {
 
 	// AggregatesSnapshot returns a copy of global aggregates from the previous superstep.
 	AggregatesSnapshot() map[string]any
-
-	// Type-safe accessor methods to prevent runtime panics
-
-	// GetString retrieves a string value from state.
-	// Returns error if key doesn't exist or value is not a string.
-	GetString(key string) (string, error)
-
-	// GetInt retrieves an integer value from state.
-	// Returns error if key doesn't exist or value is not an int.
-	GetInt(key string) (int, error)
-
-	// GetInt64 retrieves an int64 value from state.
-	// Returns error if key doesn't exist or value is not an int64.
-	GetInt64(key string) (int64, error)
-
-	// GetFloat64 retrieves a float64 value from state.
-	// Returns error if key doesn't exist or value is not a float64.
-	GetFloat64(key string) (float64, error)
-
-	// GetBool retrieves a boolean value from state.
-	// Returns error if key doesn't exist or value is not a bool.
-	GetBool(key string) (bool, error)
-
-	// GetSlice retrieves a slice value from state.
-	// Returns error if key doesn't exist or value is not a slice.
-	GetSlice(key string) ([]any, error)
-
-	// GetMap retrieves a map value from state.
-	// Returns error if key doesn't exist or value is not a map.
-	GetMap(key string) (map[string]any, error)
 }
 
 // Writer extends Reader with write capabilities for state mutations.

@@ -277,108 +277,6 @@ func (s *ChannelState) MessagesSnapshot() []ExecutionResult {
 }
 
 // =============================================================================
-// ChannelState - Type-Safe Accessors (Prevent Runtime Panics)
-// =============================================================================
-
-// GetString retrieves a string value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not a string.
-func (s *ChannelState) GetString(key string) (string, error) {
-	val := s.Get(key)
-	if val == nil {
-		return "", fmt.Errorf("key %q not found in state", key)
-	}
-	str, ok := val.(string)
-	if !ok {
-		return "", fmt.Errorf("key %q has type %T, expected string", key, val)
-	}
-	return str, nil
-}
-
-// GetInt retrieves an integer value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not an int.
-func (s *ChannelState) GetInt(key string) (int, error) {
-	val := s.Get(key)
-	if val == nil {
-		return 0, fmt.Errorf("key %q not found in state", key)
-	}
-	i, ok := val.(int)
-	if !ok {
-		return 0, fmt.Errorf("key %q has type %T, expected int", key, val)
-	}
-	return i, nil
-}
-
-// GetInt64 retrieves an int64 value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not an int64.
-func (s *ChannelState) GetInt64(key string) (int64, error) {
-	val := s.Get(key)
-	if val == nil {
-		return 0, fmt.Errorf("key %q not found in state", key)
-	}
-	i64, ok := val.(int64)
-	if !ok {
-		return 0, fmt.Errorf("key %q has type %T, expected int64", key, val)
-	}
-	return i64, nil
-}
-
-// GetFloat64 retrieves a float64 value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not a float64.
-func (s *ChannelState) GetFloat64(key string) (float64, error) {
-	val := s.Get(key)
-	if val == nil {
-		return 0, fmt.Errorf("key %q not found in state", key)
-	}
-	f64, ok := val.(float64)
-	if !ok {
-		return 0, fmt.Errorf("key %q has type %T, expected float64", key, val)
-	}
-	return f64, nil
-}
-
-// GetBool retrieves a boolean value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not a bool.
-func (s *ChannelState) GetBool(key string) (bool, error) {
-	val := s.Get(key)
-	if val == nil {
-		return false, fmt.Errorf("key %q not found in state", key)
-	}
-	b, ok := val.(bool)
-	if !ok {
-		return false, fmt.Errorf("key %q has type %T, expected bool", key, val)
-	}
-	return b, nil
-}
-
-// GetSlice retrieves a slice value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not a slice.
-func (s *ChannelState) GetSlice(key string) ([]any, error) {
-	val := s.Get(key)
-	if val == nil {
-		return nil, fmt.Errorf("key %q not found in state", key)
-	}
-	slice, ok := val.([]any)
-	if !ok {
-		return nil, fmt.Errorf("key %q has type %T, expected []any", key, val)
-	}
-	return slice, nil
-}
-
-// GetMap retrieves a map value from state with type checking.
-// Returns an error if the key doesn't exist or the value is not a map[string]any.
-func (s *ChannelState) GetMap(key string) (map[string]any, error) {
-	val := s.Get(key)
-	if val == nil {
-		return nil, fmt.Errorf("key %q not found in state", key)
-	}
-	m, ok := val.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("key %q has type %T, expected map[string]any", key, val)
-	}
-	return m, nil
-}
-
-// =============================================================================
 // State - Channel Management
 // =============================================================================
 
@@ -662,36 +560,6 @@ func (sr *StateReaderAdapter) AggregatesSnapshot() map[string]any {
 	return sr.manager.GetAggregatesSnapshot()
 }
 
-// Type-safe accessor methods (delegate to underlying manager)
-
-func (sr *StateReaderAdapter) GetString(key string) (string, error) {
-	return sr.manager.GetString(key)
-}
-
-func (sr *StateReaderAdapter) GetInt(key string) (int, error) {
-	return sr.manager.GetInt(key)
-}
-
-func (sr *StateReaderAdapter) GetInt64(key string) (int64, error) {
-	return sr.manager.GetInt64(key)
-}
-
-func (sr *StateReaderAdapter) GetFloat64(key string) (float64, error) {
-	return sr.manager.GetFloat64(key)
-}
-
-func (sr *StateReaderAdapter) GetBool(key string) (bool, error) {
-	return sr.manager.GetBool(key)
-}
-
-func (sr *StateReaderAdapter) GetSlice(key string) ([]any, error) {
-	return sr.manager.GetSlice(key)
-}
-
-func (sr *StateReaderAdapter) GetMap(key string) (map[string]any, error) {
-	return sr.manager.GetMap(key)
-}
-
 // StateWriterAdapter adapts StateManager to Writer interface.
 // This extends Reader with aggregation capabilities, allowing
 // nodes to contribute to global aggregators during execution.
@@ -770,36 +638,6 @@ func (bsw *BufferedStateWriter) MessagesSnapshot() []ExecutionResult {
 // AggregatesSnapshot returns aggregate values from the underlying reader.
 func (bsw *BufferedStateWriter) AggregatesSnapshot() map[string]any {
 	return bsw.reader.AggregatesSnapshot()
-}
-
-// Type-safe accessor methods (delegate to underlying reader)
-
-func (bsw *BufferedStateWriter) GetString(key string) (string, error) {
-	return bsw.reader.GetString(key)
-}
-
-func (bsw *BufferedStateWriter) GetInt(key string) (int, error) {
-	return bsw.reader.GetInt(key)
-}
-
-func (bsw *BufferedStateWriter) GetInt64(key string) (int64, error) {
-	return bsw.reader.GetInt64(key)
-}
-
-func (bsw *BufferedStateWriter) GetFloat64(key string) (float64, error) {
-	return bsw.reader.GetFloat64(key)
-}
-
-func (bsw *BufferedStateWriter) GetBool(key string) (bool, error) {
-	return bsw.reader.GetBool(key)
-}
-
-func (bsw *BufferedStateWriter) GetSlice(key string) ([]any, error) {
-	return bsw.reader.GetSlice(key)
-}
-
-func (bsw *BufferedStateWriter) GetMap(key string) (map[string]any, error) {
-	return bsw.reader.GetMap(key)
 }
 
 // Set is not supported on BufferedStateWriter. State writes must go through NodeResult.
