@@ -76,9 +76,9 @@ type Runtime[S any, M any] struct {
 	vertices   atomic.Int64
 	messages   atomic.Int64
 
-	// Event emission for Run execution (channel-based to allow concurrent workers)
+	// Event emission for Run execution (thread-safe channel wrapper)
 	eventChanMu sync.RWMutex
-	eventChan   chan Event[M]
+	eventChan   *safeEventChan[M]
 
 	// Resource quota management (optional)
 	quotaManager *quota.Manager
@@ -284,35 +284,45 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 // Returns an iterator that yields events as the computation progresses.
 func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 	return func(yield func(Event[M], error) bool) {
-		// Create channel for event emission (workers can send concurrently)
-		eventChan := make(chan Event[M], DefaultEventChanBufferSize)
-		doneChan := make(chan struct{})
-
-		// Store channel for use by emitEvent
+		// Create thread-safe event channel wrapper
 		r.eventChanMu.Lock()
-		r.eventChan = eventChan
+		r.eventChan = newSafeEventChan[M](DefaultEventChanBufferSize)
+		ch := r.eventChan.Chan()
 		r.eventChanMu.Unlock()
 
+		doneChan := make(chan struct{})
+
 		defer func() {
+			// Close the safe channel wrapper (prevents "send on closed channel" panics)
 			r.eventChanMu.Lock()
-			r.eventChan = nil
+			if r.eventChan != nil {
+				r.eventChan.Close()
+				r.eventChan = nil
+			}
 			r.eventChanMu.Unlock()
 		}()
 
 		// Start goroutine that actually executes the runtime
 		go func() {
-			defer close(eventChan)
+			defer func() {
+				// Close the underlying channel when execution completes
+				r.eventChanMu.RLock()
+				if r.eventChan != nil {
+					r.eventChan.Close()
+				}
+				r.eventChanMu.RUnlock()
+				close(doneChan)
+			}()
 			r.execute(ctx)
-			close(doneChan)
 		}()
 
 		// Yield events from single goroutine (satisfies iter.Seq2 contract)
-		for evt := range eventChan {
+		for evt := range ch {
 			if !yield(evt, evt.Error) {
 				// Consumer stopped iteration - drain remaining events to prevent deadlock
 				go func() {
 					//nolint:revive // Need to drain channel to prevent goroutine leak
-					for range eventChan {
+					for range ch {
 					}
 				}()
 				<-doneChan // Wait for execution to complete
@@ -719,12 +729,15 @@ func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 
 // emitEvent safely sends an event to the channel (if Run is active).
 // Can be called concurrently from multiple worker goroutines.
-func (r *Runtime[S, M]) emitEvent(event Event[M]) {
+// Returns true if the event was sent successfully, false if the channel is closed
+// or the send timed out. Failed sends are not errors - they occur during normal
+// shutdown or when the consumer is slow.
+func (r *Runtime[S, M]) emitEvent(event Event[M]) bool {
 	r.eventChanMu.RLock()
-	ch := r.eventChan
-	r.eventChanMu.RUnlock()
+	defer r.eventChanMu.RUnlock()
 
-	if ch != nil {
-		ch <- event
+	if r.eventChan == nil {
+		return false
 	}
+	return r.eventChan.Send(event)
 }

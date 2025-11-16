@@ -1206,7 +1206,185 @@ stateReader := compiled.State()
 - ✅ **Clean API**: Interface over concrete implementation
 - ✅ **Type Safety**: Go interfaces with compile-time checking
 
-The default implementation (`State`) provides channel-based state with versioning and checkpoint support.
+The default implementation (`ChannelState`) provides channel-based state with versioning and checkpoint support.
+
+### StateManager Architecture (Decomposed Design)
+
+Following the **Single Responsibility Principle**, the StateManager has been decomposed from a monolithic "god object" into focused, composable components. This architecture improves testability, maintainability, and extensibility.
+
+#### Component Architecture
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                    ChannelState                             │
+│               (StateManager Implementation)                 │
+│                                                             │
+│  Composes four specialized components:                     │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ channelStore                                         │ │
+│  │ • Channel registration and lookup                    │ │
+│  │ • Value updates (single & batch)                     │ │
+│  │ • Thread-safe access via channel.Set                 │ │
+│  └──────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ aggregateStore                                       │ │
+│  │ • Aggregate value storage                            │ │
+│  │ • Aggregate function management                      │ │
+│  │ • Immutable snapshots with lazy copy-on-write        │ │
+│  │ • Thread-safe with sync.RWMutex                      │ │
+│  └──────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ checkpointCoordinator                                │ │
+│  │ • Checkpoint backend configuration                   │ │
+│  │ • Save/load operations                               │ │
+│  │ • Metadata management                                │ │
+│  │ • Thread-safe backend access                         │ │
+│  └──────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │ versionTracker                                       │ │
+│  │ • Monotonic version counter                          │ │
+│  │ • Change detection                                   │ │
+│  │ • Checkpoint integrity validation                    │ │
+│  │ • Thread-safe increment                              │ │
+│  └──────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Interface Segregation
+
+The StateManager interface is now composed of focused sub-interfaces, following the **Interface Segregation Principle**:
+
+```go
+// StateManager - Full interface composition
+type StateManager interface {
+    Writer              // Extends Reader with Set() and Aggregate()
+    ChannelManager      // Channel lifecycle & updates
+    AggregateManager    // Cross-node aggregate coordination
+    CheckpointManager   // State persistence & restoration
+    
+    // Additional capabilities
+    Version() uint64
+    Snapshot() map[string]any
+    Clone() StateManager
+}
+
+// Reader - Read-only state access for nodes
+type Reader interface {
+    Get(key string) any
+    GetAll() map[string]any
+    MessagesSnapshot() []ExecutionResult
+    AggregatesSnapshot() map[string]any
+    // Type-safe accessors: GetString, GetInt, GetFloat64, etc.
+}
+
+// Writer - Extends Reader with write capabilities
+type Writer interface {
+    Reader
+    Set(key string, value any) error
+    Aggregate(name string, value any) error
+}
+
+// ChannelManager - Channel lifecycle management
+type ChannelManager interface {
+    AddChannel(ch channel.Channel)
+    GetChannel(name string) (channel.Channel, bool)
+    Set(key string, value any) error
+    UpdateChannel(ctx context.Context, name string, value any) error
+    UpdateChannels(ctx context.Context, updates map[string]any) error
+    AddMessages(messages []ExecutionResult)
+    ApplyUpdates(values map[string]any, messages []ExecutionResult)
+}
+
+// AggregateManager - Aggregate value management
+type AggregateManager interface {
+    GetAggregate(name string) any
+    GetAggregatesSnapshot() map[string]any
+    SetAggregates(aggregates map[string]any)
+    SetAggregateFn(fn func(string, any) error)
+    RecordAggregation(name string, value any) error
+}
+
+// CheckpointManager - State persistence
+type CheckpointManager interface {
+    SaveCheckpoint(ctx context.Context, runID string, superstep int64, metadata map[string]any) error
+    LoadCheckpoint(ctx context.Context, runID string) (*checkpoint.Checkpoint, error)
+    SetCheckpointer(checkpointer checkpoint.Checkpointer)
+}
+```
+
+#### Benefits of Decomposition
+
+**1. Single Responsibility**
+- Each component has one clear purpose
+- Easy to understand and maintain
+- Changes are localized to specific components
+
+**2. Testability**
+- Components can be tested independently
+- Easy to mock focused interfaces
+- Reduced test complexity
+
+**3. Independent Thread Safety**
+- Each component manages its own locking
+- No global lock contention
+- Better concurrent performance
+
+**4. Extensibility**
+- Can implement subsets for specialized use cases
+- Easy to add new storage backends
+- Clear extension points
+
+**5. Clean API Surface**
+- Nodes receive Reader or Writer (not full StateManager)
+- Runtime uses specific manager interfaces
+- Explicit dependencies prevent misuse
+
+#### Usage Examples
+
+**Nodes receive focused interfaces:**
+```go
+// Read-only node
+RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    status := state.Get("status")
+    // Node cannot accidentally mutate state
+    return &graph.NodeResult{...}, nil
+}
+
+// Write-capable node
+RunFunc: func(ctx context.Context, state state.Writer) (*graph.NodeResult, error) {
+    // Can read state and contribute to aggregates
+    state.Aggregate("counter", 1)
+    return &graph.NodeResult{...}, nil
+}
+```
+
+**Runtime uses full StateManager:**
+```go
+// Runtime has full access for coordination
+func (r *Runtime) executeSuperstep(ctx context.Context, sm state.StateManager) error {
+    // Use ChannelManager for updates
+    sm.UpdateChannels(ctx, updates)
+    
+    // Use AggregateManager for coordination
+    sm.SetAggregates(newAggregates)
+    
+    // Use CheckpointManager for persistence
+    sm.SaveCheckpoint(ctx, runID, superstep, metadata)
+    
+    return nil
+}
+```
+
+#### Implementation Details
+
+The components are internal implementation details in `pkg/state/components.go`:
+
+- `channelStore` - Wraps `channel.Set` for thread-safe channel management
+- `aggregateStore` - Uses `sync.RWMutex` for aggregate value protection
+- `checkpointCoordinator` - Manages pluggable checkpoint backends
+- `versionTracker` - Provides atomic version increments
+
+The `ChannelState` struct composes these components and delegates all operations to the appropriate component, maintaining a clean separation of concerns.
 
 ### Hybrid State Propagation
 

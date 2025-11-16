@@ -17,17 +17,66 @@ This package provides all state management functionality for AgentMesh graphs, i
 
 ```
 pkg/state/
-├── interfaces.go         - Core Reader/Writer interfaces (35 lines)
-├── state_manager.go      - StateManager implementation (827 lines)
-├── state_builder.go      - Fluent builder API (247 lines)
-├── execution_state.go    - Execution tracking (275 lines)
-├── execution_result.go   - Message result wrapper (92 lines)
-├── storage.go            - State persistence (120 lines)
-├── errors.go             - Error definitions (18 lines)
-├── doc.go                - Package documentation (12 lines)
+├── interfaces.go         - Core Reader/Writer/Manager interfaces
+├── state_manager.go      - ChannelState implementation & adapters
+├── components.go         - Internal decomposed components:
+│                           • channelStore (channel operations)
+│                           • aggregateStore (aggregate management)
+│                           • checkpointCoordinator (persistence)
+│                           • versionTracker (state versioning)
+├── state_builder.go      - Fluent builder API
+├── execution_state.go    - Execution tracking
+├── execution_result.go   - Message result wrapper
+├── storage.go            - State persistence
+├── errors.go             - Error definitions
+├── doc.go                - Package documentation
 └── aggregators/
-    └── aggregators.go    - Built-in aggregators (449 lines)
+    └── aggregators.go    - Built-in aggregators
 ```
+
+### Decomposed Architecture (v2.0+)
+
+Following the **Single Responsibility Principle**, StateManager has been decomposed into focused components:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              ChannelState (Public)                  │
+│         Implements StateManager Interface           │
+│                                                     │
+│  Delegates to internal components:                 │
+│  ┌───────────────────────────────────────────────┐ │
+│  │ channelStore                                  │ │
+│  │ • Channel registration & lookup               │ │
+│  │ • Value updates (single & batch)              │ │
+│  │ • Thread-safe via channel.Set                 │ │
+│  └───────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────┐ │
+│  │ aggregateStore                                │ │
+│  │ • Aggregate value storage                     │ │
+│  │ • Lazy copy-on-write snapshots                │ │
+│  │ • Independent sync.RWMutex                    │ │
+│  └───────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────┐ │
+│  │ checkpointCoordinator                         │ │
+│  │ • Pluggable checkpoint backends               │ │
+│  │ • Save/load coordination                      │ │
+│  │ • Independent sync.RWMutex                    │ │
+│  └───────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────┐ │
+│  │ versionTracker                                │ │
+│  │ • Monotonic version counter                   │ │
+│  │ • Atomic increment operations                 │ │
+│  │ • Independent sync.Mutex                      │ │
+│  └───────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- ✅ Each component has single responsibility
+- ✅ Independent thread safety (no global lock)
+- ✅ Easy to test components in isolation
+- ✅ Clear extension points
+- ✅ Better concurrent performance
 
 ## Key Types
 
@@ -157,11 +206,13 @@ pkg/runtime/state/    DELETED
 
 ## Design Principles
 
-1. **Interface Segregation**: Small, focused interfaces (Reader, Writer)
-2. **Semantic Location**: State belongs in `pkg/state`, not `pkg/runtime/state`
-3. **Zero Dependencies**: Only depends on `pkg/channel`, `pkg/checkpoint`, `pkg/message`
-4. **Thread-Safe**: All operations are safe for concurrent use
-5. **Extensible**: Easy to add custom aggregators and channels
+1. **Single Responsibility**: Each component (channelStore, aggregateStore, etc.) has one clear purpose
+2. **Interface Segregation**: Small, focused interfaces (Reader, Writer, ChannelManager, AggregateManager, CheckpointManager)
+3. **Composition Over Inheritance**: ChannelState composes specialized components
+4. **Independent Thread Safety**: Each component manages its own locking for better concurrency
+5. **Semantic Location**: State belongs in `pkg/state`, not `pkg/runtime/state`
+6. **Zero Dependencies**: Only depends on `pkg/channel`, `pkg/checkpoint`, `pkg/message`
+7. **Extensible**: Easy to add custom aggregators, channels, and checkpoint backends
 
 ## Testing
 
