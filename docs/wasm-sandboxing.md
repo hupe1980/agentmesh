@@ -125,7 +125,7 @@ messages := []message.Message{
     message.NewHumanMessageFromText("Calculate (2 + 3) * 4"),
 }
 
-results, err := agent.Invoke(ctx, messages)
+result, err := graph.Last(agent.Run(ctx, messages))
 // Tool executes in isolated WASM environment
 // No access to network, filesystem, or host memory
 ```

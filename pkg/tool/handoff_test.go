@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	stateif "github.com/hupe1980/agentmesh/pkg/state"
@@ -82,7 +83,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	state, err := graph.NewStateManager(0)
+	state, err := stateif.NewStateManager(0)
 	require.NoError(t, err)
 	g, err := graph.NewGraph(state)
 	require.NoError(t, err)
@@ -100,7 +101,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	})
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	handoffTool, err := HandoffToAgent(
@@ -174,8 +175,8 @@ func TestIsValidResult(t *testing.T) {
 }
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled[[]message.Message, stateif.ExecutionResult] {
-	state, err := graph.NewStateManager(0)
+func createMockWorkerGraph(t *testing.T, response string) graph.MessageRunnable {
+	state, err := stateif.NewStateManager(0)
 	require.NoError(t, err)
 	g, err := graph.NewGraph(state)
 	require.NoError(t, err)
@@ -192,7 +193,7 @@ func createMockWorkerGraph(t *testing.T, response string) *graph.Compiled[[]mess
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
 
-	compiledImpl, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
-	return graph.NewCompiled[[]message.Message, stateif.ExecutionResult](compiledImpl)
+	return compiled
 }

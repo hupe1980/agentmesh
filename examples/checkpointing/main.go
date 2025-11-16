@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -189,8 +189,8 @@ func runDemo(ctx context.Context) {
 	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
-	builder, err := graph.NewBuilder()
+func buildWorkflow() *exec.RunnableGraph {
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		panic(err)
 	}
@@ -224,15 +224,15 @@ func buildWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResu
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := builder.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}
-	return compiled
+	return compiled.(*exec.RunnableGraph)
 }
 
-func buildFailingWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
-	builder, err := graph.NewBuilder()
+func buildFailingWorkflow() *exec.RunnableGraph {
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		panic(err)
 	}
@@ -260,12 +260,12 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, graphstate.Execut
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, _ := builder.CompileMessageRunnable()
-	return compiled
+	compiled, _ := builder.Compile()
+	return compiled.(*exec.RunnableGraph)
 }
 
-func buildFixedWorkflow() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
-	builder, err := graph.NewBuilder()
+func buildFixedWorkflow() *exec.RunnableGraph {
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		panic(err)
 	}
@@ -296,6 +296,6 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, graphstate.Executio
 	builder.AddEdge("step2", "step3")
 	builder.AddEdge("step3", graph.EndNode)
 
-	compiled, _ := builder.CompileMessageRunnable()
-	return compiled
+	compiled, _ := builder.Compile()
+	return compiled.(*exec.RunnableGraph)
 }

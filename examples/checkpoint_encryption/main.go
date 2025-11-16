@@ -57,7 +57,7 @@ func basicEncryptionExample(ctx context.Context) {
 	}
 
 	// Create a simple graph
-	state, err := graph.NewStateManager(10)
+	state, err := graphstate.NewStateManager(10)
 	if err != nil {
 		log.Fatal(err)
 	}

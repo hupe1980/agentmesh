@@ -388,7 +388,7 @@ human := message.NewHumanMessageFromText("What is 15 multiplied by 8?")
 
 
 
-results, err := reactAgent.Invoke(ctx, []message.Message{system, human})
+result, err := graph.Last(reactAgent.Run(ctx, []message.Message{system, human}))
 
 ``````rustdocker run --rm -v $(pwd):/usr/src/app -w /usr/src/app rust:1.83 \### Local Installation
 

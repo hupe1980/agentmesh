@@ -54,13 +54,21 @@ func main() {
 			continue
 		}
 
-		// Execute and collect messages
-		messages, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
+		// Execute and collect execution results
+		results, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
 			message.NewHumanMessageFromText(query),
 		}))
 		if err != nil {
 			log.Printf("Error executing query: %v", err)
 			continue
+		}
+
+		// Extract messages from execution results
+		messages := make([]message.Message, 0, len(results))
+		for _, result := range results {
+			if result.Message != nil {
+				messages = append(messages, result.Message)
+			}
 		}
 
 		// Display conversation transcript

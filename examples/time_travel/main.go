@@ -8,8 +8,8 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -25,8 +25,8 @@ func main() {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Build a simple mathematical workflow
-	buildWorkflow := func() *graph.Compiled[[]message.Message, graphstate.ExecutionResult] {
-		builder, err := graph.NewBuilder()
+	buildWorkflow := func() *exec.RunnableGraph {
+		builder, err := exec.NewBuilder()
 		if err != nil {
 			panic(err)
 		}
@@ -66,11 +66,11 @@ func main() {
 		builder.AddEdge("add_ten", "multiply_three")
 		builder.AddEdge("multiply_three", graph.EndNode)
 
-		compiled, err := builder.CompileMessageRunnable()
+		compiled, err := builder.Compile()
 		if err != nil {
 			log.Fatal(err)
 		}
-		return compiled
+		return compiled.(*exec.RunnableGraph)
 	}
 
 	// ===== RUN 1: Starting with value = 1 =====

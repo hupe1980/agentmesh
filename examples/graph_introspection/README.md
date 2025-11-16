@@ -151,7 +151,7 @@ for i, path := range paths {
 
 ```go
 // Execute graph
-_, _ = compiled.Invoke(ctx, nil)
+_, _ = graph.Last(compiled.Run(ctx, nil))
 
 // Check runtime state
 metrics := compiled.GetMetrics()

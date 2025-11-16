@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"iter"
 	"maps"
 	"runtime/debug"
 	"sort"
@@ -60,9 +61,8 @@ import (
 //     message bus implementations (Redis, gRPC), providing 10-100x speedup
 //   - For in-memory message bus, there is no performance difference
 type Runtime[S any, M any] struct {
-	graph  Graph[S, M]
-	events chan Event[M]
-	opts   RuntimeOptions[S, M]
+	graph Graph[S, M]
+	opts  RuntimeOptions[S, M]
 
 	messageBus MessageBus[M] // Pluggable message delivery backend
 
@@ -75,12 +75,14 @@ type Runtime[S any, M any] struct {
 	vertices   atomic.Int64
 	messages   atomic.Int64
 
-	doneChan <-chan struct{} // Signals early termination request
+	// Event emission for Run execution (channel-based to allow concurrent workers)
+	eventChanMu sync.RWMutex
+	eventChan   chan Event[M]
 }
 
 // NewRuntime creates a new runtime for the given graph.
 // Returns an error if graph is nil or invalid.
-func NewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
+func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) (*Runtime[S, M], error) {
 	if graph == nil {
 		return nil, ErrGraphRequired
 	}
@@ -131,7 +133,6 @@ func NewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ..
 
 	runtime := &Runtime[S, M]{
 		graph:          graph,
-		events:         events,
 		opts:           opts,
 		messageBus:     messageBus,
 		aggregators:    aggregators,
@@ -144,8 +145,8 @@ func NewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ..
 
 // MustNewRuntime creates a new runtime for the given graph.
 // Panics if graph is nil or invalid. Use this in tests or when you're certain inputs are valid.
-func MustNewRuntime[S any, M any](graph Graph[S, M], events chan Event[M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
-	runtime, err := NewRuntime(graph, events, optFns...)
+func MustNewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
+	runtime, err := NewRuntime(graph, optFns...)
 	if err != nil {
 		panic(err)
 	}
@@ -252,7 +253,49 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 }
 
 // Run executes all supersteps until the computation quiesces.
-func (r *Runtime[S, M]) Run(ctx context.Context) error {
+// Returns an iterator that yields events as the computation progresses.
+func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
+	return func(yield func(Event[M], error) bool) {
+		// Create channel for event emission (workers can send concurrently)
+		eventChan := make(chan Event[M], 10)
+		doneChan := make(chan struct{})
+
+		// Store channel for use by emitEvent
+		r.eventChanMu.Lock()
+		r.eventChan = eventChan
+		r.eventChanMu.Unlock()
+
+		defer func() {
+			r.eventChanMu.Lock()
+			r.eventChan = nil
+			r.eventChanMu.Unlock()
+		}()
+
+		// Start goroutine that actually executes the runtime
+		go func() {
+			defer close(eventChan)
+			r.execute(ctx)
+			close(doneChan)
+		}()
+
+		// Yield events from single goroutine (satisfies iter.Seq2 contract)
+		for evt := range eventChan {
+			if !yield(evt, evt.Error) {
+				// Consumer stopped iteration - drain remaining events to prevent deadlock
+				go func() {
+					//nolint:revive // Need to drain channel to prevent goroutine leak
+					for range eventChan {
+					}
+				}()
+				<-doneChan // Wait for execution to complete
+				return
+			}
+		}
+	}
+}
+
+// execute runs the actual computation.
+func (r *Runtime[S, M]) execute(ctx context.Context) {
 	logger := logging.FromContext(ctx)
 	frontier := r.initialFrontier()
 	superstep := r.supersteps.Load()
@@ -266,9 +309,11 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 
 	var err error
 	for len(frontier) > 0 {
+		// Check context cancellation
 		if err := ctx.Err(); err != nil {
 			logger.Warn("pregel runtime canceled", "superstep", superstep, "error", err)
-			return err
+			r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+			return
 		}
 
 		// Check max iterations limit (if configured)
@@ -276,7 +321,8 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 			logger.Warn("max iterations exceeded",
 				"max_iterations", r.opts.MaxIterations,
 				"superstep", superstep)
-			return ErrMaxIterationsExceeded
+			r.emitEvent(Event[M]{Superstep: superstep, Error: ErrMaxIterationsExceeded})
+			return
 		}
 		iterationCount++
 
@@ -291,7 +337,8 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 			logger.Error("superstep execution failed",
 				"superstep", nextSuperstep,
 				"error", err)
-			return err
+			r.emitEvent(Event[M]{Superstep: nextSuperstep, Error: err})
+			return
 		}
 		superstep = nextSuperstep
 
@@ -305,7 +352,8 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 			logger.Error("failed to consume next frontier",
 				"superstep", superstep,
 				"error", err)
-			return err
+			r.emitEvent(Event[M]{Superstep: superstep, Error: err})
+			return
 		}
 
 		logger.Debug("superstep completed",
@@ -317,9 +365,6 @@ func (r *Runtime[S, M]) Run(ctx context.Context) error {
 		"total_supersteps", superstep,
 		"total_vertices", r.vertices.Load(),
 		"total_messages", r.messages.Load())
-
-	// Return nil on successful completion (don't return ctx.Err() which might be non-nil)
-	return nil
 }
 
 func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
@@ -599,55 +644,14 @@ func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
 	return msgs, nil
 }
 
+// emitEvent safely sends an event to the channel (if Run is active).
+// Can be called concurrently from multiple worker goroutines.
 func (r *Runtime[S, M]) emitEvent(event Event[M]) {
-	if r.events == nil {
-		return
+	r.eventChanMu.RLock()
+	ch := r.eventChan
+	r.eventChanMu.RUnlock()
+
+	if ch != nil {
+		ch <- event
 	}
-
-	// Check if early termination was requested
-	if r.doneChan != nil {
-		select {
-		case <-r.doneChan:
-			// Early termination - don't block on event emission
-			return
-		default:
-		}
-	}
-
-	if event.Error == nil {
-		select {
-		case r.events <- event:
-		case <-r.doneChan:
-			// Early termination requested while trying to send
-			return
-		default:
-			// Channel full, skip non-error event
-		}
-		return
-	}
-
-	// For error events, try harder to deliver
-	select {
-	case r.events <- event:
-		return
-	case <-r.doneChan:
-		// Early termination requested
-		return
-	default:
-	}
-
-	// Last resort: spawn goroutine for error event
-	// but respect done channel
-	go func() {
-		select {
-		case r.events <- event:
-		case <-r.doneChan:
-		}
-	}()
-}
-
-// SetDoneChannel configures the done channel for early termination detection.
-// This allows the runtime to stop emitting events when the consumer has stopped listening.
-func (r *Runtime[S, M]) SetDoneChannel(done <-chan struct{}) {
-	r.doneChan = done
 }

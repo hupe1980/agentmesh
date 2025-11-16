@@ -10,9 +10,11 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // FlakyModel simulates an unreliable external service
@@ -78,11 +80,11 @@ func main() {
 	}
 
 	// Build the graph using agent
-	state, err := graph.NewStateManager(10)
+	stateMgr, err := graphstate.NewStateManager(10)
 	if err != nil {
 		log.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateMgr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -99,7 +101,7 @@ func main() {
 	g.AddEdge(graph.StartNode, "flaky-service")
 	g.AddEdge("flaky-service", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	if err != nil {
 		log.Fatal(err)
 	}

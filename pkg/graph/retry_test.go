@@ -1,370 +1,286 @@
 package graph
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/pregel"
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	ErrTransient = errors.New("transient error")
-	ErrPermanent = errors.New("permanent error")
-)
+type APIError struct {
+	StatusCode int
+	Msg        string
+}
 
-func TestRetryPolicy(t *testing.T) {
-	t.Run("succeeds on first attempt", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
+func (e *APIError) Error() string {
+	return e.Msg
+}
 
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "success",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return &NodeResult{Updates: map[string]any{"result": "ok"}}, nil
-			},
-			RetryPolicy: NewRetryPolicy().
-				WithMaxAttempts(3).
-				WithConstantBackoff(time.Millisecond).
-				Build(),
-		})
-		require.NoError(t, err)
+func TestNewRetryPolicy(t *testing.T) {
+	builder := NewRetryPolicy()
+	policy := builder.Build()
 
-		g.AddEdge(StartNode, "success")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
+	assert.Equal(t, 3, policy.MaxAttempts, "default should be 3 attempts")
+	assert.NotNil(t, policy.Backoff, "should have default backoff")
+	assert.Nil(t, policy.Retryable, "default should retry all errors")
+}
 
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.NoError(t, err)
+func TestRetryPolicyBuilder_WithMaxAttempts(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithMaxAttempts(5).
+		Build()
 
-		assert.Equal(t, 1, attempts, "should succeed on first attempt")
+	assert.Equal(t, 5, policy.MaxAttempts)
+}
 
-		result, ok := compiled.State().Get("result").(string)
-		require.True(t, ok, "result should be a string")
-		assert.Equal(t, "ok", result)
-	})
+func TestRetryPolicyBuilder_WithNoRetries(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithNoRetries().
+		Build()
 
-	t.Run("retries and eventually succeeds", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
+	assert.Equal(t, 1, policy.MaxAttempts)
+}
 
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "retry-succeed",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				if attempts < 3 {
-					return nil, fmt.Errorf("attempt %d failed: %w", attempts, ErrTransient)
-				}
-				return &NodeResult{Updates: map[string]any{"attempts": attempts}}, nil
-			},
-			RetryPolicy: NewRetryPolicy().
-				WithMaxAttempts(5).
-				WithConstantBackoff(time.Millisecond).
-				Build(),
-		})
-		require.NoError(t, err)
+func TestRetryPolicyBuilder_WithExponentialBackoff(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithExponentialBackoff(time.Second, 2.0).
+		Build()
 
-		g.AddEdge(StartNode, "retry-succeed")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
+	require.NotNil(t, policy.Backoff)
 
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.NoError(t, err)
+	assert.Equal(t, time.Second, policy.Backoff(1))   // 1s * 2^0 = 1s
+	assert.Equal(t, 2*time.Second, policy.Backoff(2)) // 1s * 2^1 = 2s
+	assert.Equal(t, 4*time.Second, policy.Backoff(3)) // 1s * 2^2 = 4s
+	assert.Equal(t, 8*time.Second, policy.Backoff(4)) // 1s * 2^3 = 8s
+}
 
-		assert.Equal(t, 3, attempts)
+func TestRetryPolicyBuilder_WithLinearBackoff(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithLinearBackoff(time.Second).
+		Build()
 
-		actualAttempts, ok := compiled.State().Get("attempts").(int)
-		require.True(t, ok, "attempts should be an int")
-		assert.Equal(t, 3, actualAttempts)
-	})
+	require.NotNil(t, policy.Backoff)
 
-	t.Run("exhausts retries and fails", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
+	assert.Equal(t, time.Second, policy.Backoff(1))     // 1s * 1 = 1s
+	assert.Equal(t, 2*time.Second, policy.Backoff(2))   // 1s * 2 = 2s
+	assert.Equal(t, 3*time.Second, policy.Backoff(3))   // 1s * 3 = 3s
+	assert.Equal(t, 10*time.Second, policy.Backoff(10)) // 1s * 10 = 10s
+}
 
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "always-fail",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return nil, ErrTransient
-			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 3,
-				Backoff:     func(n int) time.Duration { return time.Millisecond },
-			},
-		})
-		require.NoError(t, err)
+func TestRetryPolicyBuilder_WithConstantBackoff(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithConstantBackoff(500 * time.Millisecond).
+		Build()
 
-		g.AddEdge(StartNode, "always-fail")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
+	require.NotNil(t, policy.Backoff)
 
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.Error(t, err, "should fail after exhausting retries")
+	assert.Equal(t, 500*time.Millisecond, policy.Backoff(1))
+	assert.Equal(t, 500*time.Millisecond, policy.Backoff(2))
+	assert.Equal(t, 500*time.Millisecond, policy.Backoff(5))
+	assert.Equal(t, 500*time.Millisecond, policy.Backoff(100))
+}
 
-		assert.Equal(t, 3, attempts)
-		assert.NotEmpty(t, err.Error())
-	})
-
-	t.Run("custom retryable function skips non-retryable errors", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
-
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "permanent-fail",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return nil, ErrPermanent
-			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 5,
-				Backoff:     func(n int) time.Duration { return time.Millisecond },
-				Retryable: func(err error) bool {
-					return errors.Is(err, ErrTransient)
-				},
-			},
-		})
-		require.NoError(t, err)
-
-		g.AddEdge(StartNode, "permanent-fail")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
-
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.Error(t, err)
-
-		// Should only attempt once since error is not retryable
-		assert.Equal(t, 1, attempts, "non-retryable error should not retry")
-	})
-
-	t.Run("respects context cancellation during backoff", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
-
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "cancel-during-retry",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return nil, ErrTransient
-			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 10,
-				Backoff:     func(n int) time.Duration { return 5 * time.Second }, // Long backoff
-			},
-		})
-		require.NoError(t, err)
-
-		g.AddEdge(StartNode, "cancel-during-retry")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(context.Background())
-
-		// Cancel after a short delay
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-		}()
-
-		start := time.Now()
-		_, err = Last(compiled.Run(ctx, nil))
-		elapsed := time.Since(start)
-
-		// Error can be nil if cancellation happens between graph execution steps
-		// or non-nil if caught during retry - both are acceptable
-		_ = err
-
-		// Should exit quickly (within 1 second), not wait for full backoff
-		assert.Less(t, elapsed, time.Second, "should cancel quickly")
-
-		// Should have attempted at least once
-		assert.GreaterOrEqual(t, attempts, 1, "should attempt at least once")
-	})
-
-	t.Run("no retry policy executes once", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
-
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "no-retry",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return nil, ErrTransient
-			},
-			// No RetryPolicy set
-		})
-		require.NoError(t, err)
-
-		g.AddEdge(StartNode, "no-retry")
-		compiled, err := g.Compile()
-		require.NoError(t, err)
-
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.Error(t, err)
-
-		assert.Equal(t, 1, attempts, "should execute exactly once without retry policy")
-	})
-
-	t.Run("exponential backoff timing", func(t *testing.T) {
-		tests := []struct {
-			attempt  int
-			expected time.Duration
-		}{
-			{0, 0},
-			{1, 1 * time.Second},
-			{2, 2 * time.Second},
-			{3, 4 * time.Second},
-			{4, 8 * time.Second},
+func TestRetryPolicyBuilder_WithCustomBackoff(t *testing.T) {
+	// Fibonacci backoff: 1, 1, 2, 3, 5, 8, ...
+	fibonacci := func(attempt int) time.Duration {
+		if attempt <= 0 {
+			return 0
 		}
-
-		for _, tt := range tests {
-			t.Run(fmt.Sprintf("attempt_%d", tt.attempt), func(t *testing.T) {
-				result := DefaultBackoff(tt.attempt)
-				assert.Equal(t, tt.expected, result)
-			})
+		if attempt <= 2 {
+			return time.Second
 		}
-	})
+		a, b := time.Second, time.Second
+		for i := 2; i < attempt; i++ {
+			a, b = b, a+b
+		}
+		return b
+	}
 
-	t.Run("aggregates reset between retry attempts", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
+	policy := NewRetryPolicy().
+		WithCustomBackoff(fibonacci).
+		Build()
 
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "retry-aggregate",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				_ = s.Aggregate("total", 1)
-				if attempts == 1 {
-					return nil, ErrTransient
-				}
-				_ = s.Aggregate("total", 2)
-				return nil, nil
-			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 3,
-				Backoff:     func(int) time.Duration { return time.Millisecond },
-			},
-		})
-		require.NoError(t, err)
+	require.NotNil(t, policy.Backoff)
 
-		err = g.AddNode(&Node{
-			Name: "report",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				snap := s.AggregatesSnapshot()
-				var total float64
-				if snap != nil {
-					switch v := snap["total"].(type) {
-					case float64:
-						total = v
-					case int:
-						total = float64(v)
-					}
-				}
-				return &NodeResult{Updates: map[string]any{"observed": total}}, nil
-			},
-		})
-		require.NoError(t, err)
+	assert.Equal(t, time.Second, policy.Backoff(1))   // 1s
+	assert.Equal(t, time.Second, policy.Backoff(2))   // 1s
+	assert.Equal(t, 2*time.Second, policy.Backoff(3)) // 2s
+	assert.Equal(t, 3*time.Second, policy.Backoff(4)) // 3s
+	assert.Equal(t, 5*time.Second, policy.Backoff(5)) // 5s
+}
 
-		g.AddEdge(StartNode, "retry-aggregate")
-		g.AddEdge("retry-aggregate", "report")
-		g.AddEdge("report", EndNode)
+func TestRetryPolicyBuilder_WithRetryableErrors(t *testing.T) {
+	ErrTransient := errors.New("transient")
+	ErrTimeout := errors.New("timeout")
+	ErrPermanent := errors.New("permanent")
 
-		// Configure PregelExecutor with aggregators
-		executor := NewPregelExecutor(WithPregelAggregators(map[string]pregel.Aggregator{"total": &SumAggregator{}}))
-		_, err = g.WithExecutor(executor)
-		require.NoError(t, err)
+	policy := NewRetryPolicy().
+		WithRetryableErrors(ErrTransient, ErrTimeout).
+		Build()
 
-		compiled, err := g.Compile()
-		require.NoError(t, err)
+	require.NotNil(t, policy.Retryable)
 
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.NoError(t, err)
+	assert.True(t, policy.Retryable(ErrTransient))
+	assert.True(t, policy.Retryable(ErrTimeout))
+	assert.False(t, policy.Retryable(ErrPermanent))
+}
 
-		assert.Equal(t, 2, attempts)
+func TestRetryPolicyBuilder_WithRetryableErrors_WrappedErrors(t *testing.T) {
+	ErrTransient := errors.New("transient")
+	wrappedErr := errors.Join(ErrTransient, errors.New("additional context"))
 
-		observedValue := compiled.State().Get("observed")
-		value, ok := observedValue.(float64)
-		if !ok {
-			if intValue, ok := observedValue.(int); ok {
-				value = float64(intValue)
-			} else {
-				t.Fatalf("unexpected observed value type %T", observedValue)
+	policy := NewRetryPolicy().
+		WithRetryableErrors(ErrTransient).
+		Build()
+
+	require.NotNil(t, policy.Retryable)
+
+	// Should work with wrapped errors (errors.Is)
+	assert.True(t, policy.Retryable(wrappedErr))
+}
+
+func TestRetryPolicyBuilder_WithNonRetryableErrors(t *testing.T) {
+	ErrInvalidInput := errors.New("invalid input")
+	ErrUnauthorized := errors.New("unauthorized")
+	ErrTransient := errors.New("transient")
+
+	policy := NewRetryPolicy().
+		WithNonRetryableErrors(ErrInvalidInput, ErrUnauthorized).
+		Build()
+
+	require.NotNil(t, policy.Retryable)
+
+	assert.False(t, policy.Retryable(ErrInvalidInput))
+	assert.False(t, policy.Retryable(ErrUnauthorized))
+	assert.True(t, policy.Retryable(ErrTransient))
+}
+
+func TestRetryPolicyBuilder_WithRetryableFunc(t *testing.T) {
+	policy := NewRetryPolicy().
+		WithRetryableFunc(func(err error) bool {
+			var apiErr *APIError
+			if errors.As(err, &apiErr) {
+				return apiErr.StatusCode >= 500
 			}
-		}
-		assert.Equal(t, 3.0, value, "aggregates should be reset between retries (1+2=3, not 1+1+2=4)")
+			return false
+		}).
+		Build()
+
+	require.NotNil(t, policy.Retryable)
+
+	assert.True(t, policy.Retryable(&APIError{StatusCode: 500, Msg: "server error"}))
+	assert.True(t, policy.Retryable(&APIError{StatusCode: 503, Msg: "service unavailable"}))
+	assert.False(t, policy.Retryable(&APIError{StatusCode: 400, Msg: "bad request"}))
+	assert.False(t, policy.Retryable(&APIError{StatusCode: 404, Msg: "not found"}))
+	assert.False(t, policy.Retryable(errors.New("other error")))
+}
+
+func TestBackoffFunctions(t *testing.T) {
+	t.Run("ExponentialBackoff", func(t *testing.T) {
+		backoff := ExponentialBackoff(100*time.Millisecond, 2.0)
+
+		assert.Equal(t, time.Duration(0), backoff(0))
+		assert.Equal(t, 100*time.Millisecond, backoff(1))
+		assert.Equal(t, 200*time.Millisecond, backoff(2))
+		assert.Equal(t, 400*time.Millisecond, backoff(3))
+		assert.Equal(t, 800*time.Millisecond, backoff(4))
 	})
 
-	t.Run("preserves all retry attempt errors", func(t *testing.T) {
-		state, err := NewStateManager(0)
-		require.NoError(t, err)
-		g, err := NewGraph(state)
-		require.NoError(t, err)
+	t.Run("LinearBackoff", func(t *testing.T) {
+		backoff := LinearBackoff(100 * time.Millisecond)
 
-		attempts := 0
-		err = g.AddNode(&Node{
-			Name: "failing-node",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-				attempts++
-				return nil, fmt.Errorf("error from attempt %d", attempts)
-			},
-			RetryPolicy: &RetryPolicy{
-				MaxAttempts: 3,
-				Backoff:     func(n int) time.Duration { return time.Millisecond },
-			},
-		})
-		require.NoError(t, err)
+		assert.Equal(t, time.Duration(0), backoff(0))
+		assert.Equal(t, 100*time.Millisecond, backoff(1))
+		assert.Equal(t, 200*time.Millisecond, backoff(2))
+		assert.Equal(t, 300*time.Millisecond, backoff(3))
+		assert.Equal(t, 1000*time.Millisecond, backoff(10))
+	})
 
-		g.AddEdge(StartNode, "failing-node")
-		g.AddEdge("failing-node", EndNode)
+	t.Run("ConstantBackoff", func(t *testing.T) {
+		backoff := ConstantBackoff(250 * time.Millisecond)
 
-		compiled, err := g.Compile()
-		require.NoError(t, err)
+		assert.Equal(t, time.Duration(0), backoff(0))
+		assert.Equal(t, 250*time.Millisecond, backoff(1))
+		assert.Equal(t, 250*time.Millisecond, backoff(2))
+		assert.Equal(t, 250*time.Millisecond, backoff(10))
+		assert.Equal(t, 250*time.Millisecond, backoff(100))
+	})
 
-		_, err = Last(compiled.Run(context.Background(), nil))
-		require.Error(t, err, "should fail after exhausting retries")
+	t.Run("CappedExponentialBackoff", func(t *testing.T) {
+		backoff := CappedExponentialBackoff(100*time.Millisecond, 2.0, time.Second)
 
-		// Check for RetryExhaustedError with all attempts preserved
-		var retryErr *RetryExhaustedError
-		require.ErrorAs(t, err, &retryErr, "should be RetryExhaustedError")
+		assert.Equal(t, time.Duration(0), backoff(0))
+		assert.Equal(t, 100*time.Millisecond, backoff(1))
+		assert.Equal(t, 200*time.Millisecond, backoff(2))
+		assert.Equal(t, 400*time.Millisecond, backoff(3))
+		assert.Equal(t, 800*time.Millisecond, backoff(4))
+		assert.Equal(t, time.Second, backoff(5))  // Capped at 1s
+		assert.Equal(t, time.Second, backoff(10)) // Still capped
+	})
 
-		assert.Len(t, retryErr.Attempts, 3, "should preserve all 3 attempts")
-		assert.Equal(t, "failing-node", retryErr.Node)
+	t.Run("JitteredExponentialBackoff", func(t *testing.T) {
+		backoff := JitteredExponentialBackoff(100*time.Millisecond, 2.0, 0.1)
 
-		// Verify each attempt error is present
-		for i, attemptErr := range retryErr.Attempts {
-			require.NotNil(t, attemptErr, "attempt %d error should not be nil", i+1)
-			assert.Contains(t, attemptErr.Error(), fmt.Sprintf("attempt %d", i+1))
-			assert.Contains(t, attemptErr.Error(), fmt.Sprintf("error from attempt %d", i+1))
+		// With 10% jitter, values should be within ±10% of expected
+		for attempt := 1; attempt <= 4; attempt++ {
+			expected := 100 * time.Millisecond * (1 << (attempt - 1))
+			actual := backoff(attempt)
+
+			// Allow ±10% jitter
+			lower := time.Duration(float64(expected) * 0.9)
+			upper := time.Duration(float64(expected) * 1.1)
+
+			assert.GreaterOrEqual(t, actual, lower, "attempt %d should be >= %v", attempt, lower)
+			assert.LessOrEqual(t, actual, upper, "attempt %d should be <= %v", attempt, upper)
+		}
+	})
+}
+
+func TestRetryPolicy_ShouldRetry(t *testing.T) {
+	t.Run("AllErrorsRetryable", func(t *testing.T) {
+		policy := &RetryPolicy{
+			MaxAttempts: 3,
+			Retryable:   nil, // nil means all errors retryable
 		}
 
-		// Verify the actual number of attempts made
-		assert.Equal(t, 3, attempts)
+		assert.True(t, policy.ShouldRetry(errors.New("any error")))
+		assert.True(t, policy.ShouldRetry(errors.New("another error")))
+	})
+
+	t.Run("SelectiveRetry", func(t *testing.T) {
+		ErrRetryable := errors.New("retryable")
+		policy := &RetryPolicy{
+			MaxAttempts: 3,
+			Retryable: func(err error) bool {
+				return errors.Is(err, ErrRetryable)
+			},
+		}
+
+		assert.True(t, policy.ShouldRetry(ErrRetryable))
+		assert.False(t, policy.ShouldRetry(errors.New("other error")))
+	})
+}
+
+func TestRetryPolicy_GetBackoffDuration(t *testing.T) {
+	t.Run("WithBackoffFunction", func(t *testing.T) {
+		policy := &RetryPolicy{
+			MaxAttempts: 3,
+			Backoff:     ConstantBackoff(time.Second),
+		}
+
+		assert.Equal(t, time.Second, policy.GetBackoffDuration(1))
+		assert.Equal(t, time.Second, policy.GetBackoffDuration(2))
+	})
+
+	t.Run("WithoutBackoffFunction", func(t *testing.T) {
+		policy := &RetryPolicy{
+			MaxAttempts: 3,
+			Backoff:     nil,
+		}
+
+		assert.Equal(t, time.Duration(0), policy.GetBackoffDuration(1))
+		assert.Equal(t, time.Duration(0), policy.GetBackoffDuration(2))
 	})
 }

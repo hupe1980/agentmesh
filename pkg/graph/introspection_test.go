@@ -1,499 +1,261 @@
 package graph
 
 import (
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetNodes(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
+func createTestGraph() (*Graph, error) {
+	stateManager, err := state.NewStateManager(0)
+	if err != nil {
+		return nil, err
+	}
 
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", "c")
-	builder.AddEdge("c", EndNode)
+	g, err := NewGraph(stateManager)
+	if err != nil {
+		return nil, err
+	}
 
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
+	// Add nodes
+	g.AddNode(&Node{Name: "start_node", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+		return &NodeResult{}, nil
+	}})
+	g.AddNode(&Node{Name: "process", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+		return &NodeResult{}, nil
+	}})
+	g.AddNode(&Node{Name: "end_node", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+		return &NodeResult{}, nil
+	}})
 
-	nodes := compiled.GetNodes()
-	assert.Len(t, nodes, 3)
-	assert.Contains(t, nodes, "a")
-	assert.Contains(t, nodes, "b")
-	assert.Contains(t, nodes, "c")
+	// Add edges
+	g.AddEdge(StartNode, "start_node")
+	g.AddEdge("start_node", "process")
+	g.AddEdge("process", "end_node")
+	g.AddEdge("end_node", EndNode)
+
+	return g, nil
 }
 
-func TestGetNodeInfo(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("node1", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("node2", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "node1")
-	builder.AddEdge("node1", "node2")
-	builder.AddEdge("node2", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
+func TestGraph_GetNodes(t *testing.T) {
+	g, err := createTestGraph()
 	require.NoError(t, err)
 
-	t.Run("valid node", func(t *testing.T) {
-		info, err := compiled.GetNodeInfo("node1")
+	nodes := g.GetNodes()
+
+	assert.Len(t, nodes, 3)
+	assert.Contains(t, nodes, "start_node")
+	assert.Contains(t, nodes, "process")
+	assert.Contains(t, nodes, "end_node")
+}
+
+func TestGraph_GetNodeInfo(t *testing.T) {
+	g, err := createTestGraph()
+	require.NoError(t, err)
+
+	t.Run("ValidNode", func(t *testing.T) {
+		info, err := g.GetNodeInfo("process")
 		require.NoError(t, err)
-		assert.Equal(t, "node1", info.Name)
+		require.NotNil(t, info)
+
+		assert.Equal(t, "process", info.Name)
 		assert.Equal(t, "standard", info.Type)
-		// Edges from START are not counted as incoming edges (by design)
-		assert.Equal(t, 0, info.IncomingEdges)
+		assert.Equal(t, 1, info.IncomingEdges)
 		assert.Equal(t, 1, info.OutgoingEdges)
 		assert.False(t, info.IsConditional)
+		assert.False(t, info.IsConditionalGate)
 		assert.False(t, info.HasRetryPolicy)
 	})
 
-	t.Run("invalid node", func(t *testing.T) {
-		_, err := compiled.GetNodeInfo("nonexistent")
-		assert.ErrorIs(t, err, ErrNodeNotFound)
+	t.Run("NodeNotFound", func(t *testing.T) {
+		_, err := g.GetNodeInfo("nonexistent")
+		assert.Error(t, err)
 	})
 }
 
-func TestGetNodeInfo_WithRetryPolicy(t *testing.T) {
-	state, err := NewStateManager(0)
-	require.NoError(t, err)
-	g, err := NewGraph(state)
-	require.NoError(t, err)
+func TestGraph_GetNodeInfo_WithRetryPolicy(t *testing.T) {
+	stateManager, _ := state.NewStateManager(0)
+	g, _ := NewGraph(stateManager)
 
-	err = g.AddNode(&Node{
+	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
+	g.AddNode(&Node{
 		Name: "retryable",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		},
-		RetryPolicy: &RetryPolicy{
-			MaxAttempts: 3,
-		},
+		RetryPolicy: retryPolicy,
 	})
+
+	info, err := g.GetNodeInfo("retryable")
 	require.NoError(t, err)
 
-	g.AddEdge(StartNode, "retryable")
-	g.AddEdge("retryable", EndNode)
-
-	compiled, err := g.Compile()
-	require.NoError(t, err)
-
-	info, err := compiled.GetNodeInfo("retryable")
-	require.NoError(t, err)
 	assert.True(t, info.HasRetryPolicy)
-	assert.Equal(t, 3, info.RetryMaxAttempts)
+	assert.Equal(t, 5, info.RetryMaxAttempts)
 }
 
-func TestGetAllNodeInfo(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
+func TestGraph_GetAllNodeInfo(t *testing.T) {
+	g, err := createTestGraph()
 	require.NoError(t, err)
 
-	infos := compiled.GetAllNodeInfo()
-	assert.Len(t, infos, 2)
+	allInfo := g.GetAllNodeInfo()
 
-	nodeNames := make(map[string]bool)
-	for _, info := range infos {
-		nodeNames[info.Name] = true
-		assert.Equal(t, "standard", info.Type)
+	assert.Len(t, allInfo, 3)
+
+	// Should be sorted by name
+	assert.Equal(t, "end_node", allInfo[0].Name)
+	assert.Equal(t, "process", allInfo[1].Name)
+	assert.Equal(t, "start_node", allInfo[2].Name)
+}
+
+func TestGraph_GetEdges(t *testing.T) {
+	g, err := createTestGraph()
+	require.NoError(t, err)
+
+	edges := g.GetEdges()
+
+	assert.Len(t, edges, 4)
+
+	// Check that all edges are direct (no conditionals)
+	for _, edge := range edges {
+		assert.Equal(t, "direct", edge.Type)
 	}
-	assert.True(t, nodeNames["a"])
-	assert.True(t, nodeNames["b"])
 }
 
-func TestGetEdges(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
+func TestGraph_GetEdges_WithConditionals(t *testing.T) {
+	stateManager, _ := state.NewStateManager(0)
+	g, _ := NewGraph(stateManager)
+
+	g.AddNode(&Node{Name: "router", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
+	}})
+	g.AddNode(&Node{Name: "option_a", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
+	}})
+	g.AddNode(&Node{Name: "option_b", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
 		return &NodeResult{}, nil
-	})
+	}})
 
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddConditionalEdges("b", func(ctx context.Context, s stateif.Reader) []string {
-		return []string{"c"}
-	}, []string{"c", EndNode})
-	builder.AddEdge("c", EndNode)
+	g.AddEdge(StartNode, "router")
+	g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		return []string{"option_a"}
+	}, []string{"option_a", "option_b"})
 
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
+	edges := g.GetEdges()
 
-	edges := compiled.GetEdges()
-	assert.NotEmpty(t, edges)
+	// Should have 1 direct edge + 1 conditional edge
+	assert.Len(t, edges, 2)
 
-	// Count edge types
-	directEdges := 0
 	conditionalEdges := 0
 	for _, edge := range edges {
-		if edge.Type == "direct" {
-			directEdges++
-		} else if edge.Type == "conditional" {
+		if edge.Type == "conditional" {
 			conditionalEdges++
+			assert.Equal(t, "router", edge.From)
+			assert.Contains(t, edge.ConditionalTargets, "option_a")
+			assert.Contains(t, edge.ConditionalTargets, "option_b")
 		}
 	}
-	assert.Greater(t, directEdges, 0)
-	assert.Greater(t, conditionalEdges, 0)
+	assert.Equal(t, 1, conditionalEdges)
 }
 
-func TestGetTopology(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("entry", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("middle", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("exit", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "entry")
-	builder.AddEdge("entry", "middle")
-	builder.AddEdge("middle", "exit")
-	builder.AddEdge("exit", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
+func TestGraph_GetTopology(t *testing.T) {
+	g, err := createTestGraph()
 	require.NoError(t, err)
 
-	topo := compiled.GetTopology()
-	assert.NotNil(t, topo)
+	topo := g.GetTopology()
+	require.NotNil(t, topo)
+
 	assert.Len(t, topo.Nodes, 3)
-	assert.NotEmpty(t, topo.Edges)
-	assert.Contains(t, topo.EntryPoints, "entry")
-	assert.Contains(t, topo.ExitPoints, "exit")
+	assert.Len(t, topo.Edges, 4)
+	assert.Equal(t, []string{"start_node"}, topo.EntryPoints)
+	assert.Equal(t, []string{"end_node"}, topo.ExitPoints)
+	assert.Empty(t, topo.ConditionalNodes)
+	assert.Empty(t, topo.IsolatedNodes)
 	assert.Greater(t, topo.MaxDepth, 0)
+	assert.Equal(t, 1, topo.TotalPaths)
 }
 
-func TestGetTopology_WithConditionals(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("router", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("path_a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("path_b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
+func TestGraph_GetTopology_WithConditionals(t *testing.T) {
+	stateManager, _ := state.NewStateManager(0)
+	g, _ := NewGraph(stateManager)
 
-	builder.AddEdge(StartNode, "router")
-	builder.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
-		return []string{"path_a"}
-	}, []string{"path_a", "path_b"})
-	builder.AddEdge("path_a", EndNode)
-	builder.AddEdge("path_b", EndNode)
+	g.AddNode(&Node{Name: "router", RunFunc: nil})
+	g.AddNode(&Node{Name: "high_priority", RunFunc: nil})
+	g.AddNode(&Node{Name: "normal", RunFunc: nil})
 
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
+	g.AddEdge(StartNode, "router")
+	g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		return []string{"high_priority"}
+	}, []string{"high_priority", "normal"})
+	g.AddEdge("high_priority", EndNode)
+	g.AddEdge("normal", EndNode)
 
-	topo := compiled.GetTopology()
+	topo := g.GetTopology()
+
 	assert.Contains(t, topo.ConditionalNodes, "router")
 	assert.Greater(t, topo.TotalPaths, 1)
 }
 
-func TestGetMetrics(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("a", "c") // Fan-out from 'a'
-	builder.AddEdge("b", EndNode)
-	builder.AddEdge("c", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
+func TestGraph_GetMetrics(t *testing.T) {
+	g, err := createTestGraph()
 	require.NoError(t, err)
 
-	metrics := compiled.GetMetrics()
+	metrics := g.GetMetrics()
+	require.NotNil(t, metrics)
+
 	assert.Equal(t, 3, metrics.TotalNodes)
-	assert.Greater(t, metrics.TotalEdges, 0)
-	assert.Greater(t, metrics.MaxFanOut, 1) // 'a' has fan-out of 2
-	assert.NotNil(t, metrics.NodesByType)
-	assert.Greater(t, metrics.NodesByType["standard"], 0)
+	assert.Equal(t, 4, metrics.TotalEdges)
+	assert.Equal(t, 0, metrics.ConditionalEdges)
+	assert.Greater(t, metrics.AverageFanOut, 0.0)
+	assert.Greater(t, metrics.AverageFanIn, 0.0)
+	assert.Contains(t, metrics.NodesByType, "standard")
+	assert.Equal(t, 3, metrics.NodesByType["standard"])
 }
 
-func TestGetDependencies(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", "c")
-	builder.AddEdge("c", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
+func TestGraph_GetNodeDependencies(t *testing.T) {
+	g, err := createTestGraph()
 	require.NoError(t, err)
 
-	t.Run("middle node", func(t *testing.T) {
-		deps, err := compiled.GetDependencies("b")
+	t.Run("MiddleNode", func(t *testing.T) {
+		deps, err := g.GetNodeDependencies("process")
 		require.NoError(t, err)
-		assert.Contains(t, deps.DirectPredecessors, "a")
-		assert.Contains(t, deps.DirectSuccessors, "c")
-		assert.Contains(t, deps.AllPredecessors, "a")
-		assert.Contains(t, deps.AllSuccessors, "c")
+		require.NotNil(t, deps)
+
+		assert.Equal(t, "process", deps.Node)
+		assert.Equal(t, []string{"start_node"}, deps.DirectPredecessors)
+		assert.Equal(t, []string{"end_node"}, deps.DirectSuccessors)
+		assert.Contains(t, deps.AllPredecessors, "start_node")
+		assert.Contains(t, deps.AllSuccessors, "end_node")
 		assert.Greater(t, deps.Depth, 0)
 	})
 
-	t.Run("first node", func(t *testing.T) {
-		deps, err := compiled.GetDependencies("a")
-		require.NoError(t, err)
-		assert.Empty(t, deps.DirectPredecessors)
-		assert.Contains(t, deps.DirectSuccessors, "b")
-		assert.Len(t, deps.AllSuccessors, 2) // b and c
-	})
-
-	t.Run("invalid node", func(t *testing.T) {
-		_, err := compiled.GetDependencies("nonexistent")
-		assert.ErrorIs(t, err, ErrNodeNotFound)
-	})
-}
-
-func TestGetExecutionPath(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
-
-	paths := compiled.GetExecutionPath(10)
-	assert.NotEmpty(t, paths)
-
-	// Verify path contains START, a, b, END
-	foundValidPath := false
-	for _, path := range paths {
-		if len(path) == 4 && path[0] == StartNode && path[1] == "a" && path[2] == "b" && path[3] == EndNode {
-			foundValidPath = true
-			break
-		}
-	}
-	assert.True(t, foundValidPath, "Should find path START -> a -> b -> END")
-}
-
-func TestGetExecutionPath_WithBranching(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("router", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("path_a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("path_b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "router")
-	builder.AddConditionalEdges("router", func(ctx context.Context, s stateif.Reader) []string {
-		return []string{"path_a"}
-	}, []string{"path_a", "path_b"})
-	builder.AddEdge("path_a", EndNode)
-	builder.AddEdge("path_b", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
-
-	paths := compiled.GetExecutionPath(10)
-	assert.NotEmpty(t, paths)
-	assert.GreaterOrEqual(t, len(paths), 2, "Should have at least 2 paths (one for each branch)")
-}
-
-func TestCalculateDepth(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", "c")
-	builder.AddEdge("c", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
-
-	assert.Equal(t, 1, compiled.calculateDepth("a"))
-	assert.Equal(t, 2, compiled.calculateDepth("b"))
-	assert.Equal(t, 3, compiled.calculateDepth("c"))
-}
-
-func TestFindAllPredecessors(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("d", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", "c")
-	builder.AddEdge("a", "d")
-	builder.AddEdge("d", "c")
-	builder.AddEdge("c", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
-
-	predecessors := compiled.findAllPredecessors("c")
-	assert.Contains(t, predecessors, "a")
-	assert.Contains(t, predecessors, "b")
-	assert.Contains(t, predecessors, "d")
-}
-
-func TestFindAllSuccessors(t *testing.T) {
-	builder, err := NewBuilder()
-	require.NoError(t, err)
-	builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-	builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	})
-
-	builder.AddEdge(StartNode, "a")
-	builder.AddEdge("a", "b")
-	builder.AddEdge("b", "c")
-	builder.AddEdge("c", EndNode)
-
-	compiled, err := builder.CompileMessageRunnable()
-	require.NoError(t, err)
-
-	successors := compiled.findAllSuccessors("a")
-	assert.Contains(t, successors, "b")
-	assert.Contains(t, successors, "c")
-	assert.NotContains(t, successors, "a") // Should not contain itself
-}
-
-func TestCyclomaticComplexity(t *testing.T) {
-	t.Run("linear graph", func(t *testing.T) {
-		builder, err := NewBuilder()
-		require.NoError(t, err)
-		builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		})
-		builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		})
-
-		builder.AddEdge(StartNode, "a")
-		builder.AddEdge("a", "b")
-		builder.AddEdge("b", EndNode)
-
-		compiled, err := builder.CompileMessageRunnable()
+	t.Run("StartNode", func(t *testing.T) {
+		deps, err := g.GetNodeDependencies("start_node")
 		require.NoError(t, err)
 
-		metrics := compiled.GetMetrics()
-		// Linear graph: E=3, N=2, P=1 -> Complexity = 3-2+2=3
-		assert.Greater(t, metrics.CyclomaticComplexity, 0)
+		// start_node has START as a predecessor
+		assert.Contains(t, deps.DirectPredecessors, StartNode)
+		assert.NotEmpty(t, deps.DirectSuccessors)
 	})
 
-	t.Run("branching graph", func(t *testing.T) {
-		builder, err := NewBuilder()
-		require.NoError(t, err)
-		builder.Node("a", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		})
-		builder.Node("b", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		})
-		builder.Node("c", func(ctx context.Context, s stateif.Writer) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		})
-
-		builder.AddEdge(StartNode, "a")
-		builder.AddEdge("a", "b")
-		builder.AddEdge("a", "c")
-		builder.AddEdge("b", EndNode)
-		builder.AddEdge("c", EndNode)
-
-		compiled, err := builder.CompileMessageRunnable()
-		require.NoError(t, err)
-
-		metrics := compiled.GetMetrics()
-		// Branching increases complexity
-		assert.Greater(t, metrics.CyclomaticComplexity, 3)
+	t.Run("NodeNotFound", func(t *testing.T) {
+		_, err := g.GetNodeDependencies("nonexistent")
+		assert.Error(t, err)
 	})
+}
+
+func TestGraph_CalculateDepth(t *testing.T) {
+	g, err := createTestGraph()
+	require.NoError(t, err)
+
+	// START -> start_node (depth 1) -> process (depth 2) -> end_node (depth 3)
+	depthStartNode := g.calculateDepth("start_node")
+	depthProcess := g.calculateDepth("process")
+	depthEndNode := g.calculateDepth("end_node")
+
+	assert.Greater(t, depthStartNode, 0)
+	assert.Greater(t, depthProcess, depthStartNode)
+	assert.Greater(t, depthEndNode, depthProcess)
 }

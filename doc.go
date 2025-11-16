@@ -47,7 +47,7 @@
 //	    message.NewSystemMessageFromText("You are a helpful assistant."),
 //	    message.NewHumanMessageFromText("What's the weather in Paris?"),
 //	}
-//	results, _ := compiled.Invoke(ctx, messages)
+//	result, _ := graph.Last(compiled.Run(ctx, messages))
 //
 // # Core Packages
 //

@@ -16,10 +16,11 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
 	"time"
+
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -54,7 +55,7 @@ func main() {
 	fmt.Println()
 
 	// Initialize state with unlimited message history
-	state, err := graph.NewStateManager(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}

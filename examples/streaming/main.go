@@ -29,6 +29,7 @@ import (
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
@@ -45,7 +46,7 @@ func main() {
 	model := openai.NewModel()
 
 	// Build a multi-node graph to demonstrate streaming
-	builder, err := graph.NewBuilder()
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
@@ -177,7 +178,7 @@ func main() {
 	builder.AddEdge("llm_call", "analyzer")
 	builder.AddEdge("analyzer", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := builder.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile graph: %v", err)
 	}
@@ -231,9 +232,9 @@ func main() {
 	fmt.Printf("\n✅ Streaming completed! Received %d total events\n", eventCount)
 
 	// Display final state
-	finalState := compiled.State()
+	finalState := builder.StateManager()
 	if finalState != nil {
-		fmt.Println("\n� Final State:")
+		fmt.Println("\n📊 Final State:")
 		for key, val := range finalState.GetAll() {
 			fmt.Printf("   %s = %v\n", key, val)
 		}

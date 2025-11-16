@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
-
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/prompt"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // extractUserQuery finds the last human message text from execution results.
@@ -112,26 +112,37 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	builder, err := graph.NewBuilder()
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create graph builder: %w", err)
+		return nil, fmt.Errorf("failed to create state manager: %w", err)
 	}
 
-	builder.Node("retrieve", createRetrieveNode(retriever))
-	builder.Node("generate", createGenerateNode(mdl, config))
+	g, err := graph.NewGraph(stateManager)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create graph: %w", err)
+	}
+
+	if err := g.AddNode(&graph.Node{
+		Name:    "retrieve",
+		RunFunc: createRetrieveNode(retriever),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add retrieve node: %w", err)
+	}
+
+	if err := g.AddNode(&graph.Node{
+		Name:    "generate",
+		RunFunc: createGenerateNode(mdl, config),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add generate node: %w", err)
+	}
 
 	// Chain: retrieve → generate
-	builder.AddEdge(graph.StartNode, "retrieve")
-	builder.AddEdge("retrieve", "generate")
-	builder.AddEdge("generate", graph.EndNode)
+	g.AddEdge(graph.StartNode, "retrieve")
+	g.AddEdge("retrieve", "generate")
+	g.AddEdge("generate", graph.EndNode)
 
-	// Compile with generic type safety
-	compiled, err := graph.Compile[[]message.Message, executionResult](builder)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile graph: %w", err)
-	}
-
-	return compiled, nil
+	// Compile the graph
+	return exec.CompileGraph(g)
 }
 
 // ragOptions holds configuration for RAG agents.

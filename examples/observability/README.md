@@ -27,11 +27,11 @@ logger := logging.NoopLogger{}
 metricsProvider := metrics.Noop()
 traceProvider := trace.Noop()
 
-compiled.Invoke(ctx, messages, 
+result, _ := graph.Last(compiled.Run(ctx, messages, 
     graph.WithLogger(logger),
     graph.WithTracer(traceProvider),
     graph.WithMetrics(metricsProvider),
-)
+))
 ```
 
 ### Production Setup (OpenTelemetry)
@@ -54,11 +54,11 @@ metricsProvider := opentelemetry.NewMetricsProvider(
     opentelemetry.WithEndpoint("http://prometheus:9090"),
 )
 
-compiled.Invoke(ctx, messages,
+result, _ := graph.Last(compiled.Run(ctx, messages,
     graph.WithLogger(logger),
     graph.WithTracer(traceProvider),
     graph.WithMetrics(metricsProvider),
-)
+))
 ```
 
 ## What Gets Instrumented Automatically
@@ -67,7 +67,7 @@ When you configure observability providers, the framework automatically:
 
 ### 1. Creates Trace Spans
 
-- **Graph execution span**: Covers entire Invoke()/Stream() call
+- **Graph execution span**: Covers entire Run() call
 - **Node execution spans**: One span per node execution
 - **Checkpoint spans**: For checkpoint save/restore operations
 

@@ -100,13 +100,16 @@ import mcptool "github.com/hupe1980/agentmesh/pkg/tool/mcp"
 toolset, _ := mcptool.NewToolset(mcpClient)
 ```
 
-### 5. Use with ReAct Agent
+### 5. Build ReAct Agent
 ```go
 reactAgent := agent.NewReAct(model, toolset)
+```
 
-result, _ := reactAgent.Invoke(ctx, []message.Message{
+### 6. Run Agent
+```go
+result, _ := graph.Last(reactAgent.Run(ctx, []message.Message{
     message.NewUserMessage("What is 123 + 456?"),
-})
+}))
 ```
 
 ## MCP Tool Definition

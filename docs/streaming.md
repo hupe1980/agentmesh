@@ -5,13 +5,13 @@ title: Streaming & Real-Time Updates
 
 # Streaming & Real-Time Updates
 
-AgentMesh provides comprehensive streaming capabilities that enable real-time visibility into graph execution. Unlike simple completion-based APIs, streaming allows you to observe intermediate progress, node-by-node execution, and incremental updates as they happen.
+AgentMesh provides comprehensive streaming capabilities that enable real-time visibility into graph execution through Go 1.23+ iterators (`iter.Seq2`). This allows you to observe intermediate progress, node-by-node execution, and incremental updates as they happen.
 
 ## Overview
 
 AgentMesh supports two complementary streaming patterns:
 
-1. **Graph-Level Streaming**: Observe execution flow between nodes
+1. **Graph-Level Streaming**: Observe execution flow between nodes using iterators
 2. **Node-Level Streaming**: Emit intermediate progress from within nodes
 
 Both patterns work seamlessly together to provide complete visibility into your agent workflows.
@@ -22,7 +22,7 @@ Both patterns work seamlessly together to provide complete visibility into your 
 
 ### Basic Usage
 
-Use `Stream()` instead of `Invoke()` to execute graphs with real-time event streaming:
+The `Run()` method returns an `iter.Seq2[state.ExecutionResult, error]` iterator that yields execution events in real-time:
 
 ```go
 // Create and compile your graph
@@ -31,52 +31,42 @@ if err != nil {
     log.Fatal(err)
 }
 
-// Start streaming execution
-seq := compiled.Run(ctx, messages)
-
-// Process events as they arrive
-for stream.Next() {
-    event := stream.Current()
-    
-    // Handle the event
-    fmt.Printf("Node: %s\n", event.Node)
-    fmt.Printf("Updates: %v\n", event.Updates)
-    
-    if event.Err != nil {
-        fmt.Printf("Error: %v\n", event.Err)
+// Execute with iterator pattern
+for result, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatalf("Execution error: %v", err)
     }
-}
-
-// Check for stream errors
-if err := stream.Err(); err != nil {
-    log.Fatal(err)
+    
+    // Handle the execution result
+    fmt.Printf("Node: %s\n", result.Node)
+    fmt.Printf("Updates: %v\n", result.Updates)
+    fmt.Printf("Messages: %v\n", result.Messages)
 }
 ```
 
-### Stream Events
+### Execution Results
 
-Each `StreamEvent` contains:
+Each `state.ExecutionResult` contains:
 
 ```go
-type StreamEvent struct {
+type ExecutionResult struct {
     Node     string              // Name of the node that produced this event
     Updates  map[string]any      // State updates (final node result)
     Messages []message.Message   // New messages added to state
-    Result   *NodeResult         // Intermediate result (from StreamWriter)
-    Err      error              // Error if node failed
 }
 ```
 
-**Key Distinction**:
-- `Updates` and `Messages`: Final node results applied to state
-- `Result`: Intermediate updates from `StreamWriter` (not applied to state)
+**Key Fields**:
+- `Node`: Name of the node that executed
+- `Updates`: State changes applied to the graph
+- `Messages`: New messages added to conversation history
 
-### Event Types
+### Iterator Pattern Benefits
 
-1. **Node Start**: `Node != ""`, `Updates == nil`, `Result == nil`
-2. **Intermediate Update**: `Node != ""`, `Result != nil` (from StreamWriter)
-3. **Node Completion**: `Node != ""`, `Updates != nil`, `Result == nil`
-4. **Error**: `Err != nil`
+1. **Type-Safe**: Compile-time checking of result types
+2. **Resource Efficient**: Lazy evaluation, process events as they arrive
+3. **Error Handling**: Errors yielded inline with results
+4. **Cancellation**: Context cancellation stops execution immediately
 
 ---
 
@@ -116,11 +106,13 @@ builder.Node("processor", func(ctx context.Context, s state.Writer) (*graph.Node
 ### How It Works
 
 1. **Extract StreamWriter**: `streamWriter := graph.GetStreamWriter(ctx)`
-2. **Check for nil**: StreamWriter is only available during `Stream()` calls
+2. **Check for nil**: StreamWriter is available when graph execution supports intermediate updates
 3. **Emit Updates**: Call `streamWriter(result)` to send intermediate events
 4. **Return Final Result**: Node still returns its final `NodeResult` as usual
 
 **Important**: Intermediate updates from StreamWriter are **not applied to graph state**. They are purely for observation and user feedback.
+
+> **Note**: StreamWriter support depends on the execution backend. The Pregel executor supports intermediate streaming.
 
 ---
 
@@ -213,29 +205,24 @@ func main() {
     
     compiled, _ := builder.CompileMessageRunnable()
     
-    // Execute with streaming
-    seq := compiled.Run(context.Background(), nil)
-    
-    // Process events
-    for event, err := range seq {
+    // Execute with iterator
+    for result, err := range compiled.Run(context.Background(), nil) {
         if err != nil {
             fmt.Printf("❌ Error: %v\n", err)
             continue
         }
         
-        // Node started
-        if event.Node != "" && event.Result == nil && len(event.Updates) == 0 {
-            fmt.Printf("\n📍 Starting node: %s\n", event.Node)
+        // Display node execution
+        fmt.Printf("\n📍 Node: %s\n", result.Node)
+        
+        // Show state updates
+        if len(result.Updates) > 0 {
+            fmt.Printf("   ✅ Updates: %v\n", result.Updates)
         }
         
-        // Intermediate update (from StreamWriter)
-        if event.Result != nil {
-            fmt.Printf("   ⚡ Progress: %v\n", event.Result.Updates)
-        }
-        
-        // Final update (applied to state)
-        if len(event.Updates) > 0 {
-            fmt.Printf("   ✅ Completed: %v\n", event.Updates)
+        // Show new messages
+        if len(result.Messages) > 0 {
+            fmt.Printf("   💬 Messages: %d new\n", len(result.Messages))
         }
     }
 }
@@ -372,7 +359,7 @@ if streamWriter != nil {
 streamWriter(result)
 ```
 
-StreamWriter is only available during `Stream()` calls. Regular `Invoke()` calls don't provide a StreamWriter.
+StreamWriter availability depends on the execution backend configuration.
 
 ### 2. Don't Stream Excessively
 
@@ -515,34 +502,45 @@ For proper cleanup and resource management:
 
 ### Memory Usage
 
-- Each streamed event allocates memory for the `StreamEvent` struct
-- Intermediate updates are **not** stored in state (unlike final results)
-- For high-frequency streaming, consider throttling or batching
+- Each execution result allocates memory for the `ExecutionResult` struct
+- Results are yielded via iterator - minimal memory overhead
+- For high-frequency updates, consider throttling or batching
 
-### Network Overhead
+### Iterator Benefits
 
-When streaming over HTTP:
-- Each event requires a network round-trip
-- Consider batching small updates
-- Use compression for large payloads
+- **Lazy Evaluation**: Results processed on-demand
+- **Low Memory**: Only current result in memory
+- **Early Termination**: Break from loop to stop execution
+- **Context Cancellation**: Respects context cancellation immediately
 
 ### Concurrency
 
-- Streaming is safe for concurrent use
-- Multiple goroutines can call `streamWriter` simultaneously
-- Events are serialized through the stream channel
+- The iterator pattern is inherently sequential for the consumer
+- Internal execution (e.g., Pregel workers) runs in parallel
+- StreamWriter can be called from multiple goroutines safely
+- Results are serialized through the iterator
 
 ---
 
-## Comparison with Invoke()
+## Execution Patterns
 
-| Feature | `Invoke()` | `Stream()` |
-|---------|-----------|-----------|
-| Return Type | Final messages only | Real-time events |
-| Progress Visibility | None | Full visibility |
-| Overhead | Minimal | Slight overhead for events |
-| StreamWriter Available | No | Yes |
-| Use Case | Simple scripts, batch jobs | Interactive UIs, monitoring |
+All graph execution uses the same `Run()` method that returns an iterator:
+
+```go
+// Process all results
+for result, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        return err
+    }
+    handleResult(result)
+}
+
+// Collect all results
+results, err := graph.Collect(compiled.Run(ctx, messages))
+
+// Get only the last result
+result, err := graph.Last(compiled.Run(ctx, messages))
+```
 
 ---
 

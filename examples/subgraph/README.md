@@ -98,10 +98,19 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
     pipeline.AddNode(&graph.Node{
         Name: "validation_stage",
         RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+            // Run validation subgraph
+            result, _ := graph.Last(validation.Run(ctx, s))
+            return result, nil
+        },
+    })
+    
+    pipeline.AddNode(&graph.Node{
+        Name: "enrichment_stage",
+        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
             data, _ := s.Get("data").(map[string]any)
-            result, _ := validation.Invoke(ctx, nil,
+            result, _ := graph.Last(validation.Run(ctx, nil,
                 graph.WithInput(map[string]any{"data": data}),
-            )
+            ))
             return &graph.NodeResult{
                 Updates: result.State,
             }, nil
@@ -113,9 +122,9 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
         Name: "enrichment_stage",
         RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
             data, _ := s.Get("data").(map[string]any)
-            result, _ := enrichment.Invoke(ctx, nil,
+            result, _ := graph.Last(enrichment.Run(ctx, nil,
                 graph.WithInput(map[string]any{"data": data}),
-            )
+            ))
             return &graph.NodeResult{
                 Updates: result.State,
             }, nil
@@ -133,11 +142,11 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
 ### 4. Execute Pipeline
 ```go
 compiled, _ := pipeline.Compile()
-result, _ := compiled.Invoke(ctx, nil,
+result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithInput(map[string]any{
         "data": rawData,
     }),
-)
+))
 ```
 
 ## Workflow Architecture

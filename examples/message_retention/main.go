@@ -30,12 +30,13 @@ import (
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 func main() {
-	state, err := graph.NewStateManager(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}
@@ -65,13 +66,16 @@ func main() {
 	g.AddEdge(graph.StartNode, "echo")
 	g.AddEdge("echo", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Example 1: Unlimited retention (default)
-	fmt.Println("=== Unlimited Retention ===")
+	// Type assert to access State() method
+	rg := compiled.(*exec.RunnableGraph)
+
+	// Example 1: Unlimited messages (default)
+	fmt.Println("=== With MaxMessages=0 (unlimited) ===")
 	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Message 1"),
 		message.NewHumanMessageFromText("Message 2"),
@@ -80,7 +84,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events1 := compiled.State().MessagesSnapshot()
+	events1 := rg.State().MessagesSnapshot()
 	fmt.Printf("Messages retained: %d\n\n", len(events1))
 
 	// Example 2: Limit to 2 messages
@@ -93,7 +97,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events2 := compiled.State().MessagesSnapshot()
+	events2 := rg.State().MessagesSnapshot()
 	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(events2))
 
 	// Example 3: Recommended for long-running agents

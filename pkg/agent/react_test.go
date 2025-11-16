@@ -10,7 +10,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,10 +22,9 @@ func TestNew_BasicAgent(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
-	// Verify it implements StatefulRunnable (MessageRunnable + State access)
-	stateful, ok := compiled.(graph.StatefulRunnable[[]message.Message, state.ExecutionResult])
-	require.True(t, ok, "agent should implement StatefulRunnable")
-	assert.NotNil(t, stateful.State())
+	// Verify it implements MessageRunnable
+	_, ok := compiled.(graph.MessageRunnable)
+	require.True(t, ok, "agent should implement MessageRunnable")
 }
 
 func TestNew_WithTools(t *testing.T) {

@@ -31,14 +31,14 @@
 //	// DynamoDB (AWS production - see pkg/checkpoint/dynamodb for details)
 //	checkpointer := dynamodb.NewCheckpointer(dynamoClient, "checkpoints-table")
 //
-//	compiled.Invoke(ctx, messages,
+//	result, _ := graph.Last(compiled.Run(ctx, messages,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("workflow-123"),
 //	    graph.WithCheckpointConfig(checkpoint.Config{
 //	        SaveInterval: 2,  // Save every 2 supersteps
 //	        AutoRestore:  true,
 //	    }),
-//	)
+//	))
 //
 // # Checkpoint Signing (Security)
 //
@@ -69,13 +69,13 @@
 //	fmt.Printf("Last checkpoint at superstep %d\n", checkpoint.Superstep)
 //
 //	// Resume execution
-//	compiled.Invoke(ctx, nil,
+//	result, _ := graph.Last(compiled.Run(ctx, nil,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("workflow-123"),
 //	    graph.WithCheckpointConfig(checkpoint.Config{
 //	        AutoRestore: true,
 //	    }),
-//	)
+//	))
 //
 // # Time-Travel Debugging
 //
@@ -83,11 +83,11 @@
 //	checkpoint, _ := checkpointer.LoadAtSuperstep(ctx, "workflow-123", 4)
 //
 //	// Resume from that point
-//	compiled.Invoke(ctx, nil,
+//	result, _ := graph.Last(compiled.Run(ctx, nil,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("workflow-123"),
 //	    graph.WithResumeFromSuperstep(4),
-//	)
+//	))
 //
 // # Checkpoint Structure
 //

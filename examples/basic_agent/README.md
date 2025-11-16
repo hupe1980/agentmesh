@@ -75,11 +75,11 @@ weatherTool := tool.NewFuncTool(
 reactAgent := agent.NewReAct(model, toolset)
 ```
 
-### 5. Invoke with Messages
+### 5. Run with Messages
 ```go
-result, _ := reactAgent.Invoke(ctx, []message.Message{
+result, _ := graph.Last(reactAgent.Run(ctx, []message.Message{
     message.NewUserMessage("What's the weather in Paris?"),
-})
+}))
 ```
 
 ## What This Example Teaches

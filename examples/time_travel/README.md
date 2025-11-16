@@ -57,14 +57,14 @@ Run 2 History:
 ```go
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-compiled.Invoke(ctx, nil,
+result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("run-1"),
     graph.WithInput(map[string]any{"value": 5}),
     graph.WithCheckpointConfig(checkpoint.Config{
         SaveInterval: 1, // Save every superstep
     }),
-)
+))
 ```
 
 ### 2. List Checkpoints

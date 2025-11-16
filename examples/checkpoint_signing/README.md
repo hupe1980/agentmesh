@@ -70,10 +70,10 @@ compiled, err := workflow.Compile(ctx,
     graph.WithModel(model),
 )
 
-result, err := compiled.Invoke(ctx, messages,
+result, err := graph.Last(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("secure-run"),
-)
+))
 ```
 
 ### Manual Signature Verification

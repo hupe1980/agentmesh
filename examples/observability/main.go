@@ -23,6 +23,7 @@
 package main
 
 import (
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
@@ -46,7 +47,7 @@ func main() {
 	traceProvider := trace.Noop()     // Replace with opentelemetry.New(tracerProvider)
 
 	// Create a simple graph
-	state, err := graph.NewStateManager(0) // Unlimited messages
+	state, err := graphstate.NewStateManager(0) // Unlimited messages
 	if err != nil {
 		panic(err)
 	}
@@ -108,7 +109,11 @@ func main() {
 	g.AddEdge(graph.StartNode, "step1")
 	g.AddEdge("step1", "step2")
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rg := compiled.(*exec.RunnableGraph)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -131,7 +136,7 @@ func main() {
 	}
 
 	// Print results
-	counter, _ := compiled.State().Get("counter").(int)
+	counter, _ := rg.State().Get("counter").(int)
 	fmt.Printf("Final counter value: %d\n", counter)
 	fmt.Printf("Total execution time: %v\n", duration)
 

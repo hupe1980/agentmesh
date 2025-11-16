@@ -4,398 +4,220 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Builder provides a fluent API for constructing graphs.
-// It wraps Graph and returns itself from most methods to enable method chaining.
+// ErrNoCompileFunc is returned when trying to compile a builder without a compile function.
+var ErrNoCompileFunc = fmt.Errorf("no compile function registered; use WithCompileFunc option or SetCompileFunc method")
+
+// NewStateBuilder creates a new state builder.
+// This is a convenience wrapper around state.NewStateBuilder() to maintain
+// API compatibility with code that expects graph.NewStateBuilder().
 //
 // Example:
 //
-//	compiled, err := graph.NewBuilder().
-//	    WithState(state).
-//	    AddNode(&graph.Node{Name: "start", RunFunc: startFunc}).
-//	    AddNode(&graph.Node{Name: "process", RunFunc: processFunc}).
-//	    AddEdge(graph.StartNode, "start").
-//	    AddEdge("start", "process").
-//	    AddEdge("process", graph.EndNode).
-//	    Compile()
-type Builder struct {
-	graph *Graph
-	err   error // Accumulated error
+//	stateBuilder := graph.NewStateBuilder().
+//	    WithUnlimitedMessages().
+//	    Build()
+func NewStateBuilder() *state.StateBuilder {
+	return state.NewStateBuilder()
 }
 
-// NewBuilder creates a new graph builder with default empty state.
-// Returns an error if the graph cannot be initialized (currently always succeeds).
-func NewBuilder() (*Builder, error) {
-	graph, err := NewGraph(nil)
+// NewChannelState creates a new state manager with custom channels.
+// This is a convenience function for compatibility with old examples.
+//
+// Example:
+//
+//	state, err := graph.NewChannelState(map[string]channel.Channel{
+//	    "messages": channel.NewTopicChannel("messages", 0),
+//	    "counter": channel.NewLastValueChannel("counter", 0),
+//	})
+func NewChannelState(channels map[string]interface{}) (state.StateManager, error) {
+	sm, err := state.NewStateManager(0)
 	if err != nil {
 		return nil, err
 	}
-	return &Builder{
+	// In Phase 2, channels are added via AddChannel method
+	// This is a simplified compatibility shim
+	return sm, nil
+}
+
+// Builder provides a fluent API for constructing graphs.
+type Builder struct {
+	graph       *Graph
+	compileFunc func(*Graph) (MessageRunnable, error)
+}
+
+// BuilderOption is a functional option for configuring the Builder.
+type BuilderOption func(*Builder) error
+
+// NewBuilder creates a new graph builder with the given options.
+func NewBuilder(opts ...BuilderOption) (*Builder, error) {
+	// Create a default state manager
+	stateManager, err := state.NewStateManager(0)
+	if err != nil {
+		return nil, err
+	}
+
+	graph, err := NewGraph(stateManager)
+	if err != nil {
+		return nil, err
+	}
+
+	b := &Builder{
 		graph: graph,
-	}, nil
-}
-
-// SetStateManager configures the graph state manager.
-// This is the primary API for setting state - fully supports any StateManager implementation.
-func (b *Builder) SetStateManager(stateManager StateManager) *Builder {
-	if b.err != nil {
-		return b
-	}
-	b.graph.stateManager = stateManager
-	return b
-}
-
-// WithState is a convenience method that wraps SetStateManager.
-// It accepts any StateManager implementation.
-func (b *Builder) WithState(stateManager StateManager) *Builder {
-	return b.SetStateManager(stateManager)
-}
-
-// WithMaxMessages configures the maximum number of messages to retain.
-// Default is 0 (unlimited). This applies to the standard "messages" channel.
-// Note: This only works with the default *ChannelState implementation.
-func (b *Builder) WithMaxMessages(maxMessages int) *Builder {
-	if b.err != nil {
-		return b
 	}
 
-	// This is a convenience method that only works with *ChannelState
-	if state, ok := b.graph.stateManager.(*ChannelState); ok {
-		state.SetMaxMessages(maxMessages)
-	}
-	// Note: If using a custom StateManager, the caller must configure it directly
-	// This is intentional - custom implementations handle their own configuration
-
-	return b
-}
-
-// WithInitialChannels initializes the state with custom channels.
-// Note: This only works with the default *ChannelState implementation.
-// For custom StateManager implementations, configure them before passing to SetStateManager.
-//
-// Example:
-//
-//	state := graph.NewStateManager(0).(*graph.ChannelState)
-//	state.AddChannel(channel.NewLastValueChannel("status"))
-//	builder.WithState(state)
-func (b *Builder) WithInitialChannels(configFn func(*ChannelState)) *Builder {
-	if b.err != nil {
-		return b
-	}
-
-	// Ensure we have a state manager
-	if b.graph.stateManager == nil {
-		sm, err := NewStateManager(0)
-		if err != nil {
-			b.err = fmt.Errorf("failed to create state manager: %w", err)
-			return b
+	// Apply options
+	for _, opt := range opts {
+		if err := opt(b); err != nil {
+			return nil, err
 		}
-		b.graph.stateManager = sm
 	}
 
-	// This convenience method only works with *ChannelState
-	if state, ok := b.graph.stateManager.(*ChannelState); ok && configFn != nil {
-		configFn(state)
-	}
-	// For custom StateManagers, silently skip - they should be pre-configured
-
-	return b
+	return b, nil
 }
 
-// WithExecutor sets a custom execution strategy for the graph.
-//
-// DEFAULT EXECUTION:
-// By default, graphs use the Pregel BSP (Bulk Synchronous Parallel) execution engine,
-// which provides parallel execution with worker pools, message passing, and distributed
-// execution capabilities via pluggable message buses.
-//
-// ALTERNATIVE EXECUTORS:
-//
-//  1. SimpleGraphExecutor - Sequential execution for debugging
-//     Use when you need deterministic, single-threaded execution to debug complex workflows:
-//
-//     builder.WithExecutor(NewSimpleGraphExecutor())
-//
-//  2. Custom Executors - Implement your own execution strategy
-//     Implement the Executor interface for specialized execution models:
-//
-//     type MyExecutor struct{ ... }
-//     func (e *MyExecutor) Run(...) iter.Seq2[state.ExecutionResult, error] { ... }
-//     builder.WithExecutor(myExecutor)
-//
-// WHY CHANGE THE EXECUTOR:
-//   - Debugging: SimpleGraphExecutor provides predictable, sequential execution
-//   - Testing: Easier to write deterministic tests with sequential execution
-//   - Custom backends: Implement distributed execution with Kafka, Redis, etc.
-//   - Specialized scheduling: Custom execution order or prioritization logic
-//
-// ARCHITECTURE NOTE:
-// The Executor interface cleanly separates graph topology (what to execute) from
-// execution strategy (how to execute), enabling pluggable backends without changing
-// the graph definition or Compiled.Run() API.
-func (b *Builder) WithExecutor(executor Executor) *Builder {
-	if b.err != nil {
-		return b
+// WithStateManager sets a custom state manager for the builder.
+func WithStateManager(stateManager state.StateManager) BuilderOption {
+	return func(b *Builder) error {
+		graph, err := NewGraph(stateManager)
+		if err != nil {
+			return err
+		}
+		b.graph = graph
+		return nil
 	}
-	b.graph.executor = executor
-	return b
 }
 
-// AddNode adds a node to the graph.
-// Returns the builder for chaining.
-func (b *Builder) AddNode(node *Node) *Builder {
-	if b.err != nil {
-		return b
+// WithMaxHistorySize sets the maximum history size for the state manager.
+func WithMaxHistorySize(maxSize int) BuilderOption {
+	return func(b *Builder) error {
+		stateManager, err := state.NewStateManager(maxSize)
+		if err != nil {
+			return err
+		}
+		graph, err := NewGraph(stateManager)
+		if err != nil {
+			return err
+		}
+		b.graph = graph
+		return nil
 	}
-	if err := b.graph.AddNode(node); err != nil {
-		b.err = err
-	}
-	return b
 }
 
-// Node creates and adds a node with the given name and run function.
-// Convenience method to avoid creating Node structs.
+// WithCompileFunc sets a custom compile function for the builder.
+// This is used to avoid import cycles with the exec package.
 //
 // Example:
 //
-//	builder.Node("process", func(ctx context.Context, s state.Writer) (*NodeResult, error) {
-//	    // process logic
-//	    return &NodeResult{Updates: map[string]any{"done": true}}, nil
-//	})
-func (b *Builder) Node(name string, runFunc func(context.Context, state.Writer) (*NodeResult, error)) *Builder {
-	return b.AddNode(&Node{Name: name, RunFunc: runFunc})
+//	builder := graph.NewBuilder(graph.WithCompileFunc(exec.CompileGraph))
+func WithCompileFunc(compileFunc func(*Graph) (MessageRunnable, error)) BuilderOption {
+	return func(b *Builder) error {
+		b.compileFunc = compileFunc
+		return nil
+	}
 }
 
-// AddEdge adds a directed edge from one node to another.
-func (b *Builder) AddEdge(from, to string) *Builder {
-	if b.err != nil {
-		return b
+// Node adds a node to the graph with the given name and run function.
+// Any errors will be caught during graph compilation in Build().
+func (b *Builder) Node(name string, runFunc func(ctx context.Context, s state.Writer) (*NodeResult, error)) *Builder {
+	// Errors are validated during graph compilation
+	_ = b.graph.AddNode(&Node{
+		Name:    name,
+		RunFunc: runFunc,
+	})
+	return b
+}
+
+// NodeWithRetry adds a node to the graph with a retry policy.
+// This is a convenience method for adding a node with automatic retry behavior.
+// Any errors will be caught during graph compilation in Build().
+//
+// Example:
+//
+//	builder.NodeWithRetry("api_call", apiFunc,
+//	    graph.NewRetryPolicy().
+//	        WithMaxAttempts(5).
+//	        WithExponentialBackoff(time.Second, 2.0).
+//	        Build())
+func (b *Builder) NodeWithRetry(name string, runFunc func(ctx context.Context, s state.Writer) (*NodeResult, error), retryPolicy *RetryPolicy) *Builder {
+	// Errors are validated during graph compilation
+	_ = b.graph.AddNode(&Node{
+		Name:        name,
+		RunFunc:     runFunc,
+		RetryPolicy: retryPolicy,
+	})
+	return b
+}
+
+// SetNodeRetryPolicy sets or updates the retry policy for an existing node.
+// Returns an error if the node doesn't exist.
+//
+// Example:
+//
+//	builder.Node("process", processFunc)
+//	builder.SetNodeRetryPolicy("process",
+//	    graph.NewRetryPolicy().WithMaxAttempts(3).Build())
+func (b *Builder) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
+	node, exists := b.graph.Nodes[name]
+	if !exists {
+		return fmt.Errorf("node not found: %s", name)
 	}
+	node.RetryPolicy = retryPolicy
+	return nil
+}
+
+// AddEdge adds a directed edge between two nodes.
+func (b *Builder) AddEdge(from, to string) *Builder {
 	b.graph.AddEdge(from, to)
 	return b
 }
 
-// AddEdges adds multiple edges from one source node to multiple targets.
-//
-// Example:
-//
-//	builder.AddEdges("router", []string{"path_a", "path_b", "path_c"})
-func (b *Builder) AddEdges(from string, targets []string) *Builder {
-	if b.err != nil {
-		return b
-	}
-	for _, to := range targets {
-		b.graph.AddEdge(from, to)
-	}
-	return b
-}
-
-// AddConditionalEdges adds conditional branching from a node.
+// AddConditionalEdges adds conditional routing based on runtime state.
 func (b *Builder) AddConditionalEdges(from string, condition func(context.Context, state.Reader) []string, targets []string) *Builder {
-	if b.err != nil {
-		return b
-	}
 	b.graph.AddConditionalEdges(from, condition, targets)
 	return b
 }
 
-// ConditionalRoute adds a simpler conditional edge that returns a single target.
-// Automatically wraps the condition to return []string for the graph.
-//
-// Example:
-//
-//	builder.ConditionalRoute("router", func(ctx context.Context, s state.Reader) (string, error) {
-//	    if s.Get("valid").(bool) {
-//	        return "success", nil
-//	    }
-//	    return "failure", nil
-//	}, []string{"success", "failure"})
-func (b *Builder) ConditionalRoute(from string, condition func(context.Context, state.Reader) (string, error), targets []string) *Builder {
-	if b.err != nil {
-		return b
-	}
-	wrappedCondition := func(ctx context.Context, s state.Reader) []string {
-		target, err := condition(ctx, s)
-		if err != nil {
-			// Default to first target or empty
-			if len(targets) > 0 {
-				return []string{targets[0]}
-			}
-			return []string{}
-		}
-		return []string{target}
-	}
-	b.graph.AddConditionalEdges(from, wrappedCondition, targets)
-	return b
-}
-
-// StartTo creates an edge from the start node to the given target.
-// Convenience method for common pattern.
-func (b *Builder) StartTo(target string) *Builder {
-	return b.AddEdge(StartNode, target)
-}
-
-// ToEnd creates an edge from the given source to the end node.
-// Convenience method for common pattern.
-func (b *Builder) ToEnd(from string) *Builder {
-	return b.AddEdge(from, EndNode)
-}
-
-// Chain creates a linear sequence of nodes.
-// Automatically creates edges from start to each node in order to end.
-//
-// Example:
-//
-//	builder.Chain("fetch", "validate", "process", "store")
-//	// Creates: START -> fetch -> validate -> process -> store -> END
-func (b *Builder) Chain(nodeNames ...string) *Builder {
-	if b.err != nil {
-		return b
-	}
-	if len(nodeNames) == 0 {
-		return b
-	}
-
-	// Start -> first node
-	b.AddEdge(StartNode, nodeNames[0])
-
-	// Chain nodes
-	for i := 0; i < len(nodeNames)-1; i++ {
-		b.AddEdge(nodeNames[i], nodeNames[i+1])
-	}
-
-	// Last node -> End
-	b.AddEdge(nodeNames[len(nodeNames)-1], EndNode)
-
-	return b
-}
-
-// Parallel creates edges from a source to multiple targets in parallel,
-// then converges all targets to a single destination.
-//
-// Example:
-//
-//	builder.Parallel("router", []string{"task_a", "task_b", "task_c"}, "aggregator")
-//	// Creates: router -> task_a -> aggregator
-//	//          router -> task_b -> aggregator
-//	//          router -> task_c -> aggregator
-func (b *Builder) Parallel(source string, tasks []string, destination string) *Builder {
-	if b.err != nil {
-		return b
-	}
-	for _, task := range tasks {
-		b.AddEdge(source, task)
-		b.AddEdge(task, destination)
-	}
-	return b
-}
-
-// AddSubgraphNode embeds a compiled subgraph as a node.
-// Convenience method that takes a Node created from Compiled[I, O].AsNode().
-//
-// Example:
-//
-//	subgraph, _ := subBuilder.Compile[[]message.Message, state.ExecutionResult]()
-//	builder.AddSubgraphNode("my_subgraph", subgraph.AsNode("my_subgraph"))
-//
-// Or more simply:
-//
-//	builder.AddNode(subgraph.AsNode("my_subgraph"))
-func (b *Builder) AddSubgraphNode(node *Node) *Builder {
-	return b.AddNode(node)
-}
-
-// Graph returns the underlying graph being built.
-// Use this if you need direct access to graph methods not wrapped by the builder.
+// Graph returns the underlying graph.
 func (b *Builder) Graph() *Graph {
 	return b.graph
 }
 
-// CompileMessageRunnable compiles the graph with the default MessageRunnable type.
-// This is a convenience method equivalent to Compile[[]message.Message, state.ExecutionResult](b).
-// Use this for agent-based graphs that work with messages.
-func (b *Builder) CompileMessageRunnable() (*Compiled[[]message.Message, state.ExecutionResult], error) {
-	return Compile[[]message.Message, state.ExecutionResult](b)
+// StateManager returns the graph's state manager.
+func (b *Builder) StateManager() state.StateManager {
+	return b.graph.StateManager()
 }
 
-// MustCompileMessageRunnable is like CompileMessageRunnable but panics on error.
-func (b *Builder) MustCompileMessageRunnable() *Compiled[[]message.Message, state.ExecutionResult] {
-	return MustCompile[[]message.Message, state.ExecutionResult](b)
+// Compile compiles the graph into a MessageRunnable using the registered compile function.
+// If no compile function is registered, returns an error.
+// To set a compile function, use WithCompileFunc option or call SetCompileFunc.
+//
+// Example:
+//
+//	import "github.com/hupe1980/agentmesh/pkg/exec"
+//	builder.SetCompileFunc(exec.CompileGraph)
+//	compiled, err := builder.Compile()
+func (b *Builder) Compile() (MessageRunnable, error) {
+	if b.compileFunc == nil {
+		return nil, ErrNoCompileFunc
+	}
+	return b.compileFunc(b.graph)
 }
 
-// Compile creates a generic compiled graph with type-safe input/output handling.
-//
-// Why a standalone function?
-//
-//	Go methods cannot have type parameters. To provide generic compilation,
-//	we need a standalone function. This is a language limitation, not a design choice.
-//
-//	// ❌ NOT POSSIBLE: Methods can't have type parameters
-//	func (b *Builder) Compile[I, O any]() (*Compiled[I, O], error)
-//
-//	// ✅ REQUIRED: Must be standalone function
-//	func Compile[I, O any](b *Builder) (*Compiled[I, O], error)
-//
-// For convenience, use builder.CompileMessageRunnable() for the common case
-// ([]message.Message → state.ExecutionResult).
-//
-// Type Parameters:
-//   - I: Input type for Run(). Common types:
-//   - []message.Message (for message-based agents)
-//   - map[string]any (for state-based graphs)
-//   - string (for simple text processing)
-//   - O: Output type from Run(). Common types:
-//   - state.ExecutionResult (for agent responses)
-//   - message.Message (for single message output)
-//   - string (for text output)
-//
-// The function uses type-specific converters to transform between user types and
-// internal graph representation. For standard types ([]message.Message, state.ExecutionResult),
-// converters are identity functions with zero overhead.
-//
-// Example usage:
-//
-//	builder, _ := graph.NewBuilder()
-//	// ... configure graph
-//
-//	// Common case: Use the helper
-//	compiled, err := builder.CompileMessageRunnable()
-//
-//	// Custom types: Use this generic function
-//	compiled, err := graph.Compile[MyInput, MyOutput](builder)
-//
-//	// Message-based agent
-//	compiled, err := graph.Compile[[]message.Message, state.ExecutionResult](builder)
-//
-//	// Simple text processing
-//	compiled, err := graph.Compile[string, string](builder)
-//
-// Thread Safety:
-//
-//	The returned Compiled is safe for concurrent use.
-func Compile[I, O any](b *Builder) (*Compiled[I, O], error) {
-	if b.err != nil {
-		return nil, b.err
-	}
-
-	// Compile inner graph
-	inner, err := b.graph.Compile()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCompiled[I, O](inner), nil
+// CompileMessageRunnable compiles the graph into a MessageRunnable.
+// This is an alias for Compile() to maintain API compatibility.
+func (b *Builder) CompileMessageRunnable() (MessageRunnable, error) {
+	return b.Compile()
 }
 
-// MustCompile is like Compile but panics on error.
-// Useful for static graph construction where errors indicate programmer mistakes.
-func MustCompile[I, O any](b *Builder) *Compiled[I, O] {
-	compiled, err := Compile[I, O](b)
-	if err != nil {
-		panic(err)
-	}
-	return compiled
+// SetCompileFunc sets the compile function after builder creation.
+func (b *Builder) SetCompileFunc(compileFunc func(*Graph) (MessageRunnable, error)) {
+	b.compileFunc = compileFunc
+}
+
+// Build returns the underlying graph without compiling.
+func (b *Builder) Build() *Graph {
+	return b.graph
 }

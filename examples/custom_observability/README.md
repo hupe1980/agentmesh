@@ -18,11 +18,11 @@ traceProvider := trace.NewOpenTelemetryProvider(...)
 metricsProvider := metrics.NewPrometheusProvider(...)
 
 // Step 2: Pass providers as graph options
-results, err := compiled.Invoke(ctx, messages,
+result, err := graph.Last(compiled.Run(ctx, messages,
     graph.WithLogger(logger),
     graph.WithTracer(traceProvider),
     graph.WithMetrics(metricsProvider),
-)
+))
 ```
 
 ## Using Providers in Node RunFunc

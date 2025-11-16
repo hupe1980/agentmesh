@@ -39,10 +39,10 @@ func WithSigning(key []byte) InMemoryCheckpointerOption {
 // Example:
 //
 //	checkpointer := checkpoint.NewInMemoryCheckpointer()
-//	compiled.Invoke(ctx, messages,
+//	result, _ := graph.Last(compiled.Run(ctx, messages,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("test-run"),
-//	)
+//	))
 //
 // With signing enabled:
 //

@@ -8,16 +8,18 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
@@ -48,7 +50,7 @@ func main() {
 	// Step 2: Build Graph with Nodes that Use Context Providers
 	// ============================================================
 
-	state, err := graph.NewChannelState(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}
@@ -245,7 +247,11 @@ func main() {
 	g.AddEdge("validate_data", "generate_summary")
 	g.AddEdge("generate_summary", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rg := compiled.(*exec.RunnableGraph)
 	if err != nil {
 		panic(err)
 	}
@@ -278,7 +284,7 @@ func main() {
 	fmt.Printf("Total execution time: %v\n", duration)
 
 	// Get final state
-	finalState := compiled.State()
+	finalState := rg.State()
 	summary := finalState.Get("summary")
 
 	fmt.Printf("\nFinal Summary: %v\n", summary)

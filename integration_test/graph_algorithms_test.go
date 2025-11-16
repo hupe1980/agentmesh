@@ -6,8 +6,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,11 +24,11 @@ func TestPageRank(t *testing.T) {
 
 	// Create a simple graph: A -> B, A -> C, B -> C, C -> A
 	// This creates a cycle that PageRank can analyze
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +43,8 @@ func TestPageRank(t *testing.T) {
 	// Initialize PageRank values
 	initialRank := 1.0 / float64(len(vertices))
 	for _, v := range vertices {
-		state.Set(fmt.Sprintf("rank_%s", v), initialRank)
-		state.Set(fmt.Sprintf("outgoing_%s", v), edges[v])
+		stateManager.Set(fmt.Sprintf("rank_%s", v), initialRank)
+		stateManager.Set(fmt.Sprintf("outgoing_%s", v), edges[v])
 	}
 
 	// Create compute nodes for each vertex
@@ -51,7 +52,7 @@ func TestPageRank(t *testing.T) {
 		v := vertex // capture loop variable
 		err = g.AddNode(&graph.Node{
 			Name: v,
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				// Get outgoing edges
 				outgoing := s.Get(fmt.Sprintf("outgoing_%s", v))
 				outgoingEdges, ok := outgoing.([]string)
@@ -83,13 +84,15 @@ func TestPageRank(t *testing.T) {
 		g.AddEdge(graph.StartNode, v)
 	}
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
-	// Run multiple iterations with max iterations set
+	// Run multiple iterations
 	for i := 0; i < iterations; i++ {
-		_, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithMaxIterations(1)))
-		require.NoError(t, err)
+		// Execute one iteration - consume all results
+		for _, err := range compiled.Run(context.Background(), nil) {
+			require.NoError(t, err)
+		}
 
 		// Accumulate contributions for each vertex
 		newRanks := make(map[string]float64)
@@ -97,7 +100,7 @@ func TestPageRank(t *testing.T) {
 			// Sum all contributions to this vertex
 			totalContrib := 0.0
 			for _, source := range vertices {
-				contrib := compiled.State().Get(fmt.Sprintf("contrib_%s_%s", source, v))
+				contrib := stateManager.Get(fmt.Sprintf("contrib_%s_%s", source, v))
 				if contribVal, ok := contrib.(float64); ok {
 					totalContrib += contribVal
 				}
@@ -110,14 +113,14 @@ func TestPageRank(t *testing.T) {
 
 		// Update all ranks for next iteration
 		for v, rank := range newRanks {
-			compiled.State().Set(fmt.Sprintf("rank_%s", v), rank)
+			stateManager.Set(fmt.Sprintf("rank_%s", v), rank)
 		}
 	}
 
 	// Verify ranks sum to approximately 1.0
 	totalRank := 0.0
 	for _, v := range vertices {
-		rank := compiled.State().Get(fmt.Sprintf("rank_%s", v))
+		rank := stateManager.Get(fmt.Sprintf("rank_%s", v))
 		if rankVal, ok := rank.(float64); ok {
 			totalRank += rankVal
 			// Each rank should be positive
@@ -133,11 +136,11 @@ func TestPageRank(t *testing.T) {
 func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +157,11 @@ func TestShortestPath(t *testing.T) {
 	// Initialize distances
 	for _, v := range vertices {
 		if v == "A" {
-			state.Set(fmt.Sprintf("dist_%s", v), 0) // source
+			stateManager.Set(fmt.Sprintf("dist_%s", v), 0) // source
 		} else {
-			state.Set(fmt.Sprintf("dist_%s", v), math.MaxInt32)
+			stateManager.Set(fmt.Sprintf("dist_%s", v), math.MaxInt32)
 		}
-		state.Set(fmt.Sprintf("edges_%s", v), edges[v])
+		stateManager.Set(fmt.Sprintf("edges_%s", v), edges[v])
 	}
 
 	// Create relaxation nodes
@@ -166,7 +169,7 @@ func TestShortestPath(t *testing.T) {
 		v := vertex
 		err = g.AddNode(&graph.Node{
 			Name: v,
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				currentDist := s.Get(fmt.Sprintf("dist_%s", v))
 				dist, ok := currentDist.(int)
 				if !ok || dist == math.MaxInt32 {
@@ -200,18 +203,19 @@ func TestShortestPath(t *testing.T) {
 		g.AddEdge(graph.StartNode, v)
 	}
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Run algorithm (in practice, would need multiple supersteps)
-	_, err = graph.Last(compiled.Run(context.Background(), nil))
-	require.NoError(t, err)
+	for _, err := range compiled.Run(context.Background(), nil) {
+		require.NoError(t, err)
+	}
 
 	// Verify shortest paths
-	distA := compiled.State().Get("dist_A")
+	distA := stateManager.Get("dist_A")
 	require.Equal(t, 0, distA) // source is 0
 
-	distB := compiled.State().Get("dist_B")
+	distB := stateManager.Get("dist_B")
 	require.Equal(t, 1, distB) // A -> B = 1
 
 	// Note: This simple implementation only does one superstep
@@ -222,22 +226,22 @@ func TestShortestPath(t *testing.T) {
 func TestGraphConvergence(t *testing.T) {
 	t.Parallel()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create nodes that increment a counter until reaching a target
-	state.Set("counter", 0)
-	state.Set("target", 10)
+	stateManager.Set("counter", 0)
+	stateManager.Set("target", 10)
 
 	err = g.AddNode(&graph.Node{
 		Name: "incrementer",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			counter := s.Get("counter")
 			count, ok := counter.(int)
 			if !ok {
@@ -266,14 +270,15 @@ func TestGraphConvergence(t *testing.T) {
 
 	g.AddEdge(graph.StartNode, "incrementer")
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Run the graph once - nodes run until completion (no cyclic edges)
-	_, err = graph.Last(compiled.Run(context.Background(), nil))
-	require.NoError(t, err)
+	for _, err := range compiled.Run(context.Background(), nil) {
+		require.NoError(t, err)
+	}
 
-	counter := compiled.State().Get("counter")
+	counter := stateManager.Get("counter")
 	count, ok := counter.(int)
 	require.True(t, ok, "counter should be an int")
 	require.Equal(t, 1, count, "counter should increment once per invocation")

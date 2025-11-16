@@ -12,6 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// runToCompletion consumes the iterator and returns the last error (if any)
+func runToCompletion[S any, M any](ctx context.Context, rt *Runtime[S, M]) error {
+	for _, err := range rt.Run(ctx) {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type mockState struct{ Counter int }
 type mockMessage struct{ Value int }
 
@@ -115,7 +125,7 @@ func TestRuntime_Run_SequentialGraph(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
@@ -162,7 +172,7 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
@@ -207,7 +217,7 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
@@ -250,7 +260,7 @@ func TestRuntime_CancelDuringExecution(t *testing.T) {
 		cancel()
 	}()
 
-	err := rt.Run(ctx)
+	err := runToCompletion(ctx, rt)
 	assert.Error(t, err)
 	assert.LessOrEqual(t, callCount, 2)
 }
@@ -272,18 +282,17 @@ func (g *errorGraph) NodeByName(name string) Node[mockState, mockMessage] {
 func (g *errorGraph) State() mockState { return g.state }
 
 func TestRuntime_NodeErrorPropagation(t *testing.T) {
-	events := make(chan Event[mockMessage], 1)
-	rt := MustNewRuntime[mockState, mockMessage](&errorGraph{}, events)
+	rt := MustNewRuntime[mockState, mockMessage](&errorGraph{})
 
-	err := rt.Run(context.Background())
-	assert.Error(t, err)
-
-	close(events)
 	var observed bool
-	for evt := range events {
-		if evt.Error != nil {
+	for evt, err := range rt.Run(context.Background()) {
+		if err != nil || evt.Error != nil {
 			observed = true
-			assert.Contains(t, evt.Error.Error(), "intentional failure")
+			errorToCheck := err
+			if errorToCheck == nil {
+				errorToCheck = evt.Error
+			}
+			assert.Contains(t, errorToCheck.Error(), "intentional failure")
 			assert.Equal(t, int64(1), evt.Superstep)
 		}
 	}
@@ -307,24 +316,29 @@ func (g *panicGraph) NodeByName(name string) Node[mockState, mockMessage] {
 func (g *panicGraph) State() mockState { return g.state }
 
 func TestRuntime_NodePanicRecovery(t *testing.T) {
-	events := make(chan Event[mockMessage], 1)
-	rt := MustNewRuntime[mockState, mockMessage](&panicGraph{}, events)
+	rt := MustNewRuntime[mockState, mockMessage](&panicGraph{})
 
-	err := rt.Run(context.Background())
-	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "panicked"))
-
-	close(events)
 	var observed bool
-	for evt := range events {
-		if evt.Error != nil {
+	var lastErr error
+	var foundDiagnostics bool
+	for evt, err := range rt.Run(context.Background()) {
+		if err != nil || evt.Error != nil {
 			observed = true
+			lastErr = err
+			if lastErr == nil {
+				lastErr = evt.Error
+			}
 			assert.Equal(t, int64(1), evt.Superstep)
-			assert.Contains(t, evt.Error.Error(), "panicked")
-			assert.NotNil(t, evt.Diagnostics)
+			assert.Contains(t, lastErr.Error(), "panicked")
+			if evt.Diagnostics != nil {
+				foundDiagnostics = true
+			}
 		}
 	}
 	assert.True(t, observed)
+	assert.Error(t, lastErr)
+	assert.True(t, strings.Contains(lastErr.Error(), "panicked"))
+	assert.True(t, foundDiagnostics, "Expected at least one event to have diagnostics")
 }
 
 func TestRuntime_InitialSuperstep(t *testing.T) {
@@ -347,7 +361,7 @@ func TestRuntime_InitialSuperstep(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithInitialSuperstep[mockState, mockMessage](5))
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	stats := rt.Stats()
 	assert.Equal(t, int64(6), stats.Supersteps)
@@ -418,7 +432,7 @@ func TestRuntime_AggregatorsVisibleNextSuperstep(t *testing.T) {
 
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	require.Len(t, observed, 2)
 	assert.Equal(t, []int{0, 1}, observed)
@@ -494,7 +508,7 @@ func TestRuntime_CombinerMergesMessages(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithCombiner[mockState, mockMessage](combiner))
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	require.Len(t, received, 1)
 	assert.Equal(t, 3, received[0].Data.Value)
@@ -549,7 +563,7 @@ func TestRuntime_DeliverSeedsExecution(t *testing.T) {
 	graph := newDeliverGraph()
 	rt := MustNewRuntime[*deliverState, mockMessage](graph, nil)
 	require.NoError(t, rt.Deliver(context.Background(), Message[mockMessage]{From: "external", To: "inbox", Data: mockMessage{Value: 1}}))
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	graph.state.mu.Lock()
 	count := graph.state.count
@@ -598,7 +612,7 @@ func TestRuntime_StatsReflectExecution(t *testing.T) {
 	}
 
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
-	require.NoError(t, rt.Run(context.Background()))
+	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	stats := rt.Stats()
 	assert.Equal(t, int64(3), stats.Supersteps)
@@ -618,7 +632,7 @@ func TestRuntime_AggregatorUnknownName(t *testing.T) {
 	graph := &singleNodeGraph{name: "agg", node: aggregatorErrorNode{}}
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
 	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
-	err := rt.Run(context.Background())
+	err := runToCompletion(context.Background(), rt)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown aggregator")
 }
@@ -627,10 +641,10 @@ type noopState struct{}
 
 type noopGraph struct{}
 
-func (noopGraph) RootNodes() []string                                  { return nil }
-func (noopGraph) Outgoing(string) []string                             { return nil }
+func (noopGraph) RootNodes() []string                            { return nil }
+func (noopGraph) Outgoing(string) []string                       { return nil }
 func (noopGraph) NodeByName(string) Node[noopState, mockMessage] { return nil }
-func (noopGraph) State() noopState                                     { return noopState{} }
+func (noopGraph) State() noopState                               { return noopState{} }
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
 	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)

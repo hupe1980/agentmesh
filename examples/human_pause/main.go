@@ -10,11 +10,12 @@ import (
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
 func main() {
-	state, err := graph.NewStateManager(0) // Unlimited messages
+	state, err := graphstate.NewStateManager(0) // Unlimited messages
 	if err != nil {
 		panic(err)
 	}
@@ -102,11 +103,14 @@ func main() {
 	g.AddEdge(graph.StartNode, "research")
 	g.AddEdge("research", "write")
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	if err != nil {
 		fmt.Println("compile error:", err)
 		return
 	}
+
+	// Type assert to access RunnableGraph methods
+	rg := compiled.(*exec.RunnableGraph)
 
 	fmt.Println("=== First Run ===")
 	if _, err := graph.Last(compiled.Run(context.Background(), nil)); err != nil {
@@ -114,15 +118,18 @@ func main() {
 	}
 	fmt.Println("state after first run:", state.GetAll())
 
-	compiled.ApplyState(map[string]any{
+	if err := rg.ApplyState(map[string]any{
 		"human_input": "Approved draft",
 		"action_history": []string{
 			fmt.Sprintf("Human provided feedback at %s", time.Now().Format(time.RFC3339)),
 		},
-	}, nil)
+	}); err != nil {
+		fmt.Println("failed to apply state:", err)
+		return
+	}
 
 	fmt.Println("\n=== Resume ===")
-	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithInitialSuperstep(compiled.CurrentSuperstep()))); err != nil {
+	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithInitialSuperstep(rg.CurrentSuperstep()))); err != nil {
 		fmt.Println("resume error:", err)
 		return
 	}

@@ -58,9 +58,9 @@
 //	)
 //
 //	// 3. Agent automatically retrieves context for queries
-//	response, _ := ragAgent.Invoke(ctx, []message.Message{
+//	response, _ := graph.Last(ragAgent.Run(ctx, []message.Message{
 //	    message.NewUserMessage("What is AgentMesh?"),
-//	})
+//	}))
 //
 // # Document Structure
 //

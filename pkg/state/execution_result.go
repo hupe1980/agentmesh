@@ -34,6 +34,7 @@ type ExecutionResult struct {
 	// Node execution results
 	Updates map[string]any // State updates from the node
 	Err     error          // Error if node execution failed
+	Partial bool           // True if this is an intermediate streaming result (not applied to state)
 }
 
 // NewExecutionResult creates an execution result wrapping a message with metadata.

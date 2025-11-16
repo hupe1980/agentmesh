@@ -35,7 +35,7 @@ func TestMailboxSizeLimit(t *testing.T) {
 		}
 
 		runtime := MustNewRuntime[*testState, testMessage](graph, nil)
-		err := runtime.Run(context.Background())
+		err := runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestMailboxSizeLimit(t *testing.T) {
 			WithMaxWorkers[*testState, testMessage](2), // Multiple workers for concurrency
 		)
 
-		err := runtime.Run(context.Background())
+		err := runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -148,7 +148,7 @@ func TestMailboxSizeLimit(t *testing.T) {
 			WithCombiner[*testState, testMessage](combiner),
 		)
 
-		err := runtime.Run(context.Background())
+		err := runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}

@@ -4,95 +4,86 @@ import (
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
-
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Last consumes an iterator and returns only the final execution result and error.
-// This is useful for getting the result of a graph run without processing intermediate steps.
+// Last returns the last element from an iterator sequence.
+// Returns an error if the sequence produces an error or is empty.
 //
-// Note: Each state.ExecutionResult contains a single Message from node execution.
-// To get ALL accumulated messages, use Collect to gather all results, or access
-// the graph's State().MessagesSnapshot() directly after consuming the iterator.
+// Example:
+//
+//	result, err := graph.Last(runnable.Run(ctx, messages))
 func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, error) {
-	var lastResult state.ExecutionResult
+	var last state.ExecutionResult
 	var lastErr error
+	hasValue := false
 
-	for result, err := range seq {
-		lastResult = result
+	// Must consume entire iterator to avoid breaking range-over-func protocol
+	for val, err := range seq {
 		if err != nil {
+			// Store error but keep consuming
 			lastErr = err
-			break
+		} else {
+			// Only update last value if no error
+			last = val
+			hasValue = true
 		}
 	}
 
-	return lastResult, lastErr
+	if lastErr != nil {
+		return state.ExecutionResult{}, lastErr
+	}
+
+	if !hasValue {
+		return state.ExecutionResult{}, ErrEmptySequence
+	}
+
+	return last, lastErr
 }
 
-// Collect gathers all execution results from an iterator into a slice.
-// The final error (if any) is returned separately. This is useful for testing
-// and debugging to inspect the full execution trace.
+// Collect collects all execution results from an iterator sequence.
+// Returns an error if the sequence produces an error.
+//
+// Example:
+//
+//	results, err := graph.Collect(runnable.Run(ctx, messages))
 func Collect(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
 	results := make([]state.ExecutionResult, 0)
-	var lastErr error
-
 	for result, err := range seq {
 		if err != nil {
-			lastErr = err
-			break
+			return results, err
 		}
 		results = append(results, result)
 	}
-
-	return results, lastErr
+	return results, nil
 }
 
-// CollectGeneric gathers all values from a generic iterator into a slice.
-// This works with any Runnable[I, O] type, not just state.ExecutionResult.
-// The final error (if any) is returned separately.
-func CollectGeneric[T any](seq iter.Seq2[T, error]) ([]T, error) {
-	results := make([]T, 0)
-	var lastErr error
-
+// CollectMessages collects all messages from execution results in an iterator sequence.
+// Returns an error if the sequence produces an error.
+//
+// Example:
+//
+//	messages, err := graph.CollectMessages(runnable.Run(ctx, messages))
+func CollectMessages(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
+	var messages []state.ExecutionResult
 	for result, err := range seq {
 		if err != nil {
-			lastErr = err
-			break
-		}
-		results = append(results, result)
-	}
-
-	return results, lastErr
-}
-
-// CollectMessages directly collects all messages from an iterator.
-// This is a convenience function that extracts messages from execution results as they arrive,
-// avoiding the need to collect results first and then extract messages separately.
-// The final error (if any) is returned separately.
-func CollectMessages(seq iter.Seq2[state.ExecutionResult, error]) ([]message.Message, error) {
-	messages := make([]message.Message, 0)
-	var lastErr error
-
-	for result, err := range seq {
-		if err != nil {
-			lastErr = err
-			break
+			return messages, err
 		}
 		if result.Message != nil {
-			messages = append(messages, result.Message)
+			messages = append(messages, result)
 		}
 	}
-
-	return messages, lastErr
+	return messages, nil
 }
 
-// LastMessage consumes an iterator and returns only the final message and error.
-// This is useful for getting the final result of a graph run without processing
-// intermediate messages.
-func LastMessage(seq iter.Seq2[state.ExecutionResult, error]) (message.Message, error) {
-	result, err := Last(seq)
-	if err != nil {
-		return nil, err
-	}
-	return result.Message, nil
+// ErrEmptySequence is returned when trying to get the last element of an empty sequence.
+var ErrEmptySequence = &IteratorError{msg: "empty sequence"}
+
+// IteratorError represents an iterator operation error.
+type IteratorError struct {
+	msg string
+}
+
+func (e *IteratorError) Error() string {
+	return e.msg
 }

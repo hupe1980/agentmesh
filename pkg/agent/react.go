@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -104,15 +105,16 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 
 	g.AddEdge("tool", "model")
 
-	// Compile the graph with generic compilation for type safety
-	// Compile with generic type safety
-	inner, err := g.Compile()
+	// Compile the graph using the new clean architecture
+	// exec.CompileGraph bridges: graph (structure) → compile (topology) → exec (execution)
+	inner, err := exec.CompileGraph(g)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}
 
 	// Wrap with generic type-safe compiled graph
-	compiled := graph.NewCompiled[[]message.Message, executionResult](inner)
+	// Use exec.NewTyped instead of graph.NewCompiled (avoids import cycle)
+	compiled := exec.NewTyped[[]message.Message, executionResult](inner)
 
 	return compiled, nil
 }
@@ -172,10 +174,10 @@ func WithTools(tools ...tool.Tool) ReActOption {
 //
 //	// Option 2: System message in history (LangChain style)
 //	agent, err := agent.NewReActAgent(model)
-//	result, err := agent.Invoke(ctx, graph.NewInput(
+//	result, err := graph.Last(agent.Run(ctx, graph.NewInput(
 //	    message.NewSystemMessageFromText("You are a helpful math tutor."),
 //	    message.NewHumanMessageFromText("What is 2+2?"),
-//	))
+//	)))
 func WithSystemPrompt(prompt string) ReActOption {
 	return func(c *reActOptions) {
 		c.systemPrompt = prompt

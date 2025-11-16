@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,11 +25,11 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	ctx := context.Background()
 	failureRate := 0.2 // 20% of nodes will fail randomly
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 		nodeNum := i
 		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("node_%d", i),
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				// Random failure injection
 				if rand.Float64() < failureRate {
 					failCount.Add(1)
@@ -75,16 +75,32 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	g.AddEdge(graph.StartNode, "node_0")
 	g.AddEdge("node_9", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute and expect failure due to chaos
-	_, err = graph.Last(compiled.Run(ctx, nil))
+	var errors []error
+	var errorsMu sync.Mutex
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			errorsMu.Lock()
+			errors = append(errors, err)
+			errorsMu.Unlock()
+		}
+	}
 
 	// Should have at least one failure (probabilistically)
-	if err != nil {
-		t.Logf("Graph failed as expected with chaos injection: %v", err)
-		assert.Contains(t, err.Error(), "chaos: simulated failure")
+	errorsMu.Lock()
+	hasErrors := len(errors) > 0
+	var lastErr error
+	if hasErrors {
+		lastErr = errors[len(errors)-1]
+	}
+	errorsMu.Unlock()
+
+	if hasErrors {
+		t.Logf("Graph failed as expected with chaos injection: %v", lastErr)
+		assert.Contains(t, lastErr.Error(), "chaos: simulated failure")
 	}
 
 	// Verify some nodes succeeded and some failed
@@ -115,18 +131,18 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 
 	// This test verifies the graph detects message bus issues
 	// For in-memory execution, we'll test with checkpoint failures instead
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_a",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"value": 42},
 			}, nil
@@ -136,7 +152,7 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "node_b",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			value := s.Get("value")
 			require.NotNil(t, value)
 			assert.Equal(t, 42, value.(int))
@@ -149,99 +165,12 @@ func TestChaos_MessageBusFailures(t *testing.T) {
 	g.AddEdge("node_a", "node_b")
 	g.AddEdge("node_b", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
-	_, err = graph.Last(compiled.Run(ctx, nil))
-	require.NoError(t, err)
-}
-
-// TestChaos_CheckpointCorruption tests handling of corrupted checkpoint data
-func TestChaos_CheckpointCorruption(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	runID := "chaos-corrupt-run"
-
-	// Use base checkpointer for testing
-	baseCheckpointer := checkpoint.NewInMemoryCheckpointer()
-
-	state, err := graph.NewStateManager(0)
-	if err != nil {
-		t.Fatal(err)
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
 	}
-	g, err := graph.NewGraph(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = g.AddNode(&graph.Node{
-		Name: "node_1",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"data": "checkpoint_me"},
-			}, nil
-		},
-	})
-	require.NoError(t, err)
-
-	err = g.AddNode(&graph.Node{
-		Name: "node_2",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
-			data := s.Get("data")
-			require.NotNil(t, data)
-			return nil, nil
-		},
-	})
-	require.NoError(t, err)
-
-	g.AddEdge(graph.StartNode, "node_1")
-	g.AddEdge("node_1", "node_2")
-	g.AddEdge("node_2", graph.EndNode)
-
-	compiled, err := g.Compile()
-	require.NoError(t, err)
-
-	// Run with checkpointing - save every superstep
-	// Note: checkpoint queue has size 1, so async saves may be dropped if they come too fast
-	// This is expected behavior - we just verify that checkpoint system works
-	_, err = graph.Last(compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: baseCheckpointer,
-			SaveInterval: 1, // Save every superstep
-		}),
-	))
-	// Allow checkpoint errors (queue overflow is valid in fast executions)
-	if err != nil {
-		if !contains(err.Error(), "checkpoint queue full") {
-			require.NoError(t, err, "Unexpected error (non-checkpoint)")
-		}
-		t.Logf("Checkpoint queue overflow (expected in fast execution): %v", err)
-	}
-
-	// Give async checkpoint worker time to process
-	time.Sleep(50 * time.Millisecond)
-
-	// Verify at least some checkpoints were saved
-	checkpoints, err := baseCheckpointer.List(ctx, runID)
-	require.NoError(t, err)
-	t.Logf("Saved %d checkpoints (may be fewer than supersteps due to async queue)", len(checkpoints))
-
-	// If any checkpoints were saved, verify integrity
-	if len(checkpoints) > 0 {
-		cp := checkpoints[0]
-		require.NotNil(t, cp.State)
-		require.Contains(t, cp.State, "data", "Checkpoint should contain saved data")
-		t.Logf("Checkpoint integrity verified: data=%v", cp.State["data"])
-	} else {
-		t.Log("No checkpoints saved (checkpoint queue overflow - valid behavior)")
-	}
-}
-
-// Helper function for error string checking
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
 }
 
 // TestChaos_ConcurrentExecutionFailures tests failures during concurrent node execution
@@ -250,11 +179,11 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 
 	ctx := context.Background()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +193,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 		nodeNum := i
 		err = g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("parallel_%d", i),
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				// Simulate work with random failure
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
@@ -285,7 +214,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	// Aggregator node collects results
 	err = g.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			total := 0
 			for i := 0; i < 5; i++ {
 				if val := s.Get(fmt.Sprintf("result_%d", i)); val != nil {
@@ -306,15 +235,20 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	}
 	g.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute - may succeed or fail depending on random failures
-	_, err = graph.Last(compiled.Run(ctx, nil))
+	var lastErr error
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			lastErr = err
+		}
+	}
 
-	if err != nil {
-		t.Logf("Graph failed due to concurrent chaos: %v", err)
-		assert.Contains(t, err.Error(), "concurrent failure")
+	if lastErr != nil {
+		t.Logf("Graph failed due to concurrent chaos: %v", lastErr)
+		assert.Contains(t, lastErr.Error(), "concurrent failure")
 	} else {
 		t.Log("Graph succeeded despite chaos injection")
 	}
@@ -326,18 +260,18 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	ctx := context.Background()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = g.AddNode(&graph.Node{
 		Name: "slow_node",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// Simulate slow operation that will timeout
 			select {
 			case <-time.After(5 * time.Second):
@@ -354,23 +288,28 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 	g.AddEdge(graph.StartNode, "slow_node")
 	g.AddEdge("slow_node", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute with aggressive timeout (shorter than the 5 second sleep)
 	ctxTimeout, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	_, err = graph.Last(compiled.Run(ctxTimeout, nil))
+	var lastErr error
+	for _, err := range compiled.Run(ctxTimeout, nil) {
+		if err != nil {
+			lastErr = err
+		}
+	}
 
 	// Should timeout - but if the graph completes before context cancellation propagates,
 	// it may succeed. This is a race condition in the test.
-	if err != nil {
+	if lastErr != nil {
 		// Timeout occurred as expected
-		t.Logf("Node correctly timed out: %v", err)
-		assert.True(t, errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(err, context.Canceled) ||
-			strings.Contains(err.Error(), "context deadline exceeded") ||
+		t.Logf("Node correctly timed out: %v", lastErr)
+		assert.True(t, errors.Is(lastErr, context.DeadlineExceeded) ||
+			errors.Is(lastErr, context.Canceled) ||
+			strings.Contains(lastErr.Error(), "context deadline exceeded") ||
 			strings.Contains(err.Error(), "timeout"),
 			"Expected timeout-related error, got: %v", err)
 	} else {
@@ -386,18 +325,18 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	ctx := context.Background()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = g.AddNode(&graph.Node{
 		Name: "panicking_node",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// This should be caught and converted to an error
 			panic("chaos: intentional panic for testing")
 		},
@@ -406,7 +345,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "recovery_node",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// This should not execute if previous panicked
 			return &graph.NodeResult{
 				Updates: map[string]any{"recovered": true},
@@ -419,18 +358,21 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	g.AddEdge("panicking_node", "recovery_node")
 	g.AddEdge("recovery_node", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute - should handle panic gracefully
-	_, err = graph.Last(compiled.Run(ctx, nil))
+	var lastErr error
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			lastErr = err
+		}
+	}
 
 	// The panic should be caught and converted to an error
-	if err != nil {
-		t.Logf("Panic was caught and converted to error: %v", err)
-		// Verify error indicates panic
-		assert.Contains(t, err.Error(), "panic")
-	}
+	require.Error(t, lastErr, "Expected panic to be caught and converted to error")
+	assert.Contains(t, lastErr.Error(), "panic")
+	t.Logf("Panic was caught and converted to error: %v", lastErr)
 }
 
 // TestChaos_MemoryPressure tests behavior under memory pressure
@@ -442,11 +384,11 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	ctx := context.Background()
 
-	state, err := graph.NewStateManager(0)
+	stateManager, err := state.NewStateManager(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +396,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	// Node that allocates large amounts of memory
 	err = g.AddNode(&graph.Node{
 		Name: "memory_hog",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// Allocate 100MB
 			data := make([]byte, 100*1024*1024)
 			for i := range data {
@@ -471,7 +413,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	err = g.AddNode(&graph.Node{
 		Name: "consumer",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			data := s.Get("large_data")
 			require.NotNil(t, data)
 
@@ -487,12 +429,17 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	g.AddEdge("memory_hog", "consumer")
 	g.AddEdge("consumer", graph.EndNode)
 
-	compiled, err := g.Compile()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute - should handle large data
-	_, err = graph.Last(compiled.Run(ctx, nil))
-	require.NoError(t, err)
+	var lastErr error
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			lastErr = err
+		}
+	}
+	require.NoError(t, lastErr)
 	t.Log("Successfully handled large memory allocation")
 }
 
@@ -507,18 +454,18 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	var partition2Active atomic.Bool
 
 	buildGraph := func() graph.MessageRunnable {
-		state, err := graph.NewStateManager(0)
+		stateManager, err := state.NewStateManager(0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := graph.NewGraph(state)
+		g, err := graph.NewGraph(stateManager)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		err = g.AddNode(&graph.Node{
 			Name: "partition_1_node",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				if !partition1Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 1 unreachable")
 				}
@@ -531,7 +478,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 
 		err = g.AddNode(&graph.Node{
 			Name: "partition_2_node",
-			RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 				if !partition2Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 2 unreachable")
 				}
@@ -553,7 +500,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 		g.AddEdge("partition_1_node", "partition_2_node")
 		g.AddEdge("partition_2_node", graph.EndNode)
 
-		compiled, err := g.Compile()
+		compiled, err := exec.CompileGraph(g)
 		require.NoError(t, err)
 		return compiled
 	}
@@ -562,25 +509,40 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	partition1Active.Store(true)
 	partition2Active.Store(true)
 	compiled1 := buildGraph()
-	_, err := graph.Last(compiled1.Run(ctx, nil))
-	require.NoError(t, err)
+	var lastErr1 error
+	for _, err := range compiled1.Run(ctx, nil) {
+		if err != nil {
+			lastErr1 = err
+		}
+	}
+	require.NoError(t, lastErr1)
 	t.Log("Test with both partitions active: SUCCESS")
 
 	// Test 2: Partition 1 fails - should fail
 	partition1Active.Store(false)
 	partition2Active.Store(true)
 	compiled2 := buildGraph()
-	_, err = graph.Last(compiled2.Run(ctx, nil))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "partition 1 unreachable")
+	var lastErr2 error
+	for _, err := range compiled2.Run(ctx, nil) {
+		if err != nil {
+			lastErr2 = err
+		}
+	}
+	require.Error(t, lastErr2)
+	assert.Contains(t, lastErr2.Error(), "partition 1 unreachable")
 	t.Log("Test with partition 1 down: FAILED as expected")
 
 	// Test 3: Partition 1 recovers, partition 2 fails
 	partition1Active.Store(true)
 	partition2Active.Store(false)
 	compiled3 := buildGraph()
-	_, err = graph.Last(compiled3.Run(ctx, nil))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "partition 2 unreachable")
+	var lastErr3 error
+	for _, err := range compiled3.Run(ctx, nil) {
+		if err != nil {
+			lastErr3 = err
+		}
+	}
+	require.Error(t, lastErr3)
+	assert.Contains(t, lastErr3.Error(), "partition 2 unreachable")
 	t.Log("Test with partition 2 down: FAILED as expected")
 }

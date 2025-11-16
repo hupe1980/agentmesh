@@ -8,8 +8,8 @@ import (
 	"log"
 	"maps"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to compile validation subgraph: %v", err)
 	}
-	compiledValidation := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledValidationImpl)
+	compiledValidation := compiledValidationImpl.(*exec.RunnableGraph)
 
 	// Create enrichment subgraph
 	enrichmentSub := createEnrichmentSubgraph()
@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to compile enrichment subgraph: %v", err)
 	}
-	compiledEnrichment := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledEnrichmentImpl)
+	compiledEnrichment := compiledEnrichmentImpl.(*exec.RunnableGraph)
 
 	// Create analysis subgraph with state mapping
 	analysisSub := createAnalysisSubgraph()
@@ -41,15 +41,65 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to compile analysis subgraph: %v", err)
 	}
-	compiledAnalysis := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiledAnalysisImpl)
+	compiledAnalysis := compiledAnalysisImpl.(*exec.RunnableGraph)
 
-	// Create main pipeline
-	pipeline := createPipeline(compiledValidation, compiledEnrichment, compiledAnalysis)
+	// In Phase 2, we build a main pipeline that calls subgraphs as runnables
+	pipeline, err := exec.NewBuilder()
+	if err != nil {
+		log.Fatalf("Failed to create pipeline builder: %v", err)
+	}
+
+	// Wrap subgraphs as nodes that execute the compiled runnables
+	pipeline.Node("validation", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		// Run validation subgraph
+		_, err := graph.Last(compiledValidation.Run(ctx, nil))
+		if err != nil {
+			return nil, err
+		}
+		// Copy validation results to parent state
+		valid := compiledValidation.State().Get("valid")
+		s.Set("valid", valid)
+		return &graph.NodeResult{
+			Updates: map[string]any{"valid": valid},
+		}, nil
+	})
+
+	pipeline.Node("enrichment", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		// Run enrichment subgraph
+		_, err := graph.Last(compiledEnrichment.Run(ctx, nil))
+		if err != nil {
+			return nil, err
+		}
+		// Copy enriched data to parent state
+		enrichedData := compiledEnrichment.State().Get("enriched_data")
+		return &graph.NodeResult{
+			Updates: map[string]any{"enriched_data": enrichedData},
+		}, nil
+	})
+
+	pipeline.Node("analysis", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		// Run analysis subgraph
+		_, err := graph.Last(compiledAnalysis.Run(ctx, nil))
+		if err != nil {
+			return nil, err
+		}
+		// Copy analysis results to parent state
+		analysis := compiledAnalysis.State().Get("analysis")
+		return &graph.NodeResult{
+			Updates: map[string]any{"analysis": analysis},
+		}, nil
+	})
+
+	pipeline.AddEdge(graph.StartNode, "validation")
+	pipeline.AddEdge("validation", "enrichment")
+	pipeline.AddEdge("enrichment", "analysis")
+	pipeline.AddEdge("analysis", graph.EndNode)
+
 	compiled, err := pipeline.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile pipeline: %v", err)
 	}
-	compiledPipeline := graph.NewCompiled[[]message.Message, graphstate.ExecutionResult](compiled)
+	compiledPipeline := compiled.(*exec.RunnableGraph)
 
 	// Execute pipeline with sample data
 	initialState := map[string]any{
@@ -60,7 +110,16 @@ func main() {
 		},
 	}
 
-	compiledPipeline.ApplyState(initialState, nil)
+	// Set initial state in all subgraphs
+	if err := compiledValidation.ApplyState(initialState); err != nil {
+		log.Fatalf("Failed to apply state to validation: %v", err)
+	}
+	if err := compiledEnrichment.ApplyState(initialState); err != nil {
+		log.Fatalf("Failed to apply state to enrichment: %v", err)
+	}
+	if err := compiledAnalysis.ApplyState(initialState); err != nil {
+		log.Fatalf("Failed to apply state to analysis: %v", err)
+	}
 
 	_, err = graph.Last(compiledPipeline.Run(ctx, nil))
 	if err != nil {
@@ -77,7 +136,7 @@ func main() {
 
 // createValidationSubgraph validates input data
 func createValidationSubgraph() *graph.Graph {
-	state, err := graph.NewStateManager(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}
@@ -153,7 +212,7 @@ func createValidationSubgraph() *graph.Graph {
 
 // createEnrichmentSubgraph adds computed fields to data
 func createEnrichmentSubgraph() *graph.Graph {
-	state, err := graph.NewStateManager(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}
@@ -202,7 +261,7 @@ func createEnrichmentSubgraph() *graph.Graph {
 
 // createAnalysisSubgraph performs analysis on enriched data
 func createAnalysisSubgraph() *graph.Graph {
-	state, err := graph.NewStateManager(0)
+	state, err := graphstate.NewStateManager(0)
 	if err != nil {
 		panic(err)
 	}
@@ -243,93 +302,6 @@ func createAnalysisSubgraph() *graph.Graph {
 	})
 
 	g.AddEdge(graph.StartNode, "analyze")
-
-	return g
-}
-
-// createPipeline assembles subgraphs into a processing pipeline
-func createPipeline(validation, enrichment, analysis *graph.Compiled[[]message.Message, graphstate.ExecutionResult]) *graph.Graph {
-	state, err := graph.NewStateManager(0)
-	if err != nil {
-		panic(err)
-	}
-	g, err := graph.NewGraph(state)
-	if err != nil {
-		panic(err)
-	}
-
-	// Add validation subgraph (direct embedding)
-	g.AddNode(validation.AsNode("validation"))
-
-	// Add enrichment subgraph (direct embedding)
-	g.AddNode(enrichment.AsNode("enrichment"))
-
-	// Add analysis subgraph with state mapping
-	analysisNode := analysis.AsNodeWithStateMapping(
-		"analysis",
-		// mapInput: map enriched_data to analysis input
-		func(s graphstate.Reader) (map[string]any, []graphstate.ExecutionResult) {
-			enrichedData, ok := s.Get("enriched_data").(map[string]any)
-			if !ok {
-				return map[string]any{"input": map[string]any{}}, nil
-			}
-			return map[string]any{"input": enrichedData}, nil
-		},
-		// mapOutput: map analysis output to parent analysis key
-		func(s graphstate.Reader) (map[string]any, []graphstate.ExecutionResult) {
-			output, ok := s.Get("output").(map[string]any)
-			if !ok {
-				return map[string]any{"analysis": map[string]any{}}, nil
-			}
-			return map[string]any{"analysis": output}, nil
-		},
-	)
-	g.AddNode(analysisNode)
-
-	// Add report generation node
-	g.AddNode(&graph.Node{
-		Name: "generate_report",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			analysis, ok := s.Get("analysis").(map[string]any)
-			if !ok {
-				return &graph.NodeResult{
-					Updates: map[string]any{"report": "No analysis available"},
-				}, nil
-			}
-
-			report := fmt.Sprintf(
-				"User Analysis Report\n"+
-					"-------------------\n"+
-					"Score: %v\n"+
-					"Grade: %v\n"+
-					"Performance: %v\n"+
-					"Recommendation: %v",
-				analysis["score"],
-				analysis["grade"],
-				analysis["performance"],
-				analysis["recommendation"],
-			)
-
-			return &graph.NodeResult{
-				Updates: map[string]any{"report": report},
-			}, nil
-		},
-	})
-
-	// Build pipeline flow
-	g.AddEdge(graph.StartNode, "validation")
-
-	// Conditional: only proceed if valid
-	g.AddConditionalEdges("validation", func(_ context.Context, s graphstate.Reader) []string {
-		valid, ok := s.Get("valid").(bool)
-		if !ok || !valid {
-			return []string{graph.EndNode}
-		}
-		return []string{"enrichment"}
-	}, []string{"enrichment", graph.EndNode})
-
-	g.AddEdge("enrichment", "analysis")
-	g.AddEdge("analysis", "generate_report")
 
 	return g
 }

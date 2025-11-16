@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,15 +16,16 @@ import (
 func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	t.Parallel()
 
-	builder, err := graph.NewBuilder()
-	if err != nil {
-		t.Fatal(err)
-	}
+	stateManager, err := state.NewStateManager(0)
+	require.NoError(t, err)
+
+	g, err := graph.NewGraph(stateManager)
+	require.NoError(t, err)
 
 	// Node A sends updates to Node B
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "node_a",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// Send data to node_b
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -38,9 +40,9 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	})
 
 	// Node B receives updates from Node A
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "node_b",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			// Verify we received the update from node_a
 			fromA := s.Get("from_a")
 			counter := s.Get("counter")
@@ -62,11 +64,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 		},
 	})
 
-	builder.AddEdge(graph.StartNode, "node_a")
-	builder.AddEdge("node_a", "node_b")
-	builder.AddEdge("node_b", graph.EndNode)
+	g.AddEdge(graph.StartNode, "node_a")
+	g.AddEdge("node_a", "node_b")
+	g.AddEdge("node_b", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	// Execute the graph
@@ -76,10 +78,9 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	require.NotNil(t, events)
 
 	// Verify final state
-	state := compiled.State()
-	require.Equal(t, "hello from A", state.Get("from_a"))
-	require.Equal(t, "hello from B", state.Get("from_b"))
-	require.Equal(t, "received", state.Get("status"))
+	require.Equal(t, "hello from A", stateManager.Get("from_a"))
+	require.Equal(t, "hello from B", stateManager.Get("from_b"))
+	require.Equal(t, "received", stateManager.Get("status"))
 }
 
 // TestParallelMessagePropagation tests that parallel nodes can send messages
@@ -87,24 +88,25 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 func TestParallelMessagePropagation(t *testing.T) {
 	t.Parallel()
 
-	builder, err := graph.NewBuilder()
-	if err != nil {
-		t.Fatal(err)
-	}
+	stateManager, err := state.NewStateManager(0)
+	require.NoError(t, err)
+
+	g, err := graph.NewGraph(stateManager)
+	require.NoError(t, err)
 
 	// Two parallel nodes sending to the same target
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "parallel_a",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_a": "data_a"},
 			}, nil
 		},
 	})
 
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "parallel_b",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_b": "data_b"},
 			}, nil
@@ -112,9 +114,9 @@ func TestParallelMessagePropagation(t *testing.T) {
 	})
 
 	// Aggregator node receives from both parallel nodes
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			dataA := s.Get("from_parallel_a")
 			dataB := s.Get("from_parallel_b")
 
@@ -130,24 +132,25 @@ func TestParallelMessagePropagation(t *testing.T) {
 		},
 	})
 
-	builder.AddEdge(graph.StartNode, "parallel_a")
-	builder.AddEdge(graph.StartNode, "parallel_b")
-	builder.AddEdge("parallel_a", "aggregator")
-	builder.AddEdge("parallel_b", "aggregator")
-	builder.AddEdge("aggregator", graph.EndNode)
+	g.AddEdge(graph.StartNode, "parallel_a")
+	g.AddEdge(graph.StartNode, "parallel_b")
+	g.AddEdge("parallel_a", "aggregator")
+	g.AddEdge("parallel_b", "aggregator")
+	g.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = graph.Last(compiled.Run(ctx, nil))
-	require.NoError(t, err)
+	// Consume all results - we only care that execution completes without error
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
+	}
 
 	// Verify all updates were applied
-	state := compiled.State()
-	require.Equal(t, "data_a", state.Get("from_parallel_a"))
-	require.Equal(t, "data_b", state.Get("from_parallel_b"))
-	require.Equal(t, true, state.Get("aggregated"))
+	require.Equal(t, "data_a", stateManager.Get("from_parallel_a"))
+	require.Equal(t, "data_b", stateManager.Get("from_parallel_b"))
+	require.Equal(t, true, stateManager.Get("aggregated"))
 }
 
 // TestMessagePropagationSequential verifies that updates from one node
@@ -155,15 +158,16 @@ func TestParallelMessagePropagation(t *testing.T) {
 func TestMessagePropagationSequential(t *testing.T) {
 	t.Parallel()
 
-	builder, err := graph.NewBuilder()
-	if err != nil {
-		t.Fatal(err)
-	}
+	stateManager, err := state.NewStateManager(0)
+	require.NoError(t, err)
+
+	g, err := graph.NewGraph(stateManager)
+	require.NoError(t, err)
 
 	// Node 1: Sets initial values
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{
 					"step": 1,
@@ -174,9 +178,9 @@ func TestMessagePropagationSequential(t *testing.T) {
 	})
 
 	// Node 2: Reads from node 1, adds its own data
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "node_2",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			step := s.Get("step")
 			data := s.Get("data")
 
@@ -194,9 +198,9 @@ func TestMessagePropagationSequential(t *testing.T) {
 	})
 
 	// Node 3: Reads from node 2, verifies propagation
-	builder.AddNode(&graph.Node{
+	g.AddNode(&graph.Node{
 		Name: "node_3",
-		RunFunc: func(ctx context.Context, s stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 			step := s.Get("step")
 			data := s.Get("data")
 
@@ -213,20 +217,21 @@ func TestMessagePropagationSequential(t *testing.T) {
 		},
 	})
 
-	builder.AddEdge(graph.StartNode, "node_1")
-	builder.AddEdge("node_1", "node_2")
-	builder.AddEdge("node_2", "node_3")
-	builder.AddEdge("node_3", graph.EndNode)
+	g.AddEdge(graph.StartNode, "node_1")
+	g.AddEdge("node_1", "node_2")
+	g.AddEdge("node_2", "node_3")
+	g.AddEdge("node_3", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := exec.CompileGraph(g)
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = graph.Last(compiled.Run(ctx, nil))
-	require.NoError(t, err)
+	// Consume all results - we only care that execution completes without error
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
+	}
 
 	// Verify final state has all updates
-	state := compiled.State()
-	require.Equal(t, 3, state.Get("step"))
-	require.Equal(t, true, state.Get("final"))
+	require.Equal(t, 3, stateManager.Get("step"))
+	require.Equal(t, true, stateManager.Get("final"))
 }

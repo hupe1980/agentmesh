@@ -79,14 +79,14 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 ### 2. Enable Automatic Checkpointing
 ```go
-compiled.Invoke(ctx, messages,
+result, _ := graph.Last(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointConfig(checkpoint.Config{
         SaveInterval: 1,  // Save every superstep
         AutoRestore: true,
     }),
-)
+))
 ```
 
 ### 3. Load Checkpoint
@@ -97,7 +97,7 @@ fmt.Printf("Last checkpoint at superstep %d\n", ckpt.Superstep)
 
 ### 4. Resume from Checkpoint
 ```go
-compiled.Invoke(ctx, nil,
+result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointConfig(checkpoint.Config{
@@ -109,9 +109,9 @@ compiled.Invoke(ctx, nil,
 ### 5. Time-Travel to Specific Superstep
 ```go
 ckpt, _ := checkpointer.LoadAtSuperstep(ctx, "workflow-123", 2)
-compiled.Invoke(ctx, nil,
+result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithResumeFromSuperstep(2),
-)
+))
 ```
 
 ## Checkpoint Structure

@@ -61,14 +61,14 @@ builder.Node("human_review", func(ctx context.Context, s state.Writer) (*graph.N
 ### 2. Resume with Input
 ```go
 // Later, when human provides input:
-compiled.Invoke(ctx, nil,
+result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
     graph.WithResumeFromPause(),
     graph.WithInput(map[string]any{
         "human_input": "approved",
     }),
-)
+))
 ```
 
 ### 3. Process Human Decision
@@ -115,10 +115,10 @@ generate → [PAUSE: feedback] → refine → [PAUSE: feedback] → finalize
 ### Web API Integration
 ```go
 // Pause and return to user
-result := compiled.Invoke(ctx, messages,
+result, _ := graph.Last(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(sessionID),
-)
+))
 
 if result.Paused {
     // Send to user for approval
@@ -137,7 +137,7 @@ func handleApproval(w http.ResponseWriter, r *http.Request) {
     runID := r.FormValue("runID")
     decision := r.FormValue("decision")
     
-    compiled.Invoke(ctx, nil,
+    result, _ := graph.Last(compiled.Run(ctx, nil,
         graph.WithCheckpointer(checkpointer),
         graph.WithRunID(runID),
         graph.WithResumeFromPause(),
