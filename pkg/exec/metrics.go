@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"slices"
 	"sync"
 )
 
@@ -60,7 +61,7 @@ func (rm *RuntimeMetrics) AddCompleted(nodeName string) {
 func (rm *RuntimeMetrics) AddPaused(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	if !contains(rm.PausedNodes, nodeName) {
+	if !slices.Contains(rm.PausedNodes, nodeName) {
 		rm.PausedNodes = append(rm.PausedNodes, nodeName)
 	}
 	rm.removeActive(nodeName)
@@ -70,14 +71,14 @@ func (rm *RuntimeMetrics) AddPaused(nodeName string) {
 func (rm *RuntimeMetrics) ResumePaused(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.PausedNodes = remove(rm.PausedNodes, nodeName)
+	rm.PausedNodes = slices.DeleteFunc(rm.PausedNodes, func(s string) bool { return s == nodeName })
 }
 
 // AddActive marks a node as currently executing.
 func (rm *RuntimeMetrics) AddActive(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	if !contains(rm.ActiveNodes, nodeName) {
+	if !slices.Contains(rm.ActiveNodes, nodeName) {
 		rm.ActiveNodes = append(rm.ActiveNodes, nodeName)
 	}
 }
@@ -86,7 +87,7 @@ func (rm *RuntimeMetrics) AddActive(nodeName string) {
 func (rm *RuntimeMetrics) AddFailed(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	if !contains(rm.FailedNodes, nodeName) {
+	if !slices.Contains(rm.FailedNodes, nodeName) {
 		rm.FailedNodes = append(rm.FailedNodes, nodeName)
 	}
 	rm.removeActive(nodeName)
@@ -148,26 +149,5 @@ func (rm *RuntimeMetrics) Snapshot() *RuntimeMetricsSnapshot {
 
 // removeActive removes a node from the active list (must hold lock).
 func (rm *RuntimeMetrics) removeActive(nodeName string) {
-	rm.ActiveNodes = remove(rm.ActiveNodes, nodeName)
-}
-
-// Helper functions
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-func remove(slice []string, item string) []string {
-	result := make([]string, 0, len(slice))
-	for _, s := range slice {
-		if s != item {
-			result = append(result, s)
-		}
-	}
-	return result
+	rm.ActiveNodes = slices.DeleteFunc(rm.ActiveNodes, func(s string) bool { return s == nodeName })
 }
