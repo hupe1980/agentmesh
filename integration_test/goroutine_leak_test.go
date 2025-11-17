@@ -18,10 +18,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a graph with many nodes to ensure runtime would continue if not cancelled
-	sm, err := state.NewStateManager(100)
-	if err != nil {
-		t.Fatalf("Failed to create state manager: %v", err)
-	}
+	sm := newTestState()
 
 	g, err := graph.NewGraph(sm)
 	if err != nil {
@@ -33,7 +30,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 		nodeName := string(rune('A' + i))
 		g.AddNode(&graph.Node{
 			Name: nodeName,
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				// Simulate work
 				time.Sleep(10 * time.Millisecond)
 				return &graph.NodeResult{
@@ -105,7 +102,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 
 	// Run multiple graphs with early termination
 	for run := 0; run < 5; run++ {
-		sm, _ := state.NewStateManager(100)
+		sm := newTestState()
 		g, _ := graph.NewGraph(sm)
 
 		// Simple 3-node graph
@@ -113,7 +110,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 			nodeName := string(rune('A' + i))
 			g.AddNode(&graph.Node{
 				Name: nodeName,
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 					time.Sleep(5 * time.Millisecond)
 					return &graph.NodeResult{
 						Messages: []message.Message{message.NewAIMessageFromText("ok")},

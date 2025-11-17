@@ -62,14 +62,16 @@ func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.Compil
 
 	// Restore state
 	if len(chkpt.State) > 0 {
-		for key, value := range chkpt.State {
-			if err := compiled.StateManager.Set(key, value); err != nil {
-				logger.Error("failed to restore state key",
-					"key", key,
-					"error", err)
-				return fmt.Errorf("failed to restore state key %q: %w", key, err)
-			}
+		// Apply checkpoint state to restore values
+		if err := compiled.State.ApplyUpdates(ctx, chkpt.State); err != nil {
+			logger.Error("failed to apply checkpoint state",
+				"run_id", opts.RunID,
+				"error", err)
+			return fmt.Errorf("failed to apply checkpoint state: %w", err)
 		}
+		logger.Info("restored state from checkpoint",
+			"run_id", opts.RunID,
+			"state_keys", len(chkpt.State))
 	}
 
 	// TODO: Restore messages, completed nodes, paused nodes if needed
@@ -99,11 +101,13 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 		"superstep", superstep)
 
 	// Create checkpoint
+	snap := compiled.State.Snapshot()
 	chkpt := &checkpoint.Checkpoint{
 		RunID:     opts.RunID,
 		Superstep: superstep,
 		Timestamp: time.Now(),
-		State:     compiled.StateManager.GetAll(),
+		Version:   snap.Version(),
+		State:     snap.Data(),
 		// TODO: Add messages, completed nodes, paused nodes
 		Messages:       []message.Message{},
 		CompletedNodes: []string{},

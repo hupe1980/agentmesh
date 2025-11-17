@@ -260,12 +260,14 @@ For complete control over workflow logic, build custom graphs using the graph bu
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
+var MessagesKey = state.MessagesKey
+
 builder := graph.NewBuilder()
 
 // Add nodes
-builder.Node("classify", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.Node("classify", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Classify the user's intent
-    msgs := s.MessagesSnapshot()
+    msgs := state.GetFromView(view, MessagesKey)
     category := classifyIntent(msgs)
     
     return &graph.NodeResult{
@@ -273,7 +275,7 @@ builder.Node("classify", func(ctx context.Context, s state.Writer) (*graph.NodeR
     }, nil
 })
 
-builder.Node("handle_support", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.Node("handle_support", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Handle support queries
     response := message.NewAIMessage(message.NewTextPart("Support response..."))
     return &graph.NodeResult{
@@ -311,13 +313,18 @@ if err != nil {
 
 ### Node functions
 
-Nodes receive a `Writer` and return a `NodeResult`:
+Nodes receive a `ReadView` and return a `NodeResult`:
 
 ```go
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    // Read state
-    previousValue := s.Get("key")
-    messages := s.MessagesSnapshot()
+var (
+    KeyName     = state.NewKey("key", "")
+    MessagesKey = state.MessagesKey
+)
+
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    // Read state with typed keys
+    previousValue := state.GetFromView(view, KeyName)
+    messages := state.GetFromView(view, MessagesKey)
     
     // Process...
     
@@ -393,10 +400,15 @@ Compose complex workflows from reusable graph components:
 // Create a research subgraph
 researchGraph := createResearchGraph()
 
+var MessagesKey = state.MessagesKey
+
 // Embed in parent graph
-builder.Node("research", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.Node("research", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    // Get current messages
+    msgs := state.GetFromView(view, MessagesKey)
+    
     // Execute subgraph
-    messages, err := graph.CollectMessages(researchGraph.Run(ctx, s.MessagesSnapshot()))
+    messages, err := graph.CollectMessages(researchGraph.Run(ctx, msgs))
     if err != nil {
         return nil, err
     }

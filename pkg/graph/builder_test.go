@@ -10,16 +10,28 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
+func newTestState() *state.State {
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+	return st
+}
+
 func TestBuilder_BasicUsage(t *testing.T) {
-	// Create builder with exec.NewBuilder for automatic compilation
-	builder, err := exec.NewBuilder()
+	// Define key first
+	processedKey := state.NewKey("processed", false)
+
+	// Create builder with custom state
+	st := newTestState()
+	state.Register(st, processedKey)
+
+	builder, err := exec.NewBuilder(graph.WithState(st))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
 
 	// Add nodes using fluent API
 	builder.
-		Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("process", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"processed": true},
 			}, nil
@@ -40,30 +52,30 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	// Verify the result by accessing state manager
-	stateManager := builder.StateManager()
-	if !stateManager.Get("processed").(bool) {
+	// Verify the result by accessing state
+	snap := builder.State().Snapshot()
+	view := state.NewReadView(snap)
+	if !state.GetFromView(view, processedKey) {
 		t.Error("Expected processed to be true")
 	}
 }
 
 func TestBuilder_WithOptions(t *testing.T) {
-	// Create builder with custom state manager
-	stateManager, err := state.NewStateManager(10)
-	if err != nil {
-		t.Fatalf("Failed to create state manager: %v", err)
-	}
+	// Create builder with custom state
+	st := newTestState()
+	stepKey := state.NewKey("step", 0)
+	state.Register(st, stepKey)
 
-	builder, err := exec.NewBuilder(graph.WithStateManager(stateManager))
+	builder, err := exec.NewBuilder(graph.WithState(st))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
 
 	builder.
-		Node("node1", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("node1", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{"step": 1}}, nil
 		}).
-		Node("node2", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("node2", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{"step": 2}}, nil
 		}).
 		AddEdge(graph.StartNode, "node1").
@@ -81,33 +93,44 @@ func TestBuilder_WithOptions(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	stateManager2 := builder.StateManager()
-	if stateManager2.Get("step").(int) != 2 {
-		t.Errorf("Expected step to be 2, got %v", stateManager2.Get("step"))
+	snap2 := builder.State().Snapshot()
+	view2 := state.NewReadView(snap2)
+	step := state.GetFromView(view2, stepKey)
+	if step != 2 {
+		t.Errorf("Expected step to be 2, got %v", step)
 	}
 }
 
 func TestBuilder_ConditionalEdges(t *testing.T) {
-	builder, err := exec.NewBuilder()
+	// Define keys first
+	routeKey := state.NewKey("route", "")
+	resultKey := state.NewKey("result", "")
+
+	// Create builder with custom state
+	st := newTestState()
+	state.Register(st, routeKey)
+	state.Register(st, resultKey)
+
+	builder, err := exec.NewBuilder(graph.WithState(st))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
 
 	builder.
-		Node("router", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("router", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"route": "left"},
 			}, nil
 		}).
-		Node("left", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("left", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{"result": "left"}}, nil
 		}).
-		Node("right", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("right", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{"result": "right"}}, nil
 		}).
 		AddEdge(graph.StartNode, "router").
-		AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
-			route := s.Get("route").(string)
+		AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
+			route := state.GetFromView(s, routeKey)
 			if route == "left" {
 				return []string{"left"}
 			}
@@ -127,21 +150,30 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	stateManager3 := builder.StateManager()
-	if stateManager3.Get("result").(string) != "left" {
-		t.Errorf("Expected result to be 'left', got %v", stateManager3.Get("result"))
+	snap3 := builder.State().Snapshot()
+	view3 := state.NewReadView(snap3)
+	result := state.GetFromView(view3, resultKey)
+	if result != "left" {
+		t.Errorf("Expected result to be 'left', got %v", result)
 	}
 }
 
 func TestBuilder_ManualCompile(t *testing.T) {
+	// Define key first
+	doneKey := state.NewKey("done", false)
+
+	// Create state and register key
+	st := newTestState()
+	state.Register(st, doneKey)
+
 	// Test using graph.NewBuilder without auto-compile
-	builder, err := graph.NewBuilder()
+	builder, err := graph.NewBuilder(graph.WithState(st))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
 
 	builder.
-		Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("process", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{Updates: map[string]any{"done": true}}, nil
 		}).
 		AddEdge(graph.StartNode, "process").
@@ -160,9 +192,11 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	// Access state through the state manager
-	gState := g.StateManager()
-	if !gState.Get("done").(bool) {
+	// Access state through snapshot and ReadView
+	snap4 := g.State().Snapshot()
+	view4 := state.NewReadView(snap4)
+	done := state.GetFromView(view4, doneKey)
+	if !done {
 		t.Error("Expected done to be true")
 	}
 }

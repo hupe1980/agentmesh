@@ -1,12 +1,13 @@
 package main
 
 import (
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
 	"time"
+
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -171,27 +172,24 @@ func productionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-		counter := 0
-		if c, ok := s.Get("counter").(int); ok {
-			counter = c
-		}
+	counterKey := graphstate.NewKey("counter", 0)
+	statusKey := graphstate.NewKey("status", "")
+
+	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
 		return &graph.NodeResult{
-			Updates: map[string]any{"counter": counter, "status": "processed"},
+			Updates: graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "processed"},
 		}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-		counter := 0
-		if c, ok := s.Get("counter").(int); ok {
-			counter = c
-		}
+	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
 		return &graph.NodeResult{
-			Updates: map[string]any{"counter": counter, "status": "finalized"},
+			Updates: graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "finalized"},
 		}, nil
 	})
 

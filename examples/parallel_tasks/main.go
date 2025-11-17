@@ -22,7 +22,6 @@ import (
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
@@ -55,22 +54,17 @@ func main() {
 	fmt.Println("Demonstrates concurrent execution with result aggregation")
 	fmt.Println()
 
-	// Initialize state with unlimited message history
-	state, err := graphstate.NewStateManager(0)
-	if err != nil {
-		panic(err)
-	}
+	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
+	resultsKey := graphstate.NewKey("results", map[string]any{})
+	summaryKey := graphstate.NewKey("summary", map[string]any{})
 
-	// TopicChannel: Accumulates action history (like appending to a list)
-	// Each node's updates are collected without overwriting previous entries
-	state.AddChannel(channel.NewTopicChannel("action_history", 0))
+	st := graphstate.NewState()
+	graphstate.Register(st, graphstate.MessagesKey.Key)
+	graphstate.Register(st, actionHistoryKey.Key)
+	graphstate.Register(st, resultsKey)
+	graphstate.Register(st, summaryKey)
 
-	// BinaryOpChannel: Merges concurrent updates using custom reducer
-	// When multiple nodes update "results" simultaneously, mergeMapReducer
-	// combines them into a single map without losing data
-	state.AddChannel(channel.NewBinaryOpChannel("results", map[string]any{}, mergeMapReducer))
-
-	gph, err := graph.NewGraph(state)
+	gph, err := graph.NewGraph(st)
 	if err != nil {
 		panic(err)
 	}
@@ -78,17 +72,18 @@ func main() {
 	// Task A: Simulates data analysis work
 	taskA := &graph.Node{
 		Name: "task_a",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
 
+			results := graphstate.GetFromView(view, resultsKey)
+			results["task_a"] = "analysis result"
+
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"action_history": []string{"task_a: analysis completed"},
-					"results": map[string]any{
-						"task_a": "analysis result",
-					},
+				Updates: graphstate.Updates{
+					actionHistoryKey.Name(): []string{"task_a: analysis completed"},
+					resultsKey.Name():       results,
 				},
 			}, nil
 		},
@@ -97,17 +92,18 @@ func main() {
 	// Task B: Simulates simulation work (runs in parallel with Task A)
 	taskB := &graph.Node{
 		Name: "task_b",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
 
+			results := graphstate.GetFromView(view, resultsKey)
+			results["task_b"] = "simulation result"
+
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"action_history": []string{"task_b: simulation completed"},
-					"results": map[string]any{
-						"task_b": "simulation result",
-					},
+				Updates: graphstate.Updates{
+					actionHistoryKey.Name(): []string{"task_b: simulation completed"},
+					resultsKey.Name():       results,
 				},
 			}, nil
 		},
@@ -117,16 +113,16 @@ func main() {
 	// This demonstrates the fan-in pattern (many → one)
 	mergeResults := &graph.Node{
 		Name: "combine",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read the merged results from both tasks
-			results, _ := s.Get("results").(map[string]any)
+			results := graphstate.GetFromView(view, resultsKey)
 
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"action_history": []string{"combine: aggregated all results"},
-					"summary":        results,
+				Updates: graphstate.Updates{
+					actionHistoryKey.Name(): []string{"combine: aggregated all results"},
+					summaryKey.Name():       results,
 				},
 			}, nil
 		},
@@ -184,7 +180,9 @@ func main() {
 	fmt.Println("  (Note: Parallel execution is ~2x faster than sequential)")
 	fmt.Println()
 	fmt.Println("Final state:")
-	for key, value := range state.GetAll() {
-		fmt.Printf("  %s: %v\n", key, value)
-	}
+	snap := st.Snapshot()
+	view := graphstate.NewReadView(snap)
+	fmt.Printf("  action_history: %v\n", graphstate.GetFromView(view, actionHistoryKey.Key))
+	fmt.Printf("  results: %v\n", graphstate.GetFromView(view, resultsKey))
+	fmt.Printf("  summary: %v\n", graphstate.GetFromView(view, summaryKey))
 }

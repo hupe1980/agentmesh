@@ -47,7 +47,12 @@ func (s *Sequential) Run(
 					Timestamp: time.Now(),
 				}
 			}
-			compiled.StateManager.AddMessages(events)
+			updates := state.Updates{}
+			state.AppendMessages(updates, events)
+			if err := compiled.State.ApplyUpdates(ctx, updates); err != nil {
+				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
+				return
+			}
 		}
 
 		// Execute from start node
@@ -100,8 +105,10 @@ func (s *Sequential) executeFromNode(
 			return fmt.Errorf("node %s not found", nodeName)
 		}
 
-		// Execute the node
-		result, err := node.Run(ctx, compiled.StateManager)
+		// Execute the node with current state snapshot
+		snap := compiled.State.Snapshot()
+		view := state.NewReadView(snap)
+		result, err := node.Run(ctx, view)
 		if err != nil {
 			event := state.ExecutionResult{
 				ID:        uuid.New().String(),
@@ -117,16 +124,14 @@ func (s *Sequential) executeFromNode(
 
 		// Process node result
 		if result != nil {
-			// Update state
+			// Apply state updates
 			if len(result.Updates) > 0 {
-				for key, value := range result.Updates {
-					if err := compiled.StateManager.Set(key, value); err != nil {
-						return fmt.Errorf("failed to update state for key %q: %w", key, err)
-					}
+				if err := compiled.State.ApplyUpdates(ctx, result.Updates); err != nil {
+					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 			}
 
-			// Add messages
+			// Yield messages as execution events and store in state
 			if len(result.Messages) > 0 {
 				events := make([]state.ExecutionResult, len(result.Messages))
 				for i, msg := range result.Messages {
@@ -138,9 +143,15 @@ func (s *Sequential) executeFromNode(
 						Timestamp: time.Now(),
 					}
 				}
-				compiled.StateManager.AddMessages(events)
 
-				// Yield each message event
+				// Store messages in state for future nodes to access
+				msgUpdates := state.Updates{}
+				state.AppendMessages(msgUpdates, events)
+				if err := compiled.State.ApplyUpdates(ctx, msgUpdates); err != nil {
+					return fmt.Errorf("failed to store messages in state: %w", err)
+				}
+
+				// Yield events to caller
 				for _, event := range events {
 					if !yield(event, nil) {
 						return nil
@@ -167,8 +178,10 @@ func (s *Sequential) findNextNodes(
 
 	// Check for conditional edges
 	if conditionals, ok := compiled.Topology.ConditionalByFrom[nodeName]; ok {
+		snap := compiled.State.Snapshot()
+		view := state.NewReadView(snap)
 		for _, cond := range conditionals {
-			targets := cond.Condition(ctx, compiled.StateManager)
+			targets := cond.Condition(ctx, view)
 			next = append(next, targets...)
 		}
 	} else {

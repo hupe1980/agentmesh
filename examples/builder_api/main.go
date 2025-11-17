@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -14,54 +13,58 @@ import (
 
 // Define typed state keys at package level for type safety and autocomplete
 var (
-	AnalysisKey = state.NewKey[string]("analysis")
-	ScoreKey    = state.NewKey[float64]("score")
-	ValidKey    = state.NewKey[bool]("valid")
-	ResultKey   = state.NewKey[string]("result")
+	AnalysisKey = state.NewKey("analysis", "")
+	ScoreKey    = state.NewKey("score", 0.0)
+	ValidKey    = state.NewKey("valid", false)
+	ResultKey   = state.NewKey("result", "")
 )
 
 func main() {
-	// Create a builder with automatic compilation support
-	builder, err := exec.NewBuilder()
+	// Create state and register keys
+	st := state.NewState()
+	state.Register(st, AnalysisKey)
+	state.Register(st, ScoreKey)
+	state.Register(st, ValidKey)
+	state.Register(st, ResultKey)
+
+	// Create a builder with the state
+	builder, err := graph.NewBuilder(graph.WithState(st))
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
-		Node("analyze", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("analyze", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("Analyzing input...")
 			return &graph.NodeResult{
-				Updates: map[string]any{
+				Updates: state.Updates{
 					AnalysisKey.Name(): "Input looks good",
 					ScoreKey.Name():    0.95,
 				},
 			}, nil
 		}).
-		Node("validate", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("validate", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			// Type-safe read - no casting needed, compile-time checked
-			score, err := ScoreKey.Get(s)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get score: %w", err)
-			}
+			score := state.GetFromView(view, ScoreKey)
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
 			return &graph.NodeResult{
-				Updates: map[string]any{ValidKey.Name(): valid},
+				Updates: state.Updates{ValidKey.Name(): valid},
 			}, nil
 		}).
-		Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("process", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			// Type-safe read with default value - never panics
-			valid := ValidKey.GetOr(s, false)
+			valid := state.GetFromView(view, ValidKey)
 			if valid {
 				fmt.Println("Processing validated input...")
 				return &graph.NodeResult{
-					Updates: map[string]any{ResultKey.Name(): "Success!"},
+					Updates: state.Updates{ResultKey.Name(): "Success!"},
 				}, nil
 			}
 			return &graph.NodeResult{
-				Updates: map[string]any{ResultKey.Name(): "Failed validation"},
+				Updates: state.Updates{ResultKey.Name(): "Failed validation"},
 			}, nil
 		}).
 		AddEdge(graph.StartNode, "analyze").
@@ -70,7 +73,7 @@ func main() {
 		AddEdge("process", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := builder.Compile()
+	compiled, err := builder.CompileMessageRunnable()
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}
@@ -85,11 +88,9 @@ func main() {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	// Get final state with type safety - no casting, compile-time checked
-	finalState := builder.StateManager()
-	result, err := ResultKey.Get(finalState)
-	if err != nil {
-		log.Fatalf("Failed to get result: %v", err)
-	}
+	// Get final state with type safety
+	snap := st.Snapshot()
+	finalView := state.NewReadView(snap)
+	result := state.GetFromView(finalView, ResultKey)
 	fmt.Printf("\nFinal result: %s\n", result)
 }

@@ -267,7 +267,7 @@ Traditional agent frameworks use **sequential DAG execution**, which limits expr
 ```go
 builder.AddNode(&graph.Node{
     Name: "writer",
-    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         draft := generateDraft()
         return &graph.NodeResult{
             Updates: map[string]any{"draft": draft},
@@ -278,7 +278,7 @@ builder.AddNode(&graph.Node{
 
 builder.AddNode(&graph.Node{
     Name: "evaluator",
-    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         draft := state.Get("draft")
         if isGoodEnough(draft) {
             return &graph.NodeResult{NextNodes: []string{"END"}}, nil
@@ -302,7 +302,7 @@ builder := graph.NewBuilder()
 // Nodes execute in parallel when possible
 builder.AddNode(&graph.Node{
     Name: "fetch_data",
-    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         // Fetch from API...
         return &graph.NodeResult{
             Updates: map[string]any{"data": result},
@@ -312,7 +312,7 @@ builder.AddNode(&graph.Node{
 
 builder.AddNode(&graph.Node{
     Name: "process",
-    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         data := state.Get("data")
         // Process...
         return &graph.NodeResult{
@@ -520,7 +520,7 @@ type ConditionalEvaluator struct {
 ```go
 builder.AddNode(&graph.Node{
     Name: "classifier",
-    RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         category := analyzeInput(state.MessagesSnapshot())
         
         // Dynamic routing based on classification
@@ -958,7 +958,7 @@ func (a *ErrorAggregator) Aggregate(ctx context.Context, state *State, prev floa
 }
 
 // Use in node
-RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     globalError := state.GetAggregate("error").(float64)
     if globalError < 0.01 {
         return &graph.NodeResult{NextNodes: []string{"END"}}, nil
@@ -1368,7 +1368,7 @@ type CheckpointManager interface {
 **Nodes receive focused interfaces:**
 ```go
 // Read-only node
-RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     status := state.Get("status")
     // Node cannot accidentally mutate state
     return &graph.NodeResult{...}, nil
@@ -1518,7 +1518,7 @@ state.AddChannel(channel.NewBinaryOpChannel("counter", func(a, b any) any {
 Nodes receive immutable state snapshots:
 
 ```go
-RunFunc: func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Read values
     status := state.Get("status")
     messages := state.MessagesSnapshot()

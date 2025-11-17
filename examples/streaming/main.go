@@ -51,8 +51,13 @@ func main() {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
 
+	progressKey := graphstate.NewKey("progress", "")
+	currentChunkKey := graphstate.NewKey("current_chunk", "")
+	statusKey := graphstate.NewKey("status", "")
+	chunksTotalKey := graphstate.NewKey("chunks_total", 0)
+
 	// Node 1: Data processor with intermediate streaming
-	builder.Node("data_processor", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+	builder.Node("data_processor", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -66,40 +71,42 @@ func main() {
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
 				streamWriter(&graph.NodeResult{
-					Updates: map[string]any{
-						"progress":      fmt.Sprintf("%d/%d", i+1, len(chunks)),
-						"current_chunk": chunk,
+					Updates: graphstate.Updates{
+						progressKey.Name():     fmt.Sprintf("%d/%d", i+1, len(chunks)),
+						currentChunkKey.Name(): chunk,
 					},
 				})
 			}
 		}
 
 		return &graph.NodeResult{
-			Updates: map[string]any{
-				"status":       "data_processed",
-				"chunks_total": len(chunks),
+			Updates: graphstate.Updates{
+				statusKey.Name():      "data_processed",
+				chunksTotalKey.Name(): len(chunks),
 			},
 		}, nil
 	})
 
 	// Node 2: LLM call with streaming
-	builder.Node("llm_call", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+	builder.Node("llm_call", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
 
+		llmStatusKey := graphstate.NewKey("llm_status", "")
+
 		// Emit pre-call status
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
-				Updates: map[string]any{
-					"llm_status": "starting",
+				Updates: graphstate.Updates{
+					llmStatusKey.Name(): "starting",
 				},
 			})
 		}
 
 		// Get messages from state
-		events := s.MessagesSnapshot()
-		msgs := graphstate.ExtractMessages(events)
+		events := graphstate.GetMessages(view)
+		msgs := graphstate.ExtractMessageContent(events)
 
 		// Create request
 		req := &pkgmodel.Request{
@@ -113,8 +120,8 @@ func main() {
 		// Emit post-call status
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
-				Updates: map[string]any{
-					"llm_status": "completed",
+				Updates: graphstate.Updates{
+					llmStatusKey.Name(): "completed",
 				},
 			})
 		}
@@ -126,7 +133,11 @@ func main() {
 			},
 		}, nil
 	}) // Node 3: Multi-step analyzer with detailed streaming
-	builder.Node("analyzer", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+	analysisStepKey := graphstate.NewKey("analysis_step", "")
+	validationKey := graphstate.NewKey("validation", "")
+	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
+
+	builder.Node("analyzer", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -135,9 +146,9 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
-				Updates: map[string]any{
-					"analysis_step": "validation",
-					"validation":    "passed",
+				Updates: graphstate.Updates{
+					analysisStepKey.Name(): "validation",
+					validationKey.Name():   "passed",
 				},
 			})
 		}
@@ -146,9 +157,9 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
-				Updates: map[string]any{
-					"analysis_step": "quality_check",
-					"quality_score": 0.95,
+				Updates: graphstate.Updates{
+					analysisStepKey.Name(): "quality_check",
+					qualityScoreKey.Name(): 0.95,
 				},
 			})
 		}
@@ -232,15 +243,17 @@ func main() {
 	fmt.Printf("\n✅ Streaming completed! Received %d total events\n", eventCount)
 
 	// Display final state
-	finalState := builder.StateManager()
-	if finalState != nil {
+	st := builder.State()
+	if st != nil {
+		snap := st.Snapshot()
+		finalView := graphstate.NewReadView(snap)
+
 		fmt.Println("\n📊 Final State:")
-		for key, val := range finalState.GetAll() {
-			fmt.Printf("   %s = %v\n", key, val)
-		}
+		fmt.Printf("   status = %v\n", graphstate.GetFromView(finalView, statusKey))
+		fmt.Printf("   chunks_total = %v\n", graphstate.GetFromView(finalView, chunksTotalKey))
 
 		// Show final messages
-		finalEvents := finalState.MessagesSnapshot()
+		finalEvents := graphstate.GetMessages(finalView)
 		if len(finalEvents) > 0 {
 			fmt.Println("\n💬 Final Messages:")
 			for i, evt := range finalEvents {

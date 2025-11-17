@@ -14,7 +14,7 @@ type Edge struct {
 
 // ConditionalEdges represents dynamic routing based on state.
 type ConditionalEdges struct {
-	From      string                                                      // Source node
-	Condition func(context.Context, state.Reader) []string                // Returns target node names
-	Targets   []string                                                    // All possible targets
+	From      string                                          // Source node
+	Condition func(context.Context, *state.ReadView) []string // Returns target node names
+	Targets   []string                                        // All possible targets
 }

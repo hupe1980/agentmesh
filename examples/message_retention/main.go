@@ -36,11 +36,10 @@ import (
 )
 
 func main() {
-	state, err := graphstate.NewStateManager(0)
-	if err != nil {
-		panic(err)
-	}
-	g, err := graph.NewGraph(state)
+	st := graphstate.NewState()
+	graphstate.Register(st, graphstate.MessagesKey.Key)
+
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		panic(err)
 	}
@@ -48,9 +47,9 @@ func main() {
 	// Create a simple echo node
 	err = g.AddNode(&graph.Node{
 		Name: "echo",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			events := s.MessagesSnapshot()
-			lastMsg := events[len(events)-1].Message
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+			messages := graphstate.GetMessages(view)
+			lastMsg := messages[len(messages)-1].Message
 
 			return &graph.NodeResult{
 				Messages: []message.Message{
@@ -84,8 +83,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events1 := rg.State().MessagesSnapshot()
-	fmt.Printf("Messages retained: %d\n\n", len(events1))
+	snap1 := rg.State().Snapshot()
+	messages1 := graphstate.GetMessages(graphstate.NewReadView(snap1))
+	fmt.Printf("Messages retained: %d\n\n", len(messages1))
 
 	// Example 2: Limit to 2 messages
 	fmt.Println("=== With MaxMessages=2 ===")
@@ -97,8 +97,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	events2 := rg.State().MessagesSnapshot()
-	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(events2))
+	snap2 := rg.State().Snapshot()
+	messages2 := graphstate.GetMessages(graphstate.NewReadView(snap2))
+	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(messages2))
 
 	// Example 3: Recommended for long-running agents
 	fmt.Println("\n=== Recommended Configuration ===")

@@ -9,25 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createTestGraph() (*Graph, error) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		return nil, err
-	}
+// Helper function for tests
+func newTestState() *state.State {
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+	return st
+}
 
-	g, err := NewGraph(stateManager)
+func createTestGraph() (*Graph, error) {
+	st := newTestState()
+
+	g, err := NewGraph(st)
 	if err != nil {
 		return nil, err
 	}
 
 	// Add nodes
-	g.AddNode(&Node{Name: "start_node", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "start_node", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
-	g.AddNode(&Node{Name: "process", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "process", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
-	g.AddNode(&Node{Name: "end_node", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "end_node", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
 
@@ -77,13 +81,13 @@ func TestGraph_GetNodeInfo(t *testing.T) {
 }
 
 func TestGraph_GetNodeInfo_WithRetryPolicy(t *testing.T) {
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := NewGraph(stateManager)
+	st := newTestState()
+	g, _ := NewGraph(st)
 
 	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
 	g.AddNode(&Node{
 		Name: "retryable",
-		RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 			return &NodeResult{}, nil
 		},
 		RetryPolicy: retryPolicy,
@@ -125,21 +129,21 @@ func TestGraph_GetEdges(t *testing.T) {
 }
 
 func TestGraph_GetEdges_WithConditionals(t *testing.T) {
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := NewGraph(stateManager)
+	st := newTestState()
+	g, _ := NewGraph(st)
 
-	g.AddNode(&Node{Name: "router", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "router", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
-	g.AddNode(&Node{Name: "option_a", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "option_a", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
-	g.AddNode(&Node{Name: "option_b", RunFunc: func(ctx context.Context, s state.Writer) (*NodeResult, error) {
+	g.AddNode(&Node{Name: "option_b", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
 	}})
 
 	g.AddEdge(StartNode, "router")
-	g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
 		return []string{"option_a"}
 	}, []string{"option_a", "option_b"})
 
@@ -178,15 +182,15 @@ func TestGraph_GetTopology(t *testing.T) {
 }
 
 func TestGraph_GetTopology_WithConditionals(t *testing.T) {
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := NewGraph(stateManager)
+	st := newTestState()
+	g, _ := NewGraph(st)
 
 	g.AddNode(&Node{Name: "router", RunFunc: nil})
 	g.AddNode(&Node{Name: "high_priority", RunFunc: nil})
 	g.AddNode(&Node{Name: "normal", RunFunc: nil})
 
 	g.AddEdge(StartNode, "router")
-	g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
 		return []string{"high_priority"}
 	}, []string{"high_priority", "normal"})
 	g.AddEdge("high_priority", EndNode)

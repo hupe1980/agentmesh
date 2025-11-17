@@ -5,7 +5,7 @@
 //
 // AgentMesh is built on three main layers:
 //
-//  1. Execution Engine (internal/pregel) - Generic BSP runtime for parallel computation
+//  1. Execution Engine (pkg/pregel) - Public BSP runtime API for parallel computation and custom extensions
 //  2. Graph Orchestration (pkg/graph) - Workflow construction, state management, and scheduling
 //  3. Agent Layer (pkg/agent, pkg/model, pkg/tool) - High-level APIs for building LLM-powered agents
 //

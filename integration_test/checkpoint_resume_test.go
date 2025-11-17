@@ -25,11 +25,17 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create a simple workflow that increments a counter through 5 nodes
+	counterKey := state.NewKey("counter", 0)
+
 	buildWorkflow := func() graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			t.Fatal(err)
+		stateManager := newTestState()
+		state.Register(stateManager, counterKey)
+		// Register all dynamic node_N_executed keys
+		for i := 1; i <= 5; i++ {
+			key := state.NewKey(fmt.Sprintf("node_%d_executed", i), false)
+			state.Register(stateManager, key)
 		}
+
 		g, err := graph.NewGraph(stateManager)
 		if err != nil {
 			t.Fatal(err)
@@ -39,12 +45,9 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 			nodeNum := i
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-					counter := s.Get("counter")
-					if counter == nil {
-						counter = 0
-					}
-					newCounter := counter.(int) + 1
+				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+					counter := state.GetFromView(s, counterKey)
+					newCounter := counter + 1
 
 					return &graph.NodeResult{
 						Updates: map[string]any{
@@ -150,12 +153,20 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	runID := "test-partial-resume"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
+	retryAllowedKey := state.NewKey("retry_allowed", false)
+	counterKey2 := state.NewKey("counter", 0)
+
 	// Create workflow that fails on node 3 ONLY on first attempt
 	buildFailingWorkflow := func() graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			t.Fatal(err)
+		stateManager := newTestState()
+		state.Register(stateManager, retryAllowedKey)
+		state.Register(stateManager, counterKey2)
+		// Register all dynamic completed_step_N keys
+		for i := 1; i <= 5; i++ {
+			key := state.NewKey(fmt.Sprintf("completed_step_%d", i), false)
+			state.Register(stateManager, key)
 		}
+
 		g, err := graph.NewGraph(stateManager)
 		if err != nil {
 			t.Fatal(err)
@@ -165,20 +176,17 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 			nodeNum := i
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 					// Check if this step should fail
 					if nodeNum == 3 {
 						// Step 3 fails on first attempt unless retry_allowed is set
-						if s.Get("retry_allowed") == nil {
+						if !state.GetFromView(s, retryAllowedKey) {
 							return nil, fmt.Errorf("simulated failure at step %d", nodeNum)
 						}
 					}
 
 					// Increment counter
-					counter := 0
-					if val := s.Get("counter"); val != nil {
-						counter = val.(int)
-					}
+					counter := state.GetFromView(s, counterKey2)
 					newCounter := counter + 1
 
 					return &graph.NodeResult{
@@ -285,11 +293,18 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	var logMu = &atomic.Value{}
 	logMu.Store(make([]string, 0))
 
+	valueKey := state.NewKey("value", 0)
+	nodeADoneKey := state.NewKey("node_a_done", false)
+	nodeBDoneKey := state.NewKey("node_b_done", false)
+	nodeCDoneKey := state.NewKey("node_c_done", false)
+
 	buildWorkflow := func() graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		stateManager := newTestState()
+		state.Register(stateManager, valueKey)
+		state.Register(stateManager, nodeADoneKey)
+		state.Register(stateManager, nodeBDoneKey)
+		state.Register(stateManager, nodeCDoneKey)
+
 		g, err := graph.NewGraph(stateManager)
 		if err != nil {
 			t.Fatal(err)
@@ -298,7 +313,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node A sets value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_a")
 				logMu.Store(log)
@@ -315,14 +330,13 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node B multiplies value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_b",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_b")
 				logMu.Store(log)
 
-				value := s.Get("value")
-				require.NotNil(t, value)
-				newValue := value.(int) * 2
+				value := state.GetFromView(s, valueKey)
+				newValue := value * 2
 
 				return &graph.NodeResult{
 					Updates: map[string]any{
@@ -336,14 +350,13 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		// Node C adds to value
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: "node_c",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_c")
 				logMu.Store(log)
 
-				value := s.Get("value")
-				require.NotNil(t, value)
-				newValue := value.(int) + 10
+				value := state.GetFromView(s, valueKey)
+				newValue := value + 10
 
 				return &graph.NodeResult{
 					Updates: map[string]any{
@@ -429,10 +442,10 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	runID := "test-resume-version"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dataKey := state.NewKey("data", "")
+	stateManager := newTestState()
+	state.Register(stateManager, dataKey)
+
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
@@ -440,7 +453,7 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"data": "checkpoint_data"},
 			}, nil
@@ -515,10 +528,15 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Create workflow with multiple supersteps
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		t.Fatal(err)
+	stepKey := state.NewKey("step", 0)
+	stateManager := newTestState()
+	state.Register(stateManager, stepKey)
+	// Register checkpoint_N keys
+	for i := 1; i <= 3; i++ {
+		key := state.NewKey(fmt.Sprintf("checkpoint_%d", i), "")
+		state.Register(stateManager, key)
 	}
+
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
@@ -528,7 +546,7 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 		nodeNum := i
 		require.NoError(t, g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("step_%d", i),
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{
 					Updates: map[string]any{
 						"step":                                nodeNum,
@@ -618,10 +636,13 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 		go func() {
 			runID := fmt.Sprintf("concurrent-run-%d", workflowID)
 
-			stateManager, err := state.NewStateManager(0)
-			if err != nil {
-				t.Fatal(err)
-			}
+			workflowIDKey := state.NewKey("workflow_id", 0)
+			timestampKey := state.NewKey("timestamp", int64(0))
+
+			stateManager := newTestState()
+			state.Register(stateManager, workflowIDKey)
+			state.Register(stateManager, timestampKey)
+
 			g, err := graph.NewGraph(stateManager)
 			if err != nil {
 				t.Fatal(err)
@@ -629,7 +650,7 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 
 			require.NoError(t, g.AddNode(&graph.Node{
 				Name: "work",
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 					time.Sleep(10 * time.Millisecond) // Simulate work
 					return &graph.NodeResult{
 						Updates: map[string]any{
@@ -695,10 +716,10 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	runID := "test-empty-state"
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	executedKey := state.NewKey("executed", false)
+	stateManager := newTestState()
+	state.Register(stateManager, executedKey)
+
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
 		t.Fatal(err)
@@ -706,7 +727,7 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 
 	require.NoError(t, g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"executed": true},
 			}, nil

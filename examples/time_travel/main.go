@@ -24,40 +24,49 @@ func main() {
 	ctx := context.Background()
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
+	valueKey := graphstate.NewKey("value", 0)
+
 	// Build a simple mathematical workflow
-	buildWorkflow := func() *exec.RunnableGraph {
-		builder, err := exec.NewBuilder()
+	buildWorkflow := func(initialValue int) *exec.RunnableGraph {
+		st := graphstate.NewState()
+		graphstate.Register(st, graphstate.MessagesKey.Key)
+		graphstate.Register(st, valueKey)
+		st.ApplyUpdates(context.Background(), graphstate.Updates{
+			valueKey.Name(): initialValue,
+		})
+
+		builder, err := exec.NewBuilder(graph.WithState(st))
 		if err != nil {
 			panic(err)
 		}
 
 		// Step 1: Double the value
-		builder.Node("double", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			value, _ := s.Get("value").(int)
+		builder.Node("double", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
 			return &graph.NodeResult{
-				Updates: map[string]any{"value": newValue},
+				Updates: graphstate.Updates{valueKey.Name(): newValue},
 			}, nil
 		})
 
 		// Step 2: Add 10
-		builder.Node("add_ten", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			value, _ := s.Get("value").(int)
+		builder.Node("add_ten", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+			value := graphstate.GetFromView(view, valueKey)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
 			return &graph.NodeResult{
-				Updates: map[string]any{"value": newValue},
+				Updates: graphstate.Updates{valueKey.Name(): newValue},
 			}, nil
 		})
 
 		// Step 3: Multiply by 3
-		builder.Node("multiply_three", func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			value, _ := s.Get("value").(int)
+		builder.Node("multiply_three", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)
 			return &graph.NodeResult{
-				Updates: map[string]any{"value": newValue},
+				Updates: graphstate.Updates{valueKey.Name(): newValue},
 			}, nil
 		})
 
@@ -75,11 +84,8 @@ func main() {
 
 	// ===== RUN 1: Starting with value = 1 =====
 	fmt.Println("Run 1: Starting with value = 1")
-	compiled := buildWorkflow()
+	compiled := buildWorkflow(1)
 	runID1 := "run-1"
-
-	// Set initial state
-	compiled.State().Set("value", 1)
 
 	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID1),
@@ -95,16 +101,14 @@ func main() {
 			log.Fatalf("Run 1 failed: %v", err)
 		}
 	}
-	result1, _ := compiled.State().Get("value").(int)
+	snap1 := compiled.State().Snapshot()
+	result1 := graphstate.GetFromView(graphstate.NewReadView(snap1), valueKey)
 	fmt.Printf("  Final value: %d\n\n", result1)
 
 	// ===== RUN 2: Starting with value = 5 =====
 	fmt.Println("Run 2: Starting with value = 5")
-	compiled = buildWorkflow()
+	compiled = buildWorkflow(5)
 	runID2 := "run-2"
-
-	// Set initial state
-	compiled.State().Set("value", 5)
 
 	seq2 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID2),
@@ -121,16 +125,14 @@ func main() {
 		}
 	}
 
-	result2, _ := compiled.State().Get("value").(int)
+	snap2 := compiled.State().Snapshot()
+	result2 := graphstate.GetFromView(graphstate.NewReadView(snap2), valueKey)
 	fmt.Printf("  Final value: %d\n\n", result2)
 
 	// ===== RUN 3: Starting with value = 10 =====
 	fmt.Println("Run 3: Starting with value = 10")
-	compiled = buildWorkflow()
+	compiled = buildWorkflow(10)
 	runID3 := "run-3"
-
-	// Set initial state
-	compiled.State().Set("value", 10)
 
 	seq3 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID3),
@@ -147,7 +149,8 @@ func main() {
 		}
 	}
 
-	result3, _ := compiled.State().Get("value").(int)
+	snap3 := compiled.State().Snapshot()
+	result3 := graphstate.GetFromView(graphstate.NewReadView(snap3), valueKey)
 	fmt.Printf("  Final value: %d\n\n", result3)
 
 	// ===== TIME-TRAVEL DEBUGGING =====

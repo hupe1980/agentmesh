@@ -119,26 +119,26 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 	return &graph.Node{
 		Name: config.nodeName,
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			events := s.MessagesSnapshot()
-			if len(events) == 0 {
-				return &graph.NodeResult{Updates: map[string]any{}}, nil
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+			// Get last message from state
+			lastMsg := state.LastMessageContent(view)
+			if lastMsg == nil {
+				return &graph.NodeResult{Updates: state.Updates{}}, nil
 			}
 
-			lastMsg := events[len(events)-1].Message
 			ai, ok := lastMsg.(*message.AIMessage)
 			if !ok || ai == nil {
-				return &graph.NodeResult{Updates: map[string]any{}}, nil
+				return &graph.NodeResult{Updates: state.Updates{}}, nil
 			}
 
 			if len(ai.ToolCalls) == 0 {
-				return &graph.NodeResult{Updates: map[string]any{}}, nil
+				return &graph.NodeResult{Updates: state.Updates{}}, nil
 			}
 
 			toolMessages := make([]message.Message, 0, len(ai.ToolCalls))
 			for idx, call := range ai.ToolCalls {
 				// Execute BeforeTool callbacks
-				msgs, err := handleBeforeToolCallback(ctx, s, call, &config, idx)
+				msgs, err := handleBeforeToolCallback(ctx, view, call, &config, idx)
 				if err != nil {
 					return nil, err
 				}
@@ -172,7 +172,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 				result, err := tool.Call(ctx, args)
 				if err != nil {
-					errMsgs, handledErr := handleToolError(ctx, s, call, err, &config, idx)
+					errMsgs, handledErr := handleToolError(ctx, view, call, err, &config, idx)
 					if handledErr != nil {
 						return nil, handledErr
 					}
@@ -183,7 +183,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 				}
 
 				// Execute AfterTool callbacks
-				finalResult, callbackMsgs, err := handleAfterToolCallback(ctx, s, call, result, &config, idx)
+				finalResult, callbackMsgs, err := handleAfterToolCallback(ctx, view, call, result, &config, idx)
 				if err != nil {
 					return nil, err
 				}
@@ -203,7 +203,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 			return &graph.NodeResult{
 				Messages: toolMessages,
-				Updates:  map[string]any{},
+				Updates:  state.Updates{},
 			}, nil
 		},
 	}
@@ -211,7 +211,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 
 // handleToolError processes tool execution errors with plugins and fallbacks.
 // Returns error messages (if continuing on error) and error (nil if handled).
-func handleToolError(ctx context.Context, _ state.Writer, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
+func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
 	err := execErr
 
 	// Execute OnToolError plugins
@@ -241,7 +241,7 @@ func handleToolError(ctx context.Context, _ state.Writer, call message.ToolCall,
 
 // handleBeforeToolCallback executes before-tool plugins.
 // Returns error if plugin fails.
-func handleBeforeToolCallback(ctx context.Context, _ state.Writer, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
+func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
 	if config.callbacks == nil || !config.callbacks.HasPlugins() {
 		return nil, nil
 	}
@@ -271,7 +271,7 @@ func handleBeforeToolCallback(ctx context.Context, _ state.Writer, call message.
 
 // handleAfterToolCallback executes after-tool plugins.
 // Returns error if plugin fails.
-func handleAfterToolCallback(ctx context.Context, _ state.Writer, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
+func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
 	if config.callbacks == nil || !config.callbacks.HasPlugins() {
 		return result, nil, nil
 	}

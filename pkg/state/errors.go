@@ -2,21 +2,15 @@ package state
 
 import "errors"
 
-// Sentinel errors for state management
-var (
-	// ErrAggregatorsNotConfigured indicates aggregators were not set up
-	ErrAggregatorsNotConfigured = errors.New("aggregators not configured")
+// ErrKeyNotRegistered is returned when attempting to access an unregistered key.
+var ErrKeyNotRegistered = errors.New("key not registered")
 
-	// ErrUnknownAggregator indicates an unregistered aggregator name was used
-	ErrUnknownAggregator = errors.New("unknown aggregator")
+// ErrKeyNotList is returned when attempting list operations on non-list keys.
+var ErrKeyNotList = errors.New("key is not a list")
 
-	// ErrCheckpointNotFound indicates a requested checkpoint does not exist
-	ErrCheckpointNotFound = errors.New("checkpoint not found")
+// ErrTypeMismatch is returned when a value's type doesn't match the registered key type.
+var ErrTypeMismatch = errors.New("type mismatch")
 
-	// ErrInvalidState indicates state is nil or invalid
-	ErrInvalidState = errors.New("invalid state")
-
-	// ErrNodeExecution indicates a node execution failed
-	// Use errors.Is(err, ErrNodeExecution) to check for node-level failures
-	ErrNodeExecution = errors.New("node execution failed")
-)
+// ErrNodeExecution is a sentinel error that wraps node execution failures.
+// Used to distinguish node-level errors from system-level errors in execution.
+var ErrNodeExecution = errors.New("node execution failed")

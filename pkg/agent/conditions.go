@@ -20,14 +20,9 @@ import (
 // Example:
 //
 //	g.AddConditionalEdges("model", RouteOnToolCalls("tool", graph.EndNode), []string{"tool", graph.EndNode})
-func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, state.Reader) []string {
-	return func(_ context.Context, s state.Reader) []string {
-		events := s.MessagesSnapshot()
-		if len(events) == 0 {
-			return []string{otherwise}
-		}
-
-		lastMsg := events[len(events)-1].Message
+func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, *state.ReadView) []string {
+	return func(_ context.Context, view *state.ReadView) []string {
+		lastMsg := state.LastMessageContent(view)
 		if lastMsg == nil {
 			return []string{otherwise}
 		}

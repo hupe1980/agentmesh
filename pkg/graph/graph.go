@@ -9,19 +9,19 @@ import (
 
 // Graph represents a mutable computational graph with nodes and edges.
 type Graph struct {
-	Nodes        map[string]*Node
-	Edges        []Edge
-	Branches     []ConditionalEdges
-	stateManager state.StateManager
+	Nodes    map[string]*Node
+	Edges    []Edge
+	Branches []ConditionalEdges
+	state    *state.State
 }
 
-// NewGraph creates a new graph with the given state manager.
-func NewGraph(stateManager state.StateManager) (*Graph, error) {
+// NewGraph creates a new graph with the given state.
+func NewGraph(st *state.State) (*Graph, error) {
 	return &Graph{
-		Nodes:        make(map[string]*Node),
-		Edges:        make([]Edge, 0),
-		Branches:     make([]ConditionalEdges, 0),
-		stateManager: stateManager,
+		Nodes:    make(map[string]*Node),
+		Edges:    make([]Edge, 0),
+		Branches: make([]ConditionalEdges, 0),
+		state:    st,
 	}, nil
 }
 
@@ -43,7 +43,8 @@ func (g *Graph) AddEdge(from, to string) {
 }
 
 // AddConditionalEdges adds conditional routing based on runtime state.
-func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, state.Reader) []string, targets []string) {
+// The condition function receives a ReadView and returns target node names.
+func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) {
 	g.Branches = append(g.Branches, ConditionalEdges{
 		From:      from,
 		Condition: condition,
@@ -51,7 +52,7 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 	})
 }
 
-// StateManager returns the graph's state manager.
-func (g *Graph) StateManager() state.StateManager {
-	return g.stateManager
+// State returns the graph's state.
+func (g *Graph) State() *state.State {
+	return g.state
 }

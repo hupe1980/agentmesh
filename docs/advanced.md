@@ -299,7 +299,7 @@ Nodes contribute to aggregators and read results from previous supersteps:
 ```go
 node := &graph.Node{
     Name: "processor",
-    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         // Process some items
         itemsProcessed := 42
         latency := 150.0
@@ -439,7 +439,7 @@ func (a *ErrorAggregator) Aggregate(ctx context.Context, accumulated any, contri
 }
 
 // In node: check for convergence
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Calculate local error
     localError := computeLocalError()
     s.Aggregate("global_error", localError)
@@ -479,7 +479,7 @@ g.WithExecutor(executor)
 compiled, _ := exec.CompileGraph(g)
 
 // In each parallel node
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     start := time.Now()
     
     result, err := doWork()
@@ -496,7 +496,7 @@ RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 }
 
 // In final reporting node
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     snap := s.AggregatesSnapshot()
     
     successCount := snap["success_count"].(float64)
@@ -547,7 +547,7 @@ Superstep N+1:
 
 ```go
 // Node A contributes in superstep 0
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     s.Aggregate("counter", 10)  // Contributed in superstep 0
     
     snap := s.AggregatesSnapshot()
@@ -557,7 +557,7 @@ RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 }
 
 // Node B reads in superstep 1
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     snap := s.AggregatesSnapshot()
     if snap != nil {
         counter := snap["counter"].(float64)
@@ -569,7 +569,7 @@ RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 }
 
 // Node C reads in superstep 2
-RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     snap := s.AggregatesSnapshot()
     counter := snap["counter"].(float64)
     // Now counter is 15 (10 + 5 from supersteps 0 and 1)
@@ -616,7 +616,7 @@ subGraph := graph.NewGraph(subState)
 
 subGraph.AddNode(&graph.Node{
     Name: "process",
-    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         value := s.Get("value").(int)
         doubled := value * 2
         return &graph.NodeResult{
@@ -637,7 +637,7 @@ parent := graph.NewGraph(parentState)
 
 parent.AddNode(&graph.Node{
     Name: "prepare",
-    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         return &graph.NodeResult{
             Updates: map[string]any{"value": 21},
         }, nil

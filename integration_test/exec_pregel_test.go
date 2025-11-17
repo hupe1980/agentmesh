@@ -11,11 +11,18 @@ import (
 )
 
 func TestPregelExecutor(t *testing.T) {
+	// Define typed keys
+	startedKey := state.NewKey("started", false)
+	task1Key := state.NewKey("task1", "")
+	task2Key := state.NewKey("task2", "")
+	completedKey := state.NewKey("completed", false)
+
 	// Build a graph with parallel nodes
-	stateManager, err := state.NewStateManager(100)
-	if err != nil {
-		t.Fatalf("Failed to create state manager: %v", err)
-	}
+	stateManager := newTestState()
+	state.Register(stateManager, startedKey)
+	state.Register(stateManager, task1Key)
+	state.Register(stateManager, task2Key)
+	state.Register(stateManager, completedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
@@ -26,7 +33,7 @@ func TestPregelExecutor(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "start",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			counter.Add(1)
 			return &graph.NodeResult{
 				Updates: map[string]any{"started": true},
@@ -37,7 +44,7 @@ func TestPregelExecutor(t *testing.T) {
 	// Two nodes that can run in parallel
 	g.AddNode(&graph.Node{
 		Name: "task1",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			counter.Add(1)
 			return &graph.NodeResult{
 				Updates: map[string]any{"task1": "done"},
@@ -47,7 +54,7 @@ func TestPregelExecutor(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "task2",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			counter.Add(1)
 			return &graph.NodeResult{
 				Updates: map[string]any{"task2": "done"},
@@ -57,7 +64,7 @@ func TestPregelExecutor(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "end",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			counter.Add(1)
 			return &graph.NodeResult{
 				Updates: map[string]any{"completed": true},
@@ -95,7 +102,9 @@ func TestPregelExecutor(t *testing.T) {
 	}
 
 	// Verify final state
-	if val := stateManager.Get("completed"); val != true {
+	snap := stateManager.Snapshot()
+	view := state.NewReadView(snap)
+	if val := state.GetFromView(view, completedKey); val != true {
 		t.Errorf("Expected completed=true, got %v", val)
 	}
 

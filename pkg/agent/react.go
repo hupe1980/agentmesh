@@ -6,6 +6,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -69,16 +70,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 		}
 	}
 
-	// Create state using StateBuilder for cleaner initialization
-	stateBuilder := graph.NewStateBuilder().
-		WithUnlimitedMessages()
+	// Create state - StateBuilder no longer exists
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
 
-	state, err := stateBuilder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to build state: %w", err)
-	}
-
-	g, err := graph.NewGraph(state)
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
 	}

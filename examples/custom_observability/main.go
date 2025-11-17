@@ -50,11 +50,21 @@ func main() {
 	// Step 2: Build Graph with Nodes that Use Context Providers
 	// ============================================================
 
-	state, err := graphstate.NewStateManager(0)
-	if err != nil {
-		panic(err)
-	}
-	g, err := graph.NewGraph(state)
+	recordsKey := graphstate.NewKey("records", []string{})
+	timestampKey := graphstate.NewKey("timestamp", "")
+	processedKey := graphstate.NewKey("processed", 0)
+	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
+	statusKey := graphstate.NewKey("status", "")
+
+	st := graphstate.NewState()
+	graphstate.Register(st, graphstate.MessagesKey.Key)
+	graphstate.Register(st, recordsKey)
+	graphstate.Register(st, timestampKey)
+	graphstate.Register(st, processedKey)
+	graphstate.Register(st, qualityScoreKey)
+	graphstate.Register(st, statusKey)
+
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +72,7 @@ func main() {
 	// Node 1: Data Ingestion - demonstrates logger usage
 	if err := g.AddNode(&graph.Node{
 		Name: "ingest_data",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -90,7 +100,7 @@ func main() {
 	// Node 2: Data Processing - demonstrates tracer usage
 	if err := g.AddNode(&graph.Node{
 		Name: "process_data",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -104,7 +114,8 @@ func main() {
 			defer span.End(nil)
 
 			// Get raw data
-			rawData, _ := s.Get("raw_data").(map[string]any)
+			rawDataKey := graphstate.NewKey("raw_data", map[string]any{})
+			rawData := graphstate.GetFromView(view, rawDataKey)
 			records, _ := rawData["records"].([]string)
 
 			log.Info("Processing records", "count", len(records))
@@ -136,7 +147,7 @@ func main() {
 	// Node 3: Data Validation - demonstrates metrics usage
 	if err := g.AddNode(&graph.Node{
 		Name: "validate_data",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -154,7 +165,8 @@ func main() {
 			)
 
 			// Get processed data
-			processedData, _ := s.Get("processed_data").(map[string]any)
+			processedDataKey := graphstate.NewKey("processed_data", map[string]any{})
+			processedData := graphstate.GetFromView(view, processedDataKey)
 			records, _ := processedData["processed_records"].([]string)
 
 			log.Info("Validating records", "count", len(records))
@@ -204,7 +216,7 @@ func main() {
 	// Node 4: Summary - demonstrates all providers together
 	if err := g.AddNode(&graph.Node{
 		Name: "generate_summary",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)
@@ -217,7 +229,8 @@ func main() {
 			log.Info("Generating summary", "node", "generate_summary")
 
 			// Get validation results
-			validationResult, _ := s.Get("validation_result").(map[string]any)
+			validationResultKey := graphstate.NewKey("validation_result", map[string]any{})
+			validationResult := graphstate.GetFromView(view, validationResultKey)
 
 			summary := fmt.Sprintf("Validation Summary: %d valid, %d invalid records processed in %dms",
 				validationResult["valid_count"],
@@ -286,7 +299,9 @@ func main() {
 
 	// Get final state
 	finalState := rg.State()
-	summary := finalState.Get("summary")
+	summaryKey := graphstate.NewKey("summary", "")
+	snap := finalState.Snapshot()
+	summary := graphstate.GetFromView(graphstate.NewReadView(snap), summaryKey)
 
 	fmt.Printf("\nFinal Summary: %v\n", summary)
 

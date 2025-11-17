@@ -10,20 +10,20 @@ import (
 // Node represents a vertex in the execution graph.
 type Node struct {
 	Name        string
-	RunFunc     func(ctx context.Context, s state.Writer) (*NodeResult, error)
+	RunFunc     func(ctx context.Context, view *state.ReadView) (*NodeResult, error)
 	RetryPolicy *RetryPolicy // Optional retry configuration for this node
 }
 
 // NodeResult contains the output of a node execution.
 type NodeResult struct {
-	Updates  map[string]any    // State updates
+	Updates  state.Updates     // State updates (type-safe)
 	Messages []message.Message // Messages to append
 }
 
 // Run executes the node's function.
-func (n *Node) Run(ctx context.Context, s state.Writer) (*NodeResult, error) {
+func (n *Node) Run(ctx context.Context, view *state.ReadView) (*NodeResult, error) {
 	if n.RunFunc == nil {
 		return nil, nil
 	}
-	return n.RunFunc(ctx, s)
+	return n.RunFunc(ctx, view)
 }

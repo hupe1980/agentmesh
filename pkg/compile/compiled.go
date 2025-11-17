@@ -26,8 +26,8 @@ type CompiledGraph struct {
 	// Computed topology (internal, optimized for execution)
 	Topology *executionTopology
 
-	// State manager for execution
-	StateManager state.StateManager
+	// State for execution (BSP-compatible)
+	State *state.State
 
 	// Quick lookups
 	StartNode string
@@ -43,7 +43,7 @@ type CompiledGraph struct {
 //   - Topology (cycles, reachability, dead ends)
 //
 // Use CompileOptions to customize validation behavior.
-func Compile(g *graph.Graph, stateManager state.StateManager, opts ...CompileOption) (*CompiledGraph, error) {
+func Compile(g *graph.Graph, st *state.State, opts ...CompileOption) (*CompiledGraph, error) {
 	cfg := &compileConfig{
 		validationOpts: DefaultValidationOptions(),
 	}
@@ -62,11 +62,11 @@ func Compile(g *graph.Graph, stateManager state.StateManager, opts ...CompileOpt
 	topo := computeTopology(g.Nodes, g.Edges, g.Branches)
 
 	return &CompiledGraph{
-		Graph:        g,
-		Topology:     topo,
-		StateManager: stateManager,
-		StartNode:    StartNode,
-		EndNode:      EndNode,
+		Graph:     g,
+		Topology:  topo,
+		State:     st,
+		StartNode: StartNode,
+		EndNode:   EndNode,
 	}, nil
 }
 

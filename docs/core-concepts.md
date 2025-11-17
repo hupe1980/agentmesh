@@ -160,13 +160,21 @@ if err != nil {
 
 ### Node functions
 
-Nodes are functions that receive state and return updates:
+Nodes are functions that receive a read-only state view and return updates:
 
 ```go
-func processDataFunc(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
-    // Read from state
-    data := state.Get("raw_data")
-    messages := state.MessagesSnapshot()
+// Define typed keys
+var (
+    RawDataKey       = state.NewKey("raw_data", "")
+    ProcessedDataKey = state.NewKey("processed_data", "")
+    StatusKey        = state.NewKey("status", "")
+    MessagesKey      = state.MessagesKey
+)
+
+func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    // Read from state using typed keys
+    data := state.GetFromView(view, RawDataKey)
+    messages := state.GetFromView(view, MessagesKey)
     
     // Process...
     processed := transform(data)
@@ -215,17 +223,21 @@ State is shared across all nodes and flows through the graph using **channels**.
 
 ### Reading state
 
-Nodes receive immutable state snapshots:
+Nodes receive immutable state views with typed key access:
 
 ```go
-func myNode(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
-    // Read values
-    counter := state.Get("counter").(int)
-    status := state.Get("status").(string)
-    messages := state.MessagesSnapshot()
-    
-    // Access full state snapshot
-    snapshot := state.Snapshot()
+// Define typed keys
+var (
+    CounterKey  = state.NewKey("counter", 0)
+    StatusKey   = state.NewKey("status", "")
+    MessagesKey = state.MessagesKey
+)
+
+func myNode(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    // Read values using typed keys
+    counter := state.GetFromView(view, CounterKey)
+    status := state.GetFromView(view, StatusKey)
+    messages := state.GetFromView(view, MessagesKey)
     
     return &graph.NodeResult{}, nil
 }
@@ -311,7 +323,12 @@ builder.AddEdge("fetch_c", "aggregator")
 Unlike DAG-based systems, AgentMesh supports **cycles** for iterative workflows:
 
 ```go
-builder.Node("writer", func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
+var (
+    DraftKey    = state.NewKey("draft", "")
+    FeedbackKey = state.NewKey("feedback", "")
+)
+
+builder.Node("writer", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     draft := generateDraft()
     return &graph.NodeResult{
         Updates: map[string]any{"draft": draft},
@@ -319,8 +336,8 @@ builder.Node("writer", func(ctx context.Context, state state.Reader) (*graph.Nod
     }, nil
 })
 
-builder.Node("evaluator", func(ctx context.Context, state state.Reader) (*graph.NodeResult, error) {
-    draft := state.Get("draft")
+builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
         return &graph.NodeResult{NextNodes: []string{"END"}}, nil
     }

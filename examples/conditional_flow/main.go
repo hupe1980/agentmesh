@@ -18,11 +18,9 @@ import (
 	"context"
 	"fmt"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -38,20 +36,28 @@ func main() {
 func runScenario(choice string) {
 	fmt.Printf("=== Conditional Flow Example: %s ===\n", choice)
 
-	// Initialize graph state with unlimited message history
-	state, err := graphstate.NewStateManager(0)
-	if err != nil {
+	// Define typed keys for state management
+	choiceKey := graphstate.NewKey("choice", "")
+	nextPathKey := graphstate.NewKey("next_path", "")
+	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
+
+	// Create state and register keys
+	st := graphstate.NewState()
+	graphstate.Register(st, choiceKey)
+	graphstate.Register(st, nextPathKey)
+	graphstate.Register(st, actionHistoryKey.Key)
+
+	// Set initial values
+	updates := graphstate.Updates{
+		choiceKey.Name():   choice,
+		nextPathKey.Name(): "",
+	}
+	if err := st.ApplyUpdates(context.Background(), updates); err != nil {
 		panic(err)
 	}
-	state.Set("choice", choice)
-	state.Set("next_path", "")
-
-	// TopicChannel accumulates values instead of overwriting
-	// Perfect for tracking the sequence of actions taken
-	state.AddChannel(channel.NewTopicChannel("action_history", 0))
 
 	// Create the graph and helper function for adding nodes
-	gph, err := graph.NewGraph(state)
+	gph, err := graph.NewGraph(st)
 	if err != nil {
 		panic(err)
 	}
@@ -64,15 +70,15 @@ func runScenario(choice string) {
 	// Decision node: Reads input and decides which path to take
 	mustAddNode(&graph.Node{
 		Name: "decide",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
-			choiceVal, _ := s.Get("choice").(string)
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+			choiceVal := graphstate.GetFromView(view, choiceKey)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
 			// Update state to indicate which path should be taken
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"next_path": choiceVal,
-					"action_history": []string{
+				Updates: graphstate.Updates{
+					nextPathKey.Name(): choiceVal,
+					actionHistoryKey.Name(): []string{
 						fmt.Sprintf("Decision: route to %s", choiceVal),
 					},
 				},
@@ -83,11 +89,11 @@ func runScenario(choice string) {
 	// Path A: Specialized processing for option A
 	mustAddNode(&graph.Node{
 		Name: "path_a",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"action_history": []string{"Completed: Path A"},
+				Updates: graphstate.Updates{
+					actionHistoryKey.Name(): []string{"Completed: Path A"},
 				},
 			}, nil
 		},
@@ -96,11 +102,11 @@ func runScenario(choice string) {
 	// Path B: Alternative processing for option B
 	mustAddNode(&graph.Node{
 		Name: "path_b",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"action_history": []string{"Completed: Path B"},
+				Updates: graphstate.Updates{
+					actionHistoryKey.Name(): []string{"Completed: Path B"},
 				},
 			}, nil
 		},
@@ -112,9 +118,10 @@ func runScenario(choice string) {
 	// AddConditionalEdges allows runtime decisions about which nodes to execute next
 	// The evaluator function is called at runtime and can return different targets
 	// based on the current state
-	gph.AddConditionalEdges("decide", func(_ context.Context, s graphstate.Reader) []string {
+	gph.AddConditionalEdges("decide", func(_ context.Context, view *graphstate.ReadView) []string {
 		// Read the decision from state
-		if next, ok := s.Get("next_path").(string); ok && next != "" {
+		next := graphstate.GetFromView(view, nextPathKey)
+		if next != "" {
 			// Return the selected path as a slice (can return multiple for parallel execution)
 			return []string{next}
 		}
@@ -142,9 +149,11 @@ func runScenario(choice string) {
 	}
 
 	// Display final state including action history
+	snap := st.Snapshot()
+	finalView := graphstate.NewReadView(snap)
+
 	fmt.Println("\n  Final state:")
-	finalState := state.GetAll()
-	for key, value := range finalState {
-		fmt.Printf("    %s: %v\n", key, value)
-	}
+	fmt.Printf("    choice: %v\n", graphstate.GetFromView(finalView, choiceKey))
+	fmt.Printf("    next_path: %v\n", graphstate.GetFromView(finalView, nextPathKey))
+	fmt.Printf("    action_history: %v\n", graphstate.GetFromView(finalView, actionHistoryKey.Key))
 }

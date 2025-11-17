@@ -569,9 +569,11 @@ streamWriter(&graph.NodeResult{
 ### Conditional Streaming
 
 ```go
-func process(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+var VerboseKey = state.NewKey("verbose", false)
+
+func process(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    verbose := s.Get("verbose").(bool)
+    verbose := state.GetFromView(view, VerboseKey)
     
     for i, item := range items {
         process(item)

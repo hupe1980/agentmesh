@@ -16,8 +16,16 @@ import (
 func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	t.Parallel()
 
-	stateManager, err := state.NewStateManager(0)
-	require.NoError(t, err)
+	fromAKey := state.NewKey("from_a", "")
+	counterKey := state.NewKey("counter", 0)
+	fromBKey := state.NewKey("from_b", "")
+	statusKey := state.NewKey("status", "")
+
+	stateManager := newTestState()
+	state.Register(stateManager, fromAKey)
+	state.Register(stateManager, counterKey)
+	state.Register(stateManager, fromBKey)
+	state.Register(stateManager, statusKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -25,7 +33,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	// Node A sends updates to Node B
 	g.AddNode(&graph.Node{
 		Name: "node_a",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			// Send data to node_b
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -42,16 +50,15 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	// Node B receives updates from Node A
 	g.AddNode(&graph.Node{
 		Name: "node_b",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			// Verify we received the update from node_a
-			fromA := s.Get("from_a")
-			counter := s.Get("counter")
-			msgs := s.MessagesSnapshot()
+			fromA := state.GetFromView(s, fromAKey)
+			counter := state.GetFromView(s, counterKey)
+			msgs := state.GetMessages(s)
 
 			// These should be available after node_a completes
-			require.NotNil(t, fromA, "Should receive update from node_a")
+			require.NotEmpty(t, fromA, "Should receive update from node_a")
 			require.Equal(t, "hello from A", fromA)
-			require.NotNil(t, counter)
 			require.Equal(t, 1, counter)
 			require.NotEmpty(t, msgs, "Should receive messages from node_a")
 
@@ -78,9 +85,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	require.NotNil(t, events)
 
 	// Verify final state
-	require.Equal(t, "hello from A", stateManager.Get("from_a"))
-	require.Equal(t, "hello from B", stateManager.Get("from_b"))
-	require.Equal(t, "received", stateManager.Get("status"))
+	snap := stateManager.Snapshot()
+	view := state.NewReadView(snap)
+	require.Equal(t, "hello from A", state.GetFromView(view, fromAKey))
+	require.Equal(t, "hello from B", state.GetFromView(view, fromBKey))
+	require.Equal(t, "received", state.GetFromView(view, statusKey))
 }
 
 // TestParallelMessagePropagation tests that parallel nodes can send messages
@@ -88,8 +97,14 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 func TestParallelMessagePropagation(t *testing.T) {
 	t.Parallel()
 
-	stateManager, err := state.NewStateManager(0)
-	require.NoError(t, err)
+	fromParallelAKey := state.NewKey("from_parallel_a", "")
+	fromParallelBKey := state.NewKey("from_parallel_b", "")
+	aggregatedKey := state.NewKey("aggregated", false)
+
+	stateManager := newTestState()
+	state.Register(stateManager, fromParallelAKey)
+	state.Register(stateManager, fromParallelBKey)
+	state.Register(stateManager, aggregatedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -97,7 +112,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	// Two parallel nodes sending to the same target
 	g.AddNode(&graph.Node{
 		Name: "parallel_a",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_a": "data_a"},
 			}, nil
@@ -106,7 +121,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "parallel_b",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"from_parallel_b": "data_b"},
 			}, nil
@@ -116,13 +131,13 @@ func TestParallelMessagePropagation(t *testing.T) {
 	// Aggregator node receives from both parallel nodes
 	g.AddNode(&graph.Node{
 		Name: "aggregator",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			dataA := s.Get("from_parallel_a")
-			dataB := s.Get("from_parallel_b")
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+			dataA := state.GetFromView(s, fromParallelAKey)
+			dataB := state.GetFromView(s, fromParallelBKey)
 
 			// Both updates should be present
-			require.NotNil(t, dataA, "Should receive update from parallel_a")
-			require.NotNil(t, dataB, "Should receive update from parallel_b")
+			require.NotEmpty(t, dataA, "Should receive update from parallel_a")
+			require.NotEmpty(t, dataB, "Should receive update from parallel_b")
 			require.Equal(t, "data_a", dataA)
 			require.Equal(t, "data_b", dataB)
 
@@ -148,9 +163,11 @@ func TestParallelMessagePropagation(t *testing.T) {
 	}
 
 	// Verify all updates were applied
-	require.Equal(t, "data_a", stateManager.Get("from_parallel_a"))
-	require.Equal(t, "data_b", stateManager.Get("from_parallel_b"))
-	require.Equal(t, true, stateManager.Get("aggregated"))
+	snap := stateManager.Snapshot()
+	view := state.NewReadView(snap)
+	require.Equal(t, "data_a", state.GetFromView(view, fromParallelAKey))
+	require.Equal(t, "data_b", state.GetFromView(view, fromParallelBKey))
+	require.Equal(t, true, state.GetFromView(view, aggregatedKey))
 }
 
 // TestMessagePropagationSequential verifies that updates from one node
@@ -158,8 +175,14 @@ func TestParallelMessagePropagation(t *testing.T) {
 func TestMessagePropagationSequential(t *testing.T) {
 	t.Parallel()
 
-	stateManager, err := state.NewStateManager(0)
-	require.NoError(t, err)
+	stepKey := state.NewKey("step", 0)
+	dataKey := state.NewKey("data", "")
+	finalKey := state.NewKey("final", false)
+
+	stateManager := newTestState()
+	state.Register(stateManager, stepKey)
+	state.Register(stateManager, dataKey)
+	state.Register(stateManager, finalKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -167,7 +190,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 1: Sets initial values
 	g.AddNode(&graph.Node{
 		Name: "node_1",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{
 					"step": 1,
@@ -180,12 +203,11 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 2: Reads from node 1, adds its own data
 	g.AddNode(&graph.Node{
 		Name: "node_2",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			step := s.Get("step")
-			data := s.Get("data")
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+			step := state.GetFromView(s, stepKey)
+			data := state.GetFromView(s, dataKey)
 
-			require.NotNil(t, step, "Should receive step from node_1")
-			require.Equal(t, 1, step)
+			require.Equal(t, 1, step, "Should receive step from node_1")
 			require.Equal(t, "from_node_1", data)
 
 			return &graph.NodeResult{
@@ -200,12 +222,11 @@ func TestMessagePropagationSequential(t *testing.T) {
 	// Node 3: Reads from node 2, verifies propagation
 	g.AddNode(&graph.Node{
 		Name: "node_3",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			step := s.Get("step")
-			data := s.Get("data")
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+			step := state.GetFromView(s, stepKey)
+			data := state.GetFromView(s, dataKey)
 
-			require.NotNil(t, step, "Should receive step from node_2")
-			require.Equal(t, 2, step)
+			require.Equal(t, 2, step, "Should receive step from node_2")
 			require.Equal(t, "from_node_2", data)
 
 			return &graph.NodeResult{
@@ -232,6 +253,8 @@ func TestMessagePropagationSequential(t *testing.T) {
 	}
 
 	// Verify final state has all updates
-	require.Equal(t, 3, stateManager.Get("step"))
-	require.Equal(t, true, stateManager.Get("final"))
+	snap := stateManager.Snapshot()
+	view := state.NewReadView(snap)
+	require.Equal(t, 3, state.GetFromView(view, stepKey))
+	require.Equal(t, true, state.GetFromView(view, finalKey))
 }

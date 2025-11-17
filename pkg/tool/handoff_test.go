@@ -12,6 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function for tests
+func newTestState() *stateif.State {
+	st := stateif.NewState()
+	stateif.Register(st, stateif.MessagesKey.Key)
+	return st
+}
+
 func TestHandoffToAgent(t *testing.T) {
 	ctx := context.Background()
 
@@ -83,13 +90,12 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	state, err := stateif.NewStateManager(0)
-	require.NoError(t, err)
-	g, err := graph.NewGraph(state)
+	st := newTestState()
+	g, err := graph.NewGraph(st)
 	require.NoError(t, err)
 	g.AddNode(&graph.Node{
 		Name: "worker",
-		RunFunc: func(ctx context.Context, w stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *stateif.ReadView) (*graph.NodeResult, error) {
 			if failOnce {
 				failOnce = false
 				return nil, assert.AnError
@@ -176,14 +182,13 @@ func TestIsValidResult(t *testing.T) {
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
 func createMockWorkerGraph(t *testing.T, response string) graph.MessageRunnable {
-	state, err := stateif.NewStateManager(0)
-	require.NoError(t, err)
-	g, err := graph.NewGraph(state)
+	st := newTestState()
+	g, err := graph.NewGraph(st)
 	require.NoError(t, err)
 
 	g.AddNode(&graph.Node{
 		Name: "worker",
-		RunFunc: func(ctx context.Context, w stateif.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *stateif.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Messages: []message.Message{message.NewAIMessageFromText(response)},
 			}, nil

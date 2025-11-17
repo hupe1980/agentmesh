@@ -10,10 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function for tests
+func newTestState() *state.State {
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+	return st
+}
+
 func TestValidation_BasicStructure(t *testing.T) {
 	t.Run("empty graph with default options", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		g, _ := graph.NewGraph(newTestState())
 
 		validator := NewValidator(DefaultValidationOptions())
 		errors := validator.Validate(g)
@@ -23,8 +29,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("empty graph with strict validation", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		validator := NewValidator(StrictValidationOptions())
 		errors := validator.Validate(g)
@@ -35,8 +41,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("node with nil RunFunc", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name:    "invalid",
@@ -58,12 +64,12 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("node with reserved name", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: StartNode,
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -85,12 +91,12 @@ func TestValidation_BasicStructure(t *testing.T) {
 
 func TestValidation_Edges(t *testing.T) {
 	t.Run("edge to non-existent node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -111,12 +117,12 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge from non-existent node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "b",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -137,12 +143,12 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge from END node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -163,12 +169,12 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge to START node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -191,10 +197,10 @@ func TestValidation_Edges(t *testing.T) {
 
 func TestValidation_Conditionals(t *testing.T) {
 	t.Run("conditional from non-existent node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
-		g.AddConditionalEdges("non_existent", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("non_existent", func(ctx context.Context, s *state.ReadView) []string {
 			return []string{"a"}
 		}, []string{"a"})
 
@@ -212,16 +218,16 @@ func TestValidation_Conditionals(t *testing.T) {
 	})
 
 	t.Run("conditional to non-existent node", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
-		g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
 			return []string{"non_existent"}
 		}, []string{"non_existent"})
 
@@ -240,18 +246,18 @@ func TestValidation_Conditionals(t *testing.T) {
 	})
 
 	t.Run("conditional with nil condition function", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddNode(&graph.Node{
 			Name: "target",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -274,18 +280,18 @@ func TestValidation_Conditionals(t *testing.T) {
 
 func TestValidation_Topology(t *testing.T) {
 	t.Run("cycle detection", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddNode(&graph.Node{
 			Name: "b",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -313,18 +319,18 @@ func TestValidation_Topology(t *testing.T) {
 	})
 
 	t.Run("unreachable node detection", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "reachable",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddNode(&graph.Node{
 			Name: "unreachable",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -352,12 +358,12 @@ func TestValidation_Topology(t *testing.T) {
 	})
 
 	t.Run("dead end node detection", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "dead_end",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
@@ -386,78 +392,78 @@ func TestValidation_Topology(t *testing.T) {
 
 func TestCompile_WithValidation(t *testing.T) {
 	t.Run("valid graph compiles successfully", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "process",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddEdge(StartNode, "process")
 		g.AddEdge("process", EndNode)
 
-		compiled, err := Compile(g, stateManager)
+		compiled, err := Compile(g, st)
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 	})
 
 	t.Run("invalid graph fails compilation", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddEdge("a", "non_existent")
 
-		_, err := Compile(g, stateManager)
+		_, err := Compile(g, st)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 		assert.Contains(t, err.Error(), "non_existent")
 	})
 
 	t.Run("strict validation enforces constraints", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "orphan",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		// No edges - orphaned node
 
 		// Default validation passes
-		_, err := Compile(g, stateManager)
+		_, err := Compile(g, st)
 		require.NoError(t, err)
 
 		// Strict validation fails
-		_, err = Compile(g, stateManager, WithStrictValidation())
+		_, err = Compile(g, st, WithStrictValidation())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 	})
 
 	t.Run("disable validation", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		// Intentionally invalid graph
 		g.AddNode(&graph.Node{
 			Name: "a",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddEdge("a", "non_existent")
 
 		// With validation disabled, compilation should succeed
-		compiled, err := Compile(g, stateManager, WithoutValidation())
+		compiled, err := Compile(g, st, WithoutValidation())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 	})
@@ -465,14 +471,14 @@ func TestCompile_WithValidation(t *testing.T) {
 
 func TestValidation_ComplexGraphs(t *testing.T) {
 	t.Run("diamond pattern is valid", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		// Diamond: start -> split -> (left, right) -> merge -> end
 		for _, name := range []string{"split", "left", "right", "merge"} {
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 					return &graph.NodeResult{}, nil
 				},
 			})
@@ -491,30 +497,30 @@ func TestValidation_ComplexGraphs(t *testing.T) {
 	})
 
 	t.Run("conditional branches are valid", func(t *testing.T) {
-		stateManager, _ := state.NewStateManager(0)
-		g, _ := graph.NewGraph(stateManager)
+		st := newTestState()
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddNode(&graph.Node{
 			Name: "pathA",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 		g.AddNode(&graph.Node{
 			Name: "pathB",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		})
 
 		g.AddEdge(StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
 			return []string{"pathA"}
 		}, []string{"pathA", "pathB"})
 		g.AddEdge("pathA", EndNode)

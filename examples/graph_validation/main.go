@@ -36,13 +36,13 @@ func main() {
 func example1_ValidGraph() {
 	fmt.Println("--- Example 1: Valid Graph ---")
 
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := graph.NewGraph(stateManager)
+	st := state.NewState()
+	g, _ := graph.NewGraph(st)
 
 	// Create a simple linear graph
 	g.AddNode(&graph.Node{
 		Name: "process",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("Processing...")
 			return &graph.NodeResult{}, nil
 		},
@@ -73,13 +73,13 @@ func example1_ValidGraph() {
 func example2_InvalidGraph() {
 	fmt.Println("--- Example 2: Invalid Graph (Caught at Compile Time) ---")
 
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := graph.NewGraph(stateManager)
+	st := state.NewState()
+	g, _ := graph.NewGraph(st)
 
 	// Create an invalid graph - edge to non-existent node
 	g.AddNode(&graph.Node{
 		Name: "start_node",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		},
 	})
@@ -100,19 +100,19 @@ func example2_InvalidGraph() {
 func example3_StrictValidation() {
 	fmt.Println("--- Example 3: Strict Validation ---")
 
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := graph.NewGraph(stateManager)
+	st := state.NewState()
+	g, _ := graph.NewGraph(st)
 
 	// Create a graph with an unreachable node
 	g.AddNode(&graph.Node{
 		Name: "reachable",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		},
 	})
 	g.AddNode(&graph.Node{
 		Name: "unreachable",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		},
 	})
@@ -142,19 +142,19 @@ func example3_StrictValidation() {
 func example4_CustomValidation() {
 	fmt.Println("--- Example 4: Custom Validation Options ---")
 
-	stateManager, _ := state.NewStateManager(0)
-	g, _ := graph.NewGraph(stateManager)
+	st := state.NewState()
+	g, _ := graph.NewGraph(st)
 
 	// Create a graph with a cycle (for iterative algorithms)
 	g.AddNode(&graph.Node{
 		Name: "agent",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		},
 	})
 	g.AddNode(&graph.Node{
 		Name: "evaluator",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			// Check quality and potentially loop back
 			return &graph.NodeResult{}, nil
 		},

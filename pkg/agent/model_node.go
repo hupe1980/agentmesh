@@ -83,16 +83,19 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 
 	return &graph.Node{
 		Name: config.nodeName,
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-			// Get messages for model invocation
-			events := s.MessagesSnapshot()
+		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+			// Get messages from state
+			events := state.GetMessages(view)
+			messages := state.ExtractMessageContent(events)
 
 			// Create request
 			req := &model.Request{
-				Messages:     state.ExtractMessages(events),
+				Messages:     messages,
 				SystemPrompt: config.systemPrompt,
 				Tools:        config.tools,
-			} // Execute BeforeModel plugins
+			}
+
+			// Execute BeforeModel plugins
 			if config.callbacks != nil && config.callbacks.HasPlugins() {
 				resp, err := config.callbacks.ExecuteBeforeModel(ctx, req)
 				if err != nil {
@@ -102,7 +105,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 					// Short-circuit: use plugin response instead of calling model
 					return &graph.NodeResult{
 						Messages: []message.Message{resp.Message},
-						Updates:  map[string]any{},
+						Updates:  state.Updates{},
 					}, nil
 				}
 			}
@@ -126,7 +129,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 
 			return &graph.NodeResult{
 				Messages: []message.Message{resp.Message},
-				Updates:  map[string]any{},
+				Updates:  state.Updates{},
 			}, nil
 		},
 	}

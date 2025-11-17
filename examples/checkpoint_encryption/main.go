@@ -58,25 +58,32 @@ func basicEncryptionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
+	// Define state keys
+	creditCardKey := graphstate.NewKey("credit_card", "")
+	ssnKey := graphstate.NewKey("ssn", "")
+	passwordKey := graphstate.NewKey("password", "")
+
 	// Create a simple graph
-	state, err := graphstate.NewStateManager(10)
-	if err != nil {
-		log.Fatal(err)
-	}
-	g, err := graph.NewGraph(state)
+	st := graphstate.NewState()
+	graphstate.Register(st, graphstate.MessagesKey.Key)
+	graphstate.Register(st, creditCardKey)
+	graphstate.Register(st, ssnKey)
+	graphstate.Register(st, passwordKey)
+
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	g.AddNode(&graph.Node{
 		Name: "secure_node",
-		RunFunc: func(ctx context.Context, state graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			fmt.Println("  Processing sensitive data...")
 			return &graph.NodeResult{
-				Updates: map[string]any{
-					"credit_card": "4111-1111-1111-1111",
-					"ssn":         "123-45-6789",
-					"password":    "super-secret",
+				Updates: graphstate.Updates{
+					creditCardKey.Name(): "4111-1111-1111-1111",
+					ssnKey.Name():        "123-45-6789",
+					passwordKey.Name():   "super-secret",
 				},
 			}, nil
 		},

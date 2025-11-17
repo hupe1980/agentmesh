@@ -37,10 +37,13 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 	return docStrings
 }
 
+// DocumentsKey is the state key for storing retrieved documents in RAG workflows.
+var DocumentsKey = state.NewKey[[]string]("documents", nil)
+
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, state.Writer) (*graph.NodeResult, error) {
-	return func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-		events := s.MessagesSnapshot()
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
+	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		events := state.GetMessages(view)
 		if len(events) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
@@ -55,22 +58,23 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, sta
 			return nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
+		updates := state.Updates{}
+		state.SetInUpdates(updates, DocumentsKey, extractDocumentContent(docs))
+
 		return &graph.NodeResult{
-			Updates: map[string]any{
-				"documents": extractDocumentContent(docs),
-			},
+			Updates: updates,
 		}, nil
 	}
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, state.Writer) (*graph.NodeResult, error) {
-	return func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-		events := s.MessagesSnapshot()
-		messages := state.ExtractMessages(events)
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
+	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		events := state.GetMessages(view)
+		messages := state.ExtractMessageContent(events)
 
-		docs, ok := s.Get("documents").([]string)
-		if !ok || len(docs) == 0 {
+		docs := state.GetFromView(view, DocumentsKey)
+		if len(docs) == 0 {
 			// No documents found, generate without context
 			return generateWithModel(ctx, mdl, messages, "")
 		}
@@ -112,12 +116,11 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create state manager: %w", err)
-	}
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+	state.Register(st, DocumentsKey)
 
-	g, err := graph.NewGraph(stateManager)
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create graph: %w", err)
 	}

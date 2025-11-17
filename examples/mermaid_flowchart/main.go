@@ -32,13 +32,13 @@ func simpleWorkflow() {
 	}
 
 	builder.
-		Node("preprocess", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("preprocess", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("process", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("postprocess", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("postprocess", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
 		AddEdge(graph.StartNode, "preprocess").
@@ -55,29 +55,31 @@ func simpleWorkflow() {
 }
 
 func conditionalWorkflow() {
+	categoryKey := state.NewKey("category", "")
+
 	builder, err := exec.NewBuilder()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	builder.
-		Node("analyze", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("analyze", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
-				Updates: map[string]any{"category": "simple"},
+				Updates: state.Updates{categoryKey.Name(): "simple"},
 			}, nil
 		}).
-		Node("simple_path", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("simple_path", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("complex_path", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("complex_path", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("finalize", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("finalize", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
 		AddEdge(graph.StartNode, "analyze").
-		AddConditionalEdges("analyze", func(ctx context.Context, s state.Reader) []string {
-			category := s.Get("category").(string)
+		AddConditionalEdges("analyze", func(ctx context.Context, view *state.ReadView) []string {
+			category := state.GetFromView(view, categoryKey)
 			if category == "simple" {
 				return []string{"simple_path"}
 			}
@@ -102,19 +104,19 @@ func parallelWorkflow() {
 	}
 
 	builder.
-		Node("split", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("split", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("worker_1", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("worker_1", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("worker_2", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("worker_2", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("worker_3", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("worker_3", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("merge", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("merge", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
 		AddEdge(graph.StartNode, "split").
@@ -135,38 +137,41 @@ func parallelWorkflow() {
 }
 
 func complexWorkflow() {
+	validKey := state.NewKey("valid", false)
+	priorityKey := state.NewKey("priority", "")
+
 	builder, err := exec.NewBuilder()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	builder.
-		Node("input_validation", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("input_validation", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
-				Updates: map[string]any{"valid": true, "priority": "high"},
+				Updates: state.Updates{validKey.Name(): true, priorityKey.Name(): "high"},
 			}, nil
 		}).
-		Node("high_priority", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("high_priority", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("normal_priority", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("normal_priority", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("transform", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("transform", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("enrich", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("enrich", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("aggregate", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("aggregate", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
-		Node("output", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		Node("output", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}).
 		AddEdge(graph.StartNode, "input_validation").
-		AddConditionalEdges("input_validation", func(ctx context.Context, s state.Reader) []string {
-			priority := s.Get("priority").(string)
+		AddConditionalEdges("input_validation", func(ctx context.Context, view *state.ReadView) []string {
+			priority := state.GetFromView(view, priorityKey)
 			if priority == "high" {
 				return []string{"high_priority"}
 			}

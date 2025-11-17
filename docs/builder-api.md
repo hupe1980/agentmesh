@@ -67,15 +67,15 @@ builder.
             Updates: map[string]any{"route": "left"},
         }, nil
     }).
-    Node("left", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    Node("left", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         return &graph.NodeResult{Updates: map[string]any{"result": "left"}}, nil
     }).
-    Node("right", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    Node("right", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
         return &graph.NodeResult{Updates: map[string]any{"result": "right"}}, nil
     }).
     AddEdge(graph.StartNode, "router").
-    AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
-        route := s.Get("route").(string)
+    AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
+        route := state.GetFromView(view, RouteKey)
         if route == "left" {
             return []string{"left"}
         }

@@ -48,16 +48,14 @@ func main() {
 	traceProvider := trace.Noop()     // Replace with opentelemetry.New(tracerProvider)
 
 	// Define type-safe state counter
-	var counterState = graphstate.NewCounter("counter")
+	counterKey := graphstate.NewKey("counter", 0)
 
 	// Create a simple graph
-	state, err := graphstate.NewStateManager(0) // Unlimited messages
-	if err != nil {
-		panic(err)
-	}
-	// Initialize counter to 0
-	_ = counterState.Set(state, 0)
-	g, err := graph.NewGraph(state)
+	st := graphstate.NewState()
+	graphstate.Register(st, graphstate.MessagesKey.Key)
+	graphstate.Register(st, counterKey)
+
+	g, err := graph.NewGraph(st)
 	if err != nil {
 		panic(err)
 	}
@@ -66,7 +64,7 @@ func main() {
 	// Automatic instrumentation happens behind the scenes
 	if err := g.AddNode(&graph.Node{
 		Name: "step1",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -80,14 +78,12 @@ func main() {
 			// Simulate work
 			time.Sleep(10 * time.Millisecond)
 
-			// Type-safe atomic increment
-			newValue, err := counterState.Increment(s)
-			if err != nil {
-				return nil, err
-			}
+			// Increment counter
+			counter := graphstate.GetFromView(view, counterKey)
+			counter++
 
 			return &graph.NodeResult{
-				Updates: map[string]any{counterState.Name(): newValue},
+				Updates: graphstate.Updates{counterKey.Name(): counter},
 			}, nil
 		},
 	}); err != nil {
@@ -96,7 +92,7 @@ func main() {
 
 	if err := g.AddNode(&graph.Node{
 		Name: "step2",
-		RunFunc: func(ctx context.Context, s graphstate.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 
@@ -107,18 +103,12 @@ func main() {
 
 			time.Sleep(15 * time.Millisecond)
 
-			// Type-safe counter read and update
-			currentCounter, err := counterState.Get(s)
-			if err != nil {
-				return nil, err
-			}
+			// Read and update counter
+			currentCounter := graphstate.GetFromView(view, counterKey)
 			newValue := currentCounter + 10
-			if err := counterState.Set(s, newValue); err != nil {
-				return nil, err
-			}
 
 			return &graph.NodeResult{
-				Updates: map[string]any{counterState.Name(): newValue},
+				Updates: graphstate.Updates{counterKey.Name(): newValue},
 			}, nil
 		},
 	}); err != nil {
@@ -129,10 +119,6 @@ func main() {
 	g.AddEdge("step1", "step2")
 
 	compiled, err := exec.CompileGraph(g)
-	if err != nil {
-		log.Fatal(err)
-	}
-	rg := compiled.(*exec.RunnableGraph)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -154,11 +140,10 @@ func main() {
 
 	duration := time.Since(startTime)
 
-	// Print results - type-safe read
-	counter, err := counterState.Get(rg.State())
-	if err != nil {
-		log.Fatalf("Failed to get counter: %v", err)
-	}
+	// Print results
+	snap := st.Snapshot()
+	finalView := graphstate.NewReadView(snap)
+	counter := graphstate.GetFromView(finalView, counterKey)
 	fmt.Printf("Final counter value: %d\n", counter)
 	fmt.Printf("Total execution time: %v\n", duration)
 

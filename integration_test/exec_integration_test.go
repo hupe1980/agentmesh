@@ -11,11 +11,12 @@ import (
 )
 
 func TestNewArchitecture(t *testing.T) {
+	// Define typed keys
+	stepKey := state.NewKey("step", "")
+
 	// Step 1: Build a simple graph
-	stateManager, err := state.NewStateManager(100)
-	if err != nil {
-		t.Fatalf("Failed to create state manager: %v", err)
-	}
+	stateManager := newTestState()
+	state.Register(stateManager, stepKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
@@ -24,7 +25,7 @@ func TestNewArchitecture(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "start",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"step": "started"},
 			}, nil
@@ -33,7 +34,7 @@ func TestNewArchitecture(t *testing.T) {
 
 	g.AddNode(&graph.Node{
 		Name: "process",
-		RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"step": "processed"},
 				Messages: []message.Message{
@@ -66,15 +67,17 @@ func TestNewArchitecture(t *testing.T) {
 	}
 
 	// Verify state was updated
-	val := stateManager.Get("step")
+	snap := stateManager.Snapshot()
+	view := state.NewReadView(snap)
+	val := state.GetFromView(view, stepKey)
 	if val != "processed" {
 		t.Errorf("Expected step='processed', got %v", val)
 	}
 
 	// Verify messages were added
-	messages, exists := stateManager.GetChannel("messages")
-	if !exists || messages == nil {
-		t.Error("Expected messages channel to exist")
+	msgs := state.GetFromView(view, state.MessagesKey.Key)
+	if len(msgs) == 0 {
+		t.Error("Expected messages to exist")
 	}
 
 	t.Logf("✅ New architecture test passed! Generated %d results", resultCount)

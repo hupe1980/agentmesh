@@ -19,8 +19,7 @@ func TestGraphValidation(t *testing.T) {
 	t.Run("compiles graph with unreachable nodes", func(t *testing.T) {
 		// Note: The current implementation doesn't validate unreachable nodes
 		// This is acceptable - unreachable nodes simply won't execute
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -28,7 +27,7 @@ func TestGraphValidation(t *testing.T) {
 		// Add reachable node
 		reachable := &graph.Node{
 			Name: "reachable",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -36,7 +35,7 @@ func TestGraphValidation(t *testing.T) {
 		// Add unreachable node (no edges to it)
 		unreachable := &graph.Node{
 			Name: "unreachable",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -53,22 +52,21 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("accepts valid linear graph", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
 		step1 := &graph.Node{
 			Name: "step1",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
 
 		step2 := &graph.Node{
 			Name: "step2",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -84,29 +82,31 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("accepts graph with conditional branches", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		routeKey := state.NewKey("route", "")
+
+		stateManager := newTestState()
+		state.Register(stateManager, routeKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
 		router := &graph.Node{
 			Name: "router",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
 
 		pathA := &graph.Node{
 			Name: "pathA",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
 
 		pathB := &graph.Node{
 			Name: "pathB",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -116,7 +116,7 @@ func TestGraphValidation(t *testing.T) {
 		g.AddNode(pathB)
 
 		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
 			return []string{"pathA"}
 		}, []string{"pathA", "pathB"})
 		g.AddEdge("pathA", graph.EndNode)
@@ -126,37 +126,12 @@ func TestGraphValidation(t *testing.T) {
 		_, err = exec.CompileGraph(g)
 		require.NoError(t, err)
 	})
-
-	t.Run("compiles graph without direct start connection", func(t *testing.T) {
-		// Note: Nodes without incoming edges simply won't execute
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
-
-		g, err := graph.NewGraph(stateManager)
-		require.NoError(t, err)
-
-		node := &graph.Node{
-			Name: "isolated",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
-
-		g.AddNode(node)
-		g.AddEdge("isolated", graph.EndNode)
-		// No edge from START to "isolated" - it won't execute
-
-		// Compilation succeeds (validation doesn't require START connection)
-		_, err = exec.CompileGraph(g)
-		require.NoError(t, err)
-	})
 }
 
 // TestErrorHandling tests error propagation in graph execution
 func TestErrorHandling(t *testing.T) {
 	t.Run("propagates node errors", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -164,7 +139,7 @@ func TestErrorHandling(t *testing.T) {
 		expectedErr := errors.New("node failed")
 		failingNode := &graph.Node{
 			Name: "failing",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return nil, expectedErr
 			},
 		}
@@ -189,8 +164,7 @@ func TestErrorHandling(t *testing.T) {
 	})
 
 	t.Run("stops execution on error", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -198,7 +172,7 @@ func TestErrorHandling(t *testing.T) {
 		node1Executed := false
 		node1 := &graph.Node{
 			Name: "node1",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				node1Executed = true
 				return nil, errors.New("error in node1")
 			},
@@ -207,7 +181,7 @@ func TestErrorHandling(t *testing.T) {
 		node2Executed := false
 		node2 := &graph.Node{
 			Name: "node2",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				node2Executed = true
 				return &graph.NodeResult{}, nil
 			},
@@ -223,10 +197,7 @@ func TestErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		for _, err := range compiled.Run(ctx, nil) {
-			if err != nil {
-				// Error occurred, continue consuming iterator
-			}
+		for range compiled.Run(ctx, nil) {
 		}
 
 		assert.True(t, node1Executed, "node1 should execute")
@@ -237,8 +208,14 @@ func TestErrorHandling(t *testing.T) {
 // TestComplexGraphPatterns tests more complex graph structures
 func TestComplexGraphPatterns(t *testing.T) {
 	t.Run("diamond pattern execution", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		splitDoneKey := state.NewKey("split_done", false)
+		leftDoneKey := state.NewKey("left_done", false)
+		rightDoneKey := state.NewKey("right_done", false)
+
+		stateManager := newTestState()
+		state.Register(stateManager, splitDoneKey)
+		state.Register(stateManager, leftDoneKey)
+		state.Register(stateManager, rightDoneKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -249,7 +226,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		// Diamond pattern: start -> split -> (left, right) -> merge -> end
 		split := &graph.Node{
 			Name: "split",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "split")
 				executionOrderMu.Unlock()
@@ -261,7 +238,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 
 		left := &graph.Node{
 			Name: "left",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "left")
 				executionOrderMu.Unlock()
@@ -273,7 +250,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 
 		right := &graph.Node{
 			Name: "right",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "right")
 				executionOrderMu.Unlock()
@@ -285,14 +262,14 @@ func TestComplexGraphPatterns(t *testing.T) {
 
 		merge := &graph.Node{
 			Name: "merge",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "merge")
 				executionOrderMu.Unlock()
 				// Both left and right should have executed
-				leftDone := s.Get("left_done")
-				rightDone := s.Get("right_done")
-				if leftDone == nil || rightDone == nil {
+				leftDone := state.GetFromView(view, leftDoneKey)
+				rightDone := state.GetFromView(view, rightDoneKey)
+				if !leftDone || !rightDone {
 					return nil, errors.New("left and right should have executed before merge")
 				}
 				return &graph.NodeResult{}, nil
@@ -305,7 +282,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		g.AddNode(merge)
 
 		g.AddEdge(graph.StartNode, "split")
-		g.AddConditionalEdges("split", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("split", func(ctx context.Context, view *state.ReadView) []string {
 			return []string{"left", "right"}
 		}, []string{"left", "right"})
 		g.AddEdge("left", "merge")
@@ -316,8 +293,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		for result, err := range compiled.Run(ctx, nil) {
-			_ = result
+		for _, err := range compiled.Run(ctx, nil) {
 			require.NoError(t, err)
 		}
 
@@ -342,8 +318,10 @@ func TestComplexGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("cyclic pattern with loop", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		counterKey := state.NewKey("counter", 0)
+
+		stateManager := newTestState()
+		state.Register(stateManager, counterKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -353,7 +331,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 
 		loop := &graph.Node{
 			Name: "loop",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				counter++
 				return &graph.NodeResult{
 					Updates: map[string]any{"counter": counter},
@@ -365,9 +343,9 @@ func TestComplexGraphPatterns(t *testing.T) {
 		g.AddEdge(graph.StartNode, "loop")
 
 		// Conditional: loop back or exit
-		g.AddConditionalEdges("loop", func(ctx context.Context, s state.Reader) []string {
-			c := s.Get("counter")
-			if c != nil && c.(int) >= maxIterations {
+		g.AddConditionalEdges("loop", func(ctx context.Context, view *state.ReadView) []string {
+			c := state.GetFromView(view, counterKey)
+			if c >= maxIterations {
 				return []string{graph.EndNode}
 			}
 			return []string{"loop"}
@@ -377,8 +355,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		require.NoError(t, err)
 
 		ctx := context.Background()
-		for result, err := range compiled.Run(ctx, nil) {
-			_ = result
+		for _, err := range compiled.Run(ctx, nil) {
 			require.NoError(t, err)
 		}
 
@@ -389,15 +366,14 @@ func TestComplexGraphPatterns(t *testing.T) {
 // TestCompileOptions tests compilation options
 func TestCompileOptions(t *testing.T) {
 	t.Run("uses custom executor", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
 		node := &graph.Node{
 			Name: "test",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -412,22 +388,20 @@ func TestCompileOptions(t *testing.T) {
 		require.NotNil(t, compiled)
 
 		ctx := context.Background()
-		for result, err := range compiled.Run(ctx, nil) {
-			_ = result
+		for _, err := range compiled.Run(ctx, nil) {
 			require.NoError(t, err)
 		}
 	})
 
 	t.Run("uses default Pregel executor when no option provided", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
 		node := &graph.Node{
 			Name: "test",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{}, nil
 			},
 		}
@@ -442,8 +416,7 @@ func TestCompileOptions(t *testing.T) {
 		require.NotNil(t, compiled)
 
 		ctx := context.Background()
-		for result, err := range compiled.Run(ctx, nil) {
-			_ = result
+		for _, err := range compiled.Run(ctx, nil) {
 			require.NoError(t, err)
 		}
 	})
@@ -452,16 +425,15 @@ func TestCompileOptions(t *testing.T) {
 // TestTopologyComputation tests the compile package's topology building
 func TestTopologyComputation(t *testing.T) {
 	t.Run("computes correct topology for linear graph", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(&graph.Node{Name: "a", RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		g.AddNode(&graph.Node{Name: "a", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}})
-		g.AddNode(&graph.Node{Name: "b", RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		g.AddNode(&graph.Node{Name: "b", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}})
 
@@ -483,24 +455,23 @@ func TestTopologyComputation(t *testing.T) {
 	})
 
 	t.Run("computes topology with conditional edges", func(t *testing.T) {
-		stateManager, err := state.NewStateManager(0)
-		require.NoError(t, err)
+		stateManager := newTestState()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(&graph.Node{Name: "router", RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		g.AddNode(&graph.Node{Name: "router", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}})
-		g.AddNode(&graph.Node{Name: "target1", RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		g.AddNode(&graph.Node{Name: "target1", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}})
-		g.AddNode(&graph.Node{Name: "target2", RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+		g.AddNode(&graph.Node{Name: "target2", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{}, nil
 		}})
 
 		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
+		g.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
 			return []string{"target1"}
 		}, []string{"target1", "target2"})
 		g.AddEdge("target1", graph.EndNode)

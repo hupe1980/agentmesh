@@ -123,7 +123,7 @@ func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable,
 	}
 
 	// Step 1: Compile topology using pkg/compile with validation options
-	compiled, err := compile.Compile(g, g.StateManager(), cfg.compileOpts...)
+	compiled, err := compile.Compile(g, g.State(), cfg.compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %w", err)
 	}
@@ -261,11 +261,11 @@ func (rg *RunnableGraph) GetRuntimeMetrics() *RuntimeMetrics {
 // Example:
 //
 //	state := runnable.State()
-//	value := state.Get("key")
-//	state.Set("key", "value")
-//	messages := state.MessagesSnapshot()
-func (rg *RunnableGraph) State() state.StateManager {
-	return rg.compiled.StateManager
+//	value := state.Get[string](myKey)
+//	state.Set(ctx, myKey, "value")
+//	snapshot := state.Snapshot()
+func (rg *RunnableGraph) State() *state.State {
+	return rg.compiled.State
 }
 
 // ApplyState applies state updates to the graph's state manager.
@@ -273,16 +273,13 @@ func (rg *RunnableGraph) State() state.StateManager {
 //
 // Example:
 //
-//	updates := map[string]any{
-//	    "approved": true,
-//	    "user_input": "proceed",
-//	}
-//	runnable.ApplyState(updates)
-func (rg *RunnableGraph) ApplyState(updates map[string]any) error {
-	for key, value := range updates {
-		if err := rg.compiled.StateManager.Set(key, value); err != nil {
-			return fmt.Errorf("failed to apply state for key %q: %w", key, err)
-		}
+//	updates := state.Updates{}
+//	state.SetInUpdates(updates, approvedKey, true)
+//	state.SetInUpdates(updates, userInputKey, "proceed")
+//	runnable.ApplyState(ctx, updates)
+func (rg *RunnableGraph) ApplyState(ctx context.Context, updates state.Updates) error {
+	if err := rg.compiled.State.ApplyUpdates(ctx, updates); err != nil {
+		return fmt.Errorf("failed to apply state updates: %w", err)
 	}
 	return nil
 }

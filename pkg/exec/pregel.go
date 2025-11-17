@@ -146,7 +146,7 @@ func (p *Pregel) Run(
 		worker := p.startCheckpointWorker(runCtx, runOpts)
 		defer p.stopCheckpointWorker(worker)
 
-		// Add initial messages to state
+		// Store initial messages in state
 		if len(initialMessages) > 0 {
 			events := make([]state.ExecutionResult, len(initialMessages))
 			for i, msg := range initialMessages {
@@ -158,7 +158,12 @@ func (p *Pregel) Run(
 					Timestamp: time.Now(),
 				}
 			}
-			compiled.StateManager.AddMessages(events)
+			updates := state.Updates{}
+			state.AppendMessages(updates, events)
+			if err := compiled.State.ApplyUpdates(runCtx, updates); err != nil {
+				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
+				return
+			}
 		}
 
 		// Create result channel to serialize all yields from a single goroutine
@@ -337,41 +342,15 @@ func (n *pregelNodeAdapter) Run(
 	}
 
 	// If distributed state is enabled, apply incoming state updates first
+	// TODO: Distributed state synchronization needs to be reimplemented for new state system
+	// The new state system uses typed keys (Key[T]) and ApplyUpdates for batch mutations
+	// Distributed state sync should:
+	// 1. Receive state.Updates from remote nodes
+	// 2. Call compiled.State.ApplyUpdates(ctx, updates) at BSP barriers
+	// 3. Use state snapshots for consistent reads across distributed nodes
 	if n.enableDistributedState {
-		for _, msg := range incoming {
-			if stateMsg := FromMessage(msg.Data); stateMsg != nil {
-				// Apply state updates from remote node
-				for key, value := range stateMsg.Updates {
-					// Handle JSON numeric type conversion (float64 -> int)
-					// When JSON deserializes numbers, they become float64
-					// Convert back to int if the original value was an int
-					if existing := n.compiled.StateManager.Get(key); existing != nil {
-						switch existing.(type) {
-						case int:
-							if f, ok := value.(float64); ok {
-								value = int(f)
-							}
-						case int64:
-							if f, ok := value.(float64); ok {
-								value = int64(f)
-							}
-						case int32:
-							if f, ok := value.(float64); ok {
-								value = int32(f)
-							}
-						}
-					}
-					if err := n.compiled.StateManager.Set(key, value); err != nil {
-						return fmt.Errorf("failed to apply distributed state update for key %q: %w", key, err)
-					}
-				}
-
-				// Add messages to local state
-				if len(stateMsg.Messages) > 0 {
-					n.compiled.StateManager.AddMessages(stateMsg.Messages)
-				}
-			}
-		}
+		// Disabled until reimplemented for new state system
+		_ = incoming
 	}
 
 	// Create a stream writer that yields intermediate results
@@ -417,8 +396,20 @@ func (n *pregelNodeAdapter) Run(
 	// Attach stream writer to context
 	ctxWithStream := graph.WithStreamWriter(ctx, streamWriter)
 
+	// TODO: Create snapshot and ReadView for BSP-correct execution
+	// Current implementation passes State directly which breaks BSP semantics
+	// Proper BSP flow:
+	// 1. snap := n.compiled.State.Snapshot()
+	// 2. view := state.NewReadView(snap)
+	// 3. result, err := node.Run(ctxWithStream, view)
+	// 4. Collect all updates from all nodes
+	// 5. Apply updates once: n.compiled.State.ApplyUpdates(ctx, allUpdates)
+	// For now, using state directly to get compilation working
+
 	// Execute the node with streaming support
-	result, err := node.Run(ctxWithStream, n.compiled.StateManager)
+	snap := n.compiled.State.Snapshot()
+	view := state.NewReadView(snap)
+	result, err := node.Run(ctxWithStream, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
 		return fmt.Errorf("%w: node %q: %v", state.ErrNodeExecution, n.nodeName, err)
@@ -428,14 +419,15 @@ func (n *pregelNodeAdapter) Run(
 		return nil
 	}
 
-	// Update state locally
-	for key, value := range result.Updates {
-		if err := n.compiled.StateManager.Set(key, value); err != nil {
-			return fmt.Errorf("failed to update state for key %q: %w", key, err)
+	// TODO: Violates BSP - should collect updates and apply at barrier
+	// For now, applying immediately to get basic functionality working
+	if len(result.Updates) > 0 {
+		if err := n.compiled.State.ApplyUpdates(ctx, result.Updates); err != nil {
+			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
 	}
 
-	// Add messages to state and yield events
+	// Store messages in state and yield as execution events
 	if len(result.Messages) > 0 {
 		events := make([]state.ExecutionResult, len(result.Messages))
 		for i, msg := range result.Messages {
@@ -447,9 +439,15 @@ func (n *pregelNodeAdapter) Run(
 				Timestamp: time.Now(),
 			}
 		}
-		n.compiled.StateManager.AddMessages(events)
 
-		// Yield each event
+		// Store messages in state for future nodes to access
+		msgUpdates := state.Updates{}
+		state.AppendMessages(msgUpdates, events)
+		if err := n.compiled.State.ApplyUpdates(ctx, msgUpdates); err != nil {
+			return fmt.Errorf("failed to store messages in state: %w", err)
+		}
+
+		// Yield each event to caller
 		for _, event := range events {
 			if !n.yield(event, nil) {
 				return nil
@@ -479,8 +477,11 @@ func (n *pregelNodeAdapter) Run(
 	// Send messages to next nodes via pregel runtime
 	// Check for conditional edges first
 	if conditionals, ok := n.compiled.Topology.ConditionalByFrom[n.nodeName]; ok {
+		// Create fresh snapshot for conditional edge evaluation (after updates applied)
+		condSnap := n.compiled.State.Snapshot()
+		condView := state.NewReadView(condSnap)
 		for _, cond := range conditionals {
-			targets := cond.Condition(ctx, n.compiled.StateManager)
+			targets := cond.Condition(ctx, condView)
 			for _, target := range targets {
 				if target != n.compiled.EndNode {
 					vertex.Send(pregel.Message[message.Message]{

@@ -30,40 +30,46 @@ func main() {
 		panic(err)
 	}
 
+	// Define state keys
+	validKey := state.NewKey("valid", false)
+	priorityKey := state.NewKey("priority", "")
+	processedKey := state.NewKey("processed", false)
+	completeKey := state.NewKey("complete", false)
+
 	// Add nodes
-	builder.Node("input_validator", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+	builder.Node("input_validator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 		fmt.Println("✓ Validating input...")
 		return &graph.NodeResult{
-			Updates: map[string]any{
-				"valid":    true,
-				"priority": "high",
+			Updates: state.Updates{
+				validKey.Name():    true,
+				priorityKey.Name(): "high",
 			},
 		}, nil
 	})
 
-	builder.Node("router", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 		fmt.Println("✓ Routing request...")
 		return &graph.NodeResult{}, nil
 	})
 
-	builder.Node("high_priority_handler", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+	builder.Node("high_priority_handler", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 		fmt.Println("✓ Handling high priority request...")
 		return &graph.NodeResult{
-			Updates: map[string]any{"processed": true},
+			Updates: state.Updates{processedKey.Name(): true},
 		}, nil
 	})
 
-	builder.Node("normal_handler", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+	builder.Node("normal_handler", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 		fmt.Println("✓ Handling normal request...")
 		return &graph.NodeResult{
-			Updates: map[string]any{"processed": true},
+			Updates: state.Updates{processedKey.Name(): true},
 		}, nil
 	})
 
-	builder.Node("aggregator", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+	builder.Node("aggregator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 		fmt.Println("✓ Aggregating results...")
 		return &graph.NodeResult{
-			Updates: map[string]any{"complete": true},
+			Updates: state.Updates{completeKey.Name(): true},
 		}, nil
 	})
 
@@ -72,8 +78,8 @@ func main() {
 	builder.AddEdge("input_validator", "router")
 
 	// Conditional routing based on priority
-	builder.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
-		priority := s.Get("priority")
+	builder.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
+		priority := state.GetFromView(view, priorityKey)
 		if priority == "high" {
 			return []string{"high_priority_handler"}
 		}

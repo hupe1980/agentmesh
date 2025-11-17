@@ -24,7 +24,7 @@ import (
 //
 // Example - Simple cache:
 //
-//	func CacheCheck(ctx context.Context, s state.Writer) (message.Message, error) {
+//	func CacheCheck(ctx context.Context, s *state.ReadView) (message.Message, error) {
 //	    messages := s.MessagesSnapshot()
 //	    key := hashMessages(messages)
 //	    if cached := cache.Get(key); cached != nil {
@@ -35,7 +35,7 @@ import (
 //
 // Example - Stateful rate limiting:
 //
-//	func RateLimit(ctx context.Context, s state.Writer) (message.Message, error) {
+//	func RateLimit(ctx context.Context, s *state.ReadView) (message.Message, error) {
 //	    count := s.Get("request_count").(int)
 //	    if count > 10 {
 //	        return message.NewAI("Rate limit exceeded"), nil
@@ -43,7 +43,7 @@ import (
 //	    s.Set("request_count", count+1)
 //	    return nil, nil  // Continue
 //	}
-type BeforeModelCallback func(ctx context.Context, s state.Writer) (message.Message, error)
+type BeforeModelCallback func(ctx context.Context, s *state.ReadView) (message.Message, error)
 
 // AfterModelCallback allows post-processing of model responses before they
 // are returned to the graph. Returning a non-nil message.Message replaces
@@ -64,7 +64,7 @@ type BeforeModelCallback func(ctx context.Context, s state.Writer) (message.Mess
 //
 // Example - Content filter:
 //
-//	func FilterToxicity(ctx context.Context, s state.Writer, response message.Message) (message.Message, error) {
+//	func FilterToxicity(ctx context.Context, s *state.ReadView, response message.Message) (message.Message, error) {
 //	    if containsToxicity(response.Parts().Text()) {
 //	        return message.NewAI("[Content filtered]"), nil
 //	    }
@@ -73,13 +73,13 @@ type BeforeModelCallback func(ctx context.Context, s state.Writer) (message.Mess
 //
 // Example - Track topics:
 //
-//	func TrackTopics(ctx context.Context, s state.Writer, response message.Message) (message.Message, error) {
+//	func TrackTopics(ctx context.Context, s *state.ReadView, response message.Message) (message.Message, error) {
 //	    topics := extractTopics(response)
 //	    existing := s.Get("discussed_topics").([]string)
 //	    s.Set("discussed_topics", append(existing, topics...))
 //	    return nil, nil  // Keep original
 //	}
-type AfterModelCallback func(ctx context.Context, s state.Writer, response message.Message) (message.Message, error)
+type AfterModelCallback func(ctx context.Context, s *state.ReadView, response message.Message) (message.Message, error)
 
 // OnModelErrorCallback handles model invocation failures.
 // It may return a fallback message or propagate the error.
@@ -104,7 +104,7 @@ type AfterModelCallback func(ctx context.Context, s state.Writer, response messa
 //
 // Example - Fallback model:
 //
-//	func FallbackModel(ctx context.Context, s state.Writer, err error) (message.Message, error) {
+//	func FallbackModel(ctx context.Context, s *state.ReadView, err error) (message.Message, error) {
 //	    if errors.Is(err, ErrRateLimited) {
 //	        messages := s.MessagesSnapshot()
 //	        // Use a simpler fallback model
@@ -115,7 +115,7 @@ type AfterModelCallback func(ctx context.Context, s state.Writer, response messa
 //
 // Example - Retry tracking:
 //
-//	func RetryHandler(ctx context.Context, s state.Writer, err error) (message.Message, error) {
+//	func RetryHandler(ctx context.Context, s *state.ReadView, err error) (message.Message, error) {
 //	    retries := s.Get("retry_count").(int)
 //	    if retries < 3 {
 //	        s.Set("retry_count", retries+1)
@@ -123,7 +123,7 @@ type AfterModelCallback func(ctx context.Context, s state.Writer, response messa
 //	    }
 //	    return message.NewAI("Service unavailable"), nil  // Fallback
 //	}
-type OnModelErrorCallback func(ctx context.Context, s state.Writer, err error) (message.Message, error)
+type OnModelErrorCallback func(ctx context.Context, s *state.ReadView, err error) (message.Message, error)
 
 // BeforeToolCallback intercepts tool invocations prior to execution.
 // Returning a non-nil result skips the actual tool call and uses
@@ -142,7 +142,7 @@ type OnModelErrorCallback func(ctx context.Context, s state.Writer, err error) (
 //
 // Example - Access control:
 //
-//	func CheckPermissions(ctx context.Context, s state.Writer, call message.ToolCall) (any, error) {
+//	func CheckPermissions(ctx context.Context, s *state.ReadView, call message.ToolCall) (any, error) {
 //	    userRole := s.Get("user_role").(string)
 //	    if !hasPermission(userRole, call.Name) {
 //	        return nil, fmt.Errorf("permission denied for tool: %s", call.Name)
@@ -152,7 +152,7 @@ type OnModelErrorCallback func(ctx context.Context, s state.Writer, err error) (
 //
 // Example - Tool quota:
 //
-//	func EnforceQuota(ctx context.Context, s state.Writer, call message.ToolCall) (any, error) {
+//	func EnforceQuota(ctx context.Context, s *state.ReadView, call message.ToolCall) (any, error) {
 //	    used := s.Get("tools_used").(int)
 //	    if used >= 10 {
 //	        return "Tool quota exceeded", nil
@@ -160,7 +160,7 @@ type OnModelErrorCallback func(ctx context.Context, s state.Writer, err error) (
 //	    s.Set("tools_used", used+1)
 //	    return nil, nil
 //	}
-type BeforeToolCallback func(ctx context.Context, s state.Writer, call message.ToolCall) (any, error)
+type BeforeToolCallback func(ctx context.Context, s *state.ReadView, call message.ToolCall) (any, error)
 
 // AfterToolCallback allows inspection and mutation of tool responses.
 // Returning a non-nil result replaces the original tool output.
@@ -179,7 +179,7 @@ type BeforeToolCallback func(ctx context.Context, s state.Writer, call message.T
 //
 // Example - Result validation:
 //
-//	func ValidateToolOutput(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error) {
+//	func ValidateToolOutput(ctx context.Context, s *state.ReadView, call message.ToolCall, result any) (any, error) {
 //	    if err := validateOutput(result); err != nil {
 //	        return nil, fmt.Errorf("invalid tool output: %w", err)
 //	    }
@@ -188,13 +188,13 @@ type BeforeToolCallback func(ctx context.Context, s state.Writer, call message.T
 //
 // Example - Store result:
 //
-//	func StoreToolResult(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error) {
+//	func StoreToolResult(ctx context.Context, s *state.ReadView, call message.ToolCall, result any) (any, error) {
 //	    results := s.Get("tool_results").(map[string]any)
 //	    results[call.Name] = result
 //	    s.Set("tool_results", results)
 //	    return nil, nil
 //	}
-type AfterToolCallback func(ctx context.Context, s state.Writer, call message.ToolCall, result any) (any, error)
+type AfterToolCallback func(ctx context.Context, s *state.ReadView, call message.ToolCall, result any) (any, error)
 
 // OnToolErrorCallback handles tool invocation failures.
 // It may return a fallback result or propagate the error.
@@ -213,7 +213,7 @@ type AfterToolCallback func(ctx context.Context, s state.Writer, call message.To
 //
 // Example - Fallback:
 //
-//	func FallbackResponse(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error) {
+//	func FallbackResponse(ctx context.Context, s *state.ReadView, call message.ToolCall, err error) (any, error) {
 //	    if errors.Is(err, ErrTimeout) {
 //	        return "Service temporarily unavailable", nil
 //	    }
@@ -222,7 +222,7 @@ type AfterToolCallback func(ctx context.Context, s state.Writer, call message.To
 //
 // Example - Circuit breaker:
 //
-//	func CircuitBreaker(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error) {
+//	func CircuitBreaker(ctx context.Context, s *state.ReadView, call message.ToolCall, err error) (any, error) {
 //	    failures := s.Get("tool_failures").(int)
 //	    s.Set("tool_failures", failures+1)
 //	    if failures >= 5 {
@@ -231,4 +231,4 @@ type AfterToolCallback func(ctx context.Context, s state.Writer, call message.To
 //	    }
 //	    return nil, err
 //	}
-type OnToolErrorCallback func(ctx context.Context, s state.Writer, call message.ToolCall, err error) (any, error)
+type OnToolErrorCallback func(ctx context.Context, s *state.ReadView, call message.ToolCall, err error) (any, error)

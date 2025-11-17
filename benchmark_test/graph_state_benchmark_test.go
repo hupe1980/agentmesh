@@ -10,13 +10,19 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
+func newTestState() *state.State {
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+	return st
+}
+
 // BenchmarkGraphExecution measures performance of basic graph execution
 func BenchmarkGraphExecution(b *testing.B) {
 	sizes := []int{10, 50, 100}
 
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("nodes_%d", size), func(b *testing.B) {
-			stateManager, err := state.NewStateManager(0)
+			stateManager := newTestState()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -30,7 +36,7 @@ func BenchmarkGraphExecution(b *testing.B) {
 				nodeNum := i
 				err := g.AddNode(&graph.Node{
 					Name: fmt.Sprintf("node_%d", nodeNum),
-					RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+					RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 						// Simple computation
 						val := s.Get("counter")
 						count, ok := val.(int)
@@ -78,7 +84,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 
 	for _, size := range parallelSizes {
 		b.Run(fmt.Sprintf("parallel_%d", size), func(b *testing.B) {
-			stateManager, err := state.NewStateManager(0)
+			stateManager := newTestState()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -92,7 +98,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 				nodeNum := i
 				err := g.AddNode(&graph.Node{
 					Name: fmt.Sprintf("parallel_%d", nodeNum),
-					RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+					RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 						// Simulate some work
 						sum := 0
 						for j := range 1000 {
@@ -131,7 +137,7 @@ func BenchmarkParallelExecution(b *testing.B) {
 // BenchmarkStateOperations measures state access performance
 func BenchmarkStateOperations(b *testing.B) {
 	b.Run("Set", func(b *testing.B) {
-		stateManager, err := state.NewStateManager(0)
+		stateManager := newTestState()
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -142,7 +148,7 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		stateManager, err := state.NewStateManager(0)
+		stateManager := newTestState()
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -156,7 +162,7 @@ func BenchmarkStateOperations(b *testing.B) {
 	})
 
 	b.Run("GetAll", func(b *testing.B) {
-		stateManager, err := state.NewStateManager(0)
+		stateManager := newTestState()
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -172,7 +178,7 @@ func BenchmarkStateOperations(b *testing.B) {
 
 // BenchmarkScheduler measures scheduler performance
 func BenchmarkScheduler(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
+	stateManager := newTestState()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -185,7 +191,7 @@ func BenchmarkScheduler(b *testing.B) {
 	for i := range 50 {
 		err := g.AddNode(&graph.Node{
 			Name: fmt.Sprintf("node_%d", i),
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				return &graph.NodeResult{Updates: map[string]any{}}, nil
 			},
 		})

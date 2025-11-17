@@ -2,215 +2,133 @@ package benchmark_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Benchmark state operations
+// Benchmark state operations with state v3 API
 
-func BenchmarkState_Get(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	stateManager.Set("key1", "value1")
-	stateManager.Set("key2", 42)
-	stateManager.Set("key3", []string{"a", "b", "c"})
+func BenchmarkState_GetFromView(b *testing.B) {
+	st := state.NewState()
 
-	for b.Loop() {
-		_ = stateManager.Get("key1")
-	}
-}
+	// Define and register typed keys with default values
+	key1 := state.NewKey("key1", "")
+	key2 := state.NewKey("key2", 0)
+	key3 := state.NewKey("key3", []string{})
 
-func BenchmarkState_Set(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
+	state.Register(st, key1)
+	state.Register(st, key2)
+	state.Register(st, key3)
+	state.Register(st, state.MessagesKey.Key)
 
-	for i := 0; b.Loop(); i++ {
-		stateManager.Set("key", i)
-	}
-}
+	// Set values
+	ctx := context.Background()
+	_ = st.ApplyUpdates(ctx, map[string]any{
+		"key1": "value1",
+		"key2": 42,
+		"key3": []string{"a", "b", "c"},
+	})
 
-func BenchmarkState_GetAll(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for i := range 100 {
-		stateManager.Set(string(rune('a'+i%26)), i)
-	}
-
-	for b.Loop() {
-		_ = stateManager.GetAll()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		snap := st.Snapshot()
+		view := state.NewReadView(snap)
+		_ = state.GetFromView(view, key1)
 	}
 }
 
 func BenchmarkState_ApplyUpdates(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
+	st := state.NewState()
+
+	key1 := state.NewKey("key1", "")
+	key2 := state.NewKey("key2", 0)
+	key3 := state.NewKey("key3", []string{})
+
+	state.Register(st, key1)
+	state.Register(st, key2)
+	state.Register(st, key3)
+	state.Register(st, state.MessagesKey.Key)
+
 	updates := map[string]any{
 		"key1": "value1",
 		"key2": 42,
 		"key3": []string{"a", "b", "c"},
 	}
 
-	for b.Loop() {
-		stateManager.ApplyUpdates(updates, nil)
-	}
-}
-
-func BenchmarkState_ApplyUpdatesWithReducer(b *testing.B) {
-	appendReducer := func(oldValue, newValue any) any {
-		oldSlice, _ := oldValue.([]int)
-		newSlice, _ := newValue.([]int)
-		return append(oldSlice, newSlice...)
-	}
-
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	// Use BinaryOpChannel for accumulation with custom reducer
-	stateManager.AddChannel(channel.NewBinaryOpChannel("items", []int{}, appendReducer))
-
-	updates := map[string]any{"items": []int{1, 2, 3}}
-
-	for b.Loop() {
-		stateManager.ApplyUpdates(updates, nil)
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = st.ApplyUpdates(ctx, updates)
 	}
 }
 
 // Benchmark message operations
 
 func BenchmarkState_AddMessages(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+
 	msgs := []state.ExecutionResult{
 		*state.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
 		*state.NewExecutionResult(message.NewAIMessageFromText("Hi there"), "", ""),
 	}
 
-	for b.Loop() {
-		stateManager.AddMessages(msgs)
+	ctx := context.Background()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = st.ApplyUpdates(ctx, map[string]any{
+			state.MessagesKey.Key.Name(): msgs,
+		})
 	}
 }
 
-func BenchmarkState_MessagesSnapshot(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for range 100 {
-		stateManager.AddMessages([]state.ExecutionResult{
+func BenchmarkState_GetMessages(b *testing.B) {
+	st := state.NewState()
+	state.Register(st, state.MessagesKey.Key)
+
+	ctx := context.Background()
+	// Add 100 messages
+	for i := 0; i < 100; i++ {
+		msgs := []state.ExecutionResult{
 			*state.NewExecutionResult(message.NewHumanMessageFromText("Message"), "", ""),
+		}
+		_ = st.ApplyUpdates(ctx, map[string]any{
+			state.MessagesKey.Key.Name(): msgs,
 		})
 	}
 
-	for b.Loop() {
-		_ = stateManager.MessagesSnapshot()
-	}
-}
-
-func BenchmarkState_MessagesWithCompaction(b *testing.B) {
-	stateManager, err := state.NewStateManager(100) // Enable compaction with max 100 messages
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	msgs := []state.ExecutionResult{
-		*state.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
-	}
-
-	for b.Loop() {
-		stateManager.AddMessages(msgs)
-	}
-}
-
-// Benchmark parallel state access
-
-func BenchmarkState_ParallelReads(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	stateManager.Set("key1", "value1")
-	stateManager.Set("key2", 42)
-
 	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			_ = stateManager.Get("key1")
-		}
-	})
-}
-
-func BenchmarkState_ParallelWrites(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
+	for i := 0; i < b.N; i++ {
+		snap := st.Snapshot()
+		view := state.NewReadView(snap)
+		_ = state.GetFromView(view, state.MessagesKey.Key)
 	}
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			stateManager.Set("key", i)
-			i++
-		}
-	})
-}
-
-func BenchmarkState_ParallelMixed(b *testing.B) {
-	stateManager, err := state.NewStateManager(0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	stateManager.Set("key1", "value1")
-	stateManager.Set("key2", 42)
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			if i%10 == 0 {
-				stateManager.Set("key", i)
-			} else {
-				_ = stateManager.Get("key1")
-			}
-			i++
-		}
-	})
 }
 
 // Benchmark graph execution
 
 func BenchmarkGraph_SimpleExecution(b *testing.B) {
+	countKey := state.NewKey("count", 0)
+
 	createSimpleGraph := func() graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		stateManager.Set("count", 0)
-		g, err := graph.NewGraph(stateManager)
-		if err != nil {
-			b.Fatal(err)
-		}
+		st := state.NewState()
+		state.Register(st, countKey)
+		state.Register(st, state.MessagesKey.Key)
+
+		ctx := context.Background()
+		_ = st.ApplyUpdates(ctx, map[string]any{"count": 0})
+
+		g, _ := graph.NewGraph(st)
 
 		g.AddNode(&graph.Node{
 			Name: "increment",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				count, _ := s.Get("count").(int)
+			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+				count := state.GetFromView(view, countKey)
 				return &graph.NodeResult{Updates: map[string]any{"count": count + 1}}, nil
 			},
 		})
@@ -222,7 +140,8 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		return compiled
 	}
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		compiled := createSimpleGraph()
 		for range compiled.Run(context.Background(), nil) {
 		}
@@ -230,23 +149,24 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 }
 
 func BenchmarkGraph_LinearChain(b *testing.B) {
-	createChainGraph := func(length int) graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		stateManager.Set("value", 0) // Fixed
-		g, err := graph.NewGraph(stateManager)
-		if err != nil {
-			b.Fatal(err)
-		}
+	valueKey := state.NewKey("value", 0)
 
-		for i := range length {
-			name := string(rune('a' + i%26))
+	createChainGraph := func(length int) graph.MessageRunnable {
+		st := state.NewState()
+		state.Register(st, valueKey)
+		state.Register(st, state.MessagesKey.Key)
+
+		ctx := context.Background()
+		_ = st.ApplyUpdates(ctx, map[string]any{"value": 0})
+
+		g, _ := graph.NewGraph(st)
+
+		for i := 0; i < length; i++ {
+			name := fmt.Sprintf("node_%d", i)
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-					val, _ := s.Get("value").(int)
+				RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+					val := state.GetFromView(view, valueKey)
 					return &graph.NodeResult{Updates: map[string]any{"value": val + 1}}, nil
 				},
 			})
@@ -254,7 +174,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			if i == 0 {
 				g.AddEdge(graph.StartNode, name)
 			} else {
-				prevName := string(rune('a' + (i-1)%26))
+				prevName := fmt.Sprintf("node_%d", i-1)
 				g.AddEdge(prevName, name)
 			}
 
@@ -269,7 +189,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 
 	b.Run("Length5", func(b *testing.B) {
 		b.ResetTimer()
-		for b.Loop() {
+		for i := 0; i < b.N; i++ {
 			compiled := createChainGraph(5)
 			for range compiled.Run(context.Background(), nil) {
 			}
@@ -278,217 +198,43 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 
 	b.Run("Length10", func(b *testing.B) {
 		b.ResetTimer()
-		for b.Loop() {
+		for i := 0; i < b.N; i++ {
 			compiled := createChainGraph(10)
 			for range compiled.Run(context.Background(), nil) {
 			}
 		}
 	})
-
-	b.Run("Length20", func(b *testing.B) {
-		b.ResetTimer()
-		for b.Loop() {
-			compiled := createChainGraph(20)
-			for range compiled.Run(context.Background(), nil) {
-			}
-		}
-	})
 }
-
-func BenchmarkGraph_ParallelNodes(b *testing.B) {
-	createParallelGraph := func(parallelism int) graph.MessageRunnable {
-		appendReducer := func(oldValue, newValue any) any {
-			oldSlice, _ := oldValue.([]int)
-			newSlice, _ := newValue.([]int)
-			return append(oldSlice, newSlice...)
-		}
-
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		// Use BinaryOpChannel for results accumulation
-		stateManager.AddChannel(channel.NewBinaryOpChannel("results", []int{}, appendReducer))
-		g, err := graph.NewGraph(stateManager)
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		g.AddNode(&graph.Node{
-			Name: "start",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		})
-
-		for i := range parallelism {
-			name := string(rune('a' + i%26))
-			idx := i
-			g.AddNode(&graph.Node{
-				Name: name,
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-					return &graph.NodeResult{Updates: map[string]any{"results": []int{idx}}}, nil
-				},
-			})
-			g.AddEdge("start", name)
-			g.AddEdge(name, graph.EndNode)
-		}
-
-		g.AddEdge(graph.StartNode, "start")
-
-		compiled, _ := exec.CompileGraph(g)
-		return compiled
-	}
-
-	b.Run("Parallel2", func(b *testing.B) {
-		b.ResetTimer()
-		for b.Loop() {
-			compiled := createParallelGraph(2)
-			for range compiled.Run(context.Background(), nil) {
-			}
-		}
-	})
-
-	b.Run("Parallel5", func(b *testing.B) {
-		b.ResetTimer()
-		for b.Loop() {
-			compiled := createParallelGraph(5)
-			for range compiled.Run(context.Background(), nil) {
-			}
-		}
-	})
-
-	b.Run("Parallel10", func(b *testing.B) {
-		b.ResetTimer()
-		for b.Loop() {
-			compiled := createParallelGraph(10)
-			for range compiled.Run(context.Background(), nil) {
-			}
-		}
-	})
-}
-
-func BenchmarkGraph_ConditionalRouting(b *testing.B) {
-	createConditionalGraph := func() graph.MessageRunnable {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		stateManager.Set("route", "left") // Fixed
-		g, err := graph.NewGraph(stateManager)
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		g.AddNode(&graph.Node{
-			Name: "router",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		})
-
-		g.AddNode(&graph.Node{
-			Name: "left",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				return &graph.NodeResult{Updates: map[string]any{"result": "left"}}, nil
-			},
-		})
-
-		g.AddNode(&graph.Node{
-			Name: "right",
-			RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-				return &graph.NodeResult{Updates: map[string]any{"result": "right"}}, nil
-			},
-		})
-
-		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, s state.Reader) []string {
-			route, _ := s.Get("route").(string)
-			return []string{route}
-		}, []string{"left", "right"})
-
-		g.AddEdge("left", graph.EndNode)
-		g.AddEdge("right", graph.EndNode)
-
-		compiled, _ := exec.CompileGraph(g)
-		return compiled
-	}
-
-	for b.Loop() {
-		compiled := createConditionalGraph()
-		for range compiled.Run(context.Background(), nil) {
-		}
-	}
-}
-
-// Benchmark message cloning (critical path in state operations)
-
-func BenchmarkCloneMessages_Small(b *testing.B) {
-	msgs := []message.Message{
-		message.NewHumanMessageFromText("Hello"),
-		message.NewAIMessageFromText("Hi there"),
-	}
-
-	for b.Loop() {
-		_ = cloneMessagesHelper(msgs)
-	}
-}
-
-func BenchmarkCloneMessages_Large(b *testing.B) {
-	msgs := make([]message.Message, 100)
-	for i := range 100 {
-		msgs[i] = message.NewHumanMessageFromText("Message content here")
-	}
-
-	for b.Loop() {
-		_ = cloneMessagesHelper(msgs)
-	}
-}
-
-// Benchmark graph compilation
 
 func BenchmarkGraph_Compile(b *testing.B) {
 	createGraph := func() *graph.Graph {
-		stateManager, err := state.NewStateManager(0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		g, err := graph.NewGraph(stateManager)
-		if err != nil {
-			b.Fatal(err)
-		}
+		st := state.NewState()
+		state.Register(st, state.MessagesKey.Key)
+
+		g, _ := graph.NewGraph(st)
 
 		for i := 0; i < 10; i++ {
-			name := string(rune('a' + i))
+			name := fmt.Sprintf("node_%d", i)
 			g.AddNode(&graph.Node{
 				Name: name,
-				RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+				RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 					return &graph.NodeResult{}, nil
 				},
 			})
 			if i > 0 {
-				prevName := string(rune('a' + i - 1))
+				prevName := fmt.Sprintf("node_%d", i-1)
 				g.AddEdge(prevName, name)
 			}
 		}
-		g.AddEdge(graph.StartNode, "a")
-		g.AddEdge("j", graph.EndNode)
+		g.AddEdge(graph.StartNode, "node_0")
+		g.AddEdge("node_9", graph.EndNode)
 
 		return g
 	}
 
-	for b.Loop() {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		g := createGraph()
 		_, _ = exec.CompileGraph(g)
 	}
-}
-
-// Helper function to clone messages
-func cloneMessagesHelper(msgs []message.Message) []message.Message {
-	if len(msgs) == 0 {
-		return nil
-	}
-	clone := make([]message.Message, len(msgs))
-	copy(clone, msgs)
-	return clone
 }
