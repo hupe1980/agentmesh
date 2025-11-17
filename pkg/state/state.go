@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"maps"
 	"reflect"
 	"sync"
 )
@@ -254,9 +255,7 @@ func (s *State) Snapshot() *Snapshot {
 
 	// Create immutable copy
 	data := make(map[string]any, len(s.data))
-	for k, v := range s.data {
-		data[k] = v
-	}
+	maps.Copy(data, s.data)
 
 	return &Snapshot{
 		data:    data,
