@@ -58,13 +58,13 @@ func main() {
 	resultsKey := graphstate.NewKey("results", map[string]any{})
 	summaryKey := graphstate.NewKey("summary", map[string]any{})
 
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
-	graphstate.Register(st, actionHistoryKey.Key)
-	graphstate.Register(st, resultsKey)
-	graphstate.Register(st, summaryKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
+	graphstate.RegisterKey(mgr, resultsKey)
+	graphstate.RegisterKey(mgr, summaryKey)
 
-	gph, err := graph.NewGraph(st)
+	gph, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -180,8 +180,11 @@ func main() {
 	fmt.Println("  (Note: Parallel execution is ~2x faster than sequential)")
 	fmt.Println()
 	fmt.Println("Final state:")
-	snap := st.Snapshot()
-	view := graphstate.NewReadView(snap)
+	ctx := context.Background()
+	view, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		panic(err)
+	}
 	fmt.Printf("  action_history: %v\n", graphstate.GetFromView(view, actionHistoryKey.Key))
 	fmt.Printf("  results: %v\n", graphstate.GetFromView(view, resultsKey))
 	fmt.Printf("  summary: %v\n", graphstate.GetFromView(view, summaryKey))

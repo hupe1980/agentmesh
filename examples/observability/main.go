@@ -51,11 +51,11 @@ func main() {
 	counterKey := graphstate.NewKey("counter", 0)
 
 	// Create a simple graph
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
-	graphstate.Register(st, counterKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, counterKey)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -141,8 +141,10 @@ func main() {
 	duration := time.Since(startTime)
 
 	// Print results
-	snap := st.Snapshot()
-	finalView := graphstate.NewReadView(snap)
+	finalView, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		panic(err)
+	}
 	counter := graphstate.GetFromView(finalView, counterKey)
 	fmt.Printf("Final counter value: %d\n", counter)
 	fmt.Printf("Total execution time: %v\n", duration)

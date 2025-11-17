@@ -169,9 +169,11 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 				return nil, fmt.Errorf("failed to convert response: %w", err)
 			}
 
+			updates := state.Updates{}
+			state.AppendMessages(updates, resultMessages)
+
 			return &graph.NodeResult{
-				Messages: resultMessages,
-				Updates:  state.Updates{},
+				Updates: updates,
 			}, nil
 		}
 
@@ -237,9 +239,11 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 			}
 		}
 
+		updates := state.Updates{}
+		state.AppendMessages(updates, resultMessages)
+
 		return &graph.NodeResult{
-			Messages: resultMessages,
-			Updates:  state.Updates{},
+			Updates: updates,
 		}, nil
 	}
 }

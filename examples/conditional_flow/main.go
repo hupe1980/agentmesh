@@ -42,22 +42,22 @@ func runScenario(choice string) {
 	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
 
 	// Create state and register keys
-	st := graphstate.NewState()
-	graphstate.Register(st, choiceKey)
-	graphstate.Register(st, nextPathKey)
-	graphstate.Register(st, actionHistoryKey.Key)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, choiceKey)
+	graphstate.RegisterKey(mgr, nextPathKey)
+	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
 
 	// Set initial values
 	updates := graphstate.Updates{
 		choiceKey.Name():   choice,
 		nextPathKey.Name(): "",
 	}
-	if err := st.ApplyUpdates(context.Background(), updates); err != nil {
+	if err := graphstate.ApplyUpdates(context.Background(), mgr, updates); err != nil {
 		panic(err)
 	}
 
 	// Create the graph and helper function for adding nodes
-	gph, err := graph.NewGraph(st)
+	gph, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -141,7 +141,8 @@ func runScenario(choice string) {
 	}
 
 	// Execute the graph - routing will happen automatically based on state
-	for _, err := range compiled.Run(context.Background(), nil) {
+	ctx := context.Background()
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			fmt.Printf("❌ Execution error: %v\n", err)
 			return
@@ -149,8 +150,10 @@ func runScenario(choice string) {
 	}
 
 	// Display final state including action history
-	snap := st.Snapshot()
-	finalView := graphstate.NewReadView(snap)
+	finalView, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("\n  Final state:")
 	fmt.Printf("    choice: %v\n", graphstate.GetFromView(finalView, choiceKey))

@@ -26,24 +26,17 @@ type CompiledGraph struct {
 	// Computed topology (internal, optimized for execution)
 	Topology *executionTopology
 
-	// State for execution (BSP-compatible)
-	State *state.State
+	// Manager for execution (unified state management)
+	Manager *state.Manager
 
 	// Quick lookups
 	StartNode string
 	EndNode   string
 }
 
-// Compile takes a graph and compiles it into an executable form.
-// This validates the graph structure and computes topology information.
-//
-// Validation checks include:
-//   - Basic structure (nodes, edges, conditionals)
-//   - Edge references (all nodes exist)
-//   - Topology (cycles, reachability, dead ends)
-//
-// Use CompileOptions to customize validation behavior.
-func Compile(g *graph.Graph, st *state.State, opts ...CompileOption) (*CompiledGraph, error) {
+// Compile validates and compiles a graph into an executable form.
+// It performs topological validation and prepares the graph for execution.
+func Compile(g *graph.Graph, manager *state.Manager, opts ...CompileOption) (*CompiledGraph, error) {
 	cfg := &compileConfig{
 		validationOpts: DefaultValidationOptions(),
 	}
@@ -64,7 +57,7 @@ func Compile(g *graph.Graph, st *state.State, opts ...CompileOption) (*CompiledG
 	return &CompiledGraph{
 		Graph:     g,
 		Topology:  topo,
-		State:     st,
+		Manager:   manager,
 		StartNode: StartNode,
 		EndNode:   EndNode,
 	}, nil

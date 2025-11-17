@@ -28,14 +28,16 @@ func main() {
 
 	// Build a simple mathematical workflow
 	buildWorkflow := func(initialValue int) *exec.RunnableGraph {
-		st := graphstate.NewState()
-		graphstate.Register(st, graphstate.MessagesKey.Key)
-		graphstate.Register(st, valueKey)
-		st.ApplyUpdates(context.Background(), graphstate.Updates{
+		mgr := graphstate.NewManager()
+		graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+		graphstate.RegisterKey(mgr, valueKey)
+		if err := graphstate.ApplyUpdates(context.Background(), mgr, graphstate.Updates{
 			valueKey.Name(): initialValue,
-		})
+		}); err != nil {
+			panic(err)
+		}
 
-		builder, err := exec.NewBuilder(graph.WithState(st))
+		builder, err := exec.NewBuilder(graph.WithManager(mgr))
 		if err != nil {
 			panic(err)
 		}
@@ -101,8 +103,11 @@ func main() {
 			log.Fatalf("Run 1 failed: %v", err)
 		}
 	}
-	snap1 := compiled.State().Snapshot()
-	result1 := graphstate.GetFromView(graphstate.NewReadView(snap1), valueKey)
+	view1, err := compiled.Manager().CreateReadView(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to create read view: %v", err)
+	}
+	result1 := graphstate.GetFromView(view1, valueKey)
 	fmt.Printf("  Final value: %d\n\n", result1)
 
 	// ===== RUN 2: Starting with value = 5 =====
@@ -125,8 +130,11 @@ func main() {
 		}
 	}
 
-	snap2 := compiled.State().Snapshot()
-	result2 := graphstate.GetFromView(graphstate.NewReadView(snap2), valueKey)
+	view2, err := compiled.Manager().CreateReadView(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to create read view: %v", err)
+	}
+	result2 := graphstate.GetFromView(view2, valueKey)
 	fmt.Printf("  Final value: %d\n\n", result2)
 
 	// ===== RUN 3: Starting with value = 10 =====
@@ -149,8 +157,11 @@ func main() {
 		}
 	}
 
-	snap3 := compiled.State().Snapshot()
-	result3 := graphstate.GetFromView(graphstate.NewReadView(snap3), valueKey)
+	view3, err := compiled.Manager().CreateReadView(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to create read view: %v", err)
+	}
+	result3 := graphstate.GetFromView(view3, valueKey)
 	fmt.Printf("  Final value: %d\n\n", result3)
 
 	// ===== TIME-TRAVEL DEBUGGING =====

@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"sync/atomic"
 )
@@ -12,6 +13,21 @@ var (
 	// LastValueChannel uses atomic.Value which cannot store nil values.
 	ErrNilValue = errors.New("channel: cannot write nil value to LastValueChannel")
 )
+
+// isSlice checks if a value is a slice type using reflection.
+func isSlice(v any) bool {
+	return reflect.TypeOf(v).Kind() == reflect.Slice
+}
+
+// appendSliceElements appends all elements from a slice (of any type) to the target []any.
+// Uses reflection to iterate over slice elements regardless of concrete type.
+func appendSliceElements(target []any, slice any) []any {
+	rv := reflect.ValueOf(slice)
+	for i := 0; i < rv.Len(); i++ {
+		target = append(target, rv.Index(i).Interface())
+	}
+	return target
+}
 
 // Channel is the user-facing abstraction for data flow between nodes.
 // Provides simple read/write operations with channel-specific update semantics.
@@ -150,7 +166,13 @@ func (tc *TopicChannel) Write(ctx context.Context, value any) error {
 	case []any:
 		tc.values = append(tc.values, v...)
 	default:
-		tc.values = append(tc.values, v)
+		// Check if value is a slice using reflection
+		// This handles []T for any concrete type T (e.g., []message.Message)
+		if isSlice(v) {
+			tc.values = appendSliceElements(tc.values, v)
+		} else {
+			tc.values = append(tc.values, v)
+		}
 	}
 
 	// Enforce max values limit if set

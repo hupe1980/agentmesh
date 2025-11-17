@@ -36,10 +36,10 @@ import (
 )
 
 func main() {
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -49,12 +49,15 @@ func main() {
 		Name: "echo",
 		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 			messages := graphstate.GetMessages(view)
-			lastMsg := messages[len(messages)-1].Message
+			lastMsg := messages[len(messages)-1]
+
+			updates := graphstate.Updates{}
+			graphstate.AppendMessages(updates, []message.Message{
+				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
+			})
 
 			return &graph.NodeResult{
-				Messages: []message.Message{
-					message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
-				},
+				Updates: updates,
 			}, nil
 		},
 	})
@@ -83,8 +86,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	snap1 := rg.State().Snapshot()
-	messages1 := graphstate.GetMessages(graphstate.NewReadView(snap1))
+	view1, err := rg.Manager().CreateReadView(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	messages1 := graphstate.GetMessages(view1)
 	fmt.Printf("Messages retained: %d\n\n", len(messages1))
 
 	// Example 2: Limit to 2 messages
@@ -97,8 +103,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	snap2 := rg.State().Snapshot()
-	messages2 := graphstate.GetMessages(graphstate.NewReadView(snap2))
+	view2, err := rg.Manager().CreateReadView(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	messages2 := graphstate.GetMessages(view2)
 	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(messages2))
 
 	// Example 3: Recommended for long-running agents

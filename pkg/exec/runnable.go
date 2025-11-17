@@ -124,12 +124,12 @@ func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable,
 
 	// Ensure MessagesKey is registered for message-based execution
 	// This is safe even if already registered (Register is idempotent)
-	if err := state.RegisterList(g.State(), state.MessagesKey); err != nil {
+	if err := state.RegisterListKey(g.Manager(), state.MessagesKey); err != nil {
 		return nil, fmt.Errorf("failed to register messages key: %w", err)
 	}
 
 	// Step 1: Compile topology using pkg/compile with validation options
-	compiled, err := compile.Compile(g, g.State(), cfg.compileOpts...)
+	compiled, err := compile.Compile(g, g.Manager(), cfg.compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %w", err)
 	}
@@ -261,17 +261,15 @@ func (rg *RunnableGraph) GetRuntimeMetrics() *RuntimeMetrics {
 	return rg.runtimeMetrics
 }
 
-// State returns the state manager for accessing graph state.
-// This allows reading and modifying the graph's state directly.
+// Manager returns the graph's state manager for direct access to state values.
 //
 // Example:
 //
-//	state := runnable.State()
-//	value := state.Get[string](myKey)
-//	state.Set(ctx, myKey, "value")
-//	snapshot := state.Snapshot()
-func (rg *RunnableGraph) State() *state.State {
-	return rg.compiled.State
+//	value := state.GetFromManager[string](rg.Manager(), myKey)
+//	state.SetInManager(ctx, rg.Manager(), myKey, "value")
+//	snapshot, err := rg.Manager().Snapshot(ctx, nil)
+func (rg *RunnableGraph) Manager() *state.Manager {
+	return rg.compiled.Manager
 }
 
 // ApplyState applies state updates to the graph's state manager.
@@ -284,7 +282,7 @@ func (rg *RunnableGraph) State() *state.State {
 //	state.SetInUpdates(updates, userInputKey, "proceed")
 //	runnable.ApplyState(ctx, updates)
 func (rg *RunnableGraph) ApplyState(ctx context.Context, updates state.Updates) error {
-	if err := rg.compiled.State.ApplyUpdates(ctx, updates); err != nil {
+	if err := state.ApplyUpdates(ctx, rg.compiled.Manager, updates); err != nil {
 		return fmt.Errorf("failed to apply state updates: %w", err)
 	}
 	return nil

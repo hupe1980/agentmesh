@@ -3,7 +3,6 @@ package graph
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -15,9 +14,9 @@ type Node struct {
 }
 
 // NodeResult contains the output of a node execution.
+// Nodes return generic state updates - the agent layer decides what those updates represent.
 type NodeResult struct {
-	Updates  state.Updates     // State updates (type-safe)
-	Messages []message.Message // Messages to append
+	Updates state.Updates // State updates (type-safe, key-value pairs)
 }
 
 // Run executes the node's function.

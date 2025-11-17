@@ -64,17 +64,17 @@ func main() {
 	verifiedKey := graphstate.NewKey("verified", false)
 
 	// Register state keys before use
-	st := builder.State()
-	_ = graphstate.Register(st, progressKey)
-	_ = graphstate.Register(st, currentChunkKey)
-	_ = graphstate.Register(st, statusKey)
-	_ = graphstate.Register(st, chunksTotalKey)
-	_ = graphstate.Register(st, llmStatusKey)
-	_ = graphstate.Register(st, analysisStepKey)
-	_ = graphstate.Register(st, validationKey)
-	_ = graphstate.Register(st, qualityScoreKey)
-	_ = graphstate.Register(st, readyKey)
-	_ = graphstate.Register(st, verifiedKey)
+	mgr := builder.Manager()
+	_ = graphstate.RegisterKey(mgr, progressKey)
+	_ = graphstate.RegisterKey(mgr, currentChunkKey)
+	_ = graphstate.RegisterKey(mgr, statusKey)
+	_ = graphstate.RegisterKey(mgr, chunksTotalKey)
+	_ = graphstate.RegisterKey(mgr, llmStatusKey)
+	_ = graphstate.RegisterKey(mgr, analysisStepKey)
+	_ = graphstate.RegisterKey(mgr, validationKey)
+	_ = graphstate.RegisterKey(mgr, qualityScoreKey)
+	_ = graphstate.RegisterKey(mgr, readyKey)
+	_ = graphstate.RegisterKey(mgr, verifiedKey)
 
 	// Node 1: Data processor with intermediate streaming
 	builder.Node("data_processor", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
@@ -123,8 +123,7 @@ func main() {
 		}
 
 		// Get messages from state
-		events := graphstate.GetMessages(view)
-		msgs := graphstate.ExtractMessageContent(events)
+		msgs := graphstate.GetMessages(view)
 
 		// Create request
 		req := &pkgmodel.Request{
@@ -144,11 +143,13 @@ func main() {
 			})
 		}
 
+		updates := graphstate.Updates{
+			statusKey.Name(): "llm_completed",
+		}
+		graphstate.AppendMessages(updates, []message.Message{resp.Message})
+
 		return &graph.NodeResult{
-			Messages: []message.Message{resp.Message},
-			Updates: graphstate.Updates{
-				statusKey.Name(): "llm_completed",
-			},
+			Updates: updates,
 		}, nil
 	})
 
@@ -259,27 +260,30 @@ func main() {
 	fmt.Printf("\n✅ Streaming completed! Received %d total events\n", eventCount)
 
 	// Display final state
-	if st != nil {
-		snap := st.Snapshot()
-		finalView := graphstate.NewReadView(snap)
+	if mgr != nil {
+		finalView, err := mgr.CreateReadView(ctx)
+		if err != nil {
+			fmt.Printf("Error creating read view: %v\n", err)
+			return
+		}
 
 		fmt.Println("\n📊 Final State:")
 		fmt.Printf("   status = %v\n", graphstate.GetFromView(finalView, statusKey))
 		fmt.Printf("   chunks_total = %v\n", graphstate.GetFromView(finalView, chunksTotalKey))
 
 		// Show final messages
-		finalEvents := graphstate.GetMessages(finalView)
-		if len(finalEvents) > 0 {
+		finalMessages := graphstate.GetMessages(finalView)
+		if len(finalMessages) > 0 {
 			fmt.Println("\n💬 Final Messages:")
-			for i, evt := range finalEvents {
+			for i, msg := range finalMessages {
 				content := ""
-				for _, part := range evt.Message.Parts() {
+				for _, part := range msg.Parts() {
 					if textPart, ok := part.(message.TextPart); ok {
 						content += textPart.Text
 					}
 				}
 				if content != "" {
-					fmt.Printf("   [%d] %s: %s\n", i+1, evt.Message.Type(), content)
+					fmt.Printf("   [%d] %s: %s\n", i+1, msg.Type(), content)
 				}
 			}
 		}

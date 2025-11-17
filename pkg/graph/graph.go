@@ -12,16 +12,19 @@ type Graph struct {
 	Nodes    map[string]*Node
 	Edges    []Edge
 	Branches []ConditionalEdges
-	state    *state.State
+	manager  *state.Manager
 }
 
-// NewGraph creates a new graph with the given state.
-func NewGraph(st *state.State) (*Graph, error) {
+// NewGraph creates a new graph with the given state manager.
+func NewGraph(manager *state.Manager) (*Graph, error) {
+	if manager == nil {
+		return nil, fmt.Errorf("manager cannot be nil")
+	}
 	return &Graph{
 		Nodes:    make(map[string]*Node),
 		Edges:    make([]Edge, 0),
 		Branches: make([]ConditionalEdges, 0),
-		state:    st,
+		manager:  manager,
 	}, nil
 }
 
@@ -52,7 +55,7 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 	})
 }
 
-// State returns the graph's state.
-func (g *Graph) State() *state.State {
-	return g.state
+// Manager returns the graph's state manager.
+func (g *Graph) Manager() *state.Manager {
+	return g.manager
 }

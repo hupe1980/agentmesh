@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/compile"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // extractRunOptions applies graph.RunOption slice and returns RunOptions.
@@ -63,7 +63,7 @@ func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.Compil
 	// Restore state
 	if len(chkpt.State) > 0 {
 		// Apply checkpoint state to restore values
-		if err := compiled.State.ApplyUpdates(ctx, chkpt.State); err != nil {
+		if err := state.ApplyUpdates(ctx, compiled.Manager, chkpt.State); err != nil {
 			logger.Error("failed to apply checkpoint state",
 				"run_id", opts.RunID,
 				"error", err)
@@ -100,14 +100,23 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 		"run_id", opts.RunID,
 		"superstep", superstep)
 
-	// Create checkpoint
-	snap := compiled.State.Snapshot()
+	// Create checkpoint using Manager's Snapshot
+	vsnap, err := compiled.Manager.Snapshot(ctx, map[string]string{
+		"run_id":    opts.RunID,
+		"superstep": fmt.Sprintf("%d", superstep),
+	})
+	if err != nil {
+		// Log error but don't fail the superstep
+		// TODO: Consider making checkpointing errors more visible
+		_ = err
+	}
+
 	chkpt := &checkpoint.Checkpoint{
 		RunID:     opts.RunID,
 		Superstep: superstep,
-		Timestamp: time.Now(),
-		Version:   snap.Version(),
-		State:     snap.Data(),
+		Timestamp: vsnap.Timestamp,
+		Version:   0, // Manager handles versioning internally
+		State:     vsnap.Data,
 		// TODO: Add messages, completed nodes, paused nodes
 		Messages:       []message.Message{},
 		CompletedNodes: []string{},

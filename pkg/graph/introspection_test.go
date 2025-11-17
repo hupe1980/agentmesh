@@ -10,16 +10,16 @@ import (
 )
 
 // Helper function for tests
-func newTestState() *state.State {
-	st := state.NewState()
-	state.RegisterList(st, state.MessagesKey)
-	return st
+func newTestManager() *state.Manager {
+	mgr := state.NewManager()
+	state.RegisterListKey(mgr, state.MessagesKey)
+	return mgr
 }
 
 func createTestGraph() (*Graph, error) {
-	st := newTestState()
+	mgr := newTestManager()
 
-	g, err := NewGraph(st)
+	g, err := NewGraph(mgr)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +80,10 @@ func TestGraph_GetNodeInfo(t *testing.T) {
 	})
 }
 
-func TestGraph_GetNodeInfo_WithRetryPolicy(t *testing.T) {
-	st := newTestState()
-	g, _ := NewGraph(st)
+func TestExportToMermaid_ComplexFlowWithBranches(t *testing.T) {
+	mgr := newTestManager()
+
+	g, _ := NewGraph(mgr)
 
 	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
 	g.AddNode(&Node{
@@ -129,8 +130,8 @@ func TestGraph_GetEdges(t *testing.T) {
 }
 
 func TestGraph_GetEdges_WithConditionals(t *testing.T) {
-	st := newTestState()
-	g, _ := NewGraph(st)
+	mgr := newTestManager()
+	g, _ := NewGraph(mgr)
 
 	g.AddNode(&Node{Name: "router", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
 		return &NodeResult{}, nil
@@ -182,8 +183,8 @@ func TestGraph_GetTopology(t *testing.T) {
 }
 
 func TestGraph_GetTopology_WithConditionals(t *testing.T) {
-	st := newTestState()
-	g, _ := NewGraph(st)
+	mgr := newTestManager()
+	g, _ := NewGraph(mgr)
 
 	g.AddNode(&Node{Name: "router", RunFunc: nil})
 	g.AddNode(&Node{Name: "high_priority", RunFunc: nil})

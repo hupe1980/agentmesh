@@ -201,9 +201,11 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 				toolMessages = append(toolMessages, message.NewToolMessage(toolCallID, text))
 			}
 
+			updates := state.Updates{}
+			state.AppendMessages(updates, toolMessages)
+
 			return &graph.NodeResult{
-				Messages: toolMessages,
-				Updates:  state.Updates{},
+				Updates: updates,
 			}, nil
 		},
 	}

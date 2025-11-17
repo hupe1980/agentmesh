@@ -13,10 +13,10 @@ import (
 )
 
 // Helper function for tests
-func newTestState() *stateif.State {
-	st := stateif.NewState()
-	stateif.Register(st, stateif.MessagesKey.Key)
-	return st
+func newTestManager() *stateif.Manager {
+	mgr := stateif.NewManager()
+	stateif.RegisterListKey(mgr, stateif.MessagesKey)
+	return mgr
 }
 
 func TestHandoffToAgent(t *testing.T) {
@@ -90,8 +90,8 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	st := newTestState()
-	g, err := graph.NewGraph(st)
+	mgr := newTestManager()
+	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
 	g.AddNode(&graph.Node{
 		Name: "worker",
@@ -100,8 +100,10 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 				failOnce = false
 				return nil, assert.AnError
 			}
+			updates := stateif.Updates{}
+			stateif.AppendMessages(updates, []message.Message{message.NewAIMessageFromText("Success after retry")})
 			return &graph.NodeResult{
-				Messages: []message.Message{message.NewAIMessageFromText("Success after retry")},
+				Updates: updates,
 			}, nil
 		},
 	})
@@ -182,15 +184,17 @@ func TestIsValidResult(t *testing.T) {
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
 func createMockWorkerGraph(t *testing.T, response string) graph.MessageRunnable {
-	st := newTestState()
-	g, err := graph.NewGraph(st)
+	mgr := newTestManager()
+	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
 
 	g.AddNode(&graph.Node{
 		Name: "worker",
 		RunFunc: func(ctx context.Context, view *stateif.ReadView) (*graph.NodeResult, error) {
+			updates := stateif.Updates{}
+			stateif.AppendMessages(updates, []message.Message{message.NewAIMessageFromText(response)})
 			return &graph.NodeResult{
-				Messages: []message.Message{message.NewAIMessageFromText(response)},
+				Updates: updates,
 			}, nil
 		},
 	})

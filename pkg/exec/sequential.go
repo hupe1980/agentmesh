@@ -35,21 +35,11 @@ func (s *Sequential) Run(
 	return func(yield func(state.ExecutionResult, error) bool) {
 		runID := uuid.New().String()
 
-		// Add initial messages to state
+		// Store initial messages in state
 		if len(initialMessages) > 0 {
-			events := make([]state.ExecutionResult, len(initialMessages))
-			for i, msg := range initialMessages {
-				events[i] = state.ExecutionResult{
-					Message:   msg,
-					ID:        uuid.New().String(),
-					GraphID:   runID,
-					Node:      compiled.StartNode,
-					Timestamp: time.Now(),
-				}
-			}
 			updates := state.Updates{}
-			state.AppendMessages(updates, events)
-			if err := compiled.State.ApplyUpdates(ctx, updates); err != nil {
+			state.AppendMessages(updates, initialMessages)
+			if err := state.ApplyUpdates(ctx, compiled.Manager, updates); err != nil {
 				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
 				return
 			}
@@ -105,9 +95,11 @@ func (s *Sequential) executeFromNode(
 			return fmt.Errorf("node %s not found", nodeName)
 		}
 
-		// Execute the node with current state snapshot
-		snap := compiled.State.Snapshot()
-		view := state.NewReadView(snap)
+		// Execute the node with current state read view
+		view, err := compiled.Manager.CreateReadView(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create read view: %w", err)
+		}
 		result, err := node.Run(ctx, view)
 		if err != nil {
 			event := state.ExecutionResult{
@@ -126,35 +118,26 @@ func (s *Sequential) executeFromNode(
 		if result != nil {
 			// Apply state updates
 			if len(result.Updates) > 0 {
-				if err := compiled.State.ApplyUpdates(ctx, result.Updates); err != nil {
+				if err := state.ApplyUpdates(ctx, compiled.Manager, result.Updates); err != nil {
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
-			}
 
-			// Yield messages as execution events and store in state
-			if len(result.Messages) > 0 {
-				events := make([]state.ExecutionResult, len(result.Messages))
-				for i, msg := range result.Messages {
-					events[i] = state.ExecutionResult{
-						Message:   msg,
-						ID:        uuid.New().String(),
-						GraphID:   runID,
-						Node:      nodeName,
-						Timestamp: time.Now(),
-					}
-				}
-
-				// Store messages in state for future nodes to access
-				msgUpdates := state.Updates{}
-				state.AppendMessages(msgUpdates, events)
-				if err := compiled.State.ApplyUpdates(ctx, msgUpdates); err != nil {
-					return fmt.Errorf("failed to store messages in state: %w", err)
-				}
-
-				// Yield events to caller
-				for _, event := range events {
-					if !yield(event, nil) {
-						return nil
+				// Extract messages from updates and yield as execution events
+				if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
+					if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
+						// Yield events to caller
+						for _, msg := range messages {
+							event := state.ExecutionResult{
+								Message:   msg,
+								ID:        uuid.New().String(),
+								GraphID:   runID,
+								Node:      nodeName,
+								Timestamp: time.Now(),
+							}
+							if !yield(event, nil) {
+								return nil
+							}
+						}
 					}
 				}
 			}
@@ -178,8 +161,14 @@ func (s *Sequential) findNextNodes(
 
 	// Check for conditional edges
 	if conditionals, ok := compiled.Topology.ConditionalByFrom[nodeName]; ok {
-		snap := compiled.State.Snapshot()
-		view := state.NewReadView(snap)
+		view, err := compiled.Manager.CreateReadView(ctx)
+		if err != nil {
+			// If we can't create a read view, fall back to regular edges
+			if outgoing, ok := compiled.Topology.Outgoing[nodeName]; ok {
+				return outgoing
+			}
+			return nil
+		}
 		for _, cond := range conditionals {
 			targets := cond.Condition(ctx, view)
 			next = append(next, targets...)

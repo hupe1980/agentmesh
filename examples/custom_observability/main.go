@@ -56,15 +56,15 @@ func main() {
 	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
 	statusKey := graphstate.NewKey("status", "")
 
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
-	graphstate.Register(st, recordsKey)
-	graphstate.Register(st, timestampKey)
-	graphstate.Register(st, processedKey)
-	graphstate.Register(st, qualityScoreKey)
-	graphstate.Register(st, statusKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, recordsKey)
+	graphstate.RegisterKey(mgr, timestampKey)
+	graphstate.RegisterKey(mgr, processedKey)
+	graphstate.RegisterKey(mgr, qualityScoreKey)
+	graphstate.RegisterKey(mgr, statusKey)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -298,10 +298,13 @@ func main() {
 	fmt.Printf("Total execution time: %v\n", duration)
 
 	// Get final state
-	finalState := rg.State()
+	finalState := rg.Manager()
 	summaryKey := graphstate.NewKey("summary", "")
-	snap := finalState.Snapshot()
-	summary := graphstate.GetFromView(graphstate.NewReadView(snap), summaryKey)
+	view, err := finalState.CreateReadView(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	summary := graphstate.GetFromView(view, summaryKey)
 
 	fmt.Printf("\nFinal Summary: %v\n", summary)
 

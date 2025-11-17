@@ -20,20 +20,22 @@ func main() {
 	draftKey := graphstate.NewKey("draft", "")
 	finalReportKey := graphstate.NewKey("final_report", "")
 
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
-	graphstate.Register(st, currentTaskKey)
-	graphstate.Register(st, actionHistoryKey.Key)
-	graphstate.Register(st, humanInputKey)
-	graphstate.Register(st, draftKey)
-	graphstate.Register(st, finalReportKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, currentTaskKey)
+	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
+	graphstate.RegisterKey(mgr, humanInputKey)
+	graphstate.RegisterKey(mgr, draftKey)
+	graphstate.RegisterKey(mgr, finalReportKey)
 
 	// Initialize action history
-	st.ApplyUpdates(context.Background(), graphstate.Updates{
+	if err := graphstate.ApplyUpdates(context.Background(), mgr, graphstate.Updates{
 		actionHistoryKey.Name(): []string{"Task initiated"},
-	})
+	}); err != nil {
+		panic(err)
+	}
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -113,11 +115,15 @@ func main() {
 	rg := compiled.(*exec.RunnableGraph)
 
 	fmt.Println("=== First Run ===")
-	if _, err := graph.Last(compiled.Run(context.Background(), nil)); err != nil {
+	ctx := context.Background()
+	if _, err := graph.Last(compiled.Run(ctx, nil)); err != nil {
 		fmt.Println("run paused:", err)
 	}
-	snap := st.Snapshot()
-	fmt.Println("state after first run - action history:", graphstate.GetFromView(graphstate.NewReadView(snap), actionHistoryKey.Key))
+	view, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("state after first run - action history:", graphstate.GetFromView(view, actionHistoryKey.Key))
 
 	if err := rg.ApplyState(context.Background(), graphstate.Updates{
 		humanInputKey.Name(): "Approved draft",
@@ -130,10 +136,13 @@ func main() {
 	}
 
 	fmt.Println("\n=== Resume ===")
-	if _, err := graph.Last(compiled.Run(context.Background(), nil, graph.WithInitialSuperstep(rg.CurrentSuperstep()))); err != nil {
+	if _, err := graph.Last(compiled.Run(ctx, nil, graph.WithInitialSuperstep(rg.CurrentSuperstep()))); err != nil {
 		fmt.Println("resume error:", err)
 		return
 	}
-	snap2 := st.Snapshot()
-	fmt.Println("state after resume - action history:", graphstate.GetFromView(graphstate.NewReadView(snap2), actionHistoryKey.Key))
+	view2, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("state after resume - action history:", graphstate.GetFromView(view2, actionHistoryKey.Key))
 }

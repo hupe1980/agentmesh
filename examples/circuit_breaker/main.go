@@ -80,10 +80,10 @@ func main() {
 	}
 
 	// Build the graph using agent
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		log.Fatal(err)
 	}

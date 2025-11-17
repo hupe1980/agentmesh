@@ -1,5 +1,7 @@
 package state
 
+import "reflect"
+
 // Snapshot is an immutable point-in-time view of state.
 // Safe for concurrent access without locks.
 // Used in BSP execution to give all vertices a consistent view during a superstep.
@@ -15,7 +17,34 @@ func GetFromSnapshot[T any](snap *Snapshot, key Key[T]) T {
 	if !ok {
 		return key.zero
 	}
-	return val.(T) // Safe: key registration enforces type
+
+	// Try direct type assertion first (fast path)
+	if typed, ok := val.(T); ok {
+		return typed
+	}
+
+	// Handle slice conversion from []any to []T (for list keys)
+	// When TopicChannel stores []T, it unpacks to []any elements
+	// We need to repack them into the correct []T type
+	var zero T
+	targetType := reflect.TypeOf(zero)
+	if targetType.Kind() == reflect.Slice {
+		sourceSlice, ok := val.([]any)
+		if !ok {
+			// Not a []any, fall back to original type assertion (will panic if wrong type)
+			return val.(T)
+		}
+
+		// Create a new slice of the target type
+		resultSlice := reflect.MakeSlice(targetType, len(sourceSlice), len(sourceSlice))
+		for i, elem := range sourceSlice {
+			resultSlice.Index(i).Set(reflect.ValueOf(elem))
+		}
+		return resultSlice.Interface().(T)
+	}
+
+	// Non-slice type, use direct assertion (may panic if type mismatch)
+	return val.(T)
 }
 
 // Has checks if a key exists in the snapshot.

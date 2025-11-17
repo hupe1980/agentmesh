@@ -21,10 +21,10 @@ type BuilderOption func(*Builder) error
 
 // NewBuilder creates a new graph builder with the given options.
 func NewBuilder(opts ...BuilderOption) (*Builder, error) {
-	// Create a default state
-	st := state.NewState()
+	// Create a default state manager
+	manager := state.NewManager()
 
-	graph, err := NewGraph(st)
+	graph, err := NewGraph(manager)
 	if err != nil {
 		return nil, err
 	}
@@ -43,10 +43,25 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 	return b, nil
 }
 
-// WithState sets a custom state for the builder.
+// WithManager sets a custom state manager for the builder.
+func WithManager(manager *state.Manager) BuilderOption {
+	return func(b *Builder) error {
+		graph, err := NewGraph(manager)
+		if err != nil {
+			return err
+		}
+		b.graph = graph
+		return nil
+	}
+}
+
+// WithState is deprecated. Use WithManager instead.
+// Kept for temporary compatibility during migration.
 func WithState(st *state.State) BuilderOption {
 	return func(b *Builder) error {
-		graph, err := NewGraph(st)
+		// Create a manager (state is no longer used directly)
+		manager := state.NewManager()
+		graph, err := NewGraph(manager)
 		if err != nil {
 			return err
 		}
@@ -134,9 +149,15 @@ func (b *Builder) Graph() *Graph {
 	return b.graph
 }
 
-// State returns the graph's state.
+// Manager returns the graph's state manager.
+func (b *Builder) Manager() *state.Manager {
+	return b.graph.Manager()
+}
+
+// State is deprecated. Use Manager() instead.
+// Returns nil as State is no longer used directly.
 func (b *Builder) State() *state.State {
-	return b.graph.State()
+	return nil
 }
 
 // Compile compiles the graph into a MessageRunnable using the registered compile function.

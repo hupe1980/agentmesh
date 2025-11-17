@@ -11,15 +11,15 @@ import (
 )
 
 // Helper function for tests
-func newTestState() *state.State {
-	st := state.NewState()
-	state.RegisterList(st, state.MessagesKey)
-	return st
+func newTestManager() *state.Manager {
+	mgr := state.NewManager()
+	state.RegisterListKey(mgr, state.MessagesKey)
+	return mgr
 }
 
 func TestValidation_BasicStructure(t *testing.T) {
 	t.Run("empty graph with default options", func(t *testing.T) {
-		g, _ := graph.NewGraph(newTestState())
+		g, _ := graph.NewGraph(newTestManager())
 
 		validator := NewValidator(DefaultValidationOptions())
 		errors := validator.Validate(g)
@@ -29,8 +29,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("empty graph with strict validation", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		validator := NewValidator(StrictValidationOptions())
 		errors := validator.Validate(g)
@@ -41,8 +41,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("node with nil RunFunc", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name:    "invalid",
@@ -64,8 +64,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 	})
 
 	t.Run("node with reserved name", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: StartNode,
@@ -91,8 +91,8 @@ func TestValidation_BasicStructure(t *testing.T) {
 
 func TestValidation_Edges(t *testing.T) {
 	t.Run("edge to non-existent node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
@@ -117,8 +117,8 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge from non-existent node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "b",
@@ -143,8 +143,8 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge from END node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
@@ -169,8 +169,8 @@ func TestValidation_Edges(t *testing.T) {
 	})
 
 	t.Run("edge to START node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
@@ -197,8 +197,8 @@ func TestValidation_Edges(t *testing.T) {
 
 func TestValidation_Conditionals(t *testing.T) {
 	t.Run("conditional from non-existent node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddConditionalEdges("non_existent", func(ctx context.Context, s *state.ReadView) []string {
 			return []string{"a"}
@@ -218,8 +218,8 @@ func TestValidation_Conditionals(t *testing.T) {
 	})
 
 	t.Run("conditional to non-existent node", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "router",
@@ -246,8 +246,8 @@ func TestValidation_Conditionals(t *testing.T) {
 	})
 
 	t.Run("conditional with nil condition function", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "router",
@@ -280,8 +280,8 @@ func TestValidation_Conditionals(t *testing.T) {
 
 func TestValidation_Topology(t *testing.T) {
 	t.Run("cycle detection", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
@@ -319,8 +319,8 @@ func TestValidation_Topology(t *testing.T) {
 	})
 
 	t.Run("unreachable node detection", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "reachable",
@@ -358,8 +358,8 @@ func TestValidation_Topology(t *testing.T) {
 	})
 
 	t.Run("dead end node detection", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "dead_end",
@@ -392,8 +392,8 @@ func TestValidation_Topology(t *testing.T) {
 
 func TestCompile_WithValidation(t *testing.T) {
 	t.Run("valid graph compiles successfully", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "process",
@@ -404,14 +404,14 @@ func TestCompile_WithValidation(t *testing.T) {
 		g.AddEdge(StartNode, "process")
 		g.AddEdge("process", EndNode)
 
-		compiled, err := Compile(g, st)
+		compiled, err := Compile(g, mgr)
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 	})
 
 	t.Run("invalid graph fails compilation", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "a",
@@ -421,15 +421,15 @@ func TestCompile_WithValidation(t *testing.T) {
 		})
 		g.AddEdge("a", "non_existent")
 
-		_, err := Compile(g, st)
+		_, err := Compile(g, mgr)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 		assert.Contains(t, err.Error(), "non_existent")
 	})
 
 	t.Run("strict validation enforces constraints", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "orphan",
@@ -440,18 +440,18 @@ func TestCompile_WithValidation(t *testing.T) {
 		// No edges - orphaned node
 
 		// Default validation passes
-		_, err := Compile(g, st)
+		_, err := Compile(g, mgr)
 		require.NoError(t, err)
 
 		// Strict validation fails
-		_, err = Compile(g, st, WithStrictValidation())
+		_, err = Compile(g, mgr, WithStrictValidation())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 	})
 
 	t.Run("disable validation", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		// Intentionally invalid graph
 		g.AddNode(&graph.Node{
@@ -463,7 +463,7 @@ func TestCompile_WithValidation(t *testing.T) {
 		g.AddEdge("a", "non_existent")
 
 		// With validation disabled, compilation should succeed
-		compiled, err := Compile(g, st, WithoutValidation())
+		compiled, err := Compile(g, mgr, WithoutValidation())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 	})
@@ -471,8 +471,8 @@ func TestCompile_WithValidation(t *testing.T) {
 
 func TestValidation_ComplexGraphs(t *testing.T) {
 	t.Run("diamond pattern is valid", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		// Diamond: start -> split -> (left, right) -> merge -> end
 		for _, name := range []string{"split", "left", "right", "merge"} {
@@ -497,8 +497,8 @@ func TestValidation_ComplexGraphs(t *testing.T) {
 	})
 
 	t.Run("conditional branches are valid", func(t *testing.T) {
-		st := newTestState()
-		g, _ := graph.NewGraph(st)
+		mgr := newTestManager()
+		g, _ := graph.NewGraph(mgr)
 
 		g.AddNode(&graph.Node{
 			Name: "router",

@@ -10,23 +10,18 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-func newTestState() *state.State {
-	st := state.NewState()
-	state.RegisterList(st, state.MessagesKey)
-	return st
-}
-
 func TestBuilder_BasicUsage(t *testing.T) {
 	// Define key first
 	processedKey := state.NewKey("processed", false)
 
-	// Create builder with custom state
-	st := newTestState()
-	state.Register(st, processedKey)
-
-	builder, err := exec.NewBuilder(graph.WithState(st))
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register key
+	if err := state.RegisterKey(builder.Manager(), processedKey); err != nil {
+		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	// Add nodes using fluent API
@@ -53,22 +48,27 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	}
 
 	// Verify the result by accessing state
-	snap := builder.State().Snapshot()
-	view := state.NewReadView(snap)
+	view, err := builder.Manager().CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	if !state.GetFromView(view, processedKey) {
 		t.Error("Expected processed to be true")
 	}
 }
 
 func TestBuilder_WithOptions(t *testing.T) {
-	// Create builder with custom state
-	st := newTestState()
+	// Create builder
 	stepKey := state.NewKey("step", 0)
-	state.Register(st, stepKey)
 
-	builder, err := exec.NewBuilder(graph.WithState(st))
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register key
+	if err := state.RegisterKey(builder.Manager(), stepKey); err != nil {
+		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	builder.
@@ -93,8 +93,10 @@ func TestBuilder_WithOptions(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	snap2 := builder.State().Snapshot()
-	view2 := state.NewReadView(snap2)
+	view2, err := builder.Manager().CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	step := state.GetFromView(view2, stepKey)
 	if step != 2 {
 		t.Errorf("Expected step to be 2, got %v", step)
@@ -106,14 +108,18 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	routeKey := state.NewKey("route", "")
 	resultKey := state.NewKey("result", "")
 
-	// Create builder with custom state
-	st := newTestState()
-	state.Register(st, routeKey)
-	state.Register(st, resultKey)
-
-	builder, err := exec.NewBuilder(graph.WithState(st))
+	// Create builder
+	builder, err := exec.NewBuilder()
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register keys
+	if err := state.RegisterKey(builder.Manager(), routeKey); err != nil {
+		t.Fatalf("Failed to register key: %v", err)
+	}
+	if err := state.RegisterKey(builder.Manager(), resultKey); err != nil {
+		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	builder.
@@ -150,8 +156,10 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	snap3 := builder.State().Snapshot()
-	view3 := state.NewReadView(snap3)
+	view3, err := builder.Manager().CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	result := state.GetFromView(view3, resultKey)
 	if result != "left" {
 		t.Errorf("Expected result to be 'left', got %v", result)
@@ -162,14 +170,15 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	// Define key first
 	doneKey := state.NewKey("done", false)
 
-	// Create state and register key
-	st := newTestState()
-	state.Register(st, doneKey)
-
 	// Test using graph.NewBuilder without auto-compile
-	builder, err := graph.NewBuilder(graph.WithState(st))
+	builder, err := graph.NewBuilder()
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register key
+	if err := state.RegisterKey(builder.Manager(), doneKey); err != nil {
+		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	builder.
@@ -192,9 +201,11 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	for range compiled.Run(ctx, messages) {
 	}
 
-	// Access state through snapshot and ReadView
-	snap4 := g.State().Snapshot()
-	view4 := state.NewReadView(snap4)
+	// Access state through Manager and ReadView
+	view4, err := g.Manager().CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	done := state.GetFromView(view4, doneKey)
 	if !done {
 		t.Error("Expected done to be true")

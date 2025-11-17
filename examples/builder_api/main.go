@@ -21,14 +21,14 @@ var (
 
 func main() {
 	// Create state and register keys
-	st := state.NewState()
-	state.Register(st, AnalysisKey)
-	state.Register(st, ScoreKey)
-	state.Register(st, ValidKey)
-	state.Register(st, ResultKey)
+	mgr := state.NewManager()
+	state.RegisterKey(mgr, AnalysisKey)
+	state.RegisterKey(mgr, ScoreKey)
+	state.RegisterKey(mgr, ValidKey)
+	state.RegisterKey(mgr, ResultKey)
 
 	// Create a builder with the state
-	builder, err := graph.NewBuilder(graph.WithState(st))
+	builder, err := graph.NewBuilder(graph.WithManager(mgr))
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
@@ -89,8 +89,10 @@ func main() {
 	}
 
 	// Get final state with type safety
-	snap := st.Snapshot()
-	finalView := state.NewReadView(snap)
+	finalView, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create read view: %v", err)
+	}
 	result := state.GetFromView(finalView, ResultKey)
 	fmt.Printf("\nFinal result: %s\n", result)
 }

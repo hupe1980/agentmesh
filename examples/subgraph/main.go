@@ -21,14 +21,14 @@ func main() {
 	enrichedDataKey := graphstate.NewKey("enriched_data", map[string]any{})
 	analysisKey := graphstate.NewKey("analysis", map[string]any{})
 
-	st := graphstate.NewState()
-	graphstate.Register(st, graphstate.MessagesKey.Key)
-	graphstate.Register(st, dataKey)
-	graphstate.Register(st, validKey)
-	graphstate.Register(st, enrichedDataKey)
-	graphstate.Register(st, analysisKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, dataKey)
+	graphstate.RegisterKey(mgr, validKey)
+	graphstate.RegisterKey(mgr, enrichedDataKey)
+	graphstate.RegisterKey(mgr, analysisKey)
 
-	pipeline, err := exec.NewBuilder(graph.WithState(st))
+	pipeline, err := exec.NewBuilder(graph.WithManager(mgr))
 	if err != nil {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}
@@ -117,8 +117,10 @@ func main() {
 	}
 
 	fmt.Println("\n=== Pipeline Results ===")
-	snap := st.Snapshot()
-	view := graphstate.NewReadView(snap)
+	view, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create read view: %v", err)
+	}
 	fmt.Printf("Valid: %v\n", graphstate.GetFromView(view, validKey))
 	fmt.Printf("Enriched Data: %+v\n", graphstate.GetFromView(view, enrichedDataKey))
 	fmt.Printf("Analysis: %+v\n", graphstate.GetFromView(view, analysisKey))

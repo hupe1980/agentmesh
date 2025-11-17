@@ -71,10 +71,10 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 	}
 
 	// Create state - StateBuilder no longer exists
-	st := state.NewState()
-	state.RegisterList(st, state.MessagesKey)
+	mgr := state.NewManager()
+	state.RegisterListKey(mgr, state.MessagesKey)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
 	}

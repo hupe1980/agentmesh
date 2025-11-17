@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
@@ -23,15 +24,15 @@ func main() {
 	taskResultsKey := graphstate.NewKey("task_results", map[string]any{})
 
 	// Create state and register keys
-	st := graphstate.NewState()
-	graphstate.Register(st, phaseKey)
-	graphstate.Register(st, attemptsKey)
-	graphstate.Register(st, validatedKey)
-	graphstate.Register(st, actionLogKey.Key)
-	graphstate.Register(st, taskResultsKey)
+	mgr := graphstate.NewManager()
+	graphstate.RegisterKey(mgr, phaseKey)
+	graphstate.RegisterKey(mgr, attemptsKey)
+	graphstate.RegisterKey(mgr, validatedKey)
+	graphstate.RegisterKey(mgr, actionLogKey.Key)
+	graphstate.RegisterKey(mgr, taskResultsKey)
 
 	// Create a simple workflow
-	gph, err := graph.NewGraph(st)
+	gph, err := graph.NewGraph(mgr)
 	if err != nil {
 		panic(err)
 	}
@@ -74,11 +75,14 @@ func main() {
 	gph.AddEdge("process", graph.EndNode)
 
 	compiled, _ := exec.CompileGraph(gph)
-	graph.Last(compiled.Run(context.Background(), nil))
+	ctx := context.Background()
+	graph.Last(compiled.Run(ctx, nil))
 
 	// Read final state using typed keys
-	snap := st.Snapshot()
-	view := graphstate.NewReadView(snap)
+	view, err := mgr.CreateReadView(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("\n=== Final State ===")
 	fmt.Printf("Phase: %v\n", graphstate.GetFromView(view, phaseKey))

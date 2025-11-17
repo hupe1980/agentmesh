@@ -24,9 +24,9 @@ func main() {
 	}
 	builder.
 		Node("echo", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
-			events := graphstate.GetMessages(view)
-			if len(events) > 0 {
-				fmt.Printf("Processing message: %s\n", ExtractText(events[len(events)-1].Message))
+			messages := graphstate.GetMessages(view)
+			if len(messages) > 0 {
+				fmt.Printf("Processing message: %s\n", ExtractText(messages[len(messages)-1]))
 			}
 			return &graph.NodeResult{}, nil
 		}).

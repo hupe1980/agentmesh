@@ -148,19 +148,9 @@ func (p *Pregel) Run(
 
 		// Store initial messages in state
 		if len(initialMessages) > 0 {
-			events := make([]state.ExecutionResult, len(initialMessages))
-			for i, msg := range initialMessages {
-				events[i] = state.ExecutionResult{
-					Message:   msg,
-					ID:        uuid.New().String(),
-					GraphID:   runID,
-					Node:      compiled.StartNode,
-					Timestamp: time.Now(),
-				}
-			}
 			updates := state.Updates{}
-			state.AppendMessages(updates, events)
-			if err := compiled.State.ApplyUpdates(runCtx, updates); err != nil {
+			state.AppendMessages(updates, initialMessages)
+			if err := state.ApplyUpdates(runCtx, compiled.Manager, updates); err != nil {
 				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
 				return
 			}
@@ -346,7 +336,7 @@ func (n *pregelNodeAdapter) Run(
 	// The new state system uses typed keys (Key[T]) and ApplyUpdates for batch mutations
 	// Distributed state sync should:
 	// 1. Receive state.Updates from remote nodes
-	// 2. Call compiled.State.ApplyUpdates(ctx, updates) at BSP barriers
+	// 2. Call state.ApplyUpdates(ctx, compiled.Manager, updates) at BSP barriers
 	// 3. Use state snapshots for consistent reads across distributed nodes
 	if n.enableDistributedState {
 		// Disabled until reimplemented for new state system
@@ -359,23 +349,25 @@ func (n *pregelNodeAdapter) Run(
 			return
 		}
 
-		// Create execution events for intermediate messages
-		if len(intermediateResult.Messages) > 0 {
-			events := make([]state.ExecutionResult, len(intermediateResult.Messages))
-			for i, msg := range intermediateResult.Messages {
-				events[i] = state.ExecutionResult{
-					Message:   msg,
-					ID:        uuid.New().String(),
-					GraphID:   n.runID,
-					Node:      n.nodeName,
-					Timestamp: time.Now(),
-					Partial:   true, // Mark as intermediate/partial result
+		// Extract messages from updates and create execution events
+		if messagesAny, ok := intermediateResult.Updates[state.MessagesKey.Name()]; ok {
+			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
+				events := make([]state.ExecutionResult, len(messages))
+				for i, msg := range messages {
+					events[i] = state.ExecutionResult{
+						Message:   msg,
+						ID:        uuid.New().String(),
+						GraphID:   n.runID,
+						Node:      n.nodeName,
+						Timestamp: time.Now(),
+						Partial:   true, // Mark as intermediate/partial result
+					}
 				}
-			}
 
-			// Yield each intermediate event
-			for _, event := range events {
-				n.yield(event, nil)
+				// Yield each intermediate event
+				for _, event := range events {
+					n.yield(event, nil)
+				}
 			}
 		}
 
@@ -399,16 +391,17 @@ func (n *pregelNodeAdapter) Run(
 	// TODO: Create snapshot and ReadView for BSP-correct execution
 	// Current implementation passes State directly which breaks BSP semantics
 	// Proper BSP flow:
-	// 1. snap := n.compiled.State.Snapshot()
-	// 2. view := state.NewReadView(snap)
-	// 3. result, err := node.Run(ctxWithStream, view)
-	// 4. Collect all updates from all nodes
-	// 5. Apply updates once: n.compiled.State.ApplyUpdates(ctx, allUpdates)
+	// 1. view, err := n.compiled.Manager.CreateReadView(ctx)
+	// 2. result, err := node.Run(ctxWithStream, view)
+	// 3. Collect all updates from all nodes
+	// 4. Apply updates once: state.ApplyUpdates(ctx, compiled.Manager, allUpdates)
 	// For now, using state directly to get compilation working
 
 	// Execute the node with streaming support
-	snap := n.compiled.State.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := n.compiled.Manager.CreateReadView(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create read view: %w", err)
+	}
 	result, err := node.Run(ctxWithStream, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
@@ -422,35 +415,26 @@ func (n *pregelNodeAdapter) Run(
 	// TODO: Violates BSP - should collect updates and apply at barrier
 	// For now, applying immediately to get basic functionality working
 	if len(result.Updates) > 0 {
-		if err := n.compiled.State.ApplyUpdates(ctx, result.Updates); err != nil {
+		if err := state.ApplyUpdates(ctx, n.compiled.Manager, result.Updates); err != nil {
 			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
-	}
 
-	// Store messages in state and yield as execution events
-	if len(result.Messages) > 0 {
-		events := make([]state.ExecutionResult, len(result.Messages))
-		for i, msg := range result.Messages {
-			events[i] = state.ExecutionResult{
-				Message:   msg,
-				ID:        uuid.New().String(),
-				GraphID:   n.runID,
-				Node:      n.nodeName,
-				Timestamp: time.Now(),
-			}
-		}
-
-		// Store messages in state for future nodes to access
-		msgUpdates := state.Updates{}
-		state.AppendMessages(msgUpdates, events)
-		if err := n.compiled.State.ApplyUpdates(ctx, msgUpdates); err != nil {
-			return fmt.Errorf("failed to store messages in state: %w", err)
-		}
-
-		// Yield each event to caller
-		for _, event := range events {
-			if !n.yield(event, nil) {
-				return nil
+		// Extract messages from updates if present
+		if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
+			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
+				// Yield each message as execution result
+				for _, msg := range messages {
+					event := state.ExecutionResult{
+						Message:   msg,
+						ID:        uuid.New().String(),
+						GraphID:   n.runID,
+						Node:      n.nodeName,
+						Timestamp: time.Now(),
+					}
+					if !n.yield(event, nil) {
+						return nil
+					}
+				}
 			}
 		}
 	}
@@ -458,15 +442,20 @@ func (n *pregelNodeAdapter) Run(
 	// Prepare message data for distributed state if enabled
 	var messageData message.Message
 	if n.enableDistributedState {
-		// Create state message with updates
-		events := make([]state.ExecutionResult, len(result.Messages))
-		for i, msg := range result.Messages {
-			events[i] = state.ExecutionResult{
-				Message:   msg,
-				ID:        uuid.New().String(),
-				GraphID:   n.runID,
-				Node:      n.nodeName,
-				Timestamp: time.Now(),
+		// Extract messages from updates for distributed state
+		var events []state.ExecutionResult
+		if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
+			if messages, ok := messagesAny.([]message.Message); ok {
+				events = make([]state.ExecutionResult, len(messages))
+				for i, msg := range messages {
+					events[i] = state.ExecutionResult{
+						Message:   msg,
+						ID:        uuid.New().String(),
+						GraphID:   n.runID,
+						Node:      n.nodeName,
+						Timestamp: time.Now(),
+					}
+				}
 			}
 		}
 
@@ -477,9 +466,11 @@ func (n *pregelNodeAdapter) Run(
 	// Send messages to next nodes via pregel runtime
 	// Check for conditional edges first
 	if conditionals, ok := n.compiled.Topology.ConditionalByFrom[n.nodeName]; ok {
-		// Create fresh snapshot for conditional edge evaluation (after updates applied)
-		condSnap := n.compiled.State.Snapshot()
-		condView := state.NewReadView(condSnap)
+		// Create fresh read view for conditional edge evaluation (after updates applied)
+		condView, err := n.compiled.Manager.CreateReadView(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create read view for conditionals: %w", err)
+		}
 		for _, cond := range conditionals {
 			targets := cond.Condition(ctx, condView)
 			for _, target := range targets {

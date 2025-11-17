@@ -13,12 +13,12 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// extractUserQuery finds the last human message text from execution results.
-func extractUserQuery(events []state.ExecutionResult) (string, error) {
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Message.Type() == message.TypeHuman {
+// extractUserQuery finds the last human message text from messages.
+func extractUserQuery(messages []message.Message) (string, error) {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Type() == message.TypeHuman {
 			// Get text from Parts
-			for _, part := range events[i].Message.Parts() {
+			for _, part := range messages[i].Parts() {
 				if textPart, ok := part.(message.TextPart); ok {
 					return textPart.Text, nil
 				}
@@ -43,12 +43,12 @@ var DocumentsKey = state.NewKey[[]string]("documents", nil)
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
 func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
 	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-		events := state.GetMessages(view)
-		if len(events) == 0 {
+		messages := state.GetMessages(view)
+		if len(messages) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
 
-		query, err := extractUserQuery(events)
+		query, err := extractUserQuery(messages)
 		if err != nil {
 			return nil, err
 		}
@@ -70,8 +70,7 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 // createGenerateNode creates the generation node for producing responses with context.
 func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
 	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-		events := state.GetMessages(view)
-		messages := state.ExtractMessageContent(events)
+		messages := state.GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)
 		if len(docs) == 0 {
@@ -116,11 +115,11 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	st := state.NewState()
-	state.RegisterList(st, state.MessagesKey)
-	state.Register(st, DocumentsKey)
+	mgr := state.NewManager()
+	state.RegisterListKey(mgr, state.MessagesKey)
+	state.RegisterKey(mgr, DocumentsKey)
 
-	g, err := graph.NewGraph(st)
+	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create graph: %w", err)
 	}
@@ -194,7 +193,11 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 		return nil, err
 	}
 
+	// Return message in updates map
+	updates := state.Updates{}
+	state.AppendMessages(updates, []message.Message{resp.Message})
+
 	return &graph.NodeResult{
-		Messages: []message.Message{resp.Message},
+		Updates: updates,
 	}, nil
 }
