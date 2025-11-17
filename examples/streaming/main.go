@@ -51,10 +51,30 @@ func main() {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
 
+	// Define state keys
 	progressKey := graphstate.NewKey("progress", "")
 	currentChunkKey := graphstate.NewKey("current_chunk", "")
 	statusKey := graphstate.NewKey("status", "")
 	chunksTotalKey := graphstate.NewKey("chunks_total", 0)
+	llmStatusKey := graphstate.NewKey("llm_status", "")
+	analysisStepKey := graphstate.NewKey("analysis_step", "")
+	validationKey := graphstate.NewKey("validation", "")
+	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
+	readyKey := graphstate.NewKey("ready", false)
+	verifiedKey := graphstate.NewKey("verified", false)
+
+	// Register state keys before use
+	st := builder.State()
+	_ = graphstate.Register(st, progressKey)
+	_ = graphstate.Register(st, currentChunkKey)
+	_ = graphstate.Register(st, statusKey)
+	_ = graphstate.Register(st, chunksTotalKey)
+	_ = graphstate.Register(st, llmStatusKey)
+	_ = graphstate.Register(st, analysisStepKey)
+	_ = graphstate.Register(st, validationKey)
+	_ = graphstate.Register(st, qualityScoreKey)
+	_ = graphstate.Register(st, readyKey)
+	_ = graphstate.Register(st, verifiedKey)
 
 	// Node 1: Data processor with intermediate streaming
 	builder.Node("data_processor", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
@@ -93,8 +113,6 @@ func main() {
 
 		fmt.Println("   ⏳ Calling LLM...")
 
-		llmStatusKey := graphstate.NewKey("llm_status", "")
-
 		// Emit pre-call status
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
@@ -128,15 +146,13 @@ func main() {
 
 		return &graph.NodeResult{
 			Messages: []message.Message{resp.Message},
-			Updates: map[string]any{
-				"status": "llm_completed",
+			Updates: graphstate.Updates{
+				statusKey.Name(): "llm_completed",
 			},
 		}, nil
-	}) // Node 3: Multi-step analyzer with detailed streaming
-	analysisStepKey := graphstate.NewKey("analysis_step", "")
-	validationKey := graphstate.NewKey("validation", "")
-	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
+	})
 
+	// Node 3: Multi-step analyzer with detailed streaming
 	builder.Node("analyzer", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -168,17 +184,17 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			streamWriter(&graph.NodeResult{
-				Updates: map[string]any{
-					"analysis_step": "finalization",
-					"ready":         true,
+				Updates: graphstate.Updates{
+					analysisStepKey.Name(): "finalization",
+					readyKey.Name():        true,
 				},
 			})
 		}
 
 		return &graph.NodeResult{
-			Updates: map[string]any{
-				"status":   "analysis_complete",
-				"verified": true,
+			Updates: graphstate.Updates{
+				statusKey.Name():   "analysis_complete",
+				verifiedKey.Name(): true,
 			},
 		}, nil
 	})
@@ -243,7 +259,6 @@ func main() {
 	fmt.Printf("\n✅ Streaming completed! Received %d total events\n", eventCount)
 
 	// Display final state
-	st := builder.State()
 	if st != nil {
 		snap := st.Snapshot()
 		finalView := graphstate.NewReadView(snap)

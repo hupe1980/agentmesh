@@ -122,6 +122,12 @@ func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable,
 		return nil, errors.New("graph cannot be nil")
 	}
 
+	// Ensure MessagesKey is registered for message-based execution
+	// This is safe even if already registered (Register is idempotent)
+	if err := state.RegisterList(g.State(), state.MessagesKey); err != nil {
+		return nil, fmt.Errorf("failed to register messages key: %w", err)
+	}
+
 	// Step 1: Compile topology using pkg/compile with validation options
 	compiled, err := compile.Compile(g, g.State(), cfg.compileOpts...)
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 // Helper function for tests
 func newTestState() *state.State {
 	st := state.NewState()
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 	return st
 }
 

@@ -117,7 +117,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	}
 
 	st := state.NewState()
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 	state.Register(st, DocumentsKey)
 
 	g, err := graph.NewGraph(st)

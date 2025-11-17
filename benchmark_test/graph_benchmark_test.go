@@ -24,7 +24,7 @@ func BenchmarkState_GetFromView(b *testing.B) {
 	state.Register(st, key1)
 	state.Register(st, key2)
 	state.Register(st, key3)
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 
 	// Set values
 	ctx := context.Background()
@@ -52,7 +52,7 @@ func BenchmarkState_ApplyUpdates(b *testing.B) {
 	state.Register(st, key1)
 	state.Register(st, key2)
 	state.Register(st, key3)
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 
 	updates := map[string]any{
 		"key1": "value1",
@@ -71,7 +71,7 @@ func BenchmarkState_ApplyUpdates(b *testing.B) {
 
 func BenchmarkState_AddMessages(b *testing.B) {
 	st := state.NewState()
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 
 	msgs := []state.ExecutionResult{
 		*state.NewExecutionResult(message.NewHumanMessageFromText("Hello"), "", ""),
@@ -89,7 +89,7 @@ func BenchmarkState_AddMessages(b *testing.B) {
 
 func BenchmarkState_GetMessages(b *testing.B) {
 	st := state.NewState()
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 
 	ctx := context.Background()
 	// Add 100 messages
@@ -118,7 +118,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 	createSimpleGraph := func() graph.MessageRunnable {
 		st := state.NewState()
 		state.Register(st, countKey)
-		state.Register(st, state.MessagesKey.Key)
+		state.RegisterList(st, state.MessagesKey)
 
 		ctx := context.Background()
 		_ = st.ApplyUpdates(ctx, map[string]any{"count": 0})
@@ -154,7 +154,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 	createChainGraph := func(length int) graph.MessageRunnable {
 		st := state.NewState()
 		state.Register(st, valueKey)
-		state.Register(st, state.MessagesKey.Key)
+		state.RegisterList(st, state.MessagesKey)
 
 		ctx := context.Background()
 		_ = st.ApplyUpdates(ctx, map[string]any{"value": 0})
@@ -209,7 +209,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 func BenchmarkGraph_Compile(b *testing.B) {
 	createGraph := func() *graph.Graph {
 		st := state.NewState()
-		state.Register(st, state.MessagesKey.Key)
+		state.RegisterList(st, state.MessagesKey)
 
 		g, _ := graph.NewGraph(st)
 

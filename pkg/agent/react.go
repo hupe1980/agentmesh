@@ -72,7 +72,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 
 	// Create state - StateBuilder no longer exists
 	st := state.NewState()
-	state.Register(st, state.MessagesKey.Key)
+	state.RegisterList(st, state.MessagesKey)
 
 	g, err := graph.NewGraph(st)
 	if err != nil {

@@ -16,6 +16,7 @@ type State struct {
 	mu         sync.RWMutex
 	version    uint64
 	registered map[string]reflect.Type
+	listKeys   map[string]int // Maps list key names to their maxSize
 }
 
 // NewState creates a new mutable state container.
@@ -23,34 +24,61 @@ func NewState() *State {
 	return &State{
 		data:       make(map[string]any),
 		registered: make(map[string]reflect.Type),
+		listKeys:   make(map[string]int),
 	}
 }
 
 // Register adds a key to the registry with type validation.
 // Must be called before using the key (typically at graph construction time).
+// For ListKey types, use RegisterList instead to enable automatic appending in ApplyUpdates.
 func Register[T any](s *State, key Key[T]) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var zero T
+	return s.registerLocked(key.name, key.zero, -1)
+}
+
+// RegisterList adds a list key to the registry with type validation and max size tracking.
+// This enables ApplyUpdates to automatically append to existing list values instead of replacing them.
+func RegisterList[T any](s *State, key ListKey[T]) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.registerLocked(key.Name(), key.Zero(), key.maxSize)
+}
+
+// registerLocked is the internal registration logic (caller must hold lock).
+// If maxSize >= 0, marks key as a list key for append behavior in ApplyUpdates.
+func (s *State) registerLocked(name string, zero any, maxSize int) error {
 	expected := reflect.TypeOf(zero)
-	
+
 	// Handle interface types
 	if expected == nil {
-		expected = reflect.TypeOf((*T)(nil)).Elem()
+		// For interface types, use the element type
+		expected = reflect.TypeOf((*any)(nil)).Elem()
 	}
 
-	if existing, ok := s.registered[key.name]; ok {
+	if existing, ok := s.registered[name]; ok {
 		if existing != expected {
 			return fmt.Errorf("key %q already registered with different type: %v vs %v",
-				key.name, existing, expected)
+				name, existing, expected)
+		}
+		// Update listKeys if this is a list key
+		if maxSize >= 0 {
+			s.listKeys[name] = maxSize
 		}
 		return nil // Already registered with same type
 	}
 
-	s.registered[key.name] = expected
+	s.registered[name] = expected
 	// Initialize with zero value
-	s.data[key.name] = key.zero
+	s.data[name] = zero
+
+	// Track list keys for append behavior in ApplyUpdates
+	if maxSize >= 0 {
+		s.listKeys[name] = maxSize
+	}
+
 	return nil
 }
 
@@ -86,8 +114,15 @@ func Set[T any](ctx context.Context, s *State, key Key[T], value T) error {
 	}
 
 	valueType := reflect.TypeOf(value)
-	if valueType != expectedType {
-		return fmt.Errorf("%w: key %q expected %v, got %v",
+
+	// Allow any value if the registered type is interface{}
+	if expectedType.Kind() != reflect.Interface {
+		if valueType != expectedType {
+			return fmt.Errorf("%w: key %q expected %v, got %v",
+				ErrTypeMismatch, key.name, expectedType, valueType)
+		}
+	} else if valueType != nil && !valueType.Implements(expectedType) {
+		return fmt.Errorf("%w: key %q expected type implementing %v, got %v",
 			ErrTypeMismatch, key.name, expectedType, valueType)
 	}
 
@@ -150,8 +185,15 @@ func (s *State) ApplyUpdates(ctx context.Context, updates map[string]any) error 
 	for key, value := range updates {
 		if expectedType, ok := s.registered[key]; ok {
 			valueType := reflect.TypeOf(value)
-			if valueType != expectedType {
-				return fmt.Errorf("%w: key %q expected %v, got %v",
+
+			// Allow any value if the registered type is interface{}
+			if expectedType.Kind() != reflect.Interface {
+				if valueType != expectedType {
+					return fmt.Errorf("%w: key %q expected %v, got %v",
+						ErrTypeMismatch, key, expectedType, valueType)
+				}
+			} else if valueType != nil && !valueType.Implements(expectedType) {
+				return fmt.Errorf("%w: key %q expected type implementing %v, got %v",
 					ErrTypeMismatch, key, expectedType, valueType)
 			}
 		} else {
@@ -161,7 +203,43 @@ func (s *State) ApplyUpdates(ctx context.Context, updates map[string]any) error 
 
 	// Apply all updates
 	for key, value := range updates {
-		s.data[key] = value
+		// Check if this is a list key - if so, append instead of replace
+		if maxSize, isListKey := s.listKeys[key]; isListKey {
+			// Get existing list
+			existing := s.data[key]
+
+			// Convert value to reflect.Value to inspect it
+			newVal := reflect.ValueOf(value)
+			if newVal.Kind() != reflect.Slice {
+				return fmt.Errorf("list key %q: expected slice, got %v", key, newVal.Kind())
+			}
+
+			// Append new elements to existing list
+			var result reflect.Value
+			if existing == nil {
+				// No existing data, use new value as-is
+				result = newVal
+			} else {
+				existingVal := reflect.ValueOf(existing)
+				if existingVal.Kind() != reflect.Slice {
+					return fmt.Errorf("list key %q: existing value is not a slice", key)
+				}
+
+				// Append new elements to existing
+				result = reflect.AppendSlice(existingVal, newVal)
+			}
+
+			// Enforce max size if specified
+			if maxSize > 0 && result.Len() > maxSize {
+				// Keep only the last maxSize elements
+				result = result.Slice(result.Len()-maxSize, result.Len())
+			}
+
+			s.data[key] = result.Interface()
+		} else {
+			// Regular key - replace value
+			s.data[key] = value
+		}
 	}
 	s.version++
 
