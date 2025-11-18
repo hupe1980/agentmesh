@@ -16,17 +16,20 @@
 //
 //	// Define type-safe keys
 //	var CounterKey = state.NewKey[int]("counter", 0)
-//	var MessagesKey = state.NewListKey[message.Message]("messages", 100)
+//	var TaskListKey = state.NewListKey[string]("tasks", 100)
+//
+//	// For message history, use agent.MessagesKey from pkg/agent
+//	// (messages are agent-level concept, not general state)
 //
 //	// Create state and register keys
 //	st := state.NewState()
 //	state.Register(st, CounterKey)
-//	state.Register(st, MessagesKey)
+//	state.Register(st, TaskListKey)
 //
 //	// Type-safe operations
 //	counter := state.Get(st, CounterKey)  // Returns int
 //	state.Set(ctx, st, CounterKey, 42)    // Type-checked at compile time
-//	state.Append(ctx, st, MessagesKey, msg)
+//	state.Append(ctx, st, TaskListKey, "new task")
 //
 //	// BSP execution pattern
 //	snap := st.Snapshot()  // All vertices get consistent view

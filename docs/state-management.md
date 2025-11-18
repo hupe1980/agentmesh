@@ -75,13 +75,14 @@ Each checkpoint captures:
 type Checkpoint struct {
     RunID          string                 // Unique execution ID
     Superstep      int64                  // Iteration number
-    Timestamp      time.Time              // Creation time
-    State          map[string]any         // Graph state
-    Messages       []message.Message      // Conversation history
-    CompletedNodes []string               // Finished nodes
+    State          map[string]any         // Graph state (includes message history via "__messages__" key)
+    CompletedNodes []string               // Nodes that completed execution (for monitoring)
+    PausedNodes    []string               // Nodes paused for human-in-the-loop
     Metadata       map[string]any         // Custom metadata
 }
 ```
+
+**Note**: Message history is stored in the state under the `__messages__` key, not as a separate field.
 
 ### Checkpoint intervals
 
@@ -237,16 +238,15 @@ Control conversation history to prevent context overflow and manage costs.
 ### Set message limits
 
 ```go
-// Limit to 100 messages
-state := graph.NewStateManager(100)
+// Create message key with limit (max 50 messages)
+var MessagesKey = agent.MessagesKey  // Default: unlimited (0)
 
-// Or use StateBuilder
-stateBuilder := graph.NewStateBuilder().
-    WithMaxMessages(50)
+// Or create custom limited key
+var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 50)
 
-compiled, err := builder.Compile(
-    graph.WithStateBuilder(stateBuilder),
-)
+// Register with manager
+mgr := state.NewManager()
+state.RegisterListKey(mgr, LimitedMessagesKey)
 ```
 
 ### Pruning strategies
@@ -260,11 +260,11 @@ When limit is reached, oldest messages are removed:
 
 ### Unlimited messages
 
-For workflows that need full history:
+For workflows that need full history, use 0 as the max size:
 
 ```go
-stateBuilder := graph.NewStateBuilder().
-    WithUnlimitedMessages()
+// Unlimited message history (default for agent.MessagesKey)
+var UnlimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 0)
 ```
 
 **When to use:**

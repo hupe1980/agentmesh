@@ -207,14 +207,13 @@ Superstep 1: Repeat until END or max iterations
 Each vertex has a **mailbox** that stores messages sent to it by other vertices. Messages sent in superstep N are delivered in superstep N+1:
 
 ```go
-// Superstep 0: Node A sends message
+// Superstep 0: Node A updates state
 return &graph.NodeResult{
-    NextNodes: []string{"node_b"},
     Updates: map[string]any{"data": result},
 }, nil
 
-// Superstep 1: Node B receives message in its mailbox
-// The message is available via the Reader
+// Superstep 1: Node B receives updates via state view
+// The data is available via state.GetFromView(view, DataKey)
 ```
 
 **Mailbox Bounds**: To prevent memory exhaustion, mailboxes can be configured with size limits:
@@ -271,7 +270,6 @@ builder.AddNode(&graph.Node{
         draft := generateDraft()
         return &graph.NodeResult{
             Updates: map[string]any{"draft": draft},
-            NextNodes: []string{"evaluator"},
         }, nil
     },
 })
@@ -279,17 +277,33 @@ builder.AddNode(&graph.Node{
 builder.AddNode(&graph.Node{
     Name: "evaluator",
     RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        draft := state.Get("draft")
+        draft := state.GetFromView(view, DraftKey)
         if isGoodEnough(draft) {
-            return &graph.NodeResult{NextNodes: []string{"END"}}, nil
+            return &graph.NodeResult{
+                Updates: map[string]any{"done": true},
+            }, nil
         }
         // Send feedback and loop back to writer
         return &graph.NodeResult{
-            Updates: map[string]any{"feedback": "improve clarity"},
-            NextNodes: []string{"writer"},  // Creates a cycle!
+            Updates: map[string]any{
+                "feedback": "improve clarity",
+                "done": false,
+            },
         }, nil
     },
 })
+
+// Add static edge from writer to evaluator
+builder.AddEdge("writer", "evaluator")
+
+// Use conditional edges to create cycle - routes based on state
+builder.AddConditionalEdges("evaluator", func(ctx context.Context, view *state.ReadView) []string {
+    done := state.GetFromView(view, DoneKey)
+    if done {
+        return []string{"END"}
+    }
+    return []string{"writer"}  // Creates a cycle!
+}, []string{"END", "writer"})
 ```
 
 This creates a loop where the writer improves the draft based on evaluator feedback, executing over multiple supersteps until quality is acceptable.
@@ -521,28 +535,24 @@ type ConditionalEvaluator struct {
 builder.AddNode(&graph.Node{
     Name: "classifier",
     RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        category := analyzeInput(state.MessagesSnapshot())
-        
-        // Dynamic routing based on classification
-        var nextNodes []string
-        if category == "urgent" {
-            nextNodes = []string{"urgent_handler"}
-        } else {
-            nextNodes = []string{"standard_handler"}
-        }
+        messages := state.GetFromView(view, agent.MessagesKey)
+        category := analyzeInput(messages)
         
         return &graph.NodeResult{
-            NextNodes: nextNodes,  // Conditional routing
+            Updates: map[string]any{"category": category},
         }, nil
     },
 })
 
-// Alternative: Use conditional edge function
-builder.AddConditionalEdges("classifier", func(result *graph.NodeResult) []string {
-    category := result.Updates["category"].(string)
+// Use conditional edge function to route based on state
+builder.AddConditionalEdges("classifier", func(ctx context.Context, view *state.ReadView) []string {
+    category := state.GetFromView(view, CategoryKey)
     // Return different paths based on runtime data
-    return []string{category + "_handler"}
-})
+    if category == "urgent" {
+        return []string{"urgent_handler"}
+    }
+    return []string{"standard_handler"}
+}, []string{"urgent_handler", "standard_handler"})
 ```
 
 **Gate Mechanism**:
@@ -866,18 +876,18 @@ type Runtime[S, M] struct {
 }
 ```
 
-**Message lifecycle**:
+**State update lifecycle**:
 
 ```
 Superstep N:
   Vertex A executes
-  ├─ Returns NodeResult{NextNodes: ["B"], Updates: {...}}
-  └─ Runtime calls recordDeliveries()
-      └─ Appends message to mailbox["B"]
+  ├─ Returns NodeResult{Updates: {...}}
+  └─ Runtime applies updates to state
+      └─ State changes visible in next superstep
 
 Superstep N+1:
   Vertex B executes
-  ├─ Reads mailbox["B"] (contains message from A)
+  ├─ Reads state via view (contains updates from A)
   ├─ Processes messages
   └─ Clears mailbox["B"]
 ```
@@ -959,11 +969,16 @@ func (a *ErrorAggregator) Aggregate(ctx context.Context, state *State, prev floa
 
 // Use in node
 RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    globalError := state.GetAggregate("error").(float64)
+    globalError := state.GetFromView(view, ErrorKey)
     if globalError < 0.01 {
-        return &graph.NodeResult{NextNodes: []string{"END"}}, nil
+        return &graph.NodeResult{
+            Updates: map[string]any{"done": true},
+        }, nil
     }
     // Continue processing...
+    return &graph.NodeResult{
+        Updates: map[string]any{"done": false},
+    }, nil
 }
 ```
 
@@ -1534,10 +1549,10 @@ Nodes update state via `NodeResult`:
 
 ```go
 return &graph.NodeResult{
-    Messages: []message.Message{response},
     Updates: map[string]any{
         "status": "complete",
         "counter": 1,  // Will be summed if BinaryOpChannel
+        agent.MessagesKey.Name(): []message.Message{response},
     },
 }, nil
 ```

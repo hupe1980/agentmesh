@@ -64,11 +64,14 @@ state := graph.NewStateManager(10)
 //  - Messages 6-15 are retained
 ```
 
-### 3. Using StateBuilder
+### 3. Using Custom Message Key
 ```go
-state := graph.NewStateBuilder().
-    WithMessages(100).  // Max 100 messages
-    Build()
+// Create a limited message key (max 100 messages)
+var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
+
+// Register with manager
+mgr := state.NewManager()
+state.RegisterListKey(mgr, LimitedMessagesKey)
 ```
 
 ## Message Lifecycle

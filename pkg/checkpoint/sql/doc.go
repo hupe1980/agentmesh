@@ -65,11 +65,13 @@
 //   - run_id: Graph execution run identifier
 //   - superstep: Graph computation step number
 //   - timestamp: Checkpoint creation time
-//   - state: Serialized graph state (JSON)
-//   - messages: Serialized message queue (JSON)
-//   - completed_nodes: Array of completed node names (JSON)
-//   - paused_nodes: Array of paused node names (JSON)
+//   - state: Serialized graph state including message history (JSON)
+//   - completed_nodes: Array of completed node names for monitoring (JSON)
+//   - paused_nodes: Array of paused node names for human-in-the-loop (JSON)
 //   - metadata: Additional checkpoint metadata (JSON)
+//
+// Note: Message history is stored within the state column using the __messages__ key,
+// not as a separate column. This ensures consistent state management.
 //
 // A unique constraint ensures only one checkpoint per (run_id, superstep) combination.
 //

@@ -42,11 +42,11 @@ The signature covers:
 - Superstep
 - Version
 - Timestamp
-- State (all keys and values, sorted)
+- State (all keys and values, sorted) - includes message history via "__messages__" key
 - CompletedNodes (sorted)
 - PausedNodes (sorted)
 
-**Not signed**: Messages (too large), Signature field itself (circular)
+**Not signed**: Signature field itself (circular dependency)
 
 ## Usage
 

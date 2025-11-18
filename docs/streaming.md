@@ -305,8 +305,10 @@ builder.Node("llm_call", func(ctx context.Context, s state.Writer) (*graph.NodeR
     
     // Return final, complete message
     return &graph.NodeResult{
-        Messages: []message.Message{
-            message.NewAIMessageFromText(fullResponse.String()),
+        Updates: map[string]any{
+            agent.MessagesKey.Name(): []message.Message{
+                message.NewAIMessageFromText(fullResponse.String()),
+            },
         },
     }, nil
 })

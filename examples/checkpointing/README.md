@@ -120,15 +120,15 @@ Each checkpoint contains:
 ```go
 type Checkpoint struct {
     RunID          string                 // Workflow identifier
-    Superstep      int                    // BSP superstep number
-    Timestamp      time.Time              // When saved
-    State          map[string]any         // Full graph state
-    Messages       []message.Message      // Message history
-    CompletedNodes []string               // Executed nodes
-    PausedNodes    []string               // Human-in-loop pauses
-    Metadata       map[string]any         // Custom data
+    Superstep      int64                  // BSP superstep number
+    State          map[string]any         // Full graph state (includes message history via "__messages__" key)
+    CompletedNodes []string               // Nodes that completed execution (for monitoring)
+    PausedNodes    []string               // Nodes paused for human-in-the-loop workflows
+    Metadata       map[string]any         // Custom metadata
 }
 ```
+
+**Note**: Message history is stored in the state under the `__messages__` key, not as a separate field. This ensures a single source of truth for all state data.
 
 ## Storage Backends
 

@@ -258,9 +258,12 @@ START → retrieve → generate → END
 For complete control over workflow logic, build custom graphs using the graph builder:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/graph"
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+)
 
-var MessagesKey = state.MessagesKey
+var MessagesKey = agent.MessagesKey  // From agent package
 
 builder := graph.NewBuilder()
 
@@ -279,15 +282,19 @@ builder.Node("handle_support", func(ctx context.Context, view *state.ReadView) (
     // Handle support queries
     response := message.NewAIMessage(message.NewTextPart("Support response..."))
     return &graph.NodeResult{
-        Messages: []message.Message{response},
+        Updates: map[string]any{
+            agent.MessagesKey.Name(): []message.Message{response},
+        },
     }, nil
 })
 
-builder.Node("handle_sales", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.Node("handle_sales", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Handle sales queries
     response := message.NewAIMessage(message.NewTextPart("Sales response..."))
     return &graph.NodeResult{
-        Messages: []message.Message{response},
+        Updates: map[string]any{
+            agent.MessagesKey.Name(): []message.Message{response},
+        },
     }, nil
 })
 
@@ -318,7 +325,7 @@ Nodes receive a `ReadView` and return a `NodeResult`:
 ```go
 var (
     KeyName     = state.NewKey("key", "")
-    MessagesKey = state.MessagesKey
+    MessagesKey = agent.MessagesKey  // From agent package
 )
 
 RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
@@ -330,10 +337,10 @@ RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, err
     
     // Return updates
     return &graph.NodeResult{
-        Messages: []message.Message{newMessage},
         Updates: map[string]any{
             "key": newValue,
             "counter": 1,  // Will be summed if using BinaryOpChannel
+            agent.MessagesKey.Name(): []message.Message{newMessage},
         },
     }, nil
 }
@@ -400,7 +407,7 @@ Compose complex workflows from reusable graph components:
 // Create a research subgraph
 researchGraph := createResearchGraph()
 
-var MessagesKey = state.MessagesKey
+var MessagesKey = agent.MessagesKey  // From agent package
 
 // Embed in parent graph
 builder.Node("research", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {

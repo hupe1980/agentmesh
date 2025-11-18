@@ -1,13 +1,13 @@
-# Example: State Builder
+# Example: State Management
 
 ## Overview
-Demonstrates StateBuilder for simplified state initialization. Shows how to use a fluent API to create graph state with common channel patterns.
+Demonstrates state manager setup with typed keys for graph execution. Shows how to register channels for different data patterns.
 
 ## Key Concepts
-- **StateBuilder**: Fluent API for state creation
-- **Common Patterns**: Messages, counters, flags, lists, maps
-- **Convenience Methods**: Simplified channel configuration
-- **Type Safety**: Builder ensures correct channel types
+- **State Manager**: Central state management with typed keys
+- **Common Patterns**: Counters, flags, lists, maps
+- **Type Safety**: Typed keys ensure correct value types
+- **Channel Registration**: Register keys before use
 
 ## Running
 ```bash
@@ -17,9 +17,9 @@ go run main.go
 
 ## Expected Output
 ```
-=== StateBuilder Example ===
+=== State Management Example ===
 
-Creating state with common patterns...
+Creating state with typed keys...
 
 [init] Initializing...
   phase: initialization → processing
@@ -46,9 +46,25 @@ Final State:
 
 ## Code Walkthrough
 
-### 1. Build State with Fluent API
+### 1. Define Typed Keys
 ```go
-state := graph.NewStateBuilder().
+// Define typed keys for state management
+phaseKey := state.NewKey("phase", "initialization")
+attemptsKey := state.NewKey("attempts", 0)
+validatedKey := state.NewKey("validated", false)
+actionLogKey := state.NewListKey[string]("action_log", 0)
+taskResultsKey := state.NewKey("task_results", map[string]any{})
+
+// Create state manager and register keys
+mgr := state.NewManager()
+state.RegisterKey(mgr, phaseKey)
+state.RegisterKey(mgr, attemptsKey)
+state.RegisterKey(mgr, validatedKey)
+state.RegisterKey(mgr, actionLogKey.Key)
+state.RegisterKey(mgr, taskResultsKey)
+
+// Create graph with the manager
+gph, err := graph.NewGraph(mgr)
     WithMessages(50).                          // Message history (max 50)
     WithLastValue("phase", "initialization").  // Simple value
     WithCounter("attempts").                   // Integer counter

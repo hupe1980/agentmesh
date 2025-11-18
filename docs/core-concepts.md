@@ -133,7 +133,11 @@ A graph consists of:
 - **State** - Shared context accessible across all nodes
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/graph"
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/state"
+)
 
 builder, err := graph.NewBuilder()
 if err != nil {
@@ -168,7 +172,7 @@ var (
     RawDataKey       = state.NewKey("raw_data", "")
     ProcessedDataKey = state.NewKey("processed_data", "")
     StatusKey        = state.NewKey("status", "")
-    MessagesKey      = state.MessagesKey
+    MessagesKey      = agent.MessagesKey  // From agent package
 )
 
 func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
@@ -179,14 +183,14 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResu
     // Process...
     processed := transform(data)
     
-    // Return updates
+    // Return updates (including messages via agent.MessagesKey)
     return &graph.NodeResult{
         Updates: map[string]any{
             "processed_data": processed,
             "status": "complete",
-        },
-        Messages: []message.Message{
-            message.NewAIMessageFromText("Processing complete"),
+            agent.MessagesKey.Name(): []message.Message{
+                message.NewAIMessageFromText("Processing complete"),
+            },
         },
     }, nil
 }
@@ -199,11 +203,11 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResu
 
 ### Conditional routing
 
-Dynamically route to different nodes based on results:
+Dynamically route to different nodes based on state:
 
 ```go
-builder.AddConditionalEdges("classifier", func(result *graph.NodeResult) []string {
-    category := result.Updates["category"].(string)
+builder.AddConditionalEdges("classifier", func(ctx context.Context, view *state.ReadView) []string {
+    category := state.GetFromView(view, CategoryKey)
     switch category {
     case "urgent":
         return []string{"urgent_handler"}
@@ -212,7 +216,7 @@ builder.AddConditionalEdges("classifier", func(result *graph.NodeResult) []strin
     default:
         return []string{"default_handler"}
     }
-})
+}, []string{"urgent_handler", "normal_handler", "default_handler"})
 ```
 
 ---
@@ -230,7 +234,7 @@ Nodes receive immutable state views with typed key access:
 var (
     CounterKey  = state.NewKey("counter", 0)
     StatusKey   = state.NewKey("status", "")
-    MessagesKey = state.MessagesKey
+    MessagesKey = agent.MessagesKey  // From agent package
 )
 
 func myNode(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
@@ -253,32 +257,44 @@ return &graph.NodeResult{
         "counter": counter + 1,
         "status": "processing",
         "result": computedValue,
-    },
-    Messages: []message.Message{
-        message.NewAIMessageFromText("Updated successfully"),
+        // Add messages to updates using agent.MessagesKey
+        agent.MessagesKey.Name(): []message.Message{
+            message.NewAIMessageFromText("Updated successfully"),
+        },
     },
 }, nil
 ```
 
-### State builder pattern
+### State initialization
 
-Use the fluent StateBuilder API for simpler initialization:
+Create a state manager and register typed keys:
 
 ```go
-stateBuilder := graph.NewStateBuilder().
-    WithUnlimitedMessages().
-    WithLastValueChannel("status").
-    WithLastValueChannel("counter").
-    WithInitialMessages(
-        message.NewSystemMessageFromText("You are a helpful assistant"),
-    )
+// Create state manager
+mgr := state.NewManager()
 
-compiled, err := builder.Compile(
-    graph.WithStateBuilder(stateBuilder),
-)
+// Register typed keys
+statusKey := state.NewKey("status", "")
+counterKey := state.NewKey("counter", 0)
+
+state.Register(mgr, statusKey)
+state.Register(mgr, counterKey)
+
+// Register message key for agents
+agent.RegisterMessagesKey(mgr)
+
+// Create graph with the manager
+g, err := graph.NewGraph(mgr)
+if err != nil {
+    return err
+}
+
+// Build graph using builder
+builder.Node("process", processFunc)
+// ... add edges ...
+
+compiled, err := builder.Compile()
 ```
-
-See `examples/state_builder` for detailed usage.
 
 ---
 
@@ -332,21 +348,34 @@ builder.Node("writer", func(ctx context.Context, view *state.ReadView) (*graph.N
     draft := generateDraft()
     return &graph.NodeResult{
         Updates: map[string]any{"draft": draft},
-        NextNodes: []string{"evaluator"},
     }, nil
 })
 
 builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
-        return &graph.NodeResult{NextNodes: []string{"END"}}, nil
+        // Set done flag to route to END
+        return &graph.NodeResult{
+            Updates: map[string]any{"done": true},
+        }, nil
     }
     // Loop back to writer for refinement
     return &graph.NodeResult{
-        Updates: map[string]any{"feedback": "improve clarity"},
-        NextNodes: []string{"writer"},
+        Updates: map[string]any{
+            "feedback": "improve clarity",
+            "done": false,
+        },
     }, nil
 })
+
+// Use conditional edges to route based on state
+builder.AddConditionalEdges("evaluator", func(ctx context.Context, view *state.ReadView) []string {
+    done := state.GetFromView(view, DoneKey)
+    if done {
+        return []string{"END"}
+    }
+    return []string{"writer"}
+}, []string{"END", "writer"})
 ```
 
 ### Max iterations
@@ -447,7 +476,9 @@ state.AddChannel(channel.NewTopicChannel("messages", 100))
 
 // Updates append to the list
 result := &graph.NodeResult{
-    Messages: []message.Message{newMessage}, // Appends
+    Updates: map[string]any{
+        "messages": []message.Message{newMessage}, // Appends to topic channel
+    },
 }
 ```
 

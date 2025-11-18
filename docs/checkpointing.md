@@ -82,13 +82,14 @@ type Checkpoint struct {
     RunID          string                 // Unique execution identifier
     Superstep      int64                  // Iteration number (0, 1, 2, ...)
     Timestamp      time.Time              // When checkpoint was created
-    State          map[string]any         // Graph state (channels, values)
-    Messages       []message.Message      // Conversation history
-    CompletedNodes []string               // Nodes that finished this superstep
-    PausedNodes    []string               // Nodes waiting for input
+    State          map[string]any         // Graph state including message history (via MessagesKey)
+    CompletedNodes []string               // Nodes that finished execution (for monitoring)
+    PausedNodes    []string               // Nodes paused for human input (for human-in-the-loop)
     Metadata       map[string]any         // Custom execution metadata
 }
 ```
+
+**Note**: Message history is stored in the `State` map via `MessagesKey` channel, not as a separate field. This provides consistent state management and allows message history to be treated like any other state channel.
 
 ### 3. Superstep Progression
 
@@ -262,12 +263,13 @@ Primary Key:
 
 Attributes:
   - timestamp (String, ISO 8601)
-  - state (Binary, JSON)
-  - messages (Binary, JSON)
-  - completed_nodes (Binary, JSON)
-  - paused_nodes (Binary, JSON)
-  - metadata (Binary, JSON)
+  - state (Binary, JSON) - Includes message history via __messages__ key
+  - completed_nodes (Binary, JSON) - Nodes that finished execution
+  - paused_nodes (Binary, JSON) - Nodes paused for human input  
+  - metadata (Binary, JSON) - Custom execution metadata
 ```
+
+**Note**: Message history is stored within the `state` attribute using the `__messages__` key, not as a separate attribute. This ensures consistent state management across all checkpoint backends.
 
 **IAM Permissions Required**:
 
@@ -361,17 +363,18 @@ CREATE TABLE checkpoints (
     run_id TEXT NOT NULL,
     superstep BIGINT NOT NULL,
     timestamp TIMESTAMP NOT NULL,
-    state TEXT NOT NULL,           -- JSON
-    messages TEXT NOT NULL,        -- JSON
-    completed_nodes TEXT NOT NULL, -- JSON
-    paused_nodes TEXT NOT NULL,    -- JSON
-    metadata TEXT NOT NULL,        -- JSON
+    state TEXT NOT NULL,           -- JSON (includes message history via __messages__ key)
+    completed_nodes TEXT NOT NULL, -- JSON (nodes that finished execution)
+    paused_nodes TEXT NOT NULL,    -- JSON (nodes paused for human input)
+    metadata TEXT NOT NULL,        -- JSON (custom execution metadata)
     PRIMARY KEY (run_id, superstep)
 );
 
 CREATE INDEX idx_checkpoints_run_id ON checkpoints(run_id);
 CREATE INDEX idx_checkpoints_timestamp ON checkpoints(timestamp);
 ```
+
+**Note**: The `state` column contains all graph state including message history. Message history is stored using the `__messages__` key within the state JSON, not as a separate column.
 
 **Advanced Queries**:
 
@@ -606,7 +609,11 @@ fmt.Printf("Total supersteps: %d\n", len(checkpoints))
 // Inspect checkpoint at superstep 2
 cp, _ := checkpointer.LoadAtSuperstep(ctx, "debug-run", 2)
 fmt.Printf("State at step 2: %+v\n", cp.State)
-fmt.Printf("Messages: %d\n", len(cp.Messages))
+
+// Access message history from state
+if messages, ok := cp.State["__messages__"].([]message.Message); ok {
+    fmt.Printf("Messages: %d\n", len(messages))
+}
 fmt.Printf("Completed nodes: %v\n", cp.CompletedNodes)
 ```
 
@@ -630,11 +637,13 @@ func compareCheckpoints(store checkpoint.Checkpointer, runID string, step1, step
         }
     }
     
-    // Compare messages
-    newMessages := len(cp2.Messages) - len(cp1.Messages)
+    // Compare message history (stored in state)
+    msgs1, _ := cp1.State["__messages__"].([]message.Message)
+    msgs2, _ := cp2.State["__messages__"].([]message.Message)
+    newMessages := len(msgs2) - len(msgs1)
     if newMessages > 0 {
         fmt.Printf("\n%d new messages:\n", newMessages)
-        for _, msg := range cp2.Messages[len(cp1.Messages):] {
+        for _, msg := range msgs2[len(msgs1):] {
             fmt.Printf("  - %s: %s\n", msg.Type(), msg.Content())
         }
     }
@@ -667,10 +676,12 @@ for _, cp := range checkpoints {
     }
 }
 
-// 5. Examine exact message history
+// 5. Examine exact message history (stored in state)
 fmt.Println("\nMessage history:")
-for i, msg := range finalCP.Messages {
-    fmt.Printf("%d. [%s] %s\n", i+1, msg.Type(), msg.Content())
+if messages, ok := finalCP.State[agent.MessagesKey.Name()].([]message.Message); ok {
+    for i, msg := range messages {
+        fmt.Printf("%d. [%s] %s\n", i+1, msg.Type(), msg.Content())
+    }
 }
 ```
 
@@ -691,9 +702,7 @@ newThreadID := "test-fork-" + uuid.New().String()
 newCheckpoint := &checkpoint.Checkpoint{
     RunID:          newThreadID,
     Superstep:      0,  // Reset to start
-    Timestamp:      time.Now(),
-    State:          cp.State,
-    Messages:       cp.Messages,
+    State:          cp.State,  // Includes message history via agent.MessagesKey
     CompletedNodes: []string{},
     PausedNodes:    []string{},
     Metadata:       map[string]any{"forked_from": "original-run", "at_step": 2},
@@ -813,10 +822,13 @@ For 1000 runs with 10 supersteps each:
 **Optimization Strategies**:
 
 ```go
-// 1. Limit message history in checkpoints
+// 1. Limit message history using ListKey maxSize
+var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
+mgr := state.NewManager()
+state.RegisterListKey(mgr, LimitedMessagesKey)
+
 seq := compiled.Run(ctx, messages,
     graph.WithRunID(runID),
-    graph.WithMaxMessages(100),  // Keep only last 100 messages
 )
 
 // 2. Exclude large state values
