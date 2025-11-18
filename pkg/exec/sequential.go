@@ -191,7 +191,7 @@ func (s *Sequential[I, O]) executeFromNode(
 		if err != nil {
 			return fmt.Errorf("failed to create read view: %w", err)
 		}
-		result, err := node.Run(ctx, view)
+		updates, err := node.Execute(ctx, view)
 		if err != nil {
 			// Yield error
 			var zero O
@@ -201,22 +201,22 @@ func (s *Sequential[I, O]) executeFromNode(
 			return err
 		}
 
-		// Process node result
-		if result != nil {
+		// Process node updates
+		if updates != nil {
 			// Apply state updates
-			if len(result.Updates) > 0 {
-				if err := compiled.Manager.ApplyUpdates(ctx, result.Updates); err != nil {
+			if len(updates) > 0 {
+				if err := compiled.Manager.ApplyUpdates(ctx, updates); err != nil {
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 
 				// Extract output from updates based on configured key and yield
 				if s.outputKey == "*" {
 					// Yield entire state.Updates (for state-only executor)
-					output := s.outputAdapter(result.Updates)
+					output := s.outputAdapter(updates)
 					if !yield(output, nil) {
 						return nil
 					}
-				} else if value, ok := result.Updates[s.outputKey]; ok {
+				} else if value, ok := updates[s.outputKey]; ok {
 					// Yield specific key value
 					output := s.outputAdapter(value)
 					if !yield(output, nil) {

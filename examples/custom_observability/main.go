@@ -72,9 +72,8 @@ func main() {
 	}
 
 	// Node 1: Data Ingestion - demonstrates logger usage
-	if err := g.AddNode(&graph.Node{
-		Name: "ingest_data",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("ingest_data",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -91,18 +90,15 @@ func main() {
 				"record_count", len(data["records"].([]string)),
 				"timestamp", data["timestamp"])
 
-			return &graph.NodeResult{
-				Updates: map[string]any{"raw_data": data},
-			}, nil
+			return map[string]any{"raw_data": data}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		panic(err)
 	}
 
 	// Node 2: Data Processing - demonstrates tracer usage
-	if err := g.AddNode(&graph.Node{
-		Name: "process_data",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("process_data",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -138,18 +134,15 @@ func main() {
 
 			log.Info("Processing completed", "processed_count", len(processedRecords))
 
-			return &graph.NodeResult{
-				Updates: map[string]any{"processed_data": result},
-			}, nil
+			return map[string]any{"processed_data": result}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		panic(err)
 	}
 
 	// Node 3: Data Validation - demonstrates metrics usage
-	if err := g.AddNode(&graph.Node{
-		Name: "validate_data",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("validate_data",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -207,18 +200,15 @@ func main() {
 				"invalid", invalidRecords,
 				"duration_ms", duration.Milliseconds())
 
-			return &graph.NodeResult{
-				Updates: map[string]any{"validation_result": result},
-			}, nil
+			return map[string]any{"validation_result": result}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		panic(err)
 	}
 
 	// Node 4: Summary - demonstrates all providers together
-	if err := g.AddNode(&graph.Node{
-		Name: "generate_summary",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("generate_summary",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)
@@ -247,11 +237,9 @@ func main() {
 
 			log.Info("Summary generated", "summary", summary)
 
-			return &graph.NodeResult{
-				Updates: map[string]any{"summary": summary},
-			}, nil
+			return map[string]any{"summary": summary}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		panic(err)
 	}
 

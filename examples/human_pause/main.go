@@ -41,32 +41,28 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	mustAddNode := func(n *graph.Node) {
+	mustAddNode := func(n graph.Node) {
 		if err := g.AddNode(n); err != nil {
 			panic(err)
 		}
 	}
 
-	mustAddNode(&graph.Node{
-		Name: "research",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("research",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{
-						fmt.Sprintf("Researched '%s'", topic),
-						fmt.Sprintf("Summarized findings for '%s'", topic),
-					},
-					currentTaskKey.Name(): fmt.Sprintf("Write report for %s", topic),
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{
+					fmt.Sprintf("Researched '%s'", topic),
+					fmt.Sprintf("Summarized findings for '%s'", topic),
 				},
+				currentTaskKey.Name(): fmt.Sprintf("Write report for %s", topic),
 			}, nil
 		},
-	})
+	))
 
-	mustAddNode(&graph.Node{
-		Name: "write",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("write",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("write")
 			humanInput := graphstate.GetFromView(view, humanInputKey)
 			if humanInput == "" {
@@ -74,27 +70,22 @@ func main() {
 				return nil, graph.ErrHumanInterrupt
 			}
 			task := graphstate.GetFromView(view, currentTaskKey)
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{fmt.Sprintf("Drafted report for '%s'", task)},
-					draftKey.Name():         "draft report content",
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{fmt.Sprintf("Drafted report for '%s'", task)},
+				draftKey.Name():         "draft report content",
 			}, nil
 		},
-	})
+	))
 
-	mustAddNode(&graph.Node{
-		Name: "review",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("review",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("review")
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"Reviewed draft"},
-					finalReportKey.Name():   "final report content",
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"Reviewed draft"},
+				finalReportKey.Name():   "final report content",
 			}, nil
 		},
-	})
+	))
 
 	g.AddConditionalEdges("write", func(_ context.Context, view *graphstate.ReadView) []string {
 		draft := graphstate.GetFromView(view, draftKey)

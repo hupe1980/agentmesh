@@ -38,10 +38,8 @@ func TestBuilder_BasicUsage(t *testing.T) {
 
 	// Add nodes using fluent API
 	builder.
-		Node("process", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"processed": true},
-			}, nil
+		Node("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"processed": true}, nil
 		}).
 		AddEdge(graph.StartNode, "process").
 		AddEdge("process", graph.EndNode)
@@ -87,11 +85,11 @@ func TestBuilder_WithOptions(t *testing.T) {
 	}
 
 	builder.
-		Node("node1", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{Updates: map[string]any{"step": 1}}, nil
+		Node("node1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"step": 1}, nil
 		}).
-		Node("node2", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{Updates: map[string]any{"step": 2}}, nil
+		Node("node2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"step": 2}, nil
 		}).
 		AddEdge(graph.StartNode, "node1").
 		AddEdge("node1", "node2").
@@ -141,16 +139,14 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	}
 
 	builder.
-		Node("router", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"route": "left"},
-			}, nil
+		Node("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"route": "left"}, nil
 		}).
-		Node("left", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{Updates: map[string]any{"result": "left"}}, nil
+		Node("left", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"result": "left"}, nil
 		}).
-		Node("right", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{Updates: map[string]any{"result": "right"}}, nil
+		Node("right", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"result": "right"}, nil
 		}).
 		AddEdge(graph.StartNode, "router").
 		AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
@@ -203,8 +199,8 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	}
 
 	builder.
-		Node("process", func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{Updates: map[string]any{"done": true}}, nil
+		Node("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"done": true}, nil
 		}).
 		AddEdge(graph.StartNode, "process").
 		AddEdge("process", graph.EndNode)

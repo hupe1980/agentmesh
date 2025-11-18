@@ -8,7 +8,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -116,7 +115,7 @@ func (t *AgentTool) Definition() *tool.Definition {
 
 // AgentNode creates a graph node function that calls an external A2A agent.
 // This allows integrating A2A agents directly into AgentMesh graphs.
-func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ...a2aclient.FactoryOption) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
+func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ...a2aclient.FactoryOption) func(context.Context, *state.ReadView) (state.Updates, error) {
 	// Create the client upfront - errors will be returned when node executes
 	card, cardErr := agentcard.DefaultResolver.Resolve(ctx, agentCardURL)
 	var client *a2aclient.Client
@@ -127,7 +126,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 	}
 
 	// Return a node function
-	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		// Check for setup errors
 		if cardErr != nil {
 			return nil, fmt.Errorf("failed to resolve agent card: %w", cardErr)
@@ -139,7 +138,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 		// Get last message from state
 		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
-			return &graph.NodeResult{Updates: state.Updates{}}, nil
+			return state.Updates{}, nil
 		}
 
 		// Convert to A2A format
@@ -173,9 +172,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 			updates := state.Updates{}
 			agent.AppendMessages(updates, resultMessages)
 
-			return &graph.NodeResult{
-				Updates: updates,
-			}, nil
+			return updates, nil
 		}
 
 		return nil, fmt.Errorf("unexpected response type from A2A agent")
@@ -183,7 +180,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 }
 
 // StreamingAgentNode creates a graph node that streams responses from an A2A agent.
-func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string, opts ...a2aclient.FactoryOption) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
+func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string, opts ...a2aclient.FactoryOption) func(context.Context, *state.ReadView) (state.Updates, error) {
 	card, cardErr := agentcard.DefaultResolver.Resolve(ctx, agentCardURL)
 	var client *a2aclient.Client
 	var clientErr error
@@ -192,7 +189,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		client, clientErr = a2aclient.NewFromCard(ctx, card, opts...)
 	}
 
-	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		if cardErr != nil {
 			return nil, fmt.Errorf("failed to resolve agent card: %w", cardErr)
 		}
@@ -203,7 +200,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		// Get last message from state
 		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
-			return &graph.NodeResult{Updates: state.Updates{}}, nil
+			return state.Updates{}, nil
 		}
 
 		a2aMsg, err := ConvertToA2AMessage(lastMsg)
@@ -243,9 +240,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		updates := state.Updates{}
 		agent.AppendMessages(updates, resultMessages)
 
-		return &graph.NodeResult{
-			Updates: updates,
-		}, nil
+		return updates, nil
 	}
 }
 

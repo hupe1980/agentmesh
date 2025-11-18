@@ -59,55 +59,43 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	}
 
 	// Node 1: Initialize state with int
-	err = g.AddNode(&graph.Node{
-		Name: "node1",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): 1, // int, not float64
-					dataKey.Name():    "A",
-				},
+	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return state.Updates{
+				counterKey.Name(): 1, // int, not float64
+				dataKey.Name():    "A",
 			}, nil
 		},
-	})
+		))
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Increment counter (should stay int)
-	err = g.AddNode(&graph.Node{
-		Name: "node2",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): counter + 1, // Should be int 2
-					dataKey.Name():    data + "B",
-				},
+			return state.Updates{
+				counterKey.Name(): counter + 1, // Should be int 2
+				dataKey.Name():    data + "B",
 			}, nil
 		},
-	})
+		))
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}
 
 	// Node 3: Final increment
-	err = g.AddNode(&graph.Node{
-		Name: "node3",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	err = g.AddNode(graph.NewBaseNode("node3", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): counter + 1, // Should be int 3
-					dataKey.Name():    data + "C",
-				},
+			return state.Updates{
+				counterKey.Name(): counter + 1, // Should be int 3
+				dataKey.Name():    data + "C",
 			}, nil
 		},
-	})
+		))
 	if err != nil {
 		t.Fatalf("Failed to add node3: %v", err)
 	}

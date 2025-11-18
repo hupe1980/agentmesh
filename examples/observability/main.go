@@ -64,9 +64,8 @@ func main() {
 
 	// Add nodes that use providers via FromContext()
 	// Automatic instrumentation happens behind the scenes
-	if err := g.AddNode(&graph.Node{
-		Name: "step1",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("step1",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -84,17 +83,14 @@ func main() {
 			counter := graphstate.GetFromView(view, counterKey)
 			counter++
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{counterKey.Name(): counter},
-			}, nil
+			return graphstate.Updates{counterKey.Name(): counter}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := g.AddNode(&graph.Node{
-		Name: "step2",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	if err := g.AddNode(graph.NewBaseNode("step2",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 
@@ -109,11 +105,9 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			newValue := currentCounter + 10
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{counterKey.Name(): newValue},
-			}, nil
+			return graphstate.Updates{counterKey.Name(): newValue}, nil
 		},
-	}); err != nil {
+	)); err != nil {
 		log.Fatal(err)
 	}
 

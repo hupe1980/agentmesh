@@ -44,20 +44,17 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 
 		for i := 1; i <= 5; i++ {
 			nodeNum := i
-			require.NoError(t, g.AddNode(&graph.Node{
-				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+			require.NoError(t, g.AddNode(graph.NewBaseNode(fmt.Sprintf("step_%d", i),
+				func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 					counter := state.GetFromView(s, counterKey)
 					newCounter := counter + 1
 
-					return &graph.NodeResult{
-						Updates: map[string]any{
-							"counter":                                newCounter,
-							fmt.Sprintf("node_%d_executed", nodeNum): true,
-						},
+					return map[string]any{
+						"counter":                                newCounter,
+						fmt.Sprintf("node_%d_executed", nodeNum): true,
 					}, nil
 				},
-			}))
+			)))
 
 			if i > 1 {
 				g.AddEdge(fmt.Sprintf("step_%d", i-1), fmt.Sprintf("step_%d", i))
@@ -175,9 +172,8 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 
 		for i := 1; i <= 5; i++ {
 			nodeNum := i
-			require.NoError(t, g.AddNode(&graph.Node{
-				Name: fmt.Sprintf("step_%d", i),
-				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+			require.NoError(t, g.AddNode(graph.NewBaseNode(fmt.Sprintf("step_%d", i),
+				func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 					// Check if this step should fail
 					if nodeNum == 3 {
 						// Step 3 fails on first attempt unless retry_allowed is set
@@ -190,14 +186,12 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 					counter := state.GetFromView(s, counterKey2)
 					newCounter := counter + 1
 
-					return &graph.NodeResult{
-						Updates: map[string]any{
-							"counter": newCounter,
-							fmt.Sprintf("completed_step_%d", nodeNum): true,
-						},
+					return map[string]any{
+						"counter": newCounter,
+						fmt.Sprintf("completed_step_%d", nodeNum): true,
 					}, nil
 				},
-			}))
+			)))
 
 			if i > 1 {
 				g.AddEdge(fmt.Sprintf("step_%d", i-1), fmt.Sprintf("step_%d", i))
@@ -312,61 +306,49 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		}
 
 		// Node A sets value
-		require.NoError(t, g.AddNode(&graph.Node{
-			Name: "node_a",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				log := logMu.Load().([]string)
-				log = append(log, "node_a")
-				logMu.Store(log)
+		require.NoError(t, g.AddNode(graph.NewBaseNode("node_a", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			log := logMu.Load().([]string)
+			log = append(log, "node_a")
+			logMu.Store(log)
 
-				return &graph.NodeResult{
-					Updates: map[string]any{
-						"value":       42,
-						"node_a_done": true,
-					},
-				}, nil
-			},
-		}))
+			return map[string]any{
+				"value":       42,
+				"node_a_done": true,
+			}, nil
+		},
+		)))
 
 		// Node B multiplies value
-		require.NoError(t, g.AddNode(&graph.Node{
-			Name: "node_b",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				log := logMu.Load().([]string)
-				log = append(log, "node_b")
-				logMu.Store(log)
+		require.NoError(t, g.AddNode(graph.NewBaseNode("node_b", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			log := logMu.Load().([]string)
+			log = append(log, "node_b")
+			logMu.Store(log)
 
-				value := state.GetFromView(s, valueKey)
-				newValue := value * 2
+			value := state.GetFromView(s, valueKey)
+			newValue := value * 2
 
-				return &graph.NodeResult{
-					Updates: map[string]any{
-						"value":       newValue,
-						"node_b_done": true,
-					},
-				}, nil
-			},
-		}))
+			return map[string]any{
+				"value":       newValue,
+				"node_b_done": true,
+			}, nil
+		},
+		)))
 
 		// Node C adds to value
-		require.NoError(t, g.AddNode(&graph.Node{
-			Name: "node_c",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				log := logMu.Load().([]string)
-				log = append(log, "node_c")
-				logMu.Store(log)
+		require.NoError(t, g.AddNode(graph.NewBaseNode("node_c", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			log := logMu.Load().([]string)
+			log = append(log, "node_c")
+			logMu.Store(log)
 
-				value := state.GetFromView(s, valueKey)
-				newValue := value + 10
+			value := state.GetFromView(s, valueKey)
+			newValue := value + 10
 
-				return &graph.NodeResult{
-					Updates: map[string]any{
-						"value":       newValue,
-						"node_c_done": true,
-					},
-				}, nil
-			},
-		}))
+			return map[string]any{
+				"value":       newValue,
+				"node_c_done": true,
+			}, nil
+		},
+		)))
 
 		g.AddEdge(graph.StartNode, "node_a")
 		g.AddEdge("node_a", "node_b")
@@ -452,14 +434,10 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.NoError(t, g.AddNode(&graph.Node{
-		Name: "node_1",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"data": "checkpoint_data"},
-			}, nil
-		},
-	}))
+	require.NoError(t, g.AddNode(graph.NewBaseNode("node_1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return map[string]any{"data": "checkpoint_data"}, nil
+	},
+	)))
 
 	g.AddEdge(graph.StartNode, "node_1")
 	g.AddEdge("node_1", graph.EndNode)
@@ -545,17 +523,14 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		nodeNum := i
-		require.NoError(t, g.AddNode(&graph.Node{
-			Name: fmt.Sprintf("step_%d", i),
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{
-					Updates: map[string]any{
-						"step":                                nodeNum,
-						fmt.Sprintf("checkpoint_%d", nodeNum): fmt.Sprintf("data_at_step_%d", nodeNum),
-					},
+		require.NoError(t, g.AddNode(graph.NewBaseNode(fmt.Sprintf("step_%d", i),
+			func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+				return map[string]any{
+					"step":                                nodeNum,
+					fmt.Sprintf("checkpoint_%d", nodeNum): fmt.Sprintf("data_at_step_%d", nodeNum),
 				}, nil
 			},
-		}))
+		)))
 
 		if i > 1 {
 			g.AddEdge(fmt.Sprintf("step_%d", i-1), fmt.Sprintf("step_%d", i))
@@ -649,18 +624,14 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			require.NoError(t, g.AddNode(&graph.Node{
-				Name: "work",
-				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-					time.Sleep(10 * time.Millisecond) // Simulate work
-					return &graph.NodeResult{
-						Updates: map[string]any{
-							"workflow_id": workflowID,
-							"timestamp":   time.Now().Unix(),
-						},
-					}, nil
-				},
-			}))
+			require.NoError(t, g.AddNode(graph.NewBaseNode("work", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+				time.Sleep(10 * time.Millisecond) // Simulate work
+				return map[string]any{
+					"workflow_id": workflowID,
+					"timestamp":   time.Now().Unix(),
+				}, nil
+			},
+			)))
 
 			g.AddEdge(graph.StartNode, "work")
 			g.AddEdge("work", graph.EndNode)
@@ -726,14 +697,10 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.NoError(t, g.AddNode(&graph.Node{
-		Name: "node_1",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"executed": true},
-			}, nil
-		},
-	}))
+	require.NoError(t, g.AddNode(graph.NewBaseNode("node_1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return map[string]any{"executed": true}, nil
+	},
+	)))
 
 	g.AddEdge(graph.StartNode, "node_1")
 	g.AddEdge("node_1", graph.EndNode)

@@ -28,15 +28,15 @@ func createTestGraph() (*Graph, error) {
 	}
 
 	// Add nodes
-	g.AddNode(&Node{Name: "start_node", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
-	g.AddNode(&Node{Name: "process", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
-	g.AddNode(&Node{Name: "end_node", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
+	g.AddNode(NewBaseNode("start_node", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
+	g.AddNode(NewBaseNode("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
+	g.AddNode(NewBaseNode("end_node", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
 
 	// Add edges
 	g.AddEdge(StartNode, "start_node")
@@ -89,13 +89,9 @@ func TestExportToMermaid_ComplexFlowWithBranches(t *testing.T) {
 	g, _ := NewGraph(mgr)
 
 	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
-	g.AddNode(&Node{
-		Name: "retryable",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-			return &NodeResult{}, nil
-		},
-		RetryPolicy: retryPolicy,
-	})
+	g.AddNode(NewBaseNodeWithRetry("retryable", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}, retryPolicy))
 
 	info, err := g.GetNodeInfo("retryable")
 	require.NoError(t, err)
@@ -136,15 +132,15 @@ func TestGraph_GetEdges_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(&Node{Name: "router", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
-	g.AddNode(&Node{Name: "option_a", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
-	g.AddNode(&Node{Name: "option_b", RunFunc: func(ctx context.Context, s *state.ReadView) (*NodeResult, error) {
-		return &NodeResult{}, nil
-	}})
+	g.AddNode(NewBaseNode("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
+	g.AddNode(NewBaseNode("option_a", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
+	g.AddNode(NewBaseNode("option_b", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		return nil, nil
+	}))
 
 	g.AddEdge(StartNode, "router")
 	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
@@ -189,9 +185,9 @@ func TestGraph_GetTopology_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(&Node{Name: "router", RunFunc: nil})
-	g.AddNode(&Node{Name: "high_priority", RunFunc: nil})
-	g.AddNode(&Node{Name: "normal", RunFunc: nil})
+	g.AddNode(NewBaseNode("router", nil))
+	g.AddNode(NewBaseNode("high_priority", nil))
+	g.AddNode(NewBaseNode("normal", nil))
 
 	g.AddEdge(StartNode, "router")
 	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {

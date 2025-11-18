@@ -58,9 +58,7 @@ retry := plugins.NewRetryPlugin(
 pm.Register(retry)
         return nil, err
     }
-    return &graph.NodeResult{
-        Updates: map[string]any{"api_result": result},
-    }, nil
+    return map[string]any{"api_result": result}, nil
 }, graph.WithRetryPolicy(&graph.RetryPolicy{
     MaxAttempts: 3,
     Backoff: func(attempt int) time.Duration {
@@ -297,34 +295,17 @@ Nodes contribute to aggregators and read results from previous supersteps:
 Nodes contribute to aggregators and read results from previous supersteps:
 
 ```go
-node := &graph.Node{
-    Name: "processor",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        // Process some items
-        itemsProcessed := 42
-        latency := 150.0
-        
-        // Contribute to multiple aggregates
-        if err := s.Aggregate("total_processed", itemsProcessed); err != nil {
-            return nil, err
-        }
-        if err := s.Aggregate("avg_latency", latency); err != nil {
-            return nil, err
-        }
-        
-        // Read aggregates from previous superstep
-        snap := s.AggregatesSnapshot()
-        if snap != nil {
-            if total, ok := snap["total_processed"].(float64); ok {
-                log.Printf("Total items processed so far: %.0f", total)
-            }
-            if avgState, ok := snap["avg_latency"].(graph.avgState); ok {
-                log.Printf("Average latency: %.2fms (n=%d)", avgState.Mean, avgState.Count)
-            }
-        }
-        
-        return &graph.NodeResult{}, nil
-    },
+// In a Pregel-style execution context, nodes can aggregate values
+// Note: Standard graph nodes use state.Updates directly
+func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Process some items
+    itemsProcessed := 42
+    latency := 150.0
+    
+    // Note: Aggregation is specific to Pregel runtime
+    // For standard graphs, return state.Updates directly
+    
+    return nil, nil
 }
 ```
 
@@ -451,14 +432,13 @@ RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, err
             if globalError < 0.001 {
                 // Converged! Route to END
                 return &graph.NodeResult{
-                    Updates: map[string]any{"converged": true},
-                }, nil
+                    return map[string]any{"converged": true}, nil
             }
         }
     }
     
     // Continue processing
-    return &graph.NodeResult{}, nil
+    return nil, nil
 }
 ```
 
@@ -478,28 +458,27 @@ executor := graph.NewPregelExecutor(
 g.WithExecutor(executor)
 compiled, _ := exec.CompileGraph(g)
 
-// In each parallel node
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+// In each parallel node (Pregel-style aggregation)
+func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     start := time.Now()
     
     result, err := doWork()
     latency := time.Since(start).Milliseconds()
     
-    s.Aggregate("total_latency", latency)
+    // Note: Aggregation API depends on Pregel runtime context
+    // This is a conceptual example
     if err != nil {
-        s.Aggregate("failure_count", 1)
         return nil, err
     }
-    
-    s.Aggregate("success_count", 1)
     return result, nil
 }
 
-// In final reporting node
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    snap := s.AggregatesSnapshot()
+// In final reporting node (Pregel-style)
+func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Note: Aggregates are specific to Pregel runtime
+    // This is a conceptual example
     
-    successCount := snap["success_count"].(float64)
+    successCount := 0.0 // Would come from aggregates snapshot
     failureCount := snap["failure_count"].(float64)
     totalLatency := snap["total_latency"].(float64)
     avgLatency := totalLatency / (successCount + failureCount)

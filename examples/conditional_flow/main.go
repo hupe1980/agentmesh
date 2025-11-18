@@ -61,56 +61,47 @@ func runScenario(choice string) {
 	if err != nil {
 		panic(err)
 	}
-	mustAddNode := func(n *graph.Node) {
+	mustAddNode := func(n graph.Node) {
 		if err := gph.AddNode(n); err != nil {
 			panic(err)
 		}
 	}
 
 	// Decision node: Reads input and decides which path to take
-	mustAddNode(&graph.Node{
-		Name: "decide",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("decide",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			choiceVal := graphstate.GetFromView(view, choiceKey)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
 			// Update state to indicate which path should be taken
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					nextPathKey.Name(): choiceVal,
-					actionHistoryKey.Name(): []string{
-						fmt.Sprintf("Decision: route to %s", choiceVal),
-					},
+			return graphstate.Updates{
+				nextPathKey.Name(): choiceVal,
+				actionHistoryKey.Name(): []string{
+					fmt.Sprintf("Decision: route to %s", choiceVal),
 				},
 			}, nil
 		},
-	})
+	))
 
 	// Path A: Specialized processing for option A
-	mustAddNode(&graph.Node{
-		Name: "path_a",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("path_a",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"Completed: Path A"},
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"Completed: Path A"},
 			}, nil
 		},
-	})
+	))
 
 	// Path B: Alternative processing for option B
-	mustAddNode(&graph.Node{
-		Name: "path_b",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mustAddNode(graph.NewBaseNode("path_b",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"Completed: Path B"},
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"Completed: Path B"},
 			}, nil
 		},
-	})
+	))
 
 	// Build the graph topology with conditional routing
 	gph.AddEdge(graph.StartNode, "decide")

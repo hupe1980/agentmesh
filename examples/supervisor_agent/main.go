@@ -50,24 +50,24 @@ func main() {
 		// In production, you might want to use checkpointing or state management instead
 		supervisor, err := createSupervisor()
 		if err != nil {
-			log.Printf("Error creating supervisor: %v", err)
-			continue
+		log.Printf("Error creating supervisor: %v", err)
+		continue
 		}
 
 		// Execute and collect execution results
 		results, err := agent.CollectMessages(supervisor.Run(ctx, []message.Message{
-			message.NewHumanMessageFromText(query),
+		message.NewHumanMessageFromText(query),
 		}))
 		if err != nil {
-			log.Printf("Error executing query: %v", err)
-			continue
+		log.Printf("Error executing query: %v", err)
+		continue
 		}
 
 		// Results are now messages directly
 		messages := make([]message.Message, 0, len(results))
 		for _, result := range results {
-			if result != nil {
-				messages = append(messages, result)
+		if result != nil {
+		messages = append(messages, result)
 			}
 		}
 
@@ -169,56 +169,56 @@ func displayTranscript(query string, messages []message.Message) {
 		switch m := msg.(type) {
 		case *message.AIMessage:
 			// Check if this is supervisor routing or final response
-			if len(m.ToolCalls) > 0 {
-				fmt.Printf("\n🎯 Supervisor Routing:\n")
-				for _, call := range m.ToolCalls {
-					fmt.Printf("   → Delegating to: %s\n", call.Name)
-					if args, ok := call.Arguments["task"].(string); ok {
-						fmt.Printf("   → Task: %s\n", args)
-					}
+		if len(m.ToolCalls) > 0 {
+		fmt.Printf("\n🎯 Supervisor Routing:\n")
+		for _, call := range m.ToolCalls {
+				fmt.Printf("   → Delegating to: %s\n", call.Name)
+				if args, ok := call.Arguments["task"].(string); ok {
+					fmt.Printf("   → Task: %s\n", args)
 				}
+			}
 			} else {
-				// Final response
-				fmt.Printf("\n🤖 Response:\n")
-				for _, part := range m.Parts() {
-					if text, ok := part.(message.TextPart); ok {
-						// Format the response nicely
-						lines := strings.SplitSeq(text.Text, "\n")
-						for line := range lines {
-							if line != "" {
-								fmt.Printf("   %s\n", line)
-							}
+			// Final response
+		fmt.Printf("\n🤖 Response:\n")
+		for _, part := range m.Parts() {
+				if text, ok := part.(message.TextPart); ok {
+					// Format the response nicely
+					lines := strings.SplitSeq(text.Text, "\n")
+					for line := range lines {
+						if line != "" {
+						fmt.Printf("   %s\n", line)
 						}
 					}
 				}
+			}
 			}
 
 		case *message.ToolMessage:
 			// Show specialist response
-			fmt.Printf("\n✨ Specialist Result:\n")
-			for _, part := range m.Parts() {
-				if text, ok := part.(message.TextPart); ok {
-					// Indent specialist response
-					lines := strings.SplitSeq(text.Text, "\n")
-					for line := range lines {
-						if line != "" {
-							fmt.Printf("   %s\n", line)
-						}
+		fmt.Printf("\n✨ Specialist Result:\n")
+		for _, part := range m.Parts() {
+		if text, ok := part.(message.TextPart); ok {
+				// Indent specialist response
+				lines := strings.SplitSeq(text.Text, "\n")
+				for line := range lines {
+					if line != "" {
+						fmt.Printf("   %s\n", line)
 					}
 				}
+			}
 			}
 
 		case *message.SystemMessage:
 			// Skip system messages in output
-			continue
+		continue
 		case *message.HumanMessage:
 			// Skip repeated user messages in the transcript
-			continue
+		continue
 		}
 
 		// Add spacing between messages
 		if i < len(messages)-1 {
-			fmt.Println()
+		fmt.Println()
 		}
 	}
 	fmt.Println()

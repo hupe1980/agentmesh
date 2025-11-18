@@ -76,19 +76,16 @@ func basicEncryptionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	g.AddNode(&graph.Node{
-		Name: "secure_node",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("secure_node",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  Processing sensitive data...")
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					creditCardKey.Name(): "4111-1111-1111-1111",
-					ssnKey.Name():        "123-45-6789",
-					passwordKey.Name():   "super-secret",
-				},
+			return graphstate.Updates{
+				creditCardKey.Name(): "4111-1111-1111-1111",
+				ssnKey.Name():        "123-45-6789",
+				passwordKey.Name():   "super-secret",
 			}, nil
 		},
-	})
+	))
 
 	g.AddEdge(graph.StartNode, "secure_node")
 	g.AddEdge("secure_node", graph.EndNode)

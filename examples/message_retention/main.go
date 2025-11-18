@@ -64,9 +64,8 @@ func runExample(maxSize int) {
 	}
 
 	// Create a simple echo node
-	err = g.AddNode(&graph.Node{
-		Name: "echo",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	err = g.AddNode(graph.NewBaseNode("echo",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
@@ -75,11 +74,9 @@ func runExample(maxSize int) {
 				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
 			})
 
-			return &graph.NodeResult{
-				Updates: updates,
-			}, nil
+			return updates, nil
 		},
-	})
+	))
 	if err != nil {
 		log.Fatal(err)
 	}

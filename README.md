@@ -506,21 +506,19 @@ if err != nil {
 }
 
 // Add nodes with functions
-builder.Node("step1", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    return &graph.NodeResult{
-        Updates: map[string]any{"result": "processed"},
-    }, nil
+builder.Node("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    return map[string]any{"result": "processed"}, nil
 })
 
-builder.Node("step2", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.Node("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Recommended: Use typed keys for compile-time safety
     // var ResultKey = state.NewKey[string]("result")
-    // result, _ := ResultKey.Get(s)
+    // result := state.GetFromView(view, ResultKey)
     
     // Or use untyped access (runtime type assertion)
-    result := s.Get("result").(string)
+    result := view.Get("result").(string)
     fmt.Println("Received:", result)
-    return &graph.NodeResult{}, nil
+    return nil, nil
 })
 
 // Define flow
@@ -785,14 +783,14 @@ Compose complex workflows from reusable components:
 researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
-builder.Node("research", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    parentMessages := graph.ExtractMessages(s.MessagesSnapshot())
+builder.Node("research", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    parentMessages := graph.ExtractMessages(view.MessagesSnapshot())
     events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {
         return nil, err
     }
-    return &graph.NodeResult{
-        Messages: graph.ExtractMessages(events),
+    return state.Updates{
+        message.MessagesKey: graph.ExtractMessages(events),
     }, nil
 })
 ```

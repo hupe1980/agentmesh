@@ -21,7 +21,7 @@ type executionTopology struct {
 // computeTopology analyzes the graph structure and builds topology metadata.
 // This computes incoming/outgoing edges, identifies conditional gates, and
 // prepares data structures needed for execution.
-func computeTopology(nodes map[string]*graph.Node, edges []graph.Edge, conditionals []graph.ConditionalEdges) *executionTopology {
+func computeTopology(nodes map[string]graph.Node, edges []graph.Edge, conditionals []graph.ConditionalEdges) *executionTopology {
 	topo := &executionTopology{
 		Incoming:          make(map[string]int, len(nodes)),
 		Outgoing:          make(map[string][]string),

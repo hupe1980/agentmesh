@@ -28,14 +28,12 @@ func TestEarlyConsumerTermination(t *testing.T) {
 	// Add multiple nodes that would take time to execute
 	for i := 0; i < 10; i++ {
 		nodeName := string(rune('A' + i))
-		g.AddNode(&graph.Node{
-			Name: nodeName,
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				// Simulate work
-				time.Sleep(10 * time.Millisecond)
-				return &graph.NodeResult{}, nil
+		g.AddNode(graph.NewBaseNode(nodeName, func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			// Simulate work
+			time.Sleep(10 * time.Millisecond)
+			return nil, nil
 			},
-		})
+			))
 
 		if i > 0 {
 			prevNode := string(rune('A' + i - 1))
@@ -101,15 +99,13 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 		// Simple 3-node graph
 		for i := 0; i < 3; i++ {
 			nodeName := string(rune('A' + i))
-			g.AddNode(&graph.Node{
-				Name: nodeName,
-				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-					time.Sleep(5 * time.Millisecond)
-					return &graph.NodeResult{}, nil
-				},
-			})
+			g.AddNode(graph.NewBaseNode(nodeName, func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+				time.Sleep(5 * time.Millisecond)
+				return nil, nil
+			},
+			))
 			if i > 0 {
-				g.AddEdge(string(rune('A'+i-1)), nodeName)
+			g.AddEdge(string(rune('A'+i-1)), nodeName)
 			}
 		}
 

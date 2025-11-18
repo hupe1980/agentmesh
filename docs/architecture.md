@@ -208,9 +208,7 @@ Each vertex has a **mailbox** that stores messages sent to it by other vertices.
 
 ```go
 // Superstep 0: Node A updates state
-return &graph.NodeResult{
-    Updates: map[string]any{"data": result},
-}, nil
+return map[string]any{"data": result}, nil
 
 // Superstep 1: Node B receives updates via state view
 // The data is available via state.GetFromView(view, DataKey)
@@ -264,33 +262,21 @@ Traditional agent frameworks use **sequential DAG execution**, which limits expr
 **Example: Iterative Refinement**
 
 ```go
-builder.AddNode(&graph.Node{
-    Name: "writer",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        draft := generateDraft()
-        return &graph.NodeResult{
-            Updates: map[string]any{"draft": draft},
-        }, nil
-    },
+builder.Node("writer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    draft := generateDraft()
+    return map[string]any{"draft": draft}, nil
 })
 
-builder.AddNode(&graph.Node{
-    Name: "evaluator",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        draft := state.GetFromView(view, DraftKey)
-        if isGoodEnough(draft) {
-            return &graph.NodeResult{
-                Updates: map[string]any{"done": true},
-            }, nil
-        }
-        // Send feedback and loop back to writer
-        return &graph.NodeResult{
-            Updates: map[string]any{
-                "feedback": "improve clarity",
-                "done": false,
-            },
-        }, nil
-    },
+builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    draft := state.GetFromView(view, DraftKey)
+    if isGoodEnough(draft) {
+        return map[string]any{"done": true}, nil
+    }
+    // Send feedback and loop back to writer
+    return map[string]any{
+        "feedback": "improve clarity",
+        "done": false,
+    }, nil
 })
 
 // Add static edge from writer to evaluator
@@ -314,25 +300,15 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 builder := graph.NewBuilder()
 
 // Nodes execute in parallel when possible
-builder.AddNode(&graph.Node{
-    Name: "fetch_data",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        // Fetch from API...
-        return &graph.NodeResult{
-            Updates: map[string]any{"data": result},
-        }, nil
-    },
+builder.Node("fetch_data", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Fetch from API...
+    return map[string]any{"data": result}, nil
 })
 
-builder.AddNode(&graph.Node{
-    Name: "process",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        data := state.Get("data")
-        // Process...
-        return &graph.NodeResult{
-            Updates: map[string]any{"processed": true},
-        }, nil
-    },
+builder.Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    data := view.Get("data")
+    // Process...
+    return map[string]any{"processed": true}, nil
 })
 
 builder.AddEdge("START", "fetch_data")
@@ -524,24 +500,18 @@ type ConditionalEvaluator struct {
 
 **How it works**:
 
-1. Nodes can return **dynamic next nodes** in their `NodeResult`
-2. Conditional edges are evaluated based on node output
-3. The evaluator maintains "gate status" for conditional branches
-4. A node with conditional incoming edges only executes when its gate is open
+1. Conditional edges are evaluated based on state
+2. The evaluator maintains "gate status" for conditional branches
+3. A node with conditional incoming edges only executes when its gate is open
 
 **Example**:
 
 ```go
-builder.AddNode(&graph.Node{
-    Name: "classifier",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        messages := state.GetFromView(view, agent.MessagesKey)
-        category := analyzeInput(messages)
-        
-        return &graph.NodeResult{
-            Updates: map[string]any{"category": category},
-        }, nil
-    },
+builder.Node("classifier", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    messages := state.GetFromView(view, agent.MessagesKey)
+    category := analyzeInput(messages)
+    
+    return map[string]any{"category": category}, nil
 })
 
 // Use conditional edge function to route based on state
@@ -967,18 +937,15 @@ func (a *ErrorAggregator) Aggregate(ctx context.Context, state *State, prev floa
     return currentError, nil
 }
 
-// Use in node
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+// Use in node - execute function signature:
+// func(ctx context.Context, view *state.ReadView) (state.Updates, error)
+func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     globalError := state.GetFromView(view, ErrorKey)
     if globalError < 0.01 {
-        return &graph.NodeResult{
-            Updates: map[string]any{"done": true},
-        }, nil
+        return map[string]any{"done": true}, nil
     }
     // Continue processing...
-    return &graph.NodeResult{
-        Updates: map[string]any{"done": false},
-    }, nil
+    return map[string]any{"done": false}, nil
 }
 ```
 
@@ -1540,24 +1507,22 @@ Nodes receive immutable state snapshots:
 RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Read values
     status := state.Get("status")
-    messages := state.MessagesSnapshot()
+    messages := view.MessagesSnapshot()
     
     // Process...
-    return &graph.NodeResult{...}, nil
+    return map[string]any{...}, nil
 }
 ```
 
 ### Updating state
 
-Nodes update state via `NodeResult`:
+Nodes return state updates directly:
 
 ```go
-return &graph.NodeResult{
-    Updates: map[string]any{
-        "status": "complete",
-        "counter": 1,  // Will be summed if BinaryOpChannel
-        agent.MessagesKey.Name(): []message.Message{response},
-    },
+return map[string]any{
+    "status": "complete",
+    "counter": 1,  // Will be summed if BinaryOpChannel
+    message.MessagesKey: []message.Message{response},
 }, nil
 ```
 

@@ -22,23 +22,15 @@ func TestNewArchitecture(t *testing.T) {
 		t.Fatalf("Failed to create graph: %v", err)
 	}
 
-	g.AddNode(&graph.Node{
-		Name: "start",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"step": "started"},
-			}, nil
+	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"step": "started"}, nil
 		},
-	})
+		))
 
-	g.AddNode(&graph.Node{
-		Name: "process",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: map[string]any{"step": "processed"},
-			}, nil
+	g.AddNode(graph.NewBaseNode("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"step": "processed"}, nil
 		},
-	})
+		))
 
 	g.AddEdge(graph.StartNode, "start")
 	g.AddEdge("start", "process")

@@ -40,13 +40,12 @@ func example1_ValidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a simple linear graph
-	g.AddNode(&graph.Node{
-		Name: "process",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("process",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			fmt.Println("Processing...")
-			return &graph.NodeResult{}, nil
+			return nil, nil
 		},
-	})
+	))
 
 	g.AddEdge(compile.StartNode, "process")
 	g.AddEdge("process", compile.EndNode)
@@ -77,12 +76,11 @@ func example2_InvalidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create an invalid graph - edge to non-existent node
-	g.AddNode(&graph.Node{
-		Name: "start_node",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
+	g.AddNode(graph.NewBaseNode("start_node",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
 		},
-	})
+	))
 
 	// This edge references a node that doesn't exist
 	g.AddEdge("start_node", "non_existent_node")
@@ -104,18 +102,16 @@ func example3_StrictValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with an unreachable node
-	g.AddNode(&graph.Node{
-		Name: "reachable",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
+	g.AddNode(graph.NewBaseNode("reachable",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
 		},
-	})
-	g.AddNode(&graph.Node{
-		Name: "unreachable",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
+	))
+	g.AddNode(graph.NewBaseNode("unreachable",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
 		},
-	})
+	))
 
 	g.AddEdge(compile.StartNode, "reachable")
 	g.AddEdge("reachable", compile.EndNode)
@@ -146,19 +142,17 @@ func example4_CustomValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with a cycle (for iterative algorithms)
-	g.AddNode(&graph.Node{
-		Name: "agent",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
+	g.AddNode(graph.NewBaseNode("agent",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
 		},
-	})
-	g.AddNode(&graph.Node{
-		Name: "evaluator",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	))
+	g.AddNode(graph.NewBaseNode("evaluator",
+		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			// Check quality and potentially loop back
-			return &graph.NodeResult{}, nil
+			return nil, nil
 		},
-	})
+	))
 
 	g.AddEdge(compile.StartNode, "agent")
 	g.AddEdge("agent", "evaluator")

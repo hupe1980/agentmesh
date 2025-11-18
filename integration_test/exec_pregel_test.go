@@ -31,46 +31,30 @@ func TestPregelExecutor(t *testing.T) {
 
 	var counter atomic.Int32
 
-	g.AddNode(&graph.Node{
-		Name: "start",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			counter.Add(1)
-			return &graph.NodeResult{
-				Updates: map[string]any{"started": true},
-			}, nil
+			return map[string]any{"started": true}, nil
 		},
-	})
+		))
 
 	// Two nodes that can run in parallel
-	g.AddNode(&graph.Node{
-		Name: "task1",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("task1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			counter.Add(1)
-			return &graph.NodeResult{
-				Updates: map[string]any{"task1": "done"},
-			}, nil
+			return map[string]any{"task1": "done"}, nil
 		},
-	})
+		))
 
-	g.AddNode(&graph.Node{
-		Name: "task2",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("task2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			counter.Add(1)
-			return &graph.NodeResult{
-				Updates: map[string]any{"task2": "done"},
-			}, nil
+			return map[string]any{"task2": "done"}, nil
 		},
-	})
+		))
 
-	g.AddNode(&graph.Node{
-		Name: "end",
-		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
+	g.AddNode(graph.NewBaseNode("end", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			counter.Add(1)
-			return &graph.NodeResult{
-				Updates: map[string]any{"completed": true},
-			}, nil
+			return map[string]any{"completed": true}, nil
 		},
-	})
+		))
 
 	g.AddEdge(graph.StartNode, "start")
 	g.AddEdge("start", "task1")

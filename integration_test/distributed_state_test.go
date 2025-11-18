@@ -68,55 +68,43 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Node 1: Initialize state
-	err = g.AddNode(&graph.Node{
-		Name: "node1",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): 1.0, // Use float64 for JSON compatibility
-					dataKey.Name():    "A",
-				},
-			}, nil
-		},
-	})
+	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		return state.Updates{
+			counterKey.Name(): 1.0, // Use float64 for JSON compatibility
+			dataKey.Name():    "A",
+		}, nil
+	},
+	))
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Read and modify state (should see node1's updates via Redis)
-	err = g.AddNode(&graph.Node{
-		Name: "node2",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		counter := state.GetFromView(view, counterKey)
+		data := state.GetFromView(view, dataKey)
 
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): counter + 1.0, // Should be 2.0
-					dataKey.Name():    data + "B",    // Should be "AB"
-				},
-			}, nil
-		},
-	})
+		return state.Updates{
+			counterKey.Name(): counter + 1.0, // Should be 2.0
+			dataKey.Name():    data + "B",    // Should be "AB"
+		}, nil
+	},
+	))
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}
 
 	// Node 3: Final state update (should see node2's updates via Redis)
-	err = g.AddNode(&graph.Node{
-		Name: "node3",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	err = g.AddNode(graph.NewBaseNode("node3", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		counter := state.GetFromView(view, counterKey)
+		data := state.GetFromView(view, dataKey)
 
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): counter + 1.0, // Should be 3.0
-					dataKey.Name():    data + "C",    // Should be "ABC"
-				},
-			}, nil
-		},
-	})
+		return state.Updates{
+			counterKey.Name(): counter + 1.0, // Should be 3.0
+			dataKey.Name():    data + "C",    // Should be "ABC"
+		}, nil
+	},
+	))
 	if err != nil {
 		t.Fatalf("Failed to add node3: %v", err)
 	}
@@ -209,33 +197,25 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	}
 
 	// Node 1: Set counter = 1.0
-	err = g.AddNode(&graph.Node{
-		Name: "node1",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): 1.0,
-				},
-			}, nil
-		},
-	})
+	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		return state.Updates{
+			counterKey.Name(): 1.0,
+		}, nil
+	},
+	))
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Try to read counter (should see 1.0 from local state, not redistributed)
-	err = g.AddNode(&graph.Node{
-		Name: "node2",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
+	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					counterKey.Name(): counter + 10.0, // Should be 11.0 (1.0 + 10.0)
-				},
-			}, nil
-		},
-	})
+		return state.Updates{
+			counterKey.Name(): counter + 10.0, // Should be 11.0 (1.0 + 10.0)
+		}, nil
+	},
+	))
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}

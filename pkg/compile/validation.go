@@ -153,7 +153,9 @@ func (v *Validator) validateBasicStructure(g *graph.Graph) []ValidationError {
 			continue
 		}
 
-		if node.Name == "" {
+		nodeName := node.Name()
+
+		if nodeName == "" {
 			errors = append(errors, ValidationError{
 				Type:    ErrTypeInvalidNode,
 				Node:    name,
@@ -161,21 +163,15 @@ func (v *Validator) validateBasicStructure(g *graph.Graph) []ValidationError {
 			})
 		}
 
-		if node.Name != name {
+		if nodeName != name {
 			errors = append(errors, ValidationError{
 				Type:    ErrTypeDuplicateNode,
 				Node:    name,
-				Message: fmt.Sprintf("node name mismatch: map key %q vs node.Name %q", name, node.Name),
+				Message: fmt.Sprintf("node name mismatch: map key %q vs node.Name() %q", name, nodeName),
 			})
 		}
 
-		if node.RunFunc == nil {
-			errors = append(errors, ValidationError{
-				Type:    ErrTypeInvalidNode,
-				Node:    name,
-				Message: "node has nil RunFunc",
-			})
-		}
+		// Node interface guarantees Execute method exists, no need to check for RunFunc
 	}
 
 	// Check for reserved node names

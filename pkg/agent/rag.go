@@ -41,8 +41,8 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 var DocumentsKey = state.NewKey[[]string]("documents", nil)
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
-	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (state.Updates, error) {
+	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		messages := GetMessages(view)
 		if len(messages) == 0 {
 			return nil, fmt.Errorf("no query messages")
@@ -61,15 +61,13 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 		updates := state.Updates{}
 		state.SetInUpdates(updates, DocumentsKey, extractDocumentContent(docs))
 
-		return &graph.NodeResult{
-			Updates: updates,
-		}, nil
+		return updates, nil
 	}
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
-	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (state.Updates, error) {
+	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		messages := GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)
@@ -124,17 +122,11 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		return nil, fmt.Errorf("failed to create graph: %w", err)
 	}
 
-	if err := g.AddNode(&graph.Node{
-		Name:    "retrieve",
-		RunFunc: createRetrieveNode(retriever),
-	}); err != nil {
+	if err := g.AddNode(graph.NewBaseNode("retrieve", createRetrieveNode(retriever))); err != nil {
 		return nil, fmt.Errorf("failed to add retrieve node: %w", err)
 	}
 
-	if err := g.AddNode(&graph.Node{
-		Name:    "generate",
-		RunFunc: createGenerateNode(mdl, config),
-	}); err != nil {
+	if err := g.AddNode(graph.NewBaseNode("generate", createGenerateNode(mdl, config))); err != nil {
 		return nil, fmt.Errorf("failed to add generate node: %w", err)
 	}
 
@@ -177,7 +169,7 @@ func WithPromptTemplate(tmpl *prompt.Template) RAGOption {
 }
 
 // Helper function to generate response with optional context
-func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Message, context string) (*graph.NodeResult, error) {
+func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Message, context string) (state.Updates, error) {
 	// Prepend context if provided
 	if context != "" {
 		contextMsg := message.NewSystemMessageFromText(context)
@@ -197,7 +189,5 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 	updates := state.Updates{}
 	AppendMessages(updates, []message.Message{resp.Message})
 
-	return &graph.NodeResult{
-		Updates: updates,
-	}, nil
+	return updates, nil
 }

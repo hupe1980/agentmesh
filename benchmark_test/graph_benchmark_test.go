@@ -114,13 +114,12 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 
 		g, _ := graph.NewGraph(mgr)
 
-		g.AddNode(&graph.Node{
-			Name: "increment",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		g.AddNode(graph.NewBaseNode("increment",
+			func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 				count := state.GetFromView(view, countKey)
-				return &graph.NodeResult{Updates: map[string]any{"count": count + 1}}, nil
+				return map[string]any{"count": count + 1}, nil
 			},
-		})
+		))
 
 		g.AddEdge(graph.StartNode, "increment")
 		g.AddEdge("increment", graph.EndNode)
@@ -152,13 +151,12 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 
 		for i := 0; i < length; i++ {
 			name := fmt.Sprintf("node_%d", i)
-			g.AddNode(&graph.Node{
-				Name: name,
-				RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+			g.AddNode(graph.NewBaseNode(name,
+				func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 					val := state.GetFromView(view, valueKey)
-					return &graph.NodeResult{Updates: map[string]any{"value": val + 1}}, nil
+					return map[string]any{"value": val + 1}, nil
 				},
-			})
+			))
 
 			if i == 0 {
 				g.AddEdge(graph.StartNode, name)
@@ -204,12 +202,11 @@ func BenchmarkGraph_Compile(b *testing.B) {
 
 		for i := 0; i < 10; i++ {
 			name := fmt.Sprintf("node_%d", i)
-			g.AddNode(&graph.Node{
-				Name: name,
-				RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-					return &graph.NodeResult{}, nil
+			g.AddNode(graph.NewBaseNode(name,
+				func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+					return nil, nil
 				},
-			})
+			))
 			if i > 0 {
 				prevName := fmt.Sprintf("node_%d", i-1)
 				g.AddEdge(prevName, name)

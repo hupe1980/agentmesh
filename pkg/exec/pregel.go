@@ -480,7 +480,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	}
 
 	// Create a stream writer that yields intermediate results
-	streamWriter := func(intermediateResult *graph.NodeResult) {
+	streamWriter := func(intermediateResult state.Updates) {
 		if intermediateResult == nil {
 			return
 		}
@@ -488,9 +488,9 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		// Extract output from updates based on configured key
 		if n.executor.outputKey == "*" {
 			// Yield entire state.Updates (for state-only executor)
-			output := n.executor.outputAdapter(intermediateResult.Updates)
+			output := n.executor.outputAdapter(intermediateResult)
 			n.yield(output, nil)
-		} else if value, ok := intermediateResult.Updates[n.executor.outputKey]; ok {
+		} else if value, ok := intermediateResult[n.executor.outputKey]; ok {
 			// Yield specific key value
 			output := n.executor.outputAdapter(value)
 			n.yield(output, nil)
@@ -508,13 +508,13 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	if err != nil {
 		return fmt.Errorf("failed to create read view: %w", err)
 	}
-	result, err := node.Run(ctxWithStream, view)
+	updates, err := node.Execute(ctxWithStream, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
 		return fmt.Errorf("%w: node %q: %v", state.ErrNodeExecution, n.nodeName, err)
 	}
 
-	if result == nil {
+	if updates == nil {
 		return nil
 	}
 
@@ -530,19 +530,19 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// 1. Nodes in the same superstep run in parallel (no intra-superstep dependencies)
 	// 2. Routing/messaging happens after compute phase (between supersteps)
 	// 3. Each node sees a consistent snapshot at superstep start (via ReadView)
-	if len(result.Updates) > 0 {
-		if err := n.compiled.Manager.ApplyUpdates(ctx, result.Updates); err != nil {
+	if len(updates) > 0 {
+		if err := n.compiled.Manager.ApplyUpdates(ctx, updates); err != nil {
 			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
 
 		// Extract output from updates based on configured key and yield
 		if n.executor.outputKey == "*" {
 			// Yield entire state.Updates (for state-only executor)
-			output := n.executor.outputAdapter(result.Updates)
+			output := n.executor.outputAdapter(updates)
 			if !n.yield(output, nil) {
 				return nil
 			}
-		} else if value, ok := result.Updates[n.executor.outputKey]; ok {
+		} else if value, ok := updates[n.executor.outputKey]; ok {
 			// Special handling for slices: unfold and yield each element individually
 			// This allows nodes to return multiple outputs (e.g., parallel tool calls)
 			// and have each one appear in the output stream
@@ -568,10 +568,10 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// Send routing signals (and optionally state) to next nodes via pregel runtime
 	// For distributed execution, state updates are sent directly as state.Updates
 	var stateData state.Updates
-	if n.enableDistributedState && len(result.Updates) > 0 {
+	if n.enableDistributedState && len(updates) > 0 {
 		// Send state.Updates directly for distributed synchronization
 		// Remote nodes will receive and apply these updates before execution
-		stateData = result.Updates
+		stateData = updates
 	}
 
 	// Check for conditional edges first

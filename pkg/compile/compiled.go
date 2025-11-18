@@ -110,11 +110,11 @@ func formatValidationErrors(errors []ValidationError) error {
 }
 
 // Nodes returns all nodes in the graph.
-func (cg *CompiledGraph) Nodes() map[string]*graph.Node {
+func (cg *CompiledGraph) Nodes() map[string]graph.Node {
 	return cg.Graph.Nodes
 }
 
 // GetNode returns a node by name, or nil if not found.
-func (cg *CompiledGraph) GetNode(name string) *graph.Node {
+func (cg *CompiledGraph) GetNode(name string) graph.Node {
 	return cg.Graph.Nodes[name]
 }

@@ -37,38 +37,32 @@ func main() {
 		panic(err)
 	}
 
-	gph.AddNode(&graph.Node{
-		Name: "init",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	gph.AddNode(graph.NewBaseNode("init",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("[init] Initializing...")
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					phaseKey.Name():     "processing",
-					attemptsKey.Name():  1,
-					actionLogKey.Name(): []string{"Initialized"},
-				},
+			return graphstate.Updates{
+				phaseKey.Name():     "processing",
+				attemptsKey.Name():  1,
+				actionLogKey.Name(): []string{"Initialized"},
 			}, nil
 		},
-	})
+	))
 
-	gph.AddNode(&graph.Node{
-		Name: "process",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	gph.AddNode(graph.NewBaseNode("process",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("[process] Processing...")
 
 			// Read current attempts count
 			currentAttempts := graphstate.GetFromView(view, attemptsKey)
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					attemptsKey.Name():    currentAttempts + 1,
-					validatedKey.Name():   true,
-					actionLogKey.Name():   []string{"Processed"},
-					taskResultsKey.Name(): map[string]any{"process": "success"},
-				},
+			return graphstate.Updates{
+				attemptsKey.Name():    currentAttempts + 1,
+				validatedKey.Name():   true,
+				actionLogKey.Name():   []string{"Processed"},
+				taskResultsKey.Name(): map[string]any{"process": "success"},
 			}, nil
 		},
-	})
+	))
 
 	gph.AddEdge(graph.StartNode, "init")
 	gph.AddEdge("init", "process")

@@ -81,11 +81,8 @@ func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 }
 
 // Node adds a node to the graph with the given name and run function.
-func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error)) *Builder[I, O] {
-	_ = b.graph.AddNode(&graph.Node{
-		Name:    name,
-		RunFunc: runFunc,
-	})
+func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error)) *Builder[I, O] {
+	_ = b.graph.AddNode(graph.NewBaseNode(name, runFunc))
 	return b
 }
 
@@ -98,12 +95,8 @@ func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view
 //	        WithMaxAttempts(5).
 //	        WithExponentialBackoff(time.Second, 2.0).
 //	        Build())
-func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error), retryPolicy *graph.RetryPolicy) *Builder[I, O] {
-	_ = b.graph.AddNode(&graph.Node{
-		Name:        name,
-		RunFunc:     runFunc,
-		RetryPolicy: retryPolicy,
-	})
+func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error), retryPolicy *graph.RetryPolicy) *Builder[I, O] {
+	_ = b.graph.AddNode(graph.NewBaseNodeWithRetry(name, runFunc, retryPolicy))
 	return b
 }
 
@@ -115,12 +108,7 @@ func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Cont
 //	builder.SetNodeRetryPolicy("process",
 //	    graph.NewRetryPolicy().WithMaxAttempts(3).Build())
 func (b *Builder[I, O]) SetNodeRetryPolicy(name string, retryPolicy *graph.RetryPolicy) error {
-	node, exists := b.graph.Nodes[name]
-	if !exists {
-		return fmt.Errorf("node not found: %s", name)
-	}
-	node.RetryPolicy = retryPolicy
-	return nil
+	return b.graph.SetNodeRetryPolicy(name, retryPolicy)
 }
 
 // AddEdge adds a directed edge between two nodes.

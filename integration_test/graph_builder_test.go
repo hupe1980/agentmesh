@@ -25,14 +25,9 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		node := &graph.Node{
-			Name: "test_node",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{
-					Updates: map[string]any{"executed": true},
-				}, nil
-			},
-		}
+		node := graph.NewBaseNode("test_node", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"executed": true}, nil
+		})
 
 		err := g.AddNode(node)
 		require.NoError(t, err)
@@ -43,12 +38,9 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		node := &graph.Node{
-			Name: "test",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		node := graph.NewBaseNode("test", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 		g.AddNode(node)
 
 		g.AddEdge(graph.StartNode, "test")
@@ -61,15 +53,15 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		g.AddNode(&graph.Node{Name: "source", RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
-		g.AddNode(&graph.Node{Name: "target1", RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
-		g.AddNode(&graph.Node{Name: "target2", RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
+		g.AddNode(graph.NewBaseNode("source", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
+		g.AddNode(graph.NewBaseNode("target1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
+		g.AddNode(graph.NewBaseNode("target2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
 
 		condition := func(ctx context.Context, s *state.ReadView) []string {
 			return []string{"target1"}
@@ -93,15 +85,10 @@ func TestSimpleGraphExecution(t *testing.T) {
 		require.NoError(t, err)
 
 		executed := false
-		node := &graph.Node{
-			Name: "test",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				executed = true
-				return &graph.NodeResult{
-					Updates: map[string]any{"result": "success"},
-				}, nil
-			},
-		}
+		node := graph.NewBaseNode("test", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			executed = true
+			return map[string]any{"result": "success"}, nil
+		})
 
 		g.AddNode(node)
 		g.AddEdge(graph.StartNode, "test")
@@ -129,26 +116,16 @@ func TestSimpleGraphExecution(t *testing.T) {
 
 		var executionOrder []string
 
-		node1 := &graph.Node{
-			Name: "node1",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				executionOrder = append(executionOrder, "node1")
-				return &graph.NodeResult{
-					Updates: map[string]any{"count": 1},
-				}, nil
-			},
-		}
+		node1 := graph.NewBaseNode("node1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			executionOrder = append(executionOrder, "node1")
+			return map[string]any{"count": 1}, nil
+		})
 
-		node2 := &graph.Node{
-			Name: "node2",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				executionOrder = append(executionOrder, "node2")
-				count := state.GetFromView(s, countKey)
-				return &graph.NodeResult{
-					Updates: map[string]any{"count": count + 1},
-				}, nil
-			},
-		}
+		node2 := graph.NewBaseNode("node2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			executionOrder = append(executionOrder, "node2")
+			count := state.GetFromView(s, countKey)
+			return map[string]any{"count": count + 1}, nil
+		})
 
 		g.AddNode(node1)
 		g.AddNode(node2)
@@ -182,36 +159,21 @@ func TestConditionalRouting(t *testing.T) {
 		require.NoError(t, err)
 
 		// Decision node that sets routing choice
-		decider := &graph.Node{
-			Name: "decider",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{
-					Updates: map[string]any{"choice": "left"},
-				}, nil
-			},
-		}
+		decider := graph.NewBaseNode("decider", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"choice": "left"}, nil
+		})
 
 		leftExecuted := false
-		leftNode := &graph.Node{
-			Name: "left",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				leftExecuted = true
-				return &graph.NodeResult{
-					Updates: map[string]any{"result": "went_left"},
-				}, nil
-			},
-		}
+		leftNode := graph.NewBaseNode("left", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			leftExecuted = true
+			return map[string]any{"result": "went_left"}, nil
+		})
 
 		rightExecuted := false
-		rightNode := &graph.Node{
-			Name: "right",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				rightExecuted = true
-				return &graph.NodeResult{
-					Updates: map[string]any{"result": "went_right"},
-				}, nil
-			},
-		}
+		rightNode := graph.NewBaseNode("right", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			rightExecuted = true
+			return map[string]any{"result": "went_right"}, nil
+		})
 
 		g.AddNode(decider)
 		g.AddNode(leftNode)
@@ -253,32 +215,21 @@ func TestConditionalRouting(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		source := &graph.Node{
-			Name: "source",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{
-					Updates: map[string]any{"broadcast": true},
-				}, nil
-			},
-		}
+		source := graph.NewBaseNode("source", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{"broadcast": true}, nil
+		})
 
 		target1Executed := false
-		target1 := &graph.Node{
-			Name: "target1",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				target1Executed = true
-				return &graph.NodeResult{}, nil
-			},
-		}
+		target1 := graph.NewBaseNode("target1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			target1Executed = true
+			return nil, nil
+		})
 
 		target2Executed := false
-		target2 := &graph.Node{
-			Name: "target2",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				target2Executed = true
-				return &graph.NodeResult{}, nil
-			},
-		}
+		target2 := graph.NewBaseNode("target2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			target2Executed = true
+			return nil, nil
+		})
 
 		g.AddNode(source)
 		g.AddNode(target1)
@@ -323,29 +274,21 @@ func TestStateManagement(t *testing.T) {
 		require.NoError(t, err)
 
 		// First node writes state
-		writer := &graph.Node{
-			Name: "writer",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{
-					Updates: map[string]any{
-						"key1": "value1",
-						"key2": 42,
-					},
-				}, nil
-			},
-		}
+		writer := graph.NewBaseNode("writer", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			return map[string]any{
+				"key1": "value1",
+				"key2": 42,
+			}, nil
+		})
 
 		// Second node reads state
 		var readValue1 string
 		var readValue2 int
-		reader := &graph.Node{
-			Name: "reader",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				readValue1 = state.GetFromView(s, key1Key)
-				readValue2 = state.GetFromView(s, key2Key)
-				return &graph.NodeResult{}, nil
-			},
-		}
+		reader := graph.NewBaseNode("reader", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			readValue1 = state.GetFromView(s, key1Key)
+			readValue2 = state.GetFromView(s, key2Key)
+			return nil, nil
+		})
 
 		g.AddNode(writer)
 		g.AddNode(reader)
@@ -380,15 +323,10 @@ func TestStateManagement(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		incrementer := &graph.Node{
-			Name: "increment",
-			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
-				counter := state.GetFromView(s, counterKey)
-				return &graph.NodeResult{
-					Updates: map[string]any{"counter": counter + 1},
-				}, nil
-			},
-		}
+		incrementer := graph.NewBaseNode("increment", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+			counter := state.GetFromView(s, counterKey)
+			return map[string]any{"counter": counter + 1}, nil
+		})
 
 		g.AddNode(incrementer)
 		g.AddEdge(graph.StartNode, "increment")

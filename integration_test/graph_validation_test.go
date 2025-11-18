@@ -25,20 +25,14 @@ func TestGraphValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add reachable node
-		reachable := &graph.Node{
-			Name: "reachable",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		reachable := graph.NewBaseNode("reachable", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		// Add unreachable node (no edges to it)
-		unreachable := &graph.Node{
-			Name: "unreachable",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		unreachable := graph.NewBaseNode("unreachable", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		g.AddNode(reachable)
 		g.AddNode(unreachable)
@@ -57,19 +51,13 @@ func TestGraphValidation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		step1 := &graph.Node{
-			Name: "step1",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		step1 := graph.NewBaseNode("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
-		step2 := &graph.Node{
-			Name: "step2",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		step2 := graph.NewBaseNode("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		g.AddNode(step1)
 		g.AddNode(step2)
@@ -90,26 +78,17 @@ func TestGraphValidation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		router := &graph.Node{
-			Name: "router",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		router := graph.NewBaseNode("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
-		pathA := &graph.Node{
-			Name: "pathA",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		pathA := graph.NewBaseNode("pathA", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
-		pathB := &graph.Node{
-			Name: "pathB",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		pathB := graph.NewBaseNode("pathB", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		g.AddNode(router)
 		g.AddNode(pathA)
@@ -137,12 +116,9 @@ func TestErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedErr := errors.New("node failed")
-		failingNode := &graph.Node{
-			Name: "failing",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return nil, expectedErr
-			},
-		}
+		failingNode := graph.NewBaseNode("failing", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, expectedErr
+		})
 
 		g.AddNode(failingNode)
 		g.AddEdge(graph.StartNode, "failing")
@@ -170,22 +146,16 @@ func TestErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		node1Executed := false
-		node1 := &graph.Node{
-			Name: "node1",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				node1Executed = true
-				return nil, errors.New("error in node1")
-			},
-		}
+		node1 := graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			node1Executed = true
+			return nil, errors.New("error in node1")
+		})
 
 		node2Executed := false
-		node2 := &graph.Node{
-			Name: "node2",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				node2Executed = true
-				return &graph.NodeResult{}, nil
-			},
-		}
+		node2 := graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			node2Executed = true
+			return nil, nil
+		})
 
 		g.AddNode(node1)
 		g.AddNode(node2)
@@ -224,57 +194,39 @@ func TestComplexGraphPatterns(t *testing.T) {
 		var executionOrderMu sync.Mutex
 
 		// Diamond pattern: start -> split -> (left, right) -> merge -> end
-		split := &graph.Node{
-			Name: "split",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				executionOrderMu.Lock()
-				executionOrder = append(executionOrder, "split")
-				executionOrderMu.Unlock()
-				return &graph.NodeResult{
-					Updates: map[string]any{"split_done": true},
-				}, nil
-			},
-		}
+		split := graph.NewBaseNode("split", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			executionOrderMu.Lock()
+			executionOrder = append(executionOrder, "split")
+			executionOrderMu.Unlock()
+			return map[string]any{"split_done": true}, nil
+		})
 
-		left := &graph.Node{
-			Name: "left",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				executionOrderMu.Lock()
-				executionOrder = append(executionOrder, "left")
-				executionOrderMu.Unlock()
-				return &graph.NodeResult{
-					Updates: map[string]any{"left_done": true},
-				}, nil
-			},
-		}
+		left := graph.NewBaseNode("left", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			executionOrderMu.Lock()
+			executionOrder = append(executionOrder, "left")
+			executionOrderMu.Unlock()
+			return map[string]any{"left_done": true}, nil
+		})
 
-		right := &graph.Node{
-			Name: "right",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				executionOrderMu.Lock()
-				executionOrder = append(executionOrder, "right")
-				executionOrderMu.Unlock()
-				return &graph.NodeResult{
-					Updates: map[string]any{"right_done": true},
-				}, nil
-			},
-		}
+		right := graph.NewBaseNode("right", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			executionOrderMu.Lock()
+			executionOrder = append(executionOrder, "right")
+			executionOrderMu.Unlock()
+			return map[string]any{"right_done": true}, nil
+		})
 
-		merge := &graph.Node{
-			Name: "merge",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				executionOrderMu.Lock()
-				executionOrder = append(executionOrder, "merge")
-				executionOrderMu.Unlock()
-				// Both left and right should have executed
-				leftDone := state.GetFromView(view, leftDoneKey)
-				rightDone := state.GetFromView(view, rightDoneKey)
-				if !leftDone || !rightDone {
-					return nil, errors.New("left and right should have executed before merge")
-				}
-				return &graph.NodeResult{}, nil
-			},
-		}
+		merge := graph.NewBaseNode("merge", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			executionOrderMu.Lock()
+			executionOrder = append(executionOrder, "merge")
+			executionOrderMu.Unlock()
+			// Both left and right should have executed
+			leftDone := state.GetFromView(view, leftDoneKey)
+			rightDone := state.GetFromView(view, rightDoneKey)
+			if !leftDone || !rightDone {
+				return nil, errors.New("left and right should have executed before merge")
+			}
+			return nil, nil
+		})
 
 		g.AddNode(split)
 		g.AddNode(left)
@@ -329,15 +281,10 @@ func TestComplexGraphPatterns(t *testing.T) {
 		counter := 0
 		maxIterations := 3
 
-		loop := &graph.Node{
-			Name: "loop",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				counter++
-				return &graph.NodeResult{
-					Updates: map[string]any{"counter": counter},
-				}, nil
-			},
-		}
+		loop := graph.NewBaseNode("loop", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			counter++
+			return map[string]any{"counter": counter}, nil
+		})
 
 		g.AddNode(loop)
 		g.AddEdge(graph.StartNode, "loop")
@@ -371,12 +318,9 @@ func TestCompileOptions(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		node := &graph.Node{
-			Name: "test",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		node := graph.NewBaseNode("test", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		g.AddNode(node)
 		g.AddEdge(graph.StartNode, "test")
@@ -399,12 +343,9 @@ func TestCompileOptions(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		node := &graph.Node{
-			Name: "test",
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				return &graph.NodeResult{}, nil
-			},
-		}
+		node := graph.NewBaseNode("test", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		})
 
 		g.AddNode(node)
 		g.AddEdge(graph.StartNode, "test")
@@ -430,12 +371,12 @@ func TestTopologyComputation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(&graph.Node{Name: "a", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
-		g.AddNode(&graph.Node{Name: "b", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
+		g.AddNode(graph.NewBaseNode("a", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
+		g.AddNode(graph.NewBaseNode("b", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
 
 		g.AddEdge(graph.StartNode, "a")
 		g.AddEdge("a", "b")
@@ -460,15 +401,15 @@ func TestTopologyComputation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(&graph.Node{Name: "router", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
-		g.AddNode(&graph.Node{Name: "target1", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
-		g.AddNode(&graph.Node{Name: "target2", RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			return &graph.NodeResult{}, nil
-		}})
+		g.AddNode(graph.NewBaseNode("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
+		g.AddNode(graph.NewBaseNode("target1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
+		g.AddNode(graph.NewBaseNode("target2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}))
 
 		g.AddEdge(graph.StartNode, "router")
 		g.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {

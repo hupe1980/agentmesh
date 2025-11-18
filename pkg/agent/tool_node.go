@@ -7,15 +7,17 @@ import (
 	"sync"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-// toolNodeOptions holds configuration for a tool node.
-type toolNodeOptions struct {
-	nodeName        string
+// ToolNode executes tool calls from the last AI message.
+// It extracts tool calls from the most recent AIMessage, executes each tool
+// (sequentially or in parallel), and returns the results as ToolMessages.
+type ToolNode struct {
+	name            string
+	toolRegistry    map[string]tool.Tool
 	errorPrefix     string
 	continueOnError bool
 	parallel        bool
@@ -23,27 +25,27 @@ type toolNodeOptions struct {
 }
 
 // ToolNodeOption configures a tool node.
-type ToolNodeOption func(*toolNodeOptions)
+type ToolNodeOption func(*ToolNode)
 
 // WithToolNodeName sets the name of the tool node (default: "tool").
 func WithToolNodeName(name string) ToolNodeOption {
-	return func(c *toolNodeOptions) {
-		c.nodeName = name
+	return func(n *ToolNode) {
+		n.name = name
 	}
 }
 
 // WithToolErrorPrefix sets the error message prefix (default: "tool node").
 func WithToolErrorPrefix(prefix string) ToolNodeOption {
-	return func(c *toolNodeOptions) {
-		c.errorPrefix = prefix
+	return func(n *ToolNode) {
+		n.errorPrefix = prefix
 	}
 }
 
 // WithContinueOnToolError configures whether to continue execution when a tool fails.
 // If true, tool errors are returned as ToolMessages instead of stopping execution.
 func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
-	return func(c *toolNodeOptions) {
-		c.continueOnError = continueOnError
+	return func(n *ToolNode) {
+		n.continueOnError = continueOnError
 	}
 }
 
@@ -51,8 +53,8 @@ func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
 // When true, all tool calls from the AI message are executed concurrently.
 // This can significantly improve performance when multiple independent tools are called.
 func WithParallelToolExecution(parallel bool) ToolNodeOption {
-	return func(c *toolNodeOptions) {
-		c.parallel = parallel
+	return func(n *ToolNode) {
+		n.parallel = parallel
 	}
 }
 
@@ -60,8 +62,8 @@ func WithParallelToolExecution(parallel bool) ToolNodeOption {
 // Plugins enable intercepting and modifying tool invocations for access control,
 // caching, metrics, error handling, and other cross-cutting concerns.
 func WithToolCallbacks(cb *callbacks.PluginManager) ToolNodeOption {
-	return func(c *toolNodeOptions) {
-		c.callbacks = cb
+	return func(n *ToolNode) {
+		n.callbacks = cb
 	}
 }
 
@@ -83,14 +85,14 @@ func formatToolResult(result any) string {
 
 // marshalToolArguments converts tool call arguments to JSON string.
 // Returns error messages if marshaling fails and continueOnError is true.
-func marshalToolArguments(call message.ToolCall, config *toolNodeOptions, idx int) (string, []message.Message, error) {
+func marshalToolArguments(call message.ToolCall, node *ToolNode, idx int) (string, []message.Message, error) {
 	if len(call.Arguments) == 0 {
 		return "{}", nil, nil
 	}
 
 	payload, err := json.Marshal(call.Arguments)
 	if err != nil {
-		if config.continueOnError {
+		if node.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
@@ -98,88 +100,92 @@ func marshalToolArguments(call message.ToolCall, config *toolNodeOptions, idx in
 			errMsg := fmt.Sprintf("Error: failed to marshal arguments: %v", err)
 			return "", []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
 		}
-		return "", nil, fmt.Errorf("%s: marshal arguments for tool %q: %w", config.errorPrefix, call.Name, err)
+		return "", nil, fmt.Errorf("%s: marshal arguments for tool %q: %w", node.errorPrefix, call.Name, err)
 	}
 
 	return string(payload), nil, nil
 }
 
-// ToolNode creates a reusable node that executes tool calls from the last AI message.
-// It extracts tool calls from the most recent AIMessage, executes each tool
-// (sequentially or in parallel), and returns the results as ToolMessages.
+// NewToolNode creates a new ToolNode with the given tool registry and options.
 //
 // Example:
 //
-//	g.AddNode(ToolNode(toolRegistry,
+//	node := NewToolNode(toolRegistry,
 //	    WithToolNodeName("tools"),
 //	    WithToolErrorPrefix("my agent"),
 //	    WithContinueOnToolError(true),
-//	    WithParallelToolExecution(true)))  // Enable parallel execution
-//
-//nolint:gocyclo // Tool node requires handling many event types and configurations
-func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.Node {
-	config := toolNodeOptions{
-		nodeName:        "tool",
+//	    WithParallelToolExecution(true))
+//	g.AddNode(node)
+func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *ToolNode {
+	node := &ToolNode{
+		name:            "tool",
+		toolRegistry:    toolRegistry,
 		errorPrefix:     "tool node",
 		continueOnError: false,
+		parallel:        false,
 		callbacks:       nil,
 	}
 
 	for _, opt := range opts {
-		opt(&config)
+		opt(node)
 	}
 
-	return &graph.Node{
-		Name: config.nodeName,
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			// Get last message from state
-			lastMsg := LastMessage(view)
-			if lastMsg == nil {
-				return &graph.NodeResult{Updates: state.Updates{}}, nil
-			}
+	return node
+}
 
-			ai, ok := lastMsg.(*message.AIMessage)
-			if !ok || ai == nil {
-				return &graph.NodeResult{Updates: state.Updates{}}, nil
-			}
+// Name returns the name of the tool node.
+func (n *ToolNode) Name() string {
+	return n.name
+}
 
-			if len(ai.ToolCalls) == 0 {
-				return &graph.NodeResult{Updates: state.Updates{}}, nil
-			}
-
-			var toolMessages []message.Message
-			var err error
-
-			if config.parallel {
-				// Parallel execution
-				toolMessages, err = executeToolsParallel(ctx, view, ai.ToolCalls, toolRegistry, &config)
-			} else {
-				// Sequential execution
-				toolMessages, err = executeToolsSequential(ctx, view, ai.ToolCalls, toolRegistry, &config)
-			}
-
-			if err != nil {
-				return nil, err
-			}
-
-			updates := state.Updates{}
-			AppendMessages(updates, toolMessages)
-
-			return &graph.NodeResult{
-				Updates: updates,
-			}, nil
-		},
+// Execute processes tool calls from the last AI message.
+//
+//nolint:gocyclo // Tool node requires handling many event types and configurations
+func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	// Get last message from state
+	lastMsg := LastMessage(view)
+	if lastMsg == nil {
+		return state.Updates{}, nil
 	}
+
+	ai, ok := lastMsg.(*message.AIMessage)
+	if !ok || ai == nil {
+		return state.Updates{}, nil
+	}
+
+	if len(ai.ToolCalls) == 0 {
+		return state.Updates{}, nil
+	}
+
+	var toolMessages []message.Message
+	var err error
+
+	if n.parallel {
+		// Parallel execution
+		toolMessages, err = executeToolsParallel(ctx, view, ai.ToolCalls, n.toolRegistry, n)
+	} else {
+		// Sequential execution
+		toolMessages, err = executeToolsSequential(ctx, view, ai.ToolCalls, n.toolRegistry, n)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	updates := state.Updates{}
+	AppendMessages(updates, toolMessages)
+
+	return updates, nil
 }
 
 // handleToolError processes tool execution errors with plugins and fallbacks.
 // Returns error messages (if continuing on error) and error (nil if handled).
-func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCall, execErr error, config *toolNodeOptions, idx int) ([]message.Message, error) {
+func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCall, execErr error, node *ToolNode, idx int) ([]message.Message, error) {
 	err := execErr
 
 	// Execute OnToolError plugins
-	if config.callbacks != nil && config.callbacks.HasPlugins() {
-		pluginErr := config.callbacks.ExecuteOnToolError(ctx, call.Name, err)
+	if node.callbacks != nil && node.callbacks.HasPlugins() {
+		pluginErr := node.callbacks.ExecuteOnToolError(ctx, call.Name, err)
 		if pluginErr != nil {
 			err = pluginErr // Use transformed error
 		}
@@ -187,7 +193,7 @@ func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCa
 
 	// If still error after plugins, handle it
 	if err != nil {
-		if config.continueOnError {
+		if node.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
@@ -196,7 +202,7 @@ func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCa
 			toolMsg := message.NewToolMessage(toolCallID, errMsg)
 			return []message.Message{toolMsg}, nil
 		}
-		return nil, fmt.Errorf("%s: tool %q call failed: %w", config.errorPrefix, call.Name, err)
+		return nil, fmt.Errorf("%s: tool %q call failed: %w", node.errorPrefix, call.Name, err)
 	}
 
 	return nil, nil
@@ -204,8 +210,8 @@ func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCa
 
 // handleBeforeToolCallback executes before-tool plugins.
 // Returns error if plugin fails.
-func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, config *toolNodeOptions, idx int) ([]message.Message, error) {
-	if config.callbacks == nil || !config.callbacks.HasPlugins() {
+func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, node *ToolNode, idx int) ([]message.Message, error) {
+	if node.callbacks == nil || !node.callbacks.HasPlugins() {
 		return nil, nil
 	}
 
@@ -216,9 +222,9 @@ func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call messa
 		input = string(payload)
 	}
 
-	err := config.callbacks.ExecuteBeforeTool(ctx, call.Name, input)
+	err := node.callbacks.ExecuteBeforeTool(ctx, call.Name, input)
 	if err != nil {
-		if config.continueOnError {
+		if node.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
@@ -226,7 +232,7 @@ func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call messa
 			errMsg := fmt.Sprintf("Error: plugin rejected: %v", err)
 			return []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
 		}
-		return nil, fmt.Errorf("%s: before tool plugin: %w", config.errorPrefix, err)
+		return nil, fmt.Errorf("%s: before tool plugin: %w", node.errorPrefix, err)
 	}
 
 	return nil, nil
@@ -234,8 +240,8 @@ func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call messa
 
 // handleAfterToolCallback executes after-tool plugins.
 // Returns error if plugin fails.
-func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, result any, config *toolNodeOptions, idx int) (any, []message.Message, error) {
-	if config.callbacks == nil || !config.callbacks.HasPlugins() {
+func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, result any, node *ToolNode, idx int) (any, []message.Message, error) {
+	if node.callbacks == nil || !node.callbacks.HasPlugins() {
 		return result, nil, nil
 	}
 
@@ -243,9 +249,9 @@ func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call messag
 		Output: result,
 	}
 
-	err := config.callbacks.ExecuteAfterTool(ctx, call.Name, pluginResult)
+	err := node.callbacks.ExecuteAfterTool(ctx, call.Name, pluginResult)
 	if err != nil {
-		if config.continueOnError {
+		if node.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
@@ -253,18 +259,18 @@ func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call messag
 			errMsg := fmt.Sprintf("Error: plugin failed: %v", err)
 			return nil, []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
 		}
-		return nil, nil, fmt.Errorf("%s: after tool plugin: %w", config.errorPrefix, err)
+		return nil, nil, fmt.Errorf("%s: after tool plugin: %w", node.errorPrefix, err)
 	}
 
 	return result, nil, nil
 }
 
 // executeToolsSequential executes tool calls one by one in order.
-func executeToolsSequential(ctx context.Context, view *state.ReadView, toolCalls []message.ToolCall, toolRegistry map[string]tool.Tool, config *toolNodeOptions) ([]message.Message, error) {
+func executeToolsSequential(ctx context.Context, view *state.ReadView, toolCalls []message.ToolCall, toolRegistry map[string]tool.Tool, node *ToolNode) ([]message.Message, error) {
 	toolMessages := make([]message.Message, 0, len(toolCalls))
 
 	for idx, call := range toolCalls {
-		msgs, err := executeSingleTool(ctx, view, call, idx, toolRegistry, config)
+		msgs, err := executeSingleTool(ctx, view, call, idx, toolRegistry, node)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +282,7 @@ func executeToolsSequential(ctx context.Context, view *state.ReadView, toolCalls
 
 // executeToolsParallel executes tool calls concurrently using goroutines.
 // Results are collected in the original order of tool calls.
-func executeToolsParallel(ctx context.Context, view *state.ReadView, toolCalls []message.ToolCall, toolRegistry map[string]tool.Tool, config *toolNodeOptions) ([]message.Message, error) {
+func executeToolsParallel(ctx context.Context, view *state.ReadView, toolCalls []message.ToolCall, toolRegistry map[string]tool.Tool, node *ToolNode) ([]message.Message, error) {
 	type result struct {
 		idx      int
 		messages []message.Message
@@ -291,7 +297,7 @@ func executeToolsParallel(ctx context.Context, view *state.ReadView, toolCalls [
 		wg.Add(1)
 		go func(i int, c message.ToolCall) {
 			defer wg.Done()
-			msgs, err := executeSingleTool(ctx, view, c, i, toolRegistry, config)
+			msgs, err := executeSingleTool(ctx, view, c, i, toolRegistry, node)
 			results <- result{idx: i, messages: msgs, err: err}
 		}(idx, call)
 	}
@@ -305,7 +311,7 @@ func executeToolsParallel(ctx context.Context, view *state.ReadView, toolCalls [
 	// Collect results in order
 	resultMap := make(map[int]result)
 	for r := range results {
-		if r.err != nil && !config.continueOnError {
+		if r.err != nil && !node.continueOnError {
 			return nil, r.err
 		}
 		resultMap[r.idx] = r
@@ -327,9 +333,9 @@ func executeToolsParallel(ctx context.Context, view *state.ReadView, toolCalls [
 }
 
 // executeSingleTool executes a single tool call with all callbacks and error handling.
-func executeSingleTool(ctx context.Context, view *state.ReadView, call message.ToolCall, idx int, toolRegistry map[string]tool.Tool, config *toolNodeOptions) ([]message.Message, error) {
+func executeSingleTool(ctx context.Context, view *state.ReadView, call message.ToolCall, idx int, toolRegistry map[string]tool.Tool, node *ToolNode) ([]message.Message, error) {
 	// Execute BeforeTool callbacks
-	msgs, err := handleBeforeToolCallback(ctx, view, call, config, idx)
+	msgs, err := handleBeforeToolCallback(ctx, view, call, node, idx)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +346,7 @@ func executeSingleTool(ctx context.Context, view *state.ReadView, call message.T
 	// Check if tool exists
 	t := toolRegistry[call.Name]
 	if t == nil {
-		if config.continueOnError {
+		if node.continueOnError {
 			toolCallID := call.ID
 			if toolCallID == "" {
 				toolCallID = fmt.Sprintf("%s-%d", call.Name, idx)
@@ -348,11 +354,11 @@ func executeSingleTool(ctx context.Context, view *state.ReadView, call message.T
 			errMsg := fmt.Sprintf("Error: tool %q not registered", call.Name)
 			return []message.Message{message.NewToolMessage(toolCallID, errMsg)}, nil
 		}
-		return nil, fmt.Errorf("%s: tool %q not registered", config.errorPrefix, call.Name)
+		return nil, fmt.Errorf("%s: tool %q not registered", node.errorPrefix, call.Name)
 	}
 
 	// Marshal arguments
-	args, errMsgs, err := marshalToolArguments(call, config, idx)
+	args, errMsgs, err := marshalToolArguments(call, node, idx)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +369,7 @@ func executeSingleTool(ctx context.Context, view *state.ReadView, call message.T
 	// Execute tool
 	result, err := t.Call(ctx, args)
 	if err != nil {
-		errMsgs, handledErr := handleToolError(ctx, view, call, err, config, idx)
+		errMsgs, handledErr := handleToolError(ctx, view, call, err, node, idx)
 		if handledErr != nil {
 			return nil, handledErr
 		}
@@ -373,7 +379,7 @@ func executeSingleTool(ctx context.Context, view *state.ReadView, call message.T
 	}
 
 	// Execute AfterTool callbacks
-	finalResult, callbackMsgs, err := handleAfterToolCallback(ctx, view, call, result, config, idx)
+	finalResult, callbackMsgs, err := handleAfterToolCallback(ctx, view, call, result, node, idx)
 	if err != nil {
 		return nil, err
 	}

@@ -37,40 +37,32 @@ func main() {
 	completeKey := state.NewKey("complete", false)
 
 	// Add nodes
-	builder.Node("input_validator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	builder.Node("input_validator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		return &graph.NodeResult{
-			Updates: state.Updates{
-				validKey.Name():    true,
-				priorityKey.Name(): "high",
-			},
+		return state.Updates{
+			validKey.Name():    true,
+			priorityKey.Name(): "high",
 		}, nil
 	})
 
-	builder.Node("router", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	builder.Node("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Routing request...")
-		return &graph.NodeResult{}, nil
+		return nil, nil
 	})
 
-	builder.Node("high_priority_handler", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	builder.Node("high_priority_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		return &graph.NodeResult{
-			Updates: state.Updates{processedKey.Name(): true},
-		}, nil
+		return state.Updates{processedKey.Name(): true}, nil
 	})
 
-	builder.Node("normal_handler", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	builder.Node("normal_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		return &graph.NodeResult{
-			Updates: state.Updates{processedKey.Name(): true},
-		}, nil
+		return state.Updates{processedKey.Name(): true}, nil
 	})
 
-	builder.Node("aggregator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+	builder.Node("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		return &graph.NodeResult{
-			Updates: state.Updates{completeKey.Name(): true},
-		}, nil
+		return state.Updates{completeKey.Name(): true}, nil
 	})
 
 	// Define edges

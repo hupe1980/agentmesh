@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -71,9 +71,8 @@ func main() {
 	}
 
 	// Task A: Simulates data analysis work
-	taskA := &graph.Node{
-		Name: "task_a",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	taskA := graph.NewBaseNode("task_a",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
@@ -81,19 +80,16 @@ func main() {
 			results := graphstate.GetFromView(view, resultsKey)
 			results["task_a"] = "analysis result"
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"task_a: analysis completed"},
-					resultsKey.Name():       results,
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"task_a: analysis completed"},
+				resultsKey.Name():       results,
 			}, nil
 		},
-	}
+	)
 
 	// Task B: Simulates simulation work (runs in parallel with Task A)
-	taskB := &graph.Node{
-		Name: "task_b",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	taskB := graph.NewBaseNode("task_b",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
@@ -101,36 +97,31 @@ func main() {
 			results := graphstate.GetFromView(view, resultsKey)
 			results["task_b"] = "simulation result"
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"task_b: simulation completed"},
-					resultsKey.Name():       results,
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"task_b: simulation completed"},
+				resultsKey.Name():       results,
 			}, nil
 		},
-	}
+	)
 
 	// Merge node: Aggregates results after all parallel tasks complete
 	// This demonstrates the fan-in pattern (many → one)
-	mergeResults := &graph.Node{
-		Name: "combine",
-		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	mergeResults := graph.NewBaseNode("combine",
+		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read the merged results from both tasks
 			results := graphstate.GetFromView(view, resultsKey)
 
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{
-					actionHistoryKey.Name(): []string{"combine: aggregated all results"},
-					summaryKey.Name():       results,
-				},
+			return graphstate.Updates{
+				actionHistoryKey.Name(): []string{"combine: aggregated all results"},
+				summaryKey.Name():       results,
 			}, nil
 		},
-	}
+	)
 
 	// Helper to add nodes with error checking
-	mustAddNode := func(n *graph.Node) {
+	mustAddNode := func(n graph.Node) {
 		if err := gph.AddNode(n); err != nil {
 			panic(err)
 		}

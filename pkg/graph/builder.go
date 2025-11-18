@@ -64,12 +64,9 @@ func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 
 // Node adds a node to the graph with the given name and run function.
 // Any errors will be caught during graph compilation in Build().
-func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error)) *Builder[I, O] {
+func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error)) *Builder[I, O] {
 	// Errors are validated during graph compilation
-	_ = b.graph.AddNode(&Node{
-		Name:    name,
-		RunFunc: runFunc,
-	})
+	_ = b.graph.AddNode(NewBaseNode(name, runFunc))
 	return b
 }
 
@@ -84,18 +81,14 @@ func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view
 //	        WithMaxAttempts(5).
 //	        WithExponentialBackoff(time.Second, 2.0).
 //	        Build())
-func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error), retryPolicy *RetryPolicy) *Builder[I, O] {
+func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error), retryPolicy *RetryPolicy) *Builder[I, O] {
 	// Errors are validated during graph compilation
-	_ = b.graph.AddNode(&Node{
-		Name:        name,
-		RunFunc:     runFunc,
-		RetryPolicy: retryPolicy,
-	})
+	_ = b.graph.AddNode(NewBaseNodeWithRetry(name, runFunc, retryPolicy))
 	return b
 }
 
 // SetNodeRetryPolicy sets or updates the retry policy for an existing node.
-// Returns an error if the node doesn't exist.
+// Returns an error if the node doesn't exist or doesn't support retry.
 //
 // Example:
 //
@@ -107,7 +100,14 @@ func (b *Builder[I, O]) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy
 	if !exists {
 		return fmt.Errorf("node not found: %s", name)
 	}
-	node.RetryPolicy = retryPolicy
+
+	// Only BaseNode supports setting retry policy after creation
+	baseNode, ok := node.(*BaseNode)
+	if !ok {
+		return fmt.Errorf("node %s does not support setting retry policy", name)
+	}
+
+	baseNode.retryPolicy = retryPolicy
 	return nil
 }
 

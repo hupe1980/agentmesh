@@ -9,7 +9,7 @@ import (
 
 // Graph represents a mutable computational graph with nodes and edges.
 type Graph struct {
-	Nodes    map[string]*Node
+	Nodes    map[string]Node
 	Edges    []Edge
 	Branches []ConditionalEdges
 	manager  *state.Manager
@@ -21,7 +21,7 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 		return nil, fmt.Errorf("manager cannot be nil")
 	}
 	return &Graph{
-		Nodes:    make(map[string]*Node),
+		Nodes:    make(map[string]Node),
 		Edges:    make([]Edge, 0),
 		Branches: make([]ConditionalEdges, 0),
 		manager:  manager,
@@ -29,14 +29,32 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 }
 
 // AddNode adds a node to the graph.
-func (g *Graph) AddNode(n *Node) error {
+func (g *Graph) AddNode(n Node) error {
 	if n == nil {
 		return fmt.Errorf("node cannot be nil")
 	}
-	if n.Name == "" {
+	if n.Name() == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}
-	g.Nodes[n.Name] = n
+	g.Nodes[n.Name()] = n
+	return nil
+}
+
+// SetNodeRetryPolicy sets or updates the retry policy for an existing node.
+// Returns an error if the node doesn't exist or doesn't support retry.
+func (g *Graph) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
+	node, exists := g.Nodes[name]
+	if !exists {
+		return fmt.Errorf("node not found: %s", name)
+	}
+
+	// Only BaseNode supports setting retry policy after creation
+	baseNode, ok := node.(*BaseNode)
+	if !ok {
+		return fmt.Errorf("node %s does not support setting retry policy", name)
+	}
+
+	baseNode.retryPolicy = retryPolicy
 	return nil
 }
 

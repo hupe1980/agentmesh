@@ -3,6 +3,8 @@ package compile
 import (
 	"fmt"
 	"sort"
+
+	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
 // GetNodes returns a sorted list of all node names in the compiled graph.
@@ -18,6 +20,12 @@ func (cg *CompiledGraph) GetNodeInfo(name string) (*NodeInfo, error) {
 		return nil, fmt.Errorf("node not found: %s", name)
 	}
 
+	// Check if node supports retry policy
+	var retryPolicy *graph.RetryPolicy
+	if retryNode, ok := node.(graph.NodeWithRetry); ok {
+		retryPolicy = retryNode.RetryPolicy()
+	}
+
 	info := &NodeInfo{
 		Name:              name,
 		Type:              "standard",
@@ -25,7 +33,7 @@ func (cg *CompiledGraph) GetNodeInfo(name string) (*NodeInfo, error) {
 		OutgoingEdges:     len(cg.Topology.Outgoing[name]),
 		IsConditional:     len(cg.Topology.ConditionalByFrom[name]) > 0,
 		IsConditionalGate: cg.Topology.ConditionalGate[name],
-		HasRetryPolicy:    node.RetryPolicy != nil,
+		HasRetryPolicy:    retryPolicy != nil,
 	}
 
 	switch name {
@@ -35,8 +43,8 @@ func (cg *CompiledGraph) GetNodeInfo(name string) (*NodeInfo, error) {
 		info.Type = "end"
 	}
 
-	if node.RetryPolicy != nil {
-		info.RetryMaxAttempts = node.RetryPolicy.MaxAttempts
+	if retryPolicy != nil {
+		info.RetryMaxAttempts = retryPolicy.MaxAttempts
 	}
 
 	return info, nil

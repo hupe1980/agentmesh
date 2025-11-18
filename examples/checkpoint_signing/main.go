@@ -175,22 +175,18 @@ func productionExample(ctx context.Context) {
 	counterKey := graphstate.NewKey("counter", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "processed"},
-		}, nil
+		return graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "processed"}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "finalized"},
-		}, nil
+		return graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "finalized"}, nil
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")

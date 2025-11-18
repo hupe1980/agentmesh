@@ -35,43 +35,35 @@ func main() {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}
 
-	pipeline.Node("init", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	pipeline.Node("init", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := map[string]any{
 			"user_id": "12345",
 			"email":   "user@example.com",
 			"score":   75,
 		}
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{dataKey.Name(): data},
-		}, nil
+		return graphstate.Updates{dataKey.Name(): data}, nil
 	})
 
-	pipeline.Node("validation", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	pipeline.Node("validation", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		required := []string{"user_id", "email", "score"}
 		for _, field := range required {
 			if _, ok := data[field]; !ok {
-				return &graph.NodeResult{
-					Updates: graphstate.Updates{validKey.Name(): false},
-				}, nil
+				return graphstate.Updates{validKey.Name(): false}, nil
 			}
 		}
 		score, ok := data["score"].(int)
 		if !ok || score < 0 || score > 100 {
-			return &graph.NodeResult{
-				Updates: graphstate.Updates{validKey.Name(): false},
-			}, nil
+			return graphstate.Updates{validKey.Name(): false}, nil
 		}
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{validKey.Name(): true},
-		}, nil
+		return graphstate.Updates{validKey.Name(): true}, nil
 	})
 
-	pipeline.Node("enrichment", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	pipeline.Node("enrichment", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		valid := graphstate.GetFromView(view, validKey)
 		if !valid {
-			return &graph.NodeResult{}, nil
+			return nil, nil
 		}
 		enriched := make(map[string]any)
 		maps.Copy(enriched, data)
@@ -84,21 +76,17 @@ func main() {
 			enriched["grade"] = "C"
 		}
 		enriched["status"] = "enriched"
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{enrichedDataKey.Name(): enriched},
-		}, nil
+		return graphstate.Updates{enrichedDataKey.Name(): enriched}, nil
 	})
 
-	pipeline.Node("analysis", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	pipeline.Node("analysis", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		enrichedData := graphstate.GetFromView(view, enrichedDataKey)
 		analysis := map[string]any{
 			"processed":   true,
 			"score_grade": enrichedData["grade"],
 			"total_items": len(enrichedData),
 		}
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{analysisKey.Name(): analysis},
-		}, nil
+		return graphstate.Updates{analysisKey.Name(): analysis}, nil
 	})
 
 	pipeline.AddEdge(graph.StartNode, "init")

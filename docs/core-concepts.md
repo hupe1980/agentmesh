@@ -176,7 +176,7 @@ var (
     MessagesKey      = agent.MessagesKey  // From agent package
 )
 
-func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+func processDataFunc(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Read from state using typed keys
     data := state.GetFromView(view, RawDataKey)
     messages := state.GetFromView(view, MessagesKey)
@@ -184,14 +184,12 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (*graph.NodeResu
     // Process...
     processed := transform(data)
     
-    // Return updates (including messages via agent.MessagesKey)
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "processed_data": processed,
-            "status": "complete",
-            agent.MessagesKey.Name(): []message.Message{
-                message.NewAIMessageFromText("Processing complete"),
-            },
+    // Return updates (including messages via message.MessagesKey)
+    return map[string]any{
+        "processed_data": processed,
+        "status": "complete",
+        message.MessagesKey: []message.Message{
+            message.NewAIMessageFromText("Processing complete"),
         },
     }, nil
 }
@@ -238,30 +236,28 @@ var (
     MessagesKey = agent.MessagesKey  // From agent package
 )
 
-func myNode(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Read values using typed keys
     counter := state.GetFromView(view, CounterKey)
     status := state.GetFromView(view, StatusKey)
     messages := state.GetFromView(view, MessagesKey)
     
-    return &graph.NodeResult{}, nil
+    return nil, nil
 }
 ```
 
 ### Updating state
 
-Nodes update state through `NodeResult`:
+Nodes return state updates directly:
 
 ```go
-return &graph.NodeResult{
-    Updates: map[string]any{
-        "counter": counter + 1,
-        "status": "processing",
-        "result": computedValue,
-        // Add messages to updates using agent.MessagesKey
-        agent.MessagesKey.Name(): []message.Message{
-            message.NewAIMessageFromText("Updated successfully"),
-        },
+return map[string]any{
+    "counter": counter + 1,
+    "status": "processing",
+    "result": computedValue,
+    // Add messages to updates using message.MessagesKey
+    message.MessagesKey: []message.Message{
+        message.NewAIMessageFromText("Updated successfully"),
     },
 }, nil
 ```
@@ -347,25 +343,19 @@ var (
 
 builder.Node("writer", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     draft := generateDraft()
-    return &graph.NodeResult{
-        Updates: map[string]any{"draft": draft},
-    }, nil
+    return map[string]any{"draft": draft}, nil
 })
 
-builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
         // Set done flag to route to END
-        return &graph.NodeResult{
-            Updates: map[string]any{"done": true},
-        }, nil
+        return map[string]any{"done": true}, nil
     }
     // Loop back to writer for refinement
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "feedback": "improve clarity",
-            "done": false,
-        },
+    return map[string]any{
+        "feedback": "improve clarity",
+        "done": false,
     }, nil
 })
 
@@ -493,11 +483,9 @@ Stores only the most recent value (overwrite):
 state.AddChannel(channel.NewLastValueChannel("status"))
 
 // Updates overwrite previous value
-result := &graph.NodeResult{
-    Updates: map[string]any{
-        "status": "complete", // Overwrites previous status
-    },
-}
+return map[string]any{
+    "status": "complete", // Overwrites previous status
+}, nil
 ```
 
 **Use cases**: Current state, flags, counters
@@ -521,12 +509,10 @@ state.AddChannel(channel.NewBinaryOpChannel("max_value", func(a, b any) any {
 }))
 
 // Updates are combined
-result := &graph.NodeResult{
-    Updates: map[string]any{
-        "total": 10,      // Will be summed with existing value
-        "max_value": 100, // Will keep maximum value
-    },
-}
+return map[string]any{
+    "total": 10,      // Will be summed with existing value
+    "max_value": 100, // Will keep maximum value
+}, nil
 ```
 
 **Use cases**: Aggregations, statistics, accumulations

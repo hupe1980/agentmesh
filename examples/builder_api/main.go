@@ -37,41 +37,33 @@ func main() {
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
-		Node("analyze", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		Node("analyze", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			fmt.Println("Analyzing input...")
-			return &graph.NodeResult{
-				Updates: state.Updates{
-					AnalysisKey.Name(): "Input looks good",
-					ScoreKey.Name():    0.95,
-				},
+			return state.Updates{
+				AnalysisKey.Name(): "Input looks good",
+				ScoreKey.Name():    0.95,
 			}, nil
 		}).
-		Node("validate", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		Node("validate", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			// Type-safe read - no casting needed, compile-time checked
 			score := state.GetFromView(view, ScoreKey)
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
-			return &graph.NodeResult{
-				Updates: state.Updates{ValidKey.Name(): valid},
-			}, nil
+			return state.Updates{ValidKey.Name(): valid}, nil
 		}).
-		Node("process", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+		Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			// Type-safe read with default value - never panics
 			valid := state.GetFromView(view, ValidKey)
 			if valid {
 				fmt.Println("Processing validated input...")
 				result := "Success!"
 				fmt.Printf("✓ Final result: %s\n", result)
-				return &graph.NodeResult{
-					Updates: state.Updates{ResultKey.Name(): result},
-				}, nil
+				return state.Updates{ResultKey.Name(): result}, nil
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
-			return &graph.NodeResult{
-				Updates: state.Updates{ResultKey.Name(): result},
-			}, nil
+			return state.Updates{ResultKey.Name(): result}, nil
 		}).
 		AddEdge(graph.StartNode, "analyze").
 		AddEdge("analyze", "validate").

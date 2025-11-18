@@ -66,30 +66,28 @@ func TestPageRank(t *testing.T) {
 	// Create compute nodes for each vertex
 	for _, vertex := range vertices {
 		v := vertex // capture loop variable
-		err = g.AddNode(&graph.Node{
-			Name: v,
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				// Get outgoing edges
-				outgoingEdges := state.GetFromView(view, outgoingKeys[v])
-				if len(outgoingEdges) == 0 {
-					return &graph.NodeResult{}, nil
-				}
+		err = g.AddNode(graph.NewBaseNode(v, func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			// Get outgoing edges
+			outgoingEdges := state.GetFromView(view, outgoingKeys[v])
+			if len(outgoingEdges) == 0 {
+				return nil, nil
+			}
 
-				// Get current rank
-				rank := state.GetFromView(view, rankKeys[v])
+			// Get current rank
+			rank := state.GetFromView(view, rankKeys[v])
 
-				// Distribute rank to outgoing neighbors
-				contribution := rank / float64(len(outgoingEdges))
+			// Distribute rank to outgoing neighbors
+			contribution := rank / float64(len(outgoingEdges))
 
-				updates := make(map[string]any)
-				for _, target := range outgoingEdges {
-					key := fmt.Sprintf("contrib_%s_%s", v, target)
-					updates[key] = contribution
-				}
+			updates := make(map[string]any)
+			for _, target := range outgoingEdges {
+				key := fmt.Sprintf("contrib_%s_%s", v, target)
+				updates[key] = contribution
+			}
 
-				return &graph.NodeResult{Updates: updates}, nil
-			},
-		})
+			return updates, nil
+		},
+		))
 		require.NoError(t, err)
 		g.AddEdge(graph.StartNode, v)
 	}
@@ -188,32 +186,30 @@ func TestShortestPath(t *testing.T) {
 	// Create relaxation nodes
 	for _, vertex := range vertices {
 		v := vertex
-		err = g.AddNode(&graph.Node{
-			Name: v,
-			RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-				dist := state.GetFromView(view, distKeys[v])
-				if dist == math.MaxInt32 {
-					return &graph.NodeResult{}, nil
+		err = g.AddNode(graph.NewBaseNode(v, func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			dist := state.GetFromView(view, distKeys[v])
+			if dist == math.MaxInt32 {
+				return nil, nil
+			}
+
+			neighbors := state.GetFromView(view, edgeKeys[v])
+			if len(neighbors) == 0 {
+				return nil, nil
+			}
+
+			updates := make(map[string]any)
+			for neighbor, weight := range neighbors {
+				newDist := dist + weight
+				currentNeighborDist := state.GetFromView(view, distKeys[neighbor])
+
+				if newDist < currentNeighborDist {
+					updates[fmt.Sprintf("dist_%s", neighbor)] = newDist
 				}
+			}
 
-				neighbors := state.GetFromView(view, edgeKeys[v])
-				if len(neighbors) == 0 {
-					return &graph.NodeResult{}, nil
-				}
-
-				updates := make(map[string]any)
-				for neighbor, weight := range neighbors {
-					newDist := dist + weight
-					currentNeighborDist := state.GetFromView(view, distKeys[neighbor])
-
-					if newDist < currentNeighborDist {
-						updates[fmt.Sprintf("dist_%s", neighbor)] = newDist
-					}
-				}
-
-				return &graph.NodeResult{Updates: updates}, nil
-			},
-		})
+			return updates, nil
+		},
+		))
 		require.NoError(t, err)
 		g.AddEdge(graph.StartNode, v)
 	}
@@ -260,24 +256,20 @@ func TestGraphConvergence(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(&graph.Node{
-		Name: "incrementer",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			count := state.GetFromView(view, counterKey)
-			target := state.GetFromView(view, targetKey)
+	err = g.AddNode(graph.NewBaseNode("incrementer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		count := state.GetFromView(view, counterKey)
+		target := state.GetFromView(view, targetKey)
 
-			if count >= target {
-				// Converged - return empty result
-				return &graph.NodeResult{}, nil
-			}
+		if count >= target {
+			// Converged - return empty result
+			return nil, nil
+		}
 
-			return &graph.NodeResult{
-				Updates: map[string]any{
-					"counter": count + 1,
-				},
-			}, nil
-		},
-	})
+		return map[string]any{
+			"counter": count + 1,
+		}, nil
+	},
+	))
 	require.NoError(t, err)
 
 	g.AddEdge(graph.StartNode, "incrementer")
@@ -317,20 +309,16 @@ func TestIterativeComputation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node that halves the value each iteration
-	err = g.AddNode(&graph.Node{
-		Name: "halvinator",
-		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-			value := state.GetFromView(view, valueKey)
-			iteration := state.GetFromView(view, iterationKey)
+	err = g.AddNode(graph.NewBaseNode("halvinator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		value := state.GetFromView(view, valueKey)
+		iteration := state.GetFromView(view, iterationKey)
 
-			return &graph.NodeResult{
-				Updates: map[string]any{
-					"value":     value / 2.0,
-					"iteration": iteration + 1,
-				},
-			}, nil
-		},
-	})
+		return map[string]any{
+			"value":     value / 2.0,
+			"iteration": iteration + 1,
+		}, nil
+	},
+	))
 	require.NoError(t, err)
 
 	g.AddEdge(graph.StartNode, "halvinator")

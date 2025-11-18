@@ -77,7 +77,7 @@ func main() {
 	_ = graphstate.RegisterKey(mgr, verifiedKey)
 
 	// Node 1: Data processor with intermediate streaming
-	builder.Node("data_processor", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("data_processor", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -90,35 +90,29 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				streamWriter(&graph.NodeResult{
-					Updates: graphstate.Updates{
-						progressKey.Name():     fmt.Sprintf("%d/%d", i+1, len(chunks)),
-						currentChunkKey.Name(): chunk,
-					},
+				streamWriter(graphstate.Updates{
+					progressKey.Name():     fmt.Sprintf("%d/%d", i+1, len(chunks)),
+					currentChunkKey.Name(): chunk,
 				})
 			}
 		}
 
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{
-				statusKey.Name():      "data_processed",
-				chunksTotalKey.Name(): len(chunks),
-			},
+		return graphstate.Updates{
+			statusKey.Name():      "data_processed",
+			chunksTotalKey.Name(): len(chunks),
 		}, nil
 	})
 
 	// Node 2: LLM call with streaming
-	builder.Node("llm_call", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("llm_call", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			streamWriter(&graph.NodeResult{
-				Updates: graphstate.Updates{
-					llmStatusKey.Name(): "starting",
-				},
+			streamWriter(graphstate.Updates{
+				llmStatusKey.Name(): "starting",
 			})
 		}
 
@@ -136,10 +130,8 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			streamWriter(&graph.NodeResult{
-				Updates: graphstate.Updates{
-					llmStatusKey.Name(): "completed",
-				},
+			streamWriter(graphstate.Updates{
+				llmStatusKey.Name(): "completed",
 			})
 		}
 
@@ -148,13 +140,11 @@ func main() {
 		}
 		agent.AppendMessages(updates, []message.Message{resp.Message})
 
-		return &graph.NodeResult{
-			Updates: updates,
-		}, nil
+		return updates, nil
 	})
 
 	// Node 3: Multi-step analyzer with detailed streaming
-	builder.Node("analyzer", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("analyzer", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -162,41 +152,33 @@ func main() {
 		// Step 1: Validation
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(&graph.NodeResult{
-				Updates: graphstate.Updates{
-					analysisStepKey.Name(): "validation",
-					validationKey.Name():   "passed",
-				},
+			streamWriter(graphstate.Updates{
+				analysisStepKey.Name(): "validation",
+				validationKey.Name():   "passed",
 			})
 		}
 
 		// Step 2: Quality check
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(&graph.NodeResult{
-				Updates: graphstate.Updates{
-					analysisStepKey.Name(): "quality_check",
-					qualityScoreKey.Name(): 0.95,
-				},
+			streamWriter(graphstate.Updates{
+				analysisStepKey.Name(): "quality_check",
+				qualityScoreKey.Name(): 0.95,
 			})
 		}
 
 		// Step 3: Finalization
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(&graph.NodeResult{
-				Updates: graphstate.Updates{
-					analysisStepKey.Name(): "finalization",
-					readyKey.Name():        true,
-				},
+			streamWriter(graphstate.Updates{
+				analysisStepKey.Name(): "finalization",
+				readyKey.Name():        true,
 			})
 		}
 
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{
-				statusKey.Name():   "analysis_complete",
-				verifiedKey.Name(): true,
-			},
+		return graphstate.Updates{
+			statusKey.Name():   "analysis_complete",
+			verifiedKey.Name(): true,
 		}, nil
 	})
 

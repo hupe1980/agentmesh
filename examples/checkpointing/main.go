@@ -200,28 +200,22 @@ func buildWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
 	statusKey := graphstate.NewKey("status", "")
 	dataKey := graphstate.NewKey("data", []string{})
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "initialized"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "initialized"}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "processing", dataKey.Name(): []string{"A", "B", "C"}},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "processing", dataKey.Name(): []string{"A", "B", "C"}}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "complete"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "complete"}, nil
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")
@@ -245,21 +239,17 @@ func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Messa
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: OK")
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: OK")
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		return nil, fmt.Errorf("simulated failure at step 3")
 	})
 
@@ -281,25 +271,19 @@ func buildFixedWorkflow() *exec.RunnableGraph[[]message.Message, message.Message
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"}, nil
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"}, nil
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
+	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
-		return &graph.NodeResult{
-			Updates: graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "fixed!"},
-		}, nil
+		return graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "fixed!"}, nil
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")
