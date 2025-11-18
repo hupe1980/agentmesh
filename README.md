@@ -494,10 +494,13 @@ AgentMesh uses a **directed graph** model where:
 - **State** = Shared context accessible across all nodes
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/graph"
+import (
+    "github.com/hupe1980/agentmesh/pkg/exec"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+)
 
-// Create a graph builder
-builder, err := graph.NewBuilder()
+// Create a graph builder with Pregel executor
+builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 if err != nil {
     log.Fatal(err)
 }
@@ -661,10 +664,9 @@ executor := graph.NewPregelExecutor(
     graph.WithPregelMaxIterations(1000),
 )
 
-// Apply executor to graph
-builder := graph.NewBuilder()
+// Apply executor to graph using builder
+builder, _ := exec.NewBuilder(executor)
 // ... build graph ...
-builder.WithExecutor(executor)
 compiled, _ := builder.Compile()
 
 // Access aggregated values after execution

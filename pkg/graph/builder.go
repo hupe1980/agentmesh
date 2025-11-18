@@ -11,6 +11,19 @@ import (
 var ErrNoCompileFunc = fmt.Errorf("no compile function registered; use WithCompileFunc option or SetCompileFunc method")
 
 // Builder provides a fluent API for constructing graphs.
+//
+// DEPRECATED: Use exec.NewBuilder instead, which automatically configures
+// compilation without requiring WithCompileFunc. This builder remains for
+// backward compatibility but will be removed in a future version.
+//
+// Recommended migration:
+//
+//	// Old way (requires WithCompileFunc):
+//	builder, _ := graph.NewBuilder[I, O](graph.WithCompileFunc(compileFunc))
+//
+//	// New way (automatic compilation):
+//	builder, _ := exec.NewBuilder(exec.NewPregelExecutor())
+//
 // Type parameters:
 //   - I: Input type for the runnable
 //   - O: Output type for the runnable
@@ -23,6 +36,9 @@ type Builder[I, O any] struct {
 type BuilderOption[I, O any] func(*Builder[I, O]) error
 
 // NewBuilder creates a new graph builder with the given options.
+//
+// DEPRECATED: Use exec.NewBuilder instead for a cleaner API that doesn't
+// require WithCompileFunc. See exec.NewBuilder for examples.
 func NewBuilder[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
 	// Create a default state manager
 	manager := state.NewManager()

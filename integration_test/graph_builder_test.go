@@ -232,7 +232,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("right", graph.EndNode)
 
 		// Use Sequential executor for deterministic routing
-		compiled, err := exec.CompileGraph(g, exec.NewSequential())
+		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -295,7 +295,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("target2", graph.EndNode)
 
 		// Use Sequential to avoid repeated executions
-		compiled, err := exec.CompileGraph(g, exec.NewSequential())
+		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()

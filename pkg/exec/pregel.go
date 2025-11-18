@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"reflect"
 	"runtime"
 
 	"github.com/google/uuid"
@@ -14,22 +15,49 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
+// Default key name for messages (same as agent.MessagesKey.Name()).
+// Defined here to avoid import cycle with agent package.
+const defaultMessagesKeyName = "__messages__"
+
+// isSlice checks if a value is a slice type using reflection.
+func isSlice(value any) bool {
+	if value == nil {
+		return false
+	}
+	return reflect.TypeOf(value).Kind() == reflect.Slice
+}
+
+// reflectSliceLen returns the length of a slice using reflection.
+func reflectSliceLen(value any) int {
+	return reflect.ValueOf(value).Len()
+}
+
+// reflectSliceIndex returns the element at index i of a slice using reflection.
+func reflectSliceIndex(value any, i int) any {
+	return reflect.ValueOf(value).Index(i).Interface()
+}
+
 // Pregel is a Bulk-Synchronous Parallel (BSP) executor that uses the pregel runtime.
-type Pregel struct {
+type Pregel[I, O any] struct {
 	maxWorkers             int
 	maxIters               int
-	messageBus             pregel.MessageBus[message.Message]
+	messageBus             pregel.MessageBus[state.Updates]
 	aggregators            map[string]pregel.Aggregator
 	enableDistributedState bool            // Enable state synchronization via message bus
 	metrics                *RuntimeMetrics // Track execution metadata for checkpoints
+
+	// Generic executor configuration
+	inputToState  func(I) state.Updates // Convert input to initial state
+	outputKey     string                // Which state key to yield as output
+	outputAdapter func(any) O           // Convert state value to output type
 }
 
 // PregelOption configures a Pregel executor.
-type PregelOption func(*Pregel)
+type PregelOption[I, O any] func(*Pregel[I, O])
 
 // WithMaxWorkers sets the maximum number of parallel workers.
-func WithMaxWorkers(n int) PregelOption {
-	return func(p *Pregel) {
+func WithMaxWorkers[I, O any](n int) PregelOption[I, O] {
+	return func(p *Pregel[I, O]) {
 		if n > 0 {
 			p.maxWorkers = n
 		}
@@ -37,8 +65,8 @@ func WithMaxWorkers(n int) PregelOption {
 }
 
 // WithMaxIterations sets the maximum number of supersteps.
-func WithMaxIterations(n int) PregelOption {
-	return func(p *Pregel) {
+func WithMaxIterations[I, O any](n int) PregelOption[I, O] {
+	return func(p *Pregel[I, O]) {
 		p.maxIters = n
 	}
 }
@@ -54,16 +82,16 @@ func WithMaxIterations(n int) PregelOption {
 // state updates propagate correctly through the message bus.
 //
 // To disable state sync (routing-only messages): use WithDistributedState(false)
-func WithMessageBus(bus pregel.MessageBus[message.Message]) PregelOption {
-	return func(p *Pregel) {
+func WithMessageBus[I, O any](bus pregel.MessageBus[state.Updates]) PregelOption[I, O] {
+	return func(p *Pregel[I, O]) {
 		p.messageBus = bus
 		p.enableDistributedState = true // Auto-enable when message bus is provided
 	}
 }
 
 // WithAggregators configures global aggregators.
-func WithAggregators(aggs map[string]pregel.Aggregator) PregelOption {
-	return func(p *Pregel) {
+func WithAggregators[I, O any](aggs map[string]pregel.Aggregator) PregelOption[I, O] {
+	return func(p *Pregel[I, O]) {
 		p.aggregators = aggs
 	}
 }
@@ -84,31 +112,114 @@ func WithAggregators(aggs map[string]pregel.Aggregator) PregelOption {
 //
 // Note: WithMessageBus() automatically enables this. Use WithDistributedState(false)
 // to explicitly disable if you only need routing without state propagation.
-func WithDistributedState(enable ...bool) PregelOption {
+func WithDistributedState[I, O any](enable ...bool) PregelOption[I, O] {
 	enabled := true
 	if len(enable) > 0 {
 		enabled = enable[0]
 	}
-	return func(p *Pregel) {
+	return func(p *Pregel[I, O]) {
 		p.enableDistributedState = enabled
 	}
 }
 
-// NewPregelExecutor creates a new Pregel BSP executor.
+// NewPregelExecutor creates the default message-based Pregel executor.
+// This is the standard executor for agent systems, chat workflows.
+// Input: []message.Message, Output: message.Message (individual messages)
 //
-// The executor runs the same BSP algorithm regardless of configuration.
-// Options control where messages go and what they contain:
+// Note: The executor automatically unfolds message arrays. When a node adds multiple
+// messages (e.g., parallel tool calls), each message is yielded separately to the stream.
+func NewPregelExecutor(opts ...PregelOption[[]message.Message, message.Message]) *Pregel[[]message.Message, message.Message] {
+	return NewGenericPregelExecutor[[]message.Message, message.Message](
+		// Input: Convert []message.Message to state using default messages key
+		func(input []message.Message) state.Updates {
+			if len(input) == 0 {
+				return nil
+			}
+			return state.Updates{defaultMessagesKeyName: input}
+		},
+		// Output: Watch default messages key
+		defaultMessagesKeyName,
+		// Output: Identity adapter - messages are unfolded by the executor
+		func(value any) message.Message {
+			if msg, ok := value.(message.Message); ok {
+				return msg
+			}
+			return nil
+		},
+		opts...,
+	)
+}
+
+// NewStatePregelExecutor creates a state-only Pregel executor.
+// This is for pure state transformation workflows, data pipelines, ETL.
+// Input: state.Updates, Output: state.Updates (all state updates)
+func NewStatePregelExecutor(opts ...PregelOption[state.Updates, state.Updates]) *Pregel[state.Updates, state.Updates] {
+	return NewGenericPregelExecutor[state.Updates, state.Updates](
+		// Input: Use provided state.Updates directly as initial state
+		func(input state.Updates) state.Updates {
+			return input
+		},
+		// Output: Special marker to yield all updates (not just one key)
+		"*", // Wildcard means "yield entire state.Updates"
+		// Output: Return updates as-is
+		func(value any) state.Updates {
+			if updates, ok := value.(state.Updates); ok {
+				return updates
+			}
+			return nil
+		},
+		opts...,
+	)
+}
+
+// NewKeyPregelExecutor creates a key-based Pregel executor.
+// This is for domain-specific workflows with typed input/output.
+// Input: type I stored in inputKey, Output: type O from outputKey
+func NewKeyPregelExecutor[I, O any](
+	inputKey *state.Key[I],
+	outputKey *state.Key[O],
+	opts ...PregelOption[I, O],
+) *Pregel[I, O] {
+	return NewGenericPregelExecutor[I, O](
+		// Input: Store input in specified key
+		func(input I) state.Updates {
+			return state.Updates{inputKey.Name(): input}
+		},
+		// Output: Watch specified key
+		outputKey.Name(),
+		// Output: Type-safe extraction
+		func(value any) O {
+			if typed, ok := value.(O); ok {
+				return typed
+			}
+			var zero O
+			return zero
+		},
+		opts...,
+	)
+}
+
+// NewGenericPregelExecutor creates a fully customizable Pregel executor.
+// This is for advanced use cases with custom input/output transformations.
 //
-//   - Default: In-memory message passing, no state sync (local execution)
-//   - WithMessageBus(): Custom transport (in-memory or Redis), auto-enables state sync
-//   - WithDistributedState(false): Disable state sync for routing-only messages
-//
-// The Pregel logic is identical whether messages are in-memory or distributed via Redis.
-func NewPregelExecutor(opts ...PregelOption) *Pregel {
-	p := &Pregel{
-		maxWorkers: runtime.NumCPU(),
-		maxIters:   1000,
-		metrics:    NewRuntimeMetrics(), // Initialize execution tracking
+// Parameters:
+//   - inputToState: Converts input I to initial state updates
+//   - outputKey: Which state key to watch and yield (use "*" for all updates)
+//   - outputAdapter: Converts state value to output type O
+//   - opts: Additional configuration options
+func NewGenericPregelExecutor[I, O any](
+	inputToState func(I) state.Updates,
+	outputKey string,
+	outputAdapter func(any) O,
+	opts ...PregelOption[I, O],
+) *Pregel[I, O] {
+	p := &Pregel[I, O]{
+		maxWorkers:    runtime.NumCPU(),
+		maxIters:      1000,
+		metrics:       NewRuntimeMetrics(),
+		inputToState:  inputToState,
+		outputKey:     outputKey,
+		outputAdapter: outputAdapter,
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -119,12 +230,12 @@ func NewPregelExecutor(opts ...PregelOption) *Pregel {
 // Run executes the compiled graph using the pregel BSP runtime.
 //
 //nolint:gocyclo // Complex graph orchestration logic cannot be easily simplified
-func (p *Pregel) Run(
+func (p *Pregel[I, O]) Run(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
-	input []message.Message,
-	opts ...graph.RunOption) iter.Seq2[message.Message, error] {
-	return func(yield func(message.Message, error) bool) {
+	input I,
+	opts ...graph.RunOption) iter.Seq2[O, error] {
+	return func(yield func(O, error) bool) {
 		// Extract run options
 		runOpts := extractRunOptions(opts)
 
@@ -139,7 +250,8 @@ func (p *Pregel) Run(
 
 		// Restore from checkpoint if configured
 		if err := p.restoreCheckpoint(runCtx, compiled, runOpts); err != nil {
-			yield(nil, err)
+			var zero O
+			yield(zero, err)
 			return
 		}
 
@@ -147,21 +259,23 @@ func (p *Pregel) Run(
 		worker := p.startCheckpointWorker(runCtx, runOpts)
 		defer p.stopCheckpointWorker(worker)
 
-		// Store initial messages in state
-		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if len(input) > 0 {
-			updates := state.Updates{}
-			updates["__messages__"] = input
-			if err := state.ApplyUpdates(runCtx, compiled.Manager, updates); err != nil {
-				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
-				return
+		// Convert input to initial state using adapter
+		var inputValue any = input
+		if inputValue != nil {
+			initialState := p.inputToState(input)
+			if len(initialState) > 0 {
+				if err := state.ApplyUpdates(runCtx, compiled.Manager, initialState); err != nil {
+					var zero O
+					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
+					return
+				}
 			}
 		}
 
 		// Create result channel to serialize all yields from a single goroutine
 		resultChan := make(chan struct {
-			msg message.Message
-			err error
+			output O
+			err    error
 		}, 100)
 
 		// Single goroutine that calls yield - ensures thread safety
@@ -169,7 +283,7 @@ func (p *Pregel) Run(
 		go func() {
 			defer close(yieldDone)
 			for item := range resultChan {
-				if !yield(item.msg, item.err) {
+				if !yield(item.output, item.err) {
 					cancel() // Consumer stopped, cancel the runtime context
 					// Drain remaining items to prevent goroutine leak
 					//nolint:revive // Need to drain channel
@@ -181,12 +295,12 @@ func (p *Pregel) Run(
 		}()
 
 		// Helper to send results to the yield goroutine
-		safeYield := func(msg message.Message, err error) bool {
+		safeYield := func(output O, err error) bool {
 			select {
 			case resultChan <- struct {
-				msg message.Message
-				err error
-			}{msg, err}:
+				output O
+				err    error
+			}{output, err}:
 				return true
 			case <-runCtx.Done():
 				return false
@@ -194,7 +308,7 @@ func (p *Pregel) Run(
 		}
 
 		// Create adapter to make compiled graph work with pregel runtime
-		adapter := &pregelGraphAdapter{
+		adapter := &pregelGraphAdapter[I, O]{
 			compiled:               compiled,
 			runID:                  runID,
 			yield:                  safeYield,
@@ -203,22 +317,22 @@ func (p *Pregel) Run(
 		}
 
 		// Configure pregel runtime options
-		runtimeOpts := []pregel.RuntimeOption[*compile.CompiledGraph, message.Message]{
-			pregel.WithMaxWorkers[*compile.CompiledGraph, message.Message](p.maxWorkers),
-			pregel.WithMaxIterations[*compile.CompiledGraph, message.Message](p.maxIters),
+		runtimeOpts := []pregel.RuntimeOption[*compile.CompiledGraph, state.Updates]{
+			pregel.WithMaxWorkers[*compile.CompiledGraph, state.Updates](p.maxWorkers),
+			pregel.WithMaxIterations[*compile.CompiledGraph, state.Updates](p.maxIters),
 		}
 
 		if p.messageBus != nil {
-			runtimeOpts = append(runtimeOpts, pregel.WithMessageBus[*compile.CompiledGraph, message.Message](p.messageBus))
+			runtimeOpts = append(runtimeOpts, pregel.WithMessageBus[*compile.CompiledGraph, state.Updates](p.messageBus))
 		}
 
 		if len(p.aggregators) > 0 {
-			runtimeOpts = append(runtimeOpts, pregel.WithAggregators[*compile.CompiledGraph, message.Message](p.aggregators))
+			runtimeOpts = append(runtimeOpts, pregel.WithAggregators[*compile.CompiledGraph, state.Updates](p.aggregators))
 		}
 
 		// Add superstep completion callback for checkpointing
 		if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-			runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*compile.CompiledGraph, message.Message](
+			runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*compile.CompiledGraph, state.Updates](
 				func(ctx context.Context, superstep int64) {
 					p.saveCheckpoint(ctx, compiled, runOpts, superstep, worker)
 				},
@@ -226,9 +340,10 @@ func (p *Pregel) Run(
 		}
 
 		// Create and run the pregel runtime
-		rt, err := pregel.NewRuntime[*compile.CompiledGraph, message.Message](adapter, runtimeOpts...)
+		rt, err := pregel.NewRuntime[*compile.CompiledGraph, state.Updates](adapter, runtimeOpts...)
 		if err != nil {
-			safeYield(nil, err)
+			var zero O
+			safeYield(zero, err)
 			close(resultChan)
 			<-yieldDone
 			return
@@ -249,7 +364,8 @@ func (p *Pregel) Run(
 			if err != nil {
 				// Fatal error - BSP execution terminated
 				// Yield error and stop iteration
-				safeYield(nil, err)
+				var zero O
+				safeYield(zero, err)
 				break
 			}
 		}
@@ -260,16 +376,16 @@ func (p *Pregel) Run(
 }
 
 // pregelGraphAdapter adapts a CompiledGraph to the pregel.Graph interface.
-type pregelGraphAdapter struct {
+type pregelGraphAdapter[I, O any] struct {
 	compiled               *compile.CompiledGraph
 	runID                  string
-	yield                  func(message.Message, error) bool
+	yield                  func(O, error) bool
 	enableDistributedState bool
-	executor               *Pregel // Reference to executor for metrics tracking
+	executor               *Pregel[I, O] // Reference to executor for metrics tracking
 }
 
 // RootNodes returns nodes with no incoming edges.
-func (a *pregelGraphAdapter) RootNodes() []string {
+func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
 	var roots []string
 	for _, nodeName := range a.compiled.Topology.NodeNames {
 		if nodeName == a.compiled.StartNode || nodeName == a.compiled.EndNode {
@@ -282,14 +398,14 @@ func (a *pregelGraphAdapter) RootNodes() []string {
 	return roots
 }
 
-// Outgoing returns outgoing node names.
-func (a *pregelGraphAdapter) Outgoing(nodeName string) []string {
+// Outgoing returns outgoing edges for a node.
+func (a *pregelGraphAdapter[I, O]) Outgoing(nodeName string) []string {
 	return a.compiled.Topology.Outgoing[nodeName]
 }
 
 // NodeByName returns a pregel node adapter.
-func (a *pregelGraphAdapter) NodeByName(name string) pregel.Node[*compile.CompiledGraph, message.Message] {
-	return &pregelNodeAdapter{
+func (a *pregelGraphAdapter[I, O]) NodeByName(name string) pregel.Node[*compile.CompiledGraph, state.Updates] {
+	return &pregelNodeAdapter[I, O]{
 		nodeName:               name,
 		compiled:               a.compiled,
 		runID:                  a.runID,
@@ -300,32 +416,32 @@ func (a *pregelGraphAdapter) NodeByName(name string) pregel.Node[*compile.Compil
 }
 
 // State returns the compiled graph (used as global state).
-func (a *pregelGraphAdapter) State() *compile.CompiledGraph {
+func (a *pregelGraphAdapter[I, O]) State() *compile.CompiledGraph {
 	return a.compiled
 }
 
 // pregelNodeAdapter adapts a graph.Node to pregel.Node interface.
-type pregelNodeAdapter struct {
+type pregelNodeAdapter[I, O any] struct {
 	nodeName               string
 	compiled               *compile.CompiledGraph
 	runID                  string
-	yield                  func(message.Message, error) bool
+	yield                  func(O, error) bool
 	enableDistributedState bool
-	executor               *Pregel // Reference to executor for metrics tracking
+	executor               *Pregel[I, O] // Reference to executor for metrics tracking
 }
 
 // Name returns the node name.
-func (n *pregelNodeAdapter) Name() string {
+func (n *pregelNodeAdapter[I, O]) Name() string {
 	return n.nodeName
 }
 
 // Run executes the node.
 //
 //nolint:gocyclo,nestif // BSP node execution requires complex state management
-func (n *pregelNodeAdapter) Run(
+func (n *pregelNodeAdapter[I, O]) Run(
 	ctx context.Context,
-	vertex pregel.VertexContext[*compile.CompiledGraph, message.Message],
-	incoming []pregel.Message[message.Message],
+	vertex pregel.VertexContext[*compile.CompiledGraph, state.Updates],
+	incoming []pregel.Message[state.Updates],
 ) error {
 	node := n.compiled.GetNode(n.nodeName)
 	if node == nil {
@@ -347,16 +463,20 @@ func (n *pregelNodeAdapter) Run(
 		}
 	}
 
-	// If distributed state is enabled, apply incoming state updates first
-	// TODO: Distributed state synchronization needs to be reimplemented for new state system
-	// The new state system uses typed keys (Key[T]) and ApplyUpdates for batch mutations
-	// Distributed state sync should:
-	// 1. Receive state.Updates from remote nodes
-	// 2. Call state.ApplyUpdates(ctx, compiled.Manager, updates) at BSP barriers
-	// 3. Use state snapshots for consistent reads across distributed nodes
-	if n.enableDistributedState {
-		// Disabled until reimplemented for new state system
-		_ = incoming
+	// Apply incoming state updates from distributed nodes (BSP synchronization)
+	// In distributed execution, predecessor nodes send their state.Updates via the message bus
+	// This ensures BSP consistency: each node sees all updates from previous superstep
+	if n.enableDistributedState && len(incoming) > 0 {
+		for _, msg := range incoming {
+			if len(msg.Data) == 0 {
+				continue // Routing signal only, no state
+			}
+
+			// msg.Data is already state.Updates - apply directly
+			if err := state.ApplyUpdates(ctx, n.compiled.Manager, msg.Data); err != nil {
+				return fmt.Errorf("failed to apply distributed state updates: %w", err)
+			}
+		}
 	}
 
 	// Create a stream writer that yields intermediate results
@@ -365,15 +485,15 @@ func (n *pregelNodeAdapter) Run(
 			return
 		}
 
-		// Extract messages from updates and create execution events
-		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if messagesAny, ok := intermediateResult.Updates["__messages__"]; ok {
-			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-				// Yield each intermediate message directly
-				for _, msg := range messages {
-					n.yield(msg, nil)
-				}
-			}
+		// Extract output from updates based on configured key
+		if n.executor.outputKey == "*" {
+			// Yield entire state.Updates (for state-only executor)
+			output := n.executor.outputAdapter(intermediateResult.Updates)
+			n.yield(output, nil)
+		} else if value, ok := intermediateResult.Updates[n.executor.outputKey]; ok {
+			// Yield specific key value
+			output := n.executor.outputAdapter(value)
+			n.yield(output, nil)
 		}
 	}
 
@@ -415,37 +535,45 @@ func (n *pregelNodeAdapter) Run(
 			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
 
-		// Extract messages from updates and yield directly
-		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if messagesAny, ok := result.Updates["__messages__"]; ok {
-			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-				// Yield each message directly
-				for _, msg := range messages {
-					if !n.yield(msg, nil) {
+		// Extract output from updates based on configured key and yield
+		if n.executor.outputKey == "*" {
+			// Yield entire state.Updates (for state-only executor)
+			output := n.executor.outputAdapter(result.Updates)
+			if !n.yield(output, nil) {
+				return nil
+			}
+		} else if value, ok := result.Updates[n.executor.outputKey]; ok {
+			// Special handling for slices: unfold and yield each element individually
+			// This allows nodes to return multiple outputs (e.g., parallel tool calls)
+			// and have each one appear in the output stream
+			if isSlice(value) {
+				sliceLen := reflectSliceLen(value)
+				for i := range sliceLen {
+					elem := reflectSliceIndex(value, i)
+					output := n.executor.outputAdapter(elem)
+					if !n.yield(output, nil) {
 						return nil
 					}
+				}
+			} else {
+				// For non-slice values, apply adapter and yield once
+				output := n.executor.outputAdapter(value)
+				if !n.yield(output, nil) {
+					return nil
 				}
 			}
 		}
 	}
 
-	// Prepare message data for distributed state if enabled
-	var messageData message.Message
-	if n.enableDistributedState {
-		// Extract messages from updates for distributed state
-		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		var messages []message.Message
-		if messagesAny, ok := result.Updates["__messages__"]; ok {
-			if msgs, ok := messagesAny.([]message.Message); ok {
-				messages = msgs
-			}
-		}
-
-		stateMsg := NewStateMessage(messages, result.Updates)
-		messageData = stateMsg.ToMessage()
+	// Send routing signals (and optionally state) to next nodes via pregel runtime
+	// For distributed execution, state updates are sent directly as state.Updates
+	var stateData state.Updates
+	if n.enableDistributedState && len(result.Updates) > 0 {
+		// Send state.Updates directly for distributed synchronization
+		// Remote nodes will receive and apply these updates before execution
+		stateData = result.Updates
 	}
 
-	// Send messages to next nodes via pregel runtime
 	// Check for conditional edges first
 	if conditionals, ok := n.compiled.Topology.ConditionalByFrom[n.nodeName]; ok {
 		// Note: Conditional edges evaluate against current superstep's state (before barrier)
@@ -458,10 +586,10 @@ func (n *pregelNodeAdapter) Run(
 			targets := cond.Condition(ctx, condView)
 			for _, target := range targets {
 				if target != n.compiled.EndNode {
-					vertex.Send(pregel.Message[message.Message]{
+					vertex.Send(pregel.Message[state.Updates]{
 						From: n.nodeName,
 						To:   target,
-						Data: messageData,
+						Data: stateData,
 					})
 				}
 			}
@@ -470,10 +598,10 @@ func (n *pregelNodeAdapter) Run(
 		// Use regular outgoing edges
 		for _, target := range vertex.State.Topology.Outgoing[n.nodeName] {
 			if target != n.compiled.EndNode {
-				vertex.Send(pregel.Message[message.Message]{
+				vertex.Send(pregel.Message[state.Updates]{
 					From: n.nodeName,
 					To:   target,
-					Data: messageData,
+					Data: stateData,
 				})
 			}
 		}

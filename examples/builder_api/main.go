@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -20,18 +20,20 @@ var (
 )
 
 func main() {
-	// Create state and register keys
-	mgr := state.NewManager()
+	// Create a builder using exec.NewBuilder with state-only executor
+	// This uses the state-only Pregel executor - perfect for pure state transformations
+	// No message types needed!
+	builder, err := exec.NewBuilder(exec.NewStatePregelExecutor())
+	if err != nil {
+		log.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register state keys with the builder's manager
+	mgr := builder.Manager()
 	state.RegisterKey(mgr, AnalysisKey)
 	state.RegisterKey(mgr, ScoreKey)
 	state.RegisterKey(mgr, ValidKey)
 	state.RegisterKey(mgr, ResultKey)
-
-	// Create a builder with the state
-	builder, err := graph.NewBuilder[[]message.Message, message.Message](graph.WithManager[[]message.Message, message.Message](mgr))
-	if err != nil {
-		log.Fatalf("Failed to create builder: %v", err)
-	}
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
@@ -59,12 +61,16 @@ func main() {
 			valid := state.GetFromView(view, ValidKey)
 			if valid {
 				fmt.Println("Processing validated input...")
+				result := "Success!"
+				fmt.Printf("✓ Final result: %s\n", result)
 				return &graph.NodeResult{
-					Updates: state.Updates{ResultKey.Name(): "Success!"},
+					Updates: state.Updates{ResultKey.Name(): result},
 				}, nil
 			}
+			result := "Failed validation"
+			fmt.Printf("✗ Final result: %s\n", result)
 			return &graph.NodeResult{
-				Updates: state.Updates{ResultKey.Name(): "Failed validation"},
+				Updates: state.Updates{ResultKey.Name(): result},
 			}, nil
 		}).
 		AddEdge(graph.StartNode, "analyze").
@@ -80,19 +86,13 @@ func main() {
 
 	// Run the graph
 	ctx := context.Background()
-	messages := []message.Message{
-		message.NewHumanMessageFromText("Hello, world!"),
-	}
 
 	fmt.Println("Running workflow...")
-	for range compiled.Run(ctx, messages) {
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			log.Fatalf("Execution error: %v", err)
+		}
 	}
 
-	// Get final state with type safety
-	finalView, err := mgr.CreateReadView(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create read view: %v", err)
-	}
-	result := state.GetFromView(finalView, ResultKey)
-	fmt.Printf("\nFinal result: %s\n", result)
+	fmt.Println("\n✓ Workflow completed successfully")
 }

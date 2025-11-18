@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,7 +16,7 @@ import (
 // Design:
 //   - Each vertex mailbox is stored as a Redis list (LPUSH/RPOP for FIFO queue)
 //   - Frontier tracking uses a Redis set for O(1) membership checks
-//   - Messages are JSON-serialized for cross-language compatibility
+//   - Messages are serialized using a pluggable Codec (default: JSON)
 //   - Supports TTL for automatic cleanup of stale mailboxes
 //   - Thread-safe: Redis handles concurrent access
 //
@@ -30,6 +29,10 @@ import (
 //   - Connection pooling handled by redis client
 //   - Automatic retry with exponential backoff
 //
+// Serialization:
+//   - Default: JSON codec (cross-language, but numbers become float64)
+//   - Pluggable: Can use GOB, MessagePack, etc. via Codec interface
+//
 // Limitations:
 //   - No combiner support (Redis atomic operations would be complex)
 //   - No backpressure (Redis lists are unbounded)
@@ -38,6 +41,7 @@ type MessageBus[M any] struct {
 	client    *redis.Client
 	namespace string
 	ttl       time.Duration
+	codec     pregel.Codec
 	closed    bool
 }
 
@@ -50,6 +54,14 @@ type Options struct {
 	// TTL sets expiration time for mailbox keys to prevent memory leaks.
 	// Defaults to 24 hours. Set to 0 to disable expiration.
 	TTL time.Duration
+
+	// Codec specifies the serialization format for messages.
+	// Defaults to JSONCodec if nil.
+	//
+	// JSON (default): Cross-language compatible, numbers become float64
+	// GOB: Go-only, preserves exact types, faster
+	// MessagePack: Cross-language, faster than JSON, better type support
+	Codec pregel.Codec
 
 	// MaxRetries controls retry behavior for transient Redis errors.
 	// Defaults to 3 retries with exponential backoff.
@@ -94,6 +106,9 @@ func NewMessageBus[M any](addr, password string, db int, opts *Options) *Message
 	if opts.TTL == 0 {
 		opts.TTL = 24 * time.Hour
 	}
+	if opts.Codec == nil {
+		opts.Codec = pregel.NewJSONCodec() // Default to JSON for cross-language compatibility
+	}
 	if opts.MaxRetries == 0 {
 		opts.MaxRetries = 3
 	}
@@ -125,6 +140,7 @@ func NewMessageBus[M any](addr, password string, db int, opts *Options) *Message
 		client:    client,
 		namespace: opts.Namespace,
 		ttl:       opts.TTL,
+		codec:     opts.Codec,
 	}
 }
 
@@ -158,8 +174,8 @@ func (bus *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[M]
 			continue
 		}
 
-		// Serialize message to JSON
-		data, err := json.Marshal(msg)
+		// Serialize message using codec
+		data, err := bus.codec.Encode(msg)
 		if err != nil {
 			return fmt.Errorf("failed to serialize message to %q: %w", msg.To, err)
 		}
@@ -209,9 +225,9 @@ func (bus *MessageBus[M]) Receive(vertex string) ([]pregel.Message[M], error) {
 			return nil, fmt.Errorf("failed to receive message from %q: %w", vertex, err)
 		}
 
-		// Deserialize message
+		// Deserialize message using codec
 		var msg pregel.Message[M]
-		if err := json.Unmarshal([]byte(data), &msg); err != nil {
+		if err := bus.codec.Decode([]byte(data), &msg); err != nil {
 			return nil, fmt.Errorf("failed to deserialize message from %q: %w", vertex, err)
 		}
 

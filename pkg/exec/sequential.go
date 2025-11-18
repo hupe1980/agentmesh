@@ -14,40 +14,131 @@ import (
 
 // Sequential is a simple sequential executor that runs nodes one at a time
 // in topological order. This is useful for debugging and simple workflows.
-// It implements Executor[[]message.Message, message.Message].
-type Sequential struct{}
+type Sequential[I, O any] struct {
+	// Generic executor configuration
+	inputToState  func(I) state.Updates // Convert input to initial state
+	outputKey     string                // Which state key to yield as output
+	outputAdapter func(any) O           // Convert state value to output type
+}
 
-// NewSequential creates a new sequential executor.
-func NewSequential() *Sequential {
-	return &Sequential{}
+// NewSequentialExecutor creates a message-based Sequential executor (default behavior).
+// This is for agent workflows, LLM chains, and conversational systems.
+// Input: []message.Message, Output: message.Message (last message from messages key)
+func NewSequentialExecutor() *Sequential[[]message.Message, message.Message] {
+	return NewGenericSequentialExecutor[[]message.Message, message.Message](
+		// Input: Convert []message.Message to state using default messages key
+		func(input []message.Message) state.Updates {
+			if len(input) == 0 {
+				return nil
+			}
+			return state.Updates{defaultMessagesKeyName: input}
+		},
+		// Output: Watch default messages key
+		defaultMessagesKeyName,
+		// Output: Extract last message from messages list
+		func(value any) message.Message {
+			if msgs, ok := value.([]message.Message); ok && len(msgs) > 0 {
+				return msgs[len(msgs)-1]
+			}
+			return nil
+		},
+	)
+}
+
+// NewStateSequentialExecutor creates a state-only Sequential executor.
+// This is for pure state transformation workflows, data pipelines, ETL.
+// Input: state.Updates, Output: state.Updates (all state updates)
+func NewStateSequentialExecutor() *Sequential[state.Updates, state.Updates] {
+	return NewGenericSequentialExecutor[state.Updates, state.Updates](
+		// Input: Use provided state.Updates directly as initial state
+		func(input state.Updates) state.Updates {
+			return input
+		},
+		// Output: Special marker to yield all updates (not just one key)
+		"*", // Wildcard means "yield entire state.Updates"
+		// Output: Return updates as-is
+		func(value any) state.Updates {
+			if updates, ok := value.(state.Updates); ok {
+				return updates
+			}
+			return nil
+		},
+	)
+}
+
+// NewKeySequentialExecutor creates a key-based Sequential executor.
+// This is for domain-specific workflows with typed input/output.
+// Input: type I stored in inputKey, Output: type O from outputKey
+func NewKeySequentialExecutor[I, O any](
+	inputKey *state.Key[I],
+	outputKey *state.Key[O],
+) *Sequential[I, O] {
+	return NewGenericSequentialExecutor[I, O](
+		// Input: Store input in specified key
+		func(input I) state.Updates {
+			return state.Updates{inputKey.Name(): input}
+		},
+		// Output: Watch specified key
+		outputKey.Name(),
+		// Output: Type-safe extraction
+		func(value any) O {
+			if typed, ok := value.(O); ok {
+				return typed
+			}
+			var zero O
+			return zero
+		},
+	)
+}
+
+// NewGenericSequentialExecutor creates a fully customizable Sequential executor.
+// This is for advanced use cases with custom input/output transformations.
+//
+// Parameters:
+//   - inputToState: Converts input I to initial state updates
+//   - outputKey: Which state key to watch and yield (use "*" for all updates)
+//   - outputAdapter: Converts state value to output type O
+func NewGenericSequentialExecutor[I, O any](
+	inputToState func(I) state.Updates,
+	outputKey string,
+	outputAdapter func(any) O,
+) *Sequential[I, O] {
+	return &Sequential[I, O]{
+		inputToState:  inputToState,
+		outputKey:     outputKey,
+		outputAdapter: outputAdapter,
+	}
 }
 
 // Run executes the compiled graph sequentially.
-func (s *Sequential) Run(
+func (s *Sequential[I, O]) Run(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
-	input []message.Message,
+	input I,
 	opts ...graph.RunOption,
-) iter.Seq2[message.Message, error] {
+) iter.Seq2[O, error] {
 	// Note: Sequential executor currently ignores checkpoint options
 	_ = opts
-	return func(yield func(message.Message, error) bool) {
+	return func(yield func(O, error) bool) {
 		runID := uuid.New().String()
 
-		// Store initial messages in state
-		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if len(input) > 0 {
-			updates := state.Updates{}
-			updates["__messages__"] = input
-			if err := state.ApplyUpdates(ctx, compiled.Manager, updates); err != nil {
-				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
-				return
+		// Convert input to initial state using adapter
+		var inputValue any = input
+		if inputValue != nil {
+			initialState := s.inputToState(input)
+			if len(initialState) > 0 {
+				if err := state.ApplyUpdates(ctx, compiled.Manager, initialState); err != nil {
+					var zero O
+					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
+					return
+				}
 			}
 		}
 
 		// Execute from start node
 		if err := s.executeFromNode(ctx, compiled, compiled.StartNode, runID, yield); err != nil {
-			yield(nil, err)
+			var zero O
+			yield(zero, err)
 		}
 	}
 }
@@ -55,12 +146,12 @@ func (s *Sequential) Run(
 // executeFromNode executes nodes starting from the given node.
 //
 //nolint:gocyclo,nestif // Sequential execution orchestration requires branching logic
-func (s *Sequential) executeFromNode(
+func (s *Sequential[I, O]) executeFromNode(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
 	startNode string,
 	runID string,
-	yield func(message.Message, error) bool,
+	yield func(O, error) bool,
 ) error {
 	queue := []string{startNode}
 	executionCount := 0
@@ -102,8 +193,9 @@ func (s *Sequential) executeFromNode(
 		}
 		result, err := node.Run(ctx, view)
 		if err != nil {
-			// Yield error without message
-			if !yield(nil, err) {
+			// Yield error
+			var zero O
+			if !yield(zero, err) {
 				return nil
 			}
 			return err
@@ -117,16 +209,18 @@ func (s *Sequential) executeFromNode(
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 
-				// Extract messages from updates and yield directly
-				// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-				if messagesAny, ok := result.Updates["__messages__"]; ok {
-					if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-						// Yield messages directly to caller
-						for _, msg := range messages {
-							if !yield(msg, nil) {
-								return nil
-							}
-						}
+				// Extract output from updates based on configured key and yield
+				if s.outputKey == "*" {
+					// Yield entire state.Updates (for state-only executor)
+					output := s.outputAdapter(result.Updates)
+					if !yield(output, nil) {
+						return nil
+					}
+				} else if value, ok := result.Updates[s.outputKey]; ok {
+					// Yield specific key value
+					output := s.outputAdapter(value)
+					if !yield(output, nil) {
+						return nil
 					}
 				}
 			}
@@ -141,7 +235,7 @@ func (s *Sequential) executeFromNode(
 }
 
 // findNextNodes determines which nodes should execute next based on edges and conditionals.
-func (s *Sequential) findNextNodes(
+func (s *Sequential[I, O]) findNextNodes(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
 	nodeName string,

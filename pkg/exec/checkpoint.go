@@ -24,7 +24,7 @@ type checkpointWorker struct {
 }
 
 // restoreCheckpoint loads and applies a checkpoint if configured.
-func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions) error {
+func (p *Pregel[I, O]) restoreCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions) error {
 	if opts.Checkpointer == nil || opts.RunID == "" || !opts.AutoRestore {
 		return nil
 	}
@@ -97,7 +97,7 @@ func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.Compil
 }
 
 // saveCheckpoint creates and saves a checkpoint.
-func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions, superstep int64, worker *checkpointWorker) {
+func (p *Pregel[I, O]) saveCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions, superstep int64, worker *checkpointWorker) {
 	if opts.Checkpointer == nil || opts.RunID == "" {
 		return
 	}
@@ -169,7 +169,7 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 }
 
 // saveCheckpointSync saves a checkpoint synchronously.
-func (p *Pregel) saveCheckpointSync(ctx context.Context, opts graph.RunOptions, chkpt *checkpoint.Checkpoint) error {
+func (p *Pregel[I, O]) saveCheckpointSync(ctx context.Context, opts graph.RunOptions, chkpt *checkpoint.Checkpoint) error {
 	logger := logging.FromContext(ctx)
 
 	// Use context.WithoutCancel to ensure checkpoint completes even if main context is cancelled
@@ -193,7 +193,7 @@ func (p *Pregel) saveCheckpointSync(ctx context.Context, opts graph.RunOptions, 
 }
 
 // startCheckpointWorker starts an asynchronous checkpoint worker.
-func (p *Pregel) startCheckpointWorker(ctx context.Context, opts graph.RunOptions) *checkpointWorker {
+func (p *Pregel[I, O]) startCheckpointWorker(ctx context.Context, opts graph.RunOptions) *checkpointWorker {
 	if opts.Checkpointer == nil || opts.RunID == "" {
 		return nil
 	}
@@ -248,7 +248,7 @@ func (p *Pregel) startCheckpointWorker(ctx context.Context, opts graph.RunOption
 }
 
 // stopCheckpointWorker stops the checkpoint worker and waits for completion.
-func (p *Pregel) stopCheckpointWorker(worker *checkpointWorker) {
+func (p *Pregel[I, O]) stopCheckpointWorker(worker *checkpointWorker) {
 	if worker == nil || worker.queue == nil {
 		return
 	}

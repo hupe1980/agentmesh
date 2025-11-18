@@ -193,7 +193,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddEdge("node1", "node2")
 		g.AddEdge("node2", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewSequential())
+		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -351,7 +351,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 			return []string{"loop"}
 		}, []string{"loop", graph.EndNode})
 
-		compiled, err := exec.CompileGraph(g, exec.NewSequential())
+		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -383,7 +383,7 @@ func TestCompileOptions(t *testing.T) {
 		g.AddEdge("test", graph.EndNode)
 
 		// Compile with Sequential executor
-		compiled, err := exec.CompileGraph(g, exec.NewSequential())
+		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 

@@ -311,16 +311,18 @@ func TestAgent_EmptyMessages(t *testing.T) {
 func TestAgent_MultipleToolCalls(t *testing.T) {
 	mdl := &testutil.MockModel{
 		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			// Check if we have tool results
-			hasToolResults := false
+			// Check if we have BOTH tool results
+			toolResultIDs := make(map[string]bool)
 			for _, msg := range messages {
 				if msg.Type() == message.TypeTool {
-					hasToolResults = true
-					break
+					if toolMsg, ok := msg.(*message.ToolMessage); ok {
+						toolResultIDs[toolMsg.ToolCallID] = true
+					}
 				}
 			}
 
-			if hasToolResults {
+			// Verify both tool_a and tool_b results are present
+			if toolResultIDs["1"] && toolResultIDs["2"] {
 				return message.NewAIMessageFromText("Both tools completed"), nil
 			}
 
@@ -335,8 +337,23 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 		}),
 	}
 
-	toolA := &testutil.MockTool{NameValue: "tool_a"}
-	toolB := &testutil.MockTool{NameValue: "tool_b"}
+	toolACallCount := 0
+	toolBCallCount := 0
+
+	toolA := &testutil.MockTool{
+		NameValue: "tool_a",
+		CallFunc: func(ctx context.Context, args string) (any, error) {
+			toolACallCount++
+			return "result_a", nil
+		},
+	}
+	toolB := &testutil.MockTool{
+		NameValue: "tool_b",
+		CallFunc: func(ctx context.Context, args string) (any, error) {
+			toolBCallCount++
+			return "result_b", nil
+		},
+	}
 
 	compiled, err := NewReActAgent(mdl, WithTools(toolA, toolB))
 	require.NoError(t, err)
@@ -347,15 +364,46 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 	}))
 
 	require.NoError(t, err)
+	require.NotEmpty(t, events, "Should have events")
 
-	// Count tool messages
+	// After fixing the executor to unfold message arrays, ALL messages should be yielded
+	// ToolNode returns multiple messages, and each should appear in the event stream
+
+	// Get the last event which should be the final AI message
+	lastEvent := events[len(events)-1]
+	require.NotNil(t, lastEvent, "Last event should not be nil")
+
+	// The last event should be an AI message saying "Both tools completed"
+	aiMsg, ok := lastEvent.(*message.AIMessage)
+	require.True(t, ok, "Last event should be AI message")
+	parts := aiMsg.Parts()
+	require.NotEmpty(t, parts, "AI message should have content")
+	if textPart, ok := parts[0].(message.TextPart); ok {
+		assert.Contains(t, textPart.Text, "Both tools completed")
+	}
+
+	// Count how many tool messages appear in the event stream
 	toolMsgCount := 0
+	toolMsgIDs := make(map[string]bool)
 	for _, evt := range events {
 		if evt != nil && evt.Type() == message.TypeTool {
 			toolMsgCount++
+			if toolMsg, ok := evt.(*message.ToolMessage); ok {
+				toolMsgIDs[toolMsg.ToolCallID] = true
+			}
 		}
 	}
-	assert.Equal(t, 2, toolMsgCount, "Should have 2 tool result messages")
+
+	// Both tool messages should be yielded to the stream (executor unfolds message arrays)
+	assert.Equal(t, 2, toolMsgCount, "Should have 2 tool messages in event stream (both yielded)")
+
+	// Verify both tool call IDs are present in the stream
+	assert.True(t, toolMsgIDs["1"], "Tool call ID '1' should be in stream")
+	assert.True(t, toolMsgIDs["2"], "Tool call ID '2' should be in stream")
+
+	// Verify BOTH tools were actually executed
+	assert.Equal(t, 1, toolACallCount, "tool_a should be called once")
+	assert.Equal(t, 1, toolBCallCount, "tool_b should be called once")
 }
 
 // Basic model without Tools support for testing
