@@ -73,9 +73,21 @@ func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.Compil
 			"state_keys", len(chkpt.State))
 	}
 
-	// TODO: Restore completed/paused nodes from checkpoint to enable smart resume.
-	// This requires tracking execution metadata during runtime and storing it in checkpoints.
-	// See pkg/exec/metrics.go RuntimeMetrics for the tracking infrastructure.
+	// Restore execution metadata for smart resume
+	if p.metrics != nil {
+		// Restore completed nodes
+		for _, nodeName := range chkpt.CompletedNodes {
+			p.metrics.AddCompleted(nodeName)
+		}
+		// Restore paused nodes
+		for _, nodeName := range chkpt.PausedNodes {
+			p.metrics.AddPaused(nodeName)
+		}
+		logger.Info("restored execution metadata",
+			"run_id", opts.RunID,
+			"completed_nodes", len(chkpt.CompletedNodes),
+			"paused_nodes", len(chkpt.PausedNodes))
+	}
 
 	logger.Info("checkpoint restored successfully",
 		"run_id", opts.RunID,
@@ -111,6 +123,14 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 		_ = err
 	}
 
+	// Capture execution metadata from runtime metrics
+	var completedNodes, pausedNodes []string
+	if p.metrics != nil {
+		snapshot := p.metrics.Snapshot()
+		completedNodes = snapshot.CompletedNodes
+		pausedNodes = snapshot.PausedNodes
+	}
+
 	chkpt := &checkpoint.Checkpoint{
 		RunID:     opts.RunID,
 		Superstep: superstep,
@@ -118,9 +138,9 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 		Version:   0, // Manager handles versioning internally
 		State:     vsnap.Data,
 		// Note: Message history is stored in State via MessagesKey, not as separate field
-		// TODO: Track and save completed/paused nodes from execution metrics
-		CompletedNodes: []string{},
-		PausedNodes:    []string{},
+		// Execution metadata enables smart resume: skip completed nodes, resume paused workflows
+		CompletedNodes: completedNodes,
+		PausedNodes:    pausedNodes,
 		Metadata:       map[string]any{},
 	}
 

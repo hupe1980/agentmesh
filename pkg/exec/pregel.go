@@ -20,7 +20,8 @@ type Pregel struct {
 	maxIters               int
 	messageBus             pregel.MessageBus[message.Message]
 	aggregators            map[string]pregel.Aggregator
-	enableDistributedState bool // Enable state synchronization via message bus
+	enableDistributedState bool            // Enable state synchronization via message bus
+	metrics                *RuntimeMetrics // Track execution metadata for checkpoints
 }
 
 // PregelOption configures a Pregel executor.
@@ -107,6 +108,7 @@ func NewPregelExecutor(opts ...PregelOption) *Pregel {
 	p := &Pregel{
 		maxWorkers: runtime.NumCPU(),
 		maxIters:   1000,
+		metrics:    NewRuntimeMetrics(), // Initialize execution tracking
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -197,6 +199,7 @@ func (p *Pregel) Run(
 			runID:                  runID,
 			yield:                  safeYield,
 			enableDistributedState: p.enableDistributedState,
+			executor:               p,
 		}
 
 		// Configure pregel runtime options
@@ -262,6 +265,7 @@ type pregelGraphAdapter struct {
 	runID                  string
 	yield                  func(message.Message, error) bool
 	enableDistributedState bool
+	executor               *Pregel // Reference to executor for metrics tracking
 }
 
 // RootNodes returns nodes with no incoming edges.
@@ -291,6 +295,7 @@ func (a *pregelGraphAdapter) NodeByName(name string) pregel.Node[*compile.Compil
 		runID:                  a.runID,
 		yield:                  a.yield,
 		enableDistributedState: a.enableDistributedState,
+		executor:               a.executor,
 	}
 }
 
@@ -306,6 +311,7 @@ type pregelNodeAdapter struct {
 	runID                  string
 	yield                  func(message.Message, error) bool
 	enableDistributedState bool
+	executor               *Pregel // Reference to executor for metrics tracking
 }
 
 // Name returns the node name.
@@ -324,6 +330,21 @@ func (n *pregelNodeAdapter) Run(
 	node := n.compiled.GetNode(n.nodeName)
 	if node == nil {
 		return nil // Skip missing nodes
+	}
+
+	// Check if node is paused (human-in-the-loop scenario)
+	if n.executor != nil && n.executor.metrics != nil {
+		snapshot := n.executor.metrics.Snapshot()
+
+		// Only skip paused nodes - they require external resume signal
+		for _, pausedNode := range snapshot.PausedNodes {
+			if pausedNode == n.nodeName {
+				// Node is paused, wait for external ResumePaused call
+				// CompletedNodes are tracked but don't prevent re-execution by default
+				// This allows normal graph re-execution after checkpoint resume
+				return nil
+			}
+		}
 	}
 
 	// If distributed state is enabled, apply incoming state updates first
@@ -375,6 +396,11 @@ func (n *pregelNodeAdapter) Run(
 
 	if result == nil {
 		return nil
+	}
+
+	// Track node completion for checkpoint metadata
+	if n.executor != nil && n.executor.metrics != nil {
+		n.executor.metrics.AddCompleted(n.nodeName)
 	}
 
 	// Apply updates immediately after node execution
