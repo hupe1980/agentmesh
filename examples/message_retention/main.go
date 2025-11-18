@@ -93,7 +93,10 @@ func runExample(maxSize int) {
 	}
 
 	// Type assert to access Manager() method
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	if !ok {
+		log.Fatal("failed to cast to RunnableGraph")
+	}
 
 	// Run with 3 messages
 	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{

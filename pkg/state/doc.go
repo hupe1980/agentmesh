@@ -28,23 +28,23 @@
 //	state.Register(st, TaskListKey)
 //
 //	// Type-safe operations
-//	counter := state.Get(st, CounterKey)  // Returns int
-//	state.Set(ctx, st, CounterKey, 42)    // Type-checked at compile time
-//	state.Append(ctx, st, TaskListKey, "new task")
+//	counter := state.Get(mgr, CounterKey)  // Returns int
+//	state.Set(ctx, mgr, CounterKey, 42)    // Type-checked at compile time
+//	state.Append(ctx, mgr, TaskListKey, "new task")
 //
 //	// BSP execution pattern
-//	snap := st.Snapshot()  // All vertices get consistent view
-//	view := state.NewReadView(snap)
+//	snap, _ := mgr.Snapshot(ctx)  // All vertices get consistent view
+//	view, _ := mgr.CreateReadView(ctx)
 //	result, _ := node.Run(ctx, view)  // Concurrent reads OK
-//	st.ApplyUpdates(ctx, result.Updates)  // After BSP barrier
+//	mgr.ApplyUpdates(ctx, result.Updates)  // After BSP barrier
 //
 // BSP Compatibility:
 //
 // The state package is built for Pregel's BSP execution model:
 //
-//  1. Superstep N: All vertices read from immutable Snapshot (concurrent, lock-free)
+//  1. Superstep N: All vertices read from immutable ReadView (concurrent, lock-free)
 //  2. BSP Barrier: Wait for all vertices to complete
-//  3. Apply Updates: Single writer calls ApplyUpdates() (exclusive lock)
+//  3. Apply Updates: Single writer calls Manager.ApplyUpdates() (exclusive lock)
 //  4. Superstep N+1: Vertices see updated state
 //
 // This design ensures race-free execution without complex actor models or

@@ -33,13 +33,13 @@ func main() {
 		mgr := graphstate.NewManager()
 		graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 		graphstate.RegisterKey(mgr, valueKey)
-		if err := graphstate.ApplyUpdates(context.Background(), mgr, graphstate.Updates{
+		if err := mgr.ApplyUpdates(context.Background(), graphstate.Updates{
 			valueKey.Name(): initialValue,
 		}); err != nil {
 			panic(err)
 		}
 
-		builder, err := exec.NewBuilder(exec.NewPregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+		builder, err := exec.NewBuilder(exec.NewPregelExecutor(), exec.WithManager[[]message.Message, message.Message](mgr))
 		if err != nil {
 			panic(err)
 		}
@@ -83,7 +83,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+		return compiled
 	}
 
 	// ===== RUN 1: Starting with value = 1 =====

@@ -128,45 +128,6 @@ func WithoutValidation() CompileOption {
 	}
 }
 
-// NewBuilder creates a new graph builder with CompileGraph pre-configured.
-// This allows using the fluent builder API with automatic compilation.
-// Fully generic - type parameters are inferred from the executor.
-//
-// Type parameters:
-//   - I: Input type for the executor
-//   - O: Output type for the executor
-//
-// Examples:
-//
-//	// Default: Pregel executor with message.Message types
-//	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
-//
-//	// Sequential executor with message.Message types
-//	builder, err := exec.NewBuilder(exec.NewSequential())
-//
-//	// Custom executor with custom types
-//	customExecutor := NewCustomExecutor[MyInput, MyOutput]()
-//	builder, err := exec.NewBuilder(customExecutor)
-//
-// Usage:
-//
-//	builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-//	    return &graph.NodeResult{Updates: map[string]any{"done": true}}, nil
-//	})
-//	builder.AddEdge(graph.StartNode, "process")
-//	builder.AddEdge("process", graph.EndNode)
-//	compiled, err := builder.Compile()
-func NewBuilder[I, O any](executor Executor[I, O], opts ...graph.BuilderOption[I, O]) (*graph.Builder[I, O], error) {
-	// Create a wrapper that uses the provided executor
-	compileFunc := func(g *graph.Graph) (graph.Runnable[I, O], error) {
-		return CompileGraph(g, executor)
-	}
-
-	// Add the compile function to the options
-	allOpts := append([]graph.BuilderOption[I, O]{graph.WithCompileFunc[I, O](compileFunc)}, opts...)
-	return graph.NewBuilder[I, O](allOpts...)
-}
-
 // Introspection methods - delegate to the compiled graph
 
 // GetNodes returns a sorted list of all node names.
@@ -213,7 +174,7 @@ func (rg *RunnableGraph[I, O]) GetRuntimeMetrics() *RuntimeMetrics {
 //	value := state.GetFromManager[string](rg.Manager(), myKey)
 //	state.SetInManager(ctx, rg.Manager(), myKey, "value")
 //	snapshot, err := rg.Manager().Snapshot(ctx, nil)
-func (rg *RunnableGraph[I, O]) Manager() *state.Manager {
+func (rg *RunnableGraph[I, O]) Manager() state.Manager {
 	return rg.compiled.Manager
 }
 
@@ -227,7 +188,7 @@ func (rg *RunnableGraph[I, O]) Manager() *state.Manager {
 //	state.SetInUpdates(updates, userInputKey, "proceed")
 //	runnable.ApplyState(ctx, updates)
 func (rg *RunnableGraph[I, O]) ApplyState(ctx context.Context, updates state.Updates) error {
-	if err := state.ApplyUpdates(ctx, rg.compiled.Manager, updates); err != nil {
+	if err := rg.compiled.Manager.ApplyUpdates(ctx, updates); err != nil {
 		return fmt.Errorf("failed to apply state updates: %w", err)
 	}
 	return nil

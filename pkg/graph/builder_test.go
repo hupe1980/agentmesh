@@ -11,10 +11,17 @@ import (
 )
 
 // registerMessagesKey is a helper to register the required __messages__ key
-func registerMessagesKey(t *testing.T, mgr *state.Manager) {
+// asManager is a no-op helper since Manager is now the interface.
+// Kept for consistency with existing test code.
+func asManager(t *testing.T, mgr state.Manager) state.Manager {
+	t.Helper()
+	return mgr
+}
+
+func registerMessagesKey(t *testing.T, mgr state.Manager) {
 	t.Helper()
 	messagesKey := state.NewListKey[message.Message]("__messages__", 0)
-	if err := state.RegisterListKey(mgr, messagesKey); err != nil {
+	if err := state.RegisterListKey(asManager(t, mgr), messagesKey); err != nil {
 		t.Fatalf("Failed to register messages key: %v", err)
 	}
 }
@@ -32,7 +39,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(builder.Manager(), processedKey); err != nil {
+	if err := state.RegisterKey(asManager(t, builder.Manager()), processedKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
@@ -82,7 +89,7 @@ func TestBuilder_WithOptions(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(builder.Manager(), stepKey); err != nil {
+	if err := state.RegisterKey(asManager(t, builder.Manager()), stepKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
@@ -133,11 +140,11 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register keys
-	if err := state.RegisterKey(builder.Manager(), routeKey); err != nil {
-		t.Fatalf("Failed to register key: %v", err)
+	if err := state.RegisterKey(asManager(t, builder.Manager()), routeKey); err != nil {
+		t.Fatalf("Failed to register route key: %v", err)
 	}
-	if err := state.RegisterKey(builder.Manager(), resultKey); err != nil {
-		t.Fatalf("Failed to register key: %v", err)
+	if err := state.RegisterKey(asManager(t, builder.Manager()), resultKey); err != nil {
+		t.Fatalf("Failed to register result key: %v", err)
 	}
 
 	builder.
@@ -188,8 +195,8 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	// Define key first
 	doneKey := state.NewKey("done", false)
 
-	// Test using graph.NewBuilder without auto-compile
-	builder, err := graph.NewBuilder[[]message.Message, message.Message]()
+	// Test using exec.NewBuilder (recommended API)
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -198,7 +205,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(builder.Manager(), doneKey); err != nil {
+	if err := state.RegisterKey(asManager(t, builder.Manager()), doneKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
@@ -209,9 +216,8 @@ func TestBuilder_ManualCompile(t *testing.T) {
 		AddEdge(graph.StartNode, "process").
 		AddEdge("process", graph.EndNode)
 
-	// Compile manually using exec.CompileGraph
-	g := builder.Build()
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	// Compile using the builder
+	compiled, err := builder.Compile()
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}
@@ -223,7 +229,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	}
 
 	// Access state through Manager and ReadView
-	view4, err := g.Manager().CreateReadView(ctx)
+	view4, err := compiled.Manager().CreateReadView(ctx)
 	if err != nil {
 		t.Fatalf("Failed to create read view: %v", err)
 	}

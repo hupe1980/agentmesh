@@ -28,7 +28,7 @@ func GetMessages(view *state.ReadView) []message.Message {
 }
 
 // AppendMessages adds new messages to the message history in updates.
-// This stores the slice directly - state.ApplyUpdates will append to existing messages.
+// This stores the slice directly - Manager.ApplyUpdates will append to existing messages.
 //
 // Example:
 //
@@ -37,7 +37,7 @@ func GetMessages(view *state.ReadView) []message.Message {
 //	    message.NewHumanMessageFromText("Hello"),
 //	    message.NewAIMessageFromText("Hi there!"),
 //	})
-//	state.ApplyUpdates(ctx, mgr, updates)
+//	mgr.ApplyUpdates(ctx, updates)
 func AppendMessages(updates state.Updates, messages []message.Message) {
 	if len(messages) == 0 {
 		return
@@ -73,7 +73,7 @@ func LastMessage(view *state.ReadView) message.Message {
 //	if err := agent.RegisterMessagesKey(mgr); err != nil {
 //	    return err
 //	}
-func RegisterMessagesKey(mgr *state.Manager) error {
+func RegisterMessagesKey(mgr state.Manager) error {
 	return state.RegisterListKey(mgr, MessagesKey)
 }
 

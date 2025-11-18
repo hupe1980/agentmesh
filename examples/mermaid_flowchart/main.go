@@ -8,7 +8,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -51,7 +50,7 @@ func simpleWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg := compiled
 	fmt.Println(rg.MermaidFlowchart("LR"))
 }
 
@@ -94,7 +93,7 @@ func conditionalWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg := compiled
 	fmt.Println(rg.MermaidFlowchart("TD"))
 }
 
@@ -133,7 +132,7 @@ func parallelWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg := compiled
 	fmt.Println(rg.MermaidFlowchart("TD"))
 }
 
@@ -189,7 +188,7 @@ func complexWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg := compiled
 	fmt.Println(rg.MermaidFlowchart("LR"))
 
 	fmt.Println("\n\n📊 You can copy the above Mermaid code and paste it into:")

@@ -11,7 +11,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -92,15 +91,9 @@ func main() {
 	builder.AddEdge("aggregator", graph.EndNode)
 
 	// Compile the graph - this is where topology is computed and validated
-	runnable, err := builder.Compile()
+	runnableGraph, err := builder.Compile()
 	if err != nil {
 		panic(err)
-	}
-
-	// Type assert to access introspection methods
-	runnableGraph, ok := runnable.(*exec.RunnableGraph[[]message.Message, message.Message])
-	if !ok {
-		panic("failed to get RunnableGraph")
 	}
 
 	fmt.Println("\n" + repeatString("=", 80))

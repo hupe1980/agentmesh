@@ -1323,15 +1323,18 @@ type Writer interface {
     Aggregate(name string, value any) error
 }
 
-// ChannelManager - Channel lifecycle management
-type ChannelManager interface {
-    AddChannel(ch channel.Channel)
-    GetChannel(name string) (channel.Channel, bool)
-    Set(key string, value any) error
-    UpdateChannel(ctx context.Context, name string, value any) error
-    UpdateChannels(ctx context.Context, updates map[string]any) error
-    AddMessages(messages []ExecutionResult)
-    ApplyUpdates(values map[string]any, messages []ExecutionResult)
+// State Manager - State management interface
+type Manager interface {
+    GetChannel(name string) channel.Channel
+    ApplyUpdates(ctx context.Context, updates map[string]any) error
+    Snapshot(ctx context.Context, metadata map[string]string) (*VersionedSnapshot, error)
+    Restore(ctx context.Context, snapshotID string) error
+    CreateReadView(ctx context.Context) (*ReadView, error)
+    LoadCheckpoint(ctx context.Context) error
+    ListSnapshots() []string
+    DeleteSnapshot(snapshotID string) error
+    RegisteredKeys() []string
+    Close() error
 }
 
 // AggregateManager - Aggregate value management

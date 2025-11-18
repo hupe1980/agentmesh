@@ -264,7 +264,7 @@ func (p *Pregel[I, O]) Run(
 		if inputValue != nil {
 			initialState := p.inputToState(input)
 			if len(initialState) > 0 {
-				if err := state.ApplyUpdates(runCtx, compiled.Manager, initialState); err != nil {
+				if err := compiled.Manager.ApplyUpdates(runCtx, initialState); err != nil {
 					var zero O
 					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
 					return
@@ -473,7 +473,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 			}
 
 			// msg.Data is already state.Updates - apply directly
-			if err := state.ApplyUpdates(ctx, n.compiled.Manager, msg.Data); err != nil {
+			if err := n.compiled.Manager.ApplyUpdates(ctx, msg.Data); err != nil {
 				return fmt.Errorf("failed to apply distributed state updates: %w", err)
 			}
 		}
@@ -531,7 +531,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// 2. Routing/messaging happens after compute phase (between supersteps)
 	// 3. Each node sees a consistent snapshot at superstep start (via ReadView)
 	if len(result.Updates) > 0 {
-		if err := state.ApplyUpdates(ctx, n.compiled.Manager, result.Updates); err != nil {
+		if err := n.compiled.Manager.ApplyUpdates(ctx, result.Updates); err != nil {
 			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
 

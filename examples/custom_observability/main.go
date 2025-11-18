@@ -266,9 +266,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
-	if err != nil {
-		panic(err)
+	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	if !ok {
+		log.Fatal("failed to cast to RunnableGraph")
 	}
 
 	fmt.Println("✓ Built graph with 4 nodes:")

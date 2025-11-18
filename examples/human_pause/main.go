@@ -31,7 +31,7 @@ func main() {
 	graphstate.RegisterKey(mgr, finalReportKey)
 
 	// Initialize action history
-	if err := graphstate.ApplyUpdates(context.Background(), mgr, graphstate.Updates{
+	if err := mgr.ApplyUpdates(context.Background(), graphstate.Updates{
 		actionHistoryKey.Name(): []string{"Task initiated"},
 	}); err != nil {
 		panic(err)
@@ -114,7 +114,11 @@ func main() {
 	}
 
 	// Type assert to access RunnableGraph methods
-	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	if !ok {
+		fmt.Println("failed to cast to RunnableGraph")
+		return
+	}
 
 	fmt.Println("=== First Run ===")
 	ctx := context.Background()

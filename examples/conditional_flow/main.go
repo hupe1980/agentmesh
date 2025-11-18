@@ -52,7 +52,7 @@ func runScenario(choice string) {
 		choiceKey.Name():   choice,
 		nextPathKey.Name(): "",
 	}
-	if err := graphstate.ApplyUpdates(context.Background(), mgr, updates); err != nil {
+	if err := mgr.ApplyUpdates(context.Background(), updates); err != nil {
 		panic(err)
 	}
 

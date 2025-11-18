@@ -127,7 +127,7 @@ func (s *Sequential[I, O]) Run(
 		if inputValue != nil {
 			initialState := s.inputToState(input)
 			if len(initialState) > 0 {
-				if err := state.ApplyUpdates(ctx, compiled.Manager, initialState); err != nil {
+				if err := compiled.Manager.ApplyUpdates(ctx, initialState); err != nil {
 					var zero O
 					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
 					return
@@ -205,7 +205,7 @@ func (s *Sequential[I, O]) executeFromNode(
 		if result != nil {
 			// Apply state updates
 			if len(result.Updates) > 0 {
-				if err := state.ApplyUpdates(ctx, compiled.Manager, result.Updates); err != nil {
+				if err := compiled.Manager.ApplyUpdates(ctx, result.Updates); err != nil {
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 

@@ -30,7 +30,7 @@ func main() {
 	graphstate.RegisterKey(mgr, enrichedDataKey)
 	graphstate.RegisterKey(mgr, analysisKey)
 
-	pipeline, err := exec.NewBuilder(exec.NewPregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+	pipeline, err := exec.NewBuilder(exec.NewPregelExecutor(), exec.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}

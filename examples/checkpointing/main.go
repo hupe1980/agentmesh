@@ -233,7 +233,7 @@ func buildWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}
-	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	return compiled
 }
 
 func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
@@ -269,7 +269,7 @@ func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Messa
 	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
-	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	return compiled
 }
 
 func buildFixedWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
@@ -308,5 +308,5 @@ func buildFixedWorkflow() *exec.RunnableGraph[[]message.Message, message.Message
 	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
-	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
+	return compiled
 }

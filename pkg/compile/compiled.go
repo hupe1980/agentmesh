@@ -27,7 +27,7 @@ type CompiledGraph struct {
 	Topology *executionTopology
 
 	// Manager for execution (unified state management)
-	Manager *state.Manager
+	Manager state.Manager
 
 	// Quick lookups
 	StartNode string
@@ -36,7 +36,7 @@ type CompiledGraph struct {
 
 // Compile validates and compiles a graph into an executable form.
 // It performs topological validation and prepares the graph for execution.
-func Compile(g *graph.Graph, manager *state.Manager, opts ...CompileOption) (*CompiledGraph, error) {
+func Compile(g *graph.Graph, manager state.Manager, opts ...CompileOption) (*CompiledGraph, error) {
 	cfg := &compileConfig{
 		validationOpts: DefaultValidationOptions(),
 	}
