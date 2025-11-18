@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // mockClient is a mock implementation of Client for testing.
@@ -198,7 +197,6 @@ func TestCheckpointer_Save(t *testing.T) {
 		State: map[string]any{
 			"counter": 42,
 		},
-		Messages:       []message.Message{},
 		CompletedNodes: []string{"node1"},
 		PausedNodes:    []string{},
 		Metadata:       map[string]any{"version": "1.0"},
@@ -232,7 +230,6 @@ func TestCheckpointer_Load(t *testing.T) {
 			"counter": 42,
 			"status":  "running",
 		},
-		Messages:       []message.Message{},
 		CompletedNodes: []string{"node1", "node2"},
 		PausedNodes:    []string{},
 		Metadata:       map[string]any{"version": "1.0"},
@@ -294,7 +291,6 @@ func TestCheckpointer_List(t *testing.T) {
 			State: map[string]any{
 				"superstep": i,
 			},
-			Messages:       []message.Message{},
 			CompletedNodes: []string{},
 			PausedNodes:    []string{},
 			Metadata:       map[string]any{},
@@ -338,7 +334,6 @@ func TestCheckpointer_LoadAtSuperstep(t *testing.T) {
 			State: map[string]any{
 				"superstep": i,
 			},
-			Messages:       []message.Message{},
 			CompletedNodes: []string{},
 			PausedNodes:    []string{},
 			Metadata:       map[string]any{},
@@ -380,7 +375,6 @@ func TestCheckpointer_Delete(t *testing.T) {
 			Superstep: i,
 			Timestamp: time.Now(),
 			State:     map[string]any{},
-			Messages:  []message.Message{},
 		}
 
 		if err := checkpointer.Save(ctx, cp); err != nil {
@@ -444,7 +438,6 @@ func TestCheckpointer_SaveEmptyRunID(t *testing.T) {
 		Superstep: 1,
 		Timestamp: time.Now(),
 		State:     map[string]any{},
-		Messages:  []message.Message{},
 	}
 
 	err := checkpointer.Save(ctx, cp)
@@ -467,7 +460,6 @@ func TestCheckpointer_LoadMostRecent(t *testing.T) {
 			State: map[string]any{
 				"counter": i * 10,
 			},
-			Messages: []message.Message{},
 		}
 
 		if err := checkpointer.Save(ctx, cp); err != nil {

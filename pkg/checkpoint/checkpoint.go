@@ -3,8 +3,6 @@ package checkpoint
 import (
 	"context"
 	"time"
-
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Checkpoint represents a snapshot of graph execution state at a specific point in time.
@@ -29,16 +27,17 @@ type Checkpoint struct {
 	// An empty signature indicates the checkpoint was saved without signing enabled.
 	Signature []byte
 
-	// State contains all channel values and custom state
+	// State contains all channel values including message history (via MessagesKey),
+	// conversation state, and any custom state registered with the state manager.
+	// Message history is stored in state, not as a separate Messages field.
 	State map[string]any
 
-	// Messages contains the message history
-	Messages []message.Message
-
-	// CompletedNodes tracks which nodes have finished execution
+	// CompletedNodes tracks which nodes have finished execution.
+	// Needed for smart resume: skip re-executing completed nodes.
 	CompletedNodes []string
 
-	// PausedNodes tracks which nodes are paused (e.g., human-in-the-loop)
+	// PausedNodes tracks which nodes are paused (e.g., waiting for human input).
+	// Critical for human-in-the-loop workflows: resume from the exact pause point.
 	PausedNodes []string
 
 	// Metadata for custom checkpoint annotations

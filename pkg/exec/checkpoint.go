@@ -9,7 +9,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/compile"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -74,8 +73,9 @@ func (p *Pregel) restoreCheckpoint(ctx context.Context, compiled *compile.Compil
 			"state_keys", len(chkpt.State))
 	}
 
-	// TODO: Restore messages, completed nodes, paused nodes if needed
-	// This requires additional API in compile.CompiledGraph
+	// TODO: Restore completed/paused nodes from checkpoint to enable smart resume.
+	// This requires tracking execution metadata during runtime and storing it in checkpoints.
+	// See pkg/exec/metrics.go RuntimeMetrics for the tracking infrastructure.
 
 	logger.Info("checkpoint restored successfully",
 		"run_id", opts.RunID,
@@ -117,8 +117,8 @@ func (p *Pregel) saveCheckpoint(ctx context.Context, compiled *compile.CompiledG
 		Timestamp: vsnap.Timestamp,
 		Version:   0, // Manager handles versioning internally
 		State:     vsnap.Data,
-		// TODO: Add messages, completed nodes, paused nodes
-		Messages:       []message.Message{},
+		// Note: Message history is stored in State via MessagesKey, not as separate field
+		// TODO: Track and save completed/paused nodes from execution metrics
 		CompletedNodes: []string{},
 		PausedNodes:    []string{},
 		Metadata:       map[string]any{},

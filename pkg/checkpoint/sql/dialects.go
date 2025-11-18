@@ -6,6 +6,7 @@ import "fmt"
 type SQLiteDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for SQLite.
+// Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
 func (d *SQLiteDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -14,7 +15,6 @@ func (d *SQLiteDialect) CreateTableSQL(tableName string) string {
 			superstep INTEGER NOT NULL,
 			timestamp DATETIME NOT NULL,
 			state TEXT NOT NULL,
-			messages TEXT NOT NULL,
 			completed_nodes TEXT NOT NULL,
 			paused_nodes TEXT NOT NULL,
 			metadata TEXT,
@@ -32,6 +32,7 @@ func (d *SQLiteDialect) PlaceholderForPosition(position int) string {
 type PostgreSQLDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for PostgreSQL.
+// Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
 func (d *PostgreSQLDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -40,7 +41,6 @@ func (d *PostgreSQLDialect) CreateTableSQL(tableName string) string {
 			superstep BIGINT NOT NULL,
 			timestamp TIMESTAMP NOT NULL,
 			state JSONB NOT NULL,
-			messages JSONB NOT NULL,
 			completed_nodes JSONB NOT NULL,
 			paused_nodes JSONB NOT NULL,
 			metadata JSONB,
@@ -58,6 +58,7 @@ func (d *PostgreSQLDialect) PlaceholderForPosition(position int) string {
 type MySQLDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for MySQL.
+// Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
 func (d *MySQLDialect) CreateTableSQL(tableName string) string {
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
@@ -66,7 +67,6 @@ func (d *MySQLDialect) CreateTableSQL(tableName string) string {
 			superstep BIGINT NOT NULL,
 			timestamp DATETIME NOT NULL,
 			state JSON NOT NULL,
-			messages JSON NOT NULL,
 			completed_nodes JSON NOT NULL,
 			paused_nodes JSON NOT NULL,
 			metadata JSON,

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // InMemoryCheckpointer implements Checkpointer using an in-memory store.
@@ -252,12 +250,6 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 		for k, v := range src.State {
 			dst.State[k] = v // Note: shallow copy of values
 		}
-	}
-
-	// Deep copy Messages
-	if src.Messages != nil {
-		dst.Messages = make([]message.Message, len(src.Messages))
-		copy(dst.Messages, src.Messages)
 	}
 
 	// Deep copy CompletedNodes

@@ -49,10 +49,9 @@ func SetInUpdates[T any](u Updates, key Key[T], value T) Updates {
 
 // AppendInUpdates adds a typed value to append to a list.
 // Note: This just adds the value to updates. The actual append
-// logic happens in State.ApplyUpdates or via Append() function.
+// logic happens in ApplyUpdates, which checks the type registry
+// to determine if the key is a list key and routes accordingly.
 func AppendInUpdates[T any](u Updates, key ListKey[T], value T) Updates {
-	// For now, just set the value. The executor will handle appending.
-	// TODO: Add special marker if needed for append vs set semantics
 	u[key.name] = value
 	return u
 }

@@ -95,9 +95,11 @@
 //   - RunID: Unique workflow identifier
 //   - Superstep: BSP superstep number
 //   - Timestamp: When checkpoint was created
-//   - State: Full graph state (all channels)
-//   - Messages: Message history
-//   - CompletedNodes: Executed nodes
-//   - PausedNodes: Paused nodes (human-in-loop)
+//   - State: Full graph state including message history (via MessagesKey in state channels)
+//   - CompletedNodes: Nodes that finished execution (for smart resume)
+//   - PausedNodes: Nodes waiting for input (for human-in-the-loop workflows)
 //   - Metadata: Custom annotations
+//
+// Note: Message history is stored in State (not as a separate field) via the
+// MessagesKey channel, enabling consistent state management and restoration.
 package checkpoint

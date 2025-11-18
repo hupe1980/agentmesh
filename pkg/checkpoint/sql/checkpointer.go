@@ -121,11 +121,6 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	messagesJSON, err := json.Marshal(cp.Messages)
-	if err != nil {
-		return fmt.Errorf("failed to marshal messages: %w", err)
-	}
-
 	completedNodesJSON, err := json.Marshal(cp.CompletedNodes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal completed nodes: %w", err)
@@ -142,12 +137,14 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 	}
 
 	// Insert checkpoint
+	// Note: messages column may still exist in schema for backward compatibility,
+	// but message history is now stored in state via MessagesKey
 	//nolint:gosec // Table name is sanitized, placeholders used for values
 	insertSQL := fmt.Sprintf(`
 		INSERT INTO %s (
 			run_id, superstep, timestamp, 
-			state, messages, completed_nodes, paused_nodes, metadata
-		) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+			state, completed_nodes, paused_nodes, metadata
+		) VALUES (%s, %s, %s, %s, %s, %s, %s)
 	`, c.tableName,
 		c.dialect.PlaceholderForPosition(1),
 		c.dialect.PlaceholderForPosition(2),
@@ -156,7 +153,6 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 		c.dialect.PlaceholderForPosition(5),
 		c.dialect.PlaceholderForPosition(6),
 		c.dialect.PlaceholderForPosition(7),
-		c.dialect.PlaceholderForPosition(8),
 	)
 
 	_, err = c.db.ExecContext(ctx, insertSQL,
@@ -164,7 +160,6 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 		cp.Superstep,
 		cp.Timestamp,
 		stateJSON,
-		messagesJSON,
 		completedNodesJSON,
 		pausedNodesJSON,
 		metadataJSON,
@@ -187,7 +182,7 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 	querySQL := fmt.Sprintf(`
 		SELECT 
 			run_id, superstep, timestamp,
-			state, messages, completed_nodes, paused_nodes, metadata
+			state, completed_nodes, paused_nodes, metadata
 		FROM %s
 		WHERE run_id = %s
 		ORDER BY superstep DESC
@@ -196,7 +191,6 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 
 	var (
 		stateJSON          []byte
-		messagesJSON       []byte
 		completedNodesJSON []byte
 		pausedNodesJSON    []byte
 		metadataJSON       []byte
@@ -209,7 +203,6 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 		&cp.Superstep,
 		&cp.Timestamp,
 		&stateJSON,
-		&messagesJSON,
 		&completedNodesJSON,
 		&pausedNodesJSON,
 		&metadataJSON,
@@ -225,9 +218,6 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 	// Deserialize JSON fields
 	if err := json.Unmarshal(stateJSON, &cp.State); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
-	}
-	if err := json.Unmarshal(messagesJSON, &cp.Messages); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 	}
 	if err := json.Unmarshal(completedNodesJSON, &cp.CompletedNodes); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal completed nodes: %w", err)
@@ -252,7 +242,7 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 	querySQL := fmt.Sprintf(`
 		SELECT 
 			run_id, superstep, timestamp,
-			state, messages, completed_nodes, paused_nodes, metadata
+			state, completed_nodes, paused_nodes, metadata
 		FROM %s
 		WHERE run_id = %s
 		ORDER BY superstep DESC
@@ -271,7 +261,6 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 	for rows.Next() {
 		var (
 			stateJSON          []byte
-			messagesJSON       []byte
 			completedNodesJSON []byte
 			pausedNodesJSON    []byte
 			metadataJSON       []byte
@@ -284,7 +273,6 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 			&cp.Superstep,
 			&cp.Timestamp,
 			&stateJSON,
-			&messagesJSON,
 			&completedNodesJSON,
 			&pausedNodesJSON,
 			&metadataJSON,
@@ -295,9 +283,6 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 		// Deserialize JSON fields
 		if err := json.Unmarshal(stateJSON, &cp.State); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal state: %w", err)
-		}
-		if err := json.Unmarshal(messagesJSON, &cp.Messages); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 		}
 		if err := json.Unmarshal(completedNodesJSON, &cp.CompletedNodes); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal completed nodes: %w", err)
@@ -357,7 +342,7 @@ func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, supers
 	querySQL := fmt.Sprintf(`
 		SELECT 
 			run_id, superstep, timestamp,
-			state, messages, completed_nodes, paused_nodes, metadata
+			state, completed_nodes, paused_nodes, metadata
 		FROM %s
 		WHERE run_id = %s AND superstep = %s
 		LIMIT 1
@@ -367,7 +352,6 @@ func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, supers
 
 	var (
 		stateJSON          []byte
-		messagesJSON       []byte
 		completedNodesJSON []byte
 		pausedNodesJSON    []byte
 		metadataJSON       []byte
@@ -380,7 +364,6 @@ func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, supers
 		&cp.Superstep,
 		&cp.Timestamp,
 		&stateJSON,
-		&messagesJSON,
 		&completedNodesJSON,
 		&pausedNodesJSON,
 		&metadataJSON,
@@ -396,9 +379,6 @@ func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, supers
 	// Deserialize JSON fields
 	if err := json.Unmarshal(stateJSON, &cp.State); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
-	}
-	if err := json.Unmarshal(messagesJSON, &cp.Messages); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 	}
 	if err := json.Unmarshal(completedNodesJSON, &cp.CompletedNodes); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal completed nodes: %w", err)

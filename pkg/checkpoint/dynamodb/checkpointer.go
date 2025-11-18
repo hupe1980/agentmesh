@@ -42,12 +42,12 @@ func WithTableName(name string) Option {
 }
 
 // checkpointItem represents the DynamoDB item structure.
+// Note: Message history is stored in the State field via MessagesKey, not as a separate Messages field.
 type checkpointItem struct {
 	RunID          string `dynamodbav:"run_id"`
 	Superstep      int64  `dynamodbav:"superstep"`
 	Timestamp      string `dynamodbav:"timestamp"`
 	State          string `dynamodbav:"state"`
-	Messages       string `dynamodbav:"messages"`
 	CompletedNodes string `dynamodbav:"completed_nodes"`
 	PausedNodes    string `dynamodbav:"paused_nodes"`
 	Metadata       string `dynamodbav:"metadata"`
@@ -130,11 +130,6 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
 
-	messagesJSON, err := json.Marshal(cp.Messages)
-	if err != nil {
-		return fmt.Errorf("failed to marshal messages: %w", err)
-	}
-
 	completedNodesJSON, err := json.Marshal(cp.CompletedNodes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal completed nodes: %w", err)
@@ -155,7 +150,6 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 		Superstep:      cp.Superstep,
 		Timestamp:      cp.Timestamp.Format(time.RFC3339Nano),
 		State:          string(stateJSON),
-		Messages:       string(messagesJSON),
 		CompletedNodes: string(completedNodesJSON),
 		PausedNodes:    string(pausedNodesJSON),
 		Metadata:       string(metadataJSON),
@@ -322,10 +316,6 @@ func (c *Checkpointer) unmarshalCheckpoint(item map[string]types.AttributeValue)
 	// Unmarshal JSON fields
 	if err := json.Unmarshal([]byte(dbItem.State), &cp.State); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
-	}
-
-	if err := json.Unmarshal([]byte(dbItem.Messages), &cp.Messages); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 	}
 
 	if err := json.Unmarshal([]byte(dbItem.CompletedNodes), &cp.CompletedNodes); err != nil {

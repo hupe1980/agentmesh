@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -156,9 +155,8 @@ func TestInMemoryCheckpointerWithSigning(t *testing.T) {
 			State: map[string]any{
 				"counter": 42,
 			},
-			Messages: []message.Message{
-				message.NewAIMessageFromText("test"),
-			},
+			CompletedNodes: []string{},
+			PausedNodes:    []string{},
 		}
 
 		// Save checkpoint (should sign automatically)

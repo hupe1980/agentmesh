@@ -8,7 +8,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	sqlcp "github.com/hupe1980/agentmesh/pkg/checkpoint/sql"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 
@@ -38,7 +37,6 @@ func TestSQLiteCheckpointer(t *testing.T) {
 			"counter": 42,
 			"status":  "processing",
 		},
-		Messages:       []message.Message{},
 		CompletedNodes: []string{"node1", "node2"},
 		PausedNodes:    []string{},
 		Metadata: map[string]any{
@@ -128,7 +126,6 @@ func TestSQLiteCheckpointer_MultipleSupersteps(t *testing.T) {
 			State: map[string]any{
 				"superstep": i,
 			},
-			Messages:       []message.Message{},
 			CompletedNodes: []string{},
 			PausedNodes:    []string{},
 			Metadata:       map[string]any{},
