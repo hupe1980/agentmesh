@@ -2,13 +2,13 @@
 //
 // This example shows how to:
 //   - Limit message history to prevent out-of-memory issues
-//   - Configure message retention with WithMaxMessages option
+//   - Configure message retention with ListKey maxSize parameter
 //   - Handle long-running agent conversations efficiently
 //   - Automatically prune old messages while keeping recent context
 //   - Prevent token limit exceeding when using LLMs
 //
 // Key concepts:
-//   - NewGraphState(maxMessages): Set maximum message history size
+//   - state.NewListKey[message.Message]("__messages__", maxSize): Set maximum message history size
 //   - Automatic pruning: Old messages removed when limit exceeded
 //   - Memory efficiency: Prevent OOM in long conversations
 //   - Context window management: Keep relevant conversation history
@@ -36,8 +36,27 @@ import (
 )
 
 func main() {
+	// Example 1: Unlimited messages (default)
+	fmt.Println("=== With Unlimited Messages (maxSize=0) ===")
+	runExample(0)
+
+	// Example 2: Limit to 2 messages
+	fmt.Println("\n=== With MaxSize=2 ===")
+	runExample(2)
+
+	// Example 3: Recommended for long-running agents
+	fmt.Println("\n=== Recommended Production Configuration ===")
+	fmt.Println("For long-running agents, set maxSize to 100-1000")
+	fmt.Println("This prevents OOM while retaining sufficient context")
+	runExample(100)
+}
+
+func runExample(maxSize int) {
+	// Create message key with specific retention limit
+	messagesKey := graphstate.NewListKey[message.Message]("__messages__", maxSize)
+
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	graphstate.RegisterListKey(mgr, messagesKey)
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -73,11 +92,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Type assert to access State() method
+	// Type assert to access Manager() method
 	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 
-	// Example 1: Unlimited messages (default)
-	fmt.Println("=== With MaxMessages=0 (unlimited) ===")
+	// Run with 3 messages
 	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
 		message.NewHumanMessageFromText("Message 1"),
 		message.NewHumanMessageFromText("Message 2"),
@@ -86,41 +104,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	view1, err := rg.Manager().CreateReadView(context.Background())
-	if err != nil {
-		log.Fatal(err)
-	}
-	messages1 := agent.GetMessages(view1)
-	fmt.Printf("Messages retained: %d\n\n", len(messages1))
 
-	// Example 2: Limit to 2 messages
-	fmt.Println("=== With MaxMessages=2 ===")
-	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
-		message.NewHumanMessageFromText("Message 1"),
-		message.NewHumanMessageFromText("Message 2"),
-		message.NewHumanMessageFromText("Message 3"),
-	}, graph.WithMaxMessages(2)))
+	// Check how many messages were retained
+	view, err := rg.Manager().CreateReadView(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	view2, err := rg.Manager().CreateReadView(context.Background())
-	if err != nil {
-		log.Fatal(err)
-	}
-	messages2 := agent.GetMessages(view2)
-	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(messages2))
+	// ListKey embeds Key[[]T], so we can use GetFromView
+	messages := graphstate.GetFromView(view, messagesKey.Key)
+	fmt.Printf("Messages retained: %d (maxSize=%d)\n", len(messages), maxSize)
 
-	// Example 3: Recommended for long-running agents
-	fmt.Println("\n=== Recommended Configuration ===")
-	fmt.Println("For long-running agents, set WithMaxMessages(100-1000)")
-	fmt.Println("This prevents OOM while retaining sufficient context")
-
-	// Simulate long-running agent with retention
-	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
-		message.NewHumanMessageFromText("Start long conversation"),
-	}, graph.WithMaxMessages(100)))
-	if err != nil {
-		log.Fatal(err)
+	if maxSize > 0 {
+		fmt.Println("✓ Older messages automatically pruned")
+	} else {
+		fmt.Println("✓ All messages retained (unlimited)")
 	}
-	fmt.Println("✓ Agent executed with bounded memory")
 }

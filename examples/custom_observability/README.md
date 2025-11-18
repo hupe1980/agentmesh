@@ -4,12 +4,12 @@ This example demonstrates how to use custom observability providers (logging, tr
 
 ## What This Example Shows
 
-1. ✅ How to configure providers using explicit graph options
+1. ✅ How to attach providers to context before execution
 2. ✅ How to retrieve them in node `RunFunc` using `FromContext()`
-3. ✅ How providers propagate through the entire execution chain
+3. ✅ How providers propagate through the entire execution chain via context
 4. ✅ Using logger, tracer, and metrics in the same node
 
-## Key Pattern: Explicit Provider Configuration
+## Key Pattern: Context-Based Provider Attachment
 
 ```go
 // Step 1: Create custom providers
@@ -17,12 +17,13 @@ logger := logging.NewSlogAdapter(slog.New(...))
 traceProvider := trace.NewOpenTelemetryProvider(...)
 metricsProvider := metrics.NewPrometheusProvider(...)
 
-// Step 2: Pass providers as graph options
-result, err := graph.Last(compiled.Run(ctx, messages,
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
-))
+// Step 2: Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
+// Step 3: Execute - nodes access via FromContext()
+result, err := graph.Last(compiled.Run(ctx, messages))
 ```
 
 ## Using Providers in Node RunFunc

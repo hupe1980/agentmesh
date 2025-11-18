@@ -184,7 +184,6 @@ Uses `hmac.Equal()` for constant-time signature comparison to prevent timing att
 
 - [Checkpointing](../checkpointing/) - Basic checkpoint usage without signing
 - [Time Travel](../time_travel/) - Loading checkpoints from specific supersteps
-- [Input Validation](../input_validation/) - Message validation for DoS prevention
 
 ## References
 

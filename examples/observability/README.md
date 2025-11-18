@@ -4,7 +4,7 @@ This example demonstrates production-grade observability with automatic metrics 
 
 ## What You'll Learn
 
-1. ✅ How to configure observability using explicit graph options
+1. ✅ How to configure observability using context-based providers
 2. ✅ How OpenTelemetry integrates with AgentMesh  
 3. ✅ What metrics and traces are automatically collected
 4. ✅ How distributed tracing works across node execution
@@ -27,11 +27,12 @@ logger := logging.NoopLogger{}
 metricsProvider := metrics.Noop()
 traceProvider := trace.Noop()
 
-result, _ := graph.Last(compiled.Run(ctx, messages, 
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
-))
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
+result, _ := graph.Last(compiled.Run(ctx, messages))
 ```
 
 ### Production Setup (OpenTelemetry)
@@ -54,11 +55,12 @@ metricsProvider := opentelemetry.NewMetricsProvider(
     opentelemetry.WithEndpoint("http://prometheus:9090"),
 )
 
-result, _ := graph.Last(compiled.Run(ctx, messages,
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
-))
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
+result, _ := graph.Last(compiled.Run(ctx, messages))
 ```
 
 ## What Gets Instrumented Automatically

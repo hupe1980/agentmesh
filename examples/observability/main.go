@@ -1,14 +1,15 @@
 // Package main demonstrates production-grade observability with metrics and distributed tracing.
 //
 // This example shows how to:
-//   - Configure observability using explicit graph options
+//   - Configure observability using context-based providers
 //   - Automatically instrument graph execution with traces and metrics
 //   - Use providers in node RunFuncs via FromContext()
 //   - Monitor graph health and performance in production
 //
 // Key concepts:
-//   - WithLogger/WithTracer/WithMetrics: Explicit observability configuration
-//   - Automatic instrumentation: Framework creates spans/metrics automatically
+//   - logging.WithLogger(ctx, logger): Attach logger to context
+//   - trace.WithProvider(ctx, tp): Attach trace provider to context
+//   - metrics.WithProvider(ctx, mp): Attach metrics provider to context
 //   - FromContext(): Access providers in node RunFuncs for custom instrumentation
 //   - Production Setup: Replace Noop() with OpenTelemetry providers
 //
@@ -28,9 +29,9 @@ import (
 	"log"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-	"github.com/hupe1980/agentmesh/pkg/agent"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
@@ -124,16 +125,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Execute with explicit observability configuration
-	// Framework automatically creates spans and records metrics
+	// Attach observability providers to context
+	// Nodes access these via FromContext() methods
 	ctx := context.Background()
+	ctx = logging.WithLogger(ctx, logger)
+	ctx = trace.WithProvider(ctx, traceProvider)
+	ctx = metrics.WithProvider(ctx, metricsProvider)
+
 	startTime := time.Now()
 
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithLogger(logger),
-		graph.WithTracer(traceProvider),
-		graph.WithMetrics(metricsProvider),
-	) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			log.Fatalf("Execution failed: %v", err)
 		}
@@ -151,13 +152,14 @@ func main() {
 	fmt.Printf("Total execution time: %v\n", duration)
 
 	fmt.Println("\n=== Observability Configuration ===")
-	fmt.Println("✓ Automatic instrumentation enabled via:")
-	fmt.Println("  - graph.WithLogger(logger)")
-	fmt.Println("  - graph.WithTracer(traceProvider)")
-	fmt.Println("  - graph.WithMetrics(metricsProvider)")
-	fmt.Println("\n✓ Framework automatically creates:")
-	fmt.Println("  - Trace spans for each node execution")
-	fmt.Println("  - Metrics for node duration and errors")
+	fmt.Println("✓ Observability providers attached to context via:")
+	fmt.Println("  - logging.WithLogger(ctx, logger)")
+	fmt.Println("  - trace.WithProvider(ctx, traceProvider)")
+	fmt.Println("  - metrics.WithProvider(ctx, metricsProvider)")
+	fmt.Println("\n✓ Nodes access providers via FromContext():")
+	fmt.Println("  - logging.FromContext(ctx)")
+	fmt.Println("  - trace.FromContext(ctx)")
+	fmt.Println("  - metrics.FromContext(ctx)")
 	fmt.Println("  - Structured logs (if logger configured)")
 	fmt.Println("\n✓ Nodes can access providers via FromContext()")
 	fmt.Println("  - logging.FromContext(ctx)")

@@ -599,7 +599,7 @@ executor := compiled.executor // internal access
 executor.Pause("review_node")
 
 // Execute graph (will stop before review_node)
-_, err := graph.CollectMessages(compiled.Run(ctx, messages))
+_, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -609,7 +609,7 @@ if err != nil {
 
 // Resume execution
 executor.Resume("review_node")
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -1573,7 +1573,7 @@ The compiler validates the graph topology, checks for cycles, and prepares the e
 
 ```go
 // Blocking execution - collect all messages
-messages, err := graph.CollectMessages(compiled.Run(ctx, initialMessages))
+messages, err := agent.CollectMessages(compiled.Run(ctx, initialMessages))
 if err != nil {
     log.Fatal(err)
 }

@@ -193,7 +193,7 @@ func (c *ChatBot) Chat(ctx context.Context, userID, message string) (string, err
     messages := append(history, message.NewHumanMessageFromText(message))
     
     // Execute agent
-    results, err := graph.CollectMessages(c.agent.Run(ctx, messages))
+    results, err := agent.CollectMessages(c.agent.Run(ctx, messages))
     if err != nil {
         return "", err
     }

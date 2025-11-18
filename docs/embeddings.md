@@ -122,7 +122,7 @@ ragAgent, _ := agent.NewRAGAgent(model, retriever)
 msgs := []message.Message{
     message.NewHumanMessage("How does AgentMesh handle execution?"),
 }
-messages, _ := graph.CollectMessages(ragAgent.Run(ctx, msgs))
+messages, _ := agent.CollectMessages(ragAgent.Run(ctx, msgs))
 // Response includes information about Pregel BSP from knowledge base
 ```
 
@@ -351,7 +351,7 @@ history, _ := vectorMem.Recall(ctx, "user", &memory.RecallFilter{
 
 // Prepend history to conversation
 messages := append(history, currentMessages...)
-results, err := graph.CollectMessages(agent.Run(ctx, messages))
+results, err := agent.CollectMessages(agent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }

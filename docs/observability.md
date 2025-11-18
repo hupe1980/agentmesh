@@ -28,7 +28,7 @@ sidebar:
 
 ## Quick Start {#quick-start}
 
-Enable observability with explicit options:
+Enable observability by attaching providers to context:
 
 ```go
 import (
@@ -43,12 +43,13 @@ logger := logging.NoopLogger{}
 metricsProvider := metrics.Noop()
 traceProvider := trace.Noop()
 
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
 // Execute with automatic instrumentation
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
-))
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -61,11 +62,12 @@ if err != nil {
 For testing with zero overhead:
 
 ```go
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
-    graph.WithLogger(logging.NoopLogger{}),
-    graph.WithTracer(trace.Noop()),
-    graph.WithMetrics(metrics.Noop()),
-))
+// Attach noop providers to context
+ctx = logging.WithLogger(ctx, logging.NoopLogger{})
+ctx = trace.WithProvider(ctx, trace.Noop())
+ctx = metrics.WithProvider(ctx, metrics.Noop())
+
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -101,12 +103,13 @@ metricsProvider := opentelemetry.NewMetricsProvider(
     opentelemetry.WithEndpoint("http://prometheus:9090"),
 )
 
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
 // Execute with full observability
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages,
-    graph.WithLogger(logger),
-    graph.WithTracer(traceProvider),
-    graph.WithMetrics(metricsProvider),
-))
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -257,7 +260,7 @@ If you don't configure providers, AgentMesh uses **noop** implementations with *
 
 ```go
 // No providers = zero overhead
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }

@@ -1,11 +1,11 @@
-# Example: Message Retention
+# Message Retention Example
 
 ## Overview
-Demonstrates conversation history management with message retention policies. Shows how to limit message history to prevent out-of-memory issues in long-running agent conversations.
+Demonstrates conversation history management with message retention policies using typed list keys. Shows how to limit message history to prevent out-of-memory issues in long-running agent conversations.
 
 ## Key Concepts
-- **Message Retention**: Limit history size
-- **Automatic Pruning**: Remove old messages
+- **Message Retention**: Limit history size using `ListKey` maxSize parameter
+- **Automatic Pruning**: Older messages removed when limit exceeded
 - **Memory Efficiency**: Prevent OOM in long conversations
 - **Context Window Management**: Keep relevant history for LLMs
 - **Token Limit Prevention**: Avoid exceeding LLM limits
@@ -18,160 +18,100 @@ go run main.go
 
 ## Expected Output
 ```
-=== Message Retention Example ===
+=== With Unlimited Messages (maxSize=0) ===
+Messages retained: 4 (maxSize=0)
+✓ All messages retained (unlimited)
 
-Test 1: Unlimited Messages
-  Sending 100 messages...
-  Message history size: 100
-  ✓ All messages retained
+=== With MaxSize=2 ===
+Messages retained: 2 (maxSize=2)
+✓ Older messages automatically pruned
 
-Test 2: Limited to 10 Messages
-  Sending 100 messages...
-  Message history size: 10
-  ✓ Only last 10 messages retained
-  Oldest message: "Message 91"
-  Newest message: "Message 100"
-
-Test 3: Dynamic Retention
-  Initial limit: 5
-  Sending 10 messages...
-  History size: 5
-  
-  Increasing limit to 20
-  Sending 10 more messages...
-  History size: 15
-  ✓ Retention policy updated
+=== Recommended Production Configuration ===
+For long-running agents, set maxSize to 100-1000
+This prevents OOM while retaining sufficient context
+Messages retained: 4 (maxSize=100)
+✓ Older messages automatically pruned
 ```
 
 ## Code Walkthrough
 
-### 1. Create State with Message Limit
+### 1. Create ListKey with Message Limit
 ```go
-// Unlimited messages
-state := graph.NewStateManager(0)
+// Unlimited messages (maxSize=0)
+var UnlimitedKey = state.NewListKey[message.Message]("__messages__", 0)
 
-// Limited to 50 messages
-state := graph.NewStateManager(50)
+// Limited to 100 messages
+var LimitedKey = state.NewListKey[message.Message]("__messages__", 100)
 ```
 
-### 2. Automatic Pruning
+### 2. Register Key with State Manager
 ```go
-// When limit exceeded, oldest messages are automatically removed
-state := graph.NewStateManager(10)
+mgr := state.NewManager()
+state.RegisterListKey(mgr, messagesKey)
+
+g, err := graph.NewGraph(mgr)
+```
+
+### 3. Automatic Pruning Behavior
+When the message limit is exceeded, the oldest messages are automatically removed:
+
+```go
+messagesKey := state.NewListKey[message.Message]("__messages__", 10)
 
 // After adding 15 messages:
-//  - Messages 1-5 are pruned
-//  - Messages 6-15 are retained
+//  - Messages 1-5 are automatically pruned
+//  - Messages 6-15 are retained (last 10)
 ```
 
-### 3. Using Custom Message Key
+### 4. Access Messages from State
 ```go
-// Create a limited message key (max 100 messages)
-var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
-
-// Register with manager
-mgr := state.NewManager()
-state.RegisterListKey(mgr, LimitedMessagesKey)
+view, _ := manager.CreateReadView(ctx)
+messages := state.GetFromView(view, messagesKey.Key) // ListKey embeds Key[[]T]
+fmt.Printf("Message count: %d\n", len(messages))
 ```
 
 ## Message Lifecycle
 
-### Without Retention (0 = Unlimited)
+### Without Retention (maxSize=0)
 ```
 Message 1 → Message 2 → Message 3 → ... → Message 1000
 All messages kept in memory
 ```
 
-### With Retention (Max 10)
+### With Retention (maxSize=10)
 ```
-Message 1-90: Pruned
-Message 91-100: Retained
+Message 1-90: Automatically pruned
+Message 91-100: Retained (last 10)
 ```
 
 ## What This Example Teaches
-- ✅ Message history management
-- ✅ Memory efficiency
-- ✅ Automatic pruning
-- ✅ Context window control
+- ✅ Type-safe message history management with `ListKey`
+- ✅ Memory efficiency through automatic pruning
+- ✅ Context window control for LLMs
 - ✅ Long conversation handling
+- ✅ Production-ready retention policies
 
 ## Use Cases
 
 ### Chat Applications
 ```go
-### Long-term storage with selective memory
-```go
-// Store 100 messages total
-state := graph.NewStateManager(100) // 100 messages = ~50 turns
-state.AddChannel(channel.NewTopicChannel("messages", 100))
+// Keep last 100 messages (~50 conversation turns)
+var ChatMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
 ```
 
 ### Production Agents
 ```go
-```go
-// Short context for summarization
-state := graph.NewStateManager(200)
-state.AddChannel(channel.NewTopicChannel("messages", 200))
+// Larger buffer for complex workflows
+var AgentMessagesKey = state.NewListKey[message.Message]("__messages__", 200)
 ```
 
 ### LLM Context Management
 ```go
 // GPT-4: ~8K tokens ≈ 40-50 messages
-state := graph.NewStateManager(50)
-
-// GPT-3.5: ~4K tokens ≈ 20-30 messages
-state := graph.NewStateManager(30)
+var ContextKey = state.NewListKey[message.Message]("__messages__", 50)
 ```
 
-## Production Considerations
-
-### Token Counting
-```go
-// Estimate tokens before sending to LLM
-func estimateTokens(messages []message.Message) int {
-    total := 0
-    for _, msg := range messages {
-        // Rough estimate: 1 token ≈ 4 characters
-        text := getMessageText(msg)
-        total += len(text) / 4
-    }
-    return total
-}
-```
-
-### Dynamic Adjustment
-```go
-// Adjust retention based on token count
-messages := state.MessagesSnapshot()
-tokens := estimateTokens(messages)
-
-if tokens > 7000 {
-    // Approaching limit, reduce history
-    state.SetMaxMessages(len(messages) / 2)
-}
-```
-
-### Important Message Preservation
-```go
-// Keep system messages regardless of limit
-func preserveSystemMessages(messages []message.Message) []message.Message {
-    preserved := make([]message.Message, 0)
-    for _, msg := range messages {
-        if msg.Role() == message.RoleSystem {
-            preserved = append(preserved, msg)
-        }
-    }
-    return append(preserved, getRecentMessages(messages, 40)...)
-}
-```
-
-## Next Steps
-- Implement smart message pruning
-- Add token counting
-- Create conversation summarization
-- See **examples/basic_agent** for ReAct patterns
-
-## See Also
-- [pkg/graph](../../pkg/graph) - State API
-- [pkg/message](../../pkg/message) - Message types
-- [examples/basic_agent](../basic_agent) - Agent basics
+## Related Examples
+- [State Management](../state_builder/) - Basic typed key registration
+- [Checkpointing](../checkpointing/) - Persist message history
+- [Basic Agent](../basic_agent/) - Simple agent with message handling

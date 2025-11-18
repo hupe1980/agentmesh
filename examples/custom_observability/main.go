@@ -281,15 +281,14 @@ func main() {
 	fmt.Println("Executing graph with custom observability providers...")
 	fmt.Println("--- Structured Logs (JSON) ---")
 
-	// Execute graph with explicit provider options
-	// The graph will automatically attach providers to context for all nodes
+	// Attach providers to context - nodes access via FromContext()
 	ctx := context.Background()
+	ctx = logging.WithLogger(ctx, logger)
+	ctx = trace.WithProvider(ctx, traceProvider)
+	ctx = metrics.WithProvider(ctx, metricsProvider)
+
 	start := time.Now()
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithLogger(logger),
-		graph.WithTracer(traceProvider),
-		graph.WithMetrics(metricsProvider),
-	) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			panic(fmt.Sprintf("Execution failed: %v", err))
 		}
@@ -311,16 +310,15 @@ func main() {
 	fmt.Printf("\nFinal Summary: %v\n", summary)
 
 	fmt.Println("\n=== Key Takeaways ===")
-	fmt.Println("✓ Providers configured using explicit graph options:")
-	fmt.Println("  - graph.WithLogger(logger)")
-	fmt.Println("  - graph.WithTracer(traceProvider)")
-	fmt.Println("  - graph.WithMetrics(metricsProvider)")
-	fmt.Println("✓ Graph automatically attaches providers to context")
-	fmt.Println("✓ Each node retrieves providers using FromContext()")
-	fmt.Println("✓ Logger: logging.FromContext(ctx)")
-	fmt.Println("✓ Tracer: trace.FromContext(ctx)")
-	fmt.Println("✓ Metrics: metrics.FromContext(ctx)")
-	fmt.Println("✓ All nodes share the same providers automatically")
+	fmt.Println("✓ Providers attached to context before execution:")
+	fmt.Println("  - logging.WithLogger(ctx, logger)")
+	fmt.Println("  - trace.WithProvider(ctx, traceProvider)")
+	fmt.Println("  - metrics.WithProvider(ctx, metricsProvider)")
+	fmt.Println("✓ Nodes retrieve providers using FromContext():")
+	fmt.Println("  - logging.FromContext(ctx)")
+	fmt.Println("  - trace.FromContext(ctx)")
+	fmt.Println("  - metrics.FromContext(ctx)")
+	fmt.Println("✓ All nodes share the same providers via context")
 	fmt.Println("\n=== Production Usage ===")
 	fmt.Println("Replace noop providers with real implementations:")
 	fmt.Println("- Tracer: trace.NewOpenTelemetryProvider(...)")

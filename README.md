@@ -221,7 +221,7 @@ func main() {
     }
 
     // Execute and collect all messages
-    messages, err = graph.CollectMessages(agent.Run(ctx, messages))
+    messages, err = agent.CollectMessages(agent.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }
@@ -576,7 +576,6 @@ Explore **19 comprehensive examples** demonstrating different use cases and patt
 | ⏰ [time_travel](examples/time_travel) | Debug with state versioning | Checkpointing, state replay, time-travel debugging |
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
 | 🔐 [checkpoint_signing](examples/checkpoint_signing) | HMAC-SHA256 checkpoint integrity | Tamper detection, cryptographic signing, security |
-| 🛡️ [input_validation](examples/input_validation) | Message size/count validation | DoS prevention, resource limits, security |
 | ✅ [graph_validation](examples/graph_validation) | Pre-execution graph validation | Compile-time error detection, validation modes, topology checks |
 | 📞 [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
 | 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
@@ -1043,12 +1042,13 @@ logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
 metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
 // Automatic instrumentation - structured logs throughout execution!
-for result, err := range compiled.Run(ctx, initialMessages,
-    graph.WithLogger(logger),          // Structured logging (JSON/text)
-    graph.WithTracer(traceProvider),   // Distributed tracing
-    graph.WithMetrics(metricsProvider), // Metrics collection
-) {
+for result, err := range compiled.Run(ctx, initialMessages) {
     if err != nil {
         log.Fatal(err)
     }
@@ -1074,12 +1074,13 @@ logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
 metricsProvider := metrics.NewOpenTelemetry(meterProvider)
 traceProvider := trace.NewOpenTelemetry(tracerProvider)
 
+// Attach providers to context
+ctx = logging.WithLogger(ctx, logger)
+ctx = trace.WithProvider(ctx, traceProvider)
+ctx = metrics.WithProvider(ctx, metricsProvider)
+
 // Automatic instrumentation - structured logs throughout execution!
-for result, err := range compiled.Run(ctx, initialMessages,
-    graph.WithLogger(logger),          // Structured logging (JSON/text)
-    graph.WithTracer(traceProvider),   // Distributed tracing
-    graph.WithMetrics(metricsProvider), // Metrics collection
-) {
+for result, err := range compiled.Run(ctx, initialMessages) {
     if err != nil {
         log.Fatal(err)
     }

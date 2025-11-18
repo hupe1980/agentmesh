@@ -2,11 +2,9 @@ package graph
 
 import (
 	"iter"
-
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Last returns the last message from an iterator sequence.
+// Last returns the last value from an iterator sequence.
 // Returns an error if the sequence produces an error or is empty.
 //
 // ERROR HANDLING:
@@ -15,12 +13,12 @@ import (
 //
 // Example:
 //
-//	lastMsg, err := graph.Last(runnable.Run(ctx, messages))
+//	lastMsg, err := graph.Last(runnable.Run(ctx, input))
 //	if err != nil {
 //	    return fmt.Errorf("execution failed: %w", err)
 //	}
-func Last(seq iter.Seq2[message.Message, error]) (message.Message, error) {
-	var last message.Message
+func Last[T any](seq iter.Seq2[T, error]) (T, error) {
+	var last T
 	var lastErr error
 	hasValue := false
 
@@ -37,46 +35,37 @@ func Last(seq iter.Seq2[message.Message, error]) (message.Message, error) {
 	}
 
 	if lastErr != nil {
-		return nil, lastErr
+		var zero T
+		return zero, lastErr
 	}
 
 	if !hasValue {
-		return nil, ErrEmptySequence
+		var zero T
+		return zero, ErrEmptySequence
 	}
 
 	return last, lastErr
 }
 
-// Collect collects all messages from an iterator sequence.
+// Collect collects all values from an iterator sequence.
 // Returns an error if the sequence produces an error.
 //
 // Example:
 //
-//	messages, err := graph.Collect(runnable.Run(ctx, messages))
+//	results, err := graph.Collect(runnable.Run(ctx, input))
 //	if err != nil {
 //	    return fmt.Errorf("execution failed: %w", err)
 //	}
-func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
-	messages := make([]message.Message, 0)
-	for msg, err := range seq {
+func Collect[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	results := make([]T, 0)
+	for val, err := range seq {
 		if err != nil {
-			return messages, err
+			return results, err
 		}
-		if msg != nil {
-			messages = append(messages, msg)
-		}
+		// Note: We include zero values in the slice
+		results = append(results, val)
 	}
-	return messages, nil
-}
-
-// CollectMessages collects all messages from an iterator sequence.
-// This is an alias for Collect for backward compatibility.
-//
-// Example:
-//
-//	messages, err := graph.CollectMessages(runnable.Run(ctx, messages))
-func CollectMessages(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
-	return Collect(seq)
+	return results, nil
 }
 
 // ErrEmptySequence is returned when trying to get the last element of an empty sequence.

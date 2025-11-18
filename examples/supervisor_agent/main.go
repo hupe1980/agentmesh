@@ -55,7 +55,7 @@ func main() {
 		}
 
 		// Execute and collect execution results
-		results, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
+		results, err := agent.CollectMessages(supervisor.Run(ctx, []message.Message{
 			message.NewHumanMessageFromText(query),
 		}))
 		if err != nil {

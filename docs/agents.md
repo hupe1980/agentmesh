@@ -63,7 +63,7 @@ agent, err := agent.NewReActAgent(
 )
 
 // Execute and collect messages
-messages, err := graph.CollectMessages(agent.Run(ctx, messages))
+messages, err := agent.CollectMessages(agent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -138,7 +138,7 @@ supervisor, err := agent.NewSupervisorAgent(
 )
 
 // Execute and collect messages
-messages, err := graph.CollectMessages(supervisor.Run(ctx, []message.Message{
+messages, err := agent.CollectMessages(supervisor.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
 }))
 if err != nil {
@@ -312,7 +312,7 @@ builder.AddEdge("handle_sales", "END")
 
 // Compile and execute
 compiled, err := builder.Compile()
-messages, err := graph.CollectMessages(compiled.Run(ctx, messages))
+messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -415,7 +415,7 @@ builder.Node("research", func(ctx context.Context, view *state.ReadView) (*graph
     msgs := state.GetFromView(view, MessagesKey)
     
     // Execute subgraph
-    messages, err := graph.CollectMessages(researchGraph.Run(ctx, msgs))
+    messages, err := agent.CollectMessages(researchGraph.Run(ctx, msgs))
     if err != nil {
         return nil, err
     }
