@@ -12,6 +12,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,8 +27,8 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 
 	countKey := state.NewKey("count", 0)
 
-	stateManager := newTestState()
-	state.Register(stateManager, countKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, countKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -101,15 +102,15 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 
 	ctx := context.Background()
 
-	stateManager := newTestState()
+	stateManager := newTestManager()
 
 	// Register all result keys
 	for i := 0; i < 5; i++ {
 		resultKey := state.NewKey(fmt.Sprintf("result_%d", i), 0)
-		state.Register(stateManager, resultKey)
+		state.RegisterKey(stateManager, resultKey)
 	}
 	totalKey := state.NewKey("total", 0)
-	state.Register(stateManager, totalKey)
+	state.RegisterKey(stateManager, totalKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -189,8 +190,8 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	completedKey := state.NewKey("completed", false)
 
-	stateManager := newTestState()
-	state.Register(stateManager, completedKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, completedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -251,8 +252,8 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	recoveredKey := state.NewKey("recovered", false)
 
-	stateManager := newTestState()
-	state.Register(stateManager, recoveredKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, recoveredKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -309,8 +310,8 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	largeDataKey := state.NewKey("large_data", []byte{})
 
-	stateManager := newTestState()
-	state.Register(stateManager, largeDataKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, largeDataKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -374,13 +375,13 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	var partition1Active atomic.Bool
 	var partition2Active atomic.Bool
 
-	buildGraph := func() graph.MessageRunnable {
+	buildGraph := func() graph.Runnable[[]message.Message, message.Message] {
 		p1DataKey := state.NewKey("p1_data", "")
 		resultKey := state.NewKey("result", "")
 
-		stateManager := newTestState()
-		state.Register(stateManager, p1DataKey)
-		state.Register(stateManager, resultKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, p1DataKey)
+		state.RegisterKey(stateManager, resultKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)

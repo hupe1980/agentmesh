@@ -8,6 +8,7 @@ import (
 	"time"
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -21,7 +22,7 @@ func main() {
 	finalReportKey := graphstate.NewKey("final_report", "")
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 	graphstate.RegisterKey(mgr, currentTaskKey)
 	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
 	graphstate.RegisterKey(mgr, humanInputKey)

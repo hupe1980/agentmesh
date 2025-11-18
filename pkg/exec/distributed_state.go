@@ -2,7 +2,6 @@ package exec
 
 import (
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // StateMessage wraps messages with state updates for distributed synchronization.
@@ -13,8 +12,8 @@ import (
 // and sent through the message bus. Remote nodes receive and apply these updates
 // to maintain consistent distributed state.
 type StateMessage struct {
-	// Messages contains execution events with metadata
-	Messages []state.ExecutionResult `json:"messages,omitempty"`
+	// Messages contains the messages
+	Messages []message.Message `json:"messages,omitempty"`
 
 	// Updates contains key-value state updates to be applied
 	Updates map[string]any `json:"updates,omitempty"`
@@ -23,8 +22,8 @@ type StateMessage struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
-// NewStateMessage creates a new state message with events and updates.
-func NewStateMessage(messages []state.ExecutionResult, updates map[string]any) StateMessage {
+// NewStateMessage creates a new state message with messages and updates.
+func NewStateMessage(messages []message.Message, updates map[string]any) StateMessage {
 	return StateMessage{
 		Messages: messages,
 		Updates:  updates,
@@ -72,7 +71,7 @@ func FromMessage(msg message.Message) *StateMessage {
 		if typeVal, ok := dataPart.Data["__type"].(string); ok && typeVal == "state_message" {
 			sm := &StateMessage{}
 
-			if messages, ok := dataPart.Data["messages"].([]state.ExecutionResult); ok {
+			if messages, ok := dataPart.Data["messages"].([]message.Message); ok {
 				sm.Messages = messages
 			}
 

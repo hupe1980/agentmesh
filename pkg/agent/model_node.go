@@ -85,7 +85,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			// Get messages from state
-			messages := state.GetMessages(view)
+			messages := GetMessages(view)
 
 			// Create request
 			req := &model.Request{
@@ -103,7 +103,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 				if resp != nil {
 					// Short-circuit: use plugin response instead of calling model
 					updates := state.Updates{}
-					state.AppendMessages(updates, []message.Message{resp.Message})
+					AppendMessages(updates, []message.Message{resp.Message})
 
 					return &graph.NodeResult{
 						Updates: updates,
@@ -130,7 +130,7 @@ func ModelNode(mdl model.Model, opts ...ModelNodeOption) *graph.Node {
 
 			// Return message in updates map (agent layer handles message storage)
 			updates := state.Updates{}
-			state.AppendMessages(updates, []message.Message{resp.Message})
+			AppendMessages(updates, []message.Message{resp.Message})
 
 			return &graph.NodeResult{
 				Updates: updates,
@@ -147,7 +147,7 @@ func handleModelError(ctx context.Context, req *model.Request, err error, config
 		if fallback != nil {
 			// Plugin provided fallback response
 			updates := state.Updates{}
-			state.AppendMessages(updates, []message.Message{fallback.Message})
+			AppendMessages(updates, []message.Message{fallback.Message})
 
 			return &graph.NodeResult{
 				Updates: updates,

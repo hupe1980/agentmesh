@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"time"
-
-	"github.com/hupe1980/agentmesh/pkg/graph"
 
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/pkg/compile"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -29,25 +27,26 @@ func (s *Sequential) Run(
 	compiled *compile.CompiledGraph,
 	initialMessages []message.Message,
 	opts ...graph.RunOption,
-) iter.Seq2[state.ExecutionResult, error] {
+) iter.Seq2[message.Message, error] {
 	// Note: Sequential executor currently ignores checkpoint options
 	_ = opts
-	return func(yield func(state.ExecutionResult, error) bool) {
+	return func(yield func(message.Message, error) bool) {
 		runID := uuid.New().String()
 
 		// Store initial messages in state
+		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
 		if len(initialMessages) > 0 {
 			updates := state.Updates{}
-			state.AppendMessages(updates, initialMessages)
+			updates["__messages__"] = initialMessages
 			if err := state.ApplyUpdates(ctx, compiled.Manager, updates); err != nil {
-				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
+				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
 				return
 			}
 		}
 
 		// Execute from start node
 		if err := s.executeFromNode(ctx, compiled, compiled.StartNode, runID, yield); err != nil {
-			yield(state.ExecutionResult{}, err)
+			yield(nil, err)
 		}
 	}
 }
@@ -60,7 +59,7 @@ func (s *Sequential) executeFromNode(
 	compiled *compile.CompiledGraph,
 	startNode string,
 	runID string,
-	yield func(state.ExecutionResult, error) bool,
+	yield func(message.Message, error) bool,
 ) error {
 	queue := []string{startNode}
 	executionCount := 0
@@ -102,13 +101,8 @@ func (s *Sequential) executeFromNode(
 		}
 		result, err := node.Run(ctx, view)
 		if err != nil {
-			event := state.ExecutionResult{
-				ID:        uuid.New().String(),
-				GraphID:   runID,
-				Node:      nodeName,
-				Timestamp: time.Now(),
-			}
-			if !yield(event, err) {
+			// Yield error without message
+			if !yield(nil, err) {
 				return nil
 			}
 			return err
@@ -122,19 +116,13 @@ func (s *Sequential) executeFromNode(
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 
-				// Extract messages from updates and yield as execution events
-				if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
+				// Extract messages from updates and yield directly
+				// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
+				if messagesAny, ok := result.Updates["__messages__"]; ok {
 					if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-						// Yield events to caller
+						// Yield messages directly to caller
 						for _, msg := range messages {
-							event := state.ExecutionResult{
-								Message:   msg,
-								ID:        uuid.New().String(),
-								GraphID:   runID,
-								Node:      nodeName,
-								Timestamp: time.Now(),
-							}
-							if !yield(event, nil) {
+							if !yield(msg, nil) {
 								return nil
 							}
 						}

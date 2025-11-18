@@ -55,7 +55,7 @@ func runDemo(ctx context.Context) {
 			break
 		}
 		eventCount++
-		fmt.Printf("Node: %s, Superstep: %d, Events: %d\n", event.Node, compiled.CurrentSuperstep(), eventCount)
+		fmt.Printf("Superstep: %d, Events: %d, Message: %s\n", compiled.CurrentSuperstep(), eventCount, event.Type())
 	}
 
 	// === Part 2: View checkpoint history ===

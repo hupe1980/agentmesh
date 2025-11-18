@@ -10,6 +10,15 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
+// registerMessagesKey is a helper to register the required __messages__ key
+func registerMessagesKey(t *testing.T, mgr *state.Manager) {
+	t.Helper()
+	messagesKey := state.NewListKey[message.Message]("__messages__", 0)
+	if err := state.RegisterListKey(mgr, messagesKey); err != nil {
+		t.Fatalf("Failed to register messages key: %v", err)
+	}
+}
+
 func TestBuilder_BasicUsage(t *testing.T) {
 	// Define key first
 	processedKey := state.NewKey("processed", false)
@@ -18,6 +27,9 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
+
+	// Register messages key (required by executor)
+	registerMessagesKey(t, builder.Manager())
 
 	// Register key
 	if err := state.RegisterKey(builder.Manager(), processedKey); err != nil {
@@ -66,6 +78,9 @@ func TestBuilder_WithOptions(t *testing.T) {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
 
+	// Register messages key (required by executor)
+	registerMessagesKey(t, builder.Manager())
+
 	// Register key
 	if err := state.RegisterKey(builder.Manager(), stepKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
@@ -113,6 +128,9 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
+
+	// Register messages key (required by executor)
+	registerMessagesKey(t, builder.Manager())
 
 	// Register keys
 	if err := state.RegisterKey(builder.Manager(), routeKey); err != nil {
@@ -175,6 +193,9 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
+
+	// Register messages key (required by executor)
+	registerMessagesKey(t, builder.Manager())
 
 	// Register key
 	if err := state.RegisterKey(builder.Manager(), doneKey); err != nil {

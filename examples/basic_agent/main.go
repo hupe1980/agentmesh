@@ -100,16 +100,14 @@ func main() {
 			break
 		}
 
-		// Each ExecutionResult now contains ONE Message (not a Messages slice)
-		if evt.Message == nil {
+		// Each event is now a Message directly
+		if evt == nil {
 			continue
 		}
 
-		msg := evt.Message
+		fmt.Printf("[%d] %s\n", i+1, evt.Type())
 
-		fmt.Printf("[%d] %s\n", i+1, msg.Type())
-
-		switch m := msg.(type) {
+		switch m := evt.(type) {
 		case *message.AIMessage:
 			// Display AI's reasoning and responses
 			for _, part := range m.Parts() {

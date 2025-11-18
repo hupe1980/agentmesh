@@ -10,10 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test-local dummy key for testing - compile tests don't need message-specific types
+var testDummyKey = state.NewListKey[string]("__test_data__", 0)
+
 // Helper function for tests
 func newTestManager() *state.Manager {
 	mgr := state.NewManager()
-	state.RegisterListKey(mgr, state.MessagesKey)
+	state.RegisterListKey(mgr, testDummyKey)
 	return mgr
 }
 

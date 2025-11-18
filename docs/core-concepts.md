@@ -27,7 +27,7 @@ sidebar:
     url: "#channels"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh now provides full compile-time type safety through generic compilation. Use `builder.CompileMessageRunnable()` for the common case, or `graph.Compile[I, O](builder)` for custom input/output types. See [GENERICS.md](https://github.com/hupe1980/agentmesh/blob/main/GENERICS.md) for details.
+> **Type Safety with Generics (Go 1.24+):** AgentMesh now provides full compile-time type safety through generic compilation. Use `builder.Compile()` for the common case, or `graph.Compile[I, O](builder)` for custom input/output types. See [GENERICS.md](https://github.com/hupe1980/agentmesh/blob/main/GENERICS.md) for details.
 
 ## Runnable interface {#runnable-interface}
 
@@ -114,7 +114,7 @@ var agent graph.MessageRunnable = &mockAgent{...}
 // All components share the same interface
 var agent1 graph.MessageRunnable = agent.NewReActAgent(model)
 var agent2 graph.MessageRunnable = agent.NewSupervisorAgent(model)
-compiled, _ := builder.CompileMessageRunnable()
+compiled, _ := builder.Compile()
 
 // Swap implementations without changing client code
 ```
@@ -152,7 +152,7 @@ builder.AddEdge("process", "save")
 builder.AddEdge("save", "END")
 
 // Compile into executable graph
-compiled, err := builder.CompileMessageRunnable()
+compiled, err := builder.Compile()
 if err != nil {
     return err
 }

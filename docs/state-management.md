@@ -38,24 +38,30 @@ Checkpointing enables automatic state persistence during graph execution. Every 
 ### Basic usage
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/checkpoint"
+import (
+    "github.com/hupe1980/agentmesh/pkg/checkpoint"
+    "github.com/hupe1980/agentmesh/pkg/state"
+)
 
-// Create checkpointer
-checkpointer := checkpoint.NewInMemoryCheckpointer()
+// Create manager with checkpointer
+mgr := state.NewManager(
+    state.WithCheckpointer(checkpoint.NewInMemoryCheckpointer()),
+)
+
+// Build graph with manager
+builder, err := exec.NewBuilder(exec.WithManager(mgr))
 
 // Enable checkpointing
-compiled, err := builder.CompileMessageRunnable()
+compiled, err := builder.Compile()
 
 // Execute with run ID for persistence
 seq := compiled.Run(ctx, messages,
-    graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1, AutoRestore: true}),
 )
 
 // Resume from checkpoint after failure
 seq = compiled.Run(ctx, messages,
-    graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
 )

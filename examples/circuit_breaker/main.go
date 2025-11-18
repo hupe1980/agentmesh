@@ -81,7 +81,7 @@ func main() {
 
 	// Build the graph using agent
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -120,8 +120,8 @@ func main() {
 
 		if err != nil {
 			fmt.Printf("❌ Attempt failed: %v\n", err)
-		} else if result.Message != nil {
-			text := message.Stringify(result.Message)
+		} else if result != nil {
+			text := message.Stringify(result)
 			fmt.Printf("✓ Success: %s\n", text)
 			break
 		}

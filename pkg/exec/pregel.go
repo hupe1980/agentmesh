@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"iter"
 	"runtime"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/pkg/compile"
@@ -122,8 +121,8 @@ func (p *Pregel) Run(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
 	initialMessages []message.Message,
-	opts ...graph.RunOption) iter.Seq2[state.ExecutionResult, error] {
-	return func(yield func(state.ExecutionResult, error) bool) {
+	opts ...graph.RunOption) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
 		// Extract run options
 		runOpts := extractRunOptions(opts)
 
@@ -138,7 +137,7 @@ func (p *Pregel) Run(
 
 		// Restore from checkpoint if configured
 		if err := p.restoreCheckpoint(runCtx, compiled, runOpts); err != nil {
-			yield(state.ExecutionResult{}, err)
+			yield(nil, err)
 			return
 		}
 
@@ -147,19 +146,20 @@ func (p *Pregel) Run(
 		defer p.stopCheckpointWorker(worker)
 
 		// Store initial messages in state
+		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
 		if len(initialMessages) > 0 {
 			updates := state.Updates{}
-			state.AppendMessages(updates, initialMessages)
+			updates["__messages__"] = initialMessages
 			if err := state.ApplyUpdates(runCtx, compiled.Manager, updates); err != nil {
-				yield(state.ExecutionResult{}, fmt.Errorf("failed to store initial messages: %w", err))
+				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
 				return
 			}
 		}
 
 		// Create result channel to serialize all yields from a single goroutine
 		resultChan := make(chan struct {
-			result state.ExecutionResult
-			err    error
+			msg message.Message
+			err error
 		}, 100)
 
 		// Single goroutine that calls yield - ensures thread safety
@@ -167,7 +167,7 @@ func (p *Pregel) Run(
 		go func() {
 			defer close(yieldDone)
 			for item := range resultChan {
-				if !yield(item.result, item.err) {
+				if !yield(item.msg, item.err) {
 					cancel() // Consumer stopped, cancel the runtime context
 					// Drain remaining items to prevent goroutine leak
 					//nolint:revive // Need to drain channel
@@ -179,12 +179,12 @@ func (p *Pregel) Run(
 		}()
 
 		// Helper to send results to the yield goroutine
-		safeYield := func(result state.ExecutionResult, err error) bool {
+		safeYield := func(msg message.Message, err error) bool {
 			select {
 			case resultChan <- struct {
-				result state.ExecutionResult
-				err    error
-			}{result, err}:
+				msg message.Message
+				err error
+			}{msg, err}:
 				return true
 			case <-runCtx.Done():
 				return false
@@ -225,14 +225,14 @@ func (p *Pregel) Run(
 		// Create and run the pregel runtime
 		rt, err := pregel.NewRuntime[*compile.CompiledGraph, message.Message](adapter, runtimeOpts...)
 		if err != nil {
-			safeYield(state.ExecutionResult{}, err)
+			safeYield(nil, err)
 			close(resultChan)
 			<-yieldDone
 			return
 		}
 
 		// Execute runtime and forward events to result channel
-		for evt, err := range rt.Run(runCtx) {
+		for _, err := range rt.Run(runCtx) {
 			// Check if context was cancelled (consumer stopped iterating)
 			select {
 			case <-runCtx.Done():
@@ -245,13 +245,8 @@ func (p *Pregel) Run(
 
 			if err != nil {
 				// Fatal error - BSP execution terminated
-				// Yield error result and stop iteration
-				safeYield(state.ExecutionResult{
-					ID:        uuid.New().String(),
-					GraphID:   runID,
-					Node:      evt.Node,
-					Timestamp: time.Now(),
-				}, err)
+				// Yield error and stop iteration
+				safeYield(nil, err)
 				break
 			}
 		}
@@ -265,7 +260,7 @@ func (p *Pregel) Run(
 type pregelGraphAdapter struct {
 	compiled               *compile.CompiledGraph
 	runID                  string
-	yield                  func(state.ExecutionResult, error) bool
+	yield                  func(message.Message, error) bool
 	enableDistributedState bool
 }
 
@@ -309,7 +304,7 @@ type pregelNodeAdapter struct {
 	nodeName               string
 	compiled               *compile.CompiledGraph
 	runID                  string
-	yield                  func(state.ExecutionResult, error) bool
+	yield                  func(message.Message, error) bool
 	enableDistributedState bool
 }
 
@@ -350,38 +345,14 @@ func (n *pregelNodeAdapter) Run(
 		}
 
 		// Extract messages from updates and create execution events
-		if messagesAny, ok := intermediateResult.Updates[state.MessagesKey.Name()]; ok {
+		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
+		if messagesAny, ok := intermediateResult.Updates["__messages__"]; ok {
 			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-				events := make([]state.ExecutionResult, len(messages))
-				for i, msg := range messages {
-					events[i] = state.ExecutionResult{
-						Message:   msg,
-						ID:        uuid.New().String(),
-						GraphID:   n.runID,
-						Node:      n.nodeName,
-						Timestamp: time.Now(),
-						Partial:   true, // Mark as intermediate/partial result
-					}
-				}
-
-				// Yield each intermediate event
-				for _, event := range events {
-					n.yield(event, nil)
+				// Yield each intermediate message directly
+				for _, msg := range messages {
+					n.yield(msg, nil)
 				}
 			}
-		}
-
-		// If there are state updates in the intermediate result,
-		// create a synthetic event to carry them
-		if len(intermediateResult.Updates) > 0 {
-			n.yield(state.ExecutionResult{
-				ID:        uuid.New().String(),
-				GraphID:   n.runID,
-				Node:      n.nodeName,
-				Timestamp: time.Now(),
-				Partial:   true,
-				Updates:   intermediateResult.Updates,
-			}, nil)
 		}
 	}
 
@@ -419,19 +390,13 @@ func (n *pregelNodeAdapter) Run(
 			return fmt.Errorf("failed to apply state updates: %w", err)
 		}
 
-		// Extract messages from updates if present
-		if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
+		// Extract messages from updates and yield directly
+		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
+		if messagesAny, ok := result.Updates["__messages__"]; ok {
 			if messages, ok := messagesAny.([]message.Message); ok && len(messages) > 0 {
-				// Yield each message as execution result
+				// Yield each message directly
 				for _, msg := range messages {
-					event := state.ExecutionResult{
-						Message:   msg,
-						ID:        uuid.New().String(),
-						GraphID:   n.runID,
-						Node:      n.nodeName,
-						Timestamp: time.Now(),
-					}
-					if !n.yield(event, nil) {
+					if !n.yield(msg, nil) {
 						return nil
 					}
 				}
@@ -443,23 +408,15 @@ func (n *pregelNodeAdapter) Run(
 	var messageData message.Message
 	if n.enableDistributedState {
 		// Extract messages from updates for distributed state
-		var events []state.ExecutionResult
-		if messagesAny, ok := result.Updates[state.MessagesKey.Name()]; ok {
-			if messages, ok := messagesAny.([]message.Message); ok {
-				events = make([]state.ExecutionResult, len(messages))
-				for i, msg := range messages {
-					events[i] = state.ExecutionResult{
-						Message:   msg,
-						ID:        uuid.New().String(),
-						GraphID:   n.runID,
-						Node:      n.nodeName,
-						Timestamp: time.Now(),
-					}
-				}
+		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
+		var messages []message.Message
+		if messagesAny, ok := result.Updates["__messages__"]; ok {
+			if msgs, ok := messagesAny.([]message.Message); ok {
+				messages = msgs
 			}
 		}
 
-		stateMsg := NewStateMessage(events, result.Updates)
+		stateMsg := NewStateMessage(messages, result.Updates)
 		messageData = stateMsg.ToMessage()
 	}
 

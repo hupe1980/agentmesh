@@ -81,13 +81,15 @@ func NewManager(opts ...ManagerOption) *Manager {
 //	counterKey := NewKey[int]("counter", 0)
 //	manager.RegisterKey(counterKey)
 func RegisterKey[T any](m *Manager, key Key[T]) error {
-	// Check if already registered (idempotent)
+	valueType := reflect.TypeOf(key.zero)
+
+	// Check if already registered - validate type even if channel exists
 	if m.channels.GetChannel(key.name) != nil {
-		return nil
+		// Validate that the existing registration matches this type
+		return m.types.RegisterKey(key.name, valueType, false)
 	}
 
-	valueType := reflect.TypeOf(key.zero)
-	return m.registerKey(key.name, valueType, false, 0)
+	return m.registerKeyWithValue(key.name, valueType, false, 0, key.zero)
 }
 
 // RegisterListKey registers a ListKey[T] with the manager.
@@ -99,19 +101,26 @@ func RegisterKey[T any](m *Manager, key Key[T]) error {
 //	messagesKey := NewListKey[string]("messages", 100)
 //	manager.RegisterListKey(messagesKey)
 func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
-	// Check if already registered (idempotent)
-	if m.channels.GetChannel(key.name) != nil {
-		return nil
-	}
-
 	// For list keys, the element type is T, not []T
 	var zero T
 	valueType := reflect.TypeOf(zero)
+
+	// Check if already registered - validate type even if channel exists
+	if m.channels.GetChannel(key.name) != nil {
+		// Validate that the existing registration matches this type
+		return m.types.RegisterKey(key.name, valueType, true)
+	}
+
 	return m.registerKey(key.name, valueType, true, key.maxSize)
 }
 
-// registerKey is the internal registration logic.
+// registerKey is the internal registration logic (without initial value).
 func (m *Manager) registerKey(name string, valueType reflect.Type, isList bool, maxSize int) error {
+	return m.registerKeyWithValue(name, valueType, isList, maxSize, nil)
+}
+
+// registerKeyWithValue is the internal registration logic with initial value.
+func (m *Manager) registerKeyWithValue(name string, valueType reflect.Type, isList bool, maxSize int, initialValue any) error {
 	// Register type in TypeRegistry
 	if err := m.types.RegisterKey(name, valueType, isList); err != nil {
 		return fmt.Errorf("type registration failed: %w", err)
@@ -125,11 +134,24 @@ func (m *Manager) registerKey(name string, valueType reflect.Type, isList bool, 
 		if err := m.channels.RegisterChannel(name, ch, TopicBehavior); err != nil {
 			return fmt.Errorf("channel registration failed: %w", err)
 		}
+		// Don't initialize list channels - they start empty
 	} else {
 		// LastValueChannel for regular keys (replace semantics)
 		ch = channel.NewLastValueChannel(name)
 		if err := m.channels.RegisterChannel(name, ch, LastValueBehavior); err != nil {
 			return fmt.Errorf("channel registration failed: %w", err)
+		}
+		// Initialize with provided value or type's zero value to prevent nil panics
+		var valueToWrite any
+		if initialValue != nil {
+			valueToWrite = initialValue
+		} else if valueType != nil {
+			valueToWrite = reflect.Zero(valueType).Interface()
+		}
+		// Write initial value to channel
+		ctx := context.Background()
+		if err := ch.Write(ctx, valueToWrite); err != nil {
+			return fmt.Errorf("failed to initialize channel with value: %w", err)
 		}
 	}
 

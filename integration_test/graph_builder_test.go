@@ -14,7 +14,7 @@ import (
 // TestBasicGraphBuilding tests basic graph construction and validation
 func TestBasicGraphBuilding(t *testing.T) {
 	t.Run("creates graph with valid state manager", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -22,7 +22,7 @@ func TestBasicGraphBuilding(t *testing.T) {
 	})
 
 	t.Run("adds node successfully", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
 		node := &graph.Node{
@@ -40,7 +40,7 @@ func TestBasicGraphBuilding(t *testing.T) {
 	})
 
 	t.Run("adds edges successfully", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
 		node := &graph.Node{
@@ -58,7 +58,7 @@ func TestBasicGraphBuilding(t *testing.T) {
 	})
 
 	t.Run("adds conditional edges successfully", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
 		g.AddNode(&graph.Node{Name: "source", RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
@@ -86,8 +86,8 @@ func TestSimpleGraphExecution(t *testing.T) {
 	t.Run("executes single node", func(t *testing.T) {
 		resultKey := state.NewKey("result", "")
 
-		stateManager := newTestState()
-		state.Register(stateManager, resultKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, resultKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -121,8 +121,8 @@ func TestSimpleGraphExecution(t *testing.T) {
 	t.Run("executes sequential nodes", func(t *testing.T) {
 		countKey := state.NewKey("count", 0)
 
-		stateManager := newTestState()
-		state.Register(stateManager, countKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, countKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -174,9 +174,9 @@ func TestConditionalRouting(t *testing.T) {
 		choiceKey := state.NewKey("choice", "")
 		resultKey := state.NewKey("result", "")
 
-		stateManager := newTestState()
-		state.Register(stateManager, choiceKey)
-		state.Register(stateManager, resultKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, choiceKey)
+		state.RegisterKey(stateManager, resultKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -247,8 +247,8 @@ func TestConditionalRouting(t *testing.T) {
 	t.Run("routes to multiple targets in parallel", func(t *testing.T) {
 		broadcastKey := state.NewKey("broadcast", false)
 
-		stateManager := newTestState()
-		state.Register(stateManager, broadcastKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, broadcastKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -315,9 +315,9 @@ func TestStateManagement(t *testing.T) {
 		key1Key := state.NewKey("key1", "")
 		key2Key := state.NewKey("key2", 0)
 
-		stateManager := newTestState()
-		state.Register(stateManager, key1Key)
-		state.Register(stateManager, key2Key)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, key1Key)
+		state.RegisterKey(stateManager, key2Key)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -368,12 +368,12 @@ func TestStateManagement(t *testing.T) {
 	t.Run("state persists across execution", func(t *testing.T) {
 		counterKey := state.NewKey("counter", 0)
 
-		stateManager := newTestState()
-		state.Register(stateManager, counterKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, counterKey)
 
-		// Set initial state using state.Set
+		// Set initial state using state.SetInManager
 		ctx := context.Background()
-		if err := state.Set(ctx, stateManager, counterKey, 0); err != nil {
+		if err := state.SetInManager(ctx, stateManager, counterKey, 0); err != nil {
 			t.Fatalf("Failed to initialize state: %v", err)
 		}
 
@@ -403,8 +403,8 @@ func TestStateManagement(t *testing.T) {
 		}
 
 		// Check state was updated
-		snap := stateManager.Snapshot()
-		view := state.NewReadView(snap)
+		view, err := stateManager.CreateReadView(ctx)
+		require.NoError(t, err)
 		assert.Equal(t, 1, state.GetFromView(view, counterKey))
 	})
 }

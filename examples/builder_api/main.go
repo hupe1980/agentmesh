@@ -73,7 +73,7 @@ func main() {
 		AddEdge("process", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := builder.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}

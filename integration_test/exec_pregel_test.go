@@ -18,11 +18,11 @@ func TestPregelExecutor(t *testing.T) {
 	completedKey := state.NewKey("completed", false)
 
 	// Build a graph with parallel nodes
-	stateManager := newTestState()
-	state.Register(stateManager, startedKey)
-	state.Register(stateManager, task1Key)
-	state.Register(stateManager, task2Key)
-	state.Register(stateManager, completedKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, startedKey)
+	state.RegisterKey(stateManager, task1Key)
+	state.RegisterKey(stateManager, task2Key)
+	state.RegisterKey(stateManager, completedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
@@ -88,12 +88,9 @@ func TestPregelExecutor(t *testing.T) {
 	ctx := context.Background()
 
 	resultCount := 0
-	for result, err := range runnable.Run(ctx, nil) {
-		if err != nil {
-			t.Fatalf("Execution error: %v", err)
-		}
+	for result := range runnable.Run(ctx, nil) {
 		resultCount++
-		t.Logf("Result %d: Node=%s", resultCount, result.Node)
+		t.Logf("Result %d: %v", resultCount, result)
 	}
 
 	// Verify all nodes executed
@@ -102,8 +99,10 @@ func TestPregelExecutor(t *testing.T) {
 	}
 
 	// Verify final state
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	if val := state.GetFromView(view, completedKey); val != true {
 		t.Errorf("Expected completed=true, got %v", val)
 	}

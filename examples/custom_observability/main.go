@@ -20,6 +20,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
@@ -57,7 +58,7 @@ func main() {
 	statusKey := graphstate.NewKey("status", "")
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 	graphstate.RegisterKey(mgr, recordsKey)
 	graphstate.RegisterKey(mgr, timestampKey)
 	graphstate.RegisterKey(mgr, processedKey)

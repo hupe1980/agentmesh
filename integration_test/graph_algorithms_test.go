@@ -16,6 +16,8 @@ import (
 func TestPageRank(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
+
 	const (
 		dampingFactor = 0.85
 		iterations    = 10
@@ -23,7 +25,7 @@ func TestPageRank(t *testing.T) {
 	)
 
 	// Create a simple graph: A -> B, A -> C, B -> C, C -> A
-	stateManager := newTestState()
+	stateManager := newTestManager()
 
 	vertices := []string{"A", "B", "C"}
 	edges := map[string][]string{
@@ -41,10 +43,10 @@ func TestPageRank(t *testing.T) {
 
 	for _, v := range vertices {
 		rankKeys[v] = state.NewKey(fmt.Sprintf("rank_%s", v), initialRank)
-		state.Register(stateManager, rankKeys[v])
+		state.RegisterKey(stateManager, rankKeys[v])
 
 		outgoingKeys[v] = state.NewKey(fmt.Sprintf("outgoing_%s", v), edges[v])
-		state.Register(stateManager, outgoingKeys[v])
+		state.RegisterKey(stateManager, outgoingKeys[v])
 	}
 
 	// Create contribution keys for each edge
@@ -53,7 +55,7 @@ func TestPageRank(t *testing.T) {
 		contribKeys[source] = make(map[string]state.Key[float64])
 		for _, target := range vertices {
 			key := state.NewKey(fmt.Sprintf("contrib_%s_%s", source, target), 0.0)
-			state.Register(stateManager, key)
+			state.RegisterKey(stateManager, key)
 			contribKeys[source][target] = key
 		}
 	}
@@ -103,8 +105,10 @@ func TestPageRank(t *testing.T) {
 		}
 
 		// Get snapshot to read current state
-		snap := stateManager.Snapshot()
-		view := state.NewReadView(snap)
+		view, err := stateManager.CreateReadView(ctx)
+		if err != nil {
+			t.Fatalf("CreateReadView failed: %v", err)
+		}
 
 		// Accumulate contributions for each vertex
 		newRanks := make(map[string]float64)
@@ -122,16 +126,17 @@ func TestPageRank(t *testing.T) {
 		}
 
 		// Update all ranks for next iteration
-		updates := make(map[string]any)
+		ctx := context.Background()
 		for v, rank := range newRanks {
-			updates[fmt.Sprintf("rank_%s", v)] = rank
+			_ = state.SetInManager(ctx, stateManager, rankKeys[v], rank)
 		}
-		stateManager.ApplyUpdates(context.Background(), updates)
 	}
 
 	// Verify ranks sum to approximately 1.0
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView failed: %v", err)
+	}
 
 	totalRank := 0.0
 	for _, v := range vertices {
@@ -149,7 +154,8 @@ func TestPageRank(t *testing.T) {
 func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
-	stateManager := newTestState()
+	ctx := context.Background()
+	stateManager := newTestManager()
 
 	// Create graph: A -1-> B -1-> C
 	//                A -5-> C
@@ -170,10 +176,10 @@ func TestShortestPath(t *testing.T) {
 			initialDist = 0 // source
 		}
 		distKeys[v] = state.NewKey(fmt.Sprintf("dist_%s", v), initialDist)
-		state.Register(stateManager, distKeys[v])
+		state.RegisterKey(stateManager, distKeys[v])
 
 		edgeKeys[v] = state.NewKey(fmt.Sprintf("edges_%s", v), edges[v])
-		state.Register(stateManager, edgeKeys[v])
+		state.RegisterKey(stateManager, edgeKeys[v])
 	}
 
 	g, err := graph.NewGraph(stateManager)
@@ -224,8 +230,10 @@ func TestShortestPath(t *testing.T) {
 	}
 
 	// Verify shortest paths
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView failed: %v", err)
+	}
 
 	distA := state.GetFromView(view, distKeys["A"])
 	require.Equal(t, 0, distA, "source distance should be 0")
@@ -241,12 +249,13 @@ func TestShortestPath(t *testing.T) {
 func TestGraphConvergence(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	counterKey := state.NewKey("counter", 0)
 	targetKey := state.NewKey("target", 10)
 
-	stateManager := newTestState()
-	state.Register(stateManager, counterKey)
-	state.Register(stateManager, targetKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, counterKey)
+	state.RegisterKey(stateManager, targetKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -283,8 +292,11 @@ func TestGraphConvergence(t *testing.T) {
 	}
 
 	// Verify counter was incremented once (single execution)
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView failed: %v", err)
+	}
+
 	count := state.GetFromView(view, counterKey)
 	require.Equal(t, 1, count, "counter should increment once per invocation")
 }
@@ -293,12 +305,13 @@ func TestGraphConvergence(t *testing.T) {
 func TestIterativeComputation(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	valueKey := state.NewKey("value", 1.0)
 	iterationKey := state.NewKey("iteration", 0)
 
-	stateManager := newTestState()
-	state.Register(stateManager, valueKey)
-	state.Register(stateManager, iterationKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, valueKey)
+	state.RegisterKey(stateManager, iterationKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -335,8 +348,10 @@ func TestIterativeComputation(t *testing.T) {
 	}
 
 	// Verify convergence
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView failed: %v", err)
+	}
 
 	finalValue := state.GetFromView(view, valueKey)
 	expectedValue := 1.0 / math.Pow(2, float64(maxIterations))

@@ -88,7 +88,7 @@ func WithSystemPrompt(prompt string) HandoffOption {
 func HandoffToAgent(
 	agentName string,
 	agentDescription string,
-	agentGraph graph.MessageRunnable,
+	agentGraph graph.Runnable[[]message.Message, message.Message],
 	options ...HandoffOption,
 ) (*FuncTool[HandoffArgs, string], error) {
 	if agentGraph == nil {
@@ -138,7 +138,7 @@ func HandoffToAgent(
 // executeHandoff performs the actual agent invocation with context control.
 func executeHandoff(
 	ctx context.Context,
-	agentGraph graph.MessageRunnable,
+	agentGraph graph.Runnable[[]message.Message, message.Message],
 	args HandoffArgs,
 	config *HandoffConfig,
 ) (string, error) {
@@ -161,17 +161,17 @@ func executeHandoff(
 	messages = append(messages, message.NewHumanMessageFromText(args.Task))
 
 	// Execute the worker agent graph
-	lastEvent, err := graph.Last(agentGraph.Run(ctx, messages))
+	lastMsg, err := graph.Last(agentGraph.Run(ctx, messages))
 	if err != nil {
 		return "", fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	if lastEvent.Message == nil {
+	if lastMsg == nil {
 		return "", fmt.Errorf("agent produced no messages")
 	}
 
 	// Extract text from the last message
-	return extractTextFromMessage(lastEvent.Message), nil
+	return extractTextFromMessage(lastMsg), nil
 }
 
 // extractTextFromMessage extracts text content from a message.

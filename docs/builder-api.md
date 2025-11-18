@@ -117,7 +117,7 @@ Adds conditional routing based on runtime state.
 #### `Compile() (graph.MessageRunnable, error)`
 Compiles the graph into a runnable. Only available if created with `exec.NewBuilder()`.
 
-#### `CompileMessageRunnable() (graph.MessageRunnable, error)`
+#### `Compile() (graph.MessageRunnable, error)`
 Alias for `Compile()` for API compatibility.
 
 #### `Build() *Graph`
@@ -138,7 +138,7 @@ If you have code using the old Builder API:
 builder, _ := graph.NewBuilder()
 builder.Node("process", processFunc)
 builder.AddEdge(graph.StartNode, "process")
-compiled, _ := builder.CompileMessageRunnable()
+compiled, _ := builder.Compile()
 ```
 
 Simply change `graph.NewBuilder()` to `exec.NewBuilder()`:
@@ -148,7 +148,7 @@ Simply change `graph.NewBuilder()` to `exec.NewBuilder()`:
 builder, _ := exec.NewBuilder()
 builder.Node("process", processFunc)
 builder.AddEdge(graph.StartNode, "process")
-compiled, _ := builder.Compile()  // or CompileMessageRunnable()
+compiled, _ := builder.Compile()  // or Compile()
 ```
 
 ## Examples

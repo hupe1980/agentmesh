@@ -526,7 +526,7 @@ builder.AddEdge("step1", "step2")
 builder.AddEdge("step2", graph.EndNode)
 
 // Compile with type-safe API (Go 1.24+ generics)
-compiled, err := builder.CompileMessageRunnable()
+compiled, err := builder.Compile()
 if err != nil {
     log.Fatal(err)
 }
@@ -625,7 +625,7 @@ executor := graph.NewPregelExecutor(
     graph.WithPregelMaxIterations(1000),
 )
 g.WithExecutor(executor)
-compiled, _ := builder.CompileMessageRunnable()
+compiled, _ := builder.Compile()
 ```
 
 ### ⚙️ Pregel Executor Configuration
@@ -666,7 +666,7 @@ executor := graph.NewPregelExecutor(
 builder := graph.NewBuilder()
 // ... build graph ...
 builder.WithExecutor(executor)
-compiled, _ := builder.CompileMessageRunnable()
+compiled, _ := builder.Compile()
 
 // Access aggregated values after execution
 var lastResult state.ExecutionResult
@@ -735,7 +735,7 @@ import "github.com/hupe1980/agentmesh/pkg/checkpoint"
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 // Compile graph (type-safe)
-compiled, _ := builder.CompileMessageRunnable()
+compiled, _ := builder.Compile()
 
 // Execute - state is automatically saved
 runID := "conversation-123"

@@ -12,10 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test-local message key definition to avoid import cycle with pkg/agent
+var testMessagesKey = stateif.NewListKey[message.Message]("__messages__", 0)
+
 // Helper function for tests
 func newTestManager() *stateif.Manager {
 	mgr := stateif.NewManager()
-	stateif.RegisterListKey(mgr, stateif.MessagesKey)
+	stateif.RegisterListKey(mgr, testMessagesKey)
 	return mgr
 }
 
@@ -101,7 +104,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 				return nil, assert.AnError
 			}
 			updates := stateif.Updates{}
-			stateif.AppendMessages(updates, []message.Message{message.NewAIMessageFromText("Success after retry")})
+			updates[testMessagesKey.Name()] = []message.Message{message.NewAIMessageFromText("Success after retry")}
 			return &graph.NodeResult{
 				Updates: updates,
 			}, nil
@@ -183,7 +186,7 @@ func TestIsValidResult(t *testing.T) {
 }
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) graph.MessageRunnable {
+func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]message.Message, message.Message] {
 	mgr := newTestManager()
 	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
@@ -192,7 +195,7 @@ func createMockWorkerGraph(t *testing.T, response string) graph.MessageRunnable 
 		Name: "worker",
 		RunFunc: func(ctx context.Context, view *stateif.ReadView) (*graph.NodeResult, error) {
 			updates := stateif.Updates{}
-			stateif.AppendMessages(updates, []message.Message{message.NewAIMessageFromText(response)})
+			updates[testMessagesKey.Name()] = []message.Message{message.NewAIMessageFromText(response)}
 			return &graph.NodeResult{
 				Updates: updates,
 			}, nil

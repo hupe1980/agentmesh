@@ -8,15 +8,15 @@ default:
 
 # Run all tests with race detection (default)
 test:
-    go test ./... -race -count=1
+    go test ./pkg/... ./internal/... ./integration_test/... -race -count=1
 
 # Run tests without race detection (faster, for quick iterations)
 test-fast:
-    go test ./...
+    go test ./pkg/... ./internal/... ./integration_test/...
 
 # Run tests with race detection (explicit alias for CI)
 test-race:
-    go test ./... -race -count=1
+    go test ./pkg/... ./internal/... ./integration_test/... -race -count=1
 
 # Run linter (only core library - examples excluded)
 lint:

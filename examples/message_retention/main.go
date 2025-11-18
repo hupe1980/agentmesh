@@ -28,16 +28,16 @@ import (
 	"fmt"
 	"log"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -48,11 +48,11 @@ func main() {
 	err = g.AddNode(&graph.Node{
 		Name: "echo",
 		RunFunc: func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
-			messages := graphstate.GetMessages(view)
+			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
 			updates := graphstate.Updates{}
-			graphstate.AppendMessages(updates, []message.Message{
+			agent.AppendMessages(updates, []message.Message{
 				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
 			})
 
@@ -90,7 +90,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	messages1 := graphstate.GetMessages(view1)
+	messages1 := agent.GetMessages(view1)
 	fmt.Printf("Messages retained: %d\n\n", len(messages1))
 
 	// Example 2: Limit to 2 messages
@@ -107,7 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	messages2 := graphstate.GetMessages(view2)
+	messages2 := agent.GetMessages(view2)
 	fmt.Printf("Messages retained: %d (keeps most recent)\n", len(messages2))
 
 	// Example 3: Recommended for long-running agents

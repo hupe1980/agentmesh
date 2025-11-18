@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,13 +28,13 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 	// Create a simple workflow that increments a counter through 5 nodes
 	counterKey := state.NewKey("counter", 0)
 
-	buildWorkflow := func() graph.MessageRunnable {
-		stateManager := newTestState()
-		state.Register(stateManager, counterKey)
+	buildWorkflow := func() graph.Runnable[[]message.Message, message.Message] {
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, counterKey)
 		// Register all dynamic node_N_executed keys
 		for i := 1; i <= 5; i++ {
 			key := state.NewKey(fmt.Sprintf("node_%d_executed", i), false)
-			state.Register(stateManager, key)
+			state.RegisterKey(stateManager, key)
 		}
 
 		g, err := graph.NewGraph(stateManager)
@@ -157,14 +158,14 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	counterKey2 := state.NewKey("counter", 0)
 
 	// Create workflow that fails on node 3 ONLY on first attempt
-	buildFailingWorkflow := func() graph.MessageRunnable {
-		stateManager := newTestState()
-		state.Register(stateManager, retryAllowedKey)
-		state.Register(stateManager, counterKey2)
+	buildFailingWorkflow := func() graph.Runnable[[]message.Message, message.Message] {
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, retryAllowedKey)
+		state.RegisterKey(stateManager, counterKey2)
 		// Register all dynamic completed_step_N keys
 		for i := 1; i <= 5; i++ {
 			key := state.NewKey(fmt.Sprintf("completed_step_%d", i), false)
-			state.Register(stateManager, key)
+			state.RegisterKey(stateManager, key)
 		}
 
 		g, err := graph.NewGraph(stateManager)
@@ -298,12 +299,12 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	nodeBDoneKey := state.NewKey("node_b_done", false)
 	nodeCDoneKey := state.NewKey("node_c_done", false)
 
-	buildWorkflow := func() graph.MessageRunnable {
-		stateManager := newTestState()
-		state.Register(stateManager, valueKey)
-		state.Register(stateManager, nodeADoneKey)
-		state.Register(stateManager, nodeBDoneKey)
-		state.Register(stateManager, nodeCDoneKey)
+	buildWorkflow := func() graph.Runnable[[]message.Message, message.Message] {
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, valueKey)
+		state.RegisterKey(stateManager, nodeADoneKey)
+		state.RegisterKey(stateManager, nodeBDoneKey)
+		state.RegisterKey(stateManager, nodeCDoneKey)
 
 		g, err := graph.NewGraph(stateManager)
 		if err != nil {
@@ -443,8 +444,8 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	dataKey := state.NewKey("data", "")
-	stateManager := newTestState()
-	state.Register(stateManager, dataKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, dataKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
@@ -529,12 +530,12 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 
 	// Create workflow with multiple supersteps
 	stepKey := state.NewKey("step", 0)
-	stateManager := newTestState()
-	state.Register(stateManager, stepKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, stepKey)
 	// Register checkpoint_N keys
 	for i := 1; i <= 3; i++ {
 		key := state.NewKey(fmt.Sprintf("checkpoint_%d", i), "")
-		state.Register(stateManager, key)
+		state.RegisterKey(stateManager, key)
 	}
 
 	g, err := graph.NewGraph(stateManager)
@@ -639,9 +640,9 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 			workflowIDKey := state.NewKey("workflow_id", 0)
 			timestampKey := state.NewKey("timestamp", int64(0))
 
-			stateManager := newTestState()
-			state.Register(stateManager, workflowIDKey)
-			state.Register(stateManager, timestampKey)
+			stateManager := newTestManager()
+			state.RegisterKey(stateManager, workflowIDKey)
+			state.RegisterKey(stateManager, timestampKey)
 
 			g, err := graph.NewGraph(stateManager)
 			if err != nil {
@@ -717,8 +718,8 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	executedKey := state.NewKey("executed", false)
-	stateManager := newTestState()
-	state.Register(stateManager, executedKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, executedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {

@@ -8,17 +8,18 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Executor implements a2asrv.AgentExecutor and provides A2A protocol integration for compiled
 // graphs to be exposed as A2A-compliant services.
 type Executor struct {
-	runnable graph.MessageRunnable
+	runnable graph.Runnable[[]message.Message, message.Message]
 }
 
 // NewExecutor creates a new A2A executor that wraps an AgentMesh agent or compiled graph.
-// Accepts any graph.MessageRunnable (agents, compiled graphs, etc.).
-func NewExecutor(runnable graph.MessageRunnable) *Executor {
+// Accepts any graph.Runnable (agents, compiled graphs, etc.).
+func NewExecutor(runnable graph.Runnable[[]message.Message, message.Message]) *Executor {
 	return &Executor{runnable: runnable}
 }
 
@@ -40,7 +41,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 
 	// Convert results back to A2A format and write to queue
 	for i := range events {
-		a2aMsg, err := ConvertToA2AMessage(events[i].Message)
+		a2aMsg, err := ConvertToA2AMessage(events[i])
 		if err != nil {
 			return fmt.Errorf("failed to convert result message: %w", err)
 		}
@@ -62,13 +63,13 @@ func (e *Executor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q 
 	return nil
 }
 
-// StreamingExecutor wraps an AgentMesh MessageRunnable with streaming support.
+// StreamingExecutor wraps an AgentMesh Runnable with streaming support.
 type StreamingExecutor struct {
-	compiled graph.MessageRunnable
+	compiled graph.Runnable[[]message.Message, message.Message]
 }
 
 // NewStreamingExecutor creates a new streaming A2A executor.
-func NewStreamingExecutor(compiled graph.MessageRunnable) *StreamingExecutor {
+func NewStreamingExecutor(compiled graph.Runnable[[]message.Message, message.Message]) *StreamingExecutor {
 	return &StreamingExecutor{compiled: compiled}
 }
 
@@ -89,8 +90,8 @@ func (e *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			return fmt.Errorf("streaming error: %w", err)
 		}
 
-		if event.Message != nil {
-			a2aMsg, err := ConvertToA2AMessage(event.Message)
+		if event != nil {
+			a2aMsg, err := ConvertToA2AMessage(event)
 			if err != nil {
 				// It might be better to log this and continue
 				return fmt.Errorf("failed to convert result message: %w", err)

@@ -123,7 +123,7 @@ func main() {
 	// 5. Display the conversation
 	fmt.Println("=== Conversation ===")
 	for _, evt := range events {
-		switch m := evt.Message.(type) {
+		switch m := evt.(type) {
 		case *message.SystemMessage:
 			fmt.Print("[System] ")
 			for _, part := range m.Parts() {

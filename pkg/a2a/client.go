@@ -7,6 +7,7 @@ import (
 	a2atypes "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -136,7 +137,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 		}
 
 		// Get last message from state
-		lastMsg := state.LastMessageContent(view)
+		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
 			return &graph.NodeResult{Updates: state.Updates{}}, nil
 		}
@@ -170,7 +171,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 			}
 
 			updates := state.Updates{}
-			state.AppendMessages(updates, resultMessages)
+			agent.AppendMessages(updates, resultMessages)
 
 			return &graph.NodeResult{
 				Updates: updates,
@@ -200,7 +201,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		}
 
 		// Get last message from state
-		lastMsg := state.LastMessageContent(view)
+		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
 			return &graph.NodeResult{Updates: state.Updates{}}, nil
 		}
@@ -240,7 +241,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		}
 
 		updates := state.Updates{}
-		state.AppendMessages(updates, resultMessages)
+		agent.AppendMessages(updates, resultMessages)
 
 		return &graph.NodeResult{
 			Updates: updates,

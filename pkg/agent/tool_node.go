@@ -121,7 +121,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 		Name: config.nodeName,
 		RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
 			// Get last message from state
-			lastMsg := state.LastMessageContent(view)
+			lastMsg := LastMessage(view)
 			if lastMsg == nil {
 				return &graph.NodeResult{Updates: state.Updates{}}, nil
 			}
@@ -202,7 +202,7 @@ func ToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *graph.
 			}
 
 			updates := state.Updates{}
-			state.AppendMessages(updates, toolMessages)
+			AppendMessages(updates, toolMessages)
 
 			return &graph.NodeResult{
 				Updates: updates,

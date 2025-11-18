@@ -27,13 +27,13 @@ import (
 	"strings"
 	"time"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/logrusorgru/aurora/v3"
 )
 
@@ -123,7 +123,7 @@ func main() {
 		}
 
 		// Get messages from state
-		msgs := graphstate.GetMessages(view)
+		msgs := agent.GetMessages(view)
 
 		// Create request
 		req := &pkgmodel.Request{
@@ -146,7 +146,7 @@ func main() {
 		updates := graphstate.Updates{
 			statusKey.Name(): "llm_completed",
 		}
-		graphstate.AppendMessages(updates, []message.Message{resp.Message})
+		agent.AppendMessages(updates, []message.Message{resp.Message})
 
 		return &graph.NodeResult{
 			Updates: updates,
@@ -227,25 +227,15 @@ func main() {
 
 	// Track execution progress
 	eventCount := 0
-	currentNode := ""
 
 	for event, err := range seq {
 		if err != nil {
 			log.Fatalf("Streaming error: %v", err)
 		}
 
-		if event.Node != currentNode {
-			if currentNode != "" {
-				fmt.Println() // Newline after previous node's output
-			}
-			currentNode = event.Node
-			fmt.Printf("\n▶️ Executing Node: %s\n", aurora.Bold(aurora.Cyan(currentNode)))
-			fmt.Println(strings.Repeat("-", 30))
-		}
-
-		if event.Message != nil && event.Message.Type() == message.TypeAI {
+		if event != nil && event.Type() == message.TypeAI {
 			// Print partial AI responses as they stream in
-			if aiMsg, ok := event.Message.(*message.AIMessage); ok {
+			if aiMsg, ok := event.(*message.AIMessage); ok {
 				for _, part := range aiMsg.Parts() {
 					if textPart, ok := part.(message.TextPart); ok {
 						fmt.Print(aurora.Green(textPart.Text))
@@ -272,7 +262,7 @@ func main() {
 		fmt.Printf("   chunks_total = %v\n", graphstate.GetFromView(finalView, chunksTotalKey))
 
 		// Show final messages
-		finalMessages := graphstate.GetMessages(finalView)
+		finalMessages := agent.GetMessages(finalView)
 		if len(finalMessages) > 0 {
 			fmt.Println("\n💬 Final Messages:")
 			for i, msg := range finalMessages {

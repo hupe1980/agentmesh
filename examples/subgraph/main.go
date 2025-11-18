@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 )
 
 func main() {
@@ -22,7 +23,7 @@ func main() {
 	analysisKey := graphstate.NewKey("analysis", map[string]any{})
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 	graphstate.RegisterKey(mgr, dataKey)
 	graphstate.RegisterKey(mgr, validKey)
 	graphstate.RegisterKey(mgr, enrichedDataKey)

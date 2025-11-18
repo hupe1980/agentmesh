@@ -6,7 +6,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
@@ -21,11 +20,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	fromBKey := state.NewKey("from_b", "")
 	statusKey := state.NewKey("status", "")
 
-	stateManager := newTestState()
-	state.Register(stateManager, fromAKey)
-	state.Register(stateManager, counterKey)
-	state.Register(stateManager, fromBKey)
-	state.Register(stateManager, statusKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, fromAKey)
+	state.RegisterKey(stateManager, counterKey)
+	state.RegisterKey(stateManager, fromBKey)
+	state.RegisterKey(stateManager, statusKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -40,9 +39,6 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 					"from_a":  "hello from A",
 					"counter": 1,
 				},
-				Messages: []message.Message{
-					message.NewAIMessageFromText("Message from A"),
-				},
 			}, nil
 		},
 	})
@@ -54,13 +50,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			// Verify we received the update from node_a
 			fromA := state.GetFromView(s, fromAKey)
 			counter := state.GetFromView(s, counterKey)
-			msgs := state.GetMessages(s)
 
 			// These should be available after node_a completes
 			require.NotEmpty(t, fromA, "Should receive update from node_a")
 			require.Equal(t, "hello from A", fromA)
 			require.Equal(t, 1, counter)
-			require.NotEmpty(t, msgs, "Should receive messages from node_a")
 
 			return &graph.NodeResult{
 				Updates: map[string]any{
@@ -85,8 +79,11 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	require.NotNil(t, events)
 
 	// Verify final state
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView error: %v", err)
+	}
+
 	require.Equal(t, "hello from A", state.GetFromView(view, fromAKey))
 	require.Equal(t, "hello from B", state.GetFromView(view, fromBKey))
 	require.Equal(t, "received", state.GetFromView(view, statusKey))
@@ -101,10 +98,10 @@ func TestParallelMessagePropagation(t *testing.T) {
 	fromParallelBKey := state.NewKey("from_parallel_b", "")
 	aggregatedKey := state.NewKey("aggregated", false)
 
-	stateManager := newTestState()
-	state.Register(stateManager, fromParallelAKey)
-	state.Register(stateManager, fromParallelBKey)
-	state.Register(stateManager, aggregatedKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, fromParallelAKey)
+	state.RegisterKey(stateManager, fromParallelBKey)
+	state.RegisterKey(stateManager, aggregatedKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -163,8 +160,11 @@ func TestParallelMessagePropagation(t *testing.T) {
 	}
 
 	// Verify all updates were applied
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView error: %v", err)
+	}
+
 	require.Equal(t, "data_a", state.GetFromView(view, fromParallelAKey))
 	require.Equal(t, "data_b", state.GetFromView(view, fromParallelBKey))
 	require.Equal(t, true, state.GetFromView(view, aggregatedKey))
@@ -179,10 +179,10 @@ func TestMessagePropagationSequential(t *testing.T) {
 	dataKey := state.NewKey("data", "")
 	finalKey := state.NewKey("final", false)
 
-	stateManager := newTestState()
-	state.Register(stateManager, stepKey)
-	state.Register(stateManager, dataKey)
-	state.Register(stateManager, finalKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, stepKey)
+	state.RegisterKey(stateManager, dataKey)
+	state.RegisterKey(stateManager, finalKey)
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -253,8 +253,11 @@ func TestMessagePropagationSequential(t *testing.T) {
 	}
 
 	// Verify final state has all updates
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("CreateReadView error: %v", err)
+	}
+
 	require.Equal(t, 3, state.GetFromView(view, stepKey))
 	require.Equal(t, true, state.GetFromView(view, finalKey))
 }

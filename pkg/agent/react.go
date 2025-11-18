@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -38,7 +39,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.Runnable[[]message.Message, message.Message], error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
@@ -72,7 +73,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.MessageRunnable,
 
 	// Create state - StateBuilder no longer exists
 	mgr := state.NewManager()
-	state.RegisterListKey(mgr, state.MessagesKey)
+	RegisterMessagesKey(mgr)
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {

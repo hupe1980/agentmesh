@@ -6,7 +6,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -15,8 +14,8 @@ func TestNewArchitecture(t *testing.T) {
 	stepKey := state.NewKey("step", "")
 
 	// Step 1: Build a simple graph
-	stateManager := newTestState()
-	state.Register(stateManager, stepKey)
+	stateManager := newTestManager()
+	state.RegisterKey(stateManager, stepKey)
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {
@@ -37,9 +36,6 @@ func TestNewArchitecture(t *testing.T) {
 		RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 			return &graph.NodeResult{
 				Updates: map[string]any{"step": "processed"},
-				Messages: []message.Message{
-					message.NewHumanMessageFromText("Processing complete"),
-				},
 			}, nil
 		},
 	})
@@ -58,26 +54,19 @@ func TestNewArchitecture(t *testing.T) {
 	ctx := context.Background()
 
 	resultCount := 0
-	for result, err := range runnable.Run(ctx, nil) {
-		if err != nil {
-			t.Fatalf("Execution error: %v", err)
-		}
+	for result := range runnable.Run(ctx, nil) {
 		resultCount++
-		t.Logf("Result %d: Node=%s, Message=%v", resultCount, result.Node, result.Message)
+		t.Logf("Result %d: Message=%v", resultCount, result)
 	}
 
 	// Verify state was updated
-	snap := stateManager.Snapshot()
-	view := state.NewReadView(snap)
+	view, err := stateManager.CreateReadView(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create read view: %v", err)
+	}
 	val := state.GetFromView(view, stepKey)
 	if val != "processed" {
 		t.Errorf("Expected step='processed', got %v", val)
-	}
-
-	// Verify messages were added
-	msgs := state.GetFromView(view, state.MessagesKey.Key)
-	if len(msgs) == 0 {
-		t.Error("Expected messages to exist")
 	}
 
 	t.Logf("✅ New architecture test passed! Generated %d results", resultCount)

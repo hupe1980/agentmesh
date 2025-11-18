@@ -197,7 +197,7 @@ func productionExample(ctx context.Context) {
 	builder.AddEdge("step1", "step2")
 	builder.AddEdge("step2", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := builder.Compile()
 	if err != nil {
 		log.Fatal(err)
 	}

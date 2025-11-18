@@ -43,7 +43,7 @@ var DocumentsKey = state.NewKey[[]string]("documents", nil)
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
 func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
 	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-		messages := state.GetMessages(view)
+		messages := GetMessages(view)
 		if len(messages) == 0 {
 			return nil, fmt.Errorf("no query messages")
 		}
@@ -70,7 +70,7 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 // createGenerateNode creates the generation node for producing responses with context.
 func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.NodeResult, error) {
 	return func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-		messages := state.GetMessages(view)
+		messages := GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)
 		if len(docs) == 0 {
@@ -91,7 +91,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //  1. Retrieves relevant context from a knowledge base
 //  2. Generates a response using both the query and retrieved context
 //
-// Returns a graph.MessageRunnable interface for type-safe composition.
+// Returns a graph.Runnable for type-safe composition.
 //
 // This pattern is ideal for question-answering over large document collections.
 //
@@ -102,7 +102,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (graph.MessageRunnable, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (graph.Runnable[[]message.Message, message.Message], error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
@@ -116,7 +116,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	}
 
 	mgr := state.NewManager()
-	state.RegisterListKey(mgr, state.MessagesKey)
+	RegisterMessagesKey(mgr)
 	state.RegisterKey(mgr, DocumentsKey)
 
 	g, err := graph.NewGraph(mgr)
@@ -195,7 +195,7 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 
 	// Return message in updates map
 	updates := state.Updates{}
-	state.AppendMessages(updates, []message.Message{resp.Message})
+	AppendMessages(updates, []message.Message{resp.Message})
 
 	return &graph.NodeResult{
 		Updates: updates,

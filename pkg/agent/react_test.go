@@ -23,7 +23,7 @@ func TestNew_BasicAgent(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
 	// Verify it implements MessageRunnable
-	_, ok := compiled.(graph.MessageRunnable)
+	_, ok := compiled.(graph.Runnable[[]message.Message, message.Message])
 	require.True(t, ok, "agent should implement MessageRunnable")
 }
 
@@ -351,7 +351,7 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 	// Count tool messages
 	toolMsgCount := 0
 	for _, evt := range events {
-		if evt.Message != nil && evt.Message.Type() == message.TypeTool {
+		if evt != nil && evt.Type() == message.TypeTool {
 			toolMsgCount++
 		}
 	}

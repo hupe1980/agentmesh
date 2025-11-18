@@ -63,11 +63,11 @@ func main() {
 			continue
 		}
 
-		// Extract messages from execution results
+		// Results are now messages directly
 		messages := make([]message.Message, 0, len(results))
 		for _, result := range results {
-			if result.Message != nil {
-				messages = append(messages, result.Message)
+			if result != nil {
+				messages = append(messages, result)
 			}
 		}
 
@@ -77,7 +77,7 @@ func main() {
 }
 
 // createSupervisor creates a supervisor agent with specialized workers
-func createSupervisor() (graph.MessageRunnable, error) {
+func createSupervisor() (graph.Runnable[[]message.Message, message.Message], error) {
 	model := openai.NewModel()
 
 	// Create specialized worker agents
@@ -115,7 +115,7 @@ Always provide the full task context when delegating.`),
 }
 
 // createMathAgent creates a specialized agent for mathematical problem solving
-func createMathAgent() (graph.MessageRunnable, error) {
+func createMathAgent() (graph.Runnable[[]message.Message, message.Message], error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -130,7 +130,7 @@ func createMathAgent() (graph.MessageRunnable, error) {
 }
 
 // createHistoryAgent creates a specialized agent for historical questions
-func createHistoryAgent() (graph.MessageRunnable, error) {
+func createHistoryAgent() (graph.Runnable[[]message.Message, message.Message], error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -145,7 +145,7 @@ func createHistoryAgent() (graph.MessageRunnable, error) {
 }
 
 // createCodeAgent creates a specialized agent for programming tasks
-func createCodeAgent() (graph.MessageRunnable, error) {
+func createCodeAgent() (graph.Runnable[[]message.Message, message.Message], error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(

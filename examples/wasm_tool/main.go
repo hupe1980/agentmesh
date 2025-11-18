@@ -120,11 +120,9 @@ func main() {
 	fmt.Println("Agent Transcript:")
 	fmt.Println()
 	for i, evt := range events {
-		msg := evt.Message
+		fmt.Printf("[%d] %s\n", i+1, evt.Type())
 
-		fmt.Printf("[%d] %s\n", i+1, msg.Type())
-
-		switch m := msg.(type) {
+		switch m := evt.(type) {
 		case *message.AIMessage:
 			// Display AI's reasoning and responses
 			for _, part := range m.Parts() {

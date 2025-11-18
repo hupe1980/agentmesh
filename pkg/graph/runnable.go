@@ -5,8 +5,6 @@ import (
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Runnable represents any executable component that can process input
@@ -14,9 +12,6 @@ import (
 type Runnable[I, O any] interface {
 	Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
 }
-
-// MessageRunnable processes message sequences and streams execution results.
-type MessageRunnable = Runnable[[]message.Message, state.ExecutionResult]
 
 // RunOption configures graph execution behavior.
 type RunOption func(*RunOptions)

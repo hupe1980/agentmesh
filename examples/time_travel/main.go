@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 )
 
 // This example demonstrates time-travel debugging using the checkpoint API.
@@ -29,7 +30,7 @@ func main() {
 	// Build a simple mathematical workflow
 	buildWorkflow := func(initialValue int) *exec.RunnableGraph {
 		mgr := graphstate.NewManager()
-		graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+		graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 		graphstate.RegisterKey(mgr, valueKey)
 		if err := graphstate.ApplyUpdates(context.Background(), mgr, graphstate.Updates{
 			valueKey.Name(): initialValue,

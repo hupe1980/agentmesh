@@ -20,15 +20,15 @@ var (
 	ErrInvalidOutput = errors.New("invalid output type")
 )
 
-// RunnableGraph wraps a CompiledGraph to implement graph.MessageRunnable.
+// RunnableGraph wraps a CompiledGraph to implement graph.Runnable.
 type RunnableGraph struct {
 	compiled       *compile.CompiledGraph
 	executor       Executor
 	runtimeMetrics *RuntimeMetrics
 }
 
-// NewRunnable creates a MessageRunnable from a compiled graph and executor.
-func NewRunnable(compiled *compile.CompiledGraph, executor Executor) graph.MessageRunnable {
+// NewRunnable creates a Runnable from a compiled graph and executor.
+func NewRunnable(compiled *compile.CompiledGraph, executor Executor) graph.Runnable[[]message.Message, message.Message] {
 	if executor == nil {
 		executor = NewPregelExecutor()
 	}
@@ -40,20 +40,20 @@ func NewRunnable(compiled *compile.CompiledGraph, executor Executor) graph.Messa
 }
 
 // Run executes the graph with the given messages.
-func (rg *RunnableGraph) Run(ctx context.Context, messages []message.Message, opts ...graph.RunOption) iter.Seq2[state.ExecutionResult, error] {
+func (rg *RunnableGraph) Run(ctx context.Context, messages []message.Message, opts ...graph.RunOption) iter.Seq2[message.Message, error] {
 	return rg.executor.Run(ctx, rg.compiled, messages, opts...)
 }
 
-// NewTyped creates a generic typed wrapper around a MessageRunnable.
-func NewTyped[I, O any](runnable graph.MessageRunnable) graph.Runnable[I, O] {
+// NewTyped creates a generic typed wrapper around a message Runnable.
+func NewTyped[I, O any](runnable graph.Runnable[[]message.Message, message.Message]) graph.Runnable[I, O] {
 	return &typedRunnable[I, O]{
 		inner: runnable,
 	}
 }
 
-// typedRunnable wraps MessageRunnable with generic type parameters.
+// typedRunnable wraps message Runnable with generic type parameters.
 type typedRunnable[I, O any] struct {
-	inner graph.MessageRunnable
+	inner graph.Runnable[[]message.Message, message.Message]
 }
 
 // Run executes with generic types (type assertion at runtime).
@@ -98,7 +98,7 @@ func (tr *typedRunnable[I, O]) Run(ctx context.Context, input I, opts ...graph.R
 }
 
 // CompileGraph bridges the old graph.Compile() API to the new clean architecture.
-// This is the main entry point that compiles a graph into an executable MessageRunnable.
+// This is the main entry point that compiles a graph into an executable Runnable.
 //
 // Architecture: graph (structure) → compile (topology) → exec (execution)
 //
@@ -112,8 +112,8 @@ func (tr *typedRunnable[I, O]) Run(ctx context.Context, input I, opts ...graph.R
 //	g.AddNode(modelNode)
 //	g.AddEdge(compile.StartNode, "model")
 //	runnable, err := exec.CompileGraph(g)
-//	results := runnable.Run(ctx, messages)
-func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable, error) {
+//	messages := runnable.Run(ctx, inputMessages)
+func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.Runnable[[]message.Message, message.Message], error) {
 	// Setup configuration (SRP: single responsibility - config setup)
 	cfg := setupCompilation(opts)
 
@@ -122,11 +122,8 @@ func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.MessageRunnable,
 		return nil, errors.New("graph cannot be nil")
 	}
 
-	// Ensure MessagesKey is registered for message-based execution
-	// This is safe even if already registered (Register is idempotent)
-	if err := state.RegisterListKey(g.Manager(), state.MessagesKey); err != nil {
-		return nil, fmt.Errorf("failed to register messages key: %w", err)
-	}
+	// Note: Agent layer is responsible for registering its keys (e.g., agent.RegisterMessagesKey)
+	// The exec layer remains agnostic to specific state keys
 
 	// Step 1: Compile topology using pkg/compile with validation options
 	compiled, err := compile.Compile(g, g.Manager(), cfg.compileOpts...)
@@ -213,7 +210,7 @@ func WithoutValidation() CompileOption {
 //	compiled, err := builder.Compile()
 func NewBuilder(opts ...graph.BuilderOption) (*graph.Builder, error) {
 	// Create a wrapper that matches the expected signature
-	compileFunc := func(g *graph.Graph) (graph.MessageRunnable, error) {
+	compileFunc := func(g *graph.Graph) (graph.Runnable[[]message.Message, message.Message], error) {
 		return CompileGraph(g)
 	}
 

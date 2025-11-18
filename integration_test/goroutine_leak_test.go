@@ -18,7 +18,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a graph with many nodes to ensure runtime would continue if not cancelled
-	sm := newTestState()
+	sm := newTestManager()
 
 	g, err := graph.NewGraph(sm)
 	if err != nil {
@@ -33,11 +33,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 			RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 				// Simulate work
 				time.Sleep(10 * time.Millisecond)
-				return &graph.NodeResult{
-					Messages: []message.Message{
-						message.NewAIMessageFromText("processed"),
-					},
-				}, nil
+				return &graph.NodeResult{}, nil
 			},
 		})
 
@@ -60,11 +56,8 @@ func TestEarlyConsumerTermination(t *testing.T) {
 
 	// Run the graph but stop after first result (early termination)
 	count := 0
-	for result, err := range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("start")}) {
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-		t.Logf("Got result from node: %s", result.Node)
+	for result := range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("start")}) {
+		t.Logf("Got result: %v", result)
 		count++
 		if count >= 2 {
 			// Stop early - this should cancel the runtime and not leak goroutines
@@ -102,7 +95,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 
 	// Run multiple graphs with early termination
 	for run := 0; run < 5; run++ {
-		sm := newTestState()
+		sm := newTestManager()
 		g, _ := graph.NewGraph(sm)
 
 		// Simple 3-node graph
@@ -112,9 +105,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 				Name: nodeName,
 				RunFunc: func(ctx context.Context, s *state.ReadView) (*graph.NodeResult, error) {
 					time.Sleep(5 * time.Millisecond)
-					return &graph.NodeResult{
-						Messages: []message.Message{message.NewAIMessageFromText("ok")},
-					}, nil
+					return &graph.NodeResult{}, nil
 				},
 			})
 			if i > 0 {

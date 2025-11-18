@@ -6,10 +6,10 @@ import (
 	"log"
 	"strings"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	}
 	builder.
 		Node("echo", func(ctx context.Context, view *graphstate.ReadView) (*graph.NodeResult, error) {
-			messages := graphstate.GetMessages(view)
+			messages := agent.GetMessages(view)
 			if len(messages) > 0 {
 				fmt.Printf("Processing message: %s\n", ExtractText(messages[len(messages)-1]))
 			}
@@ -33,7 +33,7 @@ func main() {
 		AddEdge(graph.StartNode, "echo").
 		AddEdge("echo", graph.EndNode)
 
-	compiled, err := builder.CompileMessageRunnable()
+	compiled, err := builder.Compile()
 	if err != nil {
 		log.Fatalf("Failed to compile graph: %v", err)
 	}

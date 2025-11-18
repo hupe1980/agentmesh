@@ -19,7 +19,7 @@ func TestGraphValidation(t *testing.T) {
 	t.Run("compiles graph with unreachable nodes", func(t *testing.T) {
 		// Note: The current implementation doesn't validate unreachable nodes
 		// This is acceptable - unreachable nodes simply won't execute
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestGraphValidation(t *testing.T) {
 	})
 
 	t.Run("accepts valid linear graph", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -84,8 +84,8 @@ func TestGraphValidation(t *testing.T) {
 	t.Run("accepts graph with conditional branches", func(t *testing.T) {
 		routeKey := state.NewKey("route", "")
 
-		stateManager := newTestState()
-		state.Register(stateManager, routeKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, routeKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestGraphValidation(t *testing.T) {
 // TestErrorHandling tests error propagation in graph execution
 func TestErrorHandling(t *testing.T) {
 	t.Run("propagates node errors", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestErrorHandling(t *testing.T) {
 	})
 
 	t.Run("stops execution on error", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -212,10 +212,10 @@ func TestComplexGraphPatterns(t *testing.T) {
 		leftDoneKey := state.NewKey("left_done", false)
 		rightDoneKey := state.NewKey("right_done", false)
 
-		stateManager := newTestState()
-		state.Register(stateManager, splitDoneKey)
-		state.Register(stateManager, leftDoneKey)
-		state.Register(stateManager, rightDoneKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, splitDoneKey)
+		state.RegisterKey(stateManager, leftDoneKey)
+		state.RegisterKey(stateManager, rightDoneKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -320,8 +320,8 @@ func TestComplexGraphPatterns(t *testing.T) {
 	t.Run("cyclic pattern with loop", func(t *testing.T) {
 		counterKey := state.NewKey("counter", 0)
 
-		stateManager := newTestState()
-		state.Register(stateManager, counterKey)
+		stateManager := newTestManager()
+		state.RegisterKey(stateManager, counterKey)
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -366,7 +366,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 // TestCompileOptions tests compilation options
 func TestCompileOptions(t *testing.T) {
 	t.Run("uses custom executor", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -394,7 +394,7 @@ func TestCompileOptions(t *testing.T) {
 	})
 
 	t.Run("uses default Pregel executor when no option provided", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -425,7 +425,7 @@ func TestCompileOptions(t *testing.T) {
 // TestTopologyComputation tests the compile package's topology building
 func TestTopologyComputation(t *testing.T) {
 	t.Run("computes correct topology for linear graph", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -455,7 +455,7 @@ func TestTopologyComputation(t *testing.T) {
 	})
 
 	t.Run("computes topology with conditional edges", func(t *testing.T) {
-		stateManager := newTestState()
+		stateManager := newTestManager()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)

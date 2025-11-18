@@ -26,7 +26,7 @@ The `Run()` method returns an `iter.Seq2[state.ExecutionResult, error]` iterator
 
 ```go
 // Create and compile your graph
-compiled, err := builder.CompileMessageRunnable()
+compiled, err := builder.Compile()
 if err != nil {
     log.Fatal(err)
 }
@@ -208,7 +208,7 @@ func main() {
     builder.AddEdge("data_processor", "analyzer")
     builder.AddEdge("analyzer", graph.EndNode)
     
-    compiled, _ := builder.CompileMessageRunnable()
+    compiled, _ := builder.Compile()
     
     // Execute with iterator
     for result, err := range compiled.Run(context.Background(), nil) {

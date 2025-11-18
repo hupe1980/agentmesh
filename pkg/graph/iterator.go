@@ -3,28 +3,24 @@ package graph
 import (
 	"iter"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Last returns the last element from an iterator sequence.
+// Last returns the last message from an iterator sequence.
 // Returns an error if the sequence produces an error or is empty.
 //
 // ERROR HANDLING:
 //   - Returns immediately when iterator yields any error (err != nil)
-//   - Use errors.Is(err, state.ErrNodeExecution) to check for node failures
 //   - Use this for blocking/non-streaming execution
 //
 // Example:
 //
-//	result, err := graph.Last(runnable.Run(ctx, messages))
+//	lastMsg, err := graph.Last(runnable.Run(ctx, messages))
 //	if err != nil {
-//	    if errors.Is(err, state.ErrNodeExecution) {
-//	        log.Printf("Node execution failed: %v", err)
-//	    }
 //	    return fmt.Errorf("execution failed: %w", err)
 //	}
-func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, error) {
-	var last state.ExecutionResult
+func Last(seq iter.Seq2[message.Message, error]) (message.Message, error) {
+	var last message.Message
 	var lastErr error
 	hasValue := false
 
@@ -41,64 +37,46 @@ func Last(seq iter.Seq2[state.ExecutionResult, error]) (state.ExecutionResult, e
 	}
 
 	if lastErr != nil {
-		return state.ExecutionResult{}, lastErr
+		return nil, lastErr
 	}
 
 	if !hasValue {
-		return state.ExecutionResult{}, ErrEmptySequence
+		return nil, ErrEmptySequence
 	}
 
 	return last, lastErr
 }
 
-// Collect collects all execution results from an iterator sequence.
+// Collect collects all messages from an iterator sequence.
 // Returns an error if the sequence produces an error.
-//
-// ERROR HANDLING:
-//   - Returns immediately on fatal error (err != nil)
-//   - Results may contain node-level errors in result.NodeError
-//   - Check both err return value AND each result.NodeError
 //
 // Example:
 //
-//	results, err := graph.Collect(runnable.Run(ctx, messages))
+//	messages, err := graph.Collect(runnable.Run(ctx, messages))
 //	if err != nil {
 //	    return fmt.Errorf("execution failed: %w", err)
 //	}
-//	// Check for node-level errors
-//	for _, result := range results {
-//	    if result.NodeError != nil {
-//	        log.Printf("Node %s failed: %v", result.Node, result.NodeError)
-//	    }
-//	}
-func Collect(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
-	results := make([]state.ExecutionResult, 0)
-	for result, err := range seq {
+func Collect(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
+	messages := make([]message.Message, 0)
+	for msg, err := range seq {
 		if err != nil {
-			return results, err
+			return messages, err
 		}
-		results = append(results, result)
+		if msg != nil {
+			messages = append(messages, msg)
+		}
 	}
-	return results, nil
+	return messages, nil
 }
 
-// CollectMessages collects all messages from execution results in an iterator sequence.
-// Returns an error if the sequence produces an error.
+// CollectMessages collects all messages from an iterator sequence.
+// This is an alias for Collect for backward compatibility.
 //
 // Example:
 //
 //	messages, err := graph.CollectMessages(runnable.Run(ctx, messages))
-func CollectMessages(seq iter.Seq2[state.ExecutionResult, error]) ([]state.ExecutionResult, error) {
-	var messages []state.ExecutionResult
-	for result, err := range seq {
-		if err != nil {
-			return messages, err
-		}
-		if result.Message != nil {
-			messages = append(messages, result)
-		}
-	}
-	return messages, nil
+func CollectMessages(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
+	return Collect(seq)
 }
 
 // ErrEmptySequence is returned when trying to get the last element of an empty sequence.

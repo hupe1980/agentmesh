@@ -30,6 +30,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/agent"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
@@ -52,7 +53,7 @@ func main() {
 
 	// Create a simple graph
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 	graphstate.RegisterKey(mgr, counterKey)
 
 	g, err := graph.NewGraph(mgr)

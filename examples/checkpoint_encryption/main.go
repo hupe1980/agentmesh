@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
@@ -65,7 +66,7 @@ func basicEncryptionExample(ctx context.Context) {
 
 	// Create a simple graph
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, graphstate.MessagesKey.Key)
+	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 	graphstate.RegisterKey(mgr, creditCardKey)
 	graphstate.RegisterKey(mgr, ssnKey)
 	graphstate.RegisterKey(mgr, passwordKey)
@@ -111,8 +112,8 @@ func basicEncryptionExample(ctx context.Context) {
 			log.Printf("  Error: %v", err)
 			continue
 		}
-		if event.Node != "" {
-			fmt.Printf("  Node: %s completed\n", event.Node)
+		if event != nil {
+			fmt.Printf("  Message: %s\n", event.Type())
 		}
 	}
 
