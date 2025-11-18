@@ -16,7 +16,7 @@ import (
 var testMessagesKey = stateif.NewListKey[message.Message]("__messages__", 0)
 
 // Helper function for tests
-func newTestManager() stateif.Manager {
+func newTestManager() *stateif.Manager {
 	mgr := stateif.NewManager()
 	stateif.RegisterListKey(mgr, testMessagesKey)
 	return mgr

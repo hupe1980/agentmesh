@@ -11,17 +11,10 @@ import (
 )
 
 // registerMessagesKey is a helper to register the required __messages__ key
-// asManager is a no-op helper since Manager is now the interface.
-// Kept for consistency with existing test code.
-func asManager(t *testing.T, mgr state.Manager) state.Manager {
-	t.Helper()
-	return mgr
-}
-
-func registerMessagesKey(t *testing.T, mgr state.Manager) {
+func registerMessagesKey(t *testing.T, mgr *state.Manager) {
 	t.Helper()
 	messagesKey := state.NewListKey[message.Message]("__messages__", 0)
-	if err := state.RegisterListKey(asManager(t, mgr), messagesKey); err != nil {
+	if err := state.RegisterListKey(mgr, messagesKey); err != nil {
 		t.Fatalf("Failed to register messages key: %v", err)
 	}
 }
@@ -39,7 +32,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(asManager(t, builder.Manager()), processedKey); err != nil {
+	if err := state.RegisterKey(builder.Manager(), processedKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
@@ -89,7 +82,7 @@ func TestBuilder_WithOptions(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(asManager(t, builder.Manager()), stepKey); err != nil {
+	if err := state.RegisterKey(builder.Manager(), stepKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
@@ -140,10 +133,10 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register keys
-	if err := state.RegisterKey(asManager(t, builder.Manager()), routeKey); err != nil {
+	if err := state.RegisterKey(builder.Manager(), routeKey); err != nil {
 		t.Fatalf("Failed to register route key: %v", err)
 	}
-	if err := state.RegisterKey(asManager(t, builder.Manager()), resultKey); err != nil {
+	if err := state.RegisterKey(builder.Manager(), resultKey); err != nil {
 		t.Fatalf("Failed to register result key: %v", err)
 	}
 
@@ -205,7 +198,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	registerMessagesKey(t, builder.Manager())
 
 	// Register key
-	if err := state.RegisterKey(asManager(t, builder.Manager()), doneKey); err != nil {
+	if err := state.RegisterKey(builder.Manager(), doneKey); err != nil {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 

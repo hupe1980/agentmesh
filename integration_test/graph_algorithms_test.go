@@ -128,7 +128,7 @@ func TestPageRank(t *testing.T) {
 		// Update all ranks for next iteration
 		ctx := context.Background()
 		for v, rank := range newRanks {
-			_ = state.SetInManager(ctx, stateManager, rankKeys[v], rank)
+			_ = state.Set(ctx, stateManager, rankKeys[v], rank)
 		}
 	}
 

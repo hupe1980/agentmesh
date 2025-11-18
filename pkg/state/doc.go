@@ -9,7 +9,7 @@
 //   - BSP-compatible: sync.Map for lock-free concurrent reads, synchronous updates
 //   - Lock-free channel registry eliminates RWMutex contention during superstep execution
 //   - Immutable snapshots for consistent superstep views
-//   - Interface segregation: nodes receive ReadView, not mutable State
+//   - Immutability enforcement: nodes receive ReadView for safe concurrent reads
 //   - Explicit error handling (no silent failures)
 //   - Zero-allocation streaming with iter.Seq
 //

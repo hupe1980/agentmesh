@@ -5,10 +5,10 @@ import (
 	"fmt"
 )
 
-// ResetInManager resets a channel to its initial empty state.
+// Reset resets a channel to its initial empty state.
 // This is used to clear list keys (TopicChannels) or reset LastValue channels.
 // WARNING: This is a destructive operation. Use with caution.
-func ResetInManager(ctx context.Context, m Manager, key string) error {
+func Reset(ctx context.Context, m *Manager, key string) error {
 	ch := m.GetChannel(key)
 	if ch == nil {
 		return fmt.Errorf("channel %q not found", key)

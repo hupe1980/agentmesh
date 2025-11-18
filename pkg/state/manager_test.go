@@ -186,13 +186,13 @@ func TestManager(t *testing.T) {
 		}
 
 		// Set value
-		err = state.SetInManager(ctx, manager, counterKey, 42)
+		err = state.Set(ctx, manager, counterKey, 42)
 		if err != nil {
 			t.Fatalf("Set failed: %v", err)
 		}
 
 		// Get value
-		value, err := state.GetFromManager(ctx, manager, counterKey)
+		value, err := state.Get(ctx, manager, counterKey)
 		if err != nil {
 			t.Fatalf("Get failed: %v", err)
 		}
@@ -215,12 +215,12 @@ func TestManager(t *testing.T) {
 		}
 
 		// Append values
-		err = state.AppendToManager(ctx, manager, messagesKey, "first")
+		err = state.Append(ctx, manager, messagesKey, "first")
 		if err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
 
-		err = state.AppendToManager(ctx, manager, messagesKey, "second")
+		err = state.Append(ctx, manager, messagesKey, "second")
 		if err != nil {
 			t.Fatalf("Append failed: %v", err)
 		}
@@ -265,7 +265,7 @@ func TestManager(t *testing.T) {
 		ch.Write(ctx, "direct")
 
 		// Verify via Get
-		value, _ := state.GetFromManager(ctx, manager, key)
+		value, _ := state.Get(ctx, manager, key)
 		if value != "direct" {
 			t.Errorf("Expected 'direct', got %s", value)
 		}
@@ -281,8 +281,8 @@ func TestManager(t *testing.T) {
 		state.RegisterKey(manager, key1)
 		state.RegisterKey(manager, key2)
 
-		state.SetInManager(ctx, manager, key1, 100)
-		state.SetInManager(ctx, manager, key2, "hello")
+		state.Set(ctx, manager, key1, 100)
+		state.Set(ctx, manager, key2, "hello")
 
 		// Create snapshot
 		snapshot, err := manager.Snapshot(ctx, map[string]string{"tag": "test"})
@@ -291,7 +291,7 @@ func TestManager(t *testing.T) {
 		}
 
 		// Modify state
-		state.SetInManager(ctx, manager, key1, 999)
+		state.Set(ctx, manager, key1, 999)
 
 		// Restore
 		err = manager.Restore(ctx, snapshot.ID)
@@ -300,7 +300,7 @@ func TestManager(t *testing.T) {
 		}
 
 		// Verify restored value
-		value, _ := state.GetFromManager(ctx, manager, key1)
+		value, _ := state.Get(ctx, manager, key1)
 		if value != 100 {
 			t.Errorf("Expected 100 after restore, got %d", value)
 		}
@@ -314,10 +314,10 @@ func TestManager(t *testing.T) {
 		state.RegisterKey(manager, key)
 
 		// Create multiple snapshots
-		state.SetInManager(ctx, manager, key, 1)
+		state.Set(ctx, manager, key, 1)
 		manager.Snapshot(ctx, nil)
 
-		state.SetInManager(ctx, manager, key, 2)
+		state.Set(ctx, manager, key, 2)
 		manager.Snapshot(ctx, nil)
 
 		snapshots := manager.ListSnapshots()
@@ -332,7 +332,7 @@ func TestManager(t *testing.T) {
 
 		key := state.NewKey[int]("test", 0)
 		state.RegisterKey(manager, key)
-		state.SetInManager(ctx, manager, key, 42)
+		state.Set(ctx, manager, key, 42)
 
 		snapshot, _ := manager.Snapshot(ctx, nil)
 
@@ -372,7 +372,7 @@ func TestManager(t *testing.T) {
 
 		key := state.NewKey[int]("stored", 0)
 		state.RegisterKey(manager, key)
-		state.SetInManager(ctx, manager, key, 123)
+		state.Set(ctx, manager, key, 123)
 
 		// Verify value is in custom store
 		value, err := customStore.Get(ctx, "stored")
@@ -392,9 +392,8 @@ func TestManager(t *testing.T) {
 		key := state.NewKey[int]("number", 0)
 		state.RegisterKey(manager, key)
 
-		// This should fail at runtime (type validation)
-		// We can't easily test this with generics, but the TypeRegistry
-		// will catch type mismatches if someone bypasses the type system
+		// Type safety is now enforced at compile time via generics.
+		// No runtime validation needed - the Go compiler prevents type mismatches.
 	})
 
 	t.Run("Concurrent access", func(t *testing.T) {
@@ -403,14 +402,14 @@ func TestManager(t *testing.T) {
 
 		key := state.NewKey[int]("counter", 0)
 		state.RegisterKey(manager, key)
-		state.SetInManager(ctx, manager, key, 0)
+		state.Set(ctx, manager, key, 0)
 
 		done := make(chan bool)
 
 		// Concurrent writes
 		for i := 0; i < 10; i++ {
 			go func(val int) {
-				state.SetInManager(ctx, manager, key, val)
+				state.Set(ctx, manager, key, val)
 				done <- true
 			}(i)
 		}
@@ -421,7 +420,7 @@ func TestManager(t *testing.T) {
 		}
 
 		// Should not panic or race
-		value, err := state.GetFromManager(ctx, manager, key)
+		value, err := state.Get(ctx, manager, key)
 		if err != nil {
 			t.Fatalf("Get failed: %v", err)
 		}
@@ -440,7 +439,7 @@ func TestManager(t *testing.T) {
 		state.RegisterKey(manager, key)
 
 		// Get without setting should return default
-		value, err := state.GetFromManager(ctx, manager, key)
+		value, err := state.Get(ctx, manager, key)
 		if err != nil {
 			t.Fatalf("Get failed: %v", err)
 		}
@@ -461,17 +460,17 @@ func TestManagerWithMaxSnapshots(t *testing.T) {
 	state.RegisterKey(manager, key)
 
 	// Create 3 snapshots
-	state.SetInManager(ctx, manager, key, 1)
+	state.Set(ctx, manager, key, 1)
 	manager.Snapshot(ctx, nil)
 
 	time.Sleep(time.Millisecond) // Ensure different timestamps
 
-	state.SetInManager(ctx, manager, key, 2)
+	state.Set(ctx, manager, key, 2)
 	manager.Snapshot(ctx, nil)
 
 	time.Sleep(time.Millisecond)
 
-	state.SetInManager(ctx, manager, key, 3)
+	state.Set(ctx, manager, key, 3)
 	manager.Snapshot(ctx, nil)
 
 	// Should only keep 2 most recent

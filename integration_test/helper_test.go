@@ -5,7 +5,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-func newTestManager() state.Manager {
+func newTestManager() *state.Manager {
 	mgr := state.NewManager()
 	state.RegisterListKey(mgr, agent.MessagesKey)
 	return mgr

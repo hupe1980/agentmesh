@@ -3,43 +3,53 @@ package state
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"sync"
 
 	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
-// manager is the default implementation of the Manager interface.
+// Manager is the concrete state manager implementation.
 // It coordinates:
 // - Store: Pluggable storage backend (memory, Redis, DynamoDB, etc.)
 // - ChannelRegistry: Channel-based storage with semantic behaviors
-// - TypeRegistry: Runtime type validation for Key[T] types
 // - SnapshotManager: In-memory versioning for rollback
 // - Checkpointer: Persistent checkpointing (optional)
 //
+// Type safety is enforced at compile-time through generic wrapper functions
+// (RegisterKey, Get, Set, Append, GetList) without runtime reflection.
+//
 // Architecture: Channels ARE the storage layer, Keys are type-safe accessors.
-type manager struct {
+type Manager struct {
+	mu              sync.RWMutex
 	store           Store
 	channels        *ChannelRegistry
-	types           *TypeRegistry
+	registeredKeys  map[string]keyInfo // Tracks registered keys without reflection
 	snapshots       *SnapshotManager
 	checkpointer    checkpoint.Checkpointer
 	checkpointRunID string
 }
 
+// keyInfo tracks registered key metadata without requiring type information.
+type keyInfo struct {
+	name    string
+	isList  bool
+	maxSize int // For list keys only
+}
+
 // ManagerOption configures manager behavior.
-type ManagerOption func(*manager)
+type ManagerOption func(*Manager)
 
 // WithStore sets the storage backend (default: MemoryStore).
 func WithStore(store Store) ManagerOption {
-	return func(m *manager) {
+	return func(m *Manager) {
 		m.store = store
 	}
 }
 
 // WithCheckpointer enables persistent checkpointing.
 func WithCheckpointer(cp checkpoint.Checkpointer, runID string) ManagerOption {
-	return func(m *manager) {
+	return func(m *Manager) {
 		m.checkpointer = cp
 		m.checkpointRunID = runID
 	}
@@ -47,7 +57,7 @@ func WithCheckpointer(cp checkpoint.Checkpointer, runID string) ManagerOption {
 
 // WithMaxSnapshots limits in-memory snapshot retention.
 func WithMaxSnapshotsLimit(max int) ManagerOption {
-	return func(m *manager) {
+	return func(m *Manager) {
 		m.snapshots = NewSnapshotManager(WithMaxSnapshots(max))
 	}
 }
@@ -57,12 +67,12 @@ func WithMaxSnapshotsLimit(max int) ManagerOption {
 // - MemoryStore for storage
 // - No checkpointing
 // - Unlimited in-memory snapshots
-func NewManager(opts ...ManagerOption) Manager {
-	m := &manager{
-		store:     NewMemoryStore(),
-		channels:  NewChannelRegistry(),
-		types:     NewTypeRegistry(),
-		snapshots: NewSnapshotManager(),
+func NewManager(opts ...ManagerOption) *Manager {
+	m := &Manager{
+		store:          NewMemoryStore(),
+		channels:       NewChannelRegistry(),
+		registeredKeys: make(map[string]keyInfo),
+		snapshots:      NewSnapshotManager(),
 	}
 
 	for _, opt := range opts {
@@ -73,123 +83,94 @@ func NewManager(opts ...ManagerOption) Manager {
 }
 
 // RegisterKey registers a Key[T] with the manager.
-// This creates the corresponding LastValueChannel and registers the type.
+// This creates the corresponding LastValueChannel.
 // If the key is already registered, this is a no-op (idempotent).
+// Type safety is enforced at compile-time through the Key[T] parameter.
 //
 // Example:
 //
 //	counterKey := NewKey[int]("counter", 0)
 //	state.RegisterKey(mgr, counterKey)
-func RegisterKey[T any](m Manager, key Key[T]) error {
-	// Type assert to concrete manager for internal access
-	mgr, ok := m.(*manager)
-	if !ok {
-		return fmt.Errorf("RegisterKey requires concrete *manager implementation")
+func RegisterKey[T any](m *Manager, key Key[T]) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if already registered (idempotent)
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
 	}
 
-	valueType := reflect.TypeOf(key.zero)
-
-	// Check if already registered - validate type even if channel exists
-	if mgr.channels.GetChannel(key.name) != nil {
-		// Validate that the existing registration matches this type
-		return mgr.types.RegisterKey(key.name, valueType, false)
+	// Create LastValueChannel for scalar keys
+	ch := channel.NewLastValueChannel(key.name)
+	if err := m.channels.RegisterChannel(key.name, ch, LastValueBehavior); err != nil {
+		return fmt.Errorf("channel registration failed: %w", err)
 	}
 
-	return mgr.registerKeyWithValue(key.name, valueType, false, 0, key.zero)
-}
-
-// RegisterListKey registers a ListKey[T] with the manager.
-// This creates the corresponding TopicChannel with maxSize limit and registers the type.
-// If the key is already registered, this is a no-op (idempotent).
-//
-// Example:
-//
-//	messagesKey := NewListKey[string]("messages", 100)
-//	state.RegisterListKey(mgr, messagesKey)
-func RegisterListKey[T any](m Manager, key ListKey[T]) error {
-	// Type assert to concrete manager for internal access
-	mgr, ok := m.(*manager)
-	if !ok {
-		return fmt.Errorf("RegisterListKey requires concrete *manager implementation")
+	// Initialize with default value
+	ctx := context.Background()
+	if err := ch.Write(ctx, key.zero); err != nil {
+		return fmt.Errorf("failed to initialize channel: %w", err)
 	}
 
-	// For list keys, the element type is T, not []T
-	var zero T
-	valueType := reflect.TypeOf(zero)
-
-	// Check if already registered - validate type even if channel exists
-	if mgr.channels.GetChannel(key.name) != nil {
-		// Validate that the existing registration matches this type
-		return mgr.types.RegisterKey(key.name, valueType, true)
-	}
-
-	return mgr.registerKey(key.name, valueType, true, key.maxSize)
-}
-
-// registerKey is the internal registration logic (without initial value).
-func (m *manager) registerKey(name string, valueType reflect.Type, isList bool, maxSize int) error {
-	return m.registerKeyWithValue(name, valueType, isList, maxSize, nil)
-}
-
-// registerKeyWithValue is the internal registration logic with initial value.
-func (m *manager) registerKeyWithValue(name string, valueType reflect.Type, isList bool, maxSize int, initialValue any) error {
-	// Register type in TypeRegistry
-	if err := m.types.RegisterKey(name, valueType, isList); err != nil {
-		return fmt.Errorf("type registration failed: %w", err)
-	}
-
-	// Create appropriate channel
-	var ch channel.Channel
-	if isList {
-		// TopicChannel for list keys (append semantics)
-		ch = channel.NewTopicChannel(name, maxSize)
-		if err := m.channels.RegisterChannel(name, ch, TopicBehavior); err != nil {
-			return fmt.Errorf("channel registration failed: %w", err)
-		}
-		// Don't initialize list channels - they start empty
-	} else {
-		// LastValueChannel for regular keys (replace semantics)
-		ch = channel.NewLastValueChannel(name)
-		if err := m.channels.RegisterChannel(name, ch, LastValueBehavior); err != nil {
-			return fmt.Errorf("channel registration failed: %w", err)
-		}
-		// Initialize with provided value or type's zero value to prevent nil panics
-		var valueToWrite any
-		if initialValue != nil {
-			valueToWrite = initialValue
-		} else if valueType != nil {
-			valueToWrite = reflect.Zero(valueType).Interface()
-		}
-		// Write initial value to channel
-		ctx := context.Background()
-		if err := ch.Write(ctx, valueToWrite); err != nil {
-			return fmt.Errorf("failed to initialize channel with value: %w", err)
-		}
+	// Track registration
+	m.registeredKeys[key.name] = keyInfo{
+		name:   key.name,
+		isList: false,
 	}
 
 	return nil
 }
 
-// GetFromManager retrieves a typed value from state.
+// RegisterListKey registers a ListKey[T] with the manager.
+// This creates the corresponding TopicChannel with maxSize limit.
+// If the key is already registered, this is a no-op (idempotent).
+// Type safety is enforced at compile-time through the ListKey[T] parameter.
+//
+// Example:
+//
+//	messagesKey := NewListKey[string]("messages", 100)
+//	state.RegisterListKey(mgr, messagesKey)
+func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if already registered (idempotent)
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
+	}
+
+	// Create TopicChannel for list keys (append semantics)
+	ch := channel.NewTopicChannel(key.name, key.maxSize)
+	if err := m.channels.RegisterChannel(key.name, ch, TopicBehavior); err != nil {
+		return fmt.Errorf("channel registration failed: %w", err)
+	}
+
+	// Track registration
+	m.registeredKeys[key.name] = keyInfo{
+		name:    key.name,
+		isList:  true,
+		maxSize: key.maxSize,
+	}
+
+	return nil
+}
+
+// Get retrieves a typed value from state.
 // If the key doesn't exist, returns the key's default value.
+// Type safety is enforced at compile-time through the Key[T] parameter.
 //
 // Example:
 //
 //	counterKey := NewKey[int]("counter", 0)
-//	value := GetFromManager(ctx, manager, counterKey)
-func GetFromManager[T any](ctx context.Context, m Manager, key Key[T]) (T, error) {
-	var zero T
-
-	// Type assert to concrete manager for internal access
-	mgr, ok := m.(*manager)
-	if !ok {
-		return zero, fmt.Errorf("GetFromManager requires concrete *manager implementation")
-	}
+//	value := state.Get(ctx, manager, counterKey)
+func Get[T any](ctx context.Context, m *Manager, key Key[T]) (T, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	// Read from channel
-	value, err := mgr.channels.GetChannelValue(ctx, key.name)
+	value, err := m.channels.GetChannelValue(ctx, key.name)
 	if err != nil {
-		return zero, err
+		return key.zero, err
 	}
 
 	// Handle nil/empty channel
@@ -197,73 +178,57 @@ func GetFromManager[T any](ctx context.Context, m Manager, key Key[T]) (T, error
 		return key.zero, nil
 	}
 
-	// Type assertion
+	// Type assertion (safe because RegisterKey[T] ensures type consistency)
 	typed, ok := value.(T)
 	if !ok {
-		return zero, fmt.Errorf("type mismatch for key %q: expected %T, got %T", key.name, zero, value)
+		return key.zero, fmt.Errorf("type mismatch for key %q: expected %T, got %T", key.name, key.zero, value)
 	}
 
 	return typed, nil
 }
 
-// SetInManager updates a typed value in state.
-// Type safety is enforced at runtime through TypeRegistry validation.
+// Set updates a typed value in state.
+// Type safety is enforced at compile-time through the Key[T] parameter.
 //
 // Example:
 //
 //	counterKey := NewKey[int]("counter", 0)
-//	err := SetInManager(ctx, manager, counterKey, 42)
-func SetInManager[T any](ctx context.Context, m Manager, key Key[T], value T) error {
-	// Type assert to concrete manager for internal access
-	mgr, ok := m.(*manager)
-	if !ok {
-		return fmt.Errorf("SetInManager requires concrete *manager implementation")
-	}
-
-	// Validate type
-	if err := mgr.types.ValidateType(key.name, value); err != nil {
-		return fmt.Errorf("type validation failed: %w", err)
-	}
+//	err := state.Set(ctx, manager, counterKey, 42)
+func Set[T any](ctx context.Context, m *Manager, key Key[T], value T) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	// Write to channel
-	if err := mgr.channels.WriteValue(ctx, key.name, value); err != nil {
+	if err := m.channels.WriteValue(ctx, key.name, value); err != nil {
 		return fmt.Errorf("channel write failed: %w", err)
 	}
 
 	// Write to store for persistence
-	if err := mgr.store.Set(ctx, key.name, value); err != nil {
+	if err := m.store.Set(ctx, key.name, value); err != nil {
 		return fmt.Errorf("store write failed: %w", err)
 	}
 
 	return nil
 }
 
-// AppendToManager adds a value to a list.
-// Type safety is enforced for the element type T.
+// Append adds a value to a list.
+// Type safety is enforced at compile-time through the ListKey[T] parameter.
 //
 // Example:
 //
 //	messagesKey := NewListKey[string]("messages", 100)
-//	err := AppendToManager(ctx, manager, messagesKey, "Hello")
-func AppendToManager[T any](ctx context.Context, m Manager, key ListKey[T], value T) error {
-	// Type assert to concrete manager for internal access
-	mgr, ok := m.(*manager)
-	if !ok {
-		return fmt.Errorf("AppendToManager requires concrete *manager implementation")
-	}
-
-	// Validate type (element type, not slice type)
-	if err := mgr.types.ValidateType(key.name, []T{value}); err != nil {
-		return fmt.Errorf("type validation failed: %w", err)
-	}
+//	err := state.Append(ctx, manager, messagesKey, "Hello")
+func Append[T any](ctx context.Context, m *Manager, key ListKey[T], value T) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	// Write to channel (TopicChannel handles appending)
-	if err := mgr.channels.WriteValue(ctx, key.name, value); err != nil {
+	if err := m.channels.WriteValue(ctx, key.name, value); err != nil {
 		return fmt.Errorf("channel write failed: %w", err)
 	}
 
-	// For persistence, we need to get current list, append, then store
-	currentList, err := mgr.channels.GetChannelValue(ctx, key.name)
+	// For persistence, get current list, append, then store
+	currentList, err := m.channels.GetChannelValue(ctx, key.name)
 	if err != nil {
 		return fmt.Errorf("failed to get current list: %w", err)
 	}
@@ -280,11 +245,41 @@ func AppendToManager[T any](ctx context.Context, m Manager, key ListKey[T], valu
 		updatedList = []T{value}
 	}
 
-	if err := mgr.store.Set(ctx, key.name, updatedList); err != nil {
+	if err := m.store.Set(ctx, key.name, updatedList); err != nil {
 		return fmt.Errorf("store write failed: %w", err)
 	}
 
 	return nil
+}
+
+// GetList retrieves all list values with compile-time type safety.
+// Returns []T or an error if not found/mistyped.
+//
+// Example:
+//
+//	messagesKey := NewListKey[string]("messages", 100)
+//	messages, err := state.GetList(ctx, manager, messagesKey)
+func GetList[T any](ctx context.Context, m *Manager, key ListKey[T]) ([]T, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Read from channel
+	value, err := m.channels.GetChannelValue(ctx, key.name)
+	if err != nil {
+		return nil, err
+	}
+
+	if value == nil {
+		return []T{}, nil
+	}
+
+	// Type assertion: []any -> []T
+	items, ok := value.([]T)
+	if !ok {
+		return nil, fmt.Errorf("type mismatch for key %q: expected []%T, got %T", key.name, *new(T), value)
+	}
+
+	return items, nil
 }
 
 // GetChannel retrieves the underlying channel for a key.
@@ -294,21 +289,27 @@ func AppendToManager[T any](ctx context.Context, m Manager, key ListKey[T], valu
 //
 //	ch := manager.GetChannel("messages")
 //	value, err := ch.Read(ctx)
-func (m *manager) GetChannel(name string) channel.Channel {
+func (m *Manager) GetChannel(name string) channel.Channel {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.channels.GetChannel(name)
 }
 
 // ApplyUpdates applies a map of updates to the manager.
 // For registered list keys, values are appended. For regular keys, values are set/replaced.
 // This is a convenience method for batch updates during graph execution.
-func (m *manager) ApplyUpdates(ctx context.Context, updates map[string]any) error {
+func (m *Manager) ApplyUpdates(ctx context.Context, updates map[string]any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if updates == nil {
 		return nil
 	}
 
 	for key, value := range updates {
 		// Check if this is a registered list key
-		isListKey := m.types.IsListKey(key)
+		info, exists := m.registeredKeys[key]
+		isListKey := exists && info.isList
 
 		if isListKey {
 			// For list keys, append the value
@@ -329,7 +330,7 @@ func (m *manager) ApplyUpdates(ctx context.Context, updates map[string]any) erro
 
 // Snapshot creates a point-in-time capture of all state.
 // The snapshot includes both channel values and metadata.
-func (m *manager) Snapshot(ctx context.Context, metadata map[string]string) (*VersionedSnapshot, error) {
+func (m *Manager) Snapshot(ctx context.Context, metadata map[string]string) (*VersionedSnapshot, error) {
 	// Capture channel state
 	data, err := m.channels.Snapshot(ctx)
 	if err != nil {
@@ -360,7 +361,7 @@ func (m *manager) Snapshot(ctx context.Context, metadata map[string]string) (*Ve
 }
 
 // Restore loads state from a snapshot.
-func (m *manager) Restore(ctx context.Context, snapshotID string) error {
+func (m *Manager) Restore(ctx context.Context, snapshotID string) error {
 	// Load snapshot data
 	data, err := m.snapshots.RestoreSnapshot(ctx, snapshotID)
 	if err != nil {
@@ -382,7 +383,7 @@ func (m *manager) Restore(ctx context.Context, snapshotID string) error {
 
 // LoadCheckpoint loads state from persistent checkpoint.
 // Only available if checkpointer was configured.
-func (m *manager) LoadCheckpoint(ctx context.Context) error {
+func (m *Manager) LoadCheckpoint(ctx context.Context) error {
 	if m.checkpointer == nil {
 		return fmt.Errorf("checkpointer not configured")
 	}
@@ -412,22 +413,29 @@ func (m *manager) LoadCheckpoint(ctx context.Context) error {
 }
 
 // ListSnapshots returns all in-memory snapshot IDs (newest first).
-func (m *manager) ListSnapshots() []string {
+func (m *Manager) ListSnapshots() []string {
 	return m.snapshots.ListSnapshots()
 }
 
 // DeleteSnapshot removes an in-memory snapshot.
-func (m *manager) DeleteSnapshot(snapshotID string) error {
+func (m *Manager) DeleteSnapshot(snapshotID string) error {
 	return m.snapshots.DeleteSnapshot(snapshotID)
 }
 
 // RegisteredKeys returns all registered key names.
-func (m *manager) RegisteredKeys() []string {
-	return m.types.RegisteredKeys()
+func (m *Manager) RegisteredKeys() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	keys := make([]string, 0, len(m.registeredKeys))
+	for name := range m.registeredKeys {
+		keys = append(keys, name)
+	}
+	return keys
 }
 
 // Close closes the manager and releases resources.
-func (m *manager) Close() error {
+func (m *Manager) Close() error {
 	if err := m.store.Close(); err != nil {
 		return fmt.Errorf("store close failed: %w", err)
 	}
@@ -436,7 +444,7 @@ func (m *manager) Close() error {
 
 // CreateReadView creates a read-only view of the current state for BSP execution.
 // This allows nodes to read state concurrently without mutations.
-func (m *manager) CreateReadView(ctx context.Context) (*ReadView, error) {
+func (m *Manager) CreateReadView(ctx context.Context) (*ReadView, error) {
 	// Take a snapshot for concurrent reads
 	versionedSnapshot, err := m.Snapshot(ctx, nil)
 	if err != nil {

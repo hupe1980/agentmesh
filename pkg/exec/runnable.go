@@ -171,10 +171,10 @@ func (rg *RunnableGraph[I, O]) GetRuntimeMetrics() *RuntimeMetrics {
 //
 // Example:
 //
-//	value := state.GetFromManager[string](rg.Manager(), myKey)
-//	state.SetInManager(ctx, rg.Manager(), myKey, "value")
+//	value := state.Get[string](rg.Manager(), myKey)
+//	state.Set(ctx, rg.Manager(), myKey, "value")
 //	snapshot, err := rg.Manager().Snapshot(ctx, nil)
-func (rg *RunnableGraph[I, O]) Manager() state.Manager {
+func (rg *RunnableGraph[I, O]) Manager() *state.Manager {
 	return rg.compiled.Manager
 }
 

@@ -51,7 +51,7 @@ func NewBuilderInternal[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], 
 }
 
 // WithManager sets a custom state manager for the builder.
-func WithManager[I, O any](manager state.Manager) BuilderOption[I, O] {
+func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 	return func(b *Builder[I, O]) error {
 		graph, err := NewGraph(manager)
 		if err != nil {
@@ -129,6 +129,6 @@ func (b *Builder[I, O]) Graph() *Graph {
 }
 
 // Manager returns the graph's state manager.
-func (b *Builder[I, O]) Manager() state.Manager {
+func (b *Builder[I, O]) Manager() *state.Manager {
 	return b.graph.Manager()
 }

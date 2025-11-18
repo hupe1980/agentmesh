@@ -1,8 +1,8 @@
 package state
 
 // ReadView provides read-only access to state (truly immutable).
-// This is what nodes receive - cannot be cast to State.
-// Enforces interface segregation at runtime.
+// This is what nodes receive for concurrent safe reads.
+// Cannot mutate underlying state - enforces separation at the type level.
 type ReadView struct {
 	snap *Snapshot // Internal, cannot access underlying State
 }

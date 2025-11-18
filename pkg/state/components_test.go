@@ -2,7 +2,6 @@ package state_test
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -129,105 +128,6 @@ func TestMemoryStore(t *testing.T) {
 		strVal, _ := store4.Get(ctx, "string")
 		if strVal != "hello" {
 			t.Errorf("String value mismatch")
-		}
-	})
-}
-
-func TestTypeRegistry(t *testing.T) {
-	registry := state.NewTypeRegistry()
-
-	t.Run("RegisterKey", func(t *testing.T) {
-		var zero int
-		err := registry.RegisterKey("counter", reflect.TypeOf(zero), false)
-		if err != nil {
-			t.Fatalf("RegisterKey failed: %v", err)
-		}
-
-		if !registry.IsRegistered("counter") {
-			t.Error("Key should be registered")
-		}
-	})
-
-	t.Run("RegisterKey duplicate with same type", func(t *testing.T) {
-		var zero int
-		err := registry.RegisterKey("counter", reflect.TypeOf(zero), false)
-		if err != nil {
-			t.Errorf("Re-registering same type should succeed, got error: %v", err)
-		}
-	})
-
-	t.Run("RegisterKey duplicate with different type", func(t *testing.T) {
-		var zero string
-		err := registry.RegisterKey("counter", reflect.TypeOf(zero), false)
-		if err == nil {
-			t.Error("Re-registering different type should fail")
-		}
-	})
-
-	t.Run("ValidateType", func(t *testing.T) {
-		registry2 := state.NewTypeRegistry()
-		var zero int
-		registry2.RegisterKey("age", reflect.TypeOf(zero), false)
-
-		err := registry2.ValidateType("age", 42)
-		if err != nil {
-			t.Errorf("ValidateType should succeed for correct type: %v", err)
-		}
-
-		err = registry2.ValidateType("age", "wrong")
-		if err == nil {
-			t.Error("ValidateType should fail for incorrect type")
-		}
-	})
-
-	t.Run("GetRegisteredType", func(t *testing.T) {
-		registry3 := state.NewTypeRegistry()
-		var zero string
-		registry3.RegisterKey("name", reflect.TypeOf(zero), false)
-
-		info := registry3.GetRegisteredType("name")
-		if info == nil {
-			t.Fatal("Expected type info, got nil")
-		}
-
-		if info.KeyName != "name" {
-			t.Errorf("Expected key name 'name', got %s", info.KeyName)
-		}
-
-		if info.IsList {
-			t.Error("Expected IsList to be false")
-		}
-	})
-
-	t.Run("List keys", func(t *testing.T) {
-		registry4 := state.NewTypeRegistry()
-		var zero []string
-		err := registry4.RegisterKey("messages", reflect.TypeOf(zero).Elem(), true)
-		if err != nil {
-			t.Fatalf("RegisterKey failed: %v", err)
-		}
-
-		info := registry4.GetRegisteredType("messages")
-		if info == nil {
-			t.Fatal("Expected type info, got nil")
-		}
-
-		if !info.IsList {
-			t.Error("Expected IsList to be true")
-		}
-	})
-
-	t.Run("RegisteredKeys", func(t *testing.T) {
-		registry5 := state.NewTypeRegistry()
-		var zeroInt int
-		var zeroStr string
-
-		registry5.RegisterKey("a", reflect.TypeOf(zeroInt), false)
-		registry5.RegisterKey("b", reflect.TypeOf(zeroStr), false)
-
-		keys := registry5.RegisteredKeys()
-		if len(keys) != 2 {
-			t.Errorf("Expected 2 registered keys, got %d", len(keys))
 		}
 	})
 }

@@ -73,7 +73,7 @@ func LastMessage(view *state.ReadView) message.Message {
 //	if err := agent.RegisterMessagesKey(mgr); err != nil {
 //	    return err
 //	}
-func RegisterMessagesKey(mgr state.Manager) error {
+func RegisterMessagesKey(mgr *state.Manager) error {
 	return state.RegisterListKey(mgr, MessagesKey)
 }
 

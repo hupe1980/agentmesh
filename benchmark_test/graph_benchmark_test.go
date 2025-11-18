@@ -29,9 +29,9 @@ func BenchmarkState_GetFromView(b *testing.B) {
 
 	// Set values
 	ctx := context.Background()
-	_ = state.SetInManager(ctx, mgr, key1, "value1")
-	_ = state.SetInManager(ctx, mgr, key2, 42)
-	_ = state.SetInManager(ctx, mgr, key3, []string{"a", "b", "c"})
+	_ = state.Set(ctx, mgr, key1, "value1")
+	_ = state.Set(ctx, mgr, key2, 42)
+	_ = state.Set(ctx, mgr, key3, []string{"a", "b", "c"})
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -55,9 +55,9 @@ func BenchmarkState_ApplyUpdates(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = state.SetInManager(ctx, mgr, key1, "value1")
-		_ = state.SetInManager(ctx, mgr, key2, 42)
-		_ = state.SetInManager(ctx, mgr, key3, []string{"a", "b", "c"})
+		_ = state.Set(ctx, mgr, key1, "value1")
+		_ = state.Set(ctx, mgr, key2, 42)
+		_ = state.Set(ctx, mgr, key3, []string{"a", "b", "c"})
 	}
 }
 
@@ -76,7 +76,7 @@ func BenchmarkState_AddMessages(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, msg := range msgs {
-			_ = state.AppendToManager(ctx, mgr, agent.MessagesKey, msg)
+			_ = state.Append(ctx, mgr, agent.MessagesKey, msg)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func BenchmarkState_GetMessages(b *testing.B) {
 	// Add 100 messages
 	for i := 0; i < 100; i++ {
 		var msg message.Message = message.NewHumanMessageFromText("Message")
-		_ = state.AppendToManager(ctx, mgr, agent.MessagesKey, msg)
+		_ = state.Append(ctx, mgr, agent.MessagesKey, msg)
 	}
 
 	b.ResetTimer()
@@ -110,7 +110,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		state.RegisterListKey(mgr, agent.MessagesKey)
 
 		ctx := context.Background()
-		_ = state.SetInManager(ctx, mgr, countKey, 0)
+		_ = state.Set(ctx, mgr, countKey, 0)
 
 		g, _ := graph.NewGraph(mgr)
 
@@ -146,7 +146,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 		state.RegisterListKey(mgr, agent.MessagesKey)
 
 		ctx := context.Background()
-		_ = state.SetInManager(ctx, mgr, valueKey, 0)
+		_ = state.Set(ctx, mgr, valueKey, 0)
 
 		g, _ := graph.NewGraph(mgr)
 

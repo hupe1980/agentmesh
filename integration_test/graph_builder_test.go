@@ -371,9 +371,9 @@ func TestStateManagement(t *testing.T) {
 		stateManager := newTestManager()
 		state.RegisterKey(stateManager, counterKey)
 
-		// Set initial state using state.SetInManager
+		// Set initial state using state.Set
 		ctx := context.Background()
-		if err := state.SetInManager(ctx, stateManager, counterKey, 0); err != nil {
+		if err := state.Set(ctx, stateManager, counterKey, 0); err != nil {
 			t.Fatalf("Failed to initialize state: %v", err)
 		}
 
