@@ -21,17 +21,9 @@ import (
 //   - Run() executes supersteps with configurable worker pool (MaxWorkers)
 //   - Deliver() can be called concurrently with Run() to inject messages
 //   - Multiple goroutines execute vertices in parallel within each superstep
-//   - Mailbox and frontier access is synchronized via mutex
+//   - Mailbox and frontier access is synchronized via atomic operations
 //
 // Mutex Usage:
-//
-//   - mu: Protects mailbox and nextFrontier during message delivery and drainage
-//
-//   - Acquired in: recordDeliveries(), drainMailbox(), initialFrontier()
-//
-//   - Lock duration: Short - only held during map operations
-//
-//   - Never held while executing vertex compute functions
 //
 //   - aggMu: Protects aggregator state (aggregates, nextAggregates)
 //
@@ -39,7 +31,13 @@ import (
 //
 //   - Lock duration: Short - only held during aggregator read/write
 //
-//   - Independent of mu - can be acquired in any order
+//   - frontierMu: Protects nextFrontier during concurrent updates
+//
+//   - Acquired in: recordDeliveries(), consumeNextFrontier()
+//
+//   - Lock duration: Very short - only held during map insert/swap
+//
+//   - Never held while executing vertex compute functions
 //
 // Memory Management:
 //   - MaxMailboxSize option prevents unbounded mailbox growth
@@ -52,15 +50,16 @@ import (
 //     a. Execute vertices in parallel (worker pool)
 //     - Each worker drains its own mailbox (parallel draining)
 //     - Then executes the vertex computation
-//     b. Collect sent messages and update frontier
+//     b. Collect sent messages and update frontier incrementally
 //     c. Finalize aggregators
 //  3. Repeat until frontier is empty or max iterations reached
 //
-// Performance Note:
+// Performance Optimizations:
 //   - Mailbox draining happens in parallel within the worker pool
 //   - This eliminates the sequential draining bottleneck for distributed
 //     message bus implementations (Redis, gRPC), providing 10-100x speedup
-//   - For in-memory message bus, there is no performance difference
+//   - Incremental frontier tracking avoids scanning entire mailbox each superstep
+//   - Frontier is built as messages are sent, not by scanning pending messages
 type Runtime[S any, M any] struct {
 	graph Graph[S, M]
 	opts  RuntimeOptions[S, M]
@@ -71,6 +70,10 @@ type Runtime[S any, M any] struct {
 	aggregators    map[string]Aggregator
 	aggregates     map[string]any // Current superstep aggregates (read-only for vertices)
 	nextAggregates map[string]any // Next superstep aggregates (write-only during execution)
+
+	// Incremental frontier tracking - avoids scanning mailbox
+	frontierMu   sync.Mutex          // Protects nextFrontier during concurrent message sends
+	nextFrontier map[string]struct{} // Vertices with pending messages for next superstep
 
 	supersteps atomic.Int64
 	vertices   atomic.Int64
@@ -165,6 +168,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 		aggregators:    aggregators,
 		aggregates:     aggregates,
 		nextAggregates: nextAggregates,
+		nextFrontier:   make(map[string]struct{}),
 		quotaManager:   quotaManager,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
@@ -448,7 +452,8 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 		frontier[name] = struct{}{}
 	}
 
-	// Add nodes with pending messages
+	// Add nodes with pending messages (fallback to message bus for initial setup)
+	// This handles cases where messages were delivered before Run() started
 	pending, err := r.messageBus.Pending()
 	if err == nil {
 		for _, name := range pending {
@@ -460,23 +465,16 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 }
 
 func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
-	// Get vertices with pending messages from message bus
-	pending, err := r.messageBus.Pending()
-	if err != nil {
-		// Propagate message bus errors instead of swallowing them
-		err = fmt.Errorf("message bus pending failed: %w", err)
-		r.emitEvent(Event[M]{}, err)
-		return nil, fmt.Errorf("consume next frontier: %w", err)
-	}
+	// Swap frontier atomically - this is much faster than scanning the mailbox
+	r.frontierMu.Lock()
+	frontier := r.nextFrontier
+	r.nextFrontier = make(map[string]struct{})
+	r.frontierMu.Unlock()
 
-	if len(pending) == 0 {
+	if len(frontier) == 0 {
 		return nil, nil // No error, just no work
 	}
 
-	frontier := make(map[string]struct{}, len(pending))
-	for _, name := range pending {
-		frontier[name] = struct{}{}
-	}
 	return frontier, nil
 }
 
@@ -724,6 +722,15 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 		r.emitEvent(Event[M]{}, fmt.Errorf("failed to deliver messages: %w", err))
 		return err
 	}
+
+	// Update frontier incrementally - record which vertices have pending messages
+	r.frontierMu.Lock()
+	for _, msg := range msgs {
+		if msg.To != "" {
+			r.nextFrontier[msg.To] = struct{}{}
+		}
+	}
+	r.frontierMu.Unlock()
 
 	return nil
 }
