@@ -120,7 +120,7 @@ func NewPregelExecutor(opts ...PregelOption) *Pregel {
 func (p *Pregel) Run(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
-	initialMessages []message.Message,
+	input []message.Message,
 	opts ...graph.RunOption) iter.Seq2[message.Message, error] {
 	return func(yield func(message.Message, error) bool) {
 		// Extract run options
@@ -147,9 +147,9 @@ func (p *Pregel) Run(
 
 		// Store initial messages in state
 		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if len(initialMessages) > 0 {
+		if len(input) > 0 {
 			updates := state.Updates{}
-			updates["__messages__"] = initialMessages
+			updates["__messages__"] = input
 			if err := state.ApplyUpdates(runCtx, compiled.Manager, updates); err != nil {
 				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
 				return

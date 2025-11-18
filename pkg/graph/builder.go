@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -12,16 +11,19 @@ import (
 var ErrNoCompileFunc = fmt.Errorf("no compile function registered; use WithCompileFunc option or SetCompileFunc method")
 
 // Builder provides a fluent API for constructing graphs.
-type Builder struct {
+// Type parameters:
+//   - I: Input type for the runnable
+//   - O: Output type for the runnable
+type Builder[I, O any] struct {
 	graph       *Graph
-	compileFunc func(*Graph) (Runnable[[]message.Message, message.Message], error)
+	compileFunc func(*Graph) (Runnable[I, O], error)
 }
 
 // BuilderOption is a functional option for configuring the Builder.
-type BuilderOption func(*Builder) error
+type BuilderOption[I, O any] func(*Builder[I, O]) error
 
 // NewBuilder creates a new graph builder with the given options.
-func NewBuilder(opts ...BuilderOption) (*Builder, error) {
+func NewBuilder[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
 	// Create a default state manager
 	manager := state.NewManager()
 
@@ -30,7 +32,7 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 		return nil, err
 	}
 
-	b := &Builder{
+	b := &Builder[I, O]{
 		graph: graph,
 	}
 
@@ -45,8 +47,8 @@ func NewBuilder(opts ...BuilderOption) (*Builder, error) {
 }
 
 // WithManager sets a custom state manager for the builder.
-func WithManager(manager *state.Manager) BuilderOption {
-	return func(b *Builder) error {
+func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
+	return func(b *Builder[I, O]) error {
 		graph, err := NewGraph(manager)
 		if err != nil {
 			return err
@@ -61,9 +63,9 @@ func WithManager(manager *state.Manager) BuilderOption {
 //
 // Example:
 //
-//	builder := graph.NewBuilder(graph.WithCompileFunc(exec.CompileGraph))
-func WithCompileFunc(compileFunc func(*Graph) (Runnable[[]message.Message, message.Message], error)) BuilderOption {
-	return func(b *Builder) error {
+//	builder := graph.NewBuilder(graph.WithCompileFunc(compileFunc))
+func WithCompileFunc[I, O any](compileFunc func(*Graph) (Runnable[I, O], error)) BuilderOption[I, O] {
+	return func(b *Builder[I, O]) error {
 		b.compileFunc = compileFunc
 		return nil
 	}
@@ -71,7 +73,7 @@ func WithCompileFunc(compileFunc func(*Graph) (Runnable[[]message.Message, messa
 
 // Node adds a node to the graph with the given name and run function.
 // Any errors will be caught during graph compilation in Build().
-func (b *Builder) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error)) *Builder {
+func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error)) *Builder[I, O] {
 	// Errors are validated during graph compilation
 	_ = b.graph.AddNode(&Node{
 		Name:    name,
@@ -91,7 +93,7 @@ func (b *Builder) Node(name string, runFunc func(ctx context.Context, view *stat
 //	        WithMaxAttempts(5).
 //	        WithExponentialBackoff(time.Second, 2.0).
 //	        Build())
-func (b *Builder) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error), retryPolicy *RetryPolicy) *Builder {
+func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (*NodeResult, error), retryPolicy *RetryPolicy) *Builder[I, O] {
 	// Errors are validated during graph compilation
 	_ = b.graph.AddNode(&Node{
 		Name:        name,
@@ -109,7 +111,7 @@ func (b *Builder) NodeWithRetry(name string, runFunc func(ctx context.Context, v
 //	builder.Node("process", processFunc)
 //	builder.SetNodeRetryPolicy("process",
 //	    graph.NewRetryPolicy().WithMaxAttempts(3).Build())
-func (b *Builder) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
+func (b *Builder[I, O]) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
 	node, exists := b.graph.Nodes[name]
 	if !exists {
 		return fmt.Errorf("node not found: %s", name)
@@ -119,24 +121,24 @@ func (b *Builder) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) erro
 }
 
 // AddEdge adds a directed edge between two nodes.
-func (b *Builder) AddEdge(from, to string) *Builder {
+func (b *Builder[I, O]) AddEdge(from, to string) *Builder[I, O] {
 	b.graph.AddEdge(from, to)
 	return b
 }
 
 // AddConditionalEdges adds conditional routing based on runtime state.
-func (b *Builder) AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) *Builder {
+func (b *Builder[I, O]) AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) *Builder[I, O] {
 	b.graph.AddConditionalEdges(from, condition, targets)
 	return b
 }
 
 // Graph returns the underlying graph.
-func (b *Builder) Graph() *Graph {
+func (b *Builder[I, O]) Graph() *Graph {
 	return b.graph
 }
 
 // Manager returns the graph's state manager.
-func (b *Builder) Manager() *state.Manager {
+func (b *Builder[I, O]) Manager() *state.Manager {
 	return b.graph.Manager()
 }
 
@@ -147,9 +149,9 @@ func (b *Builder) Manager() *state.Manager {
 // Example:
 //
 //	import "github.com/hupe1980/agentmesh/pkg/exec"
-//	builder.SetCompileFunc(exec.CompileGraph)
+//	builder.SetCompileFunc(compileFunc)
 //	compiled, err := builder.Compile()
-func (b *Builder) Compile() (Runnable[[]message.Message, message.Message], error) {
+func (b *Builder[I, O]) Compile() (Runnable[I, O], error) {
 	if b.compileFunc == nil {
 		return nil, ErrNoCompileFunc
 	}
@@ -157,11 +159,11 @@ func (b *Builder) Compile() (Runnable[[]message.Message, message.Message], error
 }
 
 // SetCompileFunc sets the compile function after builder creation.
-func (b *Builder) SetCompileFunc(compileFunc func(*Graph) (Runnable[[]message.Message, message.Message], error)) {
+func (b *Builder[I, O]) SetCompileFunc(compileFunc func(*Graph) (Runnable[I, O], error)) {
 	b.compileFunc = compileFunc
 }
 
 // Build returns the underlying graph without compiling.
-func (b *Builder) Build() *Graph {
+func (b *Builder[I, O]) Build() *Graph {
 	return b.graph
 }

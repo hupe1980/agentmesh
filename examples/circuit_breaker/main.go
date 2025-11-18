@@ -100,7 +100,7 @@ func main() {
 	g.AddEdge(graph.StartNode, "flaky-service")
 	g.AddEdge("flaky-service", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}

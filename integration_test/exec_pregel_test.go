@@ -80,7 +80,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddEdge("end", graph.EndNode)
 
 	// Compile and execute with Pregel
-	runnable, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewPregelExecutor(exec.WithMaxWorkers(4))))
+	runnable, err := exec.CompileGraph(g, exec.NewPregelExecutor(exec.WithMaxWorkers(4)))
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

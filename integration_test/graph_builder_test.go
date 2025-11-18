@@ -107,7 +107,7 @@ func TestSimpleGraphExecution(t *testing.T) {
 		g.AddEdge(graph.StartNode, "test")
 		g.AddEdge("test", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -156,7 +156,7 @@ func TestSimpleGraphExecution(t *testing.T) {
 		g.AddEdge("node1", "node2")
 		g.AddEdge("node2", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -232,7 +232,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("right", graph.EndNode)
 
 		// Use Sequential executor for deterministic routing
-		compiled, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+		compiled, err := exec.CompileGraph(g, exec.NewSequential())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -295,7 +295,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("target2", graph.EndNode)
 
 		// Use Sequential to avoid repeated executions
-		compiled, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+		compiled, err := exec.CompileGraph(g, exec.NewSequential())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -353,7 +353,7 @@ func TestStateManagement(t *testing.T) {
 		g.AddEdge("writer", "reader")
 		g.AddEdge("reader", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -394,7 +394,7 @@ func TestStateManagement(t *testing.T) {
 		g.AddEdge(graph.StartNode, "increment")
 		g.AddEdge("increment", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		// First execution

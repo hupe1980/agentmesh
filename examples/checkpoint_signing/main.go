@@ -7,10 +7,10 @@ import (
 	"log"
 	"time"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // This example demonstrates checkpoint signing with HMAC-SHA256 to prevent tampering.
@@ -167,7 +167,7 @@ func productionExample(ctx context.Context) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
 
 	// Create a simple workflow graph
-	builder, err := graph.NewBuilder()
+	builder, err := graph.NewBuilder[[]message.Message, message.Message]()
 	if err != nil {
 		log.Fatal(err)
 	}

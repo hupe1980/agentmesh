@@ -144,7 +144,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	g.AddEdge("generate", graph.EndNode)
 
 	// Compile the graph
-	return exec.CompileGraph(g)
+	return exec.CompileGraph(g, exec.NewPregelExecutor())
 }
 
 // ragOptions holds configuration for RAG agents.

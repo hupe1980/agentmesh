@@ -125,7 +125,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		g.AddEdge(graph.StartNode, "increment")
 		g.AddEdge("increment", graph.EndNode)
 
-		compiled, _ := exec.CompileGraph(g)
+		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
 		return compiled
 	}
 
@@ -172,7 +172,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			}
 		}
 
-		compiled, _ := exec.CompileGraph(g)
+		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
 		return compiled
 	}
 
@@ -224,6 +224,6 @@ func BenchmarkGraph_Compile(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := createGraph()
-		_, _ = exec.CompileGraph(g)
+		_, _ = exec.CompileGraph(g, exec.NewPregelExecutor())
 	}
 }

@@ -155,7 +155,7 @@ func main() {
 	gph.AddEdge("combine", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := exec.CompileGraph(gph)
+	compiled, err := exec.CompileGraph(gph, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return

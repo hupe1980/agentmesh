@@ -18,7 +18,7 @@ func main() {
 	fmt.Println()
 
 	// Create a simple graph
-	builder, err := graph.NewBuilder()
+	builder, err := graph.NewBuilder[[]message.Message, message.Message]()
 	if err != nil {
 		panic(err)
 	}

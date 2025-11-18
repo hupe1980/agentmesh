@@ -68,13 +68,13 @@ func main() {
 	g.AddEdge(graph.StartNode, "echo")
 	g.AddEdge("echo", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Type assert to access State() method
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 
 	// Example 1: Unlimited messages (default)
 	fmt.Println("=== With MaxMessages=0 (unlimited) ===")

@@ -45,7 +45,7 @@ func TestNewArchitecture(t *testing.T) {
 	g.AddEdge("process", graph.EndNode)
 
 	// Step 2: Compile and execute the graph
-	runnable, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+	runnable, err := exec.CompileGraph(g, exec.NewSequential())
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

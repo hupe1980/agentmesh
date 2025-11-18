@@ -46,7 +46,7 @@ func main() {
 	model := openai.NewModel()
 
 	// Build a multi-node graph to demonstrate streaming
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}

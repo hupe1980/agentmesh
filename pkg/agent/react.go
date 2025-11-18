@@ -99,7 +99,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.Runnable[[]messa
 
 	// Compile the graph using the new clean architecture
 	// exec.CompileGraph bridges: graph (structure) → compile (topology) → exec (execution)
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}

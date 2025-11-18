@@ -119,7 +119,7 @@ func main() {
 	g.AddEdge(graph.StartNode, "step1")
 	g.AddEdge("step1", "step2")
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -69,7 +69,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	g.AddEdge("node_a", "node_b")
 	g.AddEdge("node_b", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Execute the graph
@@ -150,7 +150,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	g.AddEdge("parallel_b", "aggregator")
 	g.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -243,7 +243,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	g.AddEdge("node_2", "node_3")
 	g.AddEdge("node_3", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	ctx := context.Background()

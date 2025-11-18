@@ -134,7 +134,7 @@ func runScenario(choice string) {
 	gph.AddEdge("path_b", graph.EndNode)
 
 	// Compile the graph into executable form
-	compiled, err := exec.CompileGraph(gph)
+	compiled, err := exec.CompileGraph(gph, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return

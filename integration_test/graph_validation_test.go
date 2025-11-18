@@ -47,7 +47,7 @@ func TestGraphValidation(t *testing.T) {
 		// "unreachable" has no incoming edges - it won't execute but graph compiles
 
 		// Compilation succeeds (unreachable nodes are ignored during execution)
-		_, err = exec.CompileGraph(g)
+		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 	})
 
@@ -77,7 +77,7 @@ func TestGraphValidation(t *testing.T) {
 		g.AddEdge("step1", "step2")
 		g.AddEdge("step2", graph.EndNode)
 
-		_, err = exec.CompileGraph(g)
+		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err, "valid graph should compile without errors")
 	})
 
@@ -123,7 +123,7 @@ func TestGraphValidation(t *testing.T) {
 		g.AddEdge("pathB", graph.EndNode)
 
 		// Both branches are reachable via conditional
-		_, err = exec.CompileGraph(g)
+		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 	})
 }
@@ -148,7 +148,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddEdge(graph.StartNode, "failing")
 		g.AddEdge("failing", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -193,7 +193,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddEdge("node1", "node2")
 		g.AddEdge("node2", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+		compiled, err := exec.CompileGraph(g, exec.NewSequential())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -289,7 +289,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		g.AddEdge("right", "merge")
 		g.AddEdge("merge", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -351,7 +351,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 			return []string{"loop"}
 		}, []string{"loop", graph.EndNode})
 
-		compiled, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+		compiled, err := exec.CompileGraph(g, exec.NewSequential())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -383,7 +383,7 @@ func TestCompileOptions(t *testing.T) {
 		g.AddEdge("test", graph.EndNode)
 
 		// Compile with Sequential executor
-		compiled, err := exec.CompileGraph(g, exec.WithExecutor(exec.NewSequential()))
+		compiled, err := exec.CompileGraph(g, exec.NewSequential())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 
@@ -411,7 +411,7 @@ func TestCompileOptions(t *testing.T) {
 		g.AddEdge("test", graph.EndNode)
 
 		// Compile without executor option (should default to Pregel)
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 

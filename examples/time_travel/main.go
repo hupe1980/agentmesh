@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-	"github.com/hupe1980/agentmesh/pkg/agent"
 )
 
 // This example demonstrates time-travel debugging using the checkpoint API.
@@ -28,7 +29,7 @@ func main() {
 	valueKey := graphstate.NewKey("value", 0)
 
 	// Build a simple mathematical workflow
-	buildWorkflow := func(initialValue int) *exec.RunnableGraph {
+	buildWorkflow := func(initialValue int) *exec.RunnableGraph[[]message.Message, message.Message] {
 		mgr := graphstate.NewManager()
 		graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 		graphstate.RegisterKey(mgr, valueKey)
@@ -38,7 +39,7 @@ func main() {
 			panic(err)
 		}
 
-		builder, err := exec.NewBuilder(graph.WithManager(mgr))
+		builder, err := exec.NewBuilder(exec.NewPregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 		if err != nil {
 			panic(err)
 		}
@@ -82,7 +83,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		return compiled.(*exec.RunnableGraph)
+		return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	}
 
 	// ===== RUN 1: Starting with value = 1 =====

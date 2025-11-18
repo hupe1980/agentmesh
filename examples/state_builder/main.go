@@ -74,7 +74,7 @@ func main() {
 	gph.AddEdge("init", "process")
 	gph.AddEdge("process", graph.EndNode)
 
-	compiled, _ := exec.CompileGraph(gph)
+	compiled, _ := exec.CompileGraph(gph, exec.NewPregelExecutor())
 	ctx := context.Background()
 	graph.Last(compiled.Run(ctx, nil))
 

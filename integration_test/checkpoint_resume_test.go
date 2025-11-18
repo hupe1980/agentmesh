@@ -68,7 +68,7 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 		g.AddEdge(graph.StartNode, "step_1")
 		g.AddEdge("step_5", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 		return compiled
 	}
@@ -208,7 +208,7 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 		g.AddEdge(graph.StartNode, "step_1")
 		g.AddEdge("step_5", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 		return compiled
 	}
@@ -373,7 +373,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		g.AddEdge("node_b", "node_c")
 		g.AddEdge("node_c", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g)
+		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 		require.NoError(t, err)
 		return compiled
 	}
@@ -464,7 +464,7 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	g.AddEdge(graph.StartNode, "node_1")
 	g.AddEdge("node_1", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// First run - create checkpoint
@@ -565,7 +565,7 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 	g.AddEdge(graph.StartNode, "step_1")
 	g.AddEdge("step_3", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Execute and save checkpoints at each superstep
@@ -665,7 +665,7 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 			g.AddEdge(graph.StartNode, "work")
 			g.AddEdge("work", graph.EndNode)
 
-			compiled, err := exec.CompileGraph(g)
+			compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 			if err != nil {
 				done <- err
 				return
@@ -738,7 +738,7 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	g.AddEdge(graph.StartNode, "node_1")
 	g.AddEdge("node_1", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Try to resume from non-existent checkpoint (should succeed as first run)

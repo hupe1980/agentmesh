@@ -15,12 +15,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
@@ -261,11 +262,11 @@ func main() {
 	g.AddEdge("validate_data", "generate_summary")
 	g.AddEdge("generate_summary", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	if err != nil {
 		panic(err)
 	}

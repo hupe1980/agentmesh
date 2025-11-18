@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 func main() {
@@ -106,14 +107,14 @@ func main() {
 	g.AddEdge(graph.StartNode, "research")
 	g.AddEdge("research", "write")
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Println("compile error:", err)
 		return
 	}
 
 	// Type assert to access RunnableGraph methods
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 
 	fmt.Println("=== First Run ===")
 	ctx := context.Background()

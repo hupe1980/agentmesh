@@ -28,7 +28,7 @@ func main() {
 	state.RegisterKey(mgr, ResultKey)
 
 	// Create a builder with the state
-	builder, err := graph.NewBuilder(graph.WithManager(mgr))
+	builder, err := graph.NewBuilder[[]message.Message, message.Message](graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}

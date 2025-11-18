@@ -44,7 +44,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 	}
 
 	// Compile the graph
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 			}
 		}
 
-		compiled, _ := exec.CompileGraph(g)
+		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
 
 		// Stop after first result
 		for range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("test")}) {

@@ -52,7 +52,7 @@ func example1_ValidGraph() {
 	g.AddEdge("process", compile.EndNode)
 
 	// Compile with default validation
-	runnable, err := exec.CompileGraph(g)
+	runnable, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func example2_InvalidGraph() {
 	g.AddEdge("start_node", "non_existent_node")
 
 	// Compilation will fail with validation error
-	_, err := exec.CompileGraph(g)
+	_, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Printf("✓ Validation caught error:\n%v\n\n", err)
 	} else {
@@ -122,7 +122,7 @@ func example3_StrictValidation() {
 	// "unreachable" has no incoming edges
 
 	// Default validation allows unreachable nodes
-	_, err := exec.CompileGraph(g)
+	_, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Printf("✗ Default validation should allow unreachable nodes: %v\n", err)
 	} else {
@@ -130,7 +130,7 @@ func example3_StrictValidation() {
 	}
 
 	// Strict validation catches unreachable nodes
-	_, err = exec.CompileGraph(g, exec.WithStrictValidation())
+	_, err = exec.CompileGraph(g, exec.NewPregelExecutor(), exec.WithStrictValidation())
 	if err != nil {
 		fmt.Printf("✓ Strict validation caught unreachable node:\n%v\n\n", err)
 	} else {
@@ -166,7 +166,7 @@ func example4_CustomValidation() {
 	g.AddEdge("evaluator", compile.EndNode)
 
 	// Default validation allows cycles
-	_, err := exec.CompileGraph(g)
+	_, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		fmt.Printf("✗ Default validation should allow cycles: %v\n", err)
 	} else {
@@ -174,7 +174,7 @@ func example4_CustomValidation() {
 	}
 
 	// Strict validation rejects cycles
-	_, err = exec.CompileGraph(g, exec.WithStrictValidation())
+	_, err = exec.CompileGraph(g, exec.NewPregelExecutor(), exec.WithStrictValidation())
 	if err != nil {
 		fmt.Printf("✓ Strict validation caught cycle:\n%v\n", err)
 	} else {
@@ -182,7 +182,7 @@ func example4_CustomValidation() {
 	}
 
 	// Custom validation: Allow cycles but reject unreachable nodes
-	_, err = exec.CompileGraph(g, exec.WithValidation(compile.ValidationOptions{
+	_, err = exec.CompileGraph(g, exec.NewPregelExecutor(), exec.WithValidation(compile.ValidationOptions{
 		AllowCycles:      true,  // Cycles OK for iterative algorithms
 		AllowUnreachable: false, // But all nodes must be reachable
 		AllowDeadEnds:    false, // And all nodes must reach END

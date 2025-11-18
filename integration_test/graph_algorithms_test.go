@@ -94,7 +94,7 @@ func TestPageRank(t *testing.T) {
 		g.AddEdge(graph.StartNode, v)
 	}
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple iterations
@@ -218,7 +218,7 @@ func TestShortestPath(t *testing.T) {
 		g.AddEdge(graph.StartNode, v)
 	}
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple supersteps for convergence
@@ -283,7 +283,7 @@ func TestGraphConvergence(t *testing.T) {
 	g.AddEdge(graph.StartNode, "incrementer")
 	g.AddEdge("incrementer", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Run the graph once - single pass execution
@@ -336,7 +336,7 @@ func TestIterativeComputation(t *testing.T) {
 	g.AddEdge(graph.StartNode, "halvinator")
 	g.AddEdge("halvinator", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple iterations

@@ -8,136 +8,78 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/compile"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-var (
-	// ErrInvalidInput is returned when input type assertion fails
-	ErrInvalidInput = errors.New("invalid input type")
-
-	// ErrInvalidOutput is returned when output type assertion fails
-	ErrInvalidOutput = errors.New("invalid output type")
-)
-
 // RunnableGraph wraps a CompiledGraph to implement graph.Runnable.
-type RunnableGraph struct {
+// Type parameters:
+//   - I: Input type accepted by the executor
+//   - O: Output type produced by the executor
+type RunnableGraph[I, O any] struct {
 	compiled       *compile.CompiledGraph
-	executor       Executor
+	executor       Executor[I, O]
 	runtimeMetrics *RuntimeMetrics
 }
 
 // NewRunnable creates a Runnable from a compiled graph and executor.
-func NewRunnable(compiled *compile.CompiledGraph, executor Executor) graph.Runnable[[]message.Message, message.Message] {
-	if executor == nil {
-		executor = NewPregelExecutor()
-	}
-	return &RunnableGraph{
+// Type parameters:
+//   - I: Input type accepted by the executor
+//   - O: Output type produced by the executor
+func NewRunnable[I, O any](compiled *compile.CompiledGraph, executor Executor[I, O]) graph.Runnable[I, O] {
+	return &RunnableGraph[I, O]{
 		compiled:       compiled,
 		executor:       executor,
 		runtimeMetrics: NewRuntimeMetrics(),
 	}
 }
 
-// Run executes the graph with the given messages.
-func (rg *RunnableGraph) Run(ctx context.Context, messages []message.Message, opts ...graph.RunOption) iter.Seq2[message.Message, error] {
-	return rg.executor.Run(ctx, rg.compiled, messages, opts...)
+// Run executes the graph with the given input.
+func (rg *RunnableGraph[I, O]) Run(ctx context.Context, input I, opts ...graph.RunOption) iter.Seq2[O, error] {
+	return rg.executor.Run(ctx, rg.compiled, input, opts...)
 }
 
-// NewTyped creates a generic typed wrapper around a message Runnable.
-func NewTyped[I, O any](runnable graph.Runnable[[]message.Message, message.Message]) graph.Runnable[I, O] {
-	return &typedRunnable[I, O]{
-		inner: runnable,
-	}
-}
-
-// typedRunnable wraps message Runnable with generic type parameters.
-type typedRunnable[I, O any] struct {
-	inner graph.Runnable[[]message.Message, message.Message]
-}
-
-// Run executes with generic types (type assertion at runtime).
-func (tr *typedRunnable[I, O]) Run(ctx context.Context, input I, opts ...graph.RunOption) iter.Seq2[O, error] {
-	// Type assert input to []message.Message
-	messages, ok := any(input).([]message.Message)
-	if !ok {
-		return func(yield func(O, error) bool) {
-			var zero O
-			yield(zero, ErrInvalidInput)
-		}
-	}
-
-	// Run the inner runnable
-	results := tr.inner.Run(ctx, messages, opts...)
-
-	// Convert results to output type
-	return func(yield func(O, error) bool) {
-		for result, err := range results {
-			if err != nil {
-				var zero O
-				if !yield(zero, err) {
-					return
-				}
-				continue
-			}
-
-			output, ok := any(result).(O)
-			if !ok {
-				// Type conversion failed
-				var zero O
-				if !yield(zero, ErrInvalidOutput) {
-					return
-				}
-				continue
-			}
-			if !yield(output, nil) {
-				return
-			}
-		}
-	}
-}
-
-// CompileGraph bridges the old graph.Compile() API to the new clean architecture.
-// This is the main entry point that compiles a graph into an executable Runnable.
+// CompileGraph compiles a graph into an executable Runnable.
+// Fully generic - works with any input and output types.
 //
 // Architecture: graph (structure) → compile (topology) → exec (execution)
 //
-// Following refactoring_summary.md pattern:
-// - Main function: ~26 lines (high-level orchestration)
-// - Composition over complexity
+// Type parameters:
+//   - I: Input type for the executor
+//   - O: Output type for the executor
 //
-// Example:
+// Examples:
 //
-//	g, _ := graph.NewGraph(stateManager)
-//	g.AddNode(modelNode)
-//	g.AddEdge(compile.StartNode, "model")
-//	runnable, err := exec.CompileGraph(g)
-//	messages := runnable.Run(ctx, inputMessages)
-func CompileGraph(g *graph.Graph, opts ...CompileOption) (graph.Runnable[[]message.Message, message.Message], error) {
-	// Setup configuration (SRP: single responsibility - config setup)
-	cfg := setupCompilation(opts)
-
-	// Validate graph structure early
+//	// Default: messages in, messages out (Pregel executor)
+//	runnable, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+//
+//	// Sequential execution
+//	runnable, err := exec.CompileGraph(g, exec.NewSequential())
+//
+//	// Custom types
+//	customExecutor := NewCustomExecutor[MyInput, MyOutput]()
+//	runnable, err := exec.CompileGraph(g, customExecutor)
+//
+//	// With validation options
+//	runnable, err := exec.CompileGraph(g, exec.NewPregelExecutor(), exec.WithStrictValidation())
+func CompileGraph[I, O any](g *graph.Graph, executor Executor[I, O], opts ...CompileOption) (graph.Runnable[I, O], error) {
+	// Validate inputs
 	if g == nil {
 		return nil, errors.New("graph cannot be nil")
 	}
+	if executor == nil {
+		return nil, errors.New("executor cannot be nil")
+	}
 
-	// Note: Agent layer is responsible for registering its keys (e.g., agent.RegisterMessagesKey)
-	// The exec layer remains agnostic to specific state keys
+	// Setup configuration
+	cfg := setupCompilation(opts)
 
-	// Step 1: Compile topology using pkg/compile with validation options
+	// Compile topology using pkg/compile with validation options
 	compiled, err := compile.Compile(g, g.Manager(), cfg.compileOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("compilation failed: %w", err)
 	}
 
-	// Step 2: Wrap with executor (default to Pregel)
-	executor := cfg.executor
-	if executor == nil {
-		executor = NewPregelExecutor()
-	}
-
-	// Step 3: Create runnable wrapper
+	// Create runnable wrapper
 	return NewRunnable(compiled, executor), nil
 }
 
@@ -146,27 +88,17 @@ type CompileOption func(*compileConfig)
 
 // compileConfig holds compilation configuration.
 type compileConfig struct {
-	executor    Executor
 	compileOpts []compile.CompileOption
 }
 
 // setupCompilation extracts configuration setup (SRP: single responsibility).
 // Follows refactoring_summary.md pattern: extract setup logic.
 func setupCompilation(opts []CompileOption) *compileConfig {
-	cfg := &compileConfig{
-		executor: nil, // Will use default Pregel if not provided
-	}
+	cfg := &compileConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 	return cfg
-}
-
-// WithExecutor sets the executor to use for graph execution.
-func WithExecutor(executor Executor) CompileOption {
-	return func(cfg *compileConfig) {
-		cfg.executor = executor
-	}
 }
 
 // WithValidation sets custom validation options for graph compilation.
@@ -198,63 +130,79 @@ func WithoutValidation() CompileOption {
 
 // NewBuilder creates a new graph builder with CompileGraph pre-configured.
 // This allows using the fluent builder API with automatic compilation.
+// Fully generic - type parameters are inferred from the executor.
 //
-// Example:
+// Type parameters:
+//   - I: Input type for the executor
+//   - O: Output type for the executor
 //
-//	builder, err := exec.NewBuilder()
+// Examples:
+//
+//	// Default: Pregel executor with message.Message types
+//	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+//
+//	// Sequential executor with message.Message types
+//	builder, err := exec.NewBuilder(exec.NewSequential())
+//
+//	// Custom executor with custom types
+//	customExecutor := NewCustomExecutor[MyInput, MyOutput]()
+//	builder, err := exec.NewBuilder(customExecutor)
+//
+// Usage:
+//
 //	builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
 //	    return &graph.NodeResult{Updates: map[string]any{"done": true}}, nil
 //	})
 //	builder.AddEdge(graph.StartNode, "process")
 //	builder.AddEdge("process", graph.EndNode)
 //	compiled, err := builder.Compile()
-func NewBuilder(opts ...graph.BuilderOption) (*graph.Builder, error) {
-	// Create a wrapper that matches the expected signature
-	compileFunc := func(g *graph.Graph) (graph.Runnable[[]message.Message, message.Message], error) {
-		return CompileGraph(g)
+func NewBuilder[I, O any](executor Executor[I, O], opts ...graph.BuilderOption[I, O]) (*graph.Builder[I, O], error) {
+	// Create a wrapper that uses the provided executor
+	compileFunc := func(g *graph.Graph) (graph.Runnable[I, O], error) {
+		return CompileGraph(g, executor)
 	}
 
 	// Add the compile function to the options
-	allOpts := append([]graph.BuilderOption{graph.WithCompileFunc(compileFunc)}, opts...)
-	return graph.NewBuilder(allOpts...)
+	allOpts := append([]graph.BuilderOption[I, O]{graph.WithCompileFunc[I, O](compileFunc)}, opts...)
+	return graph.NewBuilder[I, O](allOpts...)
 }
 
 // Introspection methods - delegate to the compiled graph
 
 // GetNodes returns a sorted list of all node names.
-func (rg *RunnableGraph) GetNodes() []string {
+func (rg *RunnableGraph[I, O]) GetNodes() []string {
 	return rg.compiled.GetNodes()
 }
 
 // GetNodeInfo returns detailed information about a specific node.
-func (rg *RunnableGraph) GetNodeInfo(name string) (*compile.NodeInfo, error) {
+func (rg *RunnableGraph[I, O]) GetNodeInfo(name string) (*compile.NodeInfo, error) {
 	return rg.compiled.GetNodeInfo(name)
 }
 
 // GetTopology returns a comprehensive view of the graph structure.
-func (rg *RunnableGraph) GetTopology() *compile.Topology {
+func (rg *RunnableGraph[I, O]) GetTopology() *compile.Topology {
 	return rg.compiled.GetTopology()
 }
 
 // GetMetrics returns static graph metrics (node counts, edges, complexity).
 // For runtime metrics (superstep, completed nodes), use GetRuntimeMetrics().
-func (rg *RunnableGraph) GetMetrics() *compile.Metrics {
+func (rg *RunnableGraph[I, O]) GetMetrics() *compile.Metrics {
 	return rg.compiled.GetMetrics()
 }
 
 // GetNodeDependencies returns dependency information for a specific node.
-func (rg *RunnableGraph) GetNodeDependencies(name string) (*compile.NodeDependencies, error) {
+func (rg *RunnableGraph[I, O]) GetNodeDependencies(name string) (*compile.NodeDependencies, error) {
 	return rg.compiled.GetNodeDependencies(name)
 }
 
 // MermaidFlowchart generates a Mermaid flowchart representation.
-func (rg *RunnableGraph) MermaidFlowchart(direction string) string {
+func (rg *RunnableGraph[I, O]) MermaidFlowchart(direction string) string {
 	return rg.compiled.MermaidFlowchart(direction)
 }
 
 // GetRuntimeMetrics returns current execution metrics.
 // This includes superstep number, completed/paused/active nodes, etc.
-func (rg *RunnableGraph) GetRuntimeMetrics() *RuntimeMetrics {
+func (rg *RunnableGraph[I, O]) GetRuntimeMetrics() *RuntimeMetrics {
 	return rg.runtimeMetrics
 }
 
@@ -265,7 +213,7 @@ func (rg *RunnableGraph) GetRuntimeMetrics() *RuntimeMetrics {
 //	value := state.GetFromManager[string](rg.Manager(), myKey)
 //	state.SetInManager(ctx, rg.Manager(), myKey, "value")
 //	snapshot, err := rg.Manager().Snapshot(ctx, nil)
-func (rg *RunnableGraph) Manager() *state.Manager {
+func (rg *RunnableGraph[I, O]) Manager() *state.Manager {
 	return rg.compiled.Manager
 }
 
@@ -278,7 +226,7 @@ func (rg *RunnableGraph) Manager() *state.Manager {
 //	state.SetInUpdates(updates, approvedKey, true)
 //	state.SetInUpdates(updates, userInputKey, "proceed")
 //	runnable.ApplyState(ctx, updates)
-func (rg *RunnableGraph) ApplyState(ctx context.Context, updates state.Updates) error {
+func (rg *RunnableGraph[I, O]) ApplyState(ctx context.Context, updates state.Updates) error {
 	if err := state.ApplyUpdates(ctx, rg.compiled.Manager, updates); err != nil {
 		return fmt.Errorf("failed to apply state updates: %w", err)
 	}
@@ -287,7 +235,7 @@ func (rg *RunnableGraph) ApplyState(ctx context.Context, updates state.Updates) 
 
 // CurrentSuperstep returns the current superstep number from runtime metrics.
 // Returns 0 if execution hasn't started yet.
-func (rg *RunnableGraph) CurrentSuperstep() int64 {
+func (rg *RunnableGraph[I, O]) CurrentSuperstep() int64 {
 	snapshot := rg.runtimeMetrics.Snapshot()
 	return snapshot.CurrentSuperstep
 }

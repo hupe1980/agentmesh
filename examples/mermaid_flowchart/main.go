@@ -8,6 +8,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -26,7 +27,7 @@ func main() {
 }
 
 func simpleWorkflow() {
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,14 +51,14 @@ func simpleWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	fmt.Println(rg.MermaidFlowchart("LR"))
 }
 
 func conditionalWorkflow() {
 	categoryKey := state.NewKey("category", "")
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,12 +94,12 @@ func conditionalWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	fmt.Println(rg.MermaidFlowchart("TD"))
 }
 
 func parallelWorkflow() {
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func parallelWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	fmt.Println(rg.MermaidFlowchart("TD"))
 }
 
@@ -140,7 +141,7 @@ func complexWorkflow() {
 	validKey := state.NewKey("valid", false)
 	priorityKey := state.NewKey("priority", "")
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -188,7 +189,7 @@ func complexWorkflow() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rg := compiled.(*exec.RunnableGraph)
+	rg := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 	fmt.Println(rg.MermaidFlowchart("LR"))
 
 	fmt.Println("\n\n📊 You can copy the above Mermaid code and paste it into:")

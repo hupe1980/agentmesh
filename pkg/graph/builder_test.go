@@ -23,7 +23,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	// Define key first
 	processedKey := state.NewKey("processed", false)
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBuilder_WithOptions(t *testing.T) {
 	// Create builder
 	stepKey := state.NewKey("step", 0)
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	resultKey := state.NewKey("result", "")
 
 	// Create builder
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	doneKey := state.NewKey("done", false)
 
 	// Test using graph.NewBuilder without auto-compile
-	builder, err := graph.NewBuilder()
+	builder, err := graph.NewBuilder[[]message.Message, message.Message]()
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 
 	// Compile manually using exec.CompileGraph
 	g := builder.Build()
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

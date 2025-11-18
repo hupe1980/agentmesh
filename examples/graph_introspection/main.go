@@ -11,6 +11,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -25,7 +26,7 @@ func repeatString(char string, count int) string {
 
 func main() {
 	// Build a complex graph with conditional routing
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -97,7 +98,7 @@ func main() {
 	}
 
 	// Type assert to access introspection methods
-	runnableGraph, ok := runnable.(*exec.RunnableGraph)
+	runnableGraph, ok := runnable.(*exec.RunnableGraph[[]message.Message, message.Message])
 	if !ok {
 		panic("failed to get RunnableGraph")
 	}

@@ -14,6 +14,7 @@ import (
 
 // Sequential is a simple sequential executor that runs nodes one at a time
 // in topological order. This is useful for debugging and simple workflows.
+// It implements Executor[[]message.Message, message.Message].
 type Sequential struct{}
 
 // NewSequential creates a new sequential executor.
@@ -25,7 +26,7 @@ func NewSequential() *Sequential {
 func (s *Sequential) Run(
 	ctx context.Context,
 	compiled *compile.CompiledGraph,
-	initialMessages []message.Message,
+	input []message.Message,
 	opts ...graph.RunOption,
 ) iter.Seq2[message.Message, error] {
 	// Note: Sequential executor currently ignores checkpoint options
@@ -35,9 +36,9 @@ func (s *Sequential) Run(
 
 		// Store initial messages in state
 		// Note: Uses "__messages__" key name (defined in agent.MessagesKey)
-		if len(initialMessages) > 0 {
+		if len(input) > 0 {
 			updates := state.Updates{}
-			updates["__messages__"] = initialMessages
+			updates["__messages__"] = input
 			if err := state.ApplyUpdates(ctx, compiled.Manager, updates); err != nil {
 				yield(nil, fmt.Errorf("failed to store initial messages: %w", err))
 				return

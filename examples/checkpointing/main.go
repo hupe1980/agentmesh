@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -189,8 +190,8 @@ func runDemo(ctx context.Context) {
 	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *exec.RunnableGraph {
-	builder, err := exec.NewBuilder()
+func buildWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -232,14 +233,14 @@ func buildWorkflow() *exec.RunnableGraph {
 	if err != nil {
 		log.Fatalf("Failed to compile: %v", err)
 	}
-	return compiled.(*exec.RunnableGraph)
+	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 }
 
-func buildFailingWorkflow() *exec.RunnableGraph {
+func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
 	stepKey := graphstate.NewKey("step", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -268,14 +269,14 @@ func buildFailingWorkflow() *exec.RunnableGraph {
 	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
-	return compiled.(*exec.RunnableGraph)
+	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 }
 
-func buildFixedWorkflow() *exec.RunnableGraph {
+func buildFixedWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
 	stepKey := graphstate.NewKey("step", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder, err := exec.NewBuilder()
+	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -307,5 +308,5 @@ func buildFixedWorkflow() *exec.RunnableGraph {
 	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
-	return compiled.(*exec.RunnableGraph)
+	return compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
 }

@@ -94,7 +94,7 @@ func basicEncryptionExample(ctx context.Context) {
 	g.AddEdge("secure_node", graph.EndNode)
 
 	// Compile using exec package
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}

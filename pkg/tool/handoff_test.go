@@ -112,7 +112,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	})
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 
 	handoffTool, err := HandoffToAgent(
@@ -205,7 +205,7 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g)
+	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
 	require.NoError(t, err)
 	return compiled
 }
