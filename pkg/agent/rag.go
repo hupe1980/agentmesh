@@ -102,7 +102,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (graph.Runnable[[]message.Message, message.Message], error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}

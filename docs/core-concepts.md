@@ -50,23 +50,24 @@ type Runnable[I, O any] interface {
 For convenience, AgentMesh provides type aliases for common use cases:
 
 ```go
-// MessageRunnable processes message sequences (most common)
-type MessageRunnable = Runnable[[]message.Message, state.ExecutionResult]
-
-// StateRunnable processes arbitrary state maps
-type StateRunnable = Runnable[map[string]any, state.ExecutionResult]
-
-// StringRunnable processes text input/output
-type StringRunnable = Runnable[string, string]
+// MessageRunnable processes message sequences (most common for agents)
+// Defined in pkg/agent/doc.go
+type MessageRunnable = graph.Runnable[[]message.Message, message.Message]
 ```
+
+**Why MessageRunnable?**
+- Simplifies agent constructor signatures  
+- Makes agent composition more readable
+- Consistent API across all agent types (ReAct, Supervisor, RAG)
 
 ### Usage example
 
-All agent constructors return `MessageRunnable`:
+All agent constructors return `agent.MessageRunnable`:
 
 ```go
-// Agent constructors return MessageRunnable interface
-var agent graph.MessageRunnable
+import "github.com/hupe1980/agentmesh/pkg/agent"
+
+// Agent constructors return agent.MessageRunnable
 agent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
 
 // Execute with type-safe interface

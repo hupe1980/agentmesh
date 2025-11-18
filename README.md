@@ -1324,7 +1324,39 @@ go test ./graph -bench=. -benchmem
 
 ---
 
-## 📝 API Naming Conventions
+## � Type Aliases
+
+### MessageRunnable
+
+AgentMesh provides a convenient type alias for the common pattern of Runnables that process message sequences:
+
+```go
+// Instead of this verbose type:
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.Runnable[[]message.Message, message.Message], error)
+
+// Use the MessageRunnable alias:
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (agent.MessageRunnable, error)
+```
+
+**Definition** (`pkg/agent/doc.go`):
+```go
+type MessageRunnable = graph.Runnable[[]message.Message, message.Message]
+```
+
+**Benefits**:
+- ✅ Simplified function signatures
+- ✅ Improved code readability  
+- ✅ Consistent agent API surface
+- ✅ Easier composition and type checking
+
+**Usage across the framework**:
+- All agent constructors (`NewReActAgent`, `NewSupervisorAgent`, `NewRAGAgent`)
+- Worker agents in supervisor pattern (`WorkerAgent.Agent`)
+- A2A protocol executors (`Executor`, `StreamingExecutor`)
+
+---
+
+## �📝 API Naming Conventions
 
 AgentMesh follows a **consistent naming convention** across all components to improve code clarity and maintainability:
 

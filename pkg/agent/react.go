@@ -5,7 +5,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -17,7 +16,7 @@ import (
 //  3. Observes the result
 //  4. Repeats until the answer is found
 //
-// Returns a graph.MessageRunnable interface that processes message sequences
+// Returns a MessageRunnable that processes message sequences
 // and streams execution results. This interface enables type-safe composition,
 // easy mocking in tests, and swappable implementations.
 //
@@ -39,7 +38,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.Runnable[[]message.Message, message.Message], error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}

@@ -28,34 +28,44 @@ type ChannelMetadata struct {
 
 // ChannelRegistry manages channels with different semantic behaviors.
 // This is the core storage layer for the unified state system.
+//
+// Performance: Uses sync.Map for lock-free reads, providing high-performance
+// concurrent access patterns required by Pregel's BSP execution model where
+// all workers read state concurrently at superstep boundaries.
 type ChannelRegistry struct {
-	channels map[string]*ChannelMetadata
-	mu       sync.RWMutex
+	channels sync.Map   // map[string]*ChannelMetadata - lock-free reads
+	mu       sync.Mutex // Only for operations requiring consistency across multiple channels
 }
 
 // NewChannelRegistry creates a new channel registry.
 func NewChannelRegistry() *ChannelRegistry {
-	return &ChannelRegistry{
-		channels: make(map[string]*ChannelMetadata),
-	}
+	return &ChannelRegistry{}
 }
 
 // GetOrCreateChannel retrieves an existing channel or creates a new one.
 // Default behavior is LastValueBehavior.
 func (r *ChannelRegistry) GetOrCreateChannel(name string) channel.Channel {
+	// Fast path: lock-free read
+	if val, ok := r.channels.Load(name); ok {
+		return val.(*ChannelMetadata).Channel
+	}
+
+	// Slow path: create new channel with lock
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if meta, exists := r.channels[name]; exists {
-		return meta.Channel
+	// Double-check after acquiring lock
+	if val, ok := r.channels.Load(name); ok {
+		return val.(*ChannelMetadata).Channel
 	}
 
 	// Create new channel with default LastValue behavior
 	ch := channel.NewLastValueChannel(name)
-	r.channels[name] = &ChannelMetadata{
+	meta := &ChannelMetadata{
 		Behavior: LastValueBehavior,
 		Channel:  ch,
 	}
+	r.channels.Store(name, meta)
 
 	return ch
 }
@@ -67,7 +77,7 @@ func (r *ChannelRegistry) SetChannelBehavior(name string, behavior ChannelBehavi
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	meta, exists := r.channels[name]
+	val, exists := r.channels.Load(name)
 	if !exists {
 		// Create new channel with specified behavior
 		var ch channel.Channel
@@ -85,14 +95,16 @@ func (r *ChannelRegistry) SetChannelBehavior(name string, behavior ChannelBehavi
 			return fmt.Errorf("unknown channel behavior: %d", behavior)
 		}
 
-		r.channels[name] = &ChannelMetadata{
+		meta := &ChannelMetadata{
 			Behavior: behavior,
 			Channel:  ch,
 		}
+		r.channels.Store(name, meta)
 		return nil
 	}
 
 	// Update behavior for existing channel
+	meta := val.(*ChannelMetadata)
 	meta.Behavior = behavior
 	return nil
 }
@@ -103,51 +115,56 @@ func (r *ChannelRegistry) RegisterChannel(name string, ch channel.Channel, behav
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, exists := r.channels[name]; exists {
+	if _, exists := r.channels.Load(name); exists {
 		return fmt.Errorf("channel %q already registered", name)
 	}
 
-	r.channels[name] = &ChannelMetadata{
+	meta := &ChannelMetadata{
 		Behavior: behavior,
 		Channel:  ch,
 	}
+	r.channels.Store(name, meta)
 	return nil
 }
 
 // GetChannel retrieves a channel by name.
 // Returns nil if the channel doesn't exist.
+//
+// Performance: Lock-free read using sync.Map.Load().
 func (r *ChannelRegistry) GetChannel(name string) channel.Channel {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if meta, exists := r.channels[name]; exists {
-		return meta.Channel
+	val, ok := r.channels.Load(name)
+	if !ok {
+		return nil
 	}
-	return nil
+	return val.(*ChannelMetadata).Channel
 }
 
 // GetChannelMetadata retrieves metadata for a channel.
 // Returns nil if the channel doesn't exist.
+//
+// Performance: Lock-free read using sync.Map.Load().
 func (r *ChannelRegistry) GetChannelMetadata(name string) *ChannelMetadata {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return r.channels[name]
+	val, ok := r.channels.Load(name)
+	if !ok {
+		return nil
+	}
+	return val.(*ChannelMetadata)
 }
 
 // GetChannelValue reads the current value from a channel.
 // For LastValue/BinaryOp channels, returns the single value.
 // For Topic channels, returns all values as a slice.
 // Returns nil if channel doesn't exist or is empty.
+//
+// Performance: Lock-free channel lookup, eliminates RWMutex contention
+// for concurrent reads during BSP superstep execution.
 func (r *ChannelRegistry) GetChannelValue(ctx context.Context, name string) (any, error) {
-	r.mu.RLock()
-	meta, exists := r.channels[name]
-	r.mu.RUnlock()
-
-	if !exists {
+	val, ok := r.channels.Load(name)
+	if !ok {
 		return nil, fmt.Errorf("channel %q not found", name)
 	}
 
+	meta := val.(*ChannelMetadata)
 	return meta.Channel.Read(ctx)
 }
 
@@ -166,13 +183,11 @@ func (r *ChannelRegistry) WriteValue(ctx context.Context, name string, value any
 
 // Channels returns a list of all registered channel names.
 func (r *ChannelRegistry) Channels() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	names := make([]string, 0, len(r.channels))
-	for name := range r.channels {
-		names = append(names, name)
-	}
+	var names []string
+	r.channels.Range(func(key, value any) bool {
+		names = append(names, key.(string))
+		return true
+	})
 	return names
 }
 
@@ -180,18 +195,20 @@ func (r *ChannelRegistry) Channels() []string {
 // For LastValue/BinaryOp channels, captures the single value.
 // For Topic channels, captures all queued values as a slice.
 func (r *ChannelRegistry) Snapshot(ctx context.Context) (map[string]any, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	snapshot := make(map[string]any)
 
-	snapshot := make(map[string]any, len(r.channels))
-	for name, meta := range r.channels {
-		value, err := meta.Channel.Read(ctx)
+	r.channels.Range(func(key, value any) bool {
+		name := key.(string)
+		meta := value.(*ChannelMetadata)
+
+		val, err := meta.Channel.Read(ctx)
 		if err != nil {
 			// Skip channels that can't be read
-			continue
+			return true
 		}
-		snapshot[name] = value
-	}
+		snapshot[name] = val
+		return true
+	})
 
 	return snapshot, nil
 }
@@ -203,7 +220,9 @@ func (r *ChannelRegistry) Restore(ctx context.Context, snapshot map[string]any) 
 	defer r.mu.Unlock()
 
 	for name, value := range snapshot {
-		meta, exists := r.channels[name]
+		val, exists := r.channels.Load(name)
+
+		var meta *ChannelMetadata
 		if !exists {
 			// Create new channel with LastValue behavior
 			ch := channel.NewLastValueChannel(name)
@@ -211,7 +230,9 @@ func (r *ChannelRegistry) Restore(ctx context.Context, snapshot map[string]any) 
 				Behavior: LastValueBehavior,
 				Channel:  ch,
 			}
-			r.channels[name] = meta
+			r.channels.Store(name, meta)
+		} else {
+			meta = val.(*ChannelMetadata)
 		}
 
 		// Write value to channel
@@ -230,13 +251,19 @@ func (r *ChannelRegistry) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.channels = make(map[string]*ChannelMetadata)
+	// Clear all entries from sync.Map
+	r.channels.Range(func(key, value any) bool {
+		r.channels.Delete(key)
+		return true
+	})
 }
 
 // Len returns the number of registered channels.
 func (r *ChannelRegistry) Len() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return len(r.channels)
+	count := 0
+	r.channels.Range(func(key, value any) bool {
+		count++
+		return true
+	})
+	return count
 }

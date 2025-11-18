@@ -3,17 +3,15 @@ package agent
 import (
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string                                             // Unique identifier for the worker
-	Description string                                             // Description of the worker's expertise
-	Agent       graph.Runnable[[]message.Message, message.Message] // The agent to delegate work to
+	Name        string          // Unique identifier for the worker
+	Description string          // Description of the worker's expertise
+	Agent       MessageRunnable // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -30,8 +28,8 @@ type supervisorOptions struct {
 type SupervisorOption func(*supervisorOptions)
 
 // WithWorker adds a worker agent to the supervisor.
-// The agent must implement graph.Runnable (e.g., created via NewReActAgent).
-func WithWorker(name, description string, agent graph.Runnable[[]message.Message, message.Message]) SupervisorOption {
+// The agent must implement MessageRunnable (e.g., created via NewReActAgent).
+func WithWorker(name, description string, agent MessageRunnable) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -94,11 +92,11 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 	return prompt
 }
 
-// NewSupervisorAgent creates a supervisor agent that routes tasks to specialized worker agents.
-// The supervisor uses tool-based handoffs to delegate work to the most appropriate specialist.
+// NewSupervisorAgent creates a supervisor agent that delegates work to specialized worker agents.
+// The supervisor uses a model to decide which worker should handle each request.
 //
-// Returns a graph.Runnable interface that enables type-safe composition with other agents.
-// Worker agents must also implement graph.Runnable.
+// Returns a MessageRunnable that enables type-safe composition with other agents.
+// Worker agents must also implement MessageRunnable.
 //
 // Example:
 //
@@ -110,7 +108,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (graph.Runnable[[]message.Message, message.Message], error) {
+func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (MessageRunnable, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("model must not be nil")
 	}
