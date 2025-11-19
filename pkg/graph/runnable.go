@@ -27,6 +27,10 @@ type RunOptions struct {
 	AutoRestore         bool
 	ResumeFrom          int64
 	FailOnCheckpointErr bool
+
+	// Resume support for human-in-the-loop workflows
+	Checkpoint  *checkpoint.Checkpoint // Restore from this checkpoint
+	ResumeValue map[string]any         // Inject into context for nodes
 }
 
 func defaultRunOptions() RunOptions {

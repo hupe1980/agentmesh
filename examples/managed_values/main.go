@@ -64,17 +64,17 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view *state.ReadView) (s
 	lastNode := state.GetFromView(view, LastNodeKey)
 
 	// Access managed values (ephemeral, NOT checkpointed)
-	config, err := state.GetManagedValue[*RuntimeConfig](n.manager, ctx, "runtime_config")
+	config, err := state.GetManagedValue[*RuntimeConfig](ctx, n.manager, "runtime_config")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
-	session, err := state.GetManagedValue[*SessionInfo](n.manager, ctx, "session")
+	session, err := state.GetManagedValue[*SessionInfo](ctx, n.manager, "session")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
-	metrics, err := state.GetManagedValue[*MetricsCollector](n.manager, ctx, "metrics")
+	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metrics: %w", err)
 	}
@@ -141,7 +141,7 @@ func (n *MetricsNode) Name() string {
 
 func (n *MetricsNode) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 	// Read metrics (managed value)
-	metrics, err := state.GetManagedValue[*MetricsCollector](n.manager, ctx, "metrics")
+	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func main() {
 	}
 
 	// Execute graph
-	fmt.Println("\n=== Starting Graph Execution ===\n")
+	fmt.Println("\n=== Starting Graph Execution ===")
 
 	for result := range compiled.Run(ctx, nil) {
 		if result != nil {
@@ -286,15 +286,15 @@ func main() {
 	// Show final managed values (NOT checkpointed)
 	fmt.Println("\n=== Final Managed Values (Ephemeral, NOT Checkpointed) ===")
 
-	config, _ := state.GetManagedValue[*RuntimeConfig](mgr, ctx, "runtime_config")
+	config, _ := state.GetManagedValue[*RuntimeConfig](ctx, mgr, "runtime_config")
 	fmt.Printf("Runtime Config: APIKey=%s, Timeout=%v, MaxRetries=%d\n",
 		maskAPIKey(config.APIKey), config.Timeout, config.MaxRetries)
 
-	session, _ := state.GetManagedValue[*SessionInfo](mgr, ctx, "session")
+	session, _ := state.GetManagedValue[*SessionInfo](ctx, mgr, "session")
 	fmt.Printf("Session: User=%s, Duration=%v\n",
 		session.UserID, time.Since(session.LoginTime))
 
-	currentTime, _ := state.GetManagedValue[string](mgr, ctx, "current_time")
+	currentTime, _ := state.GetManagedValue[string](ctx, mgr, "current_time")
 	fmt.Printf("Current Time (computed): %s\n", currentTime)
 
 	// Demonstrate runtime configuration update (not from nodes)
@@ -305,7 +305,7 @@ func main() {
 		MaxRetries: 5,
 		Debug:      false,
 	}
-	if err := state.SetManagedValue(mgr, ctx, "runtime_config", newConfig); err != nil {
+	if err := state.SetManagedValue(ctx, mgr, "runtime_config", newConfig); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("✓ Configuration updated (affects next execution)")

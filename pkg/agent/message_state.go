@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -27,7 +28,7 @@ func GetMessages(view *state.ReadView) []message.Message {
 }
 
 // AppendMessages adds new messages to the message history in updates.
-// This stores the slice directly - Manager.ApplyUpdates will append to existing messages.
+// Wraps the messages slice in SliceOf[T] for proper channel handling.
 //
 // Example:
 //
@@ -41,8 +42,8 @@ func AppendMessages(updates state.Updates, messages []message.Message) {
 	if len(messages) == 0 {
 		return
 	}
-	// Store the slice directly - ApplyUpdates handles appending
-	updates[MessagesKey.Name()] = messages
+	// Wrap in SliceOf[T] so the channel recognizes it as a slice to append
+	updates[MessagesKey.Name()] = channel.SliceOf[message.Message](messages)
 }
 
 // LastMessage returns the last message from the history, or nil if empty.

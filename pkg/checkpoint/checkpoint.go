@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+// PendingWrite represents a state update that has been produced by a node
+// but not yet applied to the graph state. This enables two-phase commit semantics
+// for checkpointing: save pending writes before applying them, allowing for
+// fine-grained interrupts and human review before state changes take effect.
+//
+// Use cases:
+//   - Interrupt after node execution, before state application
+//   - Human review of pending changes before committing
+//   - Transactional semantics (all-or-nothing updates)
+//   - Audit trail of what was written vs what was applied
+type PendingWrite struct {
+	// NodeName is the node that produced this write
+	NodeName string
+
+	// Channel is the state channel being updated
+	Channel string
+
+	// Value is the update value to be applied
+	Value any
+
+	// Timestamp when this write was created
+	Timestamp time.Time
+}
+
 // Checkpoint represents a snapshot of graph execution state at a specific point in time.
 // It captures all information needed to resume execution from that point.
 type Checkpoint struct {
@@ -39,6 +63,12 @@ type Checkpoint struct {
 	// PausedNodes tracks which nodes are paused (e.g., waiting for human input).
 	// Critical for human-in-the-loop workflows: resume from the exact pause point.
 	PausedNodes []string
+
+	// PendingWrites are state updates produced by nodes but not yet applied.
+	// Used for two-phase commit: checkpoint after node execution but before
+	// state application. Enables fine-grained interrupts and human review.
+	// When resuming, these writes are applied first before continuing execution.
+	PendingWrites []PendingWrite
 
 	// Metadata for custom checkpoint annotations
 	Metadata map[string]any

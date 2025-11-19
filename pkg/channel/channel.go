@@ -14,19 +14,47 @@ var (
 	ErrNilValue = errors.New("channel: cannot write nil value to LastValueChannel")
 )
 
-// isSlice checks if a value is a slice type using reflection.
-func isSlice(v any) bool {
-	return reflect.TypeOf(v).Kind() == reflect.Slice
+// SliceValue is an interface for values that can be treated as slices.
+// Implement this interface to provide slice semantics without reflection.
+//
+// This eliminates the need for reflection when writing slices to TopicChannel,
+// improving performance and type safety.
+//
+// Example:
+//
+//	type Messages []message.Message
+//
+//	func (m Messages) ToSlice() []any {
+//	    result := make([]any, len(m))
+//	    for i, msg := range m {
+//	        result[i] = msg
+//	    }
+//	    return result
+//	}
+//
+//	// Usage with TopicChannel
+//	ch.Write(ctx, Messages{msg1, msg2, msg3})
+type SliceValue interface {
+	ToSlice() []any
 }
 
-// appendSliceElements appends all elements from a slice (of any type) to the target []any.
-// Uses reflection to iterate over slice elements regardless of concrete type.
-func appendSliceElements(target []any, slice any) []any {
-	rv := reflect.ValueOf(slice)
-	for i := 0; i < rv.Len(); i++ {
-		target = append(target, rv.Index(i).Interface())
+// SliceOf is a generic helper that wraps any slice type to implement SliceValue.
+// This provides a convenient way to write strongly-typed slices to channels
+// without implementing SliceValue for every type.
+//
+// Example:
+//
+//	messages := []message.Message{msg1, msg2}
+//	ch.Write(ctx, SliceOf(messages))
+type SliceOf[T any] []T
+
+// ToSlice converts the strongly-typed slice to []any for channel storage.
+func (s SliceOf[T]) ToSlice() []any {
+	result := make([]any, len(s))
+	for i, v := range s {
+		result[i] = v
 	}
-	return target
+	return result
 }
 
 // Channel is the user-facing abstraction for data flow between nodes.
@@ -164,14 +192,28 @@ func (tc *TopicChannel) Write(ctx context.Context, value any) error {
 	// Support both single values and slices
 	switch v := value.(type) {
 	case []any:
+		// Fast path for []any
 		tc.values = append(tc.values, v...)
+	case SliceValue:
+		// Interface-based slice handling (no reflection needed)
+		tc.values = append(tc.values, v.ToSlice()...)
 	default:
-		// Check if value is a slice using reflection
-		// This handles []T for any concrete type T (e.g., []message.Message)
-		if isSlice(v) {
-			tc.values = appendSliceElements(tc.values, v)
+		// Fallback: check if it's a typed slice using reflection
+		// This handles cases like []message.Message, []string, etc.
+		if value != nil {
+			rv := reflect.ValueOf(value)
+			if rv.Kind() == reflect.Slice {
+				// Convert typed slice to []any
+				for i := 0; i < rv.Len(); i++ {
+					tc.values = append(tc.values, rv.Index(i).Interface())
+				}
+			} else {
+				// Single non-slice value (string, int, struct, etc.)
+				tc.values = append(tc.values, value)
+			}
 		} else {
-			tc.values = append(tc.values, v)
+			// Single nil value
+			tc.values = append(tc.values, value)
 		}
 	}
 

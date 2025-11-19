@@ -7,8 +7,12 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -152,13 +156,13 @@ func WithDistributedState[I, O any](enable ...bool) PregelOption[I, O] {
 // Note: The executor automatically unfolds message arrays. When a node adds multiple
 // messages (e.g., parallel tool calls), each message is yielded separately to the stream.
 func NewMessagePregelExecutor(opts ...PregelOption[[]message.Message, message.Message]) *PregelExecutor[[]message.Message, message.Message] {
-	return NewPregelExecutor[[]message.Message, message.Message](
+	return NewPregelExecutor(
 		// Input: Convert []message.Message to state using standard messages key
 		func(input []message.Message) state.Updates {
 			if len(input) == 0 {
 				return nil
 			}
-			return state.Updates{MessagesKeyName: input}
+			return state.Updates{MessagesKeyName: channel.SliceOf[message.Message](input)}
 		},
 		// Output: Watch standard messages key
 		MessagesKeyName,
@@ -177,7 +181,7 @@ func NewMessagePregelExecutor(opts ...PregelOption[[]message.Message, message.Me
 // This is for pure state transformation workflows, data pipelines, ETL.
 // Input: state.Updates, Output: state.Updates (all state updates)
 func NewStatePregelExecutor(opts ...PregelOption[state.Updates, state.Updates]) *PregelExecutor[state.Updates, state.Updates] {
-	return NewPregelExecutor[state.Updates, state.Updates](
+	return NewPregelExecutor(
 		// Input: Use provided state.Updates directly as initial state
 		func(input state.Updates) state.Updates {
 			return input
@@ -203,7 +207,7 @@ func NewKeyPregelExecutor[I, O any](
 	outputKey *state.Key[O],
 	opts ...PregelOption[I, O],
 ) *PregelExecutor[I, O] {
-	return NewPregelExecutor[I, O](
+	return NewPregelExecutor(
 		// Input: Store input in specified key
 		func(input I) state.Updates {
 			return state.Updates{inputKey.Name(): input}
@@ -266,6 +270,11 @@ func (p *PregelExecutor[I, O]) Run(
 		runCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
+		// Inject resume values into context if provided
+		if runOpts.ResumeValue != nil {
+			runCtx = withResumeValueContext(runCtx, runOpts.ResumeValue)
+		}
+
 		runID := runOpts.RunID
 		if runID == "" {
 			runID = uuid.New().String()
@@ -276,9 +285,7 @@ func (p *PregelExecutor[I, O]) Run(
 			var zero O
 			yield(zero, err)
 			return
-		}
-
-		// Start checkpoint worker
+		} // Start checkpoint worker
 		worker := p.startCheckpointWorker(runCtx, runOpts)
 		defer p.stopCheckpointWorker(worker)
 
@@ -337,9 +344,8 @@ func (p *PregelExecutor[I, O]) Run(
 			yield:                  safeYield,
 			enableDistributedState: p.enableDistributedState,
 			executor:               p,
-		}
-
-		// Configure pregel runtime options
+			checkpointer:           runOpts.Checkpointer, // For interrupt checkpoints
+		} // Configure pregel runtime options
 		runtimeOpts := []pregel.RuntimeOption[*Compiled[I, O], state.Updates]{
 			pregel.WithMaxWorkers[*Compiled[I, O], state.Updates](p.maxWorkers),
 			pregel.WithMaxIterations[*Compiled[I, O], state.Updates](p.maxIters),
@@ -420,6 +426,7 @@ type pregelGraphAdapter[I, O any] struct {
 	yield                  func(O, error) bool
 	enableDistributedState bool
 	executor               *PregelExecutor[I, O]
+	checkpointer           checkpoint.Checkpointer // For interrupt checkpoints
 
 	// BSP barrier support: one ReadView snapshot per superstep
 	// Nodes read from this shared snapshot for BSP-correct state access
@@ -429,6 +436,16 @@ type pregelGraphAdapter[I, O any] struct {
 
 // RootNodes returns nodes with no incoming edges.
 func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
+	// If resuming from a checkpoint, return the resuming nodes as roots
+	if a.executor != nil && a.executor.metrics != nil {
+		snapshot := a.executor.metrics.Snapshot()
+		if len(snapshot.ResumingNodes) > 0 {
+			// When resuming, start execution from the paused nodes
+			return snapshot.ResumingNodes
+		}
+	}
+
+	// Normal case: return actual root nodes (nodes with no incoming edges)
 	var roots []string
 	for _, nodeName := range a.compiled.topology.nodeNames {
 		if nodeName == StartNode || nodeName == EndNode {
@@ -455,7 +472,8 @@ func (a *pregelGraphAdapter[I, O]) NodeByName(name string) pregel.Node[*Compiled
 		yield:                  a.yield,
 		enableDistributedState: a.enableDistributedState,
 		executor:               a.executor,
-		graphAdapter:           a, // Pass adapter for BSP access
+		graphAdapter:           a,              // Pass adapter for BSP access
+		checkpointer:           a.checkpointer, // For interrupt checkpoints
 	}
 }
 
@@ -497,11 +515,288 @@ type pregelNodeAdapter[I, O any] struct {
 	enableDistributedState bool
 	executor               *PregelExecutor[I, O]
 	graphAdapter           *pregelGraphAdapter[I, O] // For BSP barrier access
+	checkpointer           checkpoint.Checkpointer   // For saving interrupt checkpoints
 }
 
 // Name returns the node name.
 func (n *pregelNodeAdapter[I, O]) Name() string {
 	return n.nodeName
+}
+
+// executeWithPolicies executes a node with retry and cache policies applied.
+func (n *pregelNodeAdapter[I, O]) executeWithPolicies(
+	ctx context.Context,
+	node Node,
+	view *state.ReadView,
+) (state.Updates, error) {
+	config := n.compiled.graph.NodeConfigs[n.nodeName]
+	if config == nil {
+		config = defaultNodeConfig()
+	}
+
+	// Try cache if enabled
+	if n.shouldUseCache(config) {
+		return n.executeWithCache(ctx, node, view, config)
+	}
+
+	// No caching - execute with retry
+	return n.executeWithRetry(ctx, node, view, config.RetryPolicy)
+}
+
+// shouldUseCache checks if caching is enabled and configured.
+func (n *pregelNodeAdapter[I, O]) shouldUseCache(config *NodeConfig) bool {
+	return config.CachePolicy != nil &&
+		config.CachePolicy.Enabled &&
+		config.CachePolicy.KeyFunc != nil &&
+		config.CachePolicy.Store != nil
+}
+
+// executeWithCache attempts to use cache, falling back to execution if needed.
+func (n *pregelNodeAdapter[I, O]) executeWithCache(
+	ctx context.Context,
+	node Node,
+	view *state.ReadView,
+	config *NodeConfig,
+) (state.Updates, error) {
+	store := config.CachePolicy.Store
+	cacheKey := n.generateCacheKey(ctx, view, config)
+
+	// Try cache lookup
+	if cacheKey != "" {
+		if updates, ok := n.getCachedResult(ctx, store, cacheKey, config); ok {
+			return updates, nil
+		}
+	}
+
+	// Cache miss - execute and store
+	updates, err := n.executeWithRetry(ctx, node, view, config.RetryPolicy)
+	if err == nil && cacheKey != "" && updates != nil {
+		n.cacheResult(ctx, store, cacheKey, updates, config)
+	}
+
+	return updates, err
+}
+
+// generateCacheKey creates a cache key from the current state.
+func (n *pregelNodeAdapter[I, O]) generateCacheKey(
+	ctx context.Context,
+	view *state.ReadView,
+	config *NodeConfig,
+) string {
+	snapshotData := make(map[string]any)
+	for _, key := range view.Keys() {
+		if view.Has(key) {
+			snapshotData[key] = true // Placeholder - KeyFunc should use GetFromView
+		}
+	}
+	return config.CachePolicy.KeyFunc(ctx, snapshotData)
+}
+
+// getCachedResult attempts to retrieve a valid cached result.
+func (n *pregelNodeAdapter[I, O]) getCachedResult(
+	ctx context.Context,
+	store CacheStore,
+	cacheKey string,
+	config *NodeConfig,
+) (state.Updates, bool) {
+	entry, err := store.Get(ctx, cacheKey)
+	if err != nil || entry.Updates == nil {
+		return nil, false
+	}
+
+	// Check TTL
+	if config.CachePolicy.TTL > 0 && time.Since(entry.Timestamp) >= config.CachePolicy.TTL {
+		return nil, false
+	}
+
+	return entry.Updates, true
+}
+
+// cacheResult stores execution results in the cache.
+func (n *pregelNodeAdapter[I, O]) cacheResult(
+	ctx context.Context,
+	store CacheStore,
+	cacheKey string,
+	updates state.Updates,
+	config *NodeConfig,
+) {
+	_ = store.Set(ctx, cacheKey, CacheEntry{
+		Updates:   updates,
+		Timestamp: time.Now(),
+	}, config.CachePolicy.TTL)
+}
+
+// executeWithRetry executes a node with retry policy applied.
+func (n *pregelNodeAdapter[I, O]) executeWithRetry(
+	ctx context.Context,
+	node Node,
+	view *state.ReadView,
+	policy *RetryPolicy,
+) (state.Updates, error) {
+	if policy == nil || policy.MaxAttempts <= 1 {
+		// No retry policy or only 1 attempt - execute directly
+		return node.Execute(ctx, view)
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
+		// Execute node
+		updates, err := node.Execute(ctx, view)
+		if err == nil {
+			return updates, nil
+		}
+
+		lastErr = err
+
+		// Check if error is retryable
+		if policy.Retryable != nil && !policy.Retryable(err) {
+			// Not retryable - fail immediately
+			return nil, err
+		}
+
+		// Don't sleep after the last attempt
+		if attempt < policy.MaxAttempts {
+			// Apply backoff
+			if policy.Backoff != nil {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(policy.Backoff(attempt)):
+					// Continue to next attempt
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
+}
+
+// shouldInterruptBefore checks if this node is in the interrupt-before list.
+func (n *pregelNodeAdapter[I, O]) shouldInterruptBefore() bool {
+	for _, name := range n.compiled.graph.InterruptBefore {
+		if name == n.nodeName {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldInterruptAfter checks if this node is in the interrupt-after list.
+func (n *pregelNodeAdapter[I, O]) shouldInterruptAfter() bool {
+	for _, name := range n.compiled.graph.InterruptAfter {
+		if name == n.nodeName {
+			return true
+		}
+	}
+	return false
+}
+
+// createInterruptCheckpoint creates a checkpoint with pending writes and pauses execution.
+func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
+	ctx context.Context,
+	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
+	updates state.Updates,
+	isBefore bool,
+) {
+	if n.executor == nil {
+		return // No executor, can't create checkpoint
+	}
+
+	logger := logging.FromContext(ctx)
+	stage := "before"
+	if !isBefore {
+		stage = "after"
+	}
+
+	logger.Info("interrupt detected, creating checkpoint",
+		"node", n.nodeName,
+		"stage", stage)
+
+	// Get current state snapshot
+	vsnap, err := n.compiled.manager.Snapshot(ctx, map[string]string{
+		"run_id":    n.runID,
+		"node":      n.nodeName,
+		"interrupt": stage,
+	})
+	if err != nil {
+		logger.Error("failed to create state snapshot for interrupt",
+			"node", n.nodeName,
+			"error", err)
+		return
+	}
+
+	// Create pending writes from updates (if after execution)
+	var pendingWrites []checkpoint.PendingWrite
+	if !isBefore && len(updates) > 0 {
+		for channel, value := range updates {
+			pendingWrites = append(pendingWrites, checkpoint.PendingWrite{
+				NodeName:  n.nodeName,
+				Channel:   channel,
+				Value:     value,
+				Timestamp: vsnap.Timestamp,
+			})
+		}
+	}
+
+	// Capture execution metadata
+	var completedNodes, pausedNodes []string
+	if n.executor.metrics != nil {
+		snapshot := n.executor.metrics.Snapshot()
+		completedNodes = snapshot.CompletedNodes
+		pausedNodes = make([]string, len(snapshot.PausedNodes)+1)
+		copy(pausedNodes, snapshot.PausedNodes)
+		pausedNodes[len(snapshot.PausedNodes)] = n.nodeName // Add current node to paused
+	} else {
+		pausedNodes = []string{n.nodeName}
+	}
+
+	// Get current superstep from metrics (if available)
+	var currentSuperstep int64
+	if n.executor.metrics != nil {
+		currentSuperstep = n.executor.metrics.Snapshot().CurrentSuperstep
+	}
+
+	// Create checkpoint
+	chkpt := &checkpoint.Checkpoint{
+		RunID:          n.runID,
+		Superstep:      currentSuperstep,
+		Timestamp:      vsnap.Timestamp,
+		Version:        0,
+		State:          vsnap.Data,
+		PendingWrites:  pendingWrites,
+		CompletedNodes: completedNodes,
+		PausedNodes:    pausedNodes,
+		Metadata: map[string]any{
+			"interrupt_node":  n.nodeName,
+			"interrupt_stage": stage,
+		},
+	}
+
+	logger.Info("interrupt checkpoint created",
+		"node", n.nodeName,
+		"stage", stage,
+		"pending_writes", len(pendingWrites))
+
+	// Save checkpoint if checkpointer is available
+	if n.checkpointer != nil {
+		// Use context.WithoutCancel to ensure checkpoint saves even if interrupted
+		saveCtx := context.WithoutCancel(ctx)
+		if err := n.checkpointer.Save(saveCtx, chkpt); err != nil {
+			logger.Error("failed to save interrupt checkpoint",
+				"node", n.nodeName,
+				"stage", stage,
+				"error", err)
+		} else {
+			logger.Info("interrupt checkpoint saved successfully",
+				"node", n.nodeName,
+				"stage", stage,
+				"run_id", n.runID)
+		}
+	} else {
+		logger.Warn("no checkpointer available, interrupt checkpoint not saved",
+			"node", n.nodeName,
+			"stage", stage)
+	}
 }
 
 // Run executes the node.
@@ -517,17 +812,55 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		return nil // Skip missing nodes
 	}
 
-	// Check if node is paused (human-in-the-loop scenario)
+	// Check if node is already completed or paused (checkpoint resume scenario)
 	if n.executor != nil && n.executor.metrics != nil {
 		snapshot := n.executor.metrics.Snapshot()
 
-		// Only skip paused nodes - they require external resume signal
+		// Only skip completed nodes if we're resuming from an interrupt (have resuming nodes)
+		// This allows normal auto-restore to re-execute from the start
+		if len(snapshot.ResumingNodes) > 0 {
+			// Skip completed nodes - they already executed before interrupt
+			for _, completedNode := range snapshot.CompletedNodes {
+				if completedNode == n.nodeName {
+					// Node already completed before interrupt, skip re-execution
+					return nil
+				}
+			}
+		}
+
+		// Skip paused nodes - they require external resume signal
 		for _, pausedNode := range snapshot.PausedNodes {
 			if pausedNode == n.nodeName {
 				// Node is paused, wait for external ResumePaused call
 				return nil
 			}
 		}
+	}
+
+	// Check for interrupt-before (but skip if we're resuming this node)
+	isResuming := false
+	if n.executor != nil && n.executor.metrics != nil {
+		for _, resumingNode := range n.executor.metrics.Snapshot().ResumingNodes {
+			if resumingNode == n.nodeName {
+				isResuming = true
+				break
+			}
+		}
+	}
+
+	if !isResuming && n.shouldInterruptBefore() {
+		// Create checkpoint with pending writes (node not executed yet)
+		n.createInterruptCheckpoint(ctx, vertex, nil, true)
+		// Mark node as paused so it doesn't execute again until resumed
+		if n.executor != nil && n.executor.metrics != nil {
+			n.executor.metrics.AddPaused(n.nodeName)
+		}
+		return nil // Pause execution
+	}
+
+	// Clear resuming flag after checking (node is now executing)
+	if isResuming && n.executor != nil && n.executor.metrics != nil {
+		n.executor.metrics.ClearResuming(n.nodeName)
 	}
 
 	// Apply incoming state updates from distributed nodes (BSP synchronization)
@@ -577,7 +910,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 	}
 
-	updates, err := node.Execute(ctxWithStream, view)
+	// Execute node with retry and cache policies
+	updates, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
 		return fmt.Errorf("%w: node %q: %w", state.ErrNodeExecution, n.nodeName, err)
@@ -585,6 +919,17 @@ func (n *pregelNodeAdapter[I, O]) Run(
 
 	if updates == nil {
 		return nil
+	}
+
+	// Check for interrupt-after (before applying updates)
+	if n.shouldInterruptAfter() {
+		// Create checkpoint with pending writes (updates not yet applied)
+		n.createInterruptCheckpoint(ctx, vertex, updates, false)
+		// Mark node as paused so execution doesn't continue
+		if n.executor != nil && n.executor.metrics != nil {
+			n.executor.metrics.AddPaused(n.nodeName)
+		}
+		return nil // Pause execution without applying updates
 	}
 
 	// Track node completion for checkpoint metadata

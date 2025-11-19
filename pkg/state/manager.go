@@ -25,7 +25,7 @@ type Manager struct {
 	store           Store
 	channels        *ChannelRegistry
 	registeredKeys  map[string]keyInfo          // Tracks registered keys without reflection
-	managedValues   map[string]*managedValueAny // Ephemeral runtime state (NOT checkpointed)
+	managedValues   map[string]*ManagedValueAny // Ephemeral runtime state (NOT checkpointed)
 	snapshots       *SnapshotManager
 	checkpointer    checkpoint.Checkpointer
 	checkpointRunID string
@@ -74,7 +74,7 @@ func NewManager(opts ...ManagerOption) *Manager {
 		store:          NewMemoryStore(),
 		channels:       NewChannelRegistry(),
 		registeredKeys: make(map[string]keyInfo),
-		managedValues:  make(map[string]*managedValueAny),
+		managedValues:  make(map[string]*ManagedValueAny),
 		snapshots:      NewSnapshotManager(),
 	}
 
@@ -345,7 +345,7 @@ func (m *Manager) GetChannel(name string) channel.Channel {
 // ApplyUpdates applies a map of updates to the manager.
 // For registered list keys, values are appended. For regular keys, values are set/replaced.
 // This is a convenience method for batch updates during graph execution.
-func (m *Manager) ApplyUpdates(ctx context.Context, updates map[string]any) error {
+func (m *Manager) ApplyUpdates(ctx context.Context, updates Updates) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -564,13 +564,13 @@ func RegisterManagedValue[T any](m *Manager, mv ManagedValue[T]) error {
 //
 //	// In a node's Compute function
 //	func (n *MyNode) Compute(ctx context.Context, s state.State) (state.Updates, error) {
-//	    config, err := state.GetManagedValue[*RuntimeConfig](mgr, ctx, "runtime_config")
+//	    config, err := state.GetManagedValue[*RuntimeConfig](ctx, mgr, "runtime_config")
 //	    if err != nil {
 //	        return nil, err
 //	    }
 //	    // Use config.APIKey, config.Timeout, etc.
 //	}
-func GetManagedValue[T any](m *Manager, ctx context.Context, name string) (T, error) {
+func GetManagedValue[T any](ctx context.Context, m *Manager, name string) (T, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -602,8 +602,8 @@ func GetManagedValue[T any](m *Manager, ctx context.Context, name string) (T, er
 //
 //	// Update configuration at runtime
 //	newConfig := &RuntimeConfig{APIKey: "new-secret", Timeout: 60}
-//	err := state.SetManagedValue(mgr, ctx, "runtime_config", newConfig)
-func SetManagedValue[T any](m *Manager, ctx context.Context, name string, value T) error {
+//	err := state.SetManagedValue(ctx, mgr, "runtime_config", newConfig)
+func SetManagedValue[T any](ctx context.Context, m *Manager, name string, value T) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

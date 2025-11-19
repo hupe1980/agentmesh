@@ -16,9 +16,49 @@ type checkpointWorker struct {
 }
 
 // restoreCheckpoint loads and applies a checkpoint if configured.
+// Supports WithCheckpoint() option and pending writes application.
 func (p *PregelExecutor[I, O]) restoreCheckpoint(ctx context.Context, compiled *Compiled[I, O], opts RunOptions) error {
+	chkpt, err := p.loadCheckpoint(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	if chkpt == nil {
+		return nil // No checkpoint to restore
+	}
+
+	logger := logging.FromContext(ctx)
+	logger.Info("restoring from checkpoint",
+		"run_id", chkpt.RunID,
+		"superstep", chkpt.Superstep)
+
+	if err := p.applyCheckpointData(ctx, compiled, chkpt); err != nil {
+		return err
+	}
+
+	p.restoreExecutionMetadata(ctx, chkpt)
+
+	logger.Info("checkpoint restored successfully",
+		"run_id", chkpt.RunID,
+		"superstep", chkpt.Superstep)
+
+	return nil
+}
+
+// loadCheckpoint loads a checkpoint from the configured source.
+func (p *PregelExecutor[I, O]) loadCheckpoint(ctx context.Context, opts RunOptions) (*checkpoint.Checkpoint, error) {
+	// Check if checkpoint was provided directly via WithCheckpoint()
+	if opts.Checkpoint != nil {
+		logger := logging.FromContext(ctx)
+		logger.Info("using provided checkpoint",
+			"run_id", opts.Checkpoint.RunID,
+			"superstep", opts.Checkpoint.Superstep)
+		return opts.Checkpoint, nil
+	}
+
+	// Original path: Load from checkpointer
 	if opts.Checkpointer == nil || opts.RunID == "" || !opts.AutoRestore {
-		return nil
+		return nil, nil
 	}
 
 	logger := logging.FromContext(ctx)
@@ -40,52 +80,81 @@ func (p *PregelExecutor[I, O]) restoreCheckpoint(ctx context.Context, compiled *
 		logger.Error("failed to load checkpoint",
 			"run_id", opts.RunID,
 			"error", err)
-		return fmt.Errorf("failed to load checkpoint: %w", err)
+		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
 	}
 
-	if chkpt == nil {
-		return nil // No checkpoint to restore
-	}
+	return chkpt, nil
+}
 
-	logger.Info("restoring from checkpoint",
-		"run_id", opts.RunID,
-		"superstep", chkpt.Superstep)
+// applyCheckpointData applies state and pending writes from a checkpoint.
+func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled *Compiled[I, O], chkpt *checkpoint.Checkpoint) error {
+	logger := logging.FromContext(ctx)
 
 	// Restore state
 	if len(chkpt.State) > 0 {
-		// Apply checkpoint state to restore values
 		if err := compiled.manager.ApplyUpdates(ctx, chkpt.State); err != nil {
 			logger.Error("failed to apply checkpoint state",
-				"run_id", opts.RunID,
+				"run_id", chkpt.RunID,
 				"error", err)
 			return fmt.Errorf("failed to apply checkpoint state: %w", err)
 		}
 		logger.Info("restored state from checkpoint",
-			"run_id", opts.RunID,
+			"run_id", chkpt.RunID,
 			"state_keys", len(chkpt.State))
 	}
 
-	// Restore execution metadata for smart resume
-	if p.metrics != nil {
-		// Restore completed nodes
-		for _, nodeName := range chkpt.CompletedNodes {
-			p.metrics.AddCompleted(nodeName)
+	// Apply pending writes if present
+	if len(chkpt.PendingWrites) > 0 {
+		logger.Info("applying pending writes from checkpoint",
+			"run_id", chkpt.RunID,
+			"pending_writes", len(chkpt.PendingWrites))
+
+		updates := make(map[string]any)
+		for _, pw := range chkpt.PendingWrites {
+			updates[pw.Channel] = pw.Value
+			logger.Debug("applying pending write",
+				"node", pw.NodeName,
+				"channel", pw.Channel,
+				"timestamp", pw.Timestamp)
 		}
-		// Restore paused nodes
-		for _, nodeName := range chkpt.PausedNodes {
-			p.metrics.AddPaused(nodeName)
+
+		if err := compiled.manager.ApplyUpdates(ctx, updates); err != nil {
+			logger.Error("failed to apply pending writes",
+				"run_id", chkpt.RunID,
+				"error", err)
+			return fmt.Errorf("failed to apply pending writes: %w", err)
 		}
-		logger.Info("restored execution metadata",
-			"run_id", opts.RunID,
-			"completed_nodes", len(chkpt.CompletedNodes),
-			"paused_nodes", len(chkpt.PausedNodes))
+
+		logger.Info("pending writes applied successfully",
+			"run_id", chkpt.RunID,
+			"writes_applied", len(chkpt.PendingWrites))
 	}
 
-	logger.Info("checkpoint restored successfully",
-		"run_id", opts.RunID,
-		"superstep", chkpt.Superstep)
-
 	return nil
+}
+
+// restoreExecutionMetadata restores completed and paused nodes tracking.
+func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, chkpt *checkpoint.Checkpoint) {
+	if p.metrics == nil {
+		return
+	}
+
+	// Restore completed nodes
+	for _, nodeName := range chkpt.CompletedNodes {
+		p.metrics.AddCompleted(nodeName)
+	}
+
+	// Resume paused nodes - they were paused but now we're resuming them
+	// Clear them from the paused list so they can execute
+	for _, nodeName := range chkpt.PausedNodes {
+		p.metrics.ResumePaused(nodeName)
+	}
+
+	logger := logging.FromContext(ctx)
+	logger.Info("restored execution metadata",
+		"run_id", chkpt.RunID,
+		"completed_nodes", len(chkpt.CompletedNodes),
+		"resumed_nodes", len(chkpt.PausedNodes))
 }
 
 // saveCheckpoint creates and saves a checkpoint.

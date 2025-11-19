@@ -170,7 +170,7 @@ func TestCachedManagedValue(t *testing.T) {
 		ctx = context.WithValue(context.Background(), "timestamp", int64(1030)) // +30s
 		val2, err := cached.Get(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 43, val2) // Same cached value
+		assert.Equal(t, 43, val2)     // Same cached value
 		assert.Equal(t, 1, callCount) // No new call
 	})
 
@@ -195,7 +195,7 @@ func TestCachedManagedValue(t *testing.T) {
 		val2, err := cached.Get(ctx)
 		require.NoError(t, err)
 		assert.NotEqual(t, val1, val2) // Different value
-		assert.Equal(t, 2, callCount) // New call made
+		assert.Equal(t, 2, callCount)  // New call made
 	})
 
 	t.Run("set invalidates cache", func(t *testing.T) {
@@ -260,7 +260,7 @@ func TestWrapManagedValue(t *testing.T) {
 
 	t.Run("heterogeneous map", func(t *testing.T) {
 		// Simulate manager's storage
-		managedValues := map[string]*managedValueAny{
+		managedValues := map[string]*ManagedValueAny{
 			"config":  WrapManagedValue(NewManagedValue[string]("config")),
 			"port":    WrapManagedValue(NewManagedValue[int]("port")),
 			"enabled": WrapManagedValue(NewManagedValue[bool]("enabled")),

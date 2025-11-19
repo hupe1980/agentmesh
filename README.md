@@ -796,6 +796,59 @@ for result, err := range compiled.Run(ctx, initialMessages,
 }
 ```
 
+### ⏸️ Human-in-the-Loop
+
+Pause workflows for human review and approval:
+
+```go
+// 1. Add interrupt point before critical action
+g.AddInterruptBefore("send_email")
+
+// 2. Run until interrupt
+for _, err := range executor.Run(ctx, compiled, input,
+    graph.WithRunID(runID),
+    graph.WithCheckpointer(checkpointer)) {
+    // Pauses at "send_email", creates checkpoint
+}
+
+// 3. User reviews checkpoint
+checkpoint, _ := checkpointer.Load(ctx, runID)
+fmt.Printf("Paused at: %v\n", checkpoint.PausedNodes)
+fmt.Printf("Draft email: %v\n", checkpoint.State["draft"])
+
+// 4. User makes decision
+userDecision := map[string]any{
+    "approved": true,
+    "edited_draft": "edited content",
+}
+
+// 5. Resume with user input
+for _, err := range executor.Run(ctx, compiled, input,
+    graph.WithCheckpoint(checkpoint),
+    graph.WithResumeValue(userDecision)) {
+    // Continues from interrupt with user's decision
+}
+
+// Access user decision in node
+func (n *Node) Invoke(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    resumeVals := graph.ResumeValueFromContext(ctx)
+    if resumeVals != nil {
+        if approved := resumeVals["approved"].(bool); !approved {
+            return handleRejection()
+        }
+    }
+    // ... proceed with action
+}
+```
+
+**Features:**
+- **Interrupts**: Pause before/after specific nodes
+- **Pending Writes**: Review uncommitted changes before applying
+- **Resume Values**: Inject user decisions into resumed execution
+- **Two-Phase Commit**: Transactional state updates with rollback
+
+See [`examples/human_approval`](examples/human_approval) for complete walkthrough.
+
 ### 🕰️ Time Travel Debugging
 
 Debug workflows by replaying from any superstep:

@@ -192,18 +192,18 @@ func (c *CachedManagedValue[T]) Set(ctx context.Context, value T) error {
 	return nil
 }
 
-// managedValueAny is a type-erased wrapper for storing ManagedValue[T] in a map.
+// ManagedValueAny is a type-erased wrapper for storing ManagedValue[T] in a map.
 // This allows the Manager to store managed values of different types in a single map.
-type managedValueAny struct {
+type ManagedValueAny struct {
 	name string
 	get  func(ctx context.Context) (any, error)
 	set  func(ctx context.Context, value any) error
 }
 
-// WrapManagedValue wraps a typed ManagedValue[T] into a type-erased managedValueAny.
+// WrapManagedValue wraps a typed ManagedValue[T] into a type-erased ManagedValueAny.
 // This allows heterogeneous managed values to be stored in a single map.
-func WrapManagedValue[T any](mv ManagedValue[T]) *managedValueAny {
-	return &managedValueAny{
+func WrapManagedValue[T any](mv ManagedValue[T]) *ManagedValueAny {
+	return &ManagedValueAny{
 		name: mv.Name(),
 		get: func(ctx context.Context) (any, error) {
 			return mv.Get(ctx)
@@ -220,16 +220,16 @@ func WrapManagedValue[T any](mv ManagedValue[T]) *managedValueAny {
 }
 
 // Name returns the managed value's identifier.
-func (m *managedValueAny) Name() string {
+func (m *ManagedValueAny) Name() string {
 	return m.name
 }
 
 // Get retrieves the value (type-erased).
-func (m *managedValueAny) Get(ctx context.Context) (any, error) {
+func (m *ManagedValueAny) Get(ctx context.Context) (any, error) {
 	return m.get(ctx)
 }
 
 // Set updates the value (type-erased with runtime type checking).
-func (m *managedValueAny) Set(ctx context.Context, value any) error {
+func (m *ManagedValueAny) Set(ctx context.Context, value any) error {
 	return m.set(ctx, value)
 }

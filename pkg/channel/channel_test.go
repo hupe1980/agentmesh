@@ -345,3 +345,96 @@ func TestChannelSnapshot(t *testing.T) {
 		t.Error("Snapshot was not independent")
 	}
 }
+
+func TestSliceValue(t *testing.T) {
+	ctx := context.Background()
+	tc := NewTopicChannel("test", 0)
+
+	// Test with SliceOf helper (type inference works here)
+	messages := SliceOf[string]([]string{"hello", "world", "!"})
+	if err := tc.Write(ctx, messages); err != nil {
+		t.Fatalf("Write() with SliceOf error = %v", err)
+	}
+
+	val, _ := tc.Read(ctx)
+	values := val.([]any)
+	if len(values) != 3 {
+		t.Errorf("Expected 3 values, got %d", len(values))
+	}
+	if values[0] != "hello" || values[1] != "world" || values[2] != "!" {
+		t.Errorf("Unexpected values: %v", values)
+	}
+
+	// Test with custom type
+	type CustomSlice []int
+	custom := SliceOf[int](CustomSlice{1, 2, 3})
+
+	// Wrap with SliceOf
+	if err := tc.Write(ctx, custom); err != nil {
+		t.Fatalf("Write() with custom SliceOf error = %v", err)
+	}
+
+	val, _ = tc.Read(ctx)
+	values = val.([]any)
+	if len(values) != 6 {
+		t.Errorf("Expected 6 values, got %d", len(values))
+	}
+
+	// Verify the integers were added
+	if values[3] != 1 || values[4] != 2 || values[5] != 3 {
+		t.Errorf("Custom slice values incorrect: %v", values[3:])
+	}
+}
+
+func TestSliceOfEmpty(t *testing.T) {
+	ctx := context.Background()
+	tc := NewTopicChannel("test", 0)
+
+	// Write initial value
+	tc.Write(ctx, "initial")
+
+	// Test empty slice
+	empty := SliceOf[string]([]string{})
+	if err := tc.Write(ctx, empty); err != nil {
+		t.Fatalf("Write() with empty SliceOf error = %v", err)
+	}
+
+	val, _ := tc.Read(ctx)
+	values := val.([]any)
+	// Should still have 1 value (empty slice adds nothing)
+	if len(values) != 1 {
+		t.Errorf("Expected 1 value, got %d", len(values))
+	}
+}
+
+func TestSliceOfTypes(t *testing.T) {
+	ctx := context.Background()
+	tc := NewTopicChannel("test", 0)
+
+	// Test various types
+	tests := []struct {
+		name   string
+		slice  SliceValue
+		length int
+	}{
+		{"strings", SliceOf[string]([]string{"a", "b"}), 2},
+		{"ints", SliceOf[int]([]int{1, 2, 3}), 3},
+		{"floats", SliceOf[float64]([]float64{1.1, 2.2}), 2},
+		{"bools", SliceOf[bool]([]bool{true, false}), 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tc.Reset(ctx)
+			if err := tc.Write(ctx, tt.slice); err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
+
+			val, _ := tc.Read(ctx)
+			values := val.([]any)
+			if len(values) != tt.length {
+				t.Errorf("Expected %d values, got %d", tt.length, len(values))
+			}
+		})
+	}
+}

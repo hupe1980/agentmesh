@@ -9,10 +9,13 @@ import (
 
 // Graph represents a mutable computational graph with nodes and edges.
 type Graph struct {
-	Nodes    map[string]Node
-	Edges    []Edge
-	Branches []ConditionalEdges
-	manager  *state.Manager
+	Nodes           map[string]Node
+	Edges           []Edge
+	Branches        []ConditionalEdges
+	NodeConfigs     map[string]*NodeConfig // Execution policies per node
+	InterruptBefore []string               // Nodes to interrupt before execution
+	InterruptAfter  []string               // Nodes to interrupt after execution
+	manager         *state.Manager
 }
 
 // NewGraph creates a new graph with the given state manager.
@@ -21,22 +24,58 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 		return nil, fmt.Errorf("manager cannot be nil")
 	}
 	return &Graph{
-		Nodes:    make(map[string]Node),
-		Edges:    make([]Edge, 0),
-		Branches: make([]ConditionalEdges, 0),
-		manager:  manager,
+		Nodes:           make(map[string]Node),
+		Edges:           make([]Edge, 0),
+		Branches:        make([]ConditionalEdges, 0),
+		NodeConfigs:     make(map[string]*NodeConfig),
+		InterruptBefore: make([]string, 0), // Initialize interrupt lists
+		InterruptAfter:  make([]string, 0),
+		manager:         manager,
 	}, nil
 }
 
-// AddNode adds a node to the graph.
-func (g *Graph) AddNode(n Node) error {
+// AddNode adds a node to the graph with optional execution policies.
+//
+// Example with retry policy:
+//
+//	g.AddNode(myNode, WithRetryPolicy(&RetryPolicy{
+//	    MaxAttempts: 3,
+//	    Backoff: ExponentialBackoff(100 * time.Millisecond),
+//	}))
+//
+// Example with cache policy:
+//
+//	g.AddNode(expensiveNode, WithCachePolicy(&CachePolicy{
+//	    Enabled: true,
+//	    TTL: 5 * time.Minute,
+//	    KeyFunc: func(ctx context.Context, state map[string]any) string {
+//	        return fmt.Sprintf("key:%v", state["input"])
+//	    },
+//	}))
+func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 	if n == nil {
 		return fmt.Errorf("node cannot be nil")
 	}
 	if n.Name() == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}
+
+	// Create config with defaults
+	config := defaultNodeConfig()
+
+	// Apply options
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	// Validate config
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid node config for %q: %w", n.Name(), err)
+	}
+
 	g.Nodes[n.Name()] = n
+	g.NodeConfigs[n.Name()] = config
+
 	return nil
 }
 
@@ -76,4 +115,40 @@ func (g *Graph) AddConditionalEdges(from string, condition func(context.Context,
 // Manager returns the graph's state manager.
 func (g *Graph) Manager() *state.Manager {
 	return g.manager
+}
+
+// AddInterruptBefore adds a node name to the interrupt-before list.
+// When execution reaches this node, the graph will pause before executing it,
+// create a checkpoint with pending writes, and return control to the user.
+//
+// This enables human-in-the-loop workflows where users can review
+// and modify state before a critical node executes.
+//
+// Example:
+//
+//	g.AddInterruptBefore("send_email")
+//	// Later, when resumed with WithCheckpoint() and WithResumeValue():
+//	result, err := g.Run(ctx, input,
+//	    WithCheckpoint(checkpoint),
+//	    WithResumeValue(map[string]any{"approved": true}))
+func (g *Graph) AddInterruptBefore(nodeName string) {
+	g.InterruptBefore = append(g.InterruptBefore, nodeName)
+}
+
+// AddInterruptAfter adds a node name to the interrupt-after list.
+// After this node executes, the graph will pause, create a checkpoint with
+// pending writes (output not yet committed), and return control to the user.
+//
+// This enables reviewing node output before committing changes to state.
+//
+// Example:
+//
+//	g.AddInterruptAfter("generate_report")
+//	// User can review the generated report in checkpoint.PendingWrites
+//	// Then resume with edits:
+//	result, err := g.Run(ctx, input,
+//	    WithCheckpoint(checkpoint),
+//	    WithResumeValue(map[string]any{"edited_report": editedContent}))
+func (g *Graph) AddInterruptAfter(nodeName string) {
+	g.InterruptAfter = append(g.InterruptAfter, nodeName)
 }

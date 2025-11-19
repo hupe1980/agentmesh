@@ -194,3 +194,67 @@ func WithInitialSuperstep(step int64) RunOption {
 		opts.ResumeFrom = step
 	}
 }
+
+// WithCheckpoint resumes execution from a saved checkpoint.
+// The checkpoint's state is restored and any pending writes are applied
+// before continuing execution. Typically used with WithResumeValue for
+// human-in-the-loop workflows.
+//
+// Example:
+//
+//	// Resume from a paused checkpoint
+//	checkpoint, _ := checkpointer.Load(ctx, runID)
+//	compiled.Run(ctx, input,
+//	    graph.WithCheckpoint(checkpoint),
+//	    graph.WithResumeValue(map[string]any{
+//	        "approval": "APPROVED",
+//	    }),
+//	)
+func WithCheckpoint(cp *checkpoint.Checkpoint) RunOption {
+	return func(opts *RunOptions) {
+		if opts == nil || cp == nil {
+			return
+		}
+		opts.Checkpoint = cp
+	}
+}
+
+// WithResumeValue injects values into the execution context that nodes
+// can access via ResumeValueFromContext(). This enables human-in-the-loop
+// workflows where execution is paused for review and resumed with external input.
+//
+// Use cases:
+//   - Human approval/rejection of AI actions
+//   - Human edits to AI-generated content
+//   - Injection of test values for debugging
+//   - A/B testing with different parameters
+//
+// Example:
+//
+//	// Resume with human approval
+//	compiled.Run(ctx, input,
+//	    graph.WithCheckpoint(checkpoint),
+//	    graph.WithResumeValue(map[string]any{
+//	        "approval": "APPROVED",
+//	        "edited_output": "Human-edited content...",
+//	        "reason": "Looks good!",
+//	    }),
+//	)
+//
+//	// In node:
+//	func (n *MyNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+//	    if resume := graph.ResumeValueFromContext(ctx); resume != nil {
+//	        if resume["approval"] == "APPROVED" {
+//	            // Use human-approved path
+//	        }
+//	    }
+//	    // Normal execution
+//	}
+func WithResumeValue(value map[string]any) RunOption {
+	return func(opts *RunOptions) {
+		if opts == nil {
+			return
+		}
+		opts.ResumeValue = value
+	}
+}

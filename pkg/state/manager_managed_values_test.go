@@ -24,18 +24,18 @@ func TestManagerManagedValues(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set values
-		err = SetManagedValue(mgr, ctx, "config", "production")
+		err = SetManagedValue(ctx, mgr, "config", "production")
 		require.NoError(t, err)
 
-		err = SetManagedValue(mgr, ctx, "port", 8080)
+		err = SetManagedValue(ctx, mgr, "port", 8080)
 		require.NoError(t, err)
 
 		// Get values (type-safe)
-		config, err := GetManagedValue[string](mgr, ctx, "config")
+		config, err := GetManagedValue[string](ctx, mgr, "config")
 		require.NoError(t, err)
 		assert.Equal(t, "production", config)
 
-		port, err := GetManagedValue[int](mgr, ctx, "port")
+		port, err := GetManagedValue[int](ctx, mgr, "port")
 		require.NoError(t, err)
 		assert.Equal(t, 8080, port)
 	})
@@ -60,11 +60,11 @@ func TestManagerManagedValues(t *testing.T) {
 		err := RegisterManagedValue(mgr, mv)
 		require.NoError(t, err)
 
-		err = SetManagedValue(mgr, ctx, "value", "string")
+		err = SetManagedValue(ctx, mgr, "value", "string")
 		require.NoError(t, err)
 
 		// Try to get as wrong type
-		_, err = GetManagedValue[int](mgr, ctx, "value")
+		_, err = GetManagedValue[int](ctx, mgr, "value")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "wrong type")
 	})
@@ -72,7 +72,7 @@ func TestManagerManagedValues(t *testing.T) {
 	t.Run("nonexistent managed value", func(t *testing.T) {
 		mgr := NewManager()
 
-		_, err := GetManagedValue[string](mgr, ctx, "nonexistent")
+		_, err := GetManagedValue[string](ctx, mgr, "nonexistent")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
@@ -109,7 +109,7 @@ func TestManagerManagedValues(t *testing.T) {
 		err = Set(ctx, mgr, counterKey, 42)
 		require.NoError(t, err)
 
-		err = SetManagedValue(mgr, ctx, "config", "test")
+		err = SetManagedValue(ctx, mgr, "config", "test")
 		require.NoError(t, err)
 
 		// Verify both are accessible
@@ -117,7 +117,7 @@ func TestManagerManagedValues(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 42, counter)
 
-		config, err := GetManagedValue[string](mgr, ctx, "config")
+		config, err := GetManagedValue[string](ctx, mgr, "config")
 		require.NoError(t, err)
 		assert.Equal(t, "test", config)
 
@@ -144,10 +144,10 @@ func TestManagerManagedValues(t *testing.T) {
 			APIKey:  "secret",
 			Timeout: 30,
 		}
-		err = SetManagedValue(mgr, ctx, "runtime_config", cfg)
+		err = SetManagedValue(ctx, mgr, "runtime_config", cfg)
 		require.NoError(t, err)
 
-		retrieved, err := GetManagedValue[*RuntimeConfig](mgr, ctx, "runtime_config")
+		retrieved, err := GetManagedValue[*RuntimeConfig](ctx, mgr, "runtime_config")
 		require.NoError(t, err)
 		assert.Equal(t, "secret", retrieved.APIKey)
 		assert.Equal(t, 30, retrieved.Timeout)

@@ -19,6 +19,10 @@ type RuntimeMetrics struct {
 	// PausedNodes lists node names that are currently paused (e.g., waiting for human input).
 	PausedNodes []string
 
+	// ResumingNodes lists node names that are being resumed from a paused state.
+	// These nodes should skip interrupt checks.
+	ResumingNodes []string
+
 	// ActiveNodes lists node names currently being executed.
 	ActiveNodes []string
 
@@ -37,6 +41,7 @@ type RuntimeMetricsSnapshot struct {
 	CurrentSuperstep int64
 	CompletedNodes   []string
 	PausedNodes      []string
+	ResumingNodes    []string
 	ActiveNodes      []string
 	FailedNodes      []string
 	TotalMessages    int64
@@ -48,6 +53,7 @@ func NewRuntimeMetrics() *RuntimeMetrics {
 	return &RuntimeMetrics{
 		CompletedNodes: make([]string, 0),
 		PausedNodes:    make([]string, 0),
+		ResumingNodes:  make([]string, 0),
 		ActiveNodes:    make([]string, 0),
 		FailedNodes:    make([]string, 0),
 	}
@@ -78,11 +84,21 @@ func (rm *RuntimeMetrics) AddPaused(nodeName string) {
 	rm.removeActive(nodeName)
 }
 
-// ResumePaused removes a node from the paused list.
+// ResumePaused removes a node from the paused list and marks it as resuming.
 func (rm *RuntimeMetrics) ResumePaused(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	rm.PausedNodes = slices.DeleteFunc(rm.PausedNodes, func(s string) bool { return s == nodeName })
+	if !slices.Contains(rm.ResumingNodes, nodeName) {
+		rm.ResumingNodes = append(rm.ResumingNodes, nodeName)
+	}
+}
+
+// ClearResuming removes a node from the resuming list (after it executes).
+func (rm *RuntimeMetrics) ClearResuming(nodeName string) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.ResumingNodes = slices.DeleteFunc(rm.ResumingNodes, func(s string) bool { return s == nodeName })
 }
 
 // AddActive marks a node as currently executing.
@@ -132,6 +148,7 @@ func (rm *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 		CurrentSuperstep: rm.CurrentSuperstep,
 		CompletedNodes:   slices.Clone(rm.CompletedNodes),
 		PausedNodes:      slices.Clone(rm.PausedNodes),
+		ResumingNodes:    slices.Clone(rm.ResumingNodes),
 		ActiveNodes:      slices.Clone(rm.ActiveNodes),
 		FailedNodes:      slices.Clone(rm.FailedNodes),
 		TotalMessages:    rm.TotalMessages,
