@@ -1,30 +1,34 @@
-// Package graph provides the core graph structure for AgentMesh.
+// Package graph provides the unified graph structure, compilation, and execution for AgentMesh.
 //
 // This package defines the fundamental building blocks of a computational graph:
 //   - Nodes: Executable units with run functions
 //   - Edges: Directed connections between nodes
 //   - ConditionalEdges: Dynamic routing based on runtime state
 //   - Graph: The graph structure and builder
-//
-// This package contains NO execution logic - it only defines structure.
-// Execution is handled by pkg/exec, and compilation by pkg/compile.
+//   - Compiled: Validated, executable graph
+//   - Executors: Pluggable execution strategies (Sequential, Pregel/BSP)
 //
 // ARCHITECTURE:
 //
-//	pkg/graph (this)     - Pure graph structure (nodes, edges, builder)
-//	pkg/compile          - Graph compilation (topology, validation)
-//	pkg/exec             - Graph execution (sequential, pregel strategies)
+//	pkg/graph - Unified package containing:
+//	  - Graph structure (nodes, edges, builder)
+//	  - Compilation (topology, validation)
+//	  - Execution (sequential, pregel executors)
 //
 // EXAMPLE:
 //
-//	builder := graph.NewBuilder()
-//	builder.AddNode("start", startNodeFunc)
-//	builder.AddNode("process", processNodeFunc)
-//	builder.AddEdge("start", "process")
-//	g := builder.Build()
+//	// Create a graph
+//	mgr := state.NewManager()
+//	g, _ := graph.NewGraph(mgr)
+//	g.AddNode(graph.NewBaseNode("start", startNodeFunc))
+//	g.AddNode(graph.NewBaseNode("process", processNodeFunc))
+//	g.AddEdge(graph.StartNode, "start")
+//	g.AddEdge("start", "process")
+//	g.AddEdge("process", graph.EndNode)
 //
-//	// Compilation and execution happen in other packages
-//	compiled := compile.Compile(g)
-//	executor := exec.NewSequential()
-//	executor.Run(ctx, compiled, ...)
+//	// Compile and execute
+//	compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
+//	for output, err := range compiled.Run(ctx, input) {
+//	    // Handle output
+//	}
 package graph

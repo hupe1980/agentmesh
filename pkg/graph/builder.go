@@ -8,27 +8,70 @@ import (
 )
 
 // Builder provides a fluent API for constructing graphs.
-// This is an internal type used by exec.NewBuilder().
 //
-// Use exec.NewBuilder to create graphs:
+// Use NewBuilder to create graphs:
 //
-//	builder, _ := exec.NewBuilder(exec.NewPregelExecutor())
+//	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
+//	builder.Node("process", processFunc)
+//	builder.AddEdge(graph.StartNode, "process")
+//	builder.AddEdge("process", graph.EndNode)
+//	compiled, _ := builder.Compile()
 //
 // Type parameters:
-//   - I: Input type for the runnable
-//   - O: Output type for the runnable
+//   - I: Input type for the compiled graph
+//   - O: Output type for the compiled graph
 type Builder[I, O any] struct {
-	graph *Graph
+	graph    *Graph
+	executor Executor[I, O]
 }
 
 // BuilderOption is a functional option for configuring the Builder.
 type BuilderOption[I, O any] func(*Builder[I, O]) error
 
-// NewBuilderInternal creates a new graph builder with the given options.
-// This is internal API used by exec.NewBuilder() - do not call directly.
-// Use exec.NewBuilder() instead for the public API.
-func NewBuilderInternal[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
+// NewBuilder creates a new graph builder with the specified executor.
+//
+// Examples:
+//
+//	// Default: Pregel executor with message.Message types
+//	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+//
+//	// Sequential executor with message.Message types
+//	builder, err := graph.NewBuilder(graph.NewSequentialExecutor())
+//
+//	// Custom executor with custom types
+//	customExecutor := graph.NewPregelExecutor[MyInput, MyOutput](...)
+//	builder, err := graph.NewBuilder(customExecutor)
+func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
 	// Create a default state manager
+	manager := state.NewManager()
+
+	graph, err := NewGraph(manager)
+	if err != nil {
+		return nil, err
+	}
+
+	b := &Builder[I, O]{
+		graph:    graph,
+		executor: executor,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		if err := opt(b); err != nil {
+			return nil, err
+		}
+	}
+
+	return b, nil
+}
+
+// NewBuilderInternal creates a new graph builder with the given options.
+// This is internal API - do not call directly.
+// Use NewBuilder() instead for the public API.
+//
+// Deprecated: Use NewBuilder instead
+func NewBuilderInternal[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
+	// For compatibility with exec package during migration
 	manager := state.NewManager()
 
 	graph, err := NewGraph(manager)
@@ -131,4 +174,23 @@ func (b *Builder[I, O]) Graph() *Graph {
 // Manager returns the graph's state manager.
 func (b *Builder[I, O]) Manager() *state.Manager {
 	return b.graph.Manager()
+}
+
+// Compile compiles the graph into a Compiled[I,O] using the executor.
+// Returns an error if the graph is invalid or compilation fails.
+//
+// Example:
+//
+//	compiled, err := builder.Compile()
+//	if err != nil {
+//	    return fmt.Errorf("compilation failed: %w", err)
+//	}
+//
+//	// Or with options:
+//	compiled, err := builder.Compile(graph.WithStrictValidation())
+func (b *Builder[I, O]) Compile(opts ...CompileOption) (*Compiled[I, O], error) {
+	if b.executor == nil {
+		return nil, fmt.Errorf("executor not set - use NewBuilder with an executor")
+	}
+	return Compile(b.graph, b.executor, opts...)
 }

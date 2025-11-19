@@ -16,10 +16,9 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/trace"
@@ -250,13 +249,9 @@ func main() {
 	g.AddEdge("validate_data", "generate_summary")
 	g.AddEdge("generate_summary", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
-	}
-	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
-	if !ok {
-		log.Fatal("failed to cast to RunnableGraph")
 	}
 
 	fmt.Println("✓ Built graph with 4 nodes:")
@@ -287,7 +282,7 @@ func main() {
 	fmt.Printf("Total execution time: %v\n", duration)
 
 	// Get final state
-	finalState := rg.Manager()
+	finalState := compiled.Manager()
 	summaryKey := graphstate.NewKey("summary", "")
 	view, err := finalState.CreateReadView(context.Background())
 	if err != nil {

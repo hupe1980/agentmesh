@@ -9,7 +9,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
@@ -29,7 +29,7 @@ func main() {
 	valueKey := graphstate.NewKey("value", 0)
 
 	// Build a simple mathematical workflow
-	buildWorkflow := func(initialValue int) *exec.RunnableGraph[[]message.Message, message.Message] {
+	buildWorkflow := func(initialValue int) *graph.Compiled[[]message.Message, message.Message] {
 		mgr := graphstate.NewManager()
 		graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
 		graphstate.RegisterKey(mgr, valueKey)
@@ -39,7 +39,7 @@ func main() {
 			panic(err)
 		}
 
-		builder, err := exec.NewBuilder(exec.NewPregelExecutor(), exec.WithManager[[]message.Message, message.Message](mgr))
+		builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 		if err != nil {
 			panic(err)
 		}

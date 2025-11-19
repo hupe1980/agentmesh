@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -125,7 +125,7 @@ func runScenario(choice string) {
 	gph.AddEdge("path_b", graph.EndNode)
 
 	// Compile the graph into executable form
-	compiled, err := exec.CompileGraph(gph, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return

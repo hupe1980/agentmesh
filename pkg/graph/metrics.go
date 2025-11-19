@@ -1,4 +1,4 @@
-package exec
+package graph
 
 import (
 	"slices"
@@ -30,6 +30,17 @@ type RuntimeMetrics struct {
 
 	// ExecutionTimeNs tracks total execution time in nanoseconds.
 	ExecutionTimeNs int64
+}
+
+// RuntimeMetricsSnapshot is a read-only snapshot of runtime metrics.
+type RuntimeMetricsSnapshot struct {
+	CurrentSuperstep int64
+	CompletedNodes   []string
+	PausedNodes      []string
+	ActiveNodes      []string
+	FailedNodes      []string
+	TotalMessages    int64
+	ExecutionTimeNs  int64
 }
 
 // NewRuntimeMetrics creates a new runtime metrics tracker.
@@ -100,54 +111,44 @@ func (rm *RuntimeMetrics) IncrementMessages(count int64) {
 	rm.TotalMessages += count
 }
 
-// SetExecutionTime sets the total execution time.
-func (rm *RuntimeMetrics) SetExecutionTime(ns int64) {
+// AddExecutionTime adds to the total execution time.
+func (rm *RuntimeMetrics) AddExecutionTime(ns int64) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.ExecutionTimeNs = ns
+	rm.ExecutionTimeNs += ns
 }
 
-// RuntimeMetricsSnapshot represents a point-in-time snapshot of runtime metrics.
-type RuntimeMetricsSnapshot struct {
-	CurrentSuperstep int64    `json:"current_superstep"`
-	CompletedNodes   []string `json:"completed_nodes"`
-	PausedNodes      []string `json:"paused_nodes"`
-	ActiveNodes      []string `json:"active_nodes"`
-	FailedNodes      []string `json:"failed_nodes"`
-	TotalMessages    int64    `json:"total_messages"`
-	ExecutionTimeNs  int64    `json:"execution_time_ns"`
+// removeActive removes a node from the active list (caller must hold lock).
+func (rm *RuntimeMetrics) removeActive(nodeName string) {
+	rm.ActiveNodes = slices.DeleteFunc(rm.ActiveNodes, func(s string) bool { return s == nodeName })
 }
 
-// Snapshot returns a thread-safe copy of current runtime metrics.
-func (rm *RuntimeMetrics) Snapshot() *RuntimeMetricsSnapshot {
+// Snapshot returns a read-only copy of current metrics.
+func (rm *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
-	// Create copies of slices
-	completed := make([]string, len(rm.CompletedNodes))
-	copy(completed, rm.CompletedNodes)
-
-	paused := make([]string, len(rm.PausedNodes))
-	copy(paused, rm.PausedNodes)
-
-	active := make([]string, len(rm.ActiveNodes))
-	copy(active, rm.ActiveNodes)
-
-	failed := make([]string, len(rm.FailedNodes))
-	copy(failed, rm.FailedNodes)
-
-	return &RuntimeMetricsSnapshot{
+	return RuntimeMetricsSnapshot{
 		CurrentSuperstep: rm.CurrentSuperstep,
-		CompletedNodes:   completed,
-		PausedNodes:      paused,
-		ActiveNodes:      active,
-		FailedNodes:      failed,
+		CompletedNodes:   slices.Clone(rm.CompletedNodes),
+		PausedNodes:      slices.Clone(rm.PausedNodes),
+		ActiveNodes:      slices.Clone(rm.ActiveNodes),
+		FailedNodes:      slices.Clone(rm.FailedNodes),
 		TotalMessages:    rm.TotalMessages,
 		ExecutionTimeNs:  rm.ExecutionTimeNs,
 	}
 }
 
-// removeActive removes a node from the active list (must hold lock).
-func (rm *RuntimeMetrics) removeActive(nodeName string) {
-	rm.ActiveNodes = slices.DeleteFunc(rm.ActiveNodes, func(s string) bool { return s == nodeName })
+// Reset clears all metrics.
+func (rm *RuntimeMetrics) Reset() {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	rm.CurrentSuperstep = 0
+	rm.CompletedNodes = make([]string, 0)
+	rm.PausedNodes = make([]string, 0)
+	rm.ActiveNodes = make([]string, 0)
+	rm.FailedNodes = make([]string, 0)
+	rm.TotalMessages = 0
+	rm.ExecutionTimeNs = 0
 }

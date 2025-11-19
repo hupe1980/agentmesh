@@ -10,7 +10,7 @@ type Snapshot struct {
 	version uint64
 }
 
-// Get retrieves a typed value from the snapshot.
+// GetFromSnapshot retrieves a typed value from the snapshot.
 // Returns the key's zero value if the key doesn't exist.
 func GetFromSnapshot[T any](snap *Snapshot, key Key[T]) T {
 	val, ok := snap.data[key.name]

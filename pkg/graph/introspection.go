@@ -71,6 +71,8 @@ func (g *Graph) GetNodes() []string {
 }
 
 // GetNodeInfo returns detailed information about a specific node.
+//
+//nolint:gocyclo // Acceptable complexity for comprehensive node introspection
 func (g *Graph) GetNodeInfo(name string) (*NodeInfo, error) {
 	node, exists := g.Nodes[name]
 	if !exists {

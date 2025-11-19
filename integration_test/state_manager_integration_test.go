@@ -65,7 +65,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 	defer client.Close()
 
 	t.Run("Basic operations with Redis store", func(t *testing.T) {
-		store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix("test:basic:"))
+		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:basic:"))
 		// Don't close store - it closes the shared client
 
 		manager := state.NewManager(state.WithStore(store))
@@ -109,7 +109,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 
 		// First manager - write data
 		func() {
-			store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix(prefix))
+			store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix(prefix))
 			// Don't close store - it closes the shared client
 
 			manager := state.NewManager(state.WithStore(store))
@@ -122,7 +122,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 
 		// Second manager - read data
 		func() {
-			store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix(prefix))
+			store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix(prefix))
 			// Don't close store - it closes the shared client
 
 			manager := state.NewManager(state.WithStore(store))
@@ -134,16 +134,16 @@ func TestManagerWithRedisBackend(t *testing.T) {
 			// Value should persist in Redis
 			storeValue, err := store.Get(ctx, "counter")
 			if err != nil {
-			t.Fatalf("Store Get failed: %v", err)
+				t.Fatalf("Store Get failed: %v", err)
 			}
 
 			// Redis stores as float64 after JSON unmarshaling
 			if val, ok := storeValue.(float64); ok {
-			if int(val) != 42 {
-				t.Errorf("Expected 42, got %d", int(val))
-			}
+				if int(val) != 42 {
+					t.Errorf("Expected 42, got %d", int(val))
+				}
 			} else {
-			t.Errorf("Expected float64 from Redis JSON, got %T", storeValue)
+				t.Errorf("Expected float64 from Redis JSON, got %T", storeValue)
 			}
 		}()
 
@@ -152,7 +152,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 	})
 
 	t.Run("Snapshot and Restore with Redis", func(t *testing.T) {
-		store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix("test:snapshot:"))
+		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:snapshot:"))
 		// Don't close store - it closes the shared client
 
 		manager := state.NewManager(state.WithStore(store))
@@ -199,7 +199,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 	})
 
 	t.Run("Concurrent access with Redis", func(t *testing.T) {
-		store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix("test:concurrent:"))
+		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:concurrent:"))
 		// Don't close store - it closes the shared client
 
 		manager := state.NewManager(state.WithStore(store))
@@ -217,17 +217,17 @@ func TestManagerWithRedisBackend(t *testing.T) {
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func(id int) {
-			defer wg.Done()
-			for j := 0; j < incrementsPerGoroutine; j++ {
-				// Read current value
-				current, err := state.Get(ctx, manager, key)
-				if err != nil {
-					t.Logf("Get failed: %v", err)
-					continue
+				defer wg.Done()
+				for j := 0; j < incrementsPerGoroutine; j++ {
+					// Read current value
+					current, err := state.Get(ctx, manager, key)
+					if err != nil {
+						t.Logf("Get failed: %v", err)
+						continue
+					}
+					// Increment and write back
+					state.Set(ctx, manager, key, current+1)
 				}
-				// Increment and write back
-				state.Set(ctx, manager, key, current+1)
-			}
 			}(i)
 		}
 
@@ -252,7 +252,7 @@ func TestManagerWithRedisBackend(t *testing.T) {
 	})
 
 	t.Run("Large dataset snapshot", func(t *testing.T) {
-		store := stateRedis.NewRedisStore(client, stateRedis.WithKeyPrefix("test:large:"))
+		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:large:"))
 		// Don't close store - it closes the shared client
 
 		manager := state.NewManager(state.WithStore(store))
@@ -343,7 +343,7 @@ func TestManagerWithCheckpointer(t *testing.T) {
 		// First session - save state
 		{
 			manager := state.NewManager(
-			state.WithCheckpointer(checkpointer, runID),
+				state.WithCheckpointer(checkpointer, runID),
 			)
 
 			key := state.NewKey[int]("progress", 0)
@@ -358,7 +358,7 @@ func TestManagerWithCheckpointer(t *testing.T) {
 		// Second session - recover state
 		{
 			manager := state.NewManager(
-			state.WithCheckpointer(checkpointer, runID),
+				state.WithCheckpointer(checkpointer, runID),
 			)
 			defer manager.Close()
 
@@ -368,13 +368,13 @@ func TestManagerWithCheckpointer(t *testing.T) {
 			// Load from checkpoint
 			err := manager.LoadCheckpoint(ctx)
 			if err != nil {
-			t.Fatalf("LoadCheckpoint failed: %v", err)
+				t.Fatalf("LoadCheckpoint failed: %v", err)
 			}
 
 			// Verify recovered value
 			value, err := state.Get(ctx, manager, key)
 			if err != nil {
-			t.Fatalf("Get failed: %v", err)
+				t.Fatalf("Get failed: %v", err)
 			}
 
 			// Note: Value might be different type due to checkpoint serialization
@@ -413,7 +413,7 @@ func TestManagerTypeValidation(t *testing.T) {
 
 		if items, ok := value.([]any); ok {
 			if len(items) != 3 {
-			t.Errorf("Expected 3 items, got %d", len(items))
+				t.Errorf("Expected 3 items, got %d", len(items))
 			}
 		} else {
 			t.Errorf("Expected []any from TopicChannel, got %T", value)

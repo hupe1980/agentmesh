@@ -5,14 +5,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -51,11 +47,12 @@ func main() {
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
+			history := graphstate.GetFromView(view, actionHistoryKey.Key)
 			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{
+				actionHistoryKey.Name(): append(history,
 					fmt.Sprintf("Researched '%s'", topic),
 					fmt.Sprintf("Summarized findings for '%s'", topic),
-				},
+				),
 				currentTaskKey.Name(): fmt.Sprintf("Write report for %s", topic),
 			}, nil
 		},
@@ -70,8 +67,9 @@ func main() {
 				return nil, graph.ErrHumanInterrupt
 			}
 			task := graphstate.GetFromView(view, currentTaskKey)
+			history := graphstate.GetFromView(view, actionHistoryKey.Key)
 			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{fmt.Sprintf("Drafted report for '%s'", task)},
+				actionHistoryKey.Name(): append(history, fmt.Sprintf("Drafted report for '%s'", task)),
 				draftKey.Name():         "draft report content",
 			}, nil
 		},
@@ -80,8 +78,9 @@ func main() {
 	mustAddNode(graph.NewBaseNode("review",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("review")
+			history := graphstate.GetFromView(view, actionHistoryKey.Key)
 			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"Reviewed draft"},
+				actionHistoryKey.Name(): append(history, "Reviewed draft"),
 				finalReportKey.Name():   "final report content",
 			}, nil
 		},
@@ -97,17 +96,11 @@ func main() {
 
 	g.AddEdge(graph.StartNode, "research")
 	g.AddEdge("research", "write")
+	g.AddEdge("review", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		fmt.Println("compile error:", err)
-		return
-	}
-
-	// Type assert to access RunnableGraph methods
-	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
-	if !ok {
-		fmt.Println("failed to cast to RunnableGraph")
 		return
 	}
 
@@ -122,24 +115,34 @@ func main() {
 	}
 	fmt.Println("state after first run - action history:", graphstate.GetFromView(view, actionHistoryKey.Key))
 
-	if err := rg.ApplyState(context.Background(), graphstate.Updates{
-		humanInputKey.Name(): "Approved draft",
-		actionHistoryKey.Name(): []string{
-			fmt.Sprintf("Human provided feedback at %s", time.Now().Format(time.RFC3339)),
-		},
+	// Simulate human providing input
+	fmt.Println("\n🧑 Human providing input...")
+
+	// Get current action history to append to it
+	currentHistory := graphstate.GetFromView(view, actionHistoryKey.Key)
+
+	if err := compiled.ApplyState(context.Background(), graphstate.Updates{
+		humanInputKey.Name():    "Approved draft",
+		actionHistoryKey.Name(): append(currentHistory, "Human approved: Approved draft"),
 	}); err != nil {
 		fmt.Println("failed to apply state:", err)
 		return
 	}
 
 	fmt.Println("\n=== Resume ===")
-	if _, err := graph.Last(compiled.Run(ctx, nil, graph.WithInitialSuperstep(rg.CurrentSuperstep()))); err != nil {
-		fmt.Println("resume error:", err)
-		return
+	fmt.Printf("Resuming from superstep %d\n", compiled.CurrentSuperstep())
+	// Resume from the current superstep to continue execution
+	for range compiled.Run(ctx, nil, graph.WithInitialSuperstep(compiled.CurrentSuperstep())) {
+		// Just consume the iterator
 	}
+
 	view2, err := mgr.CreateReadView(ctx)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("state after resume - action history:", graphstate.GetFromView(view2, actionHistoryKey.Key))
+	fmt.Println("\nFinal state:")
+	fmt.Println("  Action history:", graphstate.GetFromView(view2, actionHistoryKey.Key))
+	fmt.Println("  Human input:", graphstate.GetFromView(view2, humanInputKey))
+	fmt.Println("  Final report:", graphstate.GetFromView(view2, finalReportKey))
+	fmt.Println("\n✓ Human pause/resume completed successfully!")
 }

@@ -1,8 +1,7 @@
 package agent
 
 import (
-	"iter"
-
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -11,7 +10,7 @@ import (
 // This is the agent-layer equivalent of what was previously in pkg/state.
 // Messages are stored as message.Message instances in append-only fashion.
 // Use 0 for unbounded message history, or a positive number to limit history.
-var MessagesKey = state.NewListKey[message.Message]("__messages__", 0)
+var MessagesKey = state.NewListKey[message.Message](graph.MessagesKeyName, 0)
 
 // GetMessages retrieves the message history from a ReadView.
 // Returns an empty slice if no messages exist.
@@ -75,28 +74,4 @@ func LastMessage(view *state.ReadView) message.Message {
 //	}
 func RegisterMessagesKey(mgr *state.Manager) error {
 	return state.RegisterListKey(mgr, MessagesKey)
-}
-
-// CollectMessages collects all messages from an iterator sequence.
-// This is a convenience function for message-specific agent execution.
-// Skips nil messages for backward compatibility.
-//
-// Example:
-//
-//	messages, err := agent.CollectMessages(agent.Run(ctx, messages))
-//	if err != nil {
-//	    return err
-//	}
-func CollectMessages(seq iter.Seq2[message.Message, error]) ([]message.Message, error) {
-	messages := make([]message.Message, 0)
-	for msg, err := range seq {
-		if err != nil {
-			return messages, err
-		}
-		// Skip nil messages for backward compatibility
-		if msg != nil {
-			messages = append(messages, msg)
-		}
-	}
-	return messages, nil
 }

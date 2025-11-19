@@ -35,9 +35,9 @@ type SnapshotOption func(*SnapshotManager)
 // WithMaxSnapshots sets a limit on the number of retained snapshots.
 // When the limit is exceeded, the oldest snapshot is deleted.
 // Default is unlimited (0).
-func WithMaxSnapshots(max int) SnapshotOption {
+func WithMaxSnapshots(maxSnapshots int) SnapshotOption {
 	return func(sm *SnapshotManager) {
-		sm.maxSnapshots = max
+		sm.maxSnapshots = maxSnapshots
 	}
 }
 
@@ -224,11 +224,11 @@ func copyMap(m map[string]any) map[string]any {
 	if m == nil {
 		return nil
 	}
-	copy := make(map[string]any, len(m))
+	result := make(map[string]any, len(m))
 	for k, v := range m {
-		copy[k] = v
+		result[k] = v
 	}
-	return copy
+	return result
 }
 
 // copyStringMap creates a shallow copy of a map[string]string.
@@ -236,9 +236,9 @@ func copyStringMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
-	copy := make(map[string]string, len(m))
+	result := make(map[string]string, len(m))
 	for k, v := range m {
-		copy[k] = v
+		result[k] = v
 	}
-	return copy
+	return result
 }

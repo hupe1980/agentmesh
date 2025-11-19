@@ -118,7 +118,7 @@ func TestAgent_BasicExecution(t *testing.T) {
 		message.NewHumanMessageFromText("Hello!"),
 	}
 
-	messages, err := CollectMessages(compiled.Run(ctx, input))
+	messages, err := graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
 	require.NotNil(t, messages)
@@ -167,7 +167,7 @@ func TestAgent_ToolCalling(t *testing.T) {
 		message.NewHumanMessageFromText("What's the weather in Berlin?"),
 	}
 
-	messages, err := CollectMessages(compiled.Run(ctx, input))
+	messages, err := graph.Collect(compiled.Run(ctx, input))
 
 	require.NoError(t, err)
 	require.NotNil(t, messages)

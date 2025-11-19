@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -25,7 +25,7 @@ func repeatString(char string, count int) string {
 
 func main() {
 	// Build a complex graph with conditional routing
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		panic(err)
 	}

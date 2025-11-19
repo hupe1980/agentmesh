@@ -23,7 +23,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -146,7 +146,7 @@ func main() {
 	gph.AddEdge("combine", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := exec.CompileGraph(gph, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())
 	if err != nil {
 		fmt.Printf("❌ Compilation error: %v\n", err)
 		return

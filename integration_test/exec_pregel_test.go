@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -32,29 +31,29 @@ func TestPregelExecutor(t *testing.T) {
 	var counter atomic.Int32
 
 	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			counter.Add(1)
-			return map[string]any{"started": true}, nil
-		},
-		))
+		counter.Add(1)
+		return map[string]any{"started": true}, nil
+	},
+	))
 
 	// Two nodes that can run in parallel
 	g.AddNode(graph.NewBaseNode("task1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			counter.Add(1)
-			return map[string]any{"task1": "done"}, nil
-		},
-		))
+		counter.Add(1)
+		return map[string]any{"task1": "done"}, nil
+	},
+	))
 
 	g.AddNode(graph.NewBaseNode("task2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			counter.Add(1)
-			return map[string]any{"task2": "done"}, nil
-		},
-		))
+		counter.Add(1)
+		return map[string]any{"task2": "done"}, nil
+	},
+	))
 
 	g.AddNode(graph.NewBaseNode("end", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			counter.Add(1)
-			return map[string]any{"completed": true}, nil
-		},
-		))
+		counter.Add(1)
+		return map[string]any{"completed": true}, nil
+	},
+	))
 
 	g.AddEdge(graph.StartNode, "start")
 	g.AddEdge("start", "task1")
@@ -64,7 +63,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddEdge("end", graph.EndNode)
 
 	// Compile and execute with Pregel
-	runnable, err := exec.CompileGraph(g, exec.NewStatePregelExecutor(exec.WithMaxWorkers[state.Updates, state.Updates](4)))
+	runnable, err := graph.Compile(g, graph.NewStatePregelExecutor(graph.WithMaxWorkers[state.Updates, state.Updates](4)))
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

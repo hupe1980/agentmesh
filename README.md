@@ -86,7 +86,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                            │ builds on
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│               CompiledGraph (Coordinator)                    │
+│               Compiled[I,O] (Coordinator)                    │
 │  • Immutable graph topology (nodes, edges, conditionals)     │
 │  • Public API: Run() with iterator pattern                   │
 │  • Coordinates StateManager ↔ Executor                       │
@@ -96,7 +96,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                  │ delegates to            │ delegates to
                  ▼                         ▼
     ┌────────────────────────┐  ┌────────────────────────────┐
-    │    StateManager        │  │       Executor             │
+    │    StateManager        │  │       Executor[I,O]        │
     │    (Interface)         │  │       (Interface)          │
     │                        │  │                            │
     │  • Channels            │  │  • Execution Strategy      │
@@ -110,8 +110,8 @@ AgentMesh follows a **component-based architecture** with clean separation of co
                          │ implements                        │ implements
                          ▼                                   ▼
             ┌─────────────────────────┐      ┌─────────────────────────┐
-            │ Built-in Pregel BSP     │      │ SimpleGraphExecutor     │
-            │ (graphRuntime + pregel) │      │ (sequential)            │
+            │ PregelExecutor[I,O]     │      │ SequentialExecutor[I,O] │
+            │ (BSP + graphRuntime)    │      │ (sequential)            │
             │                         │      │                         │
             │ • BSP Supersteps        │      │ • Topological order     │
             │ • Parallel execution    │      │ • Single-threaded       │
@@ -125,25 +125,26 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Application Layer** (`pkg/agent`)
 - High-level agent patterns: ReAct, RAG, Supervisor
-- Built on top of Compiled
+- Built on top of Compiled[I,O]
 
 **Integration Layer** (`pkg/model`, `pkg/tool`, `pkg/retrieval`)
 - LLM providers: OpenAI, Anthropic, Gemini
 - Tool integrations: Functions, A2A, MCP
 - Retrieval: Bedrock Knowledge Bases, Kendra
 
-**Core Framework** (`pkg/graph`)
-- **Compiled**: Orchestrates execution via StateManager + Executor
-- **Builder**: Fluent API for graph construction
+**Core Framework** (`pkg/graph`) - **Unified Package**
+- **Compiled[I,O]**: Generic compiled graph that orchestrates execution via StateManager + Executor
+- **Builder[I,O]**: Fluent API for graph construction with generics
+- **Executor[I,O]**: Generic interface for execution strategies
+  - `PregelExecutor[I,O]`: Default BSP parallel execution via `graphRuntime` + `pkg/pregel`
+  - `SequentialExecutor[I,O]`: Sequential execution for debugging
+- **Validation**: Comprehensive pre-execution validation (topology, cycles, reachability)
 - **StateManager**: Composed interface with focused sub-interfaces
   - `Reader`: Read-only state access for nodes
   - `Writer`: Write capabilities (extends Reader)
   - `ChannelManager`: Channel lifecycle management
   - `AggregateManager`: Cross-node aggregate operations
   - `CheckpointManager`: State persistence and restoration
-- **Executor**: Abstracts execution strategy (interface)
-- **Built-in Pregel BSP**: Default parallel execution via `graphRuntime` + `pkg/pregel`
-- **SimpleGraphExecutor**: Sequential execution for debugging
 
 **Supporting Packages**
 - `pkg/channel`: Topic, LastValue, BinaryOp channels
@@ -162,6 +163,8 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 - Exact-match and similarity-based caching strategies
 
 **Key Design Principles:**
+- **Simplified Architecture**: Merged compile/exec into unified graph package (2 layers instead of 3)
+- **Type Safety**: Generic Compiled[I,O] and Executor[I,O] for compile-time guarantees
 - **Separation of Concerns**: State, execution, and topology are independent
 - **Interface Segregation**: Focused, composable interfaces (Reader, ChannelManager, etc.)
 - **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
@@ -221,7 +224,7 @@ func main() {
     }
 
     // Execute and collect all messages
-    messages, err = agent.CollectMessages(agent.Run(ctx, messages))
+    messages, err = graph.Collect(agent.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }
@@ -281,7 +284,7 @@ This pattern applies to:
 - `compiled.Run()` - Graph execution
 - `runtime.Run()` - Pregel BSP execution
 
-See [pkg/exec documentation](pkg/exec/doc.go) for detailed error semantics.
+See [pkg/graph documentation](pkg/graph/doc.go) for detailed error semantics.
 
 ---
 
@@ -394,10 +397,12 @@ fmt.Printf("Supported inputs: %v\n", caps.SupportedModalities)
 
 // Conditionally use features based on capabilities
 if caps.Tools {
-    // Safe to bind tools
-    if toolAware, ok := mdl.(model.ToolAware); ok {
-        mdl = toolAware.BindTools(myTools...)
+    // Safe to use tools in requests
+    req := &model.Request{
+        Messages: messages,
+        Tools:    myTools,
     }
+    resp, _ := model.Last(mdl.Generate(ctx, req))
 }
 
 if caps.NativeReasoning {
@@ -414,7 +419,7 @@ if caps.Vision {
 
 **Capability Fields:**
 - `Streaming` - Supports incremental response chunks
-- `Tools` - Supports function calling via `BindTools()`
+- `Tools` - Supports function calling via `Request.Tools`
 - `StructuredOutput` - Supports JSON schema validation
 - `NativeReasoning` - Exposes internal reasoning in `Response.Reasoning`
 - `Logprobs` - Can provide token-level probabilities
@@ -495,15 +500,11 @@ AgentMesh uses a **directed graph** model where:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/exec"
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
 
 // Create a graph builder with Pregel executor
-builder, err := exec.NewBuilder(exec.NewPregelExecutor())
-if err != nil {
-    log.Fatal(err)
-}
+builder := graph.NewBuilder(graph.NewPregelExecutor())
 
 // Add nodes with functions
 builder.Node("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {

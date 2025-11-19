@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
@@ -94,7 +94,7 @@ func TestSimpleGraphExecution(t *testing.T) {
 		g.AddEdge(graph.StartNode, "test")
 		g.AddEdge("test", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -133,7 +133,7 @@ func TestSimpleGraphExecution(t *testing.T) {
 		g.AddEdge("node1", "node2")
 		g.AddEdge("node2", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -194,7 +194,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("right", graph.EndNode)
 
 		// Use Sequential executor for deterministic routing
-		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -246,7 +246,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.AddEdge("target2", graph.EndNode)
 
 		// Use Sequential to avoid repeated executions
-		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -296,7 +296,7 @@ func TestStateManagement(t *testing.T) {
 		g.AddEdge("writer", "reader")
 		g.AddEdge("reader", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -332,7 +332,7 @@ func TestStateManagement(t *testing.T) {
 		g.AddEdge(graph.StartNode, "increment")
 		g.AddEdge("increment", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		// First execution

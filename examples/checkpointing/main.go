@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
@@ -56,7 +55,7 @@ func runDemo(ctx context.Context) {
 			break
 		}
 		eventCount++
-		fmt.Printf("Superstep: %d, Events: %d, Message: %s\n", compiled.CurrentSuperstep(), eventCount, event.Type())
+		fmt.Printf("Events: %d, Message: %s\n", eventCount, event.Type())
 	}
 
 	// === Part 2: View checkpoint history ===
@@ -190,8 +189,8 @@ func runDemo(ctx context.Context) {
 	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -230,11 +229,11 @@ func buildWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
 	return compiled
 }
 
-func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
+func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	stepKey := graphstate.NewKey("step", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		panic(err)
 	}
@@ -262,11 +261,11 @@ func buildFailingWorkflow() *exec.RunnableGraph[[]message.Message, message.Messa
 	return compiled
 }
 
-func buildFixedWorkflow() *exec.RunnableGraph[[]message.Message, message.Message] {
+func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	stepKey := graphstate.NewKey("step", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		panic(err)
 	}

@@ -3,7 +3,6 @@ package agent
 import (
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -72,7 +71,9 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 
 	// Create state - StateBuilder no longer exists
 	mgr := state.NewManager()
-	RegisterMessagesKey(mgr)
+	if err := RegisterMessagesKey(mgr); err != nil {
+		return nil, fmt.Errorf("react agent: failed to register messages key: %w", err)
+	}
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -96,9 +97,8 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 
 	g.AddEdge("tool", "model")
 
-	// Compile the graph using the new clean architecture
-	// exec.CompileGraph bridges: graph (structure) → compile (topology) → exec (execution)
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	// Compile the graph
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}

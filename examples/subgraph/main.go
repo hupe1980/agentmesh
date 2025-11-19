@@ -9,7 +9,6 @@ import (
 	"maps"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
@@ -30,7 +29,7 @@ func main() {
 	graphstate.RegisterKey(mgr, enrichedDataKey)
 	graphstate.RegisterKey(mgr, analysisKey)
 
-	pipeline, err := exec.NewBuilder(exec.NewPregelExecutor(), exec.WithManager[[]message.Message, message.Message](mgr))
+	pipeline, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}

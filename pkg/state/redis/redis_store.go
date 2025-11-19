@@ -3,38 +3,39 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisStore implements state.Store using Redis as the backend.
+// Store implements state.Store using Redis as the backend.
 // Values are serialized to JSON for storage.
-type RedisStore struct {
+type Store struct {
 	client redis.UniversalClient
 	prefix string
 }
 
-// Option configures RedisStore behavior.
-type Option func(*RedisStore)
+// Option configures Store behavior.
+type Option func(*Store)
 
 // WithKeyPrefix sets a namespace prefix for all keys (default: "agentmesh:state:").
 func WithKeyPrefix(prefix string) Option {
-	return func(rs *RedisStore) {
+	return func(rs *Store) {
 		rs.prefix = prefix
 	}
 }
 
-// NewRedisStore creates a Redis-backed state store.
+// NewStore creates a Redis-backed state store.
 // The client can be a regular Redis client, cluster client, or sentinel client.
 //
 // Example:
 //
 //	client := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-//	store := redis.NewRedisStore(client, redis.WithKeyPrefix("myapp:"))
-func NewRedisStore(client redis.UniversalClient, opts ...Option) *RedisStore {
-	rs := &RedisStore{
+//	store := redis.NewStore(client, redis.WithKeyPrefix("myapp:"))
+func NewStore(client redis.UniversalClient, opts ...Option) *Store {
+	rs := &Store{
 		client: client,
 		prefix: "agentmesh:state:",
 	}
@@ -47,22 +48,22 @@ func NewRedisStore(client redis.UniversalClient, opts ...Option) *RedisStore {
 }
 
 // prefixKey adds the namespace prefix to a key.
-func (rs *RedisStore) prefixKey(key string) string {
+func (rs *Store) prefixKey(key string) string {
 	return rs.prefix + key
 }
 
 // Get retrieves a value from Redis and deserializes it.
-func (rs *RedisStore) Get(ctx context.Context, key string) (any, error) {
-	data, err := rs.client.Get(ctx, rs.prefixKey(key)).Bytes()
+func (rs *Store) Get(ctx context.Context, key string) (any, error) {
+	data, err := rs.client.Get(ctx, rs.prefixKey(key)).Result()
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, state.ErrKeyNotFound
 		}
 		return nil, fmt.Errorf("redis get failed: %w", err)
 	}
 
 	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
+	if err := json.Unmarshal([]byte(data), &value); err != nil {
 		return nil, fmt.Errorf("json unmarshal failed: %w", err)
 	}
 
@@ -70,7 +71,7 @@ func (rs *RedisStore) Get(ctx context.Context, key string) (any, error) {
 }
 
 // Set serializes a value to JSON and stores it in Redis.
-func (rs *RedisStore) Set(ctx context.Context, key string, value any) error {
+func (rs *Store) Set(ctx context.Context, key string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("json marshal failed: %w", err)
@@ -84,7 +85,7 @@ func (rs *RedisStore) Set(ctx context.Context, key string, value any) error {
 }
 
 // Delete removes a key from Redis.
-func (rs *RedisStore) Delete(ctx context.Context, key string) error {
+func (rs *Store) Delete(ctx context.Context, key string) error {
 	result := rs.client.Del(ctx, rs.prefixKey(key))
 	if err := result.Err(); err != nil {
 		return fmt.Errorf("redis del failed: %w", err)
@@ -98,7 +99,7 @@ func (rs *RedisStore) Delete(ctx context.Context, key string) error {
 }
 
 // Keys returns all keys in the store matching the prefix.
-func (rs *RedisStore) Keys(ctx context.Context) ([]string, error) {
+func (rs *Store) Keys(ctx context.Context) ([]string, error) {
 	var keys []string
 	pattern := rs.prefix + "*"
 
@@ -120,7 +121,7 @@ func (rs *RedisStore) Keys(ctx context.Context) ([]string, error) {
 
 // Snapshot creates a point-in-time capture of all state.
 // This performs a full scan of Redis keys matching the prefix.
-func (rs *RedisStore) Snapshot(ctx context.Context) (map[string]any, error) {
+func (rs *Store) Snapshot(ctx context.Context) (map[string]any, error) {
 	keys, err := rs.Keys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list keys: %w", err)
@@ -130,7 +131,7 @@ func (rs *RedisStore) Snapshot(ctx context.Context) (map[string]any, error) {
 	for _, key := range keys {
 		value, err := rs.Get(ctx, key)
 		if err != nil {
-			if err == state.ErrKeyNotFound {
+			if errors.Is(err, state.ErrKeyNotFound) {
 				// Key was deleted between scan and get, skip it
 				continue
 			}
@@ -144,7 +145,7 @@ func (rs *RedisStore) Snapshot(ctx context.Context) (map[string]any, error) {
 
 // Restore loads state from a snapshot.
 // This performs a pipeline write for better performance.
-func (rs *RedisStore) Restore(ctx context.Context, snapshot map[string]any) error {
+func (rs *Store) Restore(ctx context.Context, snapshot map[string]any) error {
 	if len(snapshot) == 0 {
 		return nil
 	}
@@ -168,18 +169,18 @@ func (rs *RedisStore) Restore(ctx context.Context, snapshot map[string]any) erro
 }
 
 // Close closes the Redis connection.
-func (rs *RedisStore) Close() error {
+func (rs *Store) Close() error {
 	return rs.client.Close()
 }
 
 // Ping checks if the Redis connection is alive.
-func (rs *RedisStore) Ping(ctx context.Context) error {
+func (rs *Store) Ping(ctx context.Context) error {
 	return rs.client.Ping(ctx).Err()
 }
 
 // Clear removes all keys with the configured prefix.
 // WARNING: This is a destructive operation. Use with caution.
-func (rs *RedisStore) Clear(ctx context.Context) error {
+func (rs *Store) Clear(ctx context.Context) error {
 	keys, err := rs.Keys(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list keys: %w", err)
@@ -202,5 +203,5 @@ func (rs *RedisStore) Clear(ctx context.Context) error {
 	return nil
 }
 
-// Compile-time check that RedisStore implements state.Store.
-var _ state.Store = (*RedisStore)(nil)
+// Compile-time check that Store implements state.Store.
+var _ state.Store = (*Store)(nil)

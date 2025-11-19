@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -114,8 +113,12 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	}
 
 	mgr := state.NewManager()
-	RegisterMessagesKey(mgr)
-	state.RegisterKey(mgr, DocumentsKey)
+	if err := RegisterMessagesKey(mgr); err != nil {
+		return nil, fmt.Errorf("failed to register messages key: %w", err)
+	}
+	if err := state.RegisterKey(mgr, DocumentsKey); err != nil {
+		return nil, fmt.Errorf("failed to register documents key: %w", err)
+	}
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -136,7 +139,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	g.AddEdge("generate", graph.EndNode)
 
 	// Compile the graph
-	return exec.CompileGraph(g, exec.NewPregelExecutor())
+	return graph.Compile(g, graph.NewMessagePregelExecutor())
 }
 
 // ragOptions holds configuration for RAG agents.

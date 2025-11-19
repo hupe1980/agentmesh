@@ -1,3 +1,5 @@
+// Package quota provides resource quota management for graph execution.
+// It enforces limits on memory usage, goroutines, and execution time to prevent resource exhaustion.
 package quota
 
 import (
@@ -68,7 +70,7 @@ type Config struct {
 func New(cfg Config) *Manager {
 	m := &Manager{
 		maxMemoryBytes:   cfg.MaxMemoryBytes,
-		maxGoroutines:    int32(cfg.MaxGoroutines),
+		maxGoroutines:    int32(cfg.MaxGoroutines), //nolint:gosec // MaxGoroutines is validated to be positive
 		maxExecutionTime: cfg.MaxExecutionTime,
 		memoryCheckFunc:  defaultMemoryCheck,
 	}

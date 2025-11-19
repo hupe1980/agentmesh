@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -26,7 +26,7 @@ func main() {
 }
 
 func simpleWorkflow() {
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func simpleWorkflow() {
 func conditionalWorkflow() {
 	categoryKey := state.NewKey("category", "")
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func conditionalWorkflow() {
 }
 
 func parallelWorkflow() {
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func complexWorkflow() {
 	validKey := state.NewKey("valid", false)
 	priorityKey := state.NewKey("priority", "")
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}

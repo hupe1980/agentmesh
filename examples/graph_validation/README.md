@@ -71,23 +71,23 @@ compilation failed: graph validation failed with 1 error(s):
 
 ```go
 // Default validation
-runnable, err := exec.CompileGraph(g)
+runnable, err := graph.Compile(g, graph.NewPregelExecutor())
 
 // Strict validation
-runnable, err := exec.CompileGraph(g,
-    exec.WithStrictValidation())
+runnable, err := graph.Compile(g, graph.NewPregelExecutor(),
+    graph.WithStrictValidation())
 
 // Custom validation
-runnable, err := exec.CompileGraph(g,
-    exec.WithValidation(compile.ValidationOptions{
+runnable, err := graph.Compile(g, graph.NewPregelExecutor(),
+    graph.WithValidation(graph.ValidationOptions{
         AllowCycles:      true,
         AllowUnreachable: false,
         AllowDeadEnds:    false,
     }))
 
 // Disable validation (use with caution)
-runnable, err := exec.CompileGraph(g,
-    exec.WithoutValidation())
+runnable, err := graph.Compile(g, graph.NewPregelExecutor(),
+    graph.WithoutValidation())
 ```
 
 ## Validation Error Types

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -20,10 +19,9 @@ var (
 )
 
 func main() {
-	// Create a builder using exec.NewBuilder with state-only executor
-	// This uses the state-only Pregel executor - perfect for pure state transformations
-	// No message types needed!
-	builder, err := exec.NewBuilder(exec.NewStatePregelExecutor())
+	// Create a builder using graph.NewBuilder with Pregel executor
+	// This uses the Pregel executor - perfect for parallel state transformations
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}

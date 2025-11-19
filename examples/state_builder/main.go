@@ -8,7 +8,7 @@ import (
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -68,7 +68,7 @@ func main() {
 	gph.AddEdge("init", "process")
 	gph.AddEdge("process", graph.EndNode)
 
-	compiled, _ := exec.CompileGraph(gph, exec.NewPregelExecutor())
+	compiled, _ := graph.Compile(gph, graph.NewMessagePregelExecutor())
 	ctx := context.Background()
 	graph.Last(compiled.Run(ctx, nil))
 

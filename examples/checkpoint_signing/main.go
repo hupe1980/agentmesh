@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -166,8 +166,8 @@ func productionExample(ctx context.Context) {
 	// Create checkpointer with signing
 	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
 
-	// Create a simple workflow graph using exec.NewBuilder (recommended)
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	// Create a simple workflow graph using graph.NewBuilder
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}

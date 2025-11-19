@@ -168,8 +168,7 @@ executor := graph.NewPregelExecutor(
 
 g := graph.New()
 // ... build graph ...
-g.WithExecutor(executor)
-compiled, _ := exec.CompileGraph(g)
+compiled, _ := graph.Compile(g, executor)
 ```
 
 **Returns**: `float64` - Sum of all contributed values

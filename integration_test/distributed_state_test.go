@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -115,8 +114,8 @@ func TestDistributedStateSync(t *testing.T) {
 	g.AddEdge("node3", graph.EndNode)
 
 	// Compile with state-based executor + Redis message bus
-	compiled, err := exec.CompileGraph(g, exec.NewStatePregelExecutor(
-		exec.WithMessageBus[state.Updates, state.Updates](bus),
+	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
+		graph.WithMessageBus[state.Updates, state.Updates](bus),
 	))
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)
@@ -225,9 +224,9 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	g.AddEdge("node2", graph.EndNode)
 
 	// Compile with distributed state DISABLED (routing-only)
-	compiled, err := exec.CompileGraph(g, exec.NewStatePregelExecutor(
-		exec.WithMessageBus[state.Updates, state.Updates](bus),
-		exec.WithDistributedState[state.Updates, state.Updates](false), // Disable state sync
+	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
+		graph.WithMessageBus[state.Updates, state.Updates](bus),
+		graph.WithDistributedState[state.Updates, state.Updates](false), // Disable state sync
 	))
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)

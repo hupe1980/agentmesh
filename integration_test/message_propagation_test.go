@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
@@ -61,7 +61,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	g.AddEdge("node_a", "node_b")
 	g.AddEdge("node_b", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute the graph
@@ -130,7 +130,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	g.AddEdge("parallel_b", "aggregator")
 	g.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -211,7 +211,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	g.AddEdge("node_2", "node_3")
 	g.AddEdge("node_3", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	ctx := context.Background()

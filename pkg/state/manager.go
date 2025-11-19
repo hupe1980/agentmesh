@@ -55,10 +55,10 @@ func WithCheckpointer(cp checkpoint.Checkpointer, runID string) ManagerOption {
 	}
 }
 
-// WithMaxSnapshots limits in-memory snapshot retention.
-func WithMaxSnapshotsLimit(max int) ManagerOption {
+// WithMaxSnapshotsLimit limits in-memory snapshot retention.
+func WithMaxSnapshotsLimit(maxSnapshots int) ManagerOption {
 	return func(m *Manager) {
-		m.snapshots = NewSnapshotManager(WithMaxSnapshots(max))
+		m.snapshots = NewSnapshotManager(WithMaxSnapshots(maxSnapshots))
 	}
 }
 
@@ -236,7 +236,8 @@ func Append[T any](ctx context.Context, m *Manager, key ListKey[T], value T) err
 	var updatedList []T
 	if currentList != nil {
 		if existing, ok := currentList.([]T); ok {
-			updatedList = append(existing, value)
+			existing = append(existing, value)
+			updatedList = existing
 		} else {
 			// Current value is not a list, start fresh
 			updatedList = []T{value}

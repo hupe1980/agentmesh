@@ -1077,7 +1077,7 @@ type Executor interface {
 // Default: Uses Pregel BSP execution automatically
 g := graph.New()
 // ... build graph ...
-compiled, _ := exec.CompileGraph(g)
+compiled, _ := graph.Compile(g, graph.NewPregelExecutor())
 results := compiled.Run(ctx, initialMessages)  // Parallel execution via Pregel
 ```
 
@@ -1116,11 +1116,10 @@ executor := graph.NewPregelExecutor(
     graph.WithPregelMaxIterations(1000),
 )
 
-// Apply configuration before compilation
+// Build and compile with configured executor
 g := graph.New()
 // ... build graph ...
-g.WithExecutor(executor)
-compiled, _ := exec.CompileGraph(g)
+compiled, _ := graph.Compile(g, executor)
 
 // Run with configured Pregel executor
 result, _ := graph.Last(compiled.Run(ctx, initialMessages))
@@ -1149,30 +1148,30 @@ The bridging pattern allows clean separation while maintaining type safety at bo
 
 ### Alternative: SimpleGraphExecutor
 
-For **debugging** or **testing**, you can override with `SimpleGraphExecutor` (sequential, single-threaded):
+For **debugging** or **testing**, you can use `SequentialExecutor` (sequential, single-threaded):
 
 ```go
-// Override for debugging: Sequential execution
-compiled := graph.NewCompiledGraph(...).
-    WithExecutor(graph.NewSimpleExecutor())
+// For debugging: Sequential execution
+g := graph.New()
+// ... build graph ...
+compiled, _ := graph.Compile(g, graph.NewSequentialExecutor())
 
 results := compiled.Run(ctx, initialMessages)  // Sequential execution
 ```
 
 ### Custom Executors
 
-You can implement custom execution strategies by satisfying the `Executor` interface:
+You can implement custom execution strategies by satisfying the `Executor[I, O]` interface:
 
 ```go
-type CustomExecutor struct { ... }
+type CustomExecutor[I, O any] struct { ... }
 
-func (e *CustomExecutor) Run(ctx context.Context, topology *ExecutorTopology, ...) iter.Seq2[state.ExecutionResult, error] {
+func (e *CustomExecutor[I, O]) Run(ctx context.Context, topology *ExecutorTopology, ...) iter.Seq2[state.ExecutionResult, error] {
     // Custom execution logic
 }
 
 // Use custom executor
-compiled := graph.NewCompiledGraph(...).
-    WithExecutor(NewCustomExecutor())
+compiled, _ := graph.Compile(g, NewCustomExecutor[MyInput, MyOutput]())
 ```
 
 **Architecture Benefits**:

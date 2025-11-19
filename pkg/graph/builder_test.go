@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -23,7 +22,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	// Define key first
 	processedKey := state.NewKey("processed", false)
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -71,7 +70,7 @@ func TestBuilder_WithOptions(t *testing.T) {
 	// Create builder
 	stepKey := state.NewKey("step", 0)
 
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -122,7 +121,7 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	resultKey := state.NewKey("result", "")
 
 	// Create builder
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
@@ -184,8 +183,8 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	// Define key first
 	doneKey := state.NewKey("done", false)
 
-	// Test using exec.NewBuilder (recommended API)
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	// Test using graph.NewBuilder (recommended API)
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}

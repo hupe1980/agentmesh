@@ -29,7 +29,7 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
@@ -84,15 +84,9 @@ func runExample(maxSize int) {
 	g.AddEdge(graph.StartNode, "echo")
 	g.AddEdge("echo", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	// Type assert to access Manager() method
-	rg, ok := compiled.(*exec.RunnableGraph[[]message.Message, message.Message])
-	if !ok {
-		log.Fatal("failed to cast to RunnableGraph")
 	}
 
 	// Run with 3 messages
@@ -106,7 +100,7 @@ func runExample(maxSize int) {
 	}
 
 	// Check how many messages were retained
-	view, err := rg.Manager().CreateReadView(context.Background())
+	view, err := compiled.Manager().CreateReadView(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package exec
+package graph
 
 import (
 	"context"
@@ -6,15 +6,13 @@ import (
 	"iter"
 
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/pkg/compile"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Sequential is a simple sequential executor that runs nodes one at a time
+// SequentialExecutor is a simple sequential executor that runs nodes one at a time
 // in topological order. This is useful for debugging and simple workflows.
-type Sequential[I, O any] struct {
+type SequentialExecutor[I, O any] struct {
 	// Generic executor configuration
 	inputToState  func(I) state.Updates // Convert input to initial state
 	outputKey     string                // Which state key to yield as output
@@ -24,17 +22,17 @@ type Sequential[I, O any] struct {
 // NewSequentialExecutor creates a message-based Sequential executor (default behavior).
 // This is for agent workflows, LLM chains, and conversational systems.
 // Input: []message.Message, Output: message.Message (last message from messages key)
-func NewSequentialExecutor() *Sequential[[]message.Message, message.Message] {
+func NewSequentialExecutor() *SequentialExecutor[[]message.Message, message.Message] {
 	return NewGenericSequentialExecutor[[]message.Message, message.Message](
-		// Input: Convert []message.Message to state using default messages key
+		// Input: Convert []message.Message to state using standard messages key
 		func(input []message.Message) state.Updates {
 			if len(input) == 0 {
 				return nil
 			}
-			return state.Updates{defaultMessagesKeyName: input}
+			return state.Updates{MessagesKeyName: input}
 		},
-		// Output: Watch default messages key
-		defaultMessagesKeyName,
+		// Output: Watch standard messages key
+		MessagesKeyName,
 		// Output: Extract last message from messages list
 		func(value any) message.Message {
 			if msgs, ok := value.([]message.Message); ok && len(msgs) > 0 {
@@ -48,7 +46,7 @@ func NewSequentialExecutor() *Sequential[[]message.Message, message.Message] {
 // NewStateSequentialExecutor creates a state-only Sequential executor.
 // This is for pure state transformation workflows, data pipelines, ETL.
 // Input: state.Updates, Output: state.Updates (all state updates)
-func NewStateSequentialExecutor() *Sequential[state.Updates, state.Updates] {
+func NewStateSequentialExecutor() *SequentialExecutor[state.Updates, state.Updates] {
 	return NewGenericSequentialExecutor[state.Updates, state.Updates](
 		// Input: Use provided state.Updates directly as initial state
 		func(input state.Updates) state.Updates {
@@ -72,7 +70,7 @@ func NewStateSequentialExecutor() *Sequential[state.Updates, state.Updates] {
 func NewKeySequentialExecutor[I, O any](
 	inputKey *state.Key[I],
 	outputKey *state.Key[O],
-) *Sequential[I, O] {
+) *SequentialExecutor[I, O] {
 	return NewGenericSequentialExecutor[I, O](
 		// Input: Store input in specified key
 		func(input I) state.Updates {
@@ -102,8 +100,8 @@ func NewGenericSequentialExecutor[I, O any](
 	inputToState func(I) state.Updates,
 	outputKey string,
 	outputAdapter func(any) O,
-) *Sequential[I, O] {
-	return &Sequential[I, O]{
+) *SequentialExecutor[I, O] {
+	return &SequentialExecutor[I, O]{
 		inputToState:  inputToState,
 		outputKey:     outputKey,
 		outputAdapter: outputAdapter,
@@ -111,23 +109,24 @@ func NewGenericSequentialExecutor[I, O any](
 }
 
 // Run executes the compiled graph sequentially.
-func (s *Sequential[I, O]) Run(
+func (s *SequentialExecutor[I, O]) Run(
 	ctx context.Context,
-	compiled *compile.CompiledGraph,
+	compiled *Compiled[I, O],
 	input I,
-	opts ...graph.RunOption,
+	opts ...RunOption,
 ) iter.Seq2[O, error] {
 	// Note: Sequential executor currently ignores checkpoint options
 	_ = opts
 	return func(yield func(O, error) bool) {
 		runID := uuid.New().String()
+		_ = runID // For future use with checkpointing
 
 		// Convert input to initial state using adapter
 		var inputValue any = input
 		if inputValue != nil {
 			initialState := s.inputToState(input)
 			if len(initialState) > 0 {
-				if err := compiled.Manager.ApplyUpdates(ctx, initialState); err != nil {
+				if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
 					var zero O
 					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
 					return
@@ -136,7 +135,7 @@ func (s *Sequential[I, O]) Run(
 		}
 
 		// Execute from start node
-		if err := s.executeFromNode(ctx, compiled, compiled.StartNode, runID, yield); err != nil {
+		if err := s.executeFromNode(ctx, compiled, StartNode, yield); err != nil {
 			var zero O
 			yield(zero, err)
 		}
@@ -146,11 +145,10 @@ func (s *Sequential[I, O]) Run(
 // executeFromNode executes nodes starting from the given node.
 //
 //nolint:gocyclo,nestif // Sequential execution orchestration requires branching logic
-func (s *Sequential[I, O]) executeFromNode(
+func (s *SequentialExecutor[I, O]) executeFromNode(
 	ctx context.Context,
-	compiled *compile.CompiledGraph,
+	compiled *Compiled[I, O],
 	startNode string,
-	runID string,
 	yield func(O, error) bool,
 ) error {
 	queue := []string{startNode}
@@ -174,20 +172,20 @@ func (s *Sequential[I, O]) executeFromNode(
 		queue = queue[1:]
 
 		// Skip start/end nodes but follow their edges
-		if nodeName == compiled.EndNode || nodeName == compiled.StartNode {
+		if nodeName == EndNode || nodeName == StartNode {
 			nextNodes := s.findNextNodes(ctx, compiled, nodeName)
 			queue = append(queue, nextNodes...)
 			continue
 		}
 
 		// Get the node
-		node := compiled.GetNode(nodeName)
+		node := compiled.graph.Nodes[nodeName]
 		if node == nil {
 			return fmt.Errorf("node %s not found", nodeName)
 		}
 
 		// Execute the node with current state read view
-		view, err := compiled.Manager.CreateReadView(ctx)
+		view, err := compiled.manager.CreateReadView(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create read view: %w", err)
 		}
@@ -205,7 +203,7 @@ func (s *Sequential[I, O]) executeFromNode(
 		if updates != nil {
 			// Apply state updates
 			if len(updates) > 0 {
-				if err := compiled.Manager.ApplyUpdates(ctx, updates); err != nil {
+				if err := compiled.manager.ApplyUpdates(ctx, updates); err != nil {
 					return fmt.Errorf("failed to apply state updates: %w", err)
 				}
 
@@ -235,32 +233,35 @@ func (s *Sequential[I, O]) executeFromNode(
 }
 
 // findNextNodes determines which nodes should execute next based on edges and conditionals.
-func (s *Sequential[I, O]) findNextNodes(
+func (s *SequentialExecutor[I, O]) findNextNodes(
 	ctx context.Context,
-	compiled *compile.CompiledGraph,
+	compiled *Compiled[I, O],
 	nodeName string,
 ) []string {
 	var next []string
 
-	// Check for conditional edges
-	if conditionals, ok := compiled.Topology.ConditionalByFrom[nodeName]; ok {
-		view, err := compiled.Manager.CreateReadView(ctx)
-		if err != nil {
-			// If we can't create a read view, fall back to regular edges
-			if outgoing, ok := compiled.Topology.Outgoing[nodeName]; ok {
-				return outgoing
+	// Check for conditional edges in the branches list
+	for _, branch := range compiled.graph.Branches {
+		if branch.From == nodeName {
+			// Found conditional edges for this node
+			view, err := compiled.manager.CreateReadView(ctx)
+			if err != nil {
+				// If we can't create a read view, fall back to regular edges
+				if outgoing, ok := compiled.topology.outgoing[nodeName]; ok {
+					return outgoing
+				}
+				return nil
 			}
-			return nil
+
+			// Evaluate conditional function
+			targets := branch.Condition(ctx, view)
+			return targets
 		}
-		for _, cond := range conditionals {
-			targets := cond.Condition(ctx, view)
-			next = append(next, targets...)
-		}
-	} else {
-		// Use regular outgoing edges
-		if outgoing, ok := compiled.Topology.Outgoing[nodeName]; ok {
-			next = append(next, outgoing...)
-		}
+	}
+
+	// No conditional edges, use regular outgoing edges
+	if outgoing, ok := compiled.topology.outgoing[nodeName]; ok {
+		return outgoing
 	}
 
 	return next

@@ -16,16 +16,12 @@ The Builder API provides a fluent interface for constructing computation graphs 
 ```go
 import (
     "context"
-    "github.com/hupe1980/agentmesh/pkg/exec"
     "github.com/hupe1980/agentmesh/pkg/graph"
     "github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Create a builder with automatic compilation
-builder, err := exec.NewBuilder()
-if err != nil {
-    log.Fatal(err)
-}
+// Create a builder with PregelExecutor
+builder := graph.NewBuilder(graph.NewPregelExecutor())
 
 // Build a workflow using fluent API
 builder.
@@ -89,17 +85,21 @@ builder.
 
 ### Creating a Builder
 
-#### `exec.NewBuilder(opts ...graph.BuilderOption) (*graph.Builder, error)`
-Creates a builder with `CompileGraph` pre-configured. This is the recommended way to create a builder.
+#### `graph.NewBuilder[I, O any](executor Executor[I,O]) *Builder[I, O]`
+Creates a builder with the specified executor (PregelExecutor or SequentialExecutor). This is the recommended way to create graphs.
 
-#### `graph.NewBuilder(opts ...graph.BuilderOption) (*graph.Builder, error)`
-Creates a builder without automatic compilation support. You must call `exec.CompileGraph()` manually.
+```go
+// With Pregel (parallel BSP execution)
+builder := graph.NewBuilder(graph.NewPregelExecutor())
+
+// With Sequential executor (for debugging)
+builder := graph.NewBuilder(graph.NewSequentialExecutor())
+```
 
 ### Builder Options
 
 - **`graph.WithStateManager(sm state.StateManager)`**: Use a custom state manager
 - **`graph.WithMaxHistorySize(maxSize int)`**: Set maximum history size for state
-- **`graph.WithCompileFunc(func(*graph.Graph) (graph.MessageRunnable, error))`**: Set custom compile function
 
 ### Builder Methods
 
@@ -159,7 +159,6 @@ See the [builder_api example](../examples/builder_api) for a complete working ex
 
 The Builder API follows Phase 2 architecture:
 - `pkg/graph` - Graph structure and Builder
-- `pkg/compile` - Topology compilation
-- `pkg/exec` - Execution and integration
+- `pkg/graph` - Unified graph package (topology, compilation, execution)
 
-To avoid import cycles, `exec.NewBuilder()` provides the integration point where the Builder is configured with `exec.CompileGraph()`.
+The Builder[I,O] is configured with an Executor[I,O] and handles the full lifecycle from construction to compilation to execution.

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -124,7 +123,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		g.AddEdge(graph.StartNode, "increment")
 		g.AddEdge("increment", graph.EndNode)
 
-		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
 		return compiled
 	}
 
@@ -170,7 +169,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			}
 		}
 
-		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
 		return compiled
 	}
 
@@ -221,6 +220,6 @@ func BenchmarkGraph_Compile(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		g := createGraph()
-		_, _ = exec.CompileGraph(g, exec.NewPregelExecutor())
+		_, _ = graph.Compile(g, graph.NewMessagePregelExecutor())
 	}
 }

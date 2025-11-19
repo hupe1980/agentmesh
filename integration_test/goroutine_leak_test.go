@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -32,17 +31,21 @@ func TestEarlyConsumerTermination(t *testing.T) {
 			// Simulate work
 			time.Sleep(10 * time.Millisecond)
 			return nil, nil
-			},
-			))
+		},
+		))
 
-		if i > 0 {
+		if i == 0 {
+			g.AddEdge(graph.StartNode, nodeName)
+		} else {
 			prevNode := string(rune('A' + i - 1))
 			g.AddEdge(prevNode, nodeName)
 		}
 	}
+	// Connect last node to end
+	g.AddEdge("J", graph.EndNode)
 
 	// Compile the graph
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)
 	}
@@ -104,12 +107,16 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 				return nil, nil
 			},
 			))
-			if i > 0 {
-			g.AddEdge(string(rune('A'+i-1)), nodeName)
+			if i == 0 {
+				g.AddEdge(graph.StartNode, nodeName)
+			} else {
+				g.AddEdge(string(rune('A'+i-1)), nodeName)
 			}
 		}
+		// Connect last node to end
+		g.AddEdge("C", graph.EndNode)
 
-		compiled, _ := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
 
 		// Stop after first result
 		for range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("test")}) {

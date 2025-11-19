@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -69,7 +69,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	g.AddEdge(graph.StartNode, "node_0")
 	g.AddEdge("node_9", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute and expect possible failure due to chaos
@@ -154,7 +154,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	}
 	g.AddEdge("aggregator", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute - may succeed or fail depending on random failures
@@ -202,7 +202,7 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 	g.AddEdge(graph.StartNode, "slow_node")
 	g.AddEdge("slow_node", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute with aggressive timeout (shorter than the 5 second sleep)
@@ -263,7 +263,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	g.AddEdge("panicking_node", "recovery_node")
 	g.AddEdge("recovery_node", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute - should handle panic gracefully
@@ -326,7 +326,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	g.AddEdge("memory_hog", "consumer")
 	g.AddEdge("consumer", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Execute - should handle large data
@@ -390,7 +390,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 		g.AddEdge("partition_1_node", "partition_2_node")
 		g.AddEdge("partition_2_node", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 		return compiled
 	}

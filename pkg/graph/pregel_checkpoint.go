@@ -1,4 +1,4 @@
-package exec
+package graph
 
 import (
 	"context"
@@ -6,15 +6,8 @@ import (
 	"sync"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/compile"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 )
-
-// extractRunOptions applies graph.RunOption slice and returns RunOptions.
-func extractRunOptions(opts []graph.RunOption) graph.RunOptions {
-	return graph.ApplyOptions(opts...)
-}
 
 // checkpointWorker manages asynchronous checkpoint saves.
 type checkpointWorker struct {
@@ -23,7 +16,7 @@ type checkpointWorker struct {
 }
 
 // restoreCheckpoint loads and applies a checkpoint if configured.
-func (p *Pregel[I, O]) restoreCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions) error {
+func (p *PregelExecutor[I, O]) restoreCheckpoint(ctx context.Context, compiled *Compiled[I, O], opts RunOptions) error {
 	if opts.Checkpointer == nil || opts.RunID == "" || !opts.AutoRestore {
 		return nil
 	}
@@ -61,7 +54,7 @@ func (p *Pregel[I, O]) restoreCheckpoint(ctx context.Context, compiled *compile.
 	// Restore state
 	if len(chkpt.State) > 0 {
 		// Apply checkpoint state to restore values
-		if err := compiled.Manager.ApplyUpdates(ctx, chkpt.State); err != nil {
+		if err := compiled.manager.ApplyUpdates(ctx, chkpt.State); err != nil {
 			logger.Error("failed to apply checkpoint state",
 				"run_id", opts.RunID,
 				"error", err)
@@ -96,7 +89,7 @@ func (p *Pregel[I, O]) restoreCheckpoint(ctx context.Context, compiled *compile.
 }
 
 // saveCheckpoint creates and saves a checkpoint.
-func (p *Pregel[I, O]) saveCheckpoint(ctx context.Context, compiled *compile.CompiledGraph, opts graph.RunOptions, superstep int64, worker *checkpointWorker) {
+func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Compiled[I, O], opts RunOptions, superstep int64, worker *checkpointWorker) {
 	if opts.Checkpointer == nil || opts.RunID == "" {
 		return
 	}
@@ -112,13 +105,12 @@ func (p *Pregel[I, O]) saveCheckpoint(ctx context.Context, compiled *compile.Com
 		"superstep", superstep)
 
 	// Create checkpoint using Manager's Snapshot
-	vsnap, err := compiled.Manager.Snapshot(ctx, map[string]string{
+	vsnap, err := compiled.manager.Snapshot(ctx, map[string]string{
 		"run_id":    opts.RunID,
 		"superstep": fmt.Sprintf("%d", superstep),
 	})
 	if err != nil {
 		// Log error but don't fail the superstep
-		// TODO: Consider making checkpointing errors more visible
 		_ = err
 	}
 
@@ -131,13 +123,11 @@ func (p *Pregel[I, O]) saveCheckpoint(ctx context.Context, compiled *compile.Com
 	}
 
 	chkpt := &checkpoint.Checkpoint{
-		RunID:     opts.RunID,
-		Superstep: superstep,
-		Timestamp: vsnap.Timestamp,
-		Version:   0, // Manager handles versioning internally
-		State:     vsnap.Data,
-		// Note: Message history is stored in State via MessagesKey, not as separate field
-		// Execution metadata enables smart resume: skip completed nodes, resume paused workflows
+		RunID:          opts.RunID,
+		Superstep:      superstep,
+		Timestamp:      vsnap.Timestamp,
+		Version:        0, // Manager handles versioning internally
+		State:          vsnap.Data,
 		CompletedNodes: completedNodes,
 		PausedNodes:    pausedNodes,
 		Metadata:       map[string]any{},
@@ -168,7 +158,7 @@ func (p *Pregel[I, O]) saveCheckpoint(ctx context.Context, compiled *compile.Com
 }
 
 // saveCheckpointSync saves a checkpoint synchronously.
-func (p *Pregel[I, O]) saveCheckpointSync(ctx context.Context, opts graph.RunOptions, chkpt *checkpoint.Checkpoint) error {
+func (p *PregelExecutor[I, O]) saveCheckpointSync(ctx context.Context, opts RunOptions, chkpt *checkpoint.Checkpoint) error {
 	logger := logging.FromContext(ctx)
 
 	// Use context.WithoutCancel to ensure checkpoint completes even if main context is cancelled
@@ -192,7 +182,7 @@ func (p *Pregel[I, O]) saveCheckpointSync(ctx context.Context, opts graph.RunOpt
 }
 
 // startCheckpointWorker starts an asynchronous checkpoint worker.
-func (p *Pregel[I, O]) startCheckpointWorker(ctx context.Context, opts graph.RunOptions) *checkpointWorker {
+func (p *PregelExecutor[I, O]) startCheckpointWorker(ctx context.Context, opts RunOptions) *checkpointWorker {
 	if opts.Checkpointer == nil || opts.RunID == "" {
 		return nil
 	}
@@ -247,7 +237,7 @@ func (p *Pregel[I, O]) startCheckpointWorker(ctx context.Context, opts graph.Run
 }
 
 // stopCheckpointWorker stops the checkpoint worker and waits for completion.
-func (p *Pregel[I, O]) stopCheckpointWorker(worker *checkpointWorker) {
+func (p *PregelExecutor[I, O]) stopCheckpointWorker(worker *checkpointWorker) {
 	if worker == nil || worker.queue == nil {
 		return
 	}

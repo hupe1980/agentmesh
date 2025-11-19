@@ -6,7 +6,6 @@ import (
 	"math"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
@@ -90,9 +89,10 @@ func TestPageRank(t *testing.T) {
 		))
 		require.NoError(t, err)
 		g.AddEdge(graph.StartNode, v)
+		g.AddEdge(v, graph.EndNode)
 	}
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple iterations
@@ -212,9 +212,10 @@ func TestShortestPath(t *testing.T) {
 		))
 		require.NoError(t, err)
 		g.AddEdge(graph.StartNode, v)
+		g.AddEdge(v, graph.EndNode)
 	}
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple supersteps for convergence
@@ -275,7 +276,7 @@ func TestGraphConvergence(t *testing.T) {
 	g.AddEdge(graph.StartNode, "incrementer")
 	g.AddEdge("incrementer", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Run the graph once - single pass execution
@@ -324,7 +325,7 @@ func TestIterativeComputation(t *testing.T) {
 	g.AddEdge(graph.StartNode, "halvinator")
 	g.AddEdge("halvinator", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	// Run multiple iterations

@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
@@ -46,7 +46,7 @@ func main() {
 	model := openai.NewModel()
 
 	// Build a multi-node graph to demonstrate streaming
-	builder, err := exec.NewBuilder(exec.NewPregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}

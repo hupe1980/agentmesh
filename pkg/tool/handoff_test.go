@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	stateif "github.com/hupe1980/agentmesh/pkg/state"
@@ -107,7 +106,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	}))
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
 	handoffTool, err := HandoffToAgent(
@@ -195,7 +194,7 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 	g.AddEdge(graph.StartNode, "worker")
 	g.AddEdge("worker", graph.EndNode)
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 	return compiled
 }

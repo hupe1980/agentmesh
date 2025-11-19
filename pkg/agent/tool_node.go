@@ -140,7 +140,7 @@ func (n *ToolNode) Name() string {
 
 // Execute processes tool calls from the last AI message.
 //
-//nolint:gocyclo // Tool node requires handling many event types and configurations
+// Tool node requires handling many event types and configurations
 func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 	// Get last message from state
 	lastMsg := LastMessage(view)

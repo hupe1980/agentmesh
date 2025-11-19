@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -23,21 +22,21 @@ func TestNewArchitecture(t *testing.T) {
 	}
 
 	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			return map[string]any{"step": "started"}, nil
-		},
-		))
+		return map[string]any{"step": "started"}, nil
+	},
+	))
 
 	g.AddNode(graph.NewBaseNode("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			return map[string]any{"step": "processed"}, nil
-		},
-		))
+		return map[string]any{"step": "processed"}, nil
+	},
+	))
 
 	g.AddEdge(graph.StartNode, "start")
 	g.AddEdge("start", "process")
 	g.AddEdge("process", graph.EndNode)
 
 	// Step 2: Compile and execute the graph
-	runnable, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+	runnable, err := graph.Compile(g, graph.NewSequentialExecutor())
 	if err != nil {
 		t.Fatalf("Failed to compile: %v", err)
 	}

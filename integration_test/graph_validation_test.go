@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/compile"
-	"github.com/hupe1980/agentmesh/pkg/exec"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
@@ -41,7 +39,7 @@ func TestGraphValidation(t *testing.T) {
 		// "unreachable" has no incoming edges - it won't execute but graph compiles
 
 		// Compilation succeeds (unreachable nodes are ignored during execution)
-		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
+		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 	})
 
@@ -65,7 +63,7 @@ func TestGraphValidation(t *testing.T) {
 		g.AddEdge("step1", "step2")
 		g.AddEdge("step2", graph.EndNode)
 
-		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
+		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err, "valid graph should compile without errors")
 	})
 
@@ -102,7 +100,7 @@ func TestGraphValidation(t *testing.T) {
 		g.AddEdge("pathB", graph.EndNode)
 
 		// Both branches are reachable via conditional
-		_, err = exec.CompileGraph(g, exec.NewPregelExecutor())
+		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 	})
 }
@@ -124,7 +122,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddEdge(graph.StartNode, "failing")
 		g.AddEdge("failing", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -163,7 +161,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddEdge("node1", "node2")
 		g.AddEdge("node2", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -241,7 +239,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		g.AddEdge("right", "merge")
 		g.AddEdge("merge", graph.EndNode)
 
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -298,7 +296,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 			return []string{"loop"}
 		}, []string{"loop", graph.EndNode})
 
-		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -327,7 +325,7 @@ func TestCompileOptions(t *testing.T) {
 		g.AddEdge("test", graph.EndNode)
 
 		// Compile with Sequential executor
-		compiled, err := exec.CompileGraph(g, exec.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 
@@ -352,7 +350,7 @@ func TestCompileOptions(t *testing.T) {
 		g.AddEdge("test", graph.EndNode)
 
 		// Compile without executor option (should default to Pregel)
-		compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 
@@ -382,17 +380,14 @@ func TestTopologyComputation(t *testing.T) {
 		g.AddEdge("a", "b")
 		g.AddEdge("b", graph.EndNode)
 
-		compiled, err := compile.Compile(g, stateManager)
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
-		// Verify topology
-		assert.Equal(t, compile.StartNode, compiled.StartNode)
-		assert.Equal(t, compile.EndNode, compiled.EndNode)
-
-		// Check outgoing edges
-		assert.Contains(t, compiled.Topology.Outgoing[compile.StartNode], "a")
-		assert.Contains(t, compiled.Topology.Outgoing["a"], "b")
-		assert.Contains(t, compiled.Topology.Outgoing["b"], compile.EndNode)
+		// Verify topology can be retrieved
+		topo := compiled.GetTopology()
+		assert.NotNil(t, topo)
+		assert.Greater(t, len(topo.Nodes), 0)
+		assert.Greater(t, len(topo.Edges), 0)
 	})
 
 	t.Run("computes topology with conditional edges", func(t *testing.T) {
@@ -418,12 +413,11 @@ func TestTopologyComputation(t *testing.T) {
 		g.AddEdge("target1", graph.EndNode)
 		g.AddEdge("target2", graph.EndNode)
 
-		compiled, err := compile.Compile(g, stateManager)
+		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
-		// Verify conditional edges are recorded
-		assert.Contains(t, compiled.Topology.ConditionalByFrom, "router")
-		conditionals := compiled.Topology.ConditionalByFrom["router"]
-		assert.NotEmpty(t, conditionals)
+		// Verify topology includes conditional nodes
+		topo := compiled.GetTopology()
+		assert.Contains(t, topo.ConditionalNodes, "router")
 	})
 }

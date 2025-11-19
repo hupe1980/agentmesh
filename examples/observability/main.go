@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/exec"
+	
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -114,7 +114,7 @@ func main() {
 	g.AddEdge(graph.StartNode, "step1")
 	g.AddEdge("step1", "step2")
 
-	compiled, err := exec.CompileGraph(g, exec.NewPregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
 		log.Fatal(err)
 	}
