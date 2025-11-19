@@ -18,6 +18,8 @@ const (
 	TopicBehavior
 	// BinaryOpBehavior applies a binary operation when combining values.
 	BinaryOpBehavior
+	// AggregateBehavior combines values using an aggregator (sum, max, avg, etc.).
+	AggregateBehavior
 )
 
 // ChannelMetadata holds configuration for a registered channel.

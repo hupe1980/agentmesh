@@ -59,9 +59,13 @@ type RuntimeOptions[S any, M any] struct {
 	// Use this to enable distributed execution (Redis, gRPC, etc.)
 	MessageBus MessageBus[M]
 
+	// OnSuperstepStart is called before each superstep begins.
+	// The callback receives the execution context and superstep number. Useful for BSP snapshots.
+	OnSuperstepStart func(ctx context.Context, superstep int64) error
+
 	// OnSuperstepComplete is called after each superstep completes successfully.
 	// The callback receives the execution context and superstep number. Useful for checkpointing.
-	OnSuperstepComplete func(ctx context.Context, superstep int64)
+	OnSuperstepComplete func(ctx context.Context, superstep int64) error
 
 	// VertexTimeout sets the maximum execution time for a single vertex.
 	// If a vertex takes longer than this duration, its context is cancelled and
@@ -146,9 +150,17 @@ func WithMaxMailboxSize[S any, M any](size int) RuntimeOption[S, M] {
 	}
 }
 
+// WithOnSuperstepStart sets a callback that is invoked before each superstep
+// begins. Useful for creating BSP-compliant state snapshots.
+func WithOnSuperstepStart[S any, M any](callback func(ctx context.Context, superstep int64) error) RuntimeOption[S, M] {
+	return func(o *RuntimeOptions[S, M]) {
+		o.OnSuperstepStart = callback
+	}
+}
+
 // WithOnSuperstepComplete sets a callback that is invoked after each superstep
 // completes successfully. Useful for checkpointing or progress monitoring.
-func WithOnSuperstepComplete[S any, M any](callback func(ctx context.Context, superstep int64)) RuntimeOption[S, M] {
+func WithOnSuperstepComplete[S any, M any](callback func(ctx context.Context, superstep int64) error) RuntimeOption[S, M] {
 	return func(o *RuntimeOptions[S, M]) {
 		o.OnSuperstepComplete = callback
 	}

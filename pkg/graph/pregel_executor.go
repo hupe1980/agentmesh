@@ -6,6 +6,7 @@ import (
 	"iter"
 	"reflect"
 	"runtime"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -33,6 +34,33 @@ func reflectSliceIndex(value any, i int) any {
 
 // PregelExecutor is a Bulk-Synchronous Parallel (BSP) executor using the pregel runtime.
 // This is the default executor for agent workflows and chat systems.
+//
+// # BSP Semantics (Hybrid Model)
+//
+// AgentMesh implements a hybrid BSP model that balances theoretical purity with practical
+// agent workflow requirements:
+//
+// BSP-Compliant Features:
+//   - Inter-node isolation: Nodes read from shared superstep snapshot
+//   - Superstep barriers: All nodes finish before next superstep begins
+//   - Distributed state: Updates propagated via messages, delivered next superstep
+//   - Aggregators: Thread-safe accumulation across nodes
+//
+// Non-BSP Features (Deliberate Trade-offs):
+//   - Conditional edge routing: Evaluates using FRESH state (sees node's own updates)
+//   - Immediate local updates: Applied per-node (not buffered until barrier)
+//
+// Why Violate Pure BSP?
+//
+// Agent patterns (ReAct) require conditional routing to see node outputs:
+//
+//	Model → [AIMessage with tool_calls] → Route based on tool_calls → Tool Executor
+//
+// Pure BSP would use superstep snapshot for routing, which can't see the AIMessage.
+// This breaks agent workflows. The hybrid model maintains inter-node isolation while
+// allowing intra-node visibility for routing decisions.
+//
+// See _prompts/BSP_SEMANTICS.md for detailed analysis.
 type PregelExecutor[I, O any] struct {
 	maxWorkers             int
 	maxIters               int
@@ -325,14 +353,24 @@ func (p *PregelExecutor[I, O]) Run(
 			runtimeOpts = append(runtimeOpts, pregel.WithAggregators[*Compiled[I, O], state.Updates](p.aggregators))
 		}
 
-		// Add superstep completion callback for checkpointing
-		if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-			runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
-				func(ctx context.Context, superstep int64) {
+		// Add BSP barrier callbacks for proper state snapshot management
+		runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepStart[*Compiled[I, O], state.Updates](
+			func(ctx context.Context, superstep int64) error {
+				// Create snapshot at start of superstep (BSP read barrier)
+				return adapter.prepareSuperstep(ctx)
+			},
+		))
+
+		runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
+			func(ctx context.Context, superstep int64) error {
+				// Save checkpoint after superstep completes
+				// Updates are already applied immediately per node
+				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
 					p.saveCheckpoint(ctx, compiled, runOpts, superstep, worker)
-				},
-			))
-		}
+				}
+				return nil
+			},
+		))
 
 		// Create and run the pregel runtime
 		rt, err := pregel.NewRuntime[*Compiled[I, O], state.Updates](adapter, runtimeOpts...)
@@ -382,6 +420,11 @@ type pregelGraphAdapter[I, O any] struct {
 	yield                  func(O, error) bool
 	enableDistributedState bool
 	executor               *PregelExecutor[I, O]
+
+	// BSP barrier support: one ReadView snapshot per superstep
+	// Nodes read from this shared snapshot for BSP-correct state access
+	currentSuperstepView *state.ReadView
+	mu                   sync.RWMutex
 }
 
 // RootNodes returns nodes with no incoming edges.
@@ -412,12 +455,37 @@ func (a *pregelGraphAdapter[I, O]) NodeByName(name string) pregel.Node[*Compiled
 		yield:                  a.yield,
 		enableDistributedState: a.enableDistributedState,
 		executor:               a.executor,
+		graphAdapter:           a, // Pass adapter for BSP access
 	}
 }
 
 // State returns the compiled graph (used as global state).
 func (a *pregelGraphAdapter[I, O]) State() *Compiled[I, O] {
 	return a.compiled
+}
+
+// prepareSuperstep creates a snapshot for BSP-correct state reads.
+// Called once at the start of each superstep.
+// All nodes in the superstep will read from this shared snapshot.
+func (a *pregelGraphAdapter[I, O]) prepareSuperstep(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Create read view for this superstep (all nodes will share this snapshot)
+	view, err := a.compiled.manager.CreateReadView(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create superstep snapshot: %w", err)
+	}
+
+	a.currentSuperstepView = view
+	return nil
+}
+
+// getSuperstepView returns the read-only view for the current superstep.
+func (a *pregelGraphAdapter[I, O]) getSuperstepView() *state.ReadView {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.currentSuperstepView
 }
 
 // pregelNodeAdapter adapts a graph.Node to pregel.Node interface.
@@ -428,6 +496,7 @@ type pregelNodeAdapter[I, O any] struct {
 	yield                  func(O, error) bool
 	enableDistributedState bool
 	executor               *PregelExecutor[I, O]
+	graphAdapter           *pregelGraphAdapter[I, O] // For BSP barrier access
 }
 
 // Name returns the node name.
@@ -497,10 +566,17 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	ctxWithStream := WithStreamWriter(ctx, streamWriter)
 
 	// Execute the node with BSP-correct state access
-	view, err := n.compiled.manager.CreateReadView(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create read view: %w", err)
+	// Use the superstep-wide ReadView (shared by all nodes in this superstep)
+	view := n.graphAdapter.getSuperstepView()
+	if view == nil {
+		// Fallback for initialization (should not happen in normal operation)
+		var err error
+		view, err = n.compiled.manager.CreateReadView(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create read view: %w", err)
+		}
 	}
+
 	updates, err := node.Execute(ctxWithStream, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
@@ -516,7 +592,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		n.executor.metrics.AddCompleted(n.nodeName)
 	}
 
-	// Apply updates immediately after node execution
+	// Apply updates immediately for routing decisions within the same node
+	// BSP semantics are maintained because other nodes use the superstep snapshot
 	if len(updates) > 0 {
 		if err := n.compiled.manager.ApplyUpdates(ctx, updates); err != nil {
 			return fmt.Errorf("failed to apply state updates: %w", err)
@@ -563,7 +640,21 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		for _, cond := range conditions {
 			if cond.From == n.nodeName {
 				found = true
-				// Evaluate conditional edges
+				// CONDITIONAL ROUTING SEMANTICS:
+				// Creates fresh snapshot to evaluate routing - sees node's own updates.
+				//
+				// What routing sees:
+				//   - State from superstep N-1 (last superstep's final state)
+				//   - This node's updates from superstep N (applied immediately at line 599)
+				//   - NOT other nodes' updates from superstep N (BSP isolation)
+				//
+				// This violates pure BSP but enables agent patterns (ReAct, tool routing).
+				// Example: Model node produces AIMessage with tool_calls → routing checks
+				// tool_calls → routes to tool executor. Routing MUST see the AIMessage.
+				//
+				// Trade-off:
+				// - Pure BSP: Routing uses superstep snapshot → can't see own output → agents break
+				// - Hybrid: Routing sees own updates → agent routing works → not pure BSP
 				condView, err := n.compiled.manager.CreateReadView(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to create read view for conditionals: %w", err)

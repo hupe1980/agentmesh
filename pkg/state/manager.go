@@ -24,7 +24,8 @@ type Manager struct {
 	mu              sync.RWMutex
 	store           Store
 	channels        *ChannelRegistry
-	registeredKeys  map[string]keyInfo // Tracks registered keys without reflection
+	registeredKeys  map[string]keyInfo          // Tracks registered keys without reflection
+	managedValues   map[string]*managedValueAny // Ephemeral runtime state (NOT checkpointed)
 	snapshots       *SnapshotManager
 	checkpointer    checkpoint.Checkpointer
 	checkpointRunID string
@@ -32,9 +33,10 @@ type Manager struct {
 
 // keyInfo tracks registered key metadata without requiring type information.
 type keyInfo struct {
-	name    string
-	isList  bool
-	maxSize int // For list keys only
+	name        string
+	isList      bool
+	isAggregate bool
+	maxSize     int // For list keys only
 }
 
 // ManagerOption configures manager behavior.
@@ -72,6 +74,7 @@ func NewManager(opts ...ManagerOption) *Manager {
 		store:          NewMemoryStore(),
 		channels:       NewChannelRegistry(),
 		registeredKeys: make(map[string]keyInfo),
+		managedValues:  make(map[string]*managedValueAny),
 		snapshots:      NewSnapshotManager(),
 	}
 
@@ -150,6 +153,49 @@ func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
 		name:    key.name,
 		isList:  true,
 		maxSize: key.maxSize,
+	}
+
+	return nil
+}
+
+// RegisterAggregateKey registers a Key[T] with aggregation semantics.
+// This creates an AggregateChannel that combines values using the provided aggregator.
+// If the key is already registered, this is a no-op (idempotent).
+// Type safety is enforced at compile-time through the Key[T] parameter.
+//
+// Use this for global coordination patterns:
+//   - Counters (SumAggregator)
+//   - Maximum/minimum tracking (MaxAggregator, MinAggregator)
+//   - Statistical computations (AvgAggregator, VarianceAggregator)
+//   - Convergence detection (AllTrueAggregator)
+//
+// Example:
+//
+//	totalCostKey := NewKey[float64]("total_cost", 0.0)
+//	state.RegisterAggregateKey(mgr, totalCostKey, &SumAggregator{})
+//
+//	// Nodes contribute via normal Updates:
+//	return state.Updates{totalCostKey.Name(): 42.0}, nil
+func RegisterAggregateKey[T any](m *Manager, key Key[T], aggregator channel.Aggregator) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if already registered (idempotent)
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
+	}
+
+	// Create AggregateChannel with the provided aggregator
+	ch := channel.NewAggregateChannel(key.name, aggregator)
+	if err := m.channels.RegisterChannel(key.name, ch, AggregateBehavior); err != nil {
+		return fmt.Errorf("channel registration failed: %w", err)
+	}
+
+	// Track registration (mark as aggregate type)
+	m.registeredKeys[key.name] = keyInfo{
+		name:        key.name,
+		isList:      false,
+		isAggregate: true,
 	}
 
 	return nil
@@ -471,4 +517,114 @@ func convertMetadata(m map[string]string) map[string]any {
 		result[k] = v
 	}
 	return result
+}
+
+// RegisterManagedValue registers a type-safe managed value for ephemeral runtime state.
+// Managed values are NOT included in checkpoints - they are runtime-only state.
+//
+// Use cases:
+//   - Configuration stores (runtime config that shouldn't be persisted)
+//   - Session state (user sessions, auth tokens, connection pools)
+//   - Metrics collectors (runtime metrics that don't need persistence)
+//   - Resource handles (database connections, file handles)
+//
+// Example:
+//
+//	// Create a managed value for runtime configuration
+//	configMV := state.NewManagedValue[*RuntimeConfig]("runtime_config")
+//	mgr.RegisterManagedValue(configMV)
+//
+//	// Set the configuration (typically done at runtime initialization)
+//	config := &RuntimeConfig{APIKey: "secret", Timeout: 30}
+//	configMV.Set(ctx, config)
+//
+//	// Access from nodes via GetManagedValue
+//	config, err := state.GetManagedValue[*RuntimeConfig](mgr, ctx, "runtime_config")
+func RegisterManagedValue[T any](m *Manager, mv ManagedValue[T]) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	name := mv.Name()
+
+	// Check if already registered
+	if _, exists := m.managedValues[name]; exists {
+		return fmt.Errorf("managed value %q already registered", name)
+	}
+
+	// Wrap for type-erased storage
+	m.managedValues[name] = WrapManagedValue(mv)
+
+	return nil
+}
+
+// GetManagedValue retrieves a type-safe managed value from the manager.
+// Returns an error if the managed value doesn't exist or type assertion fails.
+//
+// Example:
+//
+//	// In a node's Compute function
+//	func (n *MyNode) Compute(ctx context.Context, s state.State) (state.Updates, error) {
+//	    config, err := state.GetManagedValue[*RuntimeConfig](mgr, ctx, "runtime_config")
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//	    // Use config.APIKey, config.Timeout, etc.
+//	}
+func GetManagedValue[T any](m *Manager, ctx context.Context, name string) (T, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var zero T
+
+	mv, exists := m.managedValues[name]
+	if !exists {
+		return zero, fmt.Errorf("managed value %q not found", name)
+	}
+
+	value, err := mv.Get(ctx)
+	if err != nil {
+		return zero, err
+	}
+
+	typed, ok := value.(T)
+	if !ok {
+		return zero, fmt.Errorf("managed value %q has wrong type: expected %T, got %T", name, zero, value)
+	}
+
+	return typed, nil
+}
+
+// SetManagedValue updates a managed value (runtime operation, not from nodes).
+// This is typically called during runtime initialization or by the graph executor,
+// not from within node Compute functions.
+//
+// Example:
+//
+//	// Update configuration at runtime
+//	newConfig := &RuntimeConfig{APIKey: "new-secret", Timeout: 60}
+//	err := state.SetManagedValue(mgr, ctx, "runtime_config", newConfig)
+func SetManagedValue[T any](m *Manager, ctx context.Context, name string, value T) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	mv, exists := m.managedValues[name]
+	if !exists {
+		return fmt.Errorf("managed value %q not found", name)
+	}
+
+	return mv.Set(ctx, value)
+}
+
+// GetManagedValueNames returns all registered managed value names.
+// Useful for debugging and introspection.
+func (m *Manager) GetManagedValueNames() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	names := make([]string, 0, len(m.managedValues))
+	for name := range m.managedValues {
+		names = append(names, name)
+	}
+
+	return names
 }

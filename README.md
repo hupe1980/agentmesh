@@ -631,22 +631,16 @@ compiled, _ := builder.Compile()
 
 ### ⚙️ Pregel Executor Configuration
 
-Configure Pregel BSP execution engine with aggregators, combiners, and message buses:
+Configure Pregel BSP execution engine with combiners and message buses:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/pregel"
+    "github.com/hupe1980/agentmesh/pkg/exec"
 )
 
 // Create Pregel executor with configuration
 executor := graph.NewPregelExecutor(
-    // Aggregators: Global reductions across all nodes
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "total_cost": pregel.SumAggregator{},
-        "avg_confidence": pregel.AvgAggregator{},
-    }),
-    
     // Combiner: Reduce messages before delivery
     graph.WithPregelCombiner(func(messages []graph.ChannelMessage) []graph.ChannelMessage {
         // Merge or deduplicate messages
@@ -667,31 +661,9 @@ executor := graph.NewPregelExecutor(
 builder, _ := exec.NewBuilder(executor)
 // ... build graph ...
 compiled, _ := builder.Compile()
-
-// Access aggregated values after execution
-var lastResult state.ExecutionResult
-for result, err := range compiled.Run(ctx, initialMessages) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    lastResult = result
-}
-totalCost := lastResult.Aggregates["total_cost"]  // Sum across all nodes
-avgConf := lastResult.Aggregates["avg_confidence"] // Average confidence
 ```
 
-**Available Aggregators:**
-- `pregel.SumAggregator{}` - Sum numeric values
-- `pregel.AvgAggregator{}` - Compute average
-- `pregel.MaxAggregator{}` - Find maximum
-- `pregel.MinAggregator{}` - Find minimum
-- Custom aggregators implementing `pregel.Aggregator`
-
-**Use Cases:**
-- 📊 **Global Metrics**: Track total cost, request count, error rates
-- 🎯 **Convergence Detection**: Monitor average changes for iterative algorithms
-- 🔍 **Distributed Coordination**: Share global state across nodes
-- 📈 **Real-time Analytics**: Aggregate data streams from parallel workers
+**Note:** For global aggregation patterns (sum, average, max, etc.), use **state-based aggregators** via `state.RegisterAggregateKey()` instead (see [Aggregators](#-aggregators) section above).
 
 ### 🔁 Retry Policies
 
@@ -724,7 +696,68 @@ policy := graph.NewRetryPolicy().
 - `CappedExponentialBackoff()` - Exponential with max cap
 - `JitteredExponentialBackoff()` - Prevents thundering herd
 
-### 💾 Checkpointing
+### � Aggregators
+
+Aggregators provide global coordination patterns by combining values across node executions:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/state"
+    "github.com/hupe1980/agentmesh/pkg/state/aggregators"
+)
+
+// Create manager
+mgr := state.NewManager()
+
+// Register keys with aggregation semantics
+totalCostKey := state.NewKey[any]("total_cost", 0)
+maxPriorityKey := state.NewKey[any]("max_priority", float64(-1e308))
+activeNodesKey := state.NewKey[any]("active_nodes", 0)
+
+state.RegisterAggregateKey(mgr, totalCostKey, &aggregators.SumAggregator{})
+state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
+state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
+
+// In nodes - contribute via normal Updates
+builder.Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Read current accumulated value
+    total, _ := state.GetFromView(view, totalCostKey)
+    fmt.Printf("Total cost so far: %v\n", total)
+    
+    // Contribute new value (will be aggregated)
+    return state.Updates{
+        totalCostKey.Name():     42.0,    // Added to sum
+        maxPriorityKey.Name():   priority, // Compared for max
+        activeNodesKey.Name():   1,        // Counted
+    }, nil
+})
+
+// After execution, read final aggregated values
+total, _ := state.Get(ctx, mgr, totalCostKey)
+maxPriority, _ := state.Get(ctx, mgr, maxPriorityKey)
+nodeCount, _ := state.Get(ctx, mgr, activeNodesKey)
+```
+
+**Built-in Aggregators** (`pkg/state/aggregators`):
+- **`SumAggregator`** - Sum numeric values (counters, totals)
+- **`MaxAggregator`** - Track maximum value
+- **`MinAggregator`** - Track minimum value
+- **`AvgAggregator`** - Compute running average using Welford's algorithm
+- **`VarianceAggregator`** - Compute variance for statistical analysis
+- **`CountAggregator`** - Count contributions (any non-nil value)
+- **`AllTrueAggregator`** - Boolean AND across all values
+- **`AnyTrueAggregator`** - Boolean OR across all values
+- **`StringConcatAggregator`** - Concatenate strings with separator
+
+**Use Cases:**
+- 📊 **Global Metrics**: Total cost, request counts, error rates
+- 🎯 **Resource Tracking**: Max memory usage, peak latency, min availability
+- 📈 **Statistical Analysis**: Average response times, variance in load distribution
+- 🔍 **Convergence Detection**: Monitor when all nodes reach stable state
+
+**Note:** Aggregate keys must use `Key[any]` type since aggregators return internal state types (e.g., `AvgState` for averages). Access aggregated values using type assertions when needed.
+
+### �💾 Checkpointing
 
 Automatic state persistence and recovery:
 

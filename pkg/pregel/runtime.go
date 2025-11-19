@@ -419,9 +419,15 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		}
 		superstep = nextSuperstep
 
-		// Call superstep completion callback (useful for checkpointing)
+		// Call superstep completion callback (useful for checkpointing and applying updates)
 		if r.opts.OnSuperstepComplete != nil {
-			r.opts.OnSuperstepComplete(ctx, superstep)
+			if err := r.opts.OnSuperstepComplete(ctx, superstep); err != nil {
+				logger.Error("superstep completion callback failed",
+					"superstep", superstep,
+					"error", err)
+				r.emitEvent(Event[M]{Superstep: superstep}, err)
+				return
+			}
 		}
 
 		frontier, err = r.consumeNextFrontier()
@@ -485,6 +491,13 @@ func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
 func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]struct{}, superstep int64) error {
 	if len(frontier) == 0 {
 		return nil
+	}
+
+	// Call superstep start callback (for BSP snapshot creation)
+	if r.opts.OnSuperstepStart != nil {
+		if err := r.opts.OnSuperstepStart(ctx, superstep); err != nil {
+			return fmt.Errorf("superstep start callback failed: %w", err)
+		}
 	}
 
 	// Setup execution context

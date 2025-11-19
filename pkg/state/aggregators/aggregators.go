@@ -1,23 +1,30 @@
-// Package aggregators provides built-in aggregator implementations for common use cases.
+// Package aggregators provides built-in aggregator implementations for the unified state system.
+// Aggregators are used with AggregateChannel to combine values using accumulation semantics.
 package aggregators
 
 // This file provides built-in aggregator implementations for common use cases.
 // Aggregators enable distributed computation patterns like global counters,
 // max/min tracking, convergence detection, and statistical analysis.
 //
-// All aggregators follow the BSP (Bulk Synchronous Parallel) model:
-//   - Values contributed in superstep N are aggregated
-//   - The final aggregated value becomes visible in superstep N+1
-//   - Aggregates are accessible via state.AggregatesSnapshot()
+// Usage with the State System:
+//   1. Register a key with an aggregator:
+//      totalCostKey := state.NewKey[float64]("total_cost", 0.0)
+//      state.RegisterAggregateKey(mgr, totalCostKey, &aggregators.SumAggregator{})
+//
+//   2. Contribute values in nodes via normal Updates:
+//      return state.Updates{totalCostKey.Name(): 42.0}, nil
+//
+//   3. Read accumulated value:
+//      total := state.GetFromView(view, totalCostKey)
 //
 // Thread Safety:
 // All aggregator implementations are stateless (zero-cost structs) and
-// thread-safe. The runtime handles synchronization of aggregate values.
+// thread-safe. The AggregateChannel handles synchronization.
 //
 // Custom Aggregators:
-// Implement the pregel.Aggregator interface to create custom aggregation logic:
+// Implement the channel.Aggregator interface to create custom aggregation logic:
 //
-//	type pregel.Aggregator interface {
+//	type channel.Aggregator interface {
 //	    Zero() any                        // Initial/identity value
 //	    Aggregate(current, value any) any // Combine current with new value
 //	}
@@ -30,15 +37,15 @@ package aggregators
 //
 // Example:
 //
-//	result, _ := graph.Last(compiled.Run(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
-//	    "total_processed": &SumAggregator{},
-//	})))
+//	// Register key with sum aggregation
+//	totalKey := state.NewKey[float64]("total_processed", 0.0)
+//	state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
 //
-//	// In node:
-//	s.Aggregate("total_processed", 1)  // Increment counter
+//	// In node - contribute via Updates
+//	return state.Updates{totalKey.Name(): 1.0}, nil
 //
-//	// After superstep:
-//	total := s.AggregatesSnapshot()["total_processed"].(float64)
+//	// Read accumulated value
+//	total := state.GetFromView(view, totalKey) // float64
 type SumAggregator struct{}
 
 // Zero returns the identity value for summation.
@@ -88,15 +95,15 @@ func (a *SumAggregator) Aggregate(current, value any) any {
 //
 // Example:
 //
-//	result, _ := graph.Last(compiled.Run(ctx, messages, WithAggregators(map[string]pregel.Aggregator{
-//	    "max_priority": &MaxAggregator{},
-//	})))
+//	// Register key with max aggregation
+//	maxPriorityKey := state.NewKey[float64]("max_priority", -1e308)
+//	state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 //
-//	// In node:
-//	s.Aggregate("max_priority", taskPriority)
+//	// In node - contribute via Updates
+//	return state.Updates{maxPriorityKey.Name(): taskPriority}, nil
 //
-//	// After superstep:
-//	maxPriority := s.AggregatesSnapshot()["max_priority"].(float64)
+//	// Read max value
+//	maxPriority := state.GetFromView(view, maxPriorityKey) // float64
 type MaxAggregator struct{}
 
 // Zero returns the minimum possible float64 value.

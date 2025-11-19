@@ -5,7 +5,7 @@ description: Advanced AgentMesh patterns including plugins, circuit breakers, ag
 permalink: /advanced/
 hero:
   title: Advanced Patterns
-  description: Leverage resilience plugins, BSP aggregators, and subgraph composition.
+  description: Leverage resilience plugins, state-based aggregators, and subgraph composition.
   primary_cta:
     label: Explore examples
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
@@ -133,21 +133,21 @@ cb.Reset()              // Manual reset
 See [examples/circuit_breaker](https://github.com/hupe1980/agentmesh/tree/main/examples/circuit_breaker) for complete implementation.
 
 
-## Aggregators & BSP Coordination {#aggregators}
+## Aggregators & Global State {#aggregators}
 
 ### What are Aggregators?
 
-Aggregators are a core concept in the Bulk Synchronous Parallel (BSP) model that AgentMesh implements. They provide a mechanism for **global coordination** across all nodes in a graph by accumulating values during superstep execution.
+Aggregators provide a mechanism for **global coordination** across all nodes in a graph by accumulating values during execution. They're implemented as special channels in AgentMesh's unified state system.
 
 **Key characteristics**:
 - **Global visibility**: All nodes can read the aggregated value
-- **Read-only in nodes**: Nodes contribute values but read the result from the previous superstep
-- **BSP-aligned**: Updated after each superstep barrier
-- **Type-safe**: Strongly typed aggregate values
+- **Accumulation semantics**: Values are combined using aggregator logic (sum, max, avg, etc.)
+- **Type-safe**: Registered via `state.RegisterAggregateKey[T]()`
+- **Channel-based**: Integrated with state management system
 
 ### Built-in Aggregators
 
-AgentMesh provides several built-in aggregators for common use cases:
+AgentMesh provides several built-in aggregators in the `pkg/state/aggregators` package:
 
 #### SumAggregator
 
@@ -155,111 +155,111 @@ Accumulates numeric values across all node contributions:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/pregel"
+    "github.com/hupe1980/agentmesh/pkg/state"
+    "github.com/hupe1980/agentmesh/pkg/state/aggregators"
 )
 
-// Configure aggregators via PregelExecutor
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "total_processed": pregel.SumAggregator{},
-    }),
-)
+// Create state manager
+mgr := state.NewManager()
 
-g := graph.New()
-// ... build graph ...
-compiled, _ := graph.Compile(g, executor)
+// Register aggregate key
+totalProcessedKey := state.NewKey[any]("total_processed", 0)
+state.RegisterAggregateKey(mgr, totalProcessedKey, &aggregators.SumAggregator{})
+
+// In nodes - contribute via Updates
+func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Read current total
+    total, _ := state.GetFromView(view, totalProcessedKey)
+    fmt.Printf("Total processed: %v\n", total)
+    
+    // Contribute new count
+    return state.Updates{
+        totalProcessedKey.Name(): 42.0,
+    }, nil
+}
+
+// After execution, read final sum
+total, _ := state.Get(ctx, mgr, totalProcessedKey)
 ```
 
 **Returns**: `float64` - Sum of all contributed values
 
-#### MinAggregator
+#### MinAggregator / MaxAggregator
 
-Tracks the minimum value across all nodes:
-
-```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "min_cost": pregel.MinAggregator{},
-    }),
-)
-```
-
-**Returns**: `float64` - Minimum value observed
-
-#### MaxAggregator
-
-Tracks the maximum value across all nodes:
+Tracks the minimum or maximum value across all nodes:
 
 ```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "max_priority": pregel.MaxAggregator{},
-    }),
-)
+minCostKey := state.NewKey[any]("min_cost", float64(1e308))
+maxPriorityKey := state.NewKey[any]("max_priority", float64(-1e308))
+
+state.RegisterAggregateKey(mgr, minCostKey, &aggregators.MinAggregator{})
+state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
+
+// Contribute via Updates
+return state.Updates{
+    minCostKey.Name():      estimatedCost,
+    maxPriorityKey.Name():  taskPriority,
+}, nil
 ```
 
-**Returns**: `float64` - Maximum value observed
+**Returns**: `float64` - Minimum or maximum value observed
 
 #### AvgAggregator
 
 Computes the running average of numeric values using Welford's algorithm for numerical stability:
 
 ```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "avg_latency": pregel.AvgAggregator{},
-    }),
-)
+avgLatencyKey := state.NewKey[any]("avg_latency", nil)
+state.RegisterAggregateKey(mgr, avgLatencyKey, &aggregators.AvgAggregator{})
 
 // In node
-s.Aggregate("avg_latency", responseTime)
+return state.Updates{
+    avgLatencyKey.Name(): responseTime,
+}, nil
 
-// Read result
-snap := s.AggregatesSnapshot()
-avgState := snap["avg_latency"].(pregel.AvgState)
+// Read result (returns AvgState)
+avgStateAny, _ := state.Get(ctx, mgr, avgLatencyKey)
+avgState := avgStateAny.(aggregators.AvgState)
 average := avgState.Mean
 count := avgState.Count
 ```
 
-**Returns**: `AvgState{Mean: float64, Count: int64}` - Running mean and sample count
+**Returns**: `aggregators.AvgState{Mean: float64, Count: int64}` - Running mean and sample count
 
 #### VarianceAggregator
 
 Computes the variance of numeric values using Welford's algorithm:
 
 ```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "latency_variance": pregel.VarianceAggregator{},
-    }),
-)
+varianceKey := state.NewKey[any]("latency_variance", nil)
+state.RegisterAggregateKey(mgr, varianceKey, &aggregators.VarianceAggregator{})
 
 // In node
-s.Aggregate("latency_variance", responseTime)
+return state.Updates{
+    varianceKey.Name(): responseTime,
+}, nil
 
 // Read result
-snap := s.AggregatesSnapshot()
-varState := snap["latency_variance"].(pregel.VarianceState)
+varStateAny, _ := state.Get(ctx, mgr, varianceKey)
+varState := varStateAny.(aggregators.VarianceState)
 variance := varState.M2 / float64(varState.Count)
 stdDev := math.Sqrt(variance)
 ```
 
-**Returns**: `VarianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
+**Returns**: `aggregators.VarianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
 
 #### CountAggregator
 
 Counts non-nil contributions:
 
 ```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "active_nodes": pregel.CountAggregator{},
-    }),
-)
+activeNodesKey := state.NewKey[any]("active_nodes", 0)
+state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
-// In node
-s.Aggregate("active_nodes", true) // Any non-nil value increments
+// In node - any non-nil value increments
+return state.Updates{
+    activeNodesKey.Name(): 1,
+}, nil
 ```
 
 **Returns**: `int` - Total count
@@ -269,16 +269,20 @@ s.Aggregate("active_nodes", true) // Any non-nil value increments
 Boolean aggregators for convergence detection and monitoring:
 
 ```go
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "all_converged": pregel.AllTrueAggregator{},
-        "has_errors":    pregel.AnyTrueAggregator{},
-    }),
-)
-g.WithExecutor(executor)
+allConvergedKey := state.NewKey[any]("all_converged", true)
+hasErrorsKey := state.NewKey[any]("has_errors", false)
 
-// Check after superstep
-if snap["all_converged"].(bool) {
+state.RegisterAggregateKey(mgr, allConvergedKey, &aggregators.AllTrueAggregator{})
+state.RegisterAggregateKey(mgr, hasErrorsKey, &aggregators.AnyTrueAggregator{})
+
+// In node
+return state.Updates{
+    allConvergedKey.Name(): isConverged,
+    hasErrorsKey.Name():    hasError,
+}, nil
+
+// Check convergence
+if allConverged, _ := state.Get(ctx, mgr, allConvergedKey); allConverged.(bool) {
     // All nodes converged, can terminate early
 }
 ```
@@ -287,24 +291,25 @@ if snap["all_converged"].(bool) {
 
 ### Using Aggregators in Nodes
 
-Nodes contribute to aggregators and read results from previous supersteps:
-
-### Using Aggregators in Nodes
-
-Nodes contribute to aggregators and read results from previous supersteps:
+Nodes contribute to aggregators via normal `state.Updates` and read accumulated values from `state.ReadView`:
 
 ```go
-// In a Pregel-style execution context, nodes can aggregate values
-// Note: Standard graph nodes use state.Updates directly
 func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    // Read current aggregated values
+    totalProcessed, _ := state.GetFromView(view, totalProcessedKey)
+    avgLatency, _ := state.GetFromView(view, avgLatencyKey)
+    
+    fmt.Printf("Progress: %v items, avg latency: %v\n", totalProcessed, avgLatency)
+    
     // Process some items
     itemsProcessed := 42
     latency := 150.0
     
-    // Note: Aggregation is specific to Pregel runtime
-    // For standard graphs, return state.Updates directly
-    
-    return nil, nil
+    // Contribute to aggregators via Updates
+    return state.Updates{
+        totalProcessedKey.Name(): float64(itemsProcessed),
+        avgLatencyKey.Name():     latency,
+    }, nil
 }
 ```
 
@@ -313,12 +318,14 @@ func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, er
 - Track cumulative errors  
 - Calculate global statistics (mean, variance, min/max)
 - Monitor convergence criteria
+- Distributed coordination and decision-making
 
 ### Custom Aggregators
 
-Implement the `Aggregator` interface for custom reduction logic:
+Implement the `channel.Aggregator` interface for custom reduction logic:
 
 ```go
+// From pkg/channel/channel.go
 type Aggregator interface {
     Zero() any
     Aggregate(current, value any) any
@@ -330,6 +337,11 @@ type Aggregator interface {
 Track values to compute median:
 
 ```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/channel"
+    "github.com/hupe1980/agentmesh/pkg/state"
+)
+
 type MedianAggregator struct{}
 
 type medianState struct {
@@ -351,13 +363,20 @@ func (a *MedianAggregator) Aggregate(current, value any) any {
 }
 
 // Usage
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "latency_median": &MedianAggregator{},
-    }),
-)
-g.WithExecutor(executor)
-compiled, _ := exec.CompileGraph(g)
+mgr := state.NewManager()
+medianKey := state.NewKey[any]("latency_median", nil)
+state.RegisterAggregateKey(mgr, medianKey, &MedianAggregator{})
+
+// In node
+return state.Updates{
+    medianKey.Name(): latency,
+}, nil
+
+// After execution, compute median from collected values
+medianStateAny, _ := state.Get(ctx, mgr, medianKey)
+ms := medianStateAny.(medianState)
+sort.Float64s(ms.Values)
+median := ms.Values[len(ms.Values)/2]
 ```
 
 #### Example: Histogram Aggregator
@@ -397,6 +416,12 @@ func (a *HistogramAggregator) Aggregate(current, value any) any {
     
     return state
 }
+
+// Usage
+histogramKey := state.NewKey[any]("response_time_histogram", nil)
+state.RegisterAggregateKey(mgr, histogramKey, &HistogramAggregator{
+    Bins: []float64{100, 200, 500, 1000}, // <100ms, 100-200ms, etc.
+})
 ```
 
 ### Advanced Patterns
