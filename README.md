@@ -1289,7 +1289,9 @@ compiled, _ := agent.NewReActAgent(model, tools)
 
 ### Custom MessageBus for Distributed Execution
 
-The `pkg/pregel` package is now **public API**, enabling custom MessageBus implementations for distributed execution across Redis, Kafka, or custom backends:
+The `pkg/pregel` package is now **public API**, enabling custom MessageBus implementations for distributed execution across Redis, Kafka, or custom backends.
+
+**Built-in backpressure:** The default `InMemoryMessageBus` blocks sends when mailboxes are full (never drops messages). Custom implementations should follow this pattern or explicitly document different behavior.
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/pregel"
@@ -1299,10 +1301,19 @@ type RedisMessageBus struct {
     client *redis.Client
 }
 
-func (r *RedisMessageBus) Send(from, to string, data MyMessageType) error {
+// Send should block or return error when capacity is exceeded
+// Never drop messages silently
+func (r *RedisMessageBus) Send(ctx context.Context, from, to string, data MyMessageType) error {
     // Serialize and send via Redis pub/sub
     payload, _ := json.Marshal(data)
-    return r.client.Publish(ctx, to, payload).Err()
+    
+    // Respect context cancellation during blocking operations
+    select {
+    case <-ctx.Done():
+        return fmt.Errorf("send cancelled: %w", ctx.Err())
+    default:
+        return r.client.Publish(ctx, to, payload).Err()
+    }
 }
 
 func (r *RedisMessageBus) Pending(vertex string) ([]pregel.Message[MyMessageType], error) {

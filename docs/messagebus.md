@@ -35,8 +35,12 @@ The Message Bus abstraction decouples message delivery from the Pregel runtime, 
 
 ```go
 type MessageBus[M any] interface {
-    // Send delivers messages to target vertices
-    Send(messages []Message[M]) error
+    // Send delivers messages to target vertices with backpressure.
+    // For bounded mailboxes (maxSize > 0), Send blocks when full until 
+    // space is available or context is cancelled.
+    // Returns context error if cancelled during blocking send.
+    // Messages are NEVER dropped silently.
+    Send(ctx context.Context, messages []Message[M]) error
     
     // Receive retrieves and removes all messages for a vertex
     Receive(vertex string) ([]Message[M], error)
@@ -79,20 +83,39 @@ runtime := pregel.NewRuntime(graph, events,
 
 ### InMemoryMessageBus
 
-Single-process message delivery with bounded mailboxes.
+Single-process message delivery with bounded mailboxes and backpressure.
 
 **Features:**
-- Thread-safe concurrent access
-- Optional size limits per vertex
-- Message combiner support
+- Thread-safe concurrent access (32 sharded locks)
+- Backpressure: Send blocks when mailbox is full (never drops messages)
+- Context-aware: Returns error on timeout/cancellation
+- Optional message combiner to reduce memory pressure
 - Zero external dependencies
+
+**Behavior:**
+- **Bounded mailboxes** (`maxSize > 0`): Send blocks when full, unblocks when space available
+- **Unbounded mailboxes** (`maxSize = 0`): Send never blocks, uses unlimited buffer (legacy mode)
+- **Context cancellation**: Returns error, guarantees no message corruption
+- **Message combiner**: Automatically merges messages for same target when channel ≥75% full
 
 **Configuration:**
 ```go
 bus := pregel.NewInMemoryMessageBus[MyMessage](
-    100,        // Max 100 messages per vertex
-    combiner,   // Optional message combiner
+    100,        // Max 100 messages per vertex (0 = unbounded)
+    combiner,   // Optional message combiner (nil = no combining)
 )
+```
+
+**Example with context timeout:**
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+err := bus.Send(ctx, messages)
+if err != nil {
+    // Handle timeout or cancellation
+    log.Printf("Send failed: %v", err)
+}
 ```
 
 ## Custom Implementations
@@ -201,11 +224,43 @@ replayRuntime := pregel.NewRuntime(graph, events,
 )
 ```
 
-### 3. Rate Limiting & Backpressure
+### 3. Backpressure & Flow Control
 
-Control message flow:
+**Backpressure is built into InMemoryMessageBus by default:**
 
 ```go
+// With bounded mailbox (built-in backpressure)
+bus := pregel.NewInMemoryMessageBus[MyMessage](
+    100,  // When mailbox has 100 messages, sends block
+    nil,
+)
+
+// With message combiner (reduces pressure automatically)
+bus := pregel.NewInMemoryMessageBus[MyMessage](
+    100,
+    func(existing, incoming Message[MyMessage]) Message[MyMessage] {
+        // Merge messages for same target (triggered at 75% capacity)
+        return Message[MyMessage]{
+            To:   existing.To,
+            Data: mergeData(existing.Data, incoming.Data),
+        }
+    },
+)
+
+// With context timeout (prevents indefinite blocking)
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+
+err := bus.Send(ctx, messages)
+if err != nil {
+    // Handle send failure (timeout, cancellation, etc.)
+}
+```
+
+**Additional rate limiting:**
+
+```go
+// Custom wrapper for external rate limiting
 bus := NewRateLimitedMessageBus[MyMessage](
     innerBus,
     1000,  // Max 1000 messages/sec

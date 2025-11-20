@@ -298,3 +298,257 @@ func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
 		t.Errorf("Expected only 'a' in pending, got %v", pending)
 	}
 }
+
+// TestInMemoryMessageBus_BackpressureNoMessageLoss verifies that messages are never dropped
+// when mailbox is full, they are held until space is available (backpressure).
+func TestInMemoryMessageBus_BackpressureNoMessageLoss(t *testing.T) {
+	const mailboxSize = 5
+	bus := NewInMemoryMessageBus[int](mailboxSize, nil)
+	defer bus.Close()
+
+	ctx := context.Background()
+
+	// Fill mailbox to capacity
+	var sentData []int
+	for i := 0; i < mailboxSize; i++ {
+		sentData = append(sentData, i)
+		err := bus.Send(ctx, []Message[int]{
+			{To: "vertex1", Data: i},
+		})
+		if err != nil {
+			t.Fatalf("Send %d failed: %v", i, err)
+		}
+	}
+
+	// Verify mailbox is full
+	stats := bus.Stats()
+	if stats.TotalMessages != mailboxSize {
+		t.Errorf("Expected %d messages in mailbox, got %d", mailboxSize, stats.TotalMessages)
+	}
+
+	// Attempt to send more messages concurrently - they should block
+	const extraMessages = 10
+	var wg sync.WaitGroup
+	errChan := make(chan error, extraMessages)
+
+	for i := mailboxSize; i < mailboxSize+extraMessages; i++ {
+		wg.Add(1)
+		sentData = append(sentData, i)
+		go func(val int) {
+			defer wg.Done()
+			err := bus.Send(ctx, []Message[int]{
+				{To: "vertex1", Data: val},
+			})
+			errChan <- err
+		}(i)
+	}
+
+	// Give goroutines time to block
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify sends are blocked (no errors yet)
+	select {
+	case <-errChan:
+		t.Error("Send should be blocked, not completed")
+	default:
+		// Good - sends are blocked
+	}
+
+	// Now drain mailbox to unblock sends
+	receivedData := make(map[int]bool)
+	for {
+		msgs, err := bus.Receive("vertex1")
+		if err != nil {
+			t.Fatalf("Receive failed: %v", err)
+		}
+		if len(msgs) == 0 {
+			// Check if all goroutines completed
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+				// All sends completed
+				goto verify
+			case <-time.After(100 * time.Millisecond):
+				// More sends may still be in flight, continue receiving
+			}
+		}
+		for _, msg := range msgs {
+			receivedData[msg.Data] = true
+		}
+	}
+
+verify:
+	// Verify all sends completed without errors
+	close(errChan)
+	for err := range errChan {
+		if err != nil {
+			t.Errorf("Send failed: %v", err)
+		}
+	}
+
+	// Verify ALL messages were delivered (no drops)
+	if len(receivedData) != len(sentData) {
+		t.Errorf("Expected %d unique messages, got %d", len(sentData), len(receivedData))
+	}
+	for _, val := range sentData {
+		if !receivedData[val] {
+			t.Errorf("Message with data %d was dropped", val)
+		}
+	}
+}
+
+// TestInMemoryMessageBus_ContextCancellationDuringBackpressure verifies that
+// when a send is blocked due to full mailbox and context is cancelled,
+// an error is returned and the message is not delivered.
+func TestInMemoryMessageBus_ContextCancellationDuringBackpressure(t *testing.T) {
+	const mailboxSize = 2
+	bus := NewInMemoryMessageBus[string](mailboxSize, nil)
+	defer bus.Close()
+
+	// Fill mailbox to capacity
+	ctx := context.Background()
+	for i := 0; i < mailboxSize; i++ {
+		err := bus.Send(ctx, []Message[string]{
+			{To: "vertex1", Data: "msg" + string(rune('0'+i))},
+		})
+		if err != nil {
+			t.Fatalf("Send %d failed: %v", i, err)
+		}
+	}
+
+	// Attempt send with cancelled context - should fail immediately
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := bus.Send(cancelledCtx, []Message[string]{
+		{To: "vertex1", Data: "should-fail"},
+	})
+	if err == nil {
+		t.Error("Expected error when sending with cancelled context to full mailbox")
+	}
+	if err != nil {
+		t.Logf("Got expected context error: %v", err)
+	}
+
+	// Attempt send with timeout context
+	timeoutCtx, cancel2 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel2()
+
+	err = bus.Send(timeoutCtx, []Message[string]{
+		{To: "vertex1", Data: "should-timeout"},
+	})
+	if err == nil {
+		t.Error("Expected error when send times out due to full mailbox")
+	}
+	if err != nil {
+		t.Logf("Got expected timeout error: %v", err)
+	}
+
+	// Verify original messages are intact
+	msgs, _ := bus.Receive("vertex1")
+	if len(msgs) != mailboxSize {
+		t.Errorf("Expected %d messages (original only), got %d", mailboxSize, len(msgs))
+	}
+	for i, msg := range msgs {
+		expected := "msg" + string(rune('0'+i))
+		if msg.Data != expected {
+			t.Errorf("Message %d: expected %q, got %q", i, expected, msg.Data)
+		}
+	}
+}
+
+// TestInMemoryMessageBus_ConcurrentBackpressure verifies correct behavior
+// with many concurrent senders experiencing backpressure.
+func TestInMemoryMessageBus_ConcurrentBackpressure(t *testing.T) {
+	const (
+		mailboxSize   = 10
+		numSenders    = 50
+		msgsPerSender = 20
+	)
+
+	bus := NewInMemoryMessageBus[int](mailboxSize, nil)
+	defer bus.Close()
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	var sendErrors sync.Map
+
+	// Start many concurrent senders
+	for sender := 0; sender < numSenders; sender++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < msgsPerSender; i++ {
+				err := bus.Send(ctx, []Message[int]{
+					{To: "vertex1", Data: id*1000 + i},
+				})
+				if err != nil {
+					sendErrors.Store(id*1000+i, err)
+				}
+			}
+		}(sender)
+	}
+
+	// Concurrent receiver draining messages
+	receivedData := make(map[int]bool)
+	var receiveMu sync.Mutex
+	var receiveWg sync.WaitGroup
+	stopReceiving := make(chan struct{})
+
+	receiveWg.Add(1)
+	go func() {
+		defer receiveWg.Done()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopReceiving:
+				// Final drain
+				for {
+					msgs, _ := bus.Receive("vertex1")
+					if len(msgs) == 0 {
+						return
+					}
+					receiveMu.Lock()
+					for _, msg := range msgs {
+						receivedData[msg.Data] = true
+					}
+					receiveMu.Unlock()
+				}
+			case <-ticker.C:
+				msgs, _ := bus.Receive("vertex1")
+				receiveMu.Lock()
+				for _, msg := range msgs {
+					receivedData[msg.Data] = true
+				}
+				receiveMu.Unlock()
+			}
+		}
+	}()
+
+	// Wait for all sends to complete
+	wg.Wait()
+	close(stopReceiving)
+	receiveWg.Wait()
+
+	// Verify no send errors
+	sendErrors.Range(func(key, value interface{}) bool {
+		t.Errorf("Send error for message %v: %v", key, value)
+		return true
+	})
+
+	// Verify all messages delivered
+	expectedCount := numSenders * msgsPerSender
+	receiveMu.Lock()
+	actualCount := len(receivedData)
+	receiveMu.Unlock()
+
+	if actualCount != expectedCount {
+		t.Errorf("Expected %d messages delivered, got %d", expectedCount, actualCount)
+	}
+}

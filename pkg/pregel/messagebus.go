@@ -14,7 +14,12 @@ import (
 //   - Decouple mailbox storage from Runtime execution logic
 //   - Enable distributed deployments (Redis, gRPC, Kafka, etc.)
 //   - Support message persistence for debugging and replay
-//   - Support backpressure to prevent message loss
+//   - Guarantee no message loss through backpressure or explicit errors
+//
+// Message Delivery Guarantee:
+//   - Messages are NEVER dropped silently
+//   - Send either succeeds, blocks (backpressure), or returns explicit error
+//   - Context cancellation during blocking returns error (no message corruption)
 //
 // Implementations:
 //   - InMemoryMessageBus: Default, single-process execution with blocking send
@@ -23,6 +28,7 @@ import (
 //   - PersistedMessageBus: Message persistence for replay debugging
 type MessageBus[M any] interface {
 	// Send delivers messages to target vertices with backpressure.
+	// NEVER drops messages silently - either succeeds, blocks, or returns error.
 	// Blocks when mailbox is full until space is available or context is cancelled.
 	// Returns context error if cancelled/timed out during blocking.
 	// Implementations must be thread-safe and support concurrent sends.
