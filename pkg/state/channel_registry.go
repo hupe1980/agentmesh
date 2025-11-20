@@ -183,6 +183,16 @@ func (r *ChannelRegistry) WriteValue(ctx context.Context, name string, value any
 	return ch.Write(ctx, value)
 }
 
+// DeleteChannel removes a channel from the registry.
+// Returns an error if the channel doesn't exist.
+func (r *ChannelRegistry) DeleteChannel(name string) error {
+	_, loaded := r.channels.LoadAndDelete(name)
+	if !loaded {
+		return fmt.Errorf("channel %q not found", name)
+	}
+	return nil
+}
+
 // Channels returns a list of all registered channel names.
 func (r *ChannelRegistry) Channels() []string {
 	var names []string

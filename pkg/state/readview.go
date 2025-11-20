@@ -32,11 +32,19 @@ func (rv *ReadView) Keys() []string {
 	return rv.snap.Keys()
 }
 
-// Updates is a type-safe update builder.
-// Validated when applied, not when built.
+// Updates represents state modifications to be applied.
+// This is a type alias for map[string]any for compatibility.
+//
+// For type-safe updates, use UpdateBuilder instead:
+//
+//	builder := NewUpdateBuilder()
+//	SetUpdate(builder, counterKey, 42)
+//	AppendUpdate(builder, messagesKey, msg1, msg2)
+//	updates, err := builder.Build()
 type Updates map[string]any
 
-// NewUpdates creates a new updates builder.
+// NewUpdates creates a new updates map.
+// For type-safe construction, use NewUpdateBuilder() instead.
 func NewUpdates() Updates {
 	return make(Updates)
 }

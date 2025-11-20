@@ -148,6 +148,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Supporting Packages**
 - `pkg/state`: State management with Topic, LastValue, BinaryOp channels
+  - **Type-Safe Updates**: `UpdateBuilder` with generics for compile-time type checking ([examples/typed_updates](examples/typed_updates))
 - `pkg/checkpoint`: Memory, SQL, DynamoDB persistence
 - `pkg/message`: Human, AI, Tool message types
 

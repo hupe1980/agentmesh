@@ -248,19 +248,45 @@ func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 
 ### Updating state
 
-Nodes return state updates directly:
+**Recommended: Type-safe updates with UpdateBuilder**
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/state"
+
+// Define typed keys
+var (
+    CounterKey = state.NewKey[int]("counter")
+    StatusKey  = state.NewKey[string]("status")
+)
+
+func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+    ub := state.NewUpdateBuilder()
+    state.SetUpdate(ub, CounterKey, counter + 1)        // ✅ Type-checked
+    state.SetUpdate(ub, StatusKey, "processing")        // ✅ Type-checked
+    
+    // Add messages to updates
+    state.AppendUpdate(ub, message.MessagesKey, 
+        message.NewAIMessageFromText("Updated successfully"),
+    )
+    
+    return ub.Build(), nil  // ✅ Validates no duplicate keys
+}
+```
+
+**Alternative: Traditional map approach (less safe)**
 
 ```go
 return map[string]any{
     "counter": counter + 1,
     "status": "processing",
     "result": computedValue,
-    // Add messages to updates using message.MessagesKey
     message.MessagesKey: []message.Message{
         message.NewAIMessageFromText("Updated successfully"),
     },
 }, nil
 ```
+
+> **Type Safety:** Use `UpdateBuilder` for compile-time type checking and duplicate key detection. See [State Management](/state-management/#type-safe-updates) for details.
 
 ### State initialization
 

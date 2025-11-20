@@ -1,19 +1,21 @@
 ---
 layout: doc
 title: State Management
-description: State persistence, checkpointing, time travel debugging, and message retention.
+description: Type-safe updates, state persistence, checkpointing, time travel debugging, and message retention.
 permalink: /state-management/
 hero:
   title: Manage workflow state
-  description: Persist state with checkpointing, debug with time travel, and control message history.
+  description: Build type-safe workflows with compile-time guarantees, persist state with checkpointing, and debug with time travel.
   primary_cta:
-    label: Enable checkpointing
-    href: "#checkpointing"
+    label: Type-safe updates
+    href: "#type-safe-updates"
   secondary_cta:
     label: View examples →
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
     external: true
 sidebar:
+  - title: Type-safe updates
+    url: "#type-safe-updates"
   - title: Checkpointing
     url: "#checkpointing"
   - title: Storage backends
@@ -24,6 +26,104 @@ sidebar:
     url: "#message-retention"
   - title: Human-in-the-loop
     url: "#human-in-the-loop"
+---
+
+## Type-safe updates {#type-safe-updates}
+
+`UpdateBuilder` provides compile-time type safety for state updates using Go generics. This prevents runtime errors from type mismatches and typos.
+
+### Without type safety (traditional approach)
+
+```go
+// ❌ No compile-time checks - errors happen at runtime
+builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    return &graph.NodeResult{
+        Updates: map[string]any{
+            "counter": "not a number",  // Wrong type - runtime error!
+            "mesages": []string{"hi"},  // Typo - silent bug!
+        },
+    }, nil
+})
+```
+
+### With type safety (recommended)
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/state"
+
+// Define typed keys
+var (
+    CounterKey = state.NewKey[int]("counter")
+    MessagesKey = state.NewListKey[string]("messages")
+)
+
+// ✅ Compile-time type checking
+builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+    ub := state.NewUpdateBuilder()
+    state.SetUpdate(ub, CounterKey, 42)              // ✅ Type-checked: int
+    state.AppendUpdate(ub, MessagesKey, "hello")     // ✅ Type-checked: string
+    
+    // state.SetUpdate(ub, CounterKey, "wrong")      // ❌ Won't compile!
+    // state.AppendUpdate(ub, MessagesKey, 123)      // ❌ Won't compile!
+    
+    return &graph.NodeResult{
+        Updates: ub.Build(),  // ✅ Validated (no duplicate keys)
+    }, nil
+})
+```
+
+### Key features
+
+**Compile-time guarantees:**
+- Type mismatches caught during compilation
+- Typos in key names prevented
+- Duplicate key detection
+
+**Operations:**
+- `SetUpdate[T]` - Set a single value with type checking
+- `AppendUpdate[T]` - Append to lists with type checking
+- `Delete()` - Mark keys for deletion
+- `SetRaw()` - Escape hatch for dynamic scenarios
+
+**Example:**
+
+```go
+ub := state.NewUpdateBuilder()
+
+// Set values
+state.SetUpdate(ub, state.NewKey[int]("score"), 100)
+state.SetUpdate(ub, state.NewKey[string]("status"), "active")
+
+// Append to lists
+state.AppendUpdate(ub, state.NewListKey[string]("tags"), "urgent", "review")
+
+// Delete keys
+ub.Delete("old_field")
+
+// Build validates no duplicate keys
+updates := ub.Build()  // Returns map[string]any
+```
+
+### Migration guide
+
+**Before:**
+```go
+Updates: map[string]any{
+    "counter": value,
+    "messages": []string{msg},
+}
+```
+
+**After:**
+```go
+ub := state.NewUpdateBuilder()
+state.SetUpdate(ub, CounterKey, value)
+state.AppendUpdate(ub, MessagesKey, msg)
+Updates: ub.Build()
+```
+
+See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for complete working examples.
+
 ---
 
 ## Checkpointing {#checkpointing}

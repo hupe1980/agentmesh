@@ -354,6 +354,21 @@ func (m *Manager) ApplyUpdates(ctx context.Context, updates Updates) error {
 	}
 
 	for key, value := range updates {
+		// Check for deletion marker
+		if _, isDelete := value.(deleteMarker); isDelete {
+			// Delete the key from channels
+			if err := m.channels.DeleteChannel(key); err != nil {
+				return fmt.Errorf("failed to delete key %q: %w", key, err)
+			}
+			// Delete from store
+			if err := m.store.Delete(ctx, key); err != nil {
+				return fmt.Errorf("failed to delete key %q from store: %w", key, err)
+			}
+			// Remove from registered keys
+			delete(m.registeredKeys, key)
+			continue
+		}
+
 		// Check if this is a registered list key
 		info, exists := m.registeredKeys[key]
 		isListKey := exists && info.isList
