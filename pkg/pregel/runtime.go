@@ -10,9 +10,12 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/quota"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // shardedFrontier is a lock-free concurrent map using 256 shards with
@@ -499,9 +502,15 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		nextSuperstep := superstep + 1
 		r.supersteps.Store(nextSuperstep)
 
-		logger.Debug("starting superstep",
+		// Observability: Record superstep start
+		mp := metrics.FromContext(ctx)
+		superstepCounter := mp.Counter("superstep.executions")
+		superstepCounter.Add(ctx, 1)
+
+		logger.Info("starting superstep",
 			"superstep", nextSuperstep,
-			"frontier_size", len(frontier))
+			"frontier_size", len(frontier),
+			"total_messages", r.messages.Load())
 
 		if err := r.runSuperstep(ctx, frontier, nextSuperstep); err != nil {
 			logger.Error("superstep execution failed",
@@ -583,6 +592,25 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	if len(frontier) == 0 {
 		return nil
 	}
+
+	// Observability: Create superstep-level span
+	tp := trace.FromContext(ctx)
+	tracer := tp.Tracer("agentmesh.pregel")
+	ctx, superstepSpan := tracer.Start(ctx, "superstep.execute",
+		trace.Attr{Key: "superstep", Value: superstep},
+		trace.Attr{Key: "frontier.size", Value: len(frontier)})
+	defer superstepSpan.End(nil)
+
+	// Observability: Record superstep metrics
+	mp := metrics.FromContext(ctx)
+	superstepStart := time.Now()
+	activeNodesGauge := mp.Counter("superstep.active_nodes")
+	activeNodesGauge.Add(ctx, float64(len(frontier)))
+	defer func() {
+		duration := time.Since(superstepStart)
+		superstepDuration := mp.Histogram("superstep.duration_ms")
+		superstepDuration.Record(ctx, float64(duration.Milliseconds()))
+	}()
 
 	// Call superstep start callback (for BSP snapshot creation)
 	if r.opts.OnSuperstepStart != nil {

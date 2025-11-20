@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // ToolNode executes tool calls from the last AI message.
@@ -375,9 +379,45 @@ func executeSingleTool(ctx context.Context, view *state.ReadView, call message.T
 		return errMsgs, nil
 	}
 
+	// Observability: Create tool execution span
+	tp := trace.FromContext(ctx)
+	tracer := tp.Tracer("agentmesh.agent")
+	ctx, toolSpan := tracer.Start(ctx, "tool.execute",
+		trace.Attr{Key: "tool.name", Value: call.Name},
+		trace.Attr{Key: "tool.id", Value: call.ID})
+	var toolErr error
+	defer func() {
+		toolSpan.End(toolErr)
+	}()
+
+	// Observability: Log tool execution start
+	logger := logging.FromContext(ctx)
+	logger.Debug("tool execution starting", "tool", call.Name, "tool_id", call.ID)
+
+	// Observability: Record tool execution metrics
+	mp := metrics.FromContext(ctx)
+	toolStart := time.Now()
+	toolExecCounter := mp.Counter("tool.executions")
+	toolExecCounter.Add(ctx, 1, metrics.Attr{Key: "tool", Value: call.Name})
+	defer func() {
+		duration := time.Since(toolStart)
+		toolDuration := mp.Histogram("tool.duration_ms")
+		toolDuration.Record(ctx, float64(duration.Milliseconds()),
+			metrics.Attr{Key: "tool", Value: call.Name})
+
+		if toolErr != nil {
+			toolErrors := mp.Counter("tool.errors")
+			toolErrors.Add(ctx, 1, metrics.Attr{Key: "tool", Value: call.Name})
+			logger.Error("tool execution failed", "tool", call.Name, "error", toolErr, "duration_ms", duration.Milliseconds())
+		} else {
+			logger.Debug("tool execution completed", "tool", call.Name, "duration_ms", duration.Milliseconds())
+		}
+	}()
+
 	// Execute tool
 	result, err := t.Call(ctx, args)
 	if err != nil {
+		toolErr = err
 		errMsgs, handledErr := handleToolError(ctx, view, call, err, node, idx)
 		if handledErr != nil {
 			return nil, handledErr

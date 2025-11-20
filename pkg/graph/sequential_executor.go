@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // SequentialExecutor is a simple sequential executor that runs nodes one at a time
@@ -121,6 +125,26 @@ func (s *SequentialExecutor[I, O]) Run(
 		runID := uuid.New().String()
 		_ = runID // For future use with checkpointing
 
+		// Observability: Create graph-level span
+		tp := trace.FromContext(ctx)
+		tracer := tp.Tracer("agentmesh.graph")
+		ctx, graphSpan := tracer.Start(ctx, "graph.execute.sequential")
+		defer graphSpan.End(nil)
+
+		// Observability: Log graph execution start
+		logger := logging.FromContext(ctx)
+		logger.Info("sequential graph execution starting", "run_id", runID)
+
+		// Observability: Record graph execution metrics
+		mp := metrics.FromContext(ctx)
+		graphStartTime := time.Now()
+		defer func() {
+			duration := time.Since(graphStartTime)
+			graphDuration := mp.Histogram("graph.duration_ms")
+			graphDuration.Record(ctx, float64(duration.Milliseconds()))
+			logger.Info("sequential graph execution completed", "run_id", runID, "duration_ms", duration.Milliseconds())
+		}()
+
 		// Convert input to initial state using adapter
 		var inputValue any = input
 		if inputValue != nil {
@@ -184,13 +208,49 @@ func (s *SequentialExecutor[I, O]) executeFromNode(
 			return fmt.Errorf("node %s not found", nodeName)
 		}
 
+		// Observability: Create node-level span
+		tp := trace.FromContext(ctx)
+		tracer := tp.Tracer("agentmesh.graph")
+		ctx, nodeSpan := tracer.Start(ctx, "node.execute", trace.Attr{Key: "node.name", Value: nodeName})
+		var nodeErr error
+		defer func() {
+			nodeSpan.End(nodeErr)
+		}()
+
+		// Observability: Log node execution start
+		logger := logging.FromContext(ctx)
+		logger.Debug("node execution starting", "node", nodeName)
+
+		// Observability: Record node execution metrics
+		mp := metrics.FromContext(ctx)
+		nodeStartTime := time.Now()
+		nodeExecCounter := mp.Counter("node.executions")
+		nodeExecCounter.Add(ctx, 1, metrics.Attr{Key: "node", Value: nodeName})
+		defer func() {
+			duration := time.Since(nodeStartTime)
+			nodeDuration := mp.Histogram("node.duration_ms")
+			nodeDuration.Record(ctx, float64(duration.Milliseconds()),
+				metrics.Attr{Key: "node", Value: nodeName})
+
+			if nodeErr != nil {
+				// Record error metric
+				nodeErrors := mp.Counter("node.errors")
+				nodeErrors.Add(ctx, 1, metrics.Attr{Key: "node", Value: nodeName})
+				logger.Error("node execution failed", "node", nodeName, "error", nodeErr, "duration_ms", duration.Milliseconds())
+			} else {
+				logger.Debug("node execution completed", "node", nodeName, "duration_ms", duration.Milliseconds())
+			}
+		}()
+
 		// Execute the node with current state read view
 		view, err := compiled.manager.CreateReadView(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create read view: %w", err)
+			nodeErr = fmt.Errorf("failed to create read view: %w", err)
+			return nodeErr
 		}
 		updates, err := node.Execute(ctx, view)
 		if err != nil {
+			nodeErr = err
 			// Yield error
 			var zero O
 			if !yield(zero, err) {

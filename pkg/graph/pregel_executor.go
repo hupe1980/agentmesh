@@ -13,8 +13,10 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
 // unfoldValue attempts to unfold a value if it's a slice, yielding each element.
@@ -851,6 +853,40 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 	}
 
+	// Observability: Create node-level span with attributes
+	tp := trace.FromContext(ctx)
+	tracer := tp.Tracer("agentmesh.graph")
+	ctx, nodeSpan := tracer.Start(ctx, "node.execute", trace.Attr{Key: "node.name", Value: n.nodeName})
+	var nodeErr error
+	defer func() {
+		nodeSpan.End(nodeErr)
+	}()
+
+	// Observability: Log node execution start
+	logger := logging.FromContext(ctx)
+	logger.Debug("node execution starting", "node", n.nodeName)
+
+	// Observability: Record node execution metrics
+	mp := metrics.FromContext(ctx)
+	nodeStartTime := time.Now()
+	nodeExecCounter := mp.Counter("node.executions")
+	nodeExecCounter.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
+	defer func() {
+		duration := time.Since(nodeStartTime)
+		nodeDuration := mp.Histogram("node.duration_ms")
+		nodeDuration.Record(ctx, float64(duration.Milliseconds()),
+			metrics.Attr{Key: "node", Value: n.nodeName})
+
+		if nodeErr != nil {
+			// Record error metric
+			nodeErrors := mp.Counter("node.errors")
+			nodeErrors.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
+			logger.Error("node execution failed", "node", n.nodeName, "error", nodeErr, "duration_ms", duration.Milliseconds())
+		} else {
+			logger.Debug("node execution completed", "node", n.nodeName, "duration_ms", duration.Milliseconds())
+		}
+	}()
+
 	// Check for interrupt-before (but skip if we're resuming this node)
 	isResuming := false
 	if n.executor != nil && n.executor.metrics != nil {
@@ -917,7 +953,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		var err error
 		view, err = n.compiled.manager.CreateReadView(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create read view: %w", err)
+			nodeErr = fmt.Errorf("failed to create read view: %w", err)
+			return nodeErr
 		}
 	}
 
@@ -925,7 +962,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	updates, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
-		return fmt.Errorf("%w: node %q: %w", state.ErrNodeExecution, n.nodeName, err)
+		nodeErr = fmt.Errorf("%w: node %q: %w", state.ErrNodeExecution, n.nodeName, err)
+		return nodeErr
 	}
 
 	if updates == nil {
@@ -952,7 +990,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// BSP semantics are maintained because other nodes use the superstep snapshot
 	if len(updates) > 0 {
 		if err := n.compiled.manager.ApplyUpdates(ctx, updates); err != nil {
-			return fmt.Errorf("failed to apply state updates: %w", err)
+			nodeErr = fmt.Errorf("failed to apply state updates: %w", err)
+			return nodeErr
 		}
 
 		// Extract output from updates based on configured key and yield
@@ -1009,7 +1048,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 				// - Hybrid: Routing sees own updates → agent routing works → not pure BSP
 				condView, err := n.compiled.manager.CreateReadView(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to create read view for conditionals: %w", err)
+					nodeErr = fmt.Errorf("failed to create read view for conditionals: %w", err)
+					return nodeErr
 				}
 				targets := cond.Condition(ctx, condView)
 				for _, target := range targets {
