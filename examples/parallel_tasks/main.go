@@ -20,34 +20,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/agent"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
-
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
-
-// mergeMapReducer combines results from multiple parallel tasks.
-// This reducer is used by BinaryOpChannel to handle concurrent updates
-// without data loss - perfect for aggregating parallel task results.
-func mergeMapReducer(oldValue, newValue any) any {
-	oldMap, _ := oldValue.(map[string]any)
-	newMap, _ := newValue.(map[string]any)
-
-	// Handle nil cases
-	if oldMap == nil && newMap == nil {
-		return nil
-	}
-
-	// Merge both maps, with newMap taking precedence on key conflicts
-	merged := make(map[string]any)
-	for k, v := range oldMap {
-		merged[k] = v
-	}
-	for k, v := range newMap {
-		merged[k] = v
-	}
-	return merged
-}
 
 func main() {
 	fmt.Println("=== Parallel Tasks Example ===")
@@ -55,14 +30,24 @@ func main() {
 	fmt.Println()
 
 	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
-	resultsKey := graphstate.NewKey("results", map[string]any{})
+	resultAKey := graphstate.NewKey("result_a", "")
+	resultBKey := graphstate.NewKey("result_b", "")
 	summaryKey := graphstate.NewKey("summary", map[string]any{})
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
-	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
-	graphstate.RegisterKey(mgr, resultsKey)
-	graphstate.RegisterKey(mgr, summaryKey)
+	// Register actionHistoryKey as a ListKey (TopicChannel)
+	if err := graphstate.RegisterListKey(mgr, actionHistoryKey); err != nil {
+		panic(fmt.Sprintf("Failed to register actionHistory key: %v", err))
+	}
+	if err := graphstate.RegisterKey(mgr, resultAKey); err != nil {
+		panic(fmt.Sprintf("Failed to register resultA key: %v", err))
+	}
+	if err := graphstate.RegisterKey(mgr, resultBKey); err != nil {
+		panic(fmt.Sprintf("Failed to register resultB key: %v", err))
+	}
+	if err := graphstate.RegisterKey(mgr, summaryKey); err != nil {
+		panic(fmt.Sprintf("Failed to register summary key: %v", err))
+	}
 
 	gph, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -76,12 +61,9 @@ func main() {
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
 
-			results := graphstate.GetFromView(view, resultsKey)
-			results["task_a"] = "analysis result"
-
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "task_a: analysis completed")
-			graphstate.SetUpdate(builder, resultsKey, results)
+			graphstate.SetUpdate(builder, resultAKey, "analysis result")
 			return builder.Build()
 		},
 	)
@@ -93,12 +75,9 @@ func main() {
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
 
-			results := graphstate.GetFromView(view, resultsKey)
-			results["task_b"] = "simulation result"
-
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "task_b: simulation completed")
-			graphstate.SetUpdate(builder, resultsKey, results)
+			graphstate.SetUpdate(builder, resultBKey, "simulation result")
 			return builder.Build()
 		},
 	)
@@ -109,11 +88,18 @@ func main() {
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
-			// Read the merged results from both tasks
-			results := graphstate.GetFromView(view, resultsKey)
+			// Read results from both parallel tasks
+			resultA := graphstate.GetFromView(view, resultAKey)
+			resultB := graphstate.GetFromView(view, resultBKey)
+
+			// Combine into summary map
+			results := map[string]any{
+				"task_a": resultA,
+				"task_b": resultB,
+			}
 
 			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "combine: aggregated all results")
+			// graphstate.AppendUpdate(builder, actionHistoryKey, "combine: aggregated all results")
 			graphstate.SetUpdate(builder, summaryKey, results)
 			return builder.Build()
 		},
@@ -177,6 +163,7 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("  action_history: %v\n", graphstate.GetFromView(view, actionHistoryKey.Key))
-	fmt.Printf("  results: %v\n", graphstate.GetFromView(view, resultsKey))
+	fmt.Printf("  result_a: %v\n", graphstate.GetFromView(view, resultAKey))
+	fmt.Printf("  result_b: %v\n", graphstate.GetFromView(view, resultBKey))
 	fmt.Printf("  summary: %v\n", graphstate.GetFromView(view, summaryKey))
 }

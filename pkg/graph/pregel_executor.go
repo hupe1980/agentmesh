@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"reflect"
 	"runtime"
 	"slices"
 	"sync"
@@ -18,22 +17,45 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// isSlice checks if a value is a slice type using reflection.
-func isSlice(value any) bool {
-	if value == nil {
+// unfoldValue attempts to unfold a value if it's a slice, yielding each element.
+// Returns true if the value was a slice and was unfolded, false otherwise.
+// This replaces reflection-based slice handling with type assertions for common types.
+func unfoldValue(value any, yield func(any) bool) bool {
+	// Check for SliceValue interface first (handles state.SliceOf[T] from UpdateBuilder)
+	if sv, ok := value.(state.SliceValue); ok {
+		slice := sv.ToSlice()
+		return yieldSlice(slice, yield)
+	}
+
+	// Try common slice types (most frequent cases)
+	switch v := value.(type) {
+	case []message.Message:
+		return yieldSlice(v, yield)
+	case []any:
+		return yieldSlice(v, yield)
+	case []string:
+		return yieldSlice(v, yield)
+	case []int:
+		return yieldSlice(v, yield)
+	case []float64:
+		return yieldSlice(v, yield)
+	default:
+		// Not a recognized slice type - return false to process as single value
+		// If you need to unfold a different slice type, add it explicitly above
+		// for optimal performance (reflection is 10-100x slower)
 		return false
 	}
-	return reflect.TypeOf(value).Kind() == reflect.Slice
 }
 
-// reflectSliceLen returns the length of a slice using reflection.
-func reflectSliceLen(value any) int {
-	return reflect.ValueOf(value).Len()
-}
-
-// reflectSliceIndex returns the element at index i of a slice using reflection.
-func reflectSliceIndex(value any, i int) any {
-	return reflect.ValueOf(value).Index(i).Interface()
+// yieldSlice is a generic helper that yields each element of a slice.
+// Returns true to indicate the slice was processed.
+func yieldSlice[T any](slice []T, yield func(any) bool) bool {
+	for _, elem := range slice {
+		if !yield(elem) {
+			return true
+		}
+	}
+	return true
 }
 
 // PregelExecutor is a Bulk-Synchronous Parallel (BSP) executor using the pregel runtime.
@@ -938,16 +960,12 @@ func (n *pregelNodeAdapter[I, O]) Run(
 			}
 		} else if value, ok := updates[n.executor.outputKey]; ok {
 			// Special handling for slices: unfold and yield each element individually
-			if isSlice(value) {
-				sliceLen := reflectSliceLen(value)
-				for i := range sliceLen {
-					elem := reflectSliceIndex(value, i)
-					output := n.executor.outputAdapter(elem)
-					if !n.yield(output, nil) {
-						return nil
-					}
-				}
-			} else {
+			wasUnfolded := unfoldValue(value, func(elem any) bool {
+				output := n.executor.outputAdapter(elem)
+				return n.yield(output, nil)
+			})
+
+			if !wasUnfolded {
 				// For non-slice values, apply adapter and yield once
 				output := n.executor.outputAdapter(value)
 				if !n.yield(output, nil) {
