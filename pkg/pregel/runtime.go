@@ -728,15 +728,15 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 		return nil
 	}
 
-	// Send all messages at once with context for backpressure
-	err := r.messageBus.Send(ctx, msgs)
-	if err != nil {
-		// Emit error event
-		r.emitEvent(Event[M]{}, fmt.Errorf("failed to deliver messages: %w", err))
-		return err
-	}
-
-	// Update frontier incrementally - record which vertices have pending messages
+	// CRITICAL: Update frontier BEFORE sending messages to prevent race condition.
+	// Race scenario: If we send messages first, another goroutine could call
+	// consumeNextFrontier() and get an incomplete frontier that doesn't include
+	// destinations of messages that are already in the message bus.
+	//
+	// By updating the frontier first, we ensure that:
+	// 1. Destination vertices are marked before messages arrive
+	// 2. consumeNextFrontier() always sees a consistent view
+	// 3. No messages are lost or delayed to the next superstep
 	r.frontierMu.Lock()
 	for _, msg := range msgs {
 		if msg.To != "" {
@@ -744,6 +744,16 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 		}
 	}
 	r.frontierMu.Unlock()
+
+	// Send all messages at once with context for backpressure
+	err := r.messageBus.Send(ctx, msgs)
+	if err != nil {
+		// NOTE: Frontier was already updated above. If send fails, the destinations
+		// will still be in the frontier, which is safe (they'll just have no messages).
+		// This is better than the reverse (messages sent but frontier not updated).
+		r.emitEvent(Event[M]{}, fmt.Errorf("failed to deliver messages: %w", err))
+		return err
+	}
 
 	return nil
 }
