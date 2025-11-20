@@ -11,11 +11,6 @@ import (
 // Provides simple read/write operations with channel-specific update semantics.
 type Channel = channel.Channel
 
-// VersionedChannel extends Channel with internal runtime operations.
-// Used by the graph execution engine for cache invalidation, consistent snapshots,
-// and state cloning during checkpointing.
-type VersionedChannel = channel.VersionedChannel
-
 // ResettableChannel extends Channel with administrative operations.
 // Provides dangerous state-clearing operations that should only be used
 // with explicit understanding of the consequences.
