@@ -141,7 +141,7 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 	graph := &mockGraph{
 		rootNodes: []string{"A"},
 		nodes: map[string]*mockNode{
-			"A": &mockNode{
+			"A": {
 				name:       "A",
 				next:       "B",
 				called:     &callCount,
@@ -150,7 +150,7 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 				messages:   &sent,
 				delay:      0,
 			},
-			"B": &mockNode{
+			"B": {
 				name:       "B",
 				next:       "C",
 				called:     &callCount,
@@ -159,7 +159,7 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 				messages:   &sent,
 				delay:      0,
 			},
-			"C": &mockNode{
+			"C": {
 				name:       "C",
 				next:       "",
 				called:     &callCount,
@@ -186,7 +186,7 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 	graph := &mockGraph{
 		rootNodes: []string{"A", "B"},
 		nodes: map[string]*mockNode{
-			"A": &mockNode{
+			"A": {
 				name:       "A",
 				next:       "C",
 				called:     &callCount,
@@ -195,7 +195,7 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 				messages:   &sent,
 				delay:      0,
 			},
-			"B": &mockNode{
+			"B": {
 				name:       "B",
 				next:       "C",
 				called:     &callCount,
@@ -204,7 +204,7 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 				messages:   &sent,
 				delay:      0,
 			},
-			"C": &mockNode{
+			"C": {
 				name:       "C",
 				next:       "",
 				called:     &callCount,
@@ -231,7 +231,7 @@ func TestRuntime_CancelDuringExecution(t *testing.T) {
 	graph := &mockGraph{
 		rootNodes: []string{"A", "B"},
 		nodes: map[string]*mockNode{
-			"A": &mockNode{
+			"A": {
 				name:       "A",
 				next:       "B",
 				called:     &callCount,
@@ -240,7 +240,7 @@ func TestRuntime_CancelDuringExecution(t *testing.T) {
 				messages:   &sent,
 				delay:      25 * time.Millisecond,
 			},
-			"B": &mockNode{
+			"B": {
 				name:       "B",
 				next:       "",
 				called:     &callCount,

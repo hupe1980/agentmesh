@@ -10,7 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
-	
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"

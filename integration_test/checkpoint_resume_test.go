@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"

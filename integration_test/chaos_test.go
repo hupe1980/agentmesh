@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"

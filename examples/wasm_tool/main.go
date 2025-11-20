@@ -38,14 +38,14 @@ func main() {
 		Name:        "calculator",
 		Description: "Performs arithmetic calculations on mathematical expressions",
 		Parameters: &wasm.ParameterSchema{
-		Type: "object",
-		Properties: map[string]wasm.PropertySchema{
-			"expression": {
-				Type:        "string",
-				Description: "A mathematical expression to evaluate (e.g., '2 + 2', '10 * 5 - 3')",
+			Type: "object",
+			Properties: map[string]wasm.PropertySchema{
+				"expression": {
+					Type:        "string",
+					Description: "A mathematical expression to evaluate (e.g., '2 + 2', '10 * 5 - 3')",
+				},
 			},
-			},
-		Required: []string{"expression"},
+			Required: []string{"expression"},
 		},
 	}
 
@@ -84,10 +84,10 @@ func main() {
 
 		result, err := tool.Call(ctx, testInput)
 		if err != nil {
-		fmt.Printf("Error:  %v\n", err)
+			fmt.Printf("Error:  %v\n", err)
 		} else {
-		resultJSON, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Printf("Output: %s\n", string(resultJSON))
+			resultJSON, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Printf("Output: %s\n", string(resultJSON))
 		}
 		fmt.Println()
 	}
@@ -125,30 +125,30 @@ func main() {
 		switch m := evt.(type) {
 		case *message.AIMessage:
 			// Display AI's reasoning and responses
-		for _, part := range m.Parts() {
-		if text, ok := part.(message.TextPart); ok {
-				fmt.Printf("    💭 %s\n", text.Text)
-			}
+			for _, part := range m.Parts() {
+				if text, ok := part.(message.TextPart); ok {
+					fmt.Printf("    💭 %s\n", text.Text)
+				}
 			}
 			// Show tool calls made by the AI
-		if len(m.ToolCalls) > 0 {
-		fmt.Printf("    🔧 Tool calls: %v\n", m.ToolCalls)
+			if len(m.ToolCalls) > 0 {
+				fmt.Printf("    🔧 Tool calls: %v\n", m.ToolCalls)
 			}
 
 		case *message.ToolMessage:
 			// Display tool execution results
-		for _, part := range m.Parts() {
-		if text, ok := part.(message.TextPart); ok {
-				fmt.Printf("    ⚙️  Tool result: %s\n", text.Text)
-			}
+			for _, part := range m.Parts() {
+				if text, ok := part.(message.TextPart); ok {
+					fmt.Printf("    ⚙️  Tool result: %s\n", text.Text)
+				}
 			}
 
 		default:
 			// Display other message types (system, human)
-		for _, part := range m.Parts() {
-		if text, ok := part.(message.TextPart); ok {
-				fmt.Printf("    📝 %s\n", text.Text)
-			}
+			for _, part := range m.Parts() {
+				if text, ok := part.(message.TextPart); ok {
+					fmt.Printf("    📝 %s\n", text.Text)
+				}
 			}
 		}
 		fmt.Println()

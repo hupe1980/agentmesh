@@ -47,13 +47,13 @@ func TestInterruptConfiguration(t *testing.T) {
 	manager := graphstate.NewManager()
 	g, err := graph.NewGraph(manager)
 	assert.NoError(t, err)
-	
+
 	node := graph.NewBaseNode("test", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		return graphstate.Updates{}, nil
 	})
-	
+
 	g.AddNode(node)
 	g.AddInterruptBefore("test")
-	
+
 	assert.Contains(t, g.InterruptBefore, "test")
 }

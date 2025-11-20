@@ -98,12 +98,12 @@ func demoSemanticCache(ctx context.Context) error {
 	for i := 1; i < len(queries); i++ {
 		queryEmbed, err := embedder.Embed(ctx, queries[i])
 		if err != nil {
-		return fmt.Errorf("embedding error: %w", err)
+			return fmt.Errorf("embedding error: %w", err)
 		}
 		similarity := cache.CosineSimilarity(baseEmbed, queryEmbed)
 		status := "❌ MISS"
 		if similarity >= 0.90 {
-		status = "✅ HIT"
+			status = "✅ HIT"
 		}
 		fmt.Printf("   Query %d vs Query 1: %.4f %s\n", i+1, similarity, status)
 	}
@@ -113,29 +113,29 @@ func demoSemanticCache(ctx context.Context) error {
 	for i, text := range queries {
 		// Create a mock request
 		req := &model.Request{
-		Messages: []message.Message{
-		message.NewHumanMessageFromText(text),
+			Messages: []message.Message{
+				message.NewHumanMessageFromText(text),
 			},
 		}
 
 		// Try to get from cache
 		cached, err := memCache.Get(ctx, req)
 		if err != nil {
-		return fmt.Errorf("cache get error: %w", err)
+			return fmt.Errorf("cache get error: %w", err)
 		}
 
 		if cached != nil {
-		similarity := cached.Metadata["cache_similarity"]
-		fmt.Printf("   [%d] %q → ✓ HIT (similarity: %.3f)\n", i+1, text, similarity)
+			similarity := cached.Metadata["cache_similarity"]
+			fmt.Printf("   [%d] %q → ✓ HIT (similarity: %.3f)\n", i+1, text, similarity)
 		} else {
 			// Cache miss - store a mock response
-		resp := &model.Response{
-		Message: message.NewAIMessageFromText(fmt.Sprintf("Response about %s", text)),
+			resp := &model.Response{
+				Message: message.NewAIMessageFromText(fmt.Sprintf("Response about %s", text)),
 			}
-		if err := memCache.Set(ctx, req, resp); err != nil {
-		return fmt.Errorf("cache set error: %w", err)
+			if err := memCache.Set(ctx, req, resp); err != nil {
+				return fmt.Errorf("cache set error: %w", err)
 			}
-		fmt.Printf("   [%d] %q → MISS (stored for future)\n", i+1, text)
+			fmt.Printf("   [%d] %q → MISS (stored for future)\n", i+1, text)
 		}
 	}
 

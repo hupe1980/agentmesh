@@ -7,12 +7,12 @@ import (
 // topology holds computed graph topology information for execution.
 // This is internal and not exposed to users.
 type topology struct {
-	edges             []Edge                        // Deduplicated edges
-	incoming          map[string]int                // Incoming edge count per node
-	outgoing          map[string][]string           // Outgoing edges per node
-	conditionalGate   map[string]bool               // Nodes behind conditional gates
-	conditionalByFrom map[int][]ConditionalEdges    // Conditional edges grouped by source index
-	nodeNames         []string                      // Sorted node names
+	edges             []Edge                     // Deduplicated edges
+	incoming          map[string]int             // Incoming edge count per node
+	outgoing          map[string][]string        // Outgoing edges per node
+	conditionalGate   map[string]bool            // Nodes behind conditional gates
+	conditionalByFrom map[int][]ConditionalEdges // Conditional edges grouped by source index
+	nodeNames         []string                   // Sorted node names
 }
 
 // computeTopology analyzes the graph structure and builds topology metadata.

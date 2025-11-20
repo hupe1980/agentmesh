@@ -23,10 +23,10 @@ func NewInMemoryCacheStore() *InMemoryCacheStore {
 	store := &InMemoryCacheStore{
 		entries: make(map[string]*cacheEntry),
 	}
-	
+
 	// Start background cleanup goroutine
 	go store.cleanup()
-	
+
 	return store
 }
 

@@ -18,7 +18,7 @@ Create a tool from a function:
 		"context"
 		"github.com/hupe1980/agentmesh/pkg/tool"
 	)
-	
+
 	weatherTool, err := tool.NewFuncTool(
 		"get_weather",
 		"Get current weather for a given location",
@@ -45,17 +45,17 @@ Implement the Interface to create custom tools:
 		JSONSchema() (map[string]any, error)
 		Run(ctx context.Context, input string) (any, error)
 	}
-	
+
 	type CustomTool struct{}
-	
+
 	func (t *CustomTool) Name() string {
 		return "custom"
 	}
-	
+
 	func (t *CustomTool) Description() string {
 		return "A custom tool"
 	}
-	
+
 	func (t *CustomTool) JSONSchema() (map[string]any, error) {
 		return map[string]any{
 			"type": "object",
@@ -64,7 +64,7 @@ Implement the Interface to create custom tools:
 			},
 		}, nil
 	}
-	
+
 	func (t *CustomTool) Run(ctx context.Context, input string) (any, error) {
 		// Parse input JSON and execute
 		return result, nil
@@ -79,7 +79,7 @@ NewFuncTool automatically generates JSON schemas from struct tags:
 		MaxResults int    `json:"max_results,omitempty" description:"Maximum number of results"`
 		Filters  []string `json:"filters,omitempty" description:"Filter categories"`
 	}
-	
+
 	searchTool, _ := tool.NewFuncTool(
 		"search",
 		"Search the knowledge base",
