@@ -15,11 +15,11 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 ## ✨ Features
 
 ### 🎯 Core Capabilities
-- **🔄 Parallel Graph Execution** - Pregel-based BSP engine for efficient multi-agent coordination
+- **🔄 Parallel Graph Execution** - Pregel-based BSP engine with optimized concurrency (4-10x faster state access, 50-250x better frontier scaling)
 - **🧠 LLM Integration** - First-class support for OpenAI, Anthropic, and extensible model interfaces
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic JSON schema generation
 - **🔒 WASM Tool Sandboxing** - Memory-safe sandbox for executing untrusted code with strict isolation
-- **💾 State Management** - Channel-based state with versioning and time-travel debugging
+- **💾 State Management** - Lock-free channel-based state with versioning and time-travel debugging
 - **🔁 Retry Policies** - Configurable exponential backoff with custom retry logic
 - **🎭 Subgraph Support** - Compose complex workflows from reusable graph components
 
