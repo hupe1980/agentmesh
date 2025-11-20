@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/metrics"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNoopProvider verifies the no-op implementation doesn't panic
@@ -17,10 +19,12 @@ func TestNoopProvider(t *testing.T) {
 	histogram := provider.Histogram("test_histogram")
 
 	// Should not panic
-	counter.Add(ctx, 1.0)
-	counter.Add(ctx, 5.0, metrics.Attr{Key: "label", Value: "test"})
-	histogram.Record(ctx, 100.0)
-	histogram.Record(ctx, 200.0, metrics.Attr{Key: "bucket", Value: "slow"})
+	assert.NotPanics(t, func() {
+		counter.Add(ctx, 1.0)
+		counter.Add(ctx, 5.0, metrics.Attr{Key: "label", Value: "test"})
+		histogram.Record(ctx, 100.0)
+		histogram.Record(ctx, 200.0, metrics.Attr{Key: "bucket", Value: "slow"})
+	})
 }
 
 // TestContextPropagation verifies provider is stored and retrieved from context
@@ -29,18 +33,14 @@ func TestContextPropagation(t *testing.T) {
 
 	// Without provider, should get no-op
 	provider1 := metrics.FromContext(ctx)
-	if provider1 == nil {
-		t.Fatal("FromContext should never return nil")
-	}
+	require.NotNil(t, provider1, "FromContext should never return nil")
 
-	// With provider
+	// With provider using local mock
 	mockProvider := &mockMetricsProvider{}
 	ctx = metrics.WithProvider(ctx, mockProvider)
 
 	provider2 := metrics.FromContext(ctx)
-	if provider2 != mockProvider {
-		t.Error("Should retrieve the same provider from context")
-	}
+	assert.Equal(t, mockProvider, provider2, "Should retrieve the same provider from context")
 }
 
 // TestNilProviderDefaults verifies nil provider defaults to no-op
@@ -49,20 +49,20 @@ func TestNilProviderDefaults(t *testing.T) {
 	ctx = metrics.WithProvider(ctx, nil)
 
 	provider := metrics.FromContext(ctx)
-	if provider == nil {
-		t.Fatal("WithProvider(nil) should default to no-op provider")
-	}
+	require.NotNil(t, provider, "WithProvider(nil) should default to no-op provider")
 
 	// Should not panic
 	counter := provider.Counter("test")
-	counter.Add(ctx, 1.0)
+	assert.NotPanics(t, func() {
+		counter.Add(ctx, 1.0)
+	})
 }
 
 // TestConcurrentAccess verifies thread safety of context operations
 func TestConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
-	provider := &mockMetricsProvider{}
-	ctx = metrics.WithProvider(ctx, provider)
+	mockProvider := &mockMetricsProvider{}
+	ctx = metrics.WithProvider(ctx, mockProvider)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
@@ -77,41 +77,43 @@ func TestConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	provider.mu.Lock()
-	defer provider.mu.Unlock()
-	if provider.counterCalls != 100 {
-		t.Errorf("Expected 100 counter calls, got %d", provider.counterCalls)
-	}
+	mockProvider.mu.Lock()
+	calls := mockProvider.counterCalls
+	mockProvider.mu.Unlock()
+
+	assert.Equal(t, 100, calls, "Expected 100 counter calls")
 }
 
 // TestAttrCreation verifies Attr struct construction
 func TestAttrCreation(t *testing.T) {
 	attr := metrics.Attr{Key: "environment", Value: "production"}
 
-	if attr.Key != "environment" {
-		t.Errorf("Expected key 'environment', got %q", attr.Key)
-	}
-	if attr.Value != "production" {
-		t.Errorf("Expected value 'production', got %v", attr.Value)
-	}
+	assert.Equal(t, "environment", attr.Key)
+	assert.Equal(t, "production", attr.Value)
 }
 
 // TestMultipleAttributes verifies multiple attributes can be passed
 func TestMultipleAttributes(t *testing.T) {
 	ctx := context.Background()
-	provider := &mockMetricsProvider{}
+	mockProvider := &mockMetricsProvider{}
 
-	counter := provider.Counter("test")
+	counter := mockProvider.Counter("test")
 	counter.Add(ctx, 1.0,
 		metrics.Attr{Key: "region", Value: "us-east-1"},
 		metrics.Attr{Key: "service", Value: "api"},
 	)
 
-	provider.mu.Lock()
-	defer provider.mu.Unlock()
-	if provider.lastCounterAttrs == nil || len(provider.lastCounterAttrs) != 2 {
-		t.Errorf("Expected 2 attributes, got %d", len(provider.lastCounterAttrs))
-	}
+	mockProvider.mu.Lock()
+	calls := mockProvider.counterCalls
+	attrs := mockProvider.lastCounterAttrs
+	mockProvider.mu.Unlock()
+
+	assert.Equal(t, 1, calls)
+	require.Len(t, attrs, 2)
+	assert.Equal(t, "region", attrs[0].Key)
+	assert.Equal(t, "us-east-1", attrs[0].Value)
+	assert.Equal(t, "service", attrs[1].Key)
+	assert.Equal(t, "api", attrs[1].Value)
 }
 
 // mockMetricsProvider is a test implementation that tracks calls

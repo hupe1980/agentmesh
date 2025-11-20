@@ -7,6 +7,8 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockModel is a test implementation for integration tests
@@ -87,29 +89,20 @@ func TestMockModel_Generate(t *testing.T) {
 
 	req := &model.Request{Messages: []message.Message{message.NewHumanMessageFromText("test")}}
 	result, err := model.Last(mock.Generate(context.Background(), req))
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err)
 
 	parts := result.Message.Parts()
-	if len(parts) == 0 {
-		t.Fatal("Expected message to have parts")
-	}
-	if textPart, ok := parts[0].(message.TextPart); ok {
-		if textPart.Text != "Test response" {
-			t.Errorf("Expected 'Test response', got %q", textPart.Text)
-		}
-	} else {
-		t.Error("Expected first part to be TextPart")
-	}
+	require.NotEmpty(t, parts, "Expected message to have parts")
+
+	textPart, ok := parts[0].(message.TextPart)
+	require.True(t, ok, "Expected first part to be TextPart")
+	assert.Equal(t, "Test response", textPart.Text)
 
 	// Verify usage information
-	if result.Usage == nil {
-		t.Fatal("Expected usage information")
-	}
-	if result.Usage.TotalTokens != 15 {
-		t.Errorf("Expected 15 total tokens, got %d", result.Usage.TotalTokens)
-	}
+	require.NotNil(t, result.Usage, "Expected usage information")
+	assert.Equal(t, 15, result.Usage.TotalTokens)
+	assert.Equal(t, 10, result.Usage.PromptTokens)
+	assert.Equal(t, 5, result.Usage.CompletionTokens)
 }
 
 // TestMockModel_Stream verifies mock streaming
@@ -124,23 +117,15 @@ func TestMockModel_Stream(t *testing.T) {
 	// Test streaming by collecting all responses
 	req := &model.Request{Messages: []message.Message{message.NewHumanMessageFromText("test")}}
 	responses, err := model.Collect(mock.Generate(context.Background(), req))
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if len(responses) < 1 {
-		t.Fatal("Expected at least one response")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, responses, "Expected at least one response")
 
 	// Verify the final response
 	finalResp := responses[len(responses)-1]
 	parts := finalResp.Message.Parts()
-	if len(parts) == 0 {
-		t.Fatal("Expected final message to have parts")
-	}
-	if textPart, ok := parts[0].(message.TextPart); ok {
-		if textPart.Text != "Streaming" {
-			t.Errorf("Expected 'Streaming', got %q", textPart.Text)
-		}
-	}
+	require.NotEmpty(t, parts, "Expected final message to have parts")
+
+	textPart, ok := parts[0].(message.TextPart)
+	require.True(t, ok, "Expected first part to be TextPart")
+	assert.Equal(t, "Streaming", textPart.Text)
 }

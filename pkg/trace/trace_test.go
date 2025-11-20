@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/trace"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNoopTracer verifies the no-op implementation doesn't panic
@@ -18,14 +20,17 @@ func TestNoopTracer(t *testing.T) {
 	ctx, span := tracer.Start(ctx, "operation")
 
 	// Should not panic
-	span.End(nil)
-	span.End(errors.New("test error"))
+	assert.NotPanics(t, func() {
+		span.End(nil)
+		span.End(errors.New("test error"))
+	})
 
 	// Should be able to nest spans
-	ctx2, span2 := tracer.Start(ctx, "nested_operation")
-	span2.End(nil)
-
-	_ = ctx2 // Use context to avoid unused variable
+	assert.NotPanics(t, func() {
+		ctx2, span2 := tracer.Start(ctx, "nested_operation")
+		span2.End(nil)
+		_ = ctx2 // Use context to avoid unused variable
+	})
 }
 
 // TestContextPropagation verifies tracer provider is stored and retrieved
@@ -34,18 +39,14 @@ func TestContextPropagation(t *testing.T) {
 
 	// Without provider, should get no-op
 	provider1 := trace.FromContext(ctx)
-	if provider1 == nil {
-		t.Fatal("FromContext should never return nil")
-	}
+	require.NotNil(t, provider1, "FromContext should never return nil")
 
 	// With provider
 	mockProvider := &mockTraceProvider{}
 	ctx = trace.WithProvider(ctx, mockProvider)
 
 	provider2 := trace.FromContext(ctx)
-	if provider2 != mockProvider {
-		t.Error("Should retrieve the same provider from context")
-	}
+	assert.Equal(t, mockProvider, provider2, "Should retrieve the same provider from context")
 }
 
 // TestNilProviderDefaults verifies nil provider defaults to no-op
@@ -54,14 +55,14 @@ func TestNilProviderDefaults(t *testing.T) {
 	ctx = trace.WithProvider(ctx, nil)
 
 	provider := trace.FromContext(ctx)
-	if provider == nil {
-		t.Fatal("WithProvider(nil) should default to no-op provider")
-	}
+	require.NotNil(t, provider, "WithProvider(nil) should default to no-op provider")
 
 	// Should not panic
-	tracer := provider.Tracer("test")
-	_, span := tracer.Start(ctx, "operation")
-	span.End(nil)
+	assert.NotPanics(t, func() {
+		tracer := provider.Tracer("test")
+		_, span := tracer.Start(ctx, "operation")
+		span.End(nil)
+	})
 }
 
 // TestSpanLifecycle verifies span creation and ending
@@ -73,25 +74,20 @@ func TestSpanLifecycle(t *testing.T) {
 	tracer := mockProvider.Tracer("service")
 	ctx2, span := tracer.Start(ctx, "operation")
 
-	if ctx2 == ctx {
-		t.Error("Start should return a new context")
-	}
+	assert.NotEqual(t, ctx, ctx2, "Start should return a new context")
 
 	testErr := errors.New("operation failed")
 	span.End(testErr)
 
 	mockProvider.mu.Lock()
-	defer mockProvider.mu.Unlock()
+	startCalls := mockProvider.startCalls
+	endCalls := mockProvider.endCalls
+	endErr := mockProvider.lastEndError
+	mockProvider.mu.Unlock()
 
-	if mockProvider.startCalls != 1 {
-		t.Errorf("Expected 1 start call, got %d", mockProvider.startCalls)
-	}
-	if mockProvider.endCalls != 1 {
-		t.Errorf("Expected 1 end call, got %d", mockProvider.endCalls)
-	}
-	if !errors.Is(mockProvider.lastEndError, testErr) {
-		t.Errorf("Expected end error %v, got %v", testErr, mockProvider.lastEndError)
-	}
+	assert.Equal(t, 1, startCalls)
+	assert.Equal(t, 1, endCalls)
+	assert.ErrorIs(t, endErr, testErr)
 }
 
 // TestSpanAttributes verifies attributes are passed correctly
@@ -107,11 +103,14 @@ func TestSpanAttributes(t *testing.T) {
 	span.End(nil)
 
 	mockProvider.mu.Lock()
-	defer mockProvider.mu.Unlock()
+	attrs := mockProvider.lastStartAttrs
+	mockProvider.mu.Unlock()
 
-	if len(mockProvider.lastStartAttrs) != 2 {
-		t.Errorf("Expected 2 attributes, got %d", len(mockProvider.lastStartAttrs))
-	}
+	require.Len(t, attrs, 2)
+	assert.Equal(t, "user_id", attrs[0].Key)
+	assert.Equal(t, "123", attrs[0].Value)
+	assert.Equal(t, "request_id", attrs[1].Key)
+	assert.Equal(t, "abc", attrs[1].Value)
 }
 
 // TestConcurrentTracing verifies thread safety
@@ -135,13 +134,12 @@ func TestConcurrentTracing(t *testing.T) {
 	wg.Wait()
 
 	mockProvider.mu.Lock()
-	defer mockProvider.mu.Unlock()
-	if mockProvider.startCalls != 100 {
-		t.Errorf("Expected 100 start calls, got %d", mockProvider.startCalls)
-	}
-	if mockProvider.endCalls != 100 {
-		t.Errorf("Expected 100 end calls, got %d", mockProvider.endCalls)
-	}
+	startCalls := mockProvider.startCalls
+	endCalls := mockProvider.endCalls
+	mockProvider.mu.Unlock()
+
+	assert.Equal(t, 100, startCalls)
+	assert.Equal(t, 100, endCalls)
 }
 
 // TestNestedSpans verifies nested span context propagation
@@ -156,18 +154,16 @@ func TestNestedSpans(t *testing.T) {
 	// Inner span
 	ctx2, span2 := tracer.Start(ctx1, "inner")
 
-	if ctx1 == ctx2 {
-		t.Error("Nested spans should have different contexts")
-	}
+	assert.NotEqual(t, ctx1, ctx2, "Nested spans should have different contexts")
 
 	span2.End(nil)
 	span1.End(nil)
 
 	mockProvider.mu.Lock()
-	defer mockProvider.mu.Unlock()
-	if mockProvider.startCalls != 2 {
-		t.Errorf("Expected 2 start calls for nested spans, got %d", mockProvider.startCalls)
-	}
+	startCalls := mockProvider.startCalls
+	mockProvider.mu.Unlock()
+
+	assert.Equal(t, 2, startCalls, "Expected 2 start calls for nested spans")
 }
 
 // mockTraceProvider is a test implementation that tracks calls

@@ -328,3 +328,213 @@ func (m *MockCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 
 	return nil, nil // No checkpoint at this superstep
 }
+
+// MockMetricsProvider is a mock implementation of metrics.Provider for testing.
+// It tracks all metric operations for verification in tests.
+type MockMetricsProvider struct {
+	mu                 sync.Mutex
+	counterCalls       int
+	histogramCalls     int
+	lastCounterName    string
+	lastCounterValue   float64
+	lastCounterAttrs   []any // Using any to avoid import cycle
+	lastHistogramName  string
+	lastHistogramValue float64
+	lastHistogramAttrs []any
+
+	// Counters tracks all counter add operations
+	Counters map[string]float64
+	// Histograms tracks all histogram record operations
+	Histograms map[string][]float64
+}
+
+// NewMockMetricsProvider creates a new MockMetricsProvider.
+func NewMockMetricsProvider() *MockMetricsProvider {
+	return &MockMetricsProvider{
+		Counters:   make(map[string]float64),
+		Histograms: make(map[string][]float64),
+	}
+}
+
+// Counter returns a mock counter that tracks operations.
+func (m *MockMetricsProvider) Counter(name string) interface{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.counterCalls++
+	m.lastCounterName = name
+	return &mockCounter{provider: m, name: name}
+}
+
+// Histogram returns a mock histogram that tracks operations.
+func (m *MockMetricsProvider) Histogram(name string) interface{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.histogramCalls++
+	m.lastHistogramName = name
+	return &mockHistogram{provider: m, name: name}
+}
+
+// GetCounterCalls returns the number of times Counter() was called.
+func (m *MockMetricsProvider) GetCounterCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.counterCalls
+}
+
+// GetHistogramCalls returns the number of times Histogram() was called.
+func (m *MockMetricsProvider) GetHistogramCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.histogramCalls
+}
+
+// GetCounterValue returns the total value added to a specific counter.
+func (m *MockMetricsProvider) GetCounterValue(name string) float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Counters[name]
+}
+
+// GetHistogramValues returns all values recorded to a specific histogram.
+func (m *MockMetricsProvider) GetHistogramValues(name string) []float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	values := m.Histograms[name]
+	result := make([]float64, len(values))
+	copy(result, values)
+	return result
+}
+
+type mockCounter struct {
+	provider *MockMetricsProvider
+	name     string
+}
+
+func (c *mockCounter) Add(ctx context.Context, value float64, attrs ...any) {
+	c.provider.mu.Lock()
+	defer c.provider.mu.Unlock()
+	c.provider.lastCounterValue = value
+	c.provider.lastCounterAttrs = attrs
+	c.provider.Counters[c.name] += value
+}
+
+type mockHistogram struct {
+	provider *MockMetricsProvider
+	name     string
+}
+
+func (h *mockHistogram) Record(ctx context.Context, value float64, attrs ...any) {
+	h.provider.mu.Lock()
+	defer h.provider.mu.Unlock()
+	h.provider.lastHistogramValue = value
+	h.provider.lastHistogramAttrs = attrs
+	h.provider.Histograms[h.name] = append(h.provider.Histograms[h.name], value)
+}
+
+// MockTraceProvider is a mock implementation of trace.Provider for testing.
+// It tracks all tracing operations for verification in tests.
+type MockTraceProvider struct {
+	mu             sync.Mutex
+	tracerCalls    int
+	startCalls     int
+	endCalls       int
+	lastTracerName string
+	lastSpanName   string
+	lastStartAttrs []any
+	lastEndError   error
+
+	// Spans tracks all created spans by name
+	Spans map[string]*MockSpan
+}
+
+// NewMockTraceProvider creates a new MockTraceProvider.
+func NewMockTraceProvider() *MockTraceProvider {
+	return &MockTraceProvider{
+		Spans: make(map[string]*MockSpan),
+	}
+}
+
+// Tracer returns a mock tracer that tracks operations.
+func (m *MockTraceProvider) Tracer(name string) interface{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tracerCalls++
+	m.lastTracerName = name
+	return &mockTracer{provider: m}
+}
+
+// GetTracerCalls returns the number of times Tracer() was called.
+func (m *MockTraceProvider) GetTracerCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tracerCalls
+}
+
+// GetStartCalls returns the number of times Start() was called.
+func (m *MockTraceProvider) GetStartCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.startCalls
+}
+
+// GetEndCalls returns the number of times End() was called.
+func (m *MockTraceProvider) GetEndCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.endCalls
+}
+
+// GetLastSpanName returns the name of the most recently started span.
+func (m *MockTraceProvider) GetLastSpanName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastSpanName
+}
+
+// GetSpan returns a mock span by name.
+func (m *MockTraceProvider) GetSpan(name string) *MockSpan {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Spans[name]
+}
+
+type mockTracer struct {
+	provider *MockTraceProvider
+}
+
+func (t *mockTracer) Start(ctx context.Context, name string, attrs ...any) (context.Context, interface{}) {
+	t.provider.mu.Lock()
+	defer t.provider.mu.Unlock()
+
+	t.provider.startCalls++
+	t.provider.lastSpanName = name
+	t.provider.lastStartAttrs = attrs
+
+	span := &MockSpan{
+		provider: t.provider,
+		Name:     name,
+	}
+	t.provider.Spans[name] = span
+
+	type spanKey struct{}
+	return context.WithValue(ctx, spanKey{}, span), span
+}
+
+// MockSpan is a mock implementation of trace.Span for testing.
+type MockSpan struct {
+	provider *MockTraceProvider
+	Name     string
+	Ended    bool
+	Error    error
+}
+
+// End marks the span as complete.
+func (s *MockSpan) End(err error) {
+	s.provider.mu.Lock()
+	defer s.provider.mu.Unlock()
+
+	s.provider.endCalls++
+	s.provider.lastEndError = err
+	s.Ended = true
+	s.Error = err
+}
