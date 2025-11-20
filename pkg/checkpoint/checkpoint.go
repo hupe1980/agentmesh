@@ -102,17 +102,46 @@ type Checkpointer interface {
 	LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*Checkpoint, error)
 }
 
-// Config controls checkpoint behavior
-type Config struct {
-	// Checkpointer is the storage backend
-	Checkpointer Checkpointer
+// Option is a functional option for configuring checkpoint behavior
+type Option func(*options)
 
-	// SaveInterval controls checkpoint frequency:
-	//   0 = save after every superstep (default)
-	//   1 = save every superstep
-	//   N = save every N supersteps
-	SaveInterval int
+// options holds checkpoint configuration
+type options struct {
+	checkpointer Checkpointer
+	saveInterval int
+	autoRestore  bool
+}
 
-	// AutoRestore automatically loads the last checkpoint on Invoke/Stream if it exists
-	AutoRestore bool
+// WithCheckpointer sets the storage backend for checkpoints
+func WithCheckpointer(checkpointer Checkpointer) Option {
+	return func(o *options) {
+		o.checkpointer = checkpointer
+	}
+}
+
+// WithSaveInterval controls checkpoint frequency:
+//
+//	0 = save after every superstep (default)
+//	1 = save every superstep
+//	N = save every N supersteps
+func WithSaveInterval(interval int) Option {
+	return func(o *options) {
+		o.saveInterval = interval
+	}
+}
+
+// WithAutoRestore automatically loads the last checkpoint on Invoke/Stream if it exists
+func WithAutoRestore(enabled bool) Option {
+	return func(o *options) {
+		o.autoRestore = enabled
+	}
+}
+
+// ApplyOptions applies checkpoint options to RunOptions (used by graph package)
+func ApplyOptions(opts []Option) (Checkpointer, int, bool) {
+	o := &options{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o.checkpointer, o.saveInterval, o.autoRestore
 }

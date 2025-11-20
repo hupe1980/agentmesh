@@ -34,10 +34,10 @@
 //	result, _ := graph.Last(compiled.Run(ctx, messages,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("workflow-123"),
-//	    graph.WithCheckpointConfig(checkpoint.Config{
-//	        SaveInterval: 2,  // Save every 2 supersteps
-//	        AutoRestore:  true,
-//	    }),
+//	    graph.WithCheckpointOptions(
+//	        checkpoint.WithSaveInterval(2),  // Save every 2 supersteps
+//	        checkpoint.WithAutoRestore(true),
+//	    ),
 //	))
 //
 // # Checkpoint Signing (Security)
@@ -72,9 +72,9 @@
 //	result, _ := graph.Last(compiled.Run(ctx, nil,
 //	    graph.WithCheckpointer(checkpointer),
 //	    graph.WithRunID("workflow-123"),
-//	    graph.WithCheckpointConfig(checkpoint.Config{
-//	        AutoRestore: true,
-//	    }),
+//	    graph.WithCheckpointOptions(
+//	        checkpoint.WithAutoRestore(true),
+//	    ),
 //	))
 //
 // # Time-Travel Debugging

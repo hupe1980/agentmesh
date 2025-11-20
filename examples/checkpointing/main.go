@@ -41,11 +41,11 @@ func runDemo(ctx context.Context) {
 
 	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1, // Save after every superstep
-			AutoRestore:  false,
-		}))
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1), // Save after every superstep
+			checkpoint.WithAutoRestore(false),
+		))
 
 	fmt.Println("Workflow Results:")
 	eventCount := 0
@@ -113,11 +113,11 @@ func runDemo(ctx context.Context) {
 	// First attempt - will fail
 	failSeq := failingWorkflow.Run(ctx, nil,
 		graph.WithRunID(failRunID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	)
 
 	for _, err := range failSeq {
@@ -143,11 +143,11 @@ func runDemo(ctx context.Context) {
 
 	resumeSeq := fixedWorkflow.Run(ctx, nil,
 		graph.WithRunID(failRunID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  true, // ← Automatically resume from last checkpoint
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(true), // ← Automatically resume from last checkpoint
+		),
 	)
 
 	var lastErr error

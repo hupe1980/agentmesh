@@ -82,10 +82,10 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 result, _ := graph.Last(compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointConfig(checkpoint.Config{
-        SaveInterval: 1,  // Save every superstep
-        AutoRestore: true,
-    }),
+    graph.WithCheckpointOptions(
+        checkpoint.WithSaveInterval(1),  // Save every superstep
+        checkpoint.WithAutoRestore(true),
+    ),
 ))
 ```
 
@@ -100,9 +100,9 @@ fmt.Printf("Last checkpoint at superstep %d\n", ckpt.Superstep)
 result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointConfig(checkpoint.Config{
+    graph.WithCheckpointOptions(
         AutoRestore: true,  // Resume from last checkpoint
-    }),
+    ),
 )
 ```
 

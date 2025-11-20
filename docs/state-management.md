@@ -146,13 +146,13 @@ compiled, err := builder.Compile()
 // Execute with run ID for persistence
 seq := compiled.Run(ctx, messages,
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1, AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1), checkpoint.WithAutoRestore(true)),
 )
 
 // Resume from checkpoint after failure
 seq = compiled.Run(ctx, messages,
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
 )
 ```
 

@@ -154,11 +154,11 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	// Create quota manager if configured
 	var quotaManager *quota.Manager
 	if opts.QuotaConfig != nil {
-		quotaManager = quota.New(quota.Config{
-			MaxMemoryBytes:   opts.QuotaConfig.MaxMemoryBytes,
-			MaxGoroutines:    opts.QuotaConfig.MaxGoroutines,
-			MaxExecutionTime: opts.QuotaConfig.MaxExecutionTime,
-		})
+		quotaManager = quota.New(
+			quota.WithMaxMemoryBytes(opts.QuotaConfig.MaxMemoryBytes),
+			quota.WithMaxGoroutines(opts.QuotaConfig.MaxGoroutines),
+			quota.WithMaxExecutionTime(opts.QuotaConfig.MaxExecutionTime),
+		)
 	}
 
 	runtime := &Runtime[S, M]{

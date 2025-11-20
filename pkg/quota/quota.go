@@ -39,59 +39,69 @@ type Manager struct {
 // or nil to log a warning and continue.
 type ActionFunc func(usage, limit any) error
 
-// Config configures quota limits and enforcement behavior.
-type Config struct {
-	// MaxMemoryBytes sets the maximum heap memory allowed (0 = unlimited).
-	// When exceeded, triggers GC and invokes OnMemoryExceeded action.
-	MaxMemoryBytes uint64
+// Option is a functional option for configuring quota limits and enforcement behavior.
+type Option func(*Manager)
 
-	// MaxGoroutines sets the maximum number of concurrent goroutines (0 = unlimited).
-	// When exceeded, blocks new goroutine creation until capacity is available.
-	MaxGoroutines int
-
-	// MaxExecutionTime sets the maximum total execution duration (0 = unlimited).
-	// When exceeded, invokes OnTimeExceeded action.
-	MaxExecutionTime time.Duration
-
-	// OnMemoryExceeded defines the action when memory quota is exceeded.
-	// Default: return error to fail execution.
-	OnMemoryExceeded ActionFunc
-
-	// OnGoroutineExceeded defines the action when goroutine quota is exceeded.
-	// Default: block until capacity is available (backpressure).
-	OnGoroutineExceeded ActionFunc
-
-	// OnTimeExceeded defines the action when time quota is exceeded.
-	// Default: return error to fail execution.
-	OnTimeExceeded ActionFunc
+// WithMaxMemoryBytes sets the maximum heap memory allowed (0 = unlimited).
+// When exceeded, triggers GC and invokes OnMemoryExceeded action.
+func WithMaxMemoryBytes(bytes uint64) Option {
+	return func(m *Manager) {
+		m.maxMemoryBytes = bytes
+	}
 }
 
-// New creates a new quota manager with the given configuration.
-func New(cfg Config) *Manager {
+// WithMaxGoroutines sets the maximum number of concurrent goroutines (0 = unlimited).
+// When exceeded, blocks new goroutine creation until capacity is available.
+func WithMaxGoroutines(maxGoroutines int) Option {
+	return func(m *Manager) {
+		m.maxGoroutines = int32(maxGoroutines) //nolint:gosec // maxGoroutines is validated to be positive
+	}
+}
+
+// WithMaxExecutionTime sets the maximum total execution duration (0 = unlimited).
+// When exceeded, invokes OnTimeExceeded action.
+func WithMaxExecutionTime(duration time.Duration) Option {
+	return func(m *Manager) {
+		m.maxExecutionTime = duration
+	}
+}
+
+// WithMemoryExceededAction defines the action when memory quota is exceeded.
+// Default: return error to fail execution.
+func WithMemoryExceededAction(action ActionFunc) Option {
+	return func(m *Manager) {
+		m.onMemoryExceeded = action
+	}
+}
+
+// WithGoroutineExceededAction defines the action when goroutine quota is exceeded.
+// Default: block until capacity is available (backpressure).
+func WithGoroutineExceededAction(action ActionFunc) Option {
+	return func(m *Manager) {
+		m.onGoroutineExceeded = action
+	}
+}
+
+// WithTimeExceededAction defines the action when time quota is exceeded.
+// Default: return error to fail execution.
+func WithTimeExceededAction(action ActionFunc) Option {
+	return func(m *Manager) {
+		m.onTimeExceeded = action
+	}
+}
+
+// New creates a new quota manager with the given options.
+func New(opts ...Option) *Manager {
 	m := &Manager{
-		maxMemoryBytes:   cfg.MaxMemoryBytes,
-		maxGoroutines:    int32(cfg.MaxGoroutines), //nolint:gosec // MaxGoroutines is validated to be positive
-		maxExecutionTime: cfg.MaxExecutionTime,
-		memoryCheckFunc:  defaultMemoryCheck,
+		memoryCheckFunc:     defaultMemoryCheck,
+		onMemoryExceeded:    defaultMemoryAction,
+		onGoroutineExceeded: defaultGoroutineAction,
+		onTimeExceeded:      defaultTimeAction,
 	}
 
-	// Set default actions
-	if cfg.OnMemoryExceeded != nil {
-		m.onMemoryExceeded = cfg.OnMemoryExceeded
-	} else {
-		m.onMemoryExceeded = defaultMemoryAction
-	}
-
-	if cfg.OnGoroutineExceeded != nil {
-		m.onGoroutineExceeded = cfg.OnGoroutineExceeded
-	} else {
-		m.onGoroutineExceeded = defaultGoroutineAction
-	}
-
-	if cfg.OnTimeExceeded != nil {
-		m.onTimeExceeded = cfg.OnTimeExceeded
-	} else {
-		m.onTimeExceeded = defaultTimeAction
+	// Apply options
+	for _, opt := range opts {
+		opt(m)
 	}
 
 	return m

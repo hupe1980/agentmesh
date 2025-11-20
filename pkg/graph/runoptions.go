@@ -41,26 +41,31 @@ func WithCheckpointer(checkpointer checkpoint.Checkpointer) RunOption {
 	}
 }
 
-// WithCheckpointConfig provides fine-grained control over checkpointing behavior.
+// WithCheckpointOptions provides fine-grained control over checkpointing behavior.
 //
 // Example:
 //
 //	runnable.Run(ctx, messages,
-//	    graph.WithCheckpointConfig(checkpoint.Config{
-//	        Checkpointer:  checkpointer,
-//	        SaveInterval:  5,     // Save every 5 supersteps
-//	        AutoRestore:   true,  // Resume from last checkpoint
-//	    }),
+//	    graph.WithCheckpointOptions(
+//	        checkpoint.WithCheckpointer(checkpointer),
+//	        checkpoint.WithSaveInterval(5),     // Save every 5 supersteps
+//	        checkpoint.WithAutoRestore(true),   // Resume from last checkpoint
+//	    ),
 //	    graph.WithRunID("long-running-workflow"),
 //	)
-func WithCheckpointConfig(config checkpoint.Config) RunOption {
-	return func(opts *RunOptions) {
-		if opts == nil {
+func WithCheckpointOptions(opts ...checkpoint.Option) RunOption {
+	return func(runOpts *RunOptions) {
+		if runOpts == nil {
 			return
 		}
-		opts.Checkpointer = config.Checkpointer
-		opts.CheckpointInterval = config.SaveInterval
-		opts.AutoRestore = config.AutoRestore
+		checkpointer, interval, autoRestore := checkpoint.ApplyOptions(opts)
+		if checkpointer != nil {
+			runOpts.Checkpointer = checkpointer
+		}
+		if interval > 0 {
+			runOpts.CheckpointInterval = interval
+		}
+		runOpts.AutoRestore = autoRestore
 	}
 }
 

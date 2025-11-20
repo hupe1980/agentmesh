@@ -211,10 +211,10 @@ func productionExample(ctx context.Context) {
 	// Execute with checkpointing enabled
 	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1, // Save after every superstep
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1), // Save after every superstep
+		),
 	)
 
 	for _, err := range seq {

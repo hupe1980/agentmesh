@@ -164,10 +164,10 @@ func runApprovalWorkflow(ctx context.Context) {
 
 	for _, err := range compiled.Run(ctx, []message.Message{},
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+		),
 	) {
 		if err != nil {
 			log.Printf("Error: %v", err)
@@ -295,10 +295,10 @@ func runRejectionWorkflow(ctx context.Context) {
 	fmt.Println("\n--- Running until interrupt ---")
 	for _, err := range compiled.Run(ctx, []message.Message{},
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+		),
 	) {
 		if err != nil {
 			log.Printf("Error: %v", err)

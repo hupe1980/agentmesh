@@ -776,7 +776,7 @@ runID := "conversation-123"
 for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 ) {
     if err != nil {
         log.Fatal(err)
@@ -788,7 +788,7 @@ for result, err := range compiled.Run(ctx, initialMessages,
 for result, err := range compiled.Run(ctx, initialMessages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
-    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
 ) {
     if err != nil {
         log.Fatal(err)

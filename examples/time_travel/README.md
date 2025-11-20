@@ -61,9 +61,9 @@ result, _ := graph.Last(compiled.Run(ctx, nil,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID("run-1"),
     graph.WithInput(map[string]any{"value": 5}),
-    graph.WithCheckpointConfig(checkpoint.Config{
-        SaveInterval: 1, // Save every superstep
-    }),
+    graph.WithCheckpointOptions(
+        checkpoint.WithSaveInterval(1), // Save every superstep
+    ),
 ))
 ```
 

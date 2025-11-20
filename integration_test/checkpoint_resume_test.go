@@ -75,11 +75,11 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 2, // Save every 2 supersteps to reduce queue overflow
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(2), // Save every 2 supersteps to reduce queue overflow
+			checkpoint.WithAutoRestore(false),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -112,11 +112,11 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 	lastErr = nil
 	for _, err := range compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 2,
-			AutoRestore:  true, // Resume from last checkpoint
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(2),
+			checkpoint.WithAutoRestore(true), // Resume from last checkpoint
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -212,11 +212,11 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -251,11 +251,11 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	lastErr = nil
 	for _, err := range compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  true, // Resume from last checkpoint (with retry_allowed=true)
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(true), // Resume from last checkpoint (with retry_allowed=true)
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -365,11 +365,11 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -392,11 +392,11 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 	lastErr = nil
 	for _, err := range compiled2.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  true,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(true),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -449,11 +449,11 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -476,11 +476,11 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	lastErr = nil
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  true,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(true),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -547,11 +547,11 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1, // Save after every superstep
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1), // Save after every superstep
+			checkpoint.WithAutoRestore(false),
+		),
 	) {
 		if err != nil {
 			lastErr = err
@@ -620,9 +620,7 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 			state.RegisterKey(stateManager, timestampKey)
 
 			g, err := graph.NewGraph(stateManager)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 
 			require.NoError(t, g.AddNode(graph.NewBaseNode("work", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 				time.Sleep(10 * time.Millisecond) // Simulate work
@@ -645,11 +643,11 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 			var lastErr error
 			for _, err := range compiled.Run(ctx, nil,
 				graph.WithRunID(runID),
-				graph.WithCheckpointConfig(checkpoint.Config{
-					Checkpointer: checkpointer,
-					SaveInterval: 1,
-					AutoRestore:  false,
-				}),
+				graph.WithCheckpointOptions(
+					checkpoint.WithCheckpointer(checkpointer),
+					checkpoint.WithSaveInterval(1),
+					checkpoint.WithAutoRestore(false),
+				),
 			) {
 				if err != nil {
 					lastErr = err
@@ -712,11 +710,11 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	var lastErr error
 	for _, err := range compiled.Run(ctx, nil,
 		graph.WithRunID(runID),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  true, // AutoRestore with no checkpoint should be no-op
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(true), // AutoRestore with no checkpoint should be no-op
+		),
 	) {
 		if err != nil {
 			lastErr = err

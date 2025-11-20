@@ -50,9 +50,8 @@ func TestNew_BasicAgent(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
-	// Verify it implements MessageRunnable
-	_, ok := compiled.(graph.Runnable[[]message.Message, message.Message])
-	require.True(t, ok, "agent should implement MessageRunnable")
+	// Verify it implements MessageRunnable by checking type
+	require.Implements(t, (*graph.Runnable[[]message.Message, message.Message])(nil), compiled)
 }
 
 func TestNew_WithTools(t *testing.T) {

@@ -93,11 +93,11 @@ func main() {
 
 	seq := compiled.Run(ctx, nil,
 		graph.WithRunID(runID1),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1, // Save after every superstep
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1), // Save after every superstep
+			checkpoint.WithAutoRestore(false),
+		),
 	)
 
 	for _, err := range seq {
@@ -119,11 +119,11 @@ func main() {
 
 	seq2 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID2),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	)
 
 	for _, err := range seq2 {
@@ -146,11 +146,11 @@ func main() {
 
 	seq3 := compiled.Run(ctx, nil,
 		graph.WithRunID(runID3),
-		graph.WithCheckpointConfig(checkpoint.Config{
-			Checkpointer: checkpointer,
-			SaveInterval: 1,
-			AutoRestore:  false,
-		}),
+		graph.WithCheckpointOptions(
+			checkpoint.WithCheckpointer(checkpointer),
+			checkpoint.WithSaveInterval(1),
+			checkpoint.WithAutoRestore(false),
+		),
 	)
 
 	for _, err := range seq3 {

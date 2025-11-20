@@ -59,10 +59,10 @@ messages := []message.Message{
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
     graph.WithRunID(runID),
-    graph.WithCheckpointConfig(checkpoint.Config{
-        SaveInterval: 1,  // Save every superstep
-        AutoRestore:  true,
-    }),
+    graph.WithCheckpointOptions(
+        checkpoint.WithSaveInterval(1),  // Save every superstep
+        checkpoint.WithAutoRestore(true),
+    ),
 )
 
 // Consume events
@@ -134,7 +134,7 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 seq := compiled.Run(ctx, messages,
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1, AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1), checkpoint.WithAutoRestore(true)),
 )
 
 // Process events...
@@ -146,7 +146,7 @@ for event, err := range seq {
 seq = compiled.Run(ctx, messages,
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
 )
 // Continues from where it left off
 ```
@@ -170,7 +170,7 @@ compiled, _ := builder.Compile()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 ```
 
@@ -199,7 +199,7 @@ func TestGraphCheckpointing(t *testing.T) {
     seq := compiled.Run(ctx, messages,
         graph.WithRunID("test-run"),
         graph.WithCheckpointer(checkpointer),
-        graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+        graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
     )
     
     // Process events
@@ -241,7 +241,7 @@ compiled, _ := builder.Compile()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 ```
 
@@ -343,7 +343,7 @@ compiled, _ := builder.Compile()
 
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 ```
 
@@ -442,14 +442,14 @@ compiled, _ := builder.Compile()
 seq := compiled.Run(ctx, messages,
     graph.WithRunID("secure-workflow"),
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 
 // Signatures are verified automatically on load
 seq = compiled.Run(ctx, messages,
     graph.WithRunID("secure-workflow"),
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
 )
 // Fails if signature invalid or checkpoint modified
 ```
@@ -539,10 +539,10 @@ func main() {
     seq := compiled.Run(ctx, messages,
         graph.WithRunID(fmt.Sprintf("prod-%s", userID)),
         graph.WithCheckpointer(checkpointer),
-        graph.WithCheckpointConfig(checkpoint.Config{
-            SaveInterval: 1,
-            AutoRestore:  true,
-        }),
+        graph.WithCheckpointOptions(
+            checkpoint.WithSaveInterval(1),
+            checkpoint.WithAutoRestore(true),
+        ),
     )
     
     for event, err := range seq {
@@ -594,7 +594,7 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 seq := compiled.Run(ctx, messages,
     graph.WithRunID("debug-run"),
     graph.WithCheckpointer(checkpointer),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 
 // Process events
@@ -774,14 +774,14 @@ Balance between recovery granularity and overhead:
 compiled, _ := builder.Compile()
 seq := compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 1}),  // Save every superstep
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),  // Save every superstep
 )
 
 // Coarse-grained (every 5 steps) - Better performance
 compiled, _ := builder.Compile()
 seq = compiled.Run(ctx, messages,
     graph.WithCheckpointer(store),
-    graph.WithCheckpointConfig(checkpoint.Config{SaveInterval: 5}),  // Save every 5 supersteps
+    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(5)),  // Save every 5 supersteps
 )
 
 // Manual control - Checkpoint only at critical points
@@ -872,7 +872,7 @@ func executeWithCheckpointing(
     seq := compiled.Run(ctx, messages,
         graph.WithRunID(threadID),
         graph.WithCheckpointer(checkpointer),
-        graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+        graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
     )
     
     var result []message.Message
@@ -1377,7 +1377,7 @@ func executeWithRetry(
         seq := compiled.Run(ctx, messages,
             graph.WithRunID(threadID),
             graph.WithCheckpointer(checkpointer),
-            graph.WithCheckpointConfig(checkpoint.Config{AutoRestore: true}),
+            graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
         )
         
         var result []message.Message
