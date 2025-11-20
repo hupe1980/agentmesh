@@ -10,9 +10,37 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Tests - Nil Checking
+
+func TestNewModelNode_NilModel(t *testing.T) {
+	_, err := NewModelNode(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model cannot be nil")
+}
+
+func TestNewToolNode_NilRegistry(t *testing.T) {
+	_, err := NewToolNode(nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "toolRegistry cannot be nil")
+}
+
+func TestNewModelNode_ValidModel(t *testing.T) {
+	node, err := NewModelNode(&testutil.MockModel{})
+	require.NoError(t, err)
+	assert.NotNil(t, node)
+}
+
+func TestNewToolNode_ValidRegistry(t *testing.T) {
+	registry := make(map[string]tool.Tool)
+	node, err := NewToolNode(registry)
+	require.NoError(t, err)
+	assert.NotNil(t, node)
+}
 
 // Tests
 

@@ -108,15 +108,24 @@ func marshalToolArguments(call message.ToolCall, node *ToolNode, idx int) (strin
 
 // NewToolNode creates a new ToolNode with the given tool registry and options.
 //
+// Returns an error if the toolRegistry parameter is nil.
+//
 // Example:
 //
-//	node := NewToolNode(toolRegistry,
+//	node, err := NewToolNode(toolRegistry,
 //	    WithToolNodeName("tools"),
 //	    WithToolErrorPrefix("my agent"),
 //	    WithContinueOnToolError(true),
 //	    WithParallelToolExecution(true))
+//	if err != nil {
+//	    return err
+//	}
 //	g.AddNode(node)
-func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *ToolNode {
+func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) (*ToolNode, error) {
+	if toolRegistry == nil {
+		return nil, fmt.Errorf("agent: toolRegistry cannot be nil")
+	}
+
 	node := &ToolNode{
 		name:            "tool",
 		toolRegistry:    toolRegistry,
@@ -130,7 +139,7 @@ func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) *Too
 		opt(node)
 	}
 
-	return node
+	return node, nil
 }
 
 // Name returns the name of the tool node.

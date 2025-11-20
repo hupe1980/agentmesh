@@ -26,8 +26,13 @@ type ClientWrapper struct {
 }
 
 // NewClientWrapper creates a new ClientWrapper.
-func NewClientWrapper(client *genai.Client) *ClientWrapper {
-	return &ClientWrapper{inner: client}
+// Returns an error if the client parameter is nil.
+func NewClientWrapper(client *genai.Client) (*ClientWrapper, error) {
+	if client == nil {
+		return nil, fmt.Errorf("gemini: client cannot be nil")
+	}
+
+	return &ClientWrapper{inner: client}, nil
 }
 
 // GenerateContent implements the GenerateContent method of the Client interface.
@@ -91,14 +96,24 @@ func NewModel(ctx context.Context, optFns ...func(o *Options)) (*Model, error) {
 		return nil, fmt.Errorf("failed to create gemini client: %w", err)
 	}
 
+	wrapper, err := NewClientWrapper(client)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Model{
-		client: NewClientWrapper(client),
+		client: wrapper,
 		opts:   opts,
 	}, nil
 }
 
 // NewModelFromClient creates a model from a custom client (for testing).
-func NewModelFromClient(client Client, optFns ...func(o *Options)) *Model {
+// Returns an error if the client is nil.
+func NewModelFromClient(client Client, optFns ...func(o *Options)) (*Model, error) {
+	if client == nil {
+		return nil, fmt.Errorf("gemini: client cannot be nil")
+	}
+
 	opts := Options{
 		model:           "gemini-2.0-flash-exp",
 		temperature:     0.7,
@@ -118,7 +133,7 @@ func NewModelFromClient(client Client, optFns ...func(o *Options)) *Model {
 	return &Model{
 		client: client,
 		opts:   opts,
-	}
+	}, nil
 }
 
 // WithModel returns an option function to set the model name.

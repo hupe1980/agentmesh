@@ -88,11 +88,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = g.AddNode(agent.NewModelNode(
+	modelNode, err := agent.NewModelNode(
 		flakyModel,
 		agent.WithModelNodeName("flaky-service"),
 		agent.WithModelCallbacks(pluginMgr),
-	))
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = g.AddNode(modelNode)
 	if err != nil {
 		log.Fatal(err)
 	}

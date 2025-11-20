@@ -27,8 +27,13 @@ type ClientWrapper struct {
 }
 
 // NewClientWrapper creates a new ClientWrapper.
-func NewClientWrapper(client *anthropic.Client) *ClientWrapper {
-	return &ClientWrapper{inner: client}
+// Returns an error if the client parameter is nil.
+func NewClientWrapper(client *anthropic.Client) (*ClientWrapper, error) {
+	if client == nil {
+		return nil, fmt.Errorf("anthropic: client cannot be nil")
+	}
+
+	return &ClientWrapper{inner: client}, nil
 }
 
 // Messages returns the messages service.

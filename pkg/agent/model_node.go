@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -60,18 +61,24 @@ func WithModelTools(tools ...tool.Tool) ModelNodeOption {
 // This component is commonly used in agent implementations to delegate response generation
 // to a language model. It automatically handles the conversion between state and model inputs/outputs.
 //
+// Returns an error if the model parameter is nil.
+//
 // Example:
 //
-//	g.AddNode(NewModelNode(myModel))
-//	g.AddNode(NewModelNode(myModel, WithModelNodeName("generator")))
+//	node, err := NewModelNode(myModel)
+//	node, err := NewModelNode(myModel, WithModelNodeName("generator"))
 //
 // With plugins:
 //
 //	pm := callbacks.NewPluginManager()
 //	pm.Register(ctx, guardrails.NewBlockUnsafeContentPlugin())
 //	pm.Register(ctx, guardrails.NewFilterPIIPlugin())
-//	g.AddNode(NewModelNode(myModel, WithModelCallbacks(pm)))
-func NewModelNode(mdl model.Model, opts ...ModelNodeOption) *ModelNode {
+//	node, err := NewModelNode(myModel, WithModelCallbacks(pm))
+func NewModelNode(mdl model.Model, opts ...ModelNodeOption) (*ModelNode, error) {
+	if mdl == nil {
+		return nil, fmt.Errorf("agent: model cannot be nil")
+	}
+
 	node := &ModelNode{
 		name:  "model",
 		model: mdl,
@@ -81,7 +88,7 @@ func NewModelNode(mdl model.Model, opts ...ModelNodeOption) *ModelNode {
 		opt(node)
 	}
 
-	return node
+	return node, nil
 }
 
 // Name returns the node's name.

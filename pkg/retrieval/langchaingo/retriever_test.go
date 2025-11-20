@@ -77,7 +77,8 @@ func TestRetriever_RetrieveSuccess(t *testing.T) {
 		},
 	}
 
-	retr := NewRetriever(stub)
+	retr, err := NewRetriever(stub)
+	require.NoError(t, err)
 
 	docs, err := retr.Retrieve(context.Background(), "  query  ")
 	require.NoError(t, err)
@@ -96,7 +97,8 @@ func TestRetriever_RetrieveSuccess(t *testing.T) {
 func TestRetriever_RetrieveError(t *testing.T) {
 	boom := errors.New("boom")
 	stub := &stubRetriever{err: boom}
-	retr := NewRetriever(stub)
+	retr, err := NewRetriever(stub)
+	require.NoError(t, err)
 
 	docs, err := retr.Retrieve(context.Background(), "query")
 	require.ErrorIs(t, err, boom)
@@ -104,7 +106,8 @@ func TestRetriever_RetrieveError(t *testing.T) {
 }
 
 func TestRetriever_RetrieveEmptyQuery(t *testing.T) {
-	retr := NewRetriever(&stubRetriever{})
+	retr, err := NewRetriever(&stubRetriever{})
+	require.NoError(t, err)
 
 	docs, err := retr.Retrieve(context.Background(), "   ")
 	require.EqualError(t, err, "langchaingo retriever: query cannot be empty")
@@ -124,13 +127,14 @@ func TestNewRetrieverFromVectorStore(t *testing.T) {
 
 	scoreThreshold := float32(0.42)
 
-	retr := NewRetrieverFromVectorStore(
+	retr, err := NewRetrieverFromVectorStore(
 		store,
 		func(o *Options) {
 			o.NumDocuments = 5
 			o.VectorStoreOptions = []vectorstores.Option{vectorstores.WithScoreThreshold(scoreThreshold)}
 		},
 	)
+	require.NoError(t, err)
 
 	docs, err := retr.Retrieve(context.Background(), " query ")
 	require.NoError(t, err)

@@ -36,10 +36,15 @@ type ClientWrapper struct {
 }
 
 // NewClientWrapper creates a new ClientWrapper.
-func NewClientWrapper(client *openai.Client) *ClientWrapper {
+// Returns an error if the client parameter is nil.
+func NewClientWrapper(client *openai.Client) (*ClientWrapper, error) {
+	if client == nil {
+		return nil, fmt.Errorf("openai: client cannot be nil")
+	}
+
 	return &ClientWrapper{
 		inner: client,
-	}
+	}, nil
 }
 
 // ChatCompletions implements the ChatCompletions method of the Client interface.
@@ -70,18 +75,32 @@ type Model struct {
 }
 
 // NewModel creates a new OpenAI model with default client.
+// This function is kept as non-error returning for backward compatibility since
+// the default client construction cannot fail.
 func NewModel(optFns ...func(o *Options)) *Model {
 	client := openai.NewClient()
-	return NewModelFromClient(&client, optFns...)
+	model, _ := NewModelFromClient(&client, optFns...)
+	return model
 }
 
 // NewModelFromClient creates a model from an existing OpenAI client.
-func NewModelFromClient(client *openai.Client, optFns ...func(o *Options)) *Model {
-	return NewModelFromClientWrapper(NewClientWrapper(client), optFns...)
+// Returns an error if the client is nil.
+func NewModelFromClient(client *openai.Client, optFns ...func(o *Options)) (*Model, error) {
+	wrapper, err := NewClientWrapper(client)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewModelFromClientWrapper(wrapper, optFns...)
 }
 
 // NewModelFromClientWrapper creates a model from a wrapped client.
-func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options)) *Model {
+// Returns an error if the wrapper is nil.
+func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options)) (*Model, error) {
+	if wrapper == nil {
+		return nil, fmt.Errorf("openai: wrapper cannot be nil")
+	}
+
 	opts := Options{
 		model:               openai.ChatModelGPT4oMini,
 		temperature:         0.7,
@@ -97,7 +116,7 @@ func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options
 		modelName = openai.ChatModelGPT4oMini
 	}
 
-	return &Model{client: wrapper, model: modelName, opts: opts}
+	return &Model{client: wrapper, model: modelName, opts: opts}, nil
 }
 
 // WithModel returns a new model configured to use the specified model name.

@@ -82,13 +82,21 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 
 	// Model node: generate response with tools and system prompt
 	// System prompt is sent per-request (Pydantic AI style) for token efficiency
-	_ = g.AddNode(NewModelNode(mdl,
+	modelNode, err := NewModelNode(mdl,
 		WithModelTools(acceptedTools...),
 		WithModelSystemPrompt(config.systemPrompt),
-	))
+	)
+	if err != nil {
+		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
+	}
+	_ = g.AddNode(modelNode)
 
 	// Tool node: execute tool calls
-	_ = g.AddNode(NewToolNode(toolRegistry, WithToolErrorPrefix("react agent")))
+	toolNode, err := NewToolNode(toolRegistry, WithToolErrorPrefix("react agent"))
+	if err != nil {
+		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
+	}
+	_ = g.AddNode(toolNode)
 
 	// Build graph topology
 	g.AddEdge(graph.StartNode, "model")

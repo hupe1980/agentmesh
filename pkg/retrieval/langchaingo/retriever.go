@@ -22,7 +22,8 @@ type Retriever struct {
 }
 
 // NewRetrieverFromVectorStore builds a Retriever from a LangChain vector store.
-func NewRetrieverFromVectorStore(vectorStore vectorstores.VectorStore, optFns ...func(o *Options)) *Retriever {
+// Returns an error if the vector store is nil or NewRetriever fails.
+func NewRetrieverFromVectorStore(vectorStore vectorstores.VectorStore, optFns ...func(o *Options)) (*Retriever, error) {
 	opts := Options{
 		NumDocuments:       3,
 		VectorStoreOptions: []vectorstores.Option{},
@@ -36,10 +37,15 @@ func NewRetrieverFromVectorStore(vectorStore vectorstores.VectorStore, optFns ..
 }
 
 // NewRetriever wraps an existing LangChain retriever.
-func NewRetriever(retriever schema.Retriever) *Retriever {
+// Returns an error if the retriever parameter is nil.
+func NewRetriever(retriever schema.Retriever) (*Retriever, error) {
+	if retriever == nil {
+		return nil, fmt.Errorf("langchaingo: retriever cannot be nil")
+	}
+
 	return &Retriever{
 		retriever: retriever,
-	}
+	}, nil
 }
 
 // Retrieve fetches relevant documents from the underlying LangChain retriever.
