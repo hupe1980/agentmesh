@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
@@ -135,12 +135,11 @@ func main() {
 			})
 		}
 
-		updates := graphstate.Updates{
-			statusKey.Name(): "llm_completed",
-		}
-		agent.AppendMessages(updates, []message.Message{resp.Message})
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, statusKey, "llm_completed")
+		graphstate.AppendUpdate(builder, agent.MessagesKey, resp.Message)
 
-		return updates, nil
+		return builder.Build()
 	})
 
 	// Node 3: Multi-step analyzer with detailed streaming

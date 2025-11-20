@@ -269,24 +269,11 @@ func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
         message.NewAIMessageFromText("Updated successfully"),
     )
     
-    return ub.Build(), nil  // ✅ Validates no duplicate keys
+    return ub.Build()  // ✅ Returns (Updates, error) with validation
 }
 ```
 
-**Alternative: Traditional map approach (less safe)**
-
-```go
-return map[string]any{
-    "counter": counter + 1,
-    "status": "processing",
-    "result": computedValue,
-    message.MessagesKey: []message.Message{
-        message.NewAIMessageFromText("Updated successfully"),
-    },
-}, nil
-```
-
-> **Type Safety:** Use `UpdateBuilder` for compile-time type checking and duplicate key detection. See [State Management](/state-management/#type-safe-updates) for details.
+> **Type Safety:** `UpdateBuilder` provides compile-time type checking and duplicate key detection. All state updates must use this type-safe pattern. See [State Management](/state-management/#type-safe-updates) for details.
 
 ### State initialization
 

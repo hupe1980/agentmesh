@@ -69,12 +69,12 @@ func runExample(maxSize int) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
-			updates := graphstate.Updates{}
-			agent.AppendMessages(updates, []message.Message{
-				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
-			})
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, agent.MessagesKey,
+				message.Message(message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts()))),
+			)
 
-			return updates, nil
+			return builder.Build()
 		},
 	))
 	if err != nil {

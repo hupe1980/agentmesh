@@ -172,10 +172,10 @@ func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Upd
 		return nil, err
 	}
 
-	updates := state.Updates{}
-	AppendMessages(updates, toolMessages)
+	builder := state.NewUpdateBuilder()
+	state.AppendUpdate(builder, MessagesKey, toolMessages...)
 
-	return updates, nil
+	return builder.Build()
 }
 
 // handleToolError processes tool execution errors with plugins and fallbacks.

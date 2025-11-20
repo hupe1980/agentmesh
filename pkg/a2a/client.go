@@ -169,10 +169,10 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 				return nil, fmt.Errorf("failed to convert response: %w", err)
 			}
 
-			updates := state.Updates{}
-			agent.AppendMessages(updates, resultMessages)
+			builder := state.NewUpdateBuilder()
+			state.AppendUpdate(builder, agent.MessagesKey, resultMessages...)
 
-			return updates, nil
+			return builder.Build()
 		}
 
 		return nil, fmt.Errorf("unexpected response type from A2A agent")
@@ -237,10 +237,10 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 			}
 		}
 
-		updates := state.Updates{}
-		agent.AppendMessages(updates, resultMessages)
+		builder := state.NewUpdateBuilder()
+		state.AppendUpdate(builder, agent.MessagesKey, resultMessages...)
 
-		return updates, nil
+		return builder.Build()
 	}
 }
 

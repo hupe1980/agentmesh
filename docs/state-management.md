@@ -30,23 +30,9 @@ sidebar:
 
 ## Type-safe updates {#type-safe-updates}
 
-`UpdateBuilder` provides compile-time type safety for state updates using Go generics. This prevents runtime errors from type mismatches and typos.
+`UpdateBuilder` provides compile-time type safety for state updates using Go generics. This prevents runtime errors from type mismatches and typos. **All state updates must use UpdateBuilder.**
 
-### Without type safety (traditional approach)
-
-```go
-// ❌ No compile-time checks - errors happen at runtime
-builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "counter": "not a number",  // Wrong type - runtime error!
-            "mesages": []string{"hi"},  // Typo - silent bug!
-        },
-    }, nil
-})
-```
-
-### With type safety (recommended)
+### Usage
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/state"
@@ -66,8 +52,13 @@ builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeRe
     // state.SetUpdate(ub, CounterKey, "wrong")      // ❌ Won't compile!
     // state.AppendUpdate(ub, MessagesKey, 123)      // ❌ Won't compile!
     
+    updates, err := ub.Build()  // ✅ Validated (no duplicate keys)
+    if err != nil {
+        return nil, err
+    }
+    
     return &graph.NodeResult{
-        Updates: ub.Build(),  // ✅ Validated (no duplicate keys)
+        Updates: updates,
     }, nil
 })
 ```
@@ -101,28 +92,26 @@ state.AppendUpdate(ub, state.NewListKey[string]("tags"), "urgent", "review")
 ub.Delete("old_field")
 
 // Build validates no duplicate keys
-updates := ub.Build()  // Returns map[string]any
-```
-
-### Migration guide
-
-**Before:**
-```go
-Updates: map[string]any{
-    "counter": value,
-    "messages": []string{msg},
+updates, err := ub.Build()  // Returns (map[string]any, error)
+if err != nil {
+    return nil, err
 }
 ```
 
-**After:**
+### Complete example
+
 ```go
 ub := state.NewUpdateBuilder()
 state.SetUpdate(ub, CounterKey, value)
 state.AppendUpdate(ub, MessagesKey, msg)
-Updates: ub.Build()
+updates, err := ub.Build()
+if err != nil {
+    return nil, err
+}
+return updates, nil
 ```
 
-See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for complete working examples.
+See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.
 
 ---
 

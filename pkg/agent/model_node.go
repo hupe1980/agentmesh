@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -110,9 +109,9 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 		}
 		if resp != nil {
 			// Short-circuit: use plugin response instead of calling model
-			updates := state.Updates{}
-			AppendMessages(updates, []message.Message{resp.Message})
-			return updates, nil
+			builder := state.NewUpdateBuilder()
+			state.AppendUpdate(builder, MessagesKey, resp.Message)
+			return builder.Build()
 		}
 	}
 
@@ -134,10 +133,10 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 	}
 
 	// Return message in updates map (agent layer handles message storage)
-	updates := state.Updates{}
-	AppendMessages(updates, []message.Message{resp.Message})
+	builder := state.NewUpdateBuilder()
+	state.AppendUpdate(builder, MessagesKey, resp.Message)
 
-	return updates, nil
+	return builder.Build()
 }
 
 // handleModelError processes model execution errors through plugins.
@@ -147,9 +146,9 @@ func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, er
 		fallback, transformedErr := n.callbacks.ExecuteOnModelError(ctx, req, err)
 		if fallback != nil {
 			// Plugin provided fallback response
-			updates := state.Updates{}
-			AppendMessages(updates, []message.Message{fallback.Message})
-			return updates, nil
+			builder := state.NewUpdateBuilder()
+			state.AppendUpdate(builder, MessagesKey, fallback.Message)
+			return builder.Build()
 		}
 		if transformedErr != nil {
 			return nil, transformedErr

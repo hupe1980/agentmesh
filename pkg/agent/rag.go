@@ -57,10 +57,10 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 			return nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
-		updates := state.Updates{}
-		state.SetInUpdates(updates, DocumentsKey, extractDocumentContent(docs))
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, DocumentsKey, extractDocumentContent(docs))
 
-		return updates, nil
+		return builder.Build()
 	}
 }
 
@@ -189,8 +189,8 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 	}
 
 	// Return message in updates map
-	updates := state.Updates{}
-	AppendMessages(updates, []message.Message{resp.Message})
+	builder := state.NewUpdateBuilder()
+	state.AppendUpdate(builder, MessagesKey, resp.Message)
 
-	return updates, nil
+	return builder.Build()
 }

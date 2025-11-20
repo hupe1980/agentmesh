@@ -26,25 +26,6 @@ func GetMessages(view *state.ReadView) []message.Message {
 	return state.GetFromView(view, MessagesKey.Key)
 }
 
-// AppendMessages adds new messages to the message history in updates.
-// Wraps the messages slice in SliceOf[T] for proper channel handling.
-//
-// Example:
-//
-//	updates := state.NewUpdates()
-//	agent.AppendMessages(updates, []message.Message{
-//	    message.NewHumanMessageFromText("Hello"),
-//	    message.NewAIMessageFromText("Hi there!"),
-//	})
-//	mgr.ApplyUpdates(ctx, updates)
-func AppendMessages(updates state.Updates, messages []message.Message) {
-	if len(messages) == 0 {
-		return
-	}
-	// Wrap in SliceOf[T] so the channel recognizes it as a slice to append
-	updates[MessagesKey.Name()] = state.SliceOf[message.Message](messages)
-}
-
 // LastMessage returns the last message from the history, or nil if empty.
 //
 // Example:
