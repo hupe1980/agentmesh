@@ -6,6 +6,7 @@ import (
 	"iter"
 	"reflect"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -673,22 +674,12 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 
 // shouldInterruptBefore checks if this node is in the interrupt-before list.
 func (n *pregelNodeAdapter[I, O]) shouldInterruptBefore() bool {
-	for _, name := range n.compiled.graph.InterruptBefore {
-		if name == n.nodeName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(n.compiled.graph.InterruptBefore, n.nodeName)
 }
 
 // shouldInterruptAfter checks if this node is in the interrupt-after list.
 func (n *pregelNodeAdapter[I, O]) shouldInterruptAfter() bool {
-	for _, name := range n.compiled.graph.InterruptAfter {
-		if name == n.nodeName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(n.compiled.graph.InterruptAfter, n.nodeName)
 }
 
 // createInterruptCheckpoint creates a checkpoint with pending writes and pauses execution.
@@ -820,11 +811,9 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		// This allows normal auto-restore to re-execute from the start
 		if len(snapshot.ResumingNodes) > 0 {
 			// Skip completed nodes - they already executed before interrupt
-			for _, completedNode := range snapshot.CompletedNodes {
-				if completedNode == n.nodeName {
-					// Node already completed before interrupt, skip re-execution
-					return nil
-				}
+			if slices.Contains(snapshot.CompletedNodes, n.nodeName) {
+				// Node already completed before interrupt, skip re-execution
+				return nil
 			}
 		}
 
@@ -840,11 +829,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// Check for interrupt-before (but skip if we're resuming this node)
 	isResuming := false
 	if n.executor != nil && n.executor.metrics != nil {
-		for _, resumingNode := range n.executor.metrics.Snapshot().ResumingNodes {
-			if resumingNode == n.nodeName {
-				isResuming = true
-				break
-			}
+		if slices.Contains(n.executor.metrics.Snapshot().ResumingNodes, n.nodeName) {
+			isResuming = true
 		}
 	}
 
