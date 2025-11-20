@@ -90,11 +90,24 @@ func NewManager(opts ...ManagerOption) *Manager {
 // If the key is already registered, this is a no-op (idempotent).
 // Type safety is enforced at compile-time through the Key[T] parameter.
 //
+// Thread-safe: Initializes channel before acquiring lock to prevent blocking
+// while holding the lock. This avoids race conditions where another goroutine
+// might see inconsistent state during channel initialization.
+//
 // Example:
 //
 //	counterKey := NewKey[int]("counter", 0)
 //	state.RegisterKey(mgr, counterKey)
 func RegisterKey[T any](m *Manager, key Key[T]) error {
+	// Create and initialize channel BEFORE acquiring lock
+	// This prevents blocking while holding the lock (race condition)
+	ch := channel.NewLastValueChannel(key.name)
+	ctx := context.Background()
+	if err := ch.Write(ctx, key.zero); err != nil {
+		return fmt.Errorf("failed to initialize channel: %w", err)
+	}
+
+	// Now acquire lock for registration
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -103,16 +116,9 @@ func RegisterKey[T any](m *Manager, key Key[T]) error {
 		return nil
 	}
 
-	// Create LastValueChannel for scalar keys
-	ch := channel.NewLastValueChannel(key.name)
+	// Register the pre-initialized channel
 	if err := m.channels.RegisterChannel(key.name, ch, LastValueBehavior); err != nil {
 		return fmt.Errorf("channel registration failed: %w", err)
-	}
-
-	// Initialize with default value
-	ctx := context.Background()
-	if err := ch.Write(ctx, key.zero); err != nil {
-		return fmt.Errorf("failed to initialize channel: %w", err)
 	}
 
 	// Track registration
