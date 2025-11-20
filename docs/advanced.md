@@ -322,10 +322,10 @@ func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, er
 
 ### Custom Aggregators
 
-Implement the `channel.Aggregator` interface for custom reduction logic:
+Implement the `state.Aggregator` interface for custom reduction logic:
 
 ```go
-// From pkg/channel/channel.go
+// From pkg/state/internal/channel/channel.go
 type Aggregator interface {
     Zero() any
     Aggregate(current, value any) any
@@ -338,7 +338,6 @@ Track values to compute median:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/channel"
     "github.com/hupe1980/agentmesh/pkg/state"
 )
 

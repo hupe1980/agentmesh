@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -43,7 +42,7 @@ func AppendMessages(updates state.Updates, messages []message.Message) {
 		return
 	}
 	// Wrap in SliceOf[T] so the channel recognizes it as a slice to append
-	updates[MessagesKey.Name()] = channel.SliceOf[message.Message](messages)
+	updates[MessagesKey.Name()] = state.SliceOf[message.Message](messages)
 }
 
 // LastMessage returns the last message from the history, or nil if empty.

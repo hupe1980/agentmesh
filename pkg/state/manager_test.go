@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -48,7 +47,7 @@ func TestChannelRegistry(t *testing.T) {
 	t.Run("RegisterChannel", func(t *testing.T) {
 		registry := state.NewChannelRegistry()
 
-		ch := channel.NewLastValueChannel("custom")
+		ch := state.NewLastValueChannel("custom")
 		err := registry.RegisterChannel("custom", ch, state.LastValueBehavior)
 		if err != nil {
 			t.Fatalf("RegisterChannel failed: %v", err)
@@ -63,10 +62,10 @@ func TestChannelRegistry(t *testing.T) {
 	t.Run("RegisterChannel duplicate", func(t *testing.T) {
 		registry := state.NewChannelRegistry()
 
-		ch1 := channel.NewLastValueChannel("dup")
+		ch1 := state.NewLastValueChannel("dup")
 		registry.RegisterChannel("dup", ch1, state.LastValueBehavior)
 
-		ch2 := channel.NewLastValueChannel("dup2")
+		ch2 := state.NewLastValueChannel("dup2")
 		err := registry.RegisterChannel("dup", ch2, state.LastValueBehavior)
 		if err == nil {
 			t.Error("Expected error when registering duplicate channel")

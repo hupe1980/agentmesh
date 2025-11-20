@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/state/internal/channel"
 )
 
 // Manager is the concrete state manager implementation.

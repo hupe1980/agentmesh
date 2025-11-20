@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/channel"
+	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	stateif "github.com/hupe1980/agentmesh/pkg/state"
@@ -102,7 +102,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 			return nil, assert.AnError
 		}
 		updates := stateif.Updates{}
-		updates[testMessagesKey.Name()] = channel.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
+		updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
 		return updates, nil
 	}))
 	g.AddEdge(graph.StartNode, "worker")
@@ -188,7 +188,7 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 
 	g.AddNode(graph.NewBaseNode("worker", func(ctx context.Context, view *stateif.ReadView) (stateif.Updates, error) {
 		updates := stateif.Updates{}
-		updates[testMessagesKey.Name()] = channel.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
+		updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
 		return updates, nil
 	}))
 

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/pkg/channel"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -163,7 +162,7 @@ func NewMessagePregelExecutor(opts ...PregelOption[[]message.Message, message.Me
 			if len(input) == 0 {
 				return nil
 			}
-			return state.Updates{MessagesKeyName: channel.SliceOf[message.Message](input)}
+			return state.Updates{MessagesKeyName: state.SliceOf[message.Message](input)}
 		},
 		// Output: Watch standard messages key
 		MessagesKeyName,

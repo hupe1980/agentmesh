@@ -60,7 +60,7 @@ func mergeMapReducer(oldValue, newValue any) any {
 
 ```go
 state := graph.NewStateManager(0)
-state.AddChannel(channel.NewTopicChannel("messages", 100))
+state.AddChannel(state.NewTopicChannel("messages", 100))
 
 ### 3. Create Parallel Nodes
 ```go
@@ -132,7 +132,7 @@ compiled, _ := builder.Compile(
 
 ### TopicChannel (Accumulate)
 ```go
-state.AddChannel(channel.NewTopicChannel("logs", 0))
+state.AddChannel(state.NewTopicChannel("logs", 0))
 // All parallel writes are collected in a list
 ```
 
@@ -212,5 +212,5 @@ builder.Node("api_call", func(ctx context.Context, s state.Writer) (*graph.NodeR
 
 ## See Also
 - [pkg/graph](../../pkg/graph) - Graph execution model
-- [pkg/channel](../../pkg/channel) - Channel types
+- [pkg/state](../../pkg/state) - State management and channel types
 - [examples/subgraph](../subgraph) - Complex workflows

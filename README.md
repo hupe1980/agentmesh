@@ -147,7 +147,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
   - `CheckpointManager`: State persistence and restoration
 
 **Supporting Packages**
-- `pkg/channel`: Topic, LastValue, BinaryOp channels
+- `pkg/state`: State management with Topic, LastValue, BinaryOp channels
 - `pkg/checkpoint`: Memory, SQL, DynamoDB persistence
 - `pkg/message`: Human, AI, Tool message types
 

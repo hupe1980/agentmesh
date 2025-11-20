@@ -176,5 +176,5 @@ state.AddChannel(channel.NewTopicChannel("messages", 50))
 
 ## See Also
 - [pkg/graph](../../pkg/graph) - StateBuilder API
-- [pkg/channel](../../pkg/channel) - Channel types
+- [pkg/state](../../pkg/state) - State management and channel types
 - [examples/parallel_tasks](../parallel_tasks) - Custom channels

@@ -442,17 +442,17 @@ Channels control how state updates are applied.
 
 AgentMesh uses a three-tier interface hierarchy for channels:
 
-1. **`channel.Channel`** - User-facing interface with safe operations:
+1. **`state.Channel`** - User-facing interface with safe operations:
    - `Name()` - Get channel identifier
    - `Read(ctx)` - Read current value
    - `Write(ctx, value)` - Write using channel-specific semantics
 
-2. **`channel.VersionedChannel`** - Internal runtime operations (extends Channel):
+2. **`state.VersionedChannel`** - Internal runtime operations (extends Channel):
    - `Version()` - Cache invalidation tracking
    - `Snapshot(ctx)` - Point-in-time state capture
    - `Clone()` - Deep copy for checkpointing
 
-3. **`channel.ResettableChannel`** - Admin operations (extends Channel):
+3. **`state.ResettableChannel`** - Admin operations (extends Channel):
    - `Reset(ctx)` - **Dangerous**: Clear state (use only between graph runs)
 
 **For users**: Interact only with the base `Channel` interface (Read/Write). The runtime handles internal operations automatically.
@@ -463,7 +463,7 @@ Accumulates values in a list (append-only):
 
 ```go
 state := graph.NewStateManager(100)
-state.AddChannel(channel.NewTopicChannel("messages", 100))
+state.AddChannel(state.NewTopicChannel("messages", 100))
 
 // Updates append to the list
 result := &graph.NodeResult{
@@ -480,7 +480,7 @@ result := &graph.NodeResult{
 Stores only the most recent value (overwrite):
 
 ```go
-state.AddChannel(channel.NewLastValueChannel("status"))
+state.AddChannel(state.NewLastValueChannel("status"))
 
 // Updates overwrite previous value
 return map[string]any{
@@ -496,12 +496,12 @@ Merges values using custom operators:
 
 ```go
 // Sum channel for counters
-state.AddChannel(channel.NewBinaryOpChannel("total", func(a, b any) any {
+state.AddChannel(state.NewBinaryOpChannel("total", func(a, b any) any {
     return a.(int) + b.(int)
 }))
 
 // Max channel for tracking peaks
-state.AddChannel(channel.NewBinaryOpChannel("max_value", func(a, b any) any {
+state.AddChannel(state.NewBinaryOpChannel("max_value", func(a, b any) any {
     if a.(int) > b.(int) {
         return a
     }
