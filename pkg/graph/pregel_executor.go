@@ -309,7 +309,11 @@ func (p *PregelExecutor[I, O]) Run(
 			return
 		} // Start checkpoint worker
 		worker := p.startCheckpointWorker(runCtx, runOpts)
-		defer p.stopCheckpointWorker(worker)
+		defer func() {
+			if err := p.stopCheckpointWorker(runCtx, worker, runOpts.CheckpointStopTimeout); err != nil {
+				logging.FromContext(runCtx).Warn("Failed to stop checkpoint worker gracefully", "error", err)
+			}
+		}()
 
 		// Convert input to initial state using adapter
 		var inputValue any = input

@@ -1,6 +1,10 @@
 package graph
 
-import "github.com/hupe1980/agentmesh/pkg/checkpoint"
+import (
+	"time"
+
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+)
 
 // WithRunID sets the unique identifier for this execution run.
 // Required when using checkpointing to identify which execution to save/restore.
@@ -150,6 +154,33 @@ func WithCheckpointQueueSize(size int) RunOption {
 			size = 0
 		}
 		opts.CheckpointQueueSize = size
+	}
+}
+
+// WithCheckpointStopTimeout sets the maximum time to wait for the checkpoint worker
+// to finish processing queued checkpoints during shutdown. If the timeout is exceeded,
+// an error is returned but execution continues.
+//
+// Default: 30 seconds
+//
+// Use cases:
+//   - Set higher (e.g., 60s) for slow checkpoint storage (network, S3)
+//   - Set lower (e.g., 5s) for fast local storage or when immediate shutdown is critical
+//   - Set to 0 to wait indefinitely (not recommended)
+//
+// Example:
+//
+//	// Wait up to 60 seconds for checkpoints to complete
+//	graph.WithCheckpointStopTimeout(60 * time.Second)
+//
+//	// Fast shutdown with 5 second timeout
+//	graph.WithCheckpointStopTimeout(5 * time.Second)
+func WithCheckpointStopTimeout(timeout time.Duration) RunOption {
+	return func(opts *RunOptions) {
+		if opts == nil {
+			return
+		}
+		opts.CheckpointStopTimeout = timeout
 	}
 }
 

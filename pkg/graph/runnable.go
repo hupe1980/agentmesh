@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"iter"
+	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
@@ -18,15 +19,16 @@ type RunOption func(*RunOptions)
 
 // RunOptions holds runtime execution configuration.
 type RunOptions struct {
-	MaxIterations       int
-	MaxConcurrency      int
-	RunID               string
-	Checkpointer        checkpoint.Checkpointer
-	CheckpointInterval  int
-	CheckpointQueueSize int // Size of async checkpoint queue (0 = synchronous only)
-	AutoRestore         bool
-	ResumeFrom          int64
-	FailOnCheckpointErr bool
+	MaxIterations         int
+	MaxConcurrency        int
+	RunID                 string
+	Checkpointer          checkpoint.Checkpointer
+	CheckpointInterval    int
+	CheckpointQueueSize   int           // Size of async checkpoint queue (0 = synchronous only)
+	CheckpointStopTimeout time.Duration // Maximum time to wait for checkpoint worker to stop
+	AutoRestore           bool
+	ResumeFrom            int64
+	FailOnCheckpointErr   bool
 
 	// Resume support for human-in-the-loop workflows
 	Checkpoint  *checkpoint.Checkpoint // Restore from this checkpoint
@@ -35,12 +37,13 @@ type RunOptions struct {
 
 func defaultRunOptions() RunOptions {
 	return RunOptions{
-		MaxIterations:       100,
-		MaxConcurrency:      4,
-		CheckpointInterval:  1,  // Save every superstep by default
-		CheckpointQueueSize: 10, // Buffer up to 10 checkpoints
-		AutoRestore:         false,
-		FailOnCheckpointErr: false,
+		MaxIterations:         100,
+		MaxConcurrency:        4,
+		CheckpointInterval:    1,                // Save every superstep by default
+		CheckpointQueueSize:   10,               // Buffer up to 10 checkpoints
+		CheckpointStopTimeout: 30 * time.Second, // Wait up to 30 seconds for worker to stop
+		AutoRestore:           false,
+		FailOnCheckpointErr:   false,
 	}
 }
 

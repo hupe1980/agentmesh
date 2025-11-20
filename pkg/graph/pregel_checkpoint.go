@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
@@ -305,12 +306,39 @@ func (p *PregelExecutor[I, O]) startCheckpointWorker(ctx context.Context, opts R
 	return worker
 }
 
-// stopCheckpointWorker stops the checkpoint worker and waits for completion.
-func (p *PregelExecutor[I, O]) stopCheckpointWorker(worker *checkpointWorker) {
+// stopCheckpointWorker stops the checkpoint worker and waits for completion with timeout.
+// Returns an error if the worker doesn't stop within the configured timeout.
+func (p *PregelExecutor[I, O]) stopCheckpointWorker(ctx context.Context, worker *checkpointWorker, timeout time.Duration) error {
 	if worker == nil || worker.queue == nil {
-		return
+		return nil
 	}
 
+	// Close the queue to signal the worker to stop
 	close(worker.queue)
-	worker.wg.Wait()
+
+	// Wait for worker with timeout
+	done := make(chan struct{})
+	go func() {
+		worker.wg.Wait()
+		close(done)
+	}()
+
+	// Wait for completion or timeout
+	if timeout <= 0 {
+		// No timeout - wait indefinitely
+		<-done
+		return nil
+	}
+
+	select {
+	case <-done:
+		// Worker stopped successfully
+		return nil
+	case <-time.After(timeout):
+		// Timeout exceeded
+		return fmt.Errorf("checkpoint worker did not stop within %v", timeout)
+	case <-ctx.Done():
+		// Context cancelled
+		return fmt.Errorf("checkpoint worker stop cancelled: %w", ctx.Err())
+	}
 }
