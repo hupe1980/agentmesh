@@ -40,22 +40,29 @@ func main() {
 			"email":   "user@example.com",
 			"score":   75,
 		}
-		return graphstate.Updates{dataKey.Name(): data}, nil
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, dataKey, data)
+		return builder.Build()
 	})
 
 	pipeline.Node("validation", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
+		builder := graphstate.NewUpdateBuilder()
+
 		required := []string{"user_id", "email", "score"}
 		for _, field := range required {
 			if _, ok := data[field]; !ok {
-				return graphstate.Updates{validKey.Name(): false}, nil
+				graphstate.SetUpdate(builder, validKey, false)
+				return builder.Build()
 			}
 		}
 		score, ok := data["score"].(int)
 		if !ok || score < 0 || score > 100 {
-			return graphstate.Updates{validKey.Name(): false}, nil
+			graphstate.SetUpdate(builder, validKey, false)
+			return builder.Build()
 		}
-		return graphstate.Updates{validKey.Name(): true}, nil
+		graphstate.SetUpdate(builder, validKey, true)
+		return builder.Build()
 	})
 
 	pipeline.Node("enrichment", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
@@ -75,7 +82,9 @@ func main() {
 			enriched["grade"] = "C"
 		}
 		enriched["status"] = "enriched"
-		return graphstate.Updates{enrichedDataKey.Name(): enriched}, nil
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, enrichedDataKey, enriched)
+		return builder.Build()
 	})
 
 	pipeline.Node("analysis", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
@@ -85,7 +94,9 @@ func main() {
 			"score_grade": enrichedData["grade"],
 			"total_items": len(enrichedData),
 		}
-		return graphstate.Updates{analysisKey.Name(): analysis}, nil
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, analysisKey, analysis)
+		return builder.Build()
 	})
 
 	pipeline.AddEdge(graph.StartNode, "init")

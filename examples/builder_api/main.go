@@ -37,10 +37,10 @@ func main() {
 	builder.
 		Node("analyze", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			fmt.Println("Analyzing input...")
-			return state.Updates{
-				AnalysisKey.Name(): "Input looks good",
-				ScoreKey.Name():    0.95,
-			}, nil
+			b := state.NewUpdateBuilder()
+			state.SetUpdate(b, AnalysisKey, "Input looks good")
+			state.SetUpdate(b, ScoreKey, 0.95)
+			return b.Build()
 		}).
 		Node("validate", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			// Type-safe read - no casting needed, compile-time checked
@@ -48,7 +48,9 @@ func main() {
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
-			return state.Updates{ValidKey.Name(): valid}, nil
+			b := state.NewUpdateBuilder()
+			state.SetUpdate(b, ValidKey, valid)
+			return b.Build()
 		}).
 		Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			// Type-safe read with default value - never panics
@@ -57,11 +59,15 @@ func main() {
 				fmt.Println("Processing validated input...")
 				result := "Success!"
 				fmt.Printf("✓ Final result: %s\n", result)
-				return state.Updates{ResultKey.Name(): result}, nil
+				b := state.NewUpdateBuilder()
+				state.SetUpdate(b, ResultKey, result)
+				return b.Build()
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
-			return state.Updates{ResultKey.Name(): result}, nil
+			b := state.NewUpdateBuilder()
+			state.SetUpdate(b, ResultKey, result)
+			return b.Build()
 		}).
 		AddEdge(graph.StartNode, "analyze").
 		AddEdge("analyze", "validate").

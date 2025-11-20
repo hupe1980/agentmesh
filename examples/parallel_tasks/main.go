@@ -23,7 +23,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -70,7 +69,7 @@ func main() {
 		panic(err)
 	}
 
-	// Task A: Simulates data analysis work
+	// Task A: Simulates data analysis (runs in parallel with Task B)
 	taskA := graph.NewBaseNode("task_a",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [task_a] Starting analysis...")
@@ -80,10 +79,10 @@ func main() {
 			results := graphstate.GetFromView(view, resultsKey)
 			results["task_a"] = "analysis result"
 
-			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"task_a: analysis completed"},
-				resultsKey.Name():       results,
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "task_a: analysis completed")
+			graphstate.SetUpdate(builder, resultsKey, results)
+			return builder.Build()
 		},
 	)
 
@@ -97,10 +96,10 @@ func main() {
 			results := graphstate.GetFromView(view, resultsKey)
 			results["task_b"] = "simulation result"
 
-			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"task_b: simulation completed"},
-				resultsKey.Name():       results,
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "task_b: simulation completed")
+			graphstate.SetUpdate(builder, resultsKey, results)
+			return builder.Build()
 		},
 	)
 
@@ -113,10 +112,10 @@ func main() {
 			// Read the merged results from both tasks
 			results := graphstate.GetFromView(view, resultsKey)
 
-			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"combine: aggregated all results"},
-				summaryKey.Name():       results,
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "combine: aggregated all results")
+			graphstate.SetUpdate(builder, summaryKey, results)
+			return builder.Build()
 		},
 	)
 

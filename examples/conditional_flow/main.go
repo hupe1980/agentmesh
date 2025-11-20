@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -74,12 +73,10 @@ func runScenario(choice string) {
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
 			// Update state to indicate which path should be taken
-			return graphstate.Updates{
-				nextPathKey.Name(): choiceVal,
-				actionHistoryKey.Name(): []string{
-					fmt.Sprintf("Decision: route to %s", choiceVal),
-				},
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, nextPathKey, choiceVal)
+			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))
+			return builder.Build()
 		},
 	))
 
@@ -87,9 +84,9 @@ func runScenario(choice string) {
 	mustAddNode(graph.NewBaseNode("path_a",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
-			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"Completed: Path A"},
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path A")
+			return builder.Build()
 		},
 	))
 
@@ -97,9 +94,9 @@ func runScenario(choice string) {
 	mustAddNode(graph.NewBaseNode("path_b",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
-			return graphstate.Updates{
-				actionHistoryKey.Name(): []string{"Completed: Path B"},
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path B")
+			return builder.Build()
 		},
 	))
 

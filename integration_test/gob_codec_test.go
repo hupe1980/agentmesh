@@ -59,10 +59,10 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 
 	// Node 1: Initialize state with int
 	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		return state.Updates{
-			counterKey.Name(): 1, // int, not float64
-			dataKey.Name():    "A",
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, 1) // int, not float64
+		state.SetUpdate(builder, dataKey, "A")
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -74,10 +74,10 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 		counter := state.GetFromView(view, counterKey)
 		data := state.GetFromView(view, dataKey)
 
-		return state.Updates{
-			counterKey.Name(): counter + 1, // Should be int 2
-			dataKey.Name():    data + "B",
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, counter+1) // Should be int 2
+		state.SetUpdate(builder, dataKey, data+"B")
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -89,10 +89,10 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 		counter := state.GetFromView(view, counterKey)
 		data := state.GetFromView(view, dataKey)
 
-		return state.Updates{
-			counterKey.Name(): counter + 1, // Should be int 3
-			dataKey.Name():    data + "C",
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, counter+1) // Should be int 3
+		state.SetUpdate(builder, dataKey, data+"C")
+		return builder.Build()
 	},
 	))
 	if err != nil {

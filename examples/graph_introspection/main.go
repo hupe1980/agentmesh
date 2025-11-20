@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -39,10 +38,10 @@ func main() {
 	// Add nodes
 	builder.Node("input_validator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		return state.Updates{
-			validKey.Name():    true,
-			priorityKey.Name(): "high",
-		}, nil
+		b := state.NewUpdateBuilder()
+		state.SetUpdate(b, validKey, true)
+		state.SetUpdate(b, priorityKey, "high")
+		return b.Build()
 	})
 
 	builder.Node("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
@@ -52,17 +51,23 @@ func main() {
 
 	builder.Node("high_priority_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		return state.Updates{processedKey.Name(): true}, nil
+		b := state.NewUpdateBuilder()
+		state.SetUpdate(b, processedKey, true)
+		return b.Build()
 	})
 
 	builder.Node("normal_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		return state.Updates{processedKey.Name(): true}, nil
+		b := state.NewUpdateBuilder()
+		state.SetUpdate(b, processedKey, true)
+		return b.Build()
 	})
 
 	builder.Node("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		return state.Updates{completeKey.Name(): true}, nil
+		b := state.NewUpdateBuilder()
+		state.SetUpdate(b, completeKey, true)
+		return b.Build()
 	})
 
 	// Define edges

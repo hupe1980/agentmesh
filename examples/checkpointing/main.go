@@ -202,19 +202,29 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
-		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "initialized"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 1)
+		graphstate.SetUpdate(ub, statusKey, "initialized")
+		return ub.Build()
 	})
 
 	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
-		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "processing", dataKey.Name(): []string{"A", "B", "C"}}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 2)
+		graphstate.SetUpdate(ub, statusKey, "processing")
+		graphstate.SetUpdate(ub, dataKey, []string{"A", "B", "C"})
+		return ub.Build()
 	})
 
 	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
-		return graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "complete"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 3)
+		graphstate.SetUpdate(ub, statusKey, "complete")
+		return ub.Build()
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")
@@ -240,12 +250,18 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 
 	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: OK")
-		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 1)
+		graphstate.SetUpdate(ub, statusKey, "ok")
+		return ub.Build()
 	})
 
 	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: OK")
-		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 2)
+		graphstate.SetUpdate(ub, statusKey, "ok")
+		return ub.Build()
 	})
 
 	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
@@ -272,17 +288,26 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 
 	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
-		return graphstate.Updates{stepKey.Name(): 1, statusKey.Name(): "ok"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 1)
+		graphstate.SetUpdate(ub, statusKey, "ok")
+		return ub.Build()
 	})
 
 	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
-		return graphstate.Updates{stepKey.Name(): 2, statusKey.Name(): "ok"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 2)
+		graphstate.SetUpdate(ub, statusKey, "ok")
+		return ub.Build()
 	})
 
 	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
-		return graphstate.Updates{stepKey.Name(): 3, statusKey.Name(): "fixed!"}, nil
+		ub := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(ub, stepKey, 3)
+		graphstate.SetUpdate(ub, statusKey, "fixed!")
+		return ub.Build()
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")

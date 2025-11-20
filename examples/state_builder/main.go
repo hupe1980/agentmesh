@@ -8,7 +8,6 @@ import (
 
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -40,11 +39,11 @@ func main() {
 	gph.AddNode(graph.NewBaseNode("init",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("[init] Initializing...")
-			return graphstate.Updates{
-				phaseKey.Name():     "processing",
-				attemptsKey.Name():  1,
-				actionLogKey.Name(): []string{"Initialized"},
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, phaseKey, "processing")
+			graphstate.SetUpdate(builder, attemptsKey, 1)
+			graphstate.AppendUpdate(builder, actionLogKey, "Initialized")
+			return builder.Build()
 		},
 	))
 
@@ -55,12 +54,12 @@ func main() {
 			// Read current attempts count
 			currentAttempts := graphstate.GetFromView(view, attemptsKey)
 
-			return graphstate.Updates{
-				attemptsKey.Name():    currentAttempts + 1,
-				validatedKey.Name():   true,
-				actionLogKey.Name():   []string{"Processed"},
-				taskResultsKey.Name(): map[string]any{"process": "success"},
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, attemptsKey, currentAttempts+1)
+			graphstate.SetUpdate(builder, validatedKey, true)
+			graphstate.AppendUpdate(builder, actionLogKey, "Processed")
+			graphstate.SetUpdate(builder, taskResultsKey, map[string]any{"process": "success"})
+			return builder.Build()
 		},
 	))
 

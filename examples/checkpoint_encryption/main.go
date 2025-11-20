@@ -12,7 +12,7 @@ import (
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
@@ -79,11 +79,11 @@ func basicEncryptionExample(ctx context.Context) {
 	g.AddNode(graph.NewBaseNode("secure_node",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("  Processing sensitive data...")
-			return graphstate.Updates{
-				creditCardKey.Name(): "4111-1111-1111-1111",
-				ssnKey.Name():        "123-45-6789",
-				passwordKey.Name():   "super-secret",
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, creditCardKey, "4111-1111-1111-1111")
+			graphstate.SetUpdate(builder, ssnKey, "123-45-6789")
+			graphstate.SetUpdate(builder, passwordKey, "super-secret")
+			return builder.Build()
 		},
 	))
 

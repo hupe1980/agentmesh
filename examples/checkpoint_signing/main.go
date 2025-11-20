@@ -179,14 +179,20 @@ func productionExample(ctx context.Context) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		return graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "processed"}, nil
+		b := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(b, counterKey, counter)
+		graphstate.SetUpdate(b, statusKey, "processed")
+		return b.Build()
 	})
 
 	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		return graphstate.Updates{counterKey.Name(): counter, statusKey.Name(): "finalized"}, nil
+		b := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(b, counterKey, counter)
+		graphstate.SetUpdate(b, statusKey, "finalized")
+		return b.Build()
 	})
 
 	builder.AddEdge(graph.StartNode, "step1")

@@ -89,7 +89,10 @@ func main() {
 				"record_count", len(data["records"].([]string)),
 				"timestamp", data["timestamp"])
 
-			return map[string]any{"raw_data": data}, nil
+			rawDataKey := graphstate.NewKey("raw_data", map[string]any{})
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, rawDataKey, data)
+			return builder.Build()
 		},
 	)); err != nil {
 		panic(err)
@@ -133,7 +136,10 @@ func main() {
 
 			log.Info("Processing completed", "processed_count", len(processedRecords))
 
-			return map[string]any{"processed_data": result}, nil
+			processedDataKey := graphstate.NewKey("processed_data", map[string]any{})
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, processedDataKey, result)
+			return builder.Build()
 		},
 	)); err != nil {
 		panic(err)
@@ -199,7 +205,10 @@ func main() {
 				"invalid", invalidRecords,
 				"duration_ms", duration.Milliseconds())
 
-			return map[string]any{"validation_result": result}, nil
+			validationResultKey := graphstate.NewKey("validation_result", map[string]any{})
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, validationResultKey, result)
+			return builder.Build()
 		},
 	)); err != nil {
 		panic(err)
@@ -236,7 +245,10 @@ func main() {
 
 			log.Info("Summary generated", "summary", summary)
 
-			return map[string]any{"summary": summary}, nil
+			summaryKey := graphstate.NewKey("summary", "")
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, summaryKey, summary)
+			return builder.Build()
 		},
 	)); err != nil {
 		panic(err)

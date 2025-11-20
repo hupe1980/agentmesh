@@ -116,11 +116,11 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view *state.ReadView) (s
 	metrics.RecordExecution(n.name, latency)
 
 	// Return persistent state updates (these WILL be checkpointed)
-	return state.Updates{
-		CounterKey.Name():  counter + 1,
-		LastNodeKey.Name(): n.name,
-		HistoryKey.Name():  []string{fmt.Sprintf("%s executed by user %s", n.name, session.UserID)},
-	}, nil
+	builder := state.NewUpdateBuilder()
+	state.SetUpdate(builder, CounterKey, counter+1)
+	state.SetUpdate(builder, LastNodeKey, n.name)
+	state.AppendUpdate(builder, HistoryKey, fmt.Sprintf("%s executed by user %s", n.name, session.UserID))
+	return builder.Build()
 }
 
 func maskAPIKey(key string) string {
@@ -155,9 +155,9 @@ func (n *MetricsNode) Compute(ctx context.Context, view *state.ReadView) (state.
 	}
 	fmt.Printf("======================\n\n")
 
-	return state.Updates{
-		HistoryKey.Name(): []string{"Metrics reported"},
-	}, nil
+	builder := state.NewUpdateBuilder()
+	state.AppendUpdate(builder, HistoryKey, "Metrics reported")
+	return builder.Build()
 }
 
 func main() {

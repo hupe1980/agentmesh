@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 
-	
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -64,7 +63,9 @@ func conditionalWorkflow() {
 
 	builder.
 		Node("analyze", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return state.Updates{categoryKey.Name(): "simple"}, nil
+			b := state.NewUpdateBuilder()
+			state.SetUpdate(b, categoryKey, "simple")
+			return b.Build()
 		}).
 		Node("simple_path", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
@@ -145,7 +146,10 @@ func complexWorkflow() {
 
 	builder.
 		Node("input_validation", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return state.Updates{validKey.Name(): true, priorityKey.Name(): "high"}, nil
+			b := state.NewUpdateBuilder()
+			state.SetUpdate(b, validKey, true)
+			state.SetUpdate(b, priorityKey, "high")
+			return b.Build()
 		}).
 		Node("high_priority", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil

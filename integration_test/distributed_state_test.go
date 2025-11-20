@@ -68,10 +68,10 @@ func TestDistributedStateSync(t *testing.T) {
 
 	// Node 1: Initialize state
 	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		return state.Updates{
-			counterKey.Name(): 1.0, // Use float64 for JSON compatibility
-			dataKey.Name():    "A",
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, 1.0) // Use float64 for JSON compatibility
+		state.SetUpdate(builder, dataKey, "A")
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -83,10 +83,10 @@ func TestDistributedStateSync(t *testing.T) {
 		counter := state.GetFromView(view, counterKey)
 		data := state.GetFromView(view, dataKey)
 
-		return state.Updates{
-			counterKey.Name(): counter + 1.0, // Should be 2.0
-			dataKey.Name():    data + "B",    // Should be "AB"
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, counter+1.0) // Should be 2.0
+		state.SetUpdate(builder, dataKey, data+"B")       // Should be "AB"
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -98,10 +98,10 @@ func TestDistributedStateSync(t *testing.T) {
 		counter := state.GetFromView(view, counterKey)
 		data := state.GetFromView(view, dataKey)
 
-		return state.Updates{
-			counterKey.Name(): counter + 1.0, // Should be 3.0
-			dataKey.Name():    data + "C",    // Should be "ABC"
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, counter+1.0) // Should be 3.0
+		state.SetUpdate(builder, dataKey, data+"C")       // Should be "ABC"
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -197,9 +197,9 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 
 	// Node 1: Set counter = 1.0
 	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		return state.Updates{
-			counterKey.Name(): 1.0,
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, 1.0)
+		return builder.Build()
 	},
 	))
 	if err != nil {
@@ -210,9 +210,9 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
-		return state.Updates{
-			counterKey.Name(): counter + 10.0, // Should be 11.0 (1.0 + 10.0)
-		}, nil
+		builder := state.NewUpdateBuilder()
+		state.SetUpdate(builder, counterKey, counter+10.0) // Should be 11.0 (1.0 + 10.0)
+		return builder.Build()
 	},
 	))
 	if err != nil {

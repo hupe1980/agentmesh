@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	
+
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -83,7 +83,9 @@ func main() {
 			counter := graphstate.GetFromView(view, counterKey)
 			counter++
 
-			return graphstate.Updates{counterKey.Name(): counter}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, counterKey, counter)
+			return builder.Build()
 		},
 	)); err != nil {
 		log.Fatal(err)
@@ -105,7 +107,9 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			newValue := currentCounter + 10
 
-			return graphstate.Updates{counterKey.Name(): newValue}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, counterKey, newValue)
+			return builder.Build()
 		},
 	)); err != nil {
 		log.Fatal(err)

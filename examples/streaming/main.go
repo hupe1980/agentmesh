@@ -90,17 +90,18 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				streamWriter(graphstate.Updates{
-					progressKey.Name():     fmt.Sprintf("%d/%d", i+1, len(chunks)),
-					currentChunkKey.Name(): chunk,
-				})
+				sb := graphstate.NewUpdateBuilder()
+				graphstate.SetUpdate(sb, progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))
+				graphstate.SetUpdate(sb, currentChunkKey, chunk)
+				updates, _ := sb.Build()
+				streamWriter(updates)
 			}
 		}
 
-		return graphstate.Updates{
-			statusKey.Name():      "data_processed",
-			chunksTotalKey.Name(): len(chunks),
-		}, nil
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, statusKey, "data_processed")
+		graphstate.SetUpdate(builder, chunksTotalKey, len(chunks))
+		return builder.Build()
 	})
 
 	// Node 2: LLM call with streaming
@@ -111,9 +112,10 @@ func main() {
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			streamWriter(graphstate.Updates{
-				llmStatusKey.Name(): "starting",
-			})
+			sb := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(sb, llmStatusKey, "starting")
+			updates, _ := sb.Build()
+			streamWriter(updates)
 		}
 
 		// Get messages from state
@@ -130,9 +132,10 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			streamWriter(graphstate.Updates{
-				llmStatusKey.Name(): "completed",
-			})
+			sb := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(sb, llmStatusKey, "completed")
+			updates, _ := sb.Build()
+			streamWriter(updates)
 		}
 
 		builder := graphstate.NewUpdateBuilder()
@@ -151,34 +154,37 @@ func main() {
 		// Step 1: Validation
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(graphstate.Updates{
-				analysisStepKey.Name(): "validation",
-				validationKey.Name():   "passed",
-			})
+			sb := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(sb, analysisStepKey, "validation")
+			graphstate.SetUpdate(sb, validationKey, "passed")
+			updates, _ := sb.Build()
+			streamWriter(updates)
 		}
 
 		// Step 2: Quality check
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(graphstate.Updates{
-				analysisStepKey.Name(): "quality_check",
-				qualityScoreKey.Name(): 0.95,
-			})
+			sb := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(sb, analysisStepKey, "quality_check")
+			graphstate.SetUpdate(sb, qualityScoreKey, 0.95)
+			updates, _ := sb.Build()
+			streamWriter(updates)
 		}
 
 		// Step 3: Finalization
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			streamWriter(graphstate.Updates{
-				analysisStepKey.Name(): "finalization",
-				readyKey.Name():        true,
-			})
+			sb := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(sb, analysisStepKey, "finalization")
+			graphstate.SetUpdate(sb, readyKey, true)
+			updates, _ := sb.Build()
+			streamWriter(updates)
 		}
 
-		return graphstate.Updates{
-			statusKey.Name():   "analysis_complete",
-			verifiedKey.Name(): true,
-		}, nil
+		builder := graphstate.NewUpdateBuilder()
+		graphstate.SetUpdate(builder, statusKey, "analysis_complete")
+		graphstate.SetUpdate(builder, verifiedKey, true)
+		return builder.Build()
 	})
 
 	// Define the graph flow

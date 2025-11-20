@@ -47,14 +47,13 @@ func main() {
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
-			history := graphstate.GetFromView(view, actionHistoryKey.Key)
-			return graphstate.Updates{
-				actionHistoryKey.Name(): append(history,
-					fmt.Sprintf("Researched '%s'", topic),
-					fmt.Sprintf("Summarized findings for '%s'", topic),
-				),
-				currentTaskKey.Name(): fmt.Sprintf("Write report for %s", topic),
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey,
+				fmt.Sprintf("Researched '%s'", topic),
+				fmt.Sprintf("Summarized findings for '%s'", topic),
+			)
+			graphstate.SetUpdate(builder, currentTaskKey, fmt.Sprintf("Write report for %s", topic))
+			return builder.Build()
 		},
 	))
 
@@ -67,22 +66,20 @@ func main() {
 				return nil, graph.ErrHumanInterrupt
 			}
 			task := graphstate.GetFromView(view, currentTaskKey)
-			history := graphstate.GetFromView(view, actionHistoryKey.Key)
-			return graphstate.Updates{
-				actionHistoryKey.Name(): append(history, fmt.Sprintf("Drafted report for '%s'", task)),
-				draftKey.Name():         "draft report content",
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Drafted report for '%s'", task))
+			graphstate.SetUpdate(builder, draftKey, "draft report content")
+			return builder.Build()
 		},
 	))
 
 	mustAddNode(graph.NewBaseNode("review",
 		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 			fmt.Println("review")
-			history := graphstate.GetFromView(view, actionHistoryKey.Key)
-			return graphstate.Updates{
-				actionHistoryKey.Name(): append(history, "Reviewed draft"),
-				finalReportKey.Name():   "final report content",
-			}, nil
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.AppendUpdate(builder, actionHistoryKey, "Reviewed draft")
+			graphstate.SetUpdate(builder, finalReportKey, "final report content")
+			return builder.Build()
 		},
 	))
 

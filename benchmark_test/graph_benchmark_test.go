@@ -116,7 +116,9 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		g.AddNode(graph.NewBaseNode("increment",
 			func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 				count := state.GetFromView(view, countKey)
-				return map[string]any{"count": count + 1}, nil
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, countKey, count+1)
+				return builder.Build()
 			},
 		))
 
@@ -153,7 +155,9 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			g.AddNode(graph.NewBaseNode(name,
 				func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 					val := state.GetFromView(view, valueKey)
-					return map[string]any{"value": val + 1}, nil
+					builder := state.NewUpdateBuilder()
+					state.SetUpdate(builder, valueKey, val+1)
+					return builder.Build()
 				},
 			))
 
