@@ -339,6 +339,13 @@ store, _ := checkpointsql.NewPostgreSQLCheckpointer(ctx, db)
 db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/agentmesh")
 store, _ := checkpointsql.NewMySQLCheckpointer(ctx, db)
 
+// Custom table name (must be alphanumeric + underscores only)
+store, _ := checkpointsql.NewCheckpointer(ctx, db, 
+    checkpointsql.WithTableName("my_checkpoints"),  // ✓ Valid
+    // checkpointsql.WithTableName("my-table"),     // ✗ Invalid (hyphens not allowed)
+    // checkpointsql.WithTableName("DROP TABLE"),   // ✗ Invalid (SQL keyword)
+)
+
 compiled, _ := builder.Compile()
 
 seq := compiled.Run(ctx, messages,
@@ -346,6 +353,12 @@ seq := compiled.Run(ctx, messages,
     graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
 )
 ```
+
+**Security Note**: Table names are validated to prevent SQL injection. Valid names must:
+- Start with a letter or underscore
+- Contain only alphanumeric characters and underscores
+- Be ≤64 characters
+- Not be SQL keywords or contain comment sequences
 
 **Characteristics**:
 - ✅ Full control over data

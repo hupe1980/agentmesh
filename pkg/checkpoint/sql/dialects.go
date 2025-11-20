@@ -7,7 +7,16 @@ type SQLiteDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for SQLite.
 // Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
+//
+// Security: Table name should be pre-validated by NewCheckpointer's sanitizeTableName().
+// This method assumes the table name is already safe.
 func (d *SQLiteDialect) CreateTableSQL(tableName string) string {
+	// Defense-in-depth: Panic if somehow an invalid table name slips through
+	// This should never happen in production if NewCheckpointer validation is working
+	if _, err := sanitizeTableName(tableName); err != nil {
+		panic(fmt.Sprintf("SECURITY: Invalid table name passed to CreateTableSQL: %v", err))
+	}
+
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +42,15 @@ type PostgreSQLDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for PostgreSQL.
 // Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
+//
+// Security: Table name should be pre-validated by NewCheckpointer's sanitizeTableName().
+// This method assumes the table name is already safe.
 func (d *PostgreSQLDialect) CreateTableSQL(tableName string) string {
+	// Defense-in-depth: Panic if somehow an invalid table name slips through
+	if _, err := sanitizeTableName(tableName); err != nil {
+		panic(fmt.Sprintf("SECURITY: Invalid table name passed to CreateTableSQL: %v", err))
+	}
+
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id SERIAL PRIMARY KEY,
@@ -59,7 +76,15 @@ type MySQLDialect struct{}
 
 // CreateTableSQL generates the CREATE TABLE statement for MySQL.
 // Note: Message history is stored in the state column via MessagesKey, not as a separate messages column.
+//
+// Security: Table name should be pre-validated by NewCheckpointer's sanitizeTableName().
+// This method assumes the table name is already safe.
 func (d *MySQLDialect) CreateTableSQL(tableName string) string {
+	// Defense-in-depth: Panic if somehow an invalid table name slips through
+	if _, err := sanitizeTableName(tableName); err != nil {
+		panic(fmt.Sprintf("SECURITY: Invalid table name passed to CreateTableSQL: %v", err))
+	}
+
 	return fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,

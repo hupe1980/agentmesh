@@ -5,13 +5,68 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
+var (
+	// validTableNameRegex allows only alphanumeric characters and underscores.
+	// Table names must start with a letter or underscore.
+	// Hyphens are NOT allowed as they require quoting in SQL and can cause ambiguity.
+	validTableNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`)
+)
+
+// sanitizeTableName validates and sanitizes a table name to prevent SQL injection.
+// Returns an error if the table name contains invalid characters or is too long.
+//
+// Security rules:
+// - Must start with letter or underscore
+// - Can only contain alphanumeric characters and underscores
+// - Maximum length of 64 characters (compatible with MySQL/PostgreSQL/SQLite limits)
+// - Rejects SQL keywords, special characters, and comment sequences
+// - No hyphens (they require quoting and can cause SQL ambiguity)
+func sanitizeTableName(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("table name cannot be empty")
+	}
+
+	// Check length (most databases have 64-character limit)
+	if len(name) > 64 {
+		return "", fmt.Errorf("table name too long (max 64 characters): %s", name)
+	}
+
+	// Reject SQL comment sequences (defense-in-depth)
+	if strings.Contains(name, "--") || strings.Contains(name, "/*") || strings.Contains(name, "*/") {
+		return "", fmt.Errorf("invalid table name: cannot contain SQL comment sequences: %s", name)
+	}
+
+	// Validate against allowlist pattern
+	if !validTableNameRegex.MatchString(name) {
+		return "", fmt.Errorf("invalid table name: must start with letter or underscore and contain only alphanumeric and underscore characters: %s", name)
+	}
+
+	// Reject SQL keywords (case-insensitive)
+	upperName := strings.ToUpper(name)
+	sqlKeywords := []string{
+		"SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
+		"TABLE", "FROM", "WHERE", "JOIN", "UNION", "ORDER", "GROUP", "HAVING",
+	}
+	for _, keyword := range sqlKeywords {
+		if upperName == keyword {
+			return "", fmt.Errorf("table name cannot be SQL keyword: %s", name)
+		}
+	}
+
+	return name, nil
+}
+
 // Checkpointer implements checkpoint.Checkpointer using database/sql.
 // It's database-agnostic and works with any SQL driver (SQLite, PostgreSQL, MySQL, MariaDB, etc.)
+//
+// Security: Table names are validated to prevent SQL injection. User-provided table names
+// are sanitized using an allowlist approach that only permits safe characters.
 type Checkpointer struct {
 	db        *sql.DB
 	tableName string
@@ -32,8 +87,21 @@ type Dialect interface {
 type Option func(*Checkpointer)
 
 // WithTableName sets a custom table name (default: "checkpoints").
+// The table name is validated to prevent SQL injection attacks.
+// Returns an error if the table name contains invalid characters.
+//
+// Valid table names:
+// - Must start with a letter or underscore
+// - Can contain alphanumeric characters and underscores only
+// - Maximum 64 characters
+// - Cannot be SQL keywords or contain SQL comment sequences
+//
+// Example valid names: "checkpoints", "my_checkpoints", "agent_state"
+// Example invalid names: "my table", "drop;table", "123start", "my-table"
 func WithTableName(name string) Option {
 	return func(c *Checkpointer) {
+		// Note: Validation happens in NewCheckpointer, but we store the name here
+		// This allows the error to be returned during construction
 		c.tableName = name
 	}
 }
@@ -48,10 +116,16 @@ func WithDialect(dialect Dialect) Option {
 // NewCheckpointer creates a new SQL-based checkpointer.
 // It automatically creates the checkpoints table if it doesn't exist.
 //
+// Security: Table names are validated to prevent SQL injection. Custom table names
+// must contain only alphanumeric characters, underscores, and hyphens.
+//
 // Example:
 //
 //	db, _ := sql.Open("sqlite3", "checkpoints.db")
 //	checkpointer, err := sql.NewCheckpointer(ctx, db)
+//
+//	// With custom table name
+//	checkpointer, err := sql.NewCheckpointer(ctx, db, sql.WithTableName("my_checkpoints"))
 func NewCheckpointer(ctx context.Context, db *sql.DB, opts ...Option) (*Checkpointer, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection is required")
@@ -65,6 +139,13 @@ func NewCheckpointer(ctx context.Context, db *sql.DB, opts ...Option) (*Checkpoi
 	for _, opt := range opts {
 		opt(c)
 	}
+
+	// Validate and sanitize table name to prevent SQL injection
+	sanitizedName, err := sanitizeTableName(c.tableName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid table name: %w", err)
+	}
+	c.tableName = sanitizedName
 
 	// Auto-detect dialect if not set
 	if c.dialect == nil {
