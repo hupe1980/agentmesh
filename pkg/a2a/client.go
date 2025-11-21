@@ -138,7 +138,7 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 		// Get last message from state
 		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
-			return state.Updates{}, nil
+			return state.NoUpdate(), nil
 		}
 
 		// Convert to A2A format
@@ -200,7 +200,7 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 		// Get last message from state
 		lastMsg := agent.LastMessage(view)
 		if lastMsg == nil {
-			return state.Updates{}, nil
+			return state.NoUpdate(), nil
 		}
 
 		a2aMsg, err := ConvertToA2AMessage(lastMsg)

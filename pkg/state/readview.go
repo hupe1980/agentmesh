@@ -43,23 +43,7 @@ func (rv *ReadView) Keys() []string {
 //	updates, err := builder.Build()
 type Updates map[string]any
 
-// NewUpdates creates a new updates map.
-// For type-safe construction, use NewUpdateBuilder() instead.
-func NewUpdates() Updates {
-	return make(Updates)
-}
-
-// SetInUpdates adds a typed key-value pair to the updates.
-func SetInUpdates[T any](u Updates, key Key[T], value T) Updates {
-	u[key.name] = value
-	return u
-}
-
-// AppendInUpdates adds a typed value to append to a list.
-// Note: This just adds the value to updates. The actual append
-// logic happens in ApplyUpdates, which checks the type registry
-// to determine if the key is a list key and routes accordingly.
-func AppendInUpdates[T any](u Updates, key ListKey[T], value T) Updates {
-	u[key.name] = value
-	return u
+// NoUpdate returns an empty updates map, indicating no state changes.
+func NoUpdate() Updates {
+	return map[string]any{}
 }

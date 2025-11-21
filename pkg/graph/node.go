@@ -57,7 +57,7 @@ func (n *BaseNode) Name() string {
 // Execute runs the node's function.
 func (n *BaseNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 	if n.executeFunc == nil {
-		return state.Updates{}, nil
+		return state.NoUpdate(), nil
 	}
 	return n.executeFunc(ctx, view)
 }

@@ -158,16 +158,16 @@ func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Upd
 	// Get last message from state
 	lastMsg := LastMessage(view)
 	if lastMsg == nil {
-		return state.Updates{}, nil
+		return state.NoUpdate(), nil
 	}
 
 	ai, ok := lastMsg.(*message.AIMessage)
 	if !ok || ai == nil {
-		return state.Updates{}, nil
+		return state.NoUpdate(), nil
 	}
 
 	if len(ai.ToolCalls) == 0 {
-		return state.Updates{}, nil
+		return state.NoUpdate(), nil
 	}
 
 	var toolMessages []message.Message
