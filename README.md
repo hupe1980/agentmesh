@@ -968,9 +968,11 @@ Extend AgentMesh with a type-safe plugin system for cross-cutting concerns:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/agent/callbacks"
     "github.com/hupe1980/agentmesh/pkg/model"
+    "github.com/hupe1980/agentmesh/pkg/plugin"
+    "github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 )
 
 // Create plugin manager
@@ -981,7 +983,7 @@ pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[AgentMesh]"))
 
 // Create custom plugin with typed config
 type CachePlugin struct {
-    callbacks.NoopPlugin  // Embed for default no-op implementations
+    plugin.NoopPlugin  // Embed for default no-op implementations
     cache *Cache
 }
 
@@ -1002,22 +1004,24 @@ func (p *CachePlugin) AfterModel(ctx context.Context, req *model.Request, resp *
 // Register custom plugin
 pm.Register(ctx, &CachePlugin{cache: myCache})
 
-// Use with agents
-compiled, _ := agent.NewReActAgent(
-    model,
-    tools,
-    agent.WithModelCallbacks(pm),
-    agent.WithToolCallbacks(pm),
+// Create agent with automatic plugin injection
+compiled, _ := agent.NewReActAgent(model,
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),  // Plugins automatically injected into model and tool nodes
 )
+
+// Run agent - no context injection needed!
+for result, err := range compiled.Run(ctx, messages) {
+    // Plugins intercept model calls, tool calls, node execution, and state changes automatically
+}
 ```
 
 **Plugin Lifecycle Hooks:**
 - `Init/Shutdown` - Resource management (connections, cleanup)
-- `OnGraphStart/OnGraphComplete/OnGraphError` - Graph lifecycle tracking
-- `BeforeNode/AfterNode` - Node-level interception
+- `BeforeNode/AfterNode/OnNodeError` - Node execution interception (BeforeNode can short-circuit, AfterNode can enrich state)
 - `BeforeModel/AfterModel/OnModelError` - Model request/response transformation (uses `model.Request/Response`)
 - `BeforeTool/AfterTool/OnToolError` - Tool execution monitoring
-- `OnStateChange/OnMessage` - State and message tracking
+- `OnStateChange` - State change tracking (receives nodeName + updates)
 
 **Why Plugins?**
 - **Type-safe configuration** - Pass dependencies via constructor, not `map[string]any`
@@ -1041,9 +1045,10 @@ cache := plugins.NewCachePlugin(1000) // maxSize: 1000 entries
 pm := callbacks.NewPluginManager()
 pm.Register(ctx, cache)
 
-// Use with agents
-agent, _ := agent.NewReActAgent(model, tools,
-    agent.WithModelCallbacks(pm))
+// Use with agents - callbacks automatically injected
+agent, _ := agent.NewReActAgent(model,
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm))
 
 // Cache hits for identical queries
 // "What is Python?" == "What is Python?" ✓

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
@@ -25,7 +25,6 @@ type ToolNode struct {
 	errorPrefix     string
 	continueOnError bool
 	parallel        bool
-	callbacks       *callbacks.PluginManager
 }
 
 // ToolNodeOption configures a tool node.
@@ -59,15 +58,6 @@ func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
 func WithParallelToolExecution(parallel bool) ToolNodeOption {
 	return func(n *ToolNode) {
 		n.parallel = parallel
-	}
-}
-
-// WithToolCallbacks sets the plugin manager for the tool node.
-// Plugins enable intercepting and modifying tool invocations for access control,
-// caching, metrics, error handling, and other cross-cutting concerns.
-func WithToolCallbacks(cb *callbacks.PluginManager) ToolNodeOption {
-	return func(n *ToolNode) {
-		n.callbacks = cb
 	}
 }
 
@@ -136,7 +126,6 @@ func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) (*To
 		errorPrefix:     "tool node",
 		continueOnError: false,
 		parallel:        false,
-		callbacks:       nil,
 	}
 
 	for _, opt := range opts {
@@ -196,9 +185,9 @@ func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Upd
 func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCall, execErr error, node *ToolNode, idx int) ([]message.Message, error) {
 	err := execErr
 
-	// Execute OnToolError plugins
-	if node.callbacks != nil && node.callbacks.HasPlugins() {
-		pluginErr := node.callbacks.ExecuteOnToolError(ctx, call.Name, err)
+	// Execute OnToolError plugins from context
+	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
+		pluginErr := pm.ExecuteOnToolError(ctx, call.Name, err)
 		if pluginErr != nil {
 			err = pluginErr // Use transformed error
 		}
@@ -224,7 +213,8 @@ func handleToolError(ctx context.Context, _ *state.ReadView, call message.ToolCa
 // handleBeforeToolCallback executes before-tool plugins.
 // Returns error if plugin fails.
 func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, node *ToolNode, idx int) ([]message.Message, error) {
-	if node.callbacks == nil || !node.callbacks.HasPlugins() {
+	pm := callbacks.FromContext(ctx)
+	if pm == nil || !pm.HasPlugins() {
 		return nil, nil
 	}
 
@@ -235,7 +225,7 @@ func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call messa
 		input = string(payload)
 	}
 
-	err := node.callbacks.ExecuteBeforeTool(ctx, call.Name, input)
+	err := pm.ExecuteBeforeTool(ctx, call.Name, input)
 	if err != nil {
 		if node.continueOnError {
 			toolCallID := call.ID
@@ -254,15 +244,12 @@ func handleBeforeToolCallback(ctx context.Context, _ *state.ReadView, call messa
 // handleAfterToolCallback executes after-tool plugins.
 // Returns error if plugin fails.
 func handleAfterToolCallback(ctx context.Context, _ *state.ReadView, call message.ToolCall, result any, node *ToolNode, idx int) (any, []message.Message, error) {
-	if node.callbacks == nil || !node.callbacks.HasPlugins() {
+	pm := callbacks.FromContext(ctx)
+	if pm == nil || !pm.HasPlugins() {
 		return result, nil, nil
 	}
 
-	pluginResult := callbacks.ToolResult{
-		Output: result,
-	}
-
-	err := node.callbacks.ExecuteAfterTool(ctx, call.Name, pluginResult)
+	err := pm.ExecuteAfterTool(ctx, call.Name, result)
 	if err != nil {
 		if node.continueOnError {
 			toolCallID := call.ID

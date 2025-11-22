@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/cache"
-	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 	"github.com/hupe1980/agentmesh/pkg/embedding/openai"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"

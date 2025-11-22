@@ -58,7 +58,9 @@ func main() {
 	statusKey := graphstate.NewKey("status", "")
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 	graphstate.RegisterKey(mgr, recordsKey)
 	graphstate.RegisterKey(mgr, timestampKey)
 	graphstate.RegisterKey(mgr, processedKey)

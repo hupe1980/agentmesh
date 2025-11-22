@@ -4,40 +4,65 @@ import (
 	"context"
 	"sync"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
+	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // PluginManager orchestrates plugin registration and lifecycle with thread-safety.
+//
+// The PluginManager automatically implements interface contracts from other packages:
+//   - graph.NodeCallbacks (BeforeNode, AfterNode, OnNodeError)
+//   - graph.StateCallbacks (OnStateChange)
+//   - model.ModelCallbacks (BeforeModel, AfterModel, OnModelError)
+//   - tool.ToolCallbacks (BeforeTool, AfterTool, OnToolError)
+//
+// This design follows the Dependency Inversion Principle - each package defines
+// the callback interface it needs, and PluginManager satisfies all of them without
+// creating import cycles.
+//
+// Usage:
+//
+//	pm := callbacks.NewPluginManager()
+//	pm.Register(ctx, myPlugin)
+//
+//	// Use with agents - automatic context injection
+//	agent, _ := agent.NewReActAgent(model,
+//	    agent.WithTools(tools...),
+//	    agent.WithPluginManager(pm))
+//
+//	The plugin manager is injected into context by the wrapper and retrieved by:
+//	- Nodes via callbacks.FromContext(ctx)
+//	- Graph executors via graph.WithNodeCallbacks/WithStateCallbacks
 type PluginManager struct {
 	mu      sync.RWMutex
-	plugins []Plugin
+	plugins []plugin.Plugin
 }
 
 // NewPluginManager creates a new plugin manager with no registered plugins.
 func NewPluginManager() *PluginManager {
 	return &PluginManager{
-		plugins: []Plugin{},
+		plugins: []plugin.Plugin{},
 	}
 }
 
 // Register adds a plugin to the manager and initializes it.
-func (pm *PluginManager) Register(ctx context.Context, plugin Plugin) error {
+func (pm *PluginManager) Register(ctx context.Context, p plugin.Plugin) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if err := plugin.Init(ctx); err != nil {
+	if err := p.Init(ctx); err != nil {
 		return err
 	}
 
-	pm.plugins = append(pm.plugins, plugin)
+	pm.plugins = append(pm.plugins, p)
 	return nil
 }
 
 // Shutdown gracefully shuts down all registered plugins in reverse order.
 func (pm *PluginManager) Shutdown(ctx context.Context) error {
 	pm.mu.RLock()
-	plugins := make([]Plugin, len(pm.plugins))
+	plugins := make([]plugin.Plugin, len(pm.plugins))
 	copy(plugins, pm.plugins)
 	pm.mu.RUnlock()
 
@@ -50,74 +75,36 @@ func (pm *PluginManager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// ExecuteOnGraphStart runs all plugins OnGraphStart hooks.
-func (pm *PluginManager) ExecuteOnGraphStart(ctx context.Context, graphID string) error {
-	pm.mu.RLock()
-	plugins := pm.plugins
-	pm.mu.RUnlock()
-
-	for _, p := range plugins {
-		if err := safeExecuteOnGraphStart(ctx, p, graphID); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ExecuteOnGraphComplete runs all plugins OnGraphComplete hooks.
-func (pm *PluginManager) ExecuteOnGraphComplete(ctx context.Context, graphID string, stats GraphStats) error {
-	pm.mu.RLock()
-	plugins := pm.plugins
-	pm.mu.RUnlock()
-
-	for _, p := range plugins {
-		if err := safeExecuteOnGraphComplete(ctx, p, graphID, stats); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ExecuteOnGraphError runs all plugins OnGraphError hooks.
-func (pm *PluginManager) ExecuteOnGraphError(ctx context.Context, graphID string, err error) error {
-	pm.mu.RLock()
-	plugins := pm.plugins
-	pm.mu.RUnlock()
-
-	for _, p := range plugins {
-		if hookErr := safeExecuteOnGraphError(ctx, p, graphID, err); hookErr != nil {
-			return hookErr
-		}
-	}
-
-	return nil
-}
-
 // ExecuteBeforeNode runs all plugins BeforeNode hooks.
-func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string) error {
+// Returns non-nil state.Updates if any plugin short-circuits execution.
+func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
 
 	for _, p := range plugins {
-		if err := safeExecuteBeforeNode(ctx, p, nodeName); err != nil {
-			return err
+		updates, err := safeExecuteBeforeNode(ctx, p, nodeName, view)
+		if err != nil {
+			return nil, err
+		}
+		if updates != nil {
+			// Plugin short-circuited - return immediately
+			return updates, nil
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // ExecuteAfterNode runs all plugins AfterNode hooks.
-func (pm *PluginManager) ExecuteAfterNode(ctx context.Context, nodeName string, result NodeResult) error {
+// Plugins can mutate the updates map to enrich or transform the node's output.
+func (pm *PluginManager) ExecuteAfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
 
 	for _, p := range plugins {
-		if err := safeExecuteAfterNode(ctx, p, nodeName, result); err != nil {
+		if err := safeExecuteAfterNode(ctx, p, nodeName, view, updates); err != nil {
 			return err
 		}
 	}
@@ -200,7 +187,7 @@ func (pm *PluginManager) ExecuteBeforeTool(ctx context.Context, toolName string,
 }
 
 // ExecuteAfterTool runs all plugins AfterTool hooks.
-func (pm *PluginManager) ExecuteAfterTool(ctx context.Context, toolName string, result ToolResult) error {
+func (pm *PluginManager) ExecuteAfterTool(ctx context.Context, toolName string, result any) error {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
@@ -208,6 +195,21 @@ func (pm *PluginManager) ExecuteAfterTool(ctx context.Context, toolName string, 
 	for _, p := range plugins {
 		if err := safeExecuteAfterTool(ctx, p, toolName, result); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// ExecuteOnNodeError runs all plugins OnNodeError hooks.
+func (pm *PluginManager) ExecuteOnNodeError(ctx context.Context, nodeName string, err error) error {
+	pm.mu.RLock()
+	plugins := pm.plugins
+	pm.mu.RUnlock()
+
+	for _, p := range plugins {
+		if hookErr := safeExecuteOnNodeError(ctx, p, nodeName, err); hookErr != nil {
+			return hookErr
 		}
 	}
 
@@ -230,28 +232,13 @@ func (pm *PluginManager) ExecuteOnToolError(ctx context.Context, toolName string
 }
 
 // ExecuteOnStateChange runs all plugins OnStateChange hooks.
-func (pm *PluginManager) ExecuteOnStateChange(ctx context.Context, changes StateChanges) error {
+func (pm *PluginManager) ExecuteOnStateChange(ctx context.Context, nodeName string, updates state.Updates) error {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
 
 	for _, p := range plugins {
-		if err := safeExecuteOnStateChange(ctx, p, changes); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ExecuteOnMessage runs all plugins OnMessage hooks.
-func (pm *PluginManager) ExecuteOnMessage(ctx context.Context, msg message.Message) error {
-	pm.mu.RLock()
-	plugins := pm.plugins
-	pm.mu.RUnlock()
-
-	for _, p := range plugins {
-		if err := safeExecuteOnMessage(ctx, p, msg); err != nil {
+		if err := safeExecuteOnStateChange(ctx, p, nodeName, updates); err != nil {
 			return err
 		}
 	}

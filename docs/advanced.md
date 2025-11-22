@@ -110,11 +110,11 @@ cb := plugins.NewCircuitBreakerPlugin(
 )
 pm.Register(cb)
 
-// Attach to agent
-compiled, _ := agent.NewReActAgent(
+// Attach to agent - callbacks automatically injected
+reactAgent, _ := agent.NewReActAgent(
     model,
-    tools,
-    agent.WithModelCallbacks(pm),
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),
 )
 
 // Monitor circuit state

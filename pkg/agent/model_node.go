@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -20,7 +20,6 @@ import (
 type ModelNode struct {
 	name         string
 	model        model.Model
-	callbacks    *callbacks.PluginManager
 	systemPrompt string
 	tools        []tool.Tool
 	outputSchema *schema.OutputSchema
@@ -33,15 +32,6 @@ type ModelNodeOption func(*ModelNode)
 func WithModelNodeName(name string) ModelNodeOption {
 	return func(n *ModelNode) {
 		n.name = name
-	}
-}
-
-// WithModelCallbacks sets the plugin manager for the model node.
-// Plugins enable intercepting and modifying model invocations for guardrails,
-// caching, metrics, and other cross-cutting concerns.
-func WithModelCallbacks(cb *callbacks.PluginManager) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.callbacks = cb
 	}
 }
 
@@ -97,12 +87,7 @@ func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
 //	node, err := NewModelNode(myModel)
 //	node, err := NewModelNode(myModel, WithModelNodeName("generator"))
 //
-// With plugins:
-//
-//	pm := callbacks.NewPluginManager()
-//	pm.Register(ctx, guardrails.NewBlockUnsafeContentPlugin())
-//	pm.Register(ctx, guardrails.NewFilterPIIPlugin())
-//	node, err := NewModelNode(myModel, WithModelCallbacks(pm))
+// Plugins are automatically retrieved from context when the node executes.
 func NewModelNode(mdl model.Model, opts ...ModelNodeOption) (*ModelNode, error) {
 	if mdl == nil {
 		return nil, fmt.Errorf("agent: model cannot be nil")
@@ -138,9 +123,9 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 		OutputSchema: n.outputSchema,
 	}
 
-	// Execute BeforeModel plugins
-	if n.callbacks != nil && n.callbacks.HasPlugins() {
-		resp, err := n.callbacks.ExecuteBeforeModel(ctx, req)
+	// Execute BeforeModel plugins from context
+	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
+		resp, err := pm.ExecuteBeforeModel(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -207,9 +192,9 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 		logger.Debug("model call completed", "model", modelName, "duration_ms", duration.Milliseconds())
 	}
 
-	// Execute AfterModel plugins
-	if n.callbacks != nil && n.callbacks.HasPlugins() {
-		transformed, err := n.callbacks.ExecuteAfterModel(ctx, req, resp)
+	// Execute AfterModel plugins from context
+	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
+		transformed, err := pm.ExecuteAfterModel(ctx, req, resp)
 		if err != nil {
 			return nil, err
 		}
@@ -227,9 +212,9 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 
 // handleModelError processes model execution errors through plugins.
 func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, err error) (state.Updates, error) {
-	// Execute OnModelError plugins
-	if n.callbacks != nil && n.callbacks.HasPlugins() {
-		fallback, transformedErr := n.callbacks.ExecuteOnModelError(ctx, req, err)
+	// Execute OnModelError plugins from context
+	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
+		fallback, transformedErr := pm.ExecuteOnModelError(ctx, req, err)
 		if fallback != nil {
 			// Plugin provided fallback response
 			builder := state.NewUpdateBuilder()

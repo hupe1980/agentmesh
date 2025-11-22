@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -19,7 +20,9 @@ func main() {
 	finalReportKey := graphstate.NewKey("final_report", "")
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 	graphstate.RegisterKey(mgr, currentTaskKey)
 	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
 	graphstate.RegisterKey(mgr, humanInputKey)

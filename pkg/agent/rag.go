@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -139,12 +140,19 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	g.AddEdge("generate", graph.EndNode)
 
 	// Compile the graph
-	return graph.Compile(g, graph.NewMessagePregelExecutor())
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap with automatic callback injection if plugin manager is provided
+	return wrapWithCallbacks(compiled, config.pluginManager), nil
 }
 
 // ragOptions holds configuration for RAG agents.
 type ragOptions struct {
 	promptTemplate *prompt.Template
+	pluginManager  *callbacks.PluginManager
 }
 
 func defaultRAGOptions() ragOptions {
@@ -156,6 +164,7 @@ func defaultRAGOptions() ragOptions {
 
 	return ragOptions{
 		promptTemplate: tmpl,
+		pluginManager:  nil,
 	}
 }
 
@@ -168,6 +177,13 @@ func WithPromptTemplate(tmpl *prompt.Template) RAGOption {
 		if tmpl != nil {
 			c.promptTemplate = tmpl
 		}
+	}
+}
+
+// WithRAGPluginManager sets the plugin manager for automatic callback injection.
+func WithRAGPluginManager(pm *callbacks.PluginManager) RAGOption {
+	return func(c *ragOptions) {
+		c.pluginManager = pm
 	}
 }
 

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -81,7 +81,9 @@ func main() {
 
 	// Build the graph using agent
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
@@ -91,7 +93,6 @@ func main() {
 	modelNode, err := agent.NewModelNode(
 		flakyModel,
 		agent.WithModelNodeName("flaky-service"),
-		agent.WithModelCallbacks(pluginMgr),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -112,6 +113,8 @@ func main() {
 
 	// Make multiple attempts to demonstrate circuit breaker behavior
 	ctx := context.Background()
+	// Inject plugin manager into context so nodes can retrieve it
+	ctx = callbacks.WithPluginManager(ctx, pluginMgr)
 	var lastErr error
 
 	for i := 1; i <= 10; i++ {

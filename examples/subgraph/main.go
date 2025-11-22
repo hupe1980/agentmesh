@@ -23,7 +23,9 @@ func main() {
 	analysisKey := graphstate.NewKey("analysis", map[string]any{})
 
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 	graphstate.RegisterKey(mgr, dataKey)
 	graphstate.RegisterKey(mgr, validKey)
 	graphstate.RegisterKey(mgr, enrichedDataKey)

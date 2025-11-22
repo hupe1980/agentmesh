@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
@@ -116,7 +117,8 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
 	}
 
-	return compiled, nil
+	// Wrap with automatic callback injection if plugin manager is provided
+	return wrapWithCallbacks(compiled, config.pluginManager), nil
 }
 
 // reActOptions holds configuration for ReAct agents.
@@ -125,6 +127,7 @@ type reActOptions struct {
 	tools         []tool.Tool          // Optional static tools via WithTools option
 	systemPrompt  string               // Optional system prompt prepended to all invocations
 	outputSchema  *schema.OutputSchema // Optional structured output schema
+	pluginManager *callbacks.PluginManager
 }
 
 func defaultReActOptions() reActOptions {
@@ -133,6 +136,7 @@ func defaultReActOptions() reActOptions {
 		tools:         nil,
 		systemPrompt:  "",
 		outputSchema:  nil,
+		pluginManager: nil,
 	}
 }
 
@@ -210,5 +214,29 @@ func WithSystemPrompt(prompt string) ReActOption {
 func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
 	return func(c *reActOptions) {
 		c.outputSchema = outputSchema
+	}
+}
+
+// WithPluginManager sets the plugin manager for automatic callback injection.
+// The plugin manager is automatically injected into model and tool nodes, eliminating
+// the need for manual context injection before running the agent.
+//
+// Example:
+//
+//	pm := callbacks.NewPluginManager()
+//	pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
+//
+//	agent, err := agent.NewReActAgent(model,
+//	    agent.WithTools(tools...),
+//	    agent.WithPluginManager(pm),
+//	)
+//
+//	// No context injection needed - callbacks are automatically available
+//	for result, err := range agent.Run(ctx, messages) {
+//	    // Plugins intercept model and tool calls automatically
+//	}
+func WithPluginManager(pm *callbacks.PluginManager) ReActOption {
+	return func(c *reActOptions) {
+		c.pluginManager = pm
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
@@ -15,7 +15,7 @@ import (
 // CachePlugin caches model responses to avoid redundant API calls.
 // It uses a simple in-memory cache with configurable size.
 type CachePlugin struct {
-	callbacks.NoopPlugin
+	plugin.NoopPlugin
 
 	mu        sync.RWMutex
 	cache     map[string]*model.Response

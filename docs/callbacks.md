@@ -39,11 +39,10 @@ The plugin system enables powerful extensions to AgentMesh workflows through a u
 Plugins provide lifecycle hooks into agent execution:
 
 - **Init/Shutdown** - Resource management (connections, cleanup)
+- **BeforeNode/AfterNode/OnNodeError** - Node execution interception (with short-circuit and state enrichment)
 - **BeforeModel/AfterModel/OnModelError** - Model request/response transformation
 - **BeforeTool/AfterTool/OnToolError** - Tool execution monitoring
-- **OnGraphStart/OnGraphComplete/OnGraphError** - Graph lifecycle tracking
-- **BeforeNode/AfterNode** - Node-level interception
-- **OnStateChange/OnMessage** - State and message tracking
+- **OnStateChange** - State change tracking (nodeName + updates)
 
 **Key features**:
 - ✅ Type-safe - Constructor-based configuration, no `map[string]any`
@@ -64,14 +63,10 @@ type Plugin interface {
     Init(ctx context.Context) error
     Shutdown(ctx context.Context) error
     
-    // Graph-level hooks
-    OnGraphStart(ctx context.Context, graphID string) error
-    OnGraphComplete(ctx context.Context, graphID string, stats GraphStats) error
-    OnGraphError(ctx context.Context, graphID string, err error) error
-    
-    // Node-level hooks
-    BeforeNode(ctx context.Context, nodeName string) error
-    AfterNode(ctx context.Context, nodeName string, result NodeResult) error
+    // Node hooks
+    BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error)
+    AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error
+    OnNodeError(ctx context.Context, nodeName string, err error) error
     
     // Model hooks
     BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error)
@@ -80,12 +75,11 @@ type Plugin interface {
     
     // Tool hooks
     BeforeTool(ctx context.Context, toolName string, input any) error
-    AfterTool(ctx context.Context, toolName string, result ToolResult) error
+    AfterTool(ctx context.Context, toolName string, result tool.ToolResult) error
     OnToolError(ctx context.Context, toolName string, err error) error
     
     // State hooks
-    OnStateChange(ctx context.Context, changes StateChanges) error
-    OnMessage(ctx context.Context, msg message.Message) error
+    OnStateChange(ctx context.Context, nodeName string, updates state.Updates) error
 }
 ```
 
@@ -127,22 +121,22 @@ pm := callbacks.NewPluginManager()
 
 ```go
 // Built-in plugins
-pm.Register(plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
-pm.Register(plugins.NewMetricsPlugin(metricsProvider))
-pm.Register(plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1))
+pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
+pm.Register(ctx, plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1))
+pm.Register(ctx, plugins.NewCachePlugin(100))
 
 // Custom plugins
-pm.Register(&MyCustomPlugin{})
+pm.Register(ctx, &MyCustomPlugin{})
 ```
 
 ### 3. Attach to Agent
 
 ```go
-compiled, err := agent.NewReActAgent(
+// Callbacks are automatically injected via context
+reactAgent, err := agent.NewReActAgent(
     model,
-    tools,
-    agent.WithModelCallbacks(pm),
-    agent.WithToolCallbacks(pm),
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),
 )
 ```
 
@@ -167,32 +161,7 @@ plugin := plugins.NewLoggingPlugin(
     log.Default(),
     "[AgentMesh]",  // prefix
 )
-pm.Register(plugin)
-```
-
-### MetricsPlugin
-
-Collects execution metrics (latency, errors, throughput) for observability.
-
-```go
-provider := prometheus.NewProvider()
-plugin := plugins.NewMetricsPlugin(provider)
-pm.Register(plugin)
-
-// Get snapshot
-snapshot := plugin.GetSnapshot()
-fmt.Printf("Model calls: %d, errors: %d, avg latency: %v\n",
-    snapshot.ModelCalls, snapshot.ModelErrors, snapshot.AvgModelLatency)
-```
-
-### TracingPlugin
-
-Creates distributed tracing spans for OpenTelemetry/Jaeger integration.
-
-```go
-tracer := trace.NewOpenTelemetryTracer("agentmesh")
-plugin := plugins.NewTracingPlugin(tracer)
-pm.Register(plugin)
+pm.Register(ctx, plugin)
 ```
 
 ### CircuitBreakerPlugin
@@ -205,7 +174,7 @@ plugin := plugins.NewCircuitBreakerPlugin(
     5*time.Second,  // resetTimeout
     1,              // halfOpenLimit
 )
-pm.Register(plugin)
+pm.Register(ctx, plugin)
 
 // Monitor state
 state := plugin.GetState()  // "closed", "open", "half-open"
@@ -221,7 +190,7 @@ plugin := plugins.NewRateLimitPlugin(
     100,           // maxRequests
     time.Minute,   // window
 )
-pm.Register(plugin)
+pm.Register(ctx, plugin)
 
 // Check current rate
 rate := plugin.GetCurrentRate()
@@ -233,7 +202,7 @@ In-memory response caching with LRU eviction.
 
 ```go
 plugin := plugins.NewCachePlugin(100)  // max entries
-pm.Register(plugin)
+pm.Register(ctx, plugin)
 
 // Get statistics
 stats := plugin.GetStats()
@@ -241,9 +210,27 @@ fmt.Printf("Hit rate: %.1f%%, size: %d\n",
     stats.HitRate*100, stats.Size)
 ```
 
+### SemanticCachePlugin
+
+Semantic similarity-based caching using embeddings.
+
+```go
+embedder := embedding.NewOpenAIEmbedder(client)
+plugin := plugins.NewSemanticCachePlugin(
+    embedder,
+    0.95,  // similarity threshold
+    100,   // max entries
+)
+pm.Register(ctx, plugin)
+
+// Get statistics
+stats := plugin.GetStats()
+fmt.Printf("Hit rate: %.1f%%\n", stats.HitRate*100)
+```
+
 ### RetryPlugin
 
-Tracks retry attempts with exponential backoff (note: actual retry requires model layer integration).
+Tracks retry attempts with exponential backoff.
 
 ```go
 plugin := plugins.NewRetryPlugin(
@@ -251,46 +238,7 @@ plugin := plugins.NewRetryPlugin(
     100*time.Millisecond, // baseDelay
     5*time.Second,      // maxDelay
 )
-pm.Register(plugin)
-```
-
-### PersistencePlugin
-
-Persists execution data to SQL database for audit and analytics.
-
-```go
-db, _ := sql.Open("sqlite3", "audit.db")
-plugin := plugins.NewPersistencePlugin(db)
-pm.Register(plugin)
-```
-
-### ReplayPlugin
-
-Records and replays model responses for deterministic testing.
-
-```go
-// Record mode
-plugin := plugins.NewReplayPlugin(plugins.RecordMode)
-pm.Register(plugin)
-// ... run tests ...
-f, _ := os.Create("recordings.json")
-plugin.SaveRecordings(f)
-
-// Replay mode
-plugin := plugins.NewReplayPlugin(plugins.ModeReplay)
-f, _ := os.Open("recordings.json")
-plugin.LoadRecordings(f)
-pm.Register(plugin)
-```
-
-### AuditPlugin
-
-Writes JSON audit logs to any `io.Writer`.
-
-```go
-f, _ := os.Create("audit.log")
-plugin := plugins.NewAuditPlugin(f)
-pm.Register(plugin)
+pm.Register(ctx, plugin)
 ```
 
 ---
@@ -323,70 +271,69 @@ func (p *ValidationPlugin) BeforeModel(ctx context.Context, req *model.Request) 
 }
 ```
 
-### Stateful Plugin
+### Stateful Plugin with Node Callbacks
 
 ```go
-type MetricsPlugin struct {
+type NodeMetricsPlugin struct {
     callbacks.NoopPlugin
     
-    callCount   atomic.Int64
-    errorCount  atomic.Int64
-    latencies   []time.Duration
-    mu          sync.Mutex
-    startTimes  map[string]time.Time
+    nodeCallCount atomic.Int64
+    errorCount    atomic.Int64
+    mu            sync.Mutex
+    startTimes    map[string]time.Time
 }
 
-func (p *MetricsPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
-    p.callCount.Add(1)
+func (p *NodeMetricsPlugin) BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
+    p.nodeCallCount.Add(1)
     
     p.mu.Lock()
-    p.startTimes[fmt.Sprintf("%p", req)] = time.Now()
+    p.startTimes[nodeName] = time.Now()
     p.mu.Unlock()
     
-    return nil, nil
+    return nil, nil  // Continue to node execution
 }
 
-func (p *MetricsPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
+func (p *NodeMetricsPlugin) AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
     p.mu.Lock()
-    key := fmt.Sprintf("%p", req)
-    if start, ok := p.startTimes[key]; ok {
-        p.latencies = append(p.latencies, time.Since(start))
-        delete(p.startTimes, key)
+    if start, ok := p.startTimes[nodeName]; ok {
+        duration := time.Since(start)
+        log.Printf("Node %s took %v", nodeName, duration)
+        delete(p.startTimes, nodeName)
     }
     p.mu.Unlock()
     
-    return nil, nil
+    return nil
 }
 
-func (p *MetricsPlugin) OnModelError(ctx context.Context, req *model.Request, err error) (*model.Response, error) {
+func (p *NodeMetricsPlugin) OnNodeError(ctx context.Context, nodeName string, err error) error {
     p.errorCount.Add(1)
-    return nil, err
+    log.Printf("Node %s failed: %v", nodeName, err)
+    return nil
 }
 ```
 
-### Plugin with Dependencies
+### Plugin with State Enrichment
 
 ```go
-type CachePlugin struct {
+type MetadataPlugin struct {
     callbacks.NoopPlugin
+}
+
+// AfterNode enriches state with metadata after node execution
+func (p *MetadataPlugin) AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
+    // Add metadata to updates (mutable map)
+    updates["_last_node"] = nodeName
+    updates["_timestamp"] = time.Now().Unix()
+    updates["_iteration"] = view.Get("_iteration", 0).(int) + 1
     
-    metricsPlugin *MetricsPlugin  // Dependency
-    cache         map[string]*model.Response
+    return nil
 }
 
-func NewCachePlugin(metrics *MetricsPlugin) *CachePlugin {
-    return &CachePlugin{
-        metricsPlugin: metrics,
-        cache:         make(map[string]*model.Response),
-    }
+// OnStateChange tracks all state modifications
+func (p *MetadataPlugin) OnStateChange(ctx context.Context, nodeName string, updates state.Updates) error {
+    log.Printf("Node %s modified %d keys", nodeName, len(updates))
+    return nil
 }
-
-// Register in order
-metrics := &MetricsPlugin{}
-cache := NewCachePlugin(metrics)
-
-pm.Register(metrics)
-pm.Register(cache)
 ```
 
 ---
@@ -405,10 +352,10 @@ pm.Register(cache)
 Plugins execute in registration order:
 
 ```go
-pm.Register(authPlugin)      // Security first
-pm.Register(rateLimitPlugin) // Then rate limiting
-pm.Register(cachePlugin)     // Then caching
-pm.Register(metricsPlugin)   // Finally metrics
+pm.Register(ctx, authPlugin)      // Security first
+pm.Register(ctx, rateLimitPlugin) // Then rate limiting
+pm.Register(ctx, cachePlugin)     // Then caching
+pm.Register(ctx, loggingPlugin)   // Finally logging
 ```
 
 ### Error Handling

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
@@ -27,7 +27,7 @@ const (
 // cascading failures. It opens the circuit after a threshold of failures
 // and periodically allows test requests to check if the service has recovered.
 type CircuitBreakerPlugin struct {
-	callbacks.NoopPlugin
+	plugin.NoopPlugin
 
 	maxFailures   int
 	resetTimeout  time.Duration

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/hupe1980/agentmesh/pkg/cache"
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
@@ -20,7 +20,7 @@ import (
 //   - Memory: Fast in-process cache with LRU eviction
 //   - Redis: Distributed cache for multiple instances
 type SemanticCachePlugin struct {
-	callbacks.NoopPlugin
+	plugin.NoopPlugin
 
 	cache cache.Cache
 }

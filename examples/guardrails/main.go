@@ -6,15 +6,16 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hupe1980/agentmesh/pkg/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
+	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 )
 
 // GuardrailsPlugin demonstrates content filtering and safety guardrails
 type GuardrailsPlugin struct {
-	callbacks.NoopPlugin
+	plugin.NoopPlugin
 	blockedKeywords []string
 	cache           map[string]*model.Response
 }

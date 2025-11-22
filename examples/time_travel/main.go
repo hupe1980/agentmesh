@@ -31,7 +31,9 @@ func main() {
 	// Build a simple mathematical workflow
 	buildWorkflow := func(initialValue int) *graph.Compiled[[]message.Message, message.Message] {
 		mgr := graphstate.NewManager()
-		graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+		if err := agent.RegisterMessagesKey(mgr); err != nil {
+			log.Fatal(err)
+		}
 		graphstate.RegisterKey(mgr, valueKey)
 		if err := mgr.ApplyUpdates(context.Background(), graphstate.Updates{
 			valueKey.Name(): initialValue,

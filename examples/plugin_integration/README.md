@@ -128,11 +128,11 @@ pm.Register(&DemoPlugin{})
 
 ### 5. Attach to Agent
 ```go
-compiled, _ := agent.NewReActAgent(
+// Callbacks are automatically injected via context
+reactAgent, _ := agent.NewReActAgent(
     model,
-    tools,
-    agent.WithModelCallbacks(pm),
-    agent.WithToolCallbacks(pm),
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),
 )
 
 ## Code Walkthrough
@@ -162,22 +162,33 @@ sanitizeResponse := func(ctx context.Context, s state.Writer) (message.Message, 
 }
 ```
 
-### 4. Register All Callbacks
+### 4. Create Custom Plugin
 ```go
-cbManager.RegisterBeforeModel(validateRequest)
-cbManager.RegisterAfterModel(sanitizeResponse)
-cbManager.RegisterBeforeTool(validateToolAccess)
-cbManager.RegisterAfterTool(transformToolResult)
-cbManager.RegisterOnToolError(handleToolError)
+type CustomPlugin struct {
+    *plugin.NoopPlugin
+}
+
+func (p *CustomPlugin) BeforeModel(ctx context.Context, input model.Input) (model.Input, error) {
+    // Validate request
+    return input, nil
+}
+
+func (p *CustomPlugin) AfterModel(ctx context.Context, output model.Output) (model.Output, error) {
+    // Sanitize response
+    return output, nil
+}
+
+cbManager.AddPlugin(&CustomPlugin{})
 ```
 
-### 5. Attach to Nodes
+### 5. Use with Agent
 ```go
-modelNode := agent.ModelNode(model, 
-    agent.WithModelCallbacks(cbManager),
+// Callbacks are automatically retrieved from context by nodes
+reactAgent, _ := agent.NewReActAgent(
+    model,
+    agent.WithTools(tools...),
+    agent.WithPluginManager(cbManager),
 )
-
-toolNode := agent.ToolNode(toolset,
     ```
 
 ## Features
@@ -232,29 +243,31 @@ toolNode := agent.ToolNode(toolset,
 
 ### Security & Compliance
 ```go
-// PII detection and redaction
-cbManager.RegisterAfterModel(redactPII)
-
-// Content policy enforcement
-cbManager.RegisterBeforeModel(enforceContentPolicy)
+// Use built-in security plugins
+cbManager.AddPlugin(plugins.NewContentFilter(filterConfig))
+cbManager.AddPlugin(plugins.NewPIIRedactor())
 ```
 
 ### Observability
 ```go
-// Request logging
-cbManager.RegisterBeforeModel(logRequest)
-
-// Performance tracking
-cbManager.RegisterAfterModel(recordLatency)
+// Use built-in logging plugin
+cbManager.AddPlugin(plugins.NewLogging())
 ```
 
 ### Cost Management
 ```go
-// Token counting
-cbManager.RegisterAfterModel(countTokens)
+// Custom token tracking plugin
+type TokenTracker struct {
+    *plugin.NoopPlugin
+    totalTokens int
+}
 
-// Budget enforcement
-cbManager.RegisterBeforeModel(checkBudget)
+func (t *TokenTracker) AfterModel(ctx context.Context, output model.Output) (model.Output, error) {
+    t.totalTokens += output.TokenUsage.TotalTokens
+    return output, nil
+}
+
+cbManager.AddPlugin(&TokenTracker{})
 ```
 
 ## Next Steps

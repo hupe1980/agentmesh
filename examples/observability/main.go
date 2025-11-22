@@ -54,7 +54,9 @@ func main() {
 
 	// Create a simple graph
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 	graphstate.RegisterKey(mgr, counterKey)
 
 	g, err := graph.NewGraph(mgr)

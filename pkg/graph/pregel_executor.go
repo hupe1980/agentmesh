@@ -661,42 +661,131 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 	view *state.ReadView,
 	policy *RetryPolicy,
 ) (state.Updates, error) {
+	pm, hasPluginManager := getNodeCallbacks(ctx)
+
+	// Try BeforeNode callback - may short-circuit execution
+	if shortCircuit, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view); err != nil {
+		return nil, err
+	} else if shortCircuit != nil {
+		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, shortCircuit, nil)
+	}
+
+	// Execute node with retry logic
+	updates, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
+
+	// Execute AfterNode or OnNodeError callback
+	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, updates, lastErr)
+}
+
+// executeBeforeNodeCallback executes BeforeNode plugin callback.
+// Returns short-circuit updates if callback provides them.
+func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
+	ctx context.Context,
+	pm NodeCallbacks,
+	hasPluginManager bool,
+	view *state.ReadView,
+) (state.Updates, error) {
+	if !hasPluginManager {
+		return nil, nil
+	}
+
+	shortCircuit, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
+	if err != nil {
+		return nil, fmt.Errorf("before node callback failed: %w", err)
+	}
+
+	return shortCircuit, nil
+}
+
+// executeNodeWithPolicy executes the node with retry policy.
+func (n *pregelNodeAdapter[I, O]) executeNodeWithPolicy(
+	ctx context.Context,
+	node Node,
+	view *state.ReadView,
+	policy *RetryPolicy,
+) (state.Updates, error) {
 	if policy == nil || policy.MaxAttempts <= 1 {
-		// No retry policy or only 1 attempt - execute directly
 		return node.Execute(ctx, view)
 	}
 
+	return n.executeWithRetryLoop(ctx, node, view, policy)
+}
+
+// executeWithRetryLoop executes node with retry attempts and backoff.
+func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
+	ctx context.Context,
+	node Node,
+	view *state.ReadView,
+	policy *RetryPolicy,
+) (state.Updates, error) {
+	var updates state.Updates
 	var lastErr error
+
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		// Execute node
-		updates, err := node.Execute(ctx, view)
-		if err == nil {
+		updates, lastErr = node.Execute(ctx, view)
+		if lastErr == nil {
 			return updates, nil
 		}
 
-		lastErr = err
-
 		// Check if error is retryable
-		if policy.Retryable != nil && !policy.Retryable(err) {
-			// Not retryable - fail immediately
-			return nil, err
+		if policy.Retryable != nil && !policy.Retryable(lastErr) {
+			break
 		}
 
-		// Don't sleep after the last attempt
-		if attempt < policy.MaxAttempts {
-			// Apply backoff
-			if policy.Backoff != nil {
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(policy.Backoff(attempt)):
-					// Continue to next attempt
-				}
+		// Apply backoff before next attempt
+		if attempt < policy.MaxAttempts && policy.Backoff != nil {
+			if err := n.applyBackoff(ctx, policy, attempt); err != nil {
+				return nil, err
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
+	if policy.MaxAttempts > 1 {
+		return nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
+	}
+	return nil, lastErr
+}
+
+// applyBackoff waits for backoff duration or context cancellation.
+func (n *pregelNodeAdapter[I, O]) applyBackoff(ctx context.Context, policy *RetryPolicy, attempt int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(policy.Backoff(attempt)):
+		return nil
+	}
+}
+
+// executeAfterNodeCallback executes AfterNode or OnNodeError plugin callback.
+func (n *pregelNodeAdapter[I, O]) executeAfterNodeCallback(
+	ctx context.Context,
+	pm NodeCallbacks,
+	hasPluginManager bool,
+	updates state.Updates,
+	lastErr error,
+) (state.Updates, error) {
+	if !hasPluginManager {
+		return updates, lastErr
+	}
+
+	if lastErr != nil {
+		if err := pm.ExecuteOnNodeError(ctx, n.nodeName, lastErr); err != nil {
+			return nil, fmt.Errorf("on node error callback failed: %w", err)
+		}
+		return nil, lastErr
+	}
+
+	// Success - execute AfterNode callback
+	afterView, err := n.compiled.manager.CreateReadView(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create after-node view: %w", err)
+	}
+
+	if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, updates); err != nil {
+		return nil, fmt.Errorf("after node callback failed: %w", err)
+	}
+
+	return updates, nil
 }
 
 // shouldInterruptBefore checks if this node is in the interrupt-before list.
@@ -992,6 +1081,14 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		if err := n.compiled.manager.ApplyUpdates(ctx, updates); err != nil {
 			nodeErr = fmt.Errorf("failed to apply state updates: %w", err)
 			return nodeErr
+		}
+
+		// Notify state change callbacks
+		if stateCallbacks, ok := getStateCallbacks(ctx); ok {
+			if err := stateCallbacks.ExecuteOnStateChange(ctx, n.nodeName, updates); err != nil {
+				logger.Warn("state change callback failed", "node", n.nodeName, "error", err)
+				// Don't fail execution if callbacks fail
+			}
 		}
 
 		// Extract output from updates based on configured key and yield

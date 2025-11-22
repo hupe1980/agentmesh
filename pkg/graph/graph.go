@@ -152,3 +152,14 @@ func (g *Graph) AddInterruptBefore(nodeName string) {
 func (g *Graph) AddInterruptAfter(nodeName string) {
 	g.InterruptAfter = append(g.InterruptAfter, nodeName)
 }
+
+// Shutdown gracefully shuts down the graph and its plugins.
+// Call this when you're done using the graph to clean up resources.
+//
+// Example:
+//
+//	defer g.Shutdown(context.Background())
+func (g *Graph) Shutdown(ctx context.Context) error {
+	// No shutdown needed for graph itself
+	return nil
+}

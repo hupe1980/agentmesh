@@ -99,10 +99,11 @@ pm.Register(cache)
 
 ### Integration
 ```go
-compiled, _ := agent.NewReActAgent(
+// Callbacks are automatically injected via context
+reactAgent, _ := agent.NewReActAgent(
     model,
-    tools,
-    agent.WithModelCallbacks(pm),
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),
 )
 ```
 

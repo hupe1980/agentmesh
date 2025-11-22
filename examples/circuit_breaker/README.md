@@ -81,11 +81,11 @@ pm.Register(cb)
 
 ### Integration
 ```go
-// Attach to agent
-compiled, _ := agent.NewReActAgent(
+// Callbacks are automatically injected via context
+reactAgent, _ := agent.NewReActAgent(
     model,
-    tools,
-    agent.WithModelCallbacks(pm),
+    agent.WithTools(tools...),
+    agent.WithPluginManager(pm),
 )
 ```
 

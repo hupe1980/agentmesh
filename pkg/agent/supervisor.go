@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
@@ -22,6 +23,7 @@ type supervisorOptions struct {
 	includeContext bool
 	retryAttempts  int
 	validateResult bool
+	pluginManager  *callbacks.PluginManager
 }
 
 // SupervisorOption configures a supervisor agent.
@@ -71,6 +73,24 @@ func WithWorkerRetries(attempts int) SupervisorOption {
 func WithWorkerValidation(validate bool) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.validateResult = validate
+	}
+}
+
+// WithSupervisorPluginManager sets the plugin manager for automatic callback injection.
+// The plugin manager is automatically injected into the supervisor's model node.
+//
+// Example:
+//
+//	pm := callbacks.NewPluginManager()
+//	pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Supervisor]"))
+//
+//	supervisor, err := agent.NewSupervisorAgent(model,
+//	    agent.WithWorker("math", "Math expert", mathAgent),
+//	    agent.WithSupervisorPluginManager(pm),
+//	)
+func WithSupervisorPluginManager(pm *callbacks.PluginManager) SupervisorOption {
+	return func(c *supervisorOptions) {
+		c.pluginManager = pm
 	}
 }
 
@@ -165,6 +185,11 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (MessageRunna
 		// Generate default system prompt
 		defaultPrompt := generateDefaultSupervisorPrompt(config.workers)
 		reactOpts = append(reactOpts, WithSystemPrompt(defaultPrompt))
+	}
+
+	// Add plugin manager if provided
+	if config.pluginManager != nil {
+		reactOpts = append(reactOpts, WithPluginManager(config.pluginManager))
 	}
 
 	return NewReActAgent(mdl, reactOpts...)

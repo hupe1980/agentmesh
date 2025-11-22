@@ -66,7 +66,9 @@ func basicEncryptionExample(ctx context.Context) {
 
 	// Create a simple graph
 	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, agent.MessagesKey.Key)
+	if err := agent.RegisterMessagesKey(mgr); err != nil {
+		log.Fatal(err)
+	}
 	graphstate.RegisterKey(mgr, creditCardKey)
 	graphstate.RegisterKey(mgr, ssnKey)
 	graphstate.RegisterKey(mgr, passwordKey)
