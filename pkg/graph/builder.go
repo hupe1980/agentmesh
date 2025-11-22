@@ -50,6 +50,10 @@ type BuilderOption[I, O any] func(*Builder[I, O]) error
 //	// Custom executor with custom types
 //	customExecutor := graph.NewPregelExecutor[MyInput, MyOutput](...)
 //	builder, err := graph.NewBuilder(customExecutor)
+//
+//	// With custom state manager
+//	customManager := state.NewManager(state.WithCheckpointer(cp, "run-123"))
+//	builder, err := graph.NewBuilder(executor, graph.WithManager[In, Out](customManager))
 func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
 	// Create a default state manager
 	manager := state.NewManager()
@@ -75,6 +79,14 @@ func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) 
 }
 
 // WithManager sets a custom state manager for the builder.
+//
+// Example:
+//
+//	manager := state.NewManager(
+//	    state.WithCheckpointer(checkpointer, "run-123"),
+//	    state.WithMaxSnapshotsLimit(100),
+//	)
+//	builder, err := graph.NewBuilder(executor, graph.WithManager[In, Out](manager))
 func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 	return func(b *Builder[I, O]) error {
 		graph, err := NewGraph(manager)
@@ -82,6 +94,34 @@ func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 			return err
 		}
 		b.graph = graph
+		return nil
+	}
+}
+
+// WithInterruptBefore sets nodes to interrupt before execution.
+//
+// Example:
+//
+//	builder, err := graph.NewBuilder(executor,
+//	    graph.WithInterruptBefore[In, Out]("human_approval", "critical_step"),
+//	)
+func WithInterruptBefore[I, O any](nodes ...string) BuilderOption[I, O] {
+	return func(b *Builder[I, O]) error {
+		b.graph.InterruptBefore = append(b.graph.InterruptBefore, nodes...)
+		return nil
+	}
+}
+
+// WithInterruptAfter sets nodes to interrupt after execution.
+//
+// Example:
+//
+//	builder, err := graph.NewBuilder(executor,
+//	    graph.WithInterruptAfter[In, Out]("model", "tool"),
+//	)
+func WithInterruptAfter[I, O any](nodes ...string) BuilderOption[I, O] {
+	return func(b *Builder[I, O]) error {
+		b.graph.InterruptAfter = append(b.graph.InterruptAfter, nodes...)
 		return nil
 	}
 }
