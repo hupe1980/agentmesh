@@ -16,9 +16,11 @@ import (
 	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 )
 
 func main() {
@@ -29,6 +31,11 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// Create plugin manager with logging
+	pm := callbacks.NewPluginManager()
+	defer pm.Shutdown(ctx)
+	pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Supervisor]"))
 
 	// Test queries
 	queries := []string{
@@ -48,7 +55,7 @@ func main() {
 
 		// Create fresh supervisor for each query to avoid state accumulation
 		// In production, you might want to use checkpointing or state management instead
-		supervisor, err := createSupervisor()
+		supervisor, err := createSupervisor(pm)
 		if err != nil {
 			log.Printf("Error creating supervisor: %v", err)
 			continue
@@ -77,7 +84,7 @@ func main() {
 }
 
 // createSupervisor creates a supervisor agent with specialized workers
-func createSupervisor() (graph.Runnable[[]message.Message, message.Message], error) {
+func createSupervisor(pm *callbacks.PluginManager) (graph.Runnable[[]message.Message, message.Message], error) {
 	model := openai.NewModel()
 
 	// Create specialized worker agents
@@ -111,6 +118,7 @@ Always provide the full task context when delegating.`),
 		agent.WithSupervisorMaxIterations(10),
 		agent.WithWorkerContext(false), // Fresh context for each task
 		agent.WithWorkerRetries(2),
+		agent.WithSupervisorPluginManager(pm), // Add plugin support
 	)
 }
 

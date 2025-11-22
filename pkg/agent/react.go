@@ -118,7 +118,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 
 	// Wrap with automatic callback injection if plugin manager is provided
-	return wrapWithCallbacks(compiled, config.pluginManager), nil
+	return WrapWithCallbacks(compiled, config.pluginManager), nil
 }
 
 // reActOptions holds configuration for ReAct agents.

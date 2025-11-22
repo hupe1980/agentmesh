@@ -146,7 +146,7 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	}
 
 	// Wrap with automatic callback injection if plugin manager is provided
-	return wrapWithCallbacks(compiled, config.pluginManager), nil
+	return WrapWithCallbacks(compiled, config.pluginManager), nil
 }
 
 // ragOptions holds configuration for RAG agents.
