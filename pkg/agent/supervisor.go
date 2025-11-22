@@ -169,5 +169,3 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (MessageRunna
 
 	return NewReActAgent(mdl, reactOpts...)
 }
-
-// supervisorOptions holds configuration for supervisor agents.

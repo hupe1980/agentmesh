@@ -9,6 +9,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/hupe1980/agentmesh/pkg/trace"
@@ -22,6 +23,7 @@ type ModelNode struct {
 	callbacks    *callbacks.PluginManager
 	systemPrompt string
 	tools        []tool.Tool
+	outputSchema *schema.OutputSchema
 }
 
 // ModelNodeOption configures a ModelNode.
@@ -56,6 +58,29 @@ func WithModelSystemPrompt(prompt string) ModelNodeOption {
 func WithModelTools(tools ...tool.Tool) ModelNodeOption {
 	return func(n *ModelNode) {
 		n.tools = tools
+	}
+}
+
+// WithOutputSchema sets a structured output schema with metadata.
+// The schema constrains the model to generate valid JSON matching the schema.
+// Only works with models that support structured output (check Capabilities().StructuredOutput).
+//
+// This option provides better type safety and includes metadata like name, description, and strict mode.
+// Model implementations can use the Strict flag, Description, and other metadata for provider-specific behavior.
+//
+// Example:
+//
+//	type AnalysisResult struct {
+//	    Category   string  `json:"category" jsonschema:"required,description=The category"`
+//	    Confidence float64 `json:"confidence" jsonschema:"required,description=Confidence score"`
+//	}
+//	outputSchema, _ := schema.NewOutputSchema("analysis", AnalysisResult{},
+//	    schema.WithStrict(true),
+//	    schema.WithDescription("Analysis result with category and confidence"))
+//	node, err := NewModelNode(myModel, WithOutputSchema(&outputSchema))
+func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
+	return func(n *ModelNode) {
+		n.outputSchema = outputSchema
 	}
 }
 
@@ -110,6 +135,7 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 		Messages:     messages,
 		SystemPrompt: n.systemPrompt,
 		Tools:        n.tools,
+		OutputSchema: n.outputSchema,
 	}
 
 	// Execute BeforeModel plugins

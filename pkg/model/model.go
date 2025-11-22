@@ -2,9 +2,12 @@ package model
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -56,21 +59,26 @@ type Request struct {
 	// If empty, only the messages from the Messages field are used.
 	SystemPrompt string
 
-	// Schema is an optional JSON schema for structured output generation.
+	// OutputSchema is an optional structured output schema with metadata.
 	// When provided (and Capabilities().StructuredOutput is true), the model will
 	// be constrained to generate valid JSON matching this schema.
-	// The schema should be a map[string]any representing a JSON Schema definition.
+	//
+	// This field provides additional metadata compared to Schema:
+	//  - Name: Schema identifier for logging/debugging
+	//  - Strict: Whether to enforce strict schema validation (provider-specific)
+	//  - Description: Human-readable schema description
+	//  - Schema: The actual JSON Schema definition
+	//
+	// If both Schema and OutputSchema are provided, OutputSchema takes precedence.
 	//
 	// Example:
-	//  req.Schema = map[string]any{
-	//      "type": "object",
-	//      "properties": map[string]any{
-	//          "name": map[string]any{"type": "string"},
-	//          "age":  map[string]any{"type": "integer"},
-	//      },
-	//      "required": []string{"name", "age"},
+	//  type Result struct {
+	//      Answer     string  `json:"answer" jsonschema:"required"`
+	//      Confidence float64 `json:"confidence" jsonschema:"required"`
 	//  }
-	Schema map[string]any
+	//  outputSchema, _ := schema.NewOutputSchema("result", Result{})
+	//  req.OutputSchema = &outputSchema
+	OutputSchema *schema.OutputSchema
 
 	// Stream indicates whether to use streaming mode.
 	// When true, Generate() will yield incremental chunks with Partial=true.
@@ -273,6 +281,53 @@ func Last(seq iter.Seq2[*Response, error]) (*Response, error) {
 	}
 
 	return lastResp, lastErr
+}
+
+// LastStructured extracts the last response from an iterator and unmarshals
+// the response message content into the specified type T.
+// This is useful for extracting structured output from model generation calls.
+//
+// Example:
+//
+//	type MovieReview struct {
+//	    Title   string `json:"title"`
+//	    Rating  int    `json:"rating"`
+//	    Summary string `json:"summary"`
+//	}
+//
+//	outputSchema, _ := schema.NewOutputSchema("review", MovieReview{})
+//	req := &model.Request{
+//	    Messages: []message.Message{...},
+//	    OutputSchema: &outputSchema,
+//	}
+//
+//	review, err := model.LastStructured[MovieReview](mdl.Generate(ctx, req))
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Rating: %d/5\n", review.Rating)
+func LastStructured[T any](seq iter.Seq2[*Response, error]) (*T, error) {
+	var lastResp *Response
+	for resp, err := range seq {
+		if err != nil {
+			return nil, err
+		}
+		lastResp = resp
+	}
+
+	if lastResp == nil || lastResp.Message == nil {
+		return nil, fmt.Errorf("no response returned")
+	}
+
+	// Use Stringify to extract text content from message parts
+	content := message.Stringify(lastResp.Message)
+
+	var result T
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse structured output: %w", err)
+	}
+
+	return &result, nil
 }
 
 // Collect gathers all responses from an iterator into a slice.

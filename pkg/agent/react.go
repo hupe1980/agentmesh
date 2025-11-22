@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
@@ -56,16 +57,16 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		toolRegistry[t.Name()] = t
 	}
 
-	acceptedTools := make([]tool.Tool, 0, len(toolRegistry))
+	tools := make([]tool.Tool, 0, len(toolRegistry))
 	for _, t := range toolRegistry {
-		acceptedTools = append(acceptedTools, t)
+		tools = append(tools, t)
 	}
 
 	// Check if model supports tools (via Capabilities)
-	if len(acceptedTools) > 0 {
+	if len(tools) > 0 {
 		caps := mdl.Capabilities()
 		if !caps.Tools {
-			return nil, fmt.Errorf("react agent: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(acceptedTools))
+			return nil, fmt.Errorf("react agent: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
 		}
 	}
 
@@ -82,10 +83,14 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 
 	// Model node: generate response with tools and system prompt
 	// System prompt is sent per-request (Pydantic AI style) for token efficiency
-	modelNode, err := NewModelNode(mdl,
-		WithModelTools(acceptedTools...),
+	modelNodeOpts := []ModelNodeOption{
+		WithModelTools(tools...),
 		WithModelSystemPrompt(config.systemPrompt),
-	)
+	}
+	if config.outputSchema != nil {
+		modelNodeOpts = append(modelNodeOpts, WithOutputSchema(config.outputSchema))
+	}
+	modelNode, err := NewModelNode(mdl, modelNodeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
 	}
@@ -117,8 +122,9 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
 	maxIterations int
-	tools         []tool.Tool // Optional static tools via WithTools option
-	systemPrompt  string      // Optional system prompt prepended to all invocations
+	tools         []tool.Tool          // Optional static tools via WithTools option
+	systemPrompt  string               // Optional system prompt prepended to all invocations
+	outputSchema  *schema.OutputSchema // Optional structured output schema
 }
 
 func defaultReActOptions() reActOptions {
@@ -126,6 +132,7 @@ func defaultReActOptions() reActOptions {
 		maxIterations: 10,
 		tools:         nil,
 		systemPrompt:  "",
+		outputSchema:  nil,
 	}
 }
 
@@ -176,5 +183,32 @@ func WithTools(tools ...tool.Tool) ReActOption {
 func WithSystemPrompt(prompt string) ReActOption {
 	return func(c *reActOptions) {
 		c.systemPrompt = prompt
+	}
+}
+
+// WithReActOutputSchema sets a structured output schema with metadata for the ReAct agent.
+// The schema constrains the model to generate valid JSON matching the schema.
+// Only works with models that support structured output (check model.Capabilities().StructuredOutput).
+//
+// This option provides better type safety and includes metadata like name, description, and strict mode.
+// Model implementations can use the Strict flag, Description, and other metadata for provider-specific behavior.
+//
+// Example:
+//
+//	type AgentResponse struct {
+//	    Reasoning string `json:"reasoning" jsonschema:"required,description=Step-by-step reasoning"`
+//	    Action    string `json:"action" jsonschema:"required,description=The action to take"`
+//	    Answer    string `json:"answer" jsonschema:"description=Final answer if available"`
+//	}
+//	outputSchema, _ := schema.NewOutputSchema("agent_response", AgentResponse{},
+//	    schema.WithStrict(true),
+//	    schema.WithDescription("ReAct agent structured response"))
+//	agent, err := agent.NewReActAgent(model,
+//	    agent.WithTools(tools...),
+//	    agent.WithReActOutputSchema(&outputSchema),
+//	)
+func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
+	return func(c *reActOptions) {
+		c.outputSchema = outputSchema
 	}
 }

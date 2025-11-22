@@ -490,14 +490,14 @@ func (m *Model) applyOptions(params *openai.ChatCompletionNewParams, req *model.
 	params.MaxCompletionTokens = param.NewOpt(m.opts.maxCompletionTokens)
 
 	// Apply structured output from request if specified
-	if req != nil && req.Schema != nil {
+	if req != nil && req.OutputSchema != nil {
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
 				Type: "json_schema",
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
-					Name:   "response",
-					Schema: req.Schema,
-					Strict: param.NewOpt(true),
+					Name:   req.OutputSchema.Name,
+					Schema: req.OutputSchema.Schema,
+					Strict: param.NewOpt(req.OutputSchema.Strict),
 				},
 			},
 		}
