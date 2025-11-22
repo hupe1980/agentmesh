@@ -36,7 +36,7 @@ func main() {
 	completeKey := state.NewKey("complete", false)
 
 	// Add nodes
-	builder.Node("input_validator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddNodeFunc("input_validator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, validKey, true)
@@ -44,26 +44,26 @@ func main() {
 		return b.Build()
 	})
 
-	builder.Node("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddNodeFunc("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Routing request...")
 		return nil, nil
 	})
 
-	builder.Node("high_priority_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddNodeFunc("high_priority_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.Node("normal_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddNodeFunc("normal_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.Node("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddNodeFunc("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, completeKey, true)

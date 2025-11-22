@@ -29,9 +29,7 @@ result, err := graph.Last(compiled.Run(ctx, messages))
 ## Using Providers in Node RunFunc
 
 ```go
-g.AddNode(&graph.Node{
-    Name: "my_node",
-    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+g.AddNodeFunc("my_node", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
         // Retrieve logger from context
         log := logging.FromContext(ctx)
         log.Info("Processing started", "node", "my_node")

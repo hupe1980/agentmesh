@@ -67,7 +67,7 @@ builder.AddConditionalEdges("router", routeByChoice)
 
 ### 3. Create Branch Nodes
 ```go
-builder.Node("path_a_handler", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.AddNodeFunc("path_a_handler", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     fmt.Println("Processing path A")
     return &graph.NodeResult{
         Updates: map[string]any{
@@ -76,7 +76,7 @@ builder.Node("path_a_handler", func(ctx context.Context, s state.Writer) (*graph
     }, nil
 })
 
-builder.Node("path_b_handler", /* similar */)
+builder.AddNodeFunc("path_b_handler", /* similar */)
 ```
 
 ## Routing Patterns

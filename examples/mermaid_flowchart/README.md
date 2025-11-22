@@ -19,7 +19,7 @@ This example demonstrates how to generate [Mermaid](https://mermaid.js.org/) flo
 
 ```go
 builder, _ := exec.NewBuilder()
-builder.Node("process", processFunc).
+builder.AddNodeFunc("process", processFunc).
         AddEdge(graph.StartNode, "process").
         AddEdge("process", graph.EndNode)
 
@@ -32,7 +32,7 @@ fmt.Println(mermaid)
 
 ```go
 g, _ := graph.NewGraph(stateManager)
-g.AddNode(&graph.Node{Name: "process", RunFunc: processFunc})
+g.AddNodeFunc("process", processFunc)
 g.AddEdge(graph.StartNode, "process")
 g.AddEdge("process", graph.EndNode)
 

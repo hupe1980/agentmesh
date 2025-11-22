@@ -44,7 +44,7 @@ var (
 )
 
 // ✅ Compile-time type checking
-builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.AddNodeFunc("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     ub := state.NewUpdateBuilder()
     state.SetUpdate(ub, CounterKey, 42)              // ✅ Type-checked: int
     state.AppendUpdate(ub, MessagesKey, "hello")     // ✅ Type-checked: string
@@ -377,7 +377,7 @@ Pause execution for human approval or input.
 ### Interrupt execution
 
 ```go
-builder.Node("request_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.AddNodeFunc("request_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     return &graph.NodeResult{
         Updates: map[string]any{
             "status": "awaiting_approval",

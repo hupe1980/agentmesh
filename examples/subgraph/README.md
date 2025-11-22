@@ -50,28 +50,22 @@ func createValidationSubgraph() *graph.Graph {
     state := graph.NewStateManager(0)
     g := graph.NewGraph(state)
     
-    g.AddNode(&graph.Node{
-        Name: "validate_format",
-        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-            // Validate data format
-            return &graph.NodeResult{
-                Updates: map[string]any{
-                    "format_valid": true,
-                },
-            }, nil
-        },
+    g.AddNodeFunc("validate_format", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+        // Validate data format
+        return &graph.NodeResult{
+            Updates: map[string]any{
+                "format_valid": true,
+            },
+        }, nil
     })
     
-    g.AddNode(&graph.Node{
-        Name: "validate_schema",
-        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-            // Validate schema
-            return &graph.NodeResult{
-                Updates: map[string]any{
-                    "schema_valid": true,
-                },
-            }, nil
-        },
+    g.AddNodeFunc("validate_schema", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+        // Validate schema
+        return &graph.NodeResult{
+            Updates: map[string]any{
+                "schema_valid": true,
+            },
+        }, nil
     })
     
     g.AddEdge("validate_format", "validate_schema")
@@ -95,39 +89,31 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
     pipeline := graph.NewGraph(state)
     
     // Stage 1: Validation subgraph
-    pipeline.AddNode(&graph.Node{
-        Name: "validation_stage",
-        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-            // Run validation subgraph
-            result, _ := graph.Last(validation.Run(ctx, s))
-            return result, nil
-        },
+    pipeline.AddNodeFunc("validation_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+        // Run validation subgraph
+        result, _ := graph.Last(validation.Run(ctx, s))
+        return result, nil
     })
     
-    pipeline.AddNode(&graph.Node{
-        Name: "enrichment_stage",
-        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-            data, _ := s.Get("data").(map[string]any)
-            result, _ := graph.Last(validation.Run(ctx, nil,
-                graph.WithInput(map[string]any{"data": data}),
-            ))
-            return &graph.NodeResult{
-                Updates: result.State,
-            }, nil
-        },
+    pipeline.AddNodeFunc("enrichment_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+        data, _ := s.Get("data").(map[string]any)
+        result, _ := graph.Last(validation.Run(ctx, nil,
+            graph.WithInput(map[string]any{"data": data}),
+        ))
+        return &graph.NodeResult{
+            Updates: result.State,
+        }, nil
     })
     
     // Stage 2: Enrichment subgraph
-    pipeline.AddNode(&graph.Node{
-        Name: "enrichment_stage",
-        RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-            data, _ := s.Get("data").(map[string]any)
-            result, _ := graph.Last(enrichment.Run(ctx, nil,
-                graph.WithInput(map[string]any{"data": data}),
-            ))
-            return &graph.NodeResult{
-                Updates: result.State,
-            }, nil
+    pipeline.AddNodeFunc("enrichment_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+        data, _ := s.Get("data").(map[string]any)
+        result, _ := graph.Last(enrichment.Run(ctx, nil,
+            graph.WithInput(map[string]any{"data": data}),
+        ))
+        return &graph.NodeResult{
+            Updates: result.State,
+        }, nil
         },
     })
     

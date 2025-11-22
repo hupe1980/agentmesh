@@ -78,9 +78,7 @@ gph, err := graph.NewGraph(mgr)
 ```go
 gph := graph.NewGraph(state)
 
-gph.AddNode(&graph.Node{
-    Name: "init",
-    RunFunc: func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+gph.AddNodeFunc("init", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
         return &graph.NodeResult{
             Updates: map[string]any{
                 "phase": "processing",

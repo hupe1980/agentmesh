@@ -34,7 +34,7 @@ func main() {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}
 
-	pipeline.Node("init", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddNodeFunc("init", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := map[string]any{
 			"user_id": "12345",
 			"email":   "user@example.com",
@@ -45,7 +45,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.Node("validation", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddNodeFunc("validation", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		builder := graphstate.NewUpdateBuilder()
 
@@ -65,7 +65,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.Node("enrichment", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddNodeFunc("enrichment", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		valid := graphstate.GetFromView(view, validKey)
 		if !valid {
@@ -87,7 +87,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.Node("analysis", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddNodeFunc("analysis", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		enrichedData := graphstate.GetFromView(view, enrichedDataKey)
 		analysis := map[string]any{
 			"processed":   true,

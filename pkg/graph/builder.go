@@ -9,12 +9,21 @@ import (
 
 // Builder provides a fluent API for constructing graphs.
 //
-// Use NewBuilder to create graphs:
+// Use NewBuilder to create graphs with inline functions:
 //
 //	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
-//	builder.Node("process", processFunc)
+//	builder.AddNodeFunc("process", processFunc)
 //	builder.AddEdge(graph.StartNode, "process")
 //	builder.AddEdge("process", graph.EndNode)
+//	compiled, _ := builder.Compile()
+//
+// Or with custom node types:
+//
+//	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
+//	customNode := &MyNode{name: "custom"}
+//	builder.AddNode(customNode)
+//	builder.AddEdge(graph.StartNode, "custom")
+//	builder.AddEdge("custom", graph.EndNode)
 //	compiled, _ := builder.Compile()
 //
 // Type parameters:
@@ -65,34 +74,6 @@ func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) 
 	return b, nil
 }
 
-// NewBuilderInternal creates a new graph builder with the given options.
-// This is internal API - do not call directly.
-// Use NewBuilder() instead for the public API.
-//
-// Deprecated: Use NewBuilder instead
-func NewBuilderInternal[I, O any](opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
-	// For compatibility with exec package during migration
-	manager := state.NewManager()
-
-	graph, err := NewGraph(manager)
-	if err != nil {
-		return nil, err
-	}
-
-	b := &Builder[I, O]{
-		graph: graph,
-	}
-
-	// Apply options
-	for _, opt := range opts {
-		if err := opt(b); err != nil {
-			return nil, err
-		}
-	}
-
-	return b, nil
-}
-
 // WithManager sets a custom state manager for the builder.
 func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 	return func(b *Builder[I, O]) error {
@@ -105,27 +86,44 @@ func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 	}
 }
 
-// Node adds a node to the graph with the given name and run function.
-// Any errors will be caught during graph compilation in Build().
-func (b *Builder[I, O]) Node(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error)) *Builder[I, O] {
-	// Errors are validated during graph compilation
+// AddNode adds a node to the graph.
+// Any errors will be caught during graph compilation in Compile().
+//
+// Example:
+//
+//	customNode := &MyNode{name: "custom"}
+//	builder.AddNode(customNode)
+func (b *Builder[I, O]) AddNode(node Node) *Builder[I, O] {
+	_ = b.graph.AddNode(node)
+	return b
+}
+
+// AddNodeFunc adds a function-based node to the graph with the given name.
+// Any errors will be caught during graph compilation in Compile().
+//
+// Example:
+//
+//	builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+//	    // Process logic here
+//	    return state.NoUpdate(), nil
+//	})
+func (b *Builder[I, O]) AddNodeFunc(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error)) *Builder[I, O] {
 	_ = b.graph.AddNode(NewBaseNode(name, runFunc))
 	return b
 }
 
-// NodeWithRetry adds a node to the graph with a retry policy.
+// AddNodeFuncWithRetry adds a function-based node to the graph with a retry policy.
 // This is a convenience method for adding a node with automatic retry behavior.
-// Any errors will be caught during graph compilation in Build().
+// Any errors will be caught during graph compilation in Compile().
 //
 // Example:
 //
-//	builder.NodeWithRetry("api_call", apiFunc,
+//	builder.AddNodeFuncWithRetry("api_call", apiFunc,
 //	    graph.NewRetryPolicy().
 //	        WithMaxAttempts(5).
 //	        WithExponentialBackoff(time.Second, 2.0).
 //	        Build())
-func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error), retryPolicy *RetryPolicy) *Builder[I, O] {
-	// Errors are validated during graph compilation
+func (b *Builder[I, O]) AddNodeFuncWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error), retryPolicy *RetryPolicy) *Builder[I, O] {
 	_ = b.graph.AddNode(NewBaseNodeWithRetry(name, runFunc, retryPolicy))
 	return b
 }
@@ -135,7 +133,7 @@ func (b *Builder[I, O]) NodeWithRetry(name string, runFunc func(ctx context.Cont
 //
 // Example:
 //
-//	builder.Node("process", processFunc)
+//	builder.AddNodeFunc("process", processFunc)
 //	builder.SetNodeRetryPolicy("process",
 //	    graph.NewRetryPolicy().WithMaxAttempts(3).Build())
 func (b *Builder[I, O]) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {

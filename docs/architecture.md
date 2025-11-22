@@ -262,12 +262,12 @@ Traditional agent frameworks use **sequential DAG execution**, which limits expr
 **Example: Iterative Refinement**
 
 ```go
-builder.Node("writer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("writer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     draft := generateDraft()
     return map[string]any{"draft": draft}, nil
 })
 
-builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
         return map[string]any{"done": true}, nil
@@ -300,12 +300,12 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 builder := graph.NewBuilder()
 
 // Nodes execute in parallel when possible
-builder.Node("fetch_data", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("fetch_data", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Fetch from API...
     return map[string]any{"data": result}, nil
 })
 
-builder.Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     data := view.Get("data")
     // Process...
     return map[string]any{"processed": true}, nil
@@ -507,7 +507,7 @@ type ConditionalEvaluator struct {
 **Example**:
 
 ```go
-builder.Node("classifier", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("classifier", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     messages := state.GetFromView(view, agent.MessagesKey)
     category := analyzeInput(messages)
     
@@ -1006,10 +1006,7 @@ The `graph.Builder` provides a fluent API for constructing agent workflows:
 builder := graph.NewBuilder()
 
 // Add nodes (computation units)
-builder.AddNode(&graph.Node{
-    Name: "agent",
-    RunFunc: agentFunction,
-})
+builder.AddNodeFunc("agent", agentFunction)
 
 // Add edges (define execution order)
 builder.AddEdge("START", "agent")

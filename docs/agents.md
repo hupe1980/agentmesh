@@ -268,7 +268,7 @@ var MessagesKey = agent.MessagesKey  // From agent package
 builder := graph.NewBuilder()
 
 // Add nodes
-builder.Node("classify", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.AddNodeFunc("classify", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Classify the user's intent
     msgs := state.GetFromView(view, MessagesKey)
     category := classifyIntent(msgs)
@@ -278,7 +278,7 @@ builder.Node("classify", func(ctx context.Context, view *state.ReadView) (*graph
     }, nil
 })
 
-builder.Node("handle_support", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.AddNodeFunc("handle_support", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Handle support queries
     response := message.NewAIMessage(message.NewTextPart("Support response..."))
     return &graph.NodeResult{
@@ -288,7 +288,7 @@ builder.Node("handle_support", func(ctx context.Context, view *state.ReadView) (
     }, nil
 })
 
-builder.Node("handle_sales", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.AddNodeFunc("handle_sales", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Handle sales queries
     response := message.NewAIMessage(message.NewTextPart("Sales response..."))
     return &graph.NodeResult{
@@ -410,7 +410,7 @@ researchGraph := createResearchGraph()
 var MessagesKey = agent.MessagesKey  // From agent package
 
 // Embed in parent graph
-builder.Node("research", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.AddNodeFunc("research", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     // Get current messages
     msgs := state.GetFromView(view, MessagesKey)
     

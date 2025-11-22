@@ -48,11 +48,11 @@
 //	builder := graph.NewBuilder()
 //
 //	// Add regular nodes
-//	builder.Node("prepare", prepareFunc)
+//	builder.AddNodeFunc("prepare", prepareFunc)
 //
 //	// Add A2A agent node
 //	a2aNode := a2a.NewAgentNode("https://agent.example.com", "skill-id")
-//	builder.Node("external_agent", a2aNode)
+//	builder.AddNodeFunc("external_agent", a2aNode)
 //
 //	builder.AddEdge("prepare", "external_agent")
 //	builder.AddEdge("external_agent", "END")

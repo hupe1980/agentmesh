@@ -37,7 +37,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 
 	// Add nodes using fluent API
 	builder.
-		Node("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"processed": true}, nil
 		}).
 		AddEdge(graph.StartNode, "process").
@@ -84,10 +84,10 @@ func TestBuilder_WithOptions(t *testing.T) {
 	}
 
 	builder.
-		Node("node1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("node1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 1}, nil
 		}).
-		Node("node2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("node2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 2}, nil
 		}).
 		AddEdge(graph.StartNode, "node1").
@@ -138,13 +138,13 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	}
 
 	builder.
-		Node("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"route": "left"}, nil
 		}).
-		Node("left", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("left", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "left"}, nil
 		}).
-		Node("right", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("right", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "right"}, nil
 		}).
 		AddEdge(graph.StartNode, "router").
@@ -198,7 +198,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	}
 
 	builder.
-		Node("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddNodeFunc("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"done": true}, nil
 		}).
 		AddEdge(graph.StartNode, "process").

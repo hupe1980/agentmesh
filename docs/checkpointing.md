@@ -109,9 +109,9 @@ Superstep N: Final state (all nodes complete)
 ```go
 builder := graph.NewBuilder()
 
-builder.Node("start", startFunc)
-builder.Node("process", processFunc)
-builder.Node("finish", finishFunc)
+builder.AddNodeFunc("start", startFunc)
+builder.AddNodeFunc("process", processFunc)
+builder.AddNodeFunc("finish", finishFunc)
 
 builder.Edge("start", "process")
 builder.Edge("process", "finish")
@@ -845,7 +845,7 @@ seq := compiled.Run(ctx, messages,
 )
 
 // 2. Exclude large state values
-builder.Node("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+builder.AddNodeFunc("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Don't persist large binary data
     largeData := processData()  // Use locally
     

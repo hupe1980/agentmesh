@@ -616,15 +616,12 @@ Subgraphs enable **hierarchical composition** by embedding compiled graphs as no
 subState := graph.NewStateManager(0)
 subGraph := graph.NewGraph(subState)
 
-subGraph.AddNode(&graph.Node{
-    Name: "process",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        value := s.Get("value").(int)
-        doubled := value * 2
-        return &graph.NodeResult{
-            Updates: map[string]any{"result": doubled},
-        }, nil
-    },
+subGraph.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    value := s.Get("value").(int)
+    doubled := value * 2
+    return &graph.NodeResult{
+        Updates: map[string]any{"result": doubled},
+    }, nil
 })
 
 subGraph.AddEdge(graph.StartNode, "process")
@@ -637,12 +634,10 @@ compiledSub, err := exec.CompileGraph(subGraph)
 parentState := graph.NewStateManager(0)
 parent := graph.NewGraph(parentState)
 
-parent.AddNode(&graph.Node{
-    Name: "prepare",
-    RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-        return &graph.NodeResult{
-            Updates: map[string]any{"value": 21},
-        }, nil
+parent.AddNodeFunc("prepare", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+    return &graph.NodeResult{
+        Updates: map[string]any{"value": 21},
+    }, nil
     },
 })
 

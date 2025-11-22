@@ -86,13 +86,10 @@ policy := &graph.RetryPolicy{
 
 ```go
 // Add node with retry policy
-g.AddNode(&graph.Node{
-    Name: "api_call",
-    RunFunc: apiCallFunc,
-    RetryPolicy: graph.NewRetryPolicy().
-        WithMaxAttempts(5).
-        WithExponentialBackoff(100*time.Millisecond, 2.0).
-        WithRetryableErrors(ErrTransient, ErrTimeout).
+g.AddNodeFuncWithRetry("api_call", apiCallFunc, graph.NewRetryPolicy().
+    WithMaxAttempts(5).
+    WithExponentialBackoff(100*time.Millisecond, 2.0).
+    WithRetryableErrors(ErrTransient, ErrTimeout).
         Build(),
 })
 ```

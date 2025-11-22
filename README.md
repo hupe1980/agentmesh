@@ -508,11 +508,11 @@ import (
 builder := graph.NewBuilder(graph.NewPregelExecutor())
 
 // Add nodes with functions
-builder.Node("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     return map[string]any{"result": "processed"}, nil
 })
 
-builder.Node("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Recommended: Use typed keys for compile-time safety
     // var ResultKey = state.NewKey[string]("result")
     // result := state.GetFromView(view, ResultKey)
@@ -671,7 +671,7 @@ compiled, _ := builder.Compile()
 Resilient execution with fluent builder API:
 
 ```go
-builder.Node("flaky_api", apiCallFunc)
+builder.AddNodeFunc("flaky_api", apiCallFunc)
 
 // Simple retry with defaults (3 attempts, exponential backoff)
 builder.SetRetryPolicy("flaky_api", graph.NewRetryPolicy().Build())
@@ -720,7 +720,7 @@ state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
 // In nodes - contribute via normal Updates
-builder.Node("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     // Read current accumulated value
     total, _ := state.GetFromView(view, totalCostKey)
     fmt.Printf("Total cost so far: %v\n", total)
@@ -871,7 +871,7 @@ Compose complex workflows from reusable components:
 researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
-builder.Node("research", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("research", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     parentMessages := graph.ExtractMessages(view.MessagesSnapshot())
     events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {

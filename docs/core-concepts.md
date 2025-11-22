@@ -146,9 +146,9 @@ if err != nil {
 }
 
 // Add nodes
-builder.Node("fetch", fetchDataFunc)
-builder.Node("process", processDataFunc)
-builder.Node("save", saveDataFunc)
+builder.AddNodeFunc("fetch", fetchDataFunc)
+builder.AddNodeFunc("process", processDataFunc)
+builder.AddNodeFunc("save", saveDataFunc)
 
 // Define flow with edges
 builder.AddEdge("START", "fetch")
@@ -300,7 +300,7 @@ if err != nil {
 }
 
 // Build graph using builder
-builder.Node("process", processFunc)
+builder.AddNodeFunc("process", processFunc)
 // ... add edges ...
 
 compiled, err := builder.Compile()
@@ -354,12 +354,12 @@ var (
     FeedbackKey = state.NewKey("feedback", "")
 )
 
-builder.Node("writer", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+builder.AddNodeFunc("writer", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
     draft := generateDraft()
     return map[string]any{"draft": draft}, nil
 })
 
-builder.Node("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
     draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
         // Set done flag to route to END

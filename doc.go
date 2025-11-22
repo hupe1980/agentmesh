@@ -122,7 +122,7 @@
 //
 // Retry Policies:
 //
-//	builder.Node("api_call", apiCallFunc)
+//	builder.AddNodeFunc("api_call", apiCallFunc)
 //	builder.SetRetryPolicy("api_call", &graph.RetryPolicy{
 //	    MaxAttempts:    3,
 //	    InitialBackoff: 100 * time.Millisecond,

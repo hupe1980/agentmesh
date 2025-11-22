@@ -199,7 +199,7 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	statusKey := graphstate.NewKey("status", "")
 	dataKey := graphstate.NewKey("data", []string{})
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -208,7 +208,7 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -218,7 +218,7 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -248,7 +248,7 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: OK")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 1)
@@ -256,7 +256,7 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		return ub.Build()
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: OK")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 2)
@@ -264,7 +264,7 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		return ub.Build()
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		return nil, fmt.Errorf("simulated failure at step 3")
 	})
 
@@ -286,7 +286,7 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		panic(err)
 	}
 
-	builder.Node("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 1)
@@ -294,7 +294,7 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.Node("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 2)
@@ -302,7 +302,7 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.Node("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 3)
