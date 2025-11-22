@@ -407,7 +407,7 @@ func (p *PregelExecutor[I, O]) Run(
 		))
 
 		// Create and run the pregel runtime
-		rt, err := pregel.NewRuntime[*Compiled[I, O], state.Updates](adapter, runtimeOpts...)
+		rt, err := pregel.NewRuntime(adapter, runtimeOpts...)
 		if err != nil {
 			var zero O
 			safeYield(zero, err)

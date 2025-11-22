@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"text/template"
 )
@@ -139,14 +140,10 @@ func (t *Template) RenderOrDefault(data map[string]any, defaults map[string]any)
 	merged := make(map[string]any)
 
 	// Copy defaults first
-	for k, v := range defaults {
-		merged[k] = v
-	}
+	maps.Copy(merged, defaults)
 
 	// Override with provided data
-	for k, v := range data {
-		merged[k] = v
-	}
+	maps.Copy(merged, data)
 
 	result, _ := t.Render(merged)
 	return result
