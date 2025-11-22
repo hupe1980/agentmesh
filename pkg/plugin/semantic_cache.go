@@ -1,10 +1,9 @@
-package plugins
+package plugin
 
 import (
 	"context"
 
 	"github.com/hupe1980/agentmesh/pkg/cache"
-	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
@@ -20,7 +19,7 @@ import (
 //   - Memory: Fast in-process cache with LRU eviction
 //   - Redis: Distributed cache for multiple instances
 type SemanticCachePlugin struct {
-	plugin.NoopPlugin
+	NoopPlugin
 
 	cache cache.Cache
 }
@@ -33,14 +32,14 @@ type SemanticCachePlugin struct {
 //	memCache := cache.NewMemory(embedder,
 //	    cache.WithSimilarityThreshold(0.85),
 //	    cache.WithMaxSize(1000))
-//	plugin := plugins.NewSemanticCachePlugin(memCache)
+//	plugin := plugin.NewSemanticCachePlugin(memCache)
 //
 // Example with Redis backend:
 //
 //	import redisCache "github.com/hupe1980/agentmesh/pkg/cache/redis"
 //	redisClient := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
 //	cache := redisCache.NewCache(redisClient, embedder)
-//	plugin := plugins.NewSemanticCachePlugin(cache)
+//	plugin := plugin.NewSemanticCachePlugin(cache)
 func NewSemanticCachePlugin(cache cache.Cache) *SemanticCachePlugin {
 	return &SemanticCachePlugin{
 		cache: cache,

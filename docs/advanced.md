@@ -50,7 +50,7 @@ import (
 pm := callbacks.NewPluginManager()
 
 // Add retry plugin with exponential backoff
-retry := plugins.NewRetryPlugin(
+retry := plugin.NewRetryPlugin(
     3,                   // maxRetries
     100*time.Millisecond, // baseDelay
     5*time.Second,       // maxDelay
@@ -103,7 +103,7 @@ import (
 pm := callbacks.NewPluginManager()
 
 // Configure circuit breaker
-cb := plugins.NewCircuitBreakerPlugin(
+cb := plugin.NewCircuitBreakerPlugin(
     3,              // maxFailures before opening
     5*time.Second,  // resetTimeout
     1,              // halfOpenLimit

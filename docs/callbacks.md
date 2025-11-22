@@ -121,9 +121,9 @@ pm := callbacks.NewPluginManager()
 
 ```go
 // Built-in plugins
-pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
-pm.Register(ctx, plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1))
-pm.Register(ctx, plugins.NewCachePlugin(100))
+pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Agent]"))
+pm.Register(ctx, plugin.NewCircuitBreakerPlugin(3, 5*time.Second, 1))
+pm.Register(ctx, plugin.NewCachePlugin(100))
 
 // Custom plugins
 pm.Register(ctx, &MyCustomPlugin{})
@@ -157,7 +157,7 @@ AgentMesh provides production-ready plugins in `pkg/callbacks/plugins`:
 Logs all lifecycle events for debugging and audit trails.
 
 ```go
-plugin := plugins.NewLoggingPlugin(
+plugin := plugin.NewLoggingPlugin(
     log.Default(),
     "[AgentMesh]",  // prefix
 )
@@ -169,7 +169,7 @@ pm.Register(ctx, plugin)
 Prevents cascading failures with three-state circuit breaker pattern.
 
 ```go
-plugin := plugins.NewCircuitBreakerPlugin(
+plugin := plugin.NewCircuitBreakerPlugin(
     3,              // maxFailures
     5*time.Second,  // resetTimeout
     1,              // halfOpenLimit
@@ -186,7 +186,7 @@ plugin.Reset()              // Manual reset
 Enforces rate limiting with sliding window algorithm.
 
 ```go
-plugin := plugins.NewRateLimitPlugin(
+plugin := plugin.NewRateLimitPlugin(
     100,           // maxRequests
     time.Minute,   // window
 )
@@ -201,7 +201,7 @@ rate := plugin.GetCurrentRate()
 In-memory response caching with LRU eviction.
 
 ```go
-plugin := plugins.NewCachePlugin(100)  // max entries
+plugin := plugin.NewCachePlugin(100)  // max entries
 pm.Register(ctx, plugin)
 
 // Get statistics
@@ -216,7 +216,7 @@ Semantic similarity-based caching using embeddings.
 
 ```go
 embedder := embedding.NewOpenAIEmbedder(client)
-plugin := plugins.NewSemanticCachePlugin(
+plugin := plugin.NewSemanticCachePlugin(
     embedder,
     0.95,  // similarity threshold
     100,   // max entries
@@ -233,7 +233,7 @@ fmt.Printf("Hit rate: %.1f%%\n", stats.HitRate*100)
 Tracks retry attempts with exponential backoff.
 
 ```go
-plugin := plugins.NewRetryPlugin(
+plugin := plugin.NewRetryPlugin(
     3,                  // maxRetries
     100*time.Millisecond, // baseDelay
     5*time.Second,      // maxDelay

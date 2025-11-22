@@ -90,7 +90,7 @@ func (p *GuardrailsPlugin) AfterModel(ctx context.Context, req *model.Request, r
 
 ### CachePlugin
 ```go
-cache := plugins.NewCachePlugin(100)  // max 100 entries
+cache := plugin.NewCachePlugin(100)  // max 100 entries
 
 pm := callbacks.NewPluginManager()
 pm.Register(&GuardrailsPlugin{})

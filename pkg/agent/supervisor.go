@@ -82,7 +82,7 @@ func WithWorkerValidation(validate bool) SupervisorOption {
 // Example:
 //
 //	pm := callbacks.NewPluginManager()
-//	pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Supervisor]"))
+//	pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Supervisor]"))
 //
 //	supervisor, err := agent.NewSupervisorAgent(model,
 //	    agent.WithWorker("math", "Math expert", mathAgent),

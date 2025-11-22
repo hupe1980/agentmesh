@@ -1,18 +1,17 @@
-package plugins
+package plugin
 
 import (
 	"context"
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/model"
-	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // LoggingPlugin logs all lifecycle events for debugging and monitoring.
 // It embeds NoopPlugin to inherit default no-op implementations.
 type LoggingPlugin struct {
-	plugin.NoopPlugin
+	NoopPlugin
 	logger *log.Logger
 	prefix string
 }

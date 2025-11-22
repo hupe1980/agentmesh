@@ -1,4 +1,4 @@
-package plugins
+package plugin
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
@@ -27,7 +26,7 @@ const (
 // cascading failures. It opens the circuit after a threshold of failures
 // and periodically allows test requests to check if the service has recovered.
 type CircuitBreakerPlugin struct {
-	plugin.NoopPlugin
+	NoopPlugin
 
 	maxFailures   int
 	resetTimeout  time.Duration

@@ -972,14 +972,13 @@ import (
     "github.com/hupe1980/agentmesh/pkg/agent/callbacks"
     "github.com/hupe1980/agentmesh/pkg/model"
     "github.com/hupe1980/agentmesh/pkg/plugin"
-    "github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 )
 
 // Create plugin manager
 pm := callbacks.NewPluginManager()
 
 // Register built-in plugins
-pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[AgentMesh]"))
+pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[AgentMesh]"))
 
 // Create custom plugin with typed config
 type CachePlugin struct {
@@ -1039,7 +1038,7 @@ AgentMesh provides two caching strategies to reduce API costs and improve respon
 import "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
 
 // Create exact-match cache (SHA256 hashing)
-cache := plugins.NewCachePlugin(1000) // maxSize: 1000 entries
+cache := plugin.NewCachePlugin(1000) // maxSize: 1000 entries
 
 // Register with plugin manager
 pm := callbacks.NewPluginManager()
@@ -1074,7 +1073,7 @@ memCache := cache.NewMemory(embedder,
     cache.WithMaxSize(1000))             // LRU eviction
 
 // Create semantic cache plugin
-semanticCache := plugins.NewSemanticCachePlugin(memCache)
+semanticCache := plugin.NewSemanticCachePlugin(memCache)
 
 // Register with plugin manager
 pm := callbacks.NewPluginManager()
@@ -1103,7 +1102,7 @@ cache := redisCache.NewCache(redisClient, embedder,
     cache.WithSimilarityThreshold(0.85),
     redisCache.WithKeyPrefix("myapp:llm:"))
 
-plugin := plugins.NewSemanticCachePlugin(cache)
+plugin := plugin.NewSemanticCachePlugin(cache)
 ```
 
 **When to Use Which?**

@@ -10,7 +10,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/plugin"
-	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 )
 
 // GuardrailsPlugin demonstrates content filtering and safety guardrails
@@ -127,7 +126,7 @@ func main() {
 	}
 
 	// Also add the built-in cache plugin
-	cachePlugin := plugins.NewCachePlugin(100)
+	cachePlugin := plugin.NewCachePlugin(100)
 	if err := pluginMgr.Register(context.Background(), cachePlugin); err != nil {
 		log.Fatal(err)
 	}

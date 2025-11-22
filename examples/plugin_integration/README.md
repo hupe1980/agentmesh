@@ -244,14 +244,14 @@ reactAgent, _ := agent.NewReActAgent(
 ### Security & Compliance
 ```go
 // Use built-in security plugins
-cbManager.AddPlugin(plugins.NewContentFilter(filterConfig))
-cbManager.AddPlugin(plugins.NewPIIRedactor())
+cbManager.AddPlugin(plugin.NewContentFilter(filterConfig))
+cbManager.AddPlugin(plugin.NewPIIRedactor())
 ```
 
 ### Observability
 ```go
 // Use built-in logging plugin
-cbManager.AddPlugin(plugins.NewLogging())
+cbManager.AddPlugin(plugin.NewLogging())
 ```
 
 ### Cost Management

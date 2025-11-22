@@ -68,7 +68,7 @@ import (
 )
 
 // Create circuit breaker plugin
-cb := plugins.NewCircuitBreakerPlugin(
+cb := plugin.NewCircuitBreakerPlugin(
     3,              // maxFailures before opening
     5*time.Second,  // resetTimeout before half-open
     1,              // halfOpenLimit (requests in half-open)

@@ -10,7 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
-	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -30,7 +30,7 @@ func main() {
 	}()
 
 	// Register logging plugin to track all model and tool invocations
-	loggingPlugin := plugins.NewLoggingPlugin(log.Default(), "[Agent]")
+	loggingPlugin := plugin.NewLoggingPlugin(log.Default(), "[Agent]")
 	if err := pm.Register(context.Background(), loggingPlugin); err != nil {
 		log.Fatal(err)
 	}

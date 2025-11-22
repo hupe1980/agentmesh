@@ -1,4 +1,4 @@
-package plugins
+package plugin
 
 import (
 	"context"
@@ -6,13 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
 // RetryPlugin automatically retries failed model calls with exponential backoff.
 type RetryPlugin struct {
-	plugin.NoopPlugin
+	NoopPlugin
 
 	maxRetries int
 	baseDelay  time.Duration

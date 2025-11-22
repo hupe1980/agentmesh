@@ -224,7 +224,7 @@ func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
 // Example:
 //
 //	pm := callbacks.NewPluginManager()
-//	pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
+//	pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Agent]"))
 //
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithTools(tools...),

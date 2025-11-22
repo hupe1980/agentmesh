@@ -83,7 +83,7 @@ Cache stats: Hits=2, Misses=1, Similarity=0.84
 
 ### Exact-Match Cache
 ```go
-cache := plugins.NewCachePlugin(1000) // max 1000 entries
+cache := plugin.NewCachePlugin(1000) // max 1000 entries
 ```
 
 ### Semantic Cache
@@ -96,7 +96,7 @@ cache := cache.NewMemory(embedder,
     cache.WithTTL(time.Hour),            // entries expire after 1h
     cache.WithMaxSize(1000))             // LRU eviction at 1000 entries
 
-plugin := plugins.NewSemanticCachePlugin(cache)
+plugin := plugin.NewSemanticCachePlugin(cache)
 ```
 
 ### Redis Backend (Distributed)
@@ -111,7 +111,7 @@ cache := redisCache.NewCache(redisClient, embedder,
     cache.WithSimilarityThreshold(0.85),
     redisCache.WithKeyPrefix("myapp:llm:"))
 
-plugin := plugins.NewSemanticCachePlugin(cache)
+plugin := plugin.NewSemanticCachePlugin(cache)
 ```
 
 ## Architecture

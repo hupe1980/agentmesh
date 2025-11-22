@@ -1,5 +1,3 @@
-// Package plugin provides the Plugin interface and base implementations for intercepting
-// and modifying agent execution lifecycle events.
 package plugin
 
 import (

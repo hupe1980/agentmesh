@@ -9,7 +9,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -73,7 +73,7 @@ func main() {
 	// - Opens after 3 failures
 	// - Waits 5 seconds before transitioning to half-open
 	// - Allows 1 test request in half-open state
-	cbPlugin := plugins.NewCircuitBreakerPlugin(3, 5*time.Second, 1)
+	cbPlugin := plugin.NewCircuitBreakerPlugin(3, 5*time.Second, 1)
 
 	if err := pluginMgr.Register(context.Background(), cbPlugin); err != nil {
 		log.Fatal(err)

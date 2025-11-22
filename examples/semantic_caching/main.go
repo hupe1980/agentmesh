@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/cache"
-	"github.com/hupe1980/agentmesh/pkg/plugin/plugins"
 	"github.com/hupe1980/agentmesh/pkg/embedding/openai"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/plugin"
 )
 
 // This example demonstrates semantic caching in action using OpenAI embeddings.
@@ -39,7 +39,7 @@ func demoExactMatchCache() {
 	fmt.Println()
 
 	// Create exact-match cache
-	exactCache := plugins.NewCachePlugin(1000)
+	exactCache := plugin.NewCachePlugin(1000)
 	fmt.Printf("   ✓ Created: CachePlugin(maxSize=1000)\n")
 	fmt.Printf("   ✓ Stats: %+v\n", exactCache.GetStats())
 }

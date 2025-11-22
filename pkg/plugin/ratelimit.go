@@ -1,4 +1,4 @@
-package plugins
+package plugin
 
 import (
 	"context"
@@ -6,14 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
 // RateLimitPlugin limits the rate of model calls within a time window.
 // It uses a simple sliding window algorithm to track request counts.
 type RateLimitPlugin struct {
-	plugin.NoopPlugin
+	NoopPlugin
 
 	maxRequests int
 	window      time.Duration

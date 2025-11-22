@@ -1,6 +1,8 @@
-// Package plugins provides built-in plugin implementations for AgentMesh.
+// Package plugin provides the plugin system and built-in plugin implementations for AgentMesh.
 //
-// This package contains ready-to-use plugins for common cross-cutting concerns:
+// This package includes:
+//   - Plugin interfaces for extending graph and node behavior
+//   - Built-in plugin implementations for common cross-cutting concerns:
 //   - LoggingPlugin: Logs all lifecycle events for debugging and monitoring
 //   - CachePlugin: In-memory response caching with LRU eviction
 //   - SemanticCachePlugin: Semantic similarity-based caching
@@ -11,11 +13,11 @@
 // Example usage:
 //
 //	pm := callbacks.NewPluginManager()
-//	pm.Register(ctx, plugins.NewLoggingPlugin(log.Default(), "[Agent]"))
-//	pm.Register(ctx, plugins.NewCachePlugin(100))
+//	pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Agent]"))
+//	pm.Register(ctx, plugin.NewCachePlugin(100))
 //
 //	// Use with agents - callbacks automatically injected
 //	agent, _ := agent.NewReActAgent(model,
 //	    agent.WithTools(tools...),
 //	    agent.WithPluginManager(pm))
-package plugins
+package plugin
