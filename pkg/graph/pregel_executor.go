@@ -6,6 +6,7 @@ import (
 	"iter"
 	"runtime"
 	"slices"
+	"sort"
 	"sync"
 	"time"
 
@@ -460,9 +461,16 @@ type pregelGraphAdapter[I, O any] struct {
 	// Nodes read from this shared snapshot for BSP-correct state access
 	currentSuperstepView *state.ReadView
 	mu                   sync.RWMutex
+
+	// Track which nodes executed in previous superstep for trigger-based optimization
+	// Only nodes triggered by previously executed nodes will run in subsequent supersteps
+	executedNodes map[string]bool
 }
 
-// RootNodes returns nodes with no incoming edges.
+// RootNodes returns nodes that should execute in the current superstep.
+// Uses trigger-based optimization to avoid unnecessary node execution:
+// - First superstep: nodes directly connected from START
+// - Subsequent supersteps: nodes triggered by previously executed nodes
 func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
 	// If resuming from a checkpoint, return the resuming nodes as roots
 	if a.executor != nil && a.executor.metrics != nil {
@@ -473,17 +481,37 @@ func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
 		}
 	}
 
-	// Normal case: return actual root nodes (nodes with no incoming edges)
-	var roots []string
-	for _, nodeName := range a.compiled.topology.nodeNames {
-		if nodeName == StartNode || nodeName == EndNode {
-			continue
+	a.mu.RLock()
+	executedNodes := a.executedNodes
+	a.mu.RUnlock()
+
+	// First superstep: return nodes directly connected from START
+	if len(executedNodes) == 0 {
+		if outgoing := a.compiled.topology.outgoing[StartNode]; len(outgoing) > 0 {
+			return outgoing
 		}
-		if a.compiled.topology.incoming[nodeName] == 0 {
-			roots = append(roots, nodeName)
+		return []string{}
+	}
+
+	// Subsequent supersteps: return nodes triggered by previously executed nodes
+	// This optimization ensures only nodes with incoming data/signals will execute
+	triggered := make(map[string]bool)
+	for nodeName := range executedNodes {
+		// Find nodes that can be triggered by this node's execution
+		if targets := a.compiled.topology.triggerToNodes[nodeName]; len(targets) > 0 {
+			for _, target := range targets {
+				triggered[target] = true
+			}
 		}
 	}
-	return roots
+
+	// Convert to sorted slice for deterministic execution order
+	result := make([]string, 0, len(triggered))
+	for node := range triggered {
+		result = append(result, node)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // Outgoing returns outgoing edges for a node.
@@ -524,6 +552,12 @@ func (a *pregelGraphAdapter[I, O]) prepareSuperstep(ctx context.Context) error {
 	}
 
 	a.currentSuperstepView = view
+
+	// Clear executed nodes from previous superstep to prepare for tracking this superstep
+	// The nodes that execute in this superstep will be recorded and used to determine
+	// which nodes should run in the NEXT superstep (trigger-based optimization)
+	a.executedNodes = make(map[string]bool)
+
 	return nil
 }
 
@@ -1074,6 +1108,15 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	if n.executor != nil && n.executor.metrics != nil {
 		n.executor.metrics.AddCompleted(n.nodeName)
 	}
+
+	// Track node execution for trigger-based optimization
+	// Records which nodes executed so only their downstream targets run in next superstep
+	n.graphAdapter.mu.Lock()
+	if n.graphAdapter.executedNodes == nil {
+		n.graphAdapter.executedNodes = make(map[string]bool)
+	}
+	n.graphAdapter.executedNodes[n.nodeName] = true
+	n.graphAdapter.mu.Unlock()
 
 	// Apply updates immediately for routing decisions within the same node
 	// BSP semantics are maintained because other nodes use the superstep snapshot

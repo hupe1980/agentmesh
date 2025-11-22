@@ -13,6 +13,7 @@ type topology struct {
 	conditionalGate   map[string]bool            // Nodes behind conditional gates
 	conditionalByFrom map[int][]ConditionalEdges // Conditional edges grouped by source index
 	nodeNames         []string                   // Sorted node names
+	triggerToNodes    map[string][]string        // Nodes that can be triggered by each node's output
 }
 
 // computeTopology analyzes the graph structure and builds topology metadata.
@@ -31,7 +32,33 @@ func computeTopology(nodes map[string]Node, edges []Edge, conditionals []Conditi
 		topo.incoming[name] = 0
 	}
 
-	// Deduplicate edges
+	// Process regular edges
+	processRegularEdges(topo, edges)
+
+	// Process conditional edges
+	processConditionalEdges(topo, conditionals)
+
+	// Generate sorted node names for deterministic iteration
+	topo.nodeNames = make([]string, 0, len(nodes))
+	for name := range nodes {
+		topo.nodeNames = append(topo.nodeNames, name)
+	}
+	sort.Strings(topo.nodeNames)
+
+	// Compute triggerToNodes mapping (inverse of outgoing)
+	// This maps each node to the list of nodes that can be triggered by its execution
+	topo.triggerToNodes = make(map[string][]string)
+	for from, targets := range topo.outgoing {
+		if len(targets) > 0 {
+			topo.triggerToNodes[from] = targets
+		}
+	}
+
+	return topo
+}
+
+// processRegularEdges deduplicates and processes regular edges.
+func processRegularEdges(topo *topology, edges []Edge) {
 	type edgeKey struct {
 		from string
 		to   string
@@ -63,8 +90,10 @@ func computeTopology(nodes map[string]Node, edges []Edge, conditionals []Conditi
 			}
 		}
 	}
+}
 
-	// Process conditional edges
+// processConditionalEdges processes conditional routing edges.
+func processConditionalEdges(topo *topology, conditionals []ConditionalEdges) {
 	for i, cond := range conditionals {
 		if len(cond.Targets) == 0 {
 			continue
@@ -91,13 +120,4 @@ func computeTopology(nodes map[string]Node, edges []Edge, conditionals []Conditi
 			topo.conditionalGate[target] = true
 		}
 	}
-
-	// Generate sorted node names for deterministic iteration
-	topo.nodeNames = make([]string, 0, len(nodes))
-	for name := range nodes {
-		topo.nodeNames = append(topo.nodeNames, name)
-	}
-	sort.Strings(topo.nodeNames)
-
-	return topo
 }

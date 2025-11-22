@@ -173,5 +173,4 @@ go run main.go
 
 ## Related
 
-- See `_prompts/PREGEL.md` for design rationale (inspired by LangGraph)
 - See `pkg/state/managed_value_test.go` for comprehensive tests
