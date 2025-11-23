@@ -101,8 +101,12 @@ func TestMailboxSizeLimit(t *testing.T) {
 	})
 
 	t.Run("CombinerReducesMailboxPressure", func(t *testing.T) {
-		// Combiner merges messages, reducing mailbox usage
-		// Note: Combiner only works with unbounded mailboxes (maxSize=0)
+		// Combiner merges messages when mailbox reaches 75% capacity
+		// Use small mailbox (10) so that 100 messages triggers combining
+		var receivedMsgs int
+		var totalValue int
+		var mu sync.Mutex
+
 		graph := &testGraph{
 			roots: []string{"node1"},
 			nodes: map[string]*testNode{
@@ -119,13 +123,13 @@ func TestMailboxSizeLimit(t *testing.T) {
 				"node2": {
 					name: "node2",
 					compute: func(ctx *VertexContext[*testState, testMessage], incoming []Message[testMessage]) error {
-						// With combiner, should receive 1 merged message
-						if len(incoming) != 1 {
-							t.Errorf("Expected 1 combined message, got: %d", len(incoming))
+						// With combiner and small mailbox, should receive fewer messages than sent
+						mu.Lock()
+						receivedMsgs += len(incoming)
+						for _, msg := range incoming {
+							totalValue += msg.Data.Value
 						}
-						if len(incoming) > 0 && incoming[0].Data.Value != 100 {
-							t.Errorf("Expected combined value 100, got: %d", incoming[0].Data.Value)
-						}
+						mu.Unlock()
 						return nil
 					},
 				},
@@ -142,9 +146,9 @@ func TestMailboxSizeLimit(t *testing.T) {
 			}
 		}
 
-		// Combiner requires unbounded mailbox (maxSize=0)
+		// Use small mailbox (10) to trigger combining at 75% capacity (8 messages)
 		runtime := MustNewRuntime[*testState, testMessage](graph, nil,
-			WithMaxMailboxSize[*testState, testMessage](0),
+			WithMaxMailboxSize[*testState, testMessage](10),
 			WithCombiner[*testState, testMessage](combiner),
 		)
 
@@ -153,7 +157,20 @@ func TestMailboxSizeLimit(t *testing.T) {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		t.Log("✓ Combiner successfully reduced 100 messages to 1")
+		mu.Lock()
+		finalMsgs := receivedMsgs
+		finalValue := totalValue
+		mu.Unlock()
+
+		// Verify combining occurred (fewer messages than sent, but same total value)
+		if finalMsgs >= 100 {
+			t.Errorf("Expected combining to reduce message count below 100, got: %d", finalMsgs)
+		}
+		if finalValue != 100 {
+			t.Errorf("Expected total value to be preserved (100), got: %d", finalValue)
+		}
+
+		t.Logf("✓ Combiner successfully reduced 100 messages to %d (total value preserved: %d)", finalMsgs, finalValue)
 	})
 }
 

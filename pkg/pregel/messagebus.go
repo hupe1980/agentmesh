@@ -57,13 +57,13 @@ type MessageBus[M any] interface {
 //
 // Thread-safety: All methods are thread-safe using sharded locks (32 shards).
 // Backpressure: Send blocks when channel is full until space is available or context cancelled.
-// Memory bounds: Each vertex mailbox has a bounded channel (maxSize > 0) or unbounded buffer (maxSize = 0).
+// Memory bounds: Each vertex mailbox has a bounded channel with configurable capacity.
 //
-// ⚠️ DANGER ZONE: maxSize = 0 (unbounded mode)
-// Unbounded buffers can grow without limit, leading to memory exhaustion (OOM).
-// This mode provides no backpressure and should ONLY be used for trusted workloads
-// where message production rates are guaranteed to be bounded.
-// ALWAYS prefer maxSize > 0 for production deployments.
+// All mailboxes are bounded to prevent memory exhaustion. If maxSize <= 0 is provided,
+// DefaultMaxMailboxSize (10,000) is used automatically. This ensures:
+//   - Memory safety: No unbounded growth or OOM crashes
+//   - Backpressure: Producers are naturally throttled when consumers are slow
+//   - Predictable behavior: Resource usage is bounded and observable
 //
 // Combiner support: Merges messages for the same target if configured.
 //
@@ -81,32 +81,33 @@ type InMemoryMessageBus[M any] struct {
 type messageShard[M any] struct {
 	mu           sync.Mutex
 	mailbox      map[string]chan Message[M]
-	buffer       map[string][]Message[M]
 	nextFrontier map[string]struct{}
 }
 
 // NewInMemoryMessageBus creates an in-memory message bus with backpressure.
-// maxSize controls mailbox capacity per vertex:
-//   - maxSize > 0: Uses buffered channels, Send blocks when full (backpressure)
-//   - maxSize = 0: Uses unbounded buffer, Send never blocks
 //
-// ⚠️ WARNING: maxSize = 0 is DANGEROUS and should only be used for trusted workloads
-// where message production rates are known and bounded. Unbounded buffers can lead to:
-//   - Uncontrolled memory growth (potential OOM)
-//   - No backpressure to slow down message producers
-//   - Resource exhaustion in high-throughput scenarios
-//   - Difficult to debug memory issues
+// maxSize controls mailbox capacity per vertex. If maxSize <= 0, DefaultMaxMailboxSize
+// (10,000) is used automatically to ensure memory safety and backpressure.
 //
-// RECOMMENDED: Always use maxSize > 0 (e.g., 10000) for production workloads.
-// Only use maxSize = 0 for:
-//   - Trusted, well-tested workloads with known message bounds
-//   - Development/testing environments with monitoring
-//   - Scenarios where you have external rate limiting
+// All mailboxes are bounded to prevent unbounded memory growth and OOM crashes.
+// Send operations block when mailboxes are full, providing natural backpressure
+// that throttles message producers when consumers cannot keep up.
 //
-// combiner, if provided, merges messages for the same target.
+// Recommended values:
+//   - Small graphs (<100 nodes): 1,000-5,000 messages per vertex
+//   - Medium graphs (100-1000 nodes): 5,000-10,000 messages per vertex
+//   - Large graphs (>1000 nodes): 10,000-50,000 messages per vertex
+//
+// combiner, if provided, merges messages for the same target when channels
+// approach capacity, reducing memory pressure.
 //
 // Implementation: Uses DefaultShardCount shards to reduce lock contention.
 func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMessageBus[M] {
+	// Enforce bounded mailboxes for memory safety
+	if maxSize <= 0 {
+		maxSize = DefaultMaxMailboxSize
+	}
+
 	bus := &InMemoryMessageBus[M]{
 		maxSize:  maxSize,
 		combiner: combiner,
@@ -116,7 +117,6 @@ func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMe
 	for i := range bus.shards {
 		bus.shards[i] = messageShard[M]{
 			mailbox:      make(map[string]chan Message[M]),
-			buffer:       make(map[string][]Message[M]),
 			nextFrontier: make(map[string]struct{}),
 		}
 	}
@@ -132,8 +132,7 @@ func (bus *InMemoryMessageBus[M]) shardIndex(vertex string) int {
 }
 
 // Send delivers messages to their target vertices with backpressure.
-// For bounded mailboxes (maxSize > 0), blocks when full until space is available.
-// For unbounded mailboxes (maxSize = 0), never blocks.
+// Blocks when mailbox is full until space is available or context is cancelled.
 // Returns context error if context is cancelled during blocking send.
 func (bus *InMemoryMessageBus[M]) Send(ctx context.Context, messages []Message[M]) error {
 	if len(messages) == 0 {
@@ -164,10 +163,7 @@ func (bus *InMemoryMessageBus[M]) sendOne(ctx context.Context, msg Message[M]) e
 	// Route message to appropriate shard
 	shard := bus.getShardForVertex(msg.To)
 
-	// Deliver message using either unbounded or bounded strategy
-	if bus.maxSize == 0 {
-		return bus.sendToUnboundedMailbox(shard, msg)
-	}
+	// All mailboxes are bounded
 	return bus.sendToBoundedMailbox(ctx, shard, msg)
 }
 
@@ -187,30 +183,6 @@ func (bus *InMemoryMessageBus[M]) checkClosed() error {
 func (bus *InMemoryMessageBus[M]) getShardForVertex(vertex string) *messageShard[M] {
 	shardIdx := bus.shardIndex(vertex)
 	return &bus.shards[shardIdx]
-}
-
-// sendToUnboundedMailbox delivers a message to an unbounded buffer, applying combiner if configured.
-// ⚠️ WARNING: This method can cause unbounded memory growth. Only called when maxSize = 0.
-// See NewInMemoryMessageBus documentation for safety considerations.
-func (bus *InMemoryMessageBus[M]) sendToUnboundedMailbox(shard *messageShard[M], msg Message[M]) error {
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
-
-	// Mark vertex for next frontier
-	shard.nextFrontier[msg.To] = struct{}{}
-
-	// Try to combine with existing message if combiner is configured
-	if bus.combiner != nil {
-		if existing := shard.buffer[msg.To]; len(existing) > 0 {
-			combined := bus.combiner(existing[0], msg)
-			shard.buffer[msg.To] = []Message[M]{combined}
-			return nil
-		}
-	}
-
-	// Append to unbounded buffer
-	shard.buffer[msg.To] = append(shard.buffer[msg.To], msg)
-	return nil
 }
 
 // sendToBoundedMailbox delivers a message to a bounded channel with backpressure handling.
@@ -300,8 +272,7 @@ func (bus *InMemoryMessageBus[M]) blockingSend(
 }
 
 // Receive retrieves and removes all messages for the given vertex.
-// For unbounded mailboxes, returns buffered messages.
-// For bounded mailboxes, drains the channel.
+// Drains the mailbox channel and returns all pending messages.
 // Uses sharded locks for reduced contention.
 func (bus *InMemoryMessageBus[M]) Receive(vertex string) ([]Message[M], error) {
 	// Get shard for this vertex
@@ -311,23 +282,7 @@ func (bus *InMemoryMessageBus[M]) Receive(vertex string) ([]Message[M], error) {
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
-	// Handle unbounded mailboxes
-	if bus.maxSize == 0 {
-		msgs := shard.buffer[vertex]
-		if len(msgs) == 0 {
-			return nil, nil
-		}
-
-		// Remove from buffer
-		delete(shard.buffer, vertex)
-
-		// Return a copy to prevent external mutation
-		result := make([]Message[M], len(msgs))
-		copy(result, msgs)
-		return result, nil
-	}
-
-	// Handle bounded mailboxes - drain channel WITHOUT removing it
+	// Drain channel WITHOUT removing it
 	ch, exists := shard.mailbox[vertex]
 	if !exists {
 		return nil, nil
@@ -362,10 +317,7 @@ func (bus *InMemoryMessageBus[M]) Clear(vertex string) error {
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
 
-	// Clear unbounded buffer
-	delete(shard.buffer, vertex)
-
-	// For bounded channels, just drain them (don't close since sends may be in flight)
+	// Drain channel (don't close since sends may be in flight)
 	if ch, exists := shard.mailbox[vertex]; exists {
 		// Drain channel
 	drainLoop:
@@ -426,13 +378,12 @@ func (bus *InMemoryMessageBus[M]) Close() error {
 		shard := &bus.shards[i]
 		shard.mu.Lock()
 
-		// Close all bounded mailbox channels in this shard
+		// Close all mailbox channels in this shard
 		for _, ch := range shard.mailbox {
 			close(ch)
 		}
 
 		shard.mailbox = nil
-		shard.buffer = nil
 		shard.nextFrontier = nil
 		shard.mu.Unlock()
 	}
@@ -463,17 +414,7 @@ func (bus *InMemoryMessageBus[M]) Stats() MessageBusStats {
 		shard := &bus.shards[i]
 		shard.mu.Lock()
 
-		// Count unbounded buffer messages
-		for _, msgs := range shard.buffer {
-			count := len(msgs)
-			stats.TotalMessages += count
-			stats.VerticesWithMessages++
-			if count > stats.LargestMailbox {
-				stats.LargestMailbox = count
-			}
-		}
-
-		// Count bounded channel messages
+		// Count channel messages
 		for _, ch := range shard.mailbox {
 			count := len(ch)
 			stats.TotalMessages += count

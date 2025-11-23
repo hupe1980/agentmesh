@@ -101,25 +101,24 @@ Refactored three high-complexity functions in the AgentMesh codebase to improve 
 
 **Before**:
 - Lines: 76
-- Concerns Mixed: closed check, sharding, frontier marking, unbounded/bounded handling, combiner logic, backpressure
+- Concerns Mixed: closed check, sharding, frontier marking, bounded handling, combiner logic, backpressure
 
-**After**:
-- Main Function: 10 lines
-- Extracted Helpers: 9 functions
-- Max Cyclomatic Complexity: 2
+**After** (Updated - Unbounded mode removed):
+- Main Function: Simplified with bounded-only logic
+- All mailboxes are bounded (maxSize <= 0 defaults to DefaultMaxMailboxSize)
+- Removed unbounded buffer logic for memory safety
 
-**Extracted Functions**:
+**Current Functions**:
 1. `checkClosed()` - Validate message bus state
 2. `getShardForVertex(vertex)` - Route message to correct shard
-3. `sendToUnboundedMailbox(shard, msg)` - Handle unbounded delivery with optional combining
-4. `sendToBoundedMailbox(ctx, shard, msg)` - Handle bounded delivery with backpressure
-5. `getOrCreateChannel(shard, vertex)` - Channel lifecycle management
-6. `shouldCombine(ch)` - Determine if message combination should be attempted
-7. `tryCombineWithLastMessage(ctx, shard, ch, msg)` - Attempt message combination
-8. `blockingSend(ctx, ch, msg)` - Send with context cancellation support
+3. `sendToBoundedMailbox(ctx, shard, msg)` - Handle bounded delivery with backpressure
+4. `getOrCreateChannel(shard, vertex)` - Channel lifecycle management
+5. `shouldCombine(ch)` - Determine if message combination should be attempted
+6. `tryCombineWithLastMessage(ctx, shard, ch, msg)` - Attempt message combination
+7. `blockingSend(ctx, ch, msg)` - Send with context cancellation support
 
 **Benefits**:
-- Clear separation of delivery strategies (unbounded vs bounded)
+- Memory-safe by default (no unbounded growth)
 - Backpressure logic isolated and easier to test
 - Message combination logic extracted
 - Sharding concerns separated from delivery concerns

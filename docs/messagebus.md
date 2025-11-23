@@ -93,15 +93,15 @@ Single-process message delivery with bounded mailboxes and backpressure.
 - Zero external dependencies
 
 **Behavior:**
-- **Bounded mailboxes** (`maxSize > 0`): Send blocks when full, unblocks when space available
-- **Unbounded mailboxes** (`maxSize = 0`): Send never blocks, uses unlimited buffer (legacy mode)
+- **All mailboxes are bounded**: If `maxSize <= 0`, defaults to `DefaultMaxMailboxSize` (10000)
+- **Backpressure**: Send blocks when mailbox is full, unblocks when space available
 - **Context cancellation**: Returns error, guarantees no message corruption
 - **Message combiner**: Automatically merges messages for same target when channel ≥75% full
 
 **Configuration:**
 ```go
 bus := pregel.NewInMemoryMessageBus[MyMessage](
-    100,        // Max 100 messages per vertex (0 = unbounded)
+    100,        // Max 100 messages per vertex (0 or negative = defaults to 10000)
     combiner,   // Optional message combiner (nil = no combining)
 )
 ```
