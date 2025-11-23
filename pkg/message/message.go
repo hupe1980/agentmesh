@@ -136,11 +136,12 @@ func Stringify(m Message) string {
 // JSON strings from LLM generation through message processing to tool execution.
 //
 // This design eliminates the need to:
-//   1. Unmarshal JSON string to map (from LLM)
-//   2. Marshal map back to JSON string (to tool)
+//  1. Unmarshal JSON string to map (from LLM)
+//  2. Marshal map back to JSON string (to tool)
 //
 // Instead, arguments stay as JSON strings throughout:
-//   LLM → ToolCall.Arguments (string) → tool.Call.Arguments (string) → Tool
+//
+//	LLM → ToolCall.Arguments (string) → tool.Call.Arguments (string) → Tool
 //
 // Example:
 //

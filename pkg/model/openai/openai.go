@@ -283,9 +283,9 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			parts = message.Parts{message.NewTextPart(text)}
 		}
 
-	aiMessage := message.NewAIMessage(parts)
+		aiMessage := message.NewAIMessage(parts)
 
-	if len(choice.Message.ToolCalls) > 0 {
+		if len(choice.Message.ToolCalls) > 0 {
 			toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
 			for idx := range choice.Message.ToolCalls {
 				if choice.Message.ToolCalls[idx].Type != "function" {
