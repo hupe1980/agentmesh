@@ -7,23 +7,35 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Builder provides a fluent API for constructing graphs.
+// Builder provides a fluent API for constructing graphs using the Command pattern.
 //
-// Use NewBuilder to create graphs with inline functions:
+// Use NewBuilder to create graphs with Command nodes:
 //
 //	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
-//	builder.AddNodeFunc("process", processFunc)
-//	builder.AddEdge(graph.StartNode, "process")
-//	builder.AddEdge("process", graph.EndNode)
+//	targets := graph.NewTargetSet("tool", graph.EndNode)
+//	builder.AddCommandNode("model", targets,
+//	    func(ctx, view) (*graph.Command, error) {
+//	        // Process and return Command with routing
+//	        if needsTool {
+//	            return targets.Goto(targets.Get("tool"), updates), nil
+//	        }
+//	        return targets.Goto(targets.Get(graph.EndNode), updates), nil
+//	    })
+//	compiled, _ := builder.Compile()
+//
+// Or with static routing sugar for simple cases:
+//
+//	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
+//	targets := graph.NewTargetSet("next")
+//	builder.AddStaticNode("process", targets, processFunc)
 //	compiled, _ := builder.Compile()
 //
 // Or with custom node types:
 //
 //	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
-//	customNode := &MyNode{name: "custom"}
+//	targets := graph.NewTargetSet(graph.EndNode)
+//	customNode := &BaseCommandNode{NodeName: "custom", DeclaredTargets: targets, Fn: myFunc}
 //	builder.AddNode(customNode)
-//	builder.AddEdge(graph.StartNode, "custom")
-//	builder.AddEdge("custom", graph.EndNode)
 //	compiled, _ := builder.Compile()
 //
 // Type parameters:
@@ -126,7 +138,7 @@ func WithInterruptAfter[I, O any](nodes ...string) BuilderOption[I, O] {
 	}
 }
 
-// AddNode adds a node to the graph.
+// AddNode adds a custom node implementation to the graph.
 // Any errors will be caught during graph compilation in Compile().
 //
 // Example:
@@ -138,70 +150,148 @@ func (b *Builder[I, O]) AddNode(node Node) *Builder[I, O] {
 	return b
 }
 
-// AddNodeFunc adds a function-based node to the graph with the given name.
-// Any errors will be caught during graph compilation in Compile().
+// AddCommandNode is THE primary way to add nodes to the graph.
+// All nodes return Command - this is the unified execution model.
+//
+// Parameters:
+//   - name: Node identifier
+//   - targetSet: TargetSet defining ALL POSSIBLE routing destinations
+//   - fn: CommandFunc that returns Command with updates + routing
+//
+// The targets are declarative - node can route to any subset at runtime,
+// but must choose from this declared set. Enables:
+//  1. Build-time validation (all targets must exist)
+//  2. Mermaid visualization (shows all possible paths)
+//  3. Type-safe compile-time routing
 //
 // Example:
 //
-//	builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-//	    // Process logic here
-//	    return state.NoUpdate(), nil
+//	targets := graph.NewTargetSet("tool", graph.EndNode)
+//	builder.AddCommandNode("model", targets,
+//	    func(ctx, view) (*graph.Command, error) {
+//	        messages := view.Get("messages")
+//	        response := model.Generate(ctx, messages)
+//
+//	        if hasToolCalls(response) {
+//	            return targets.Goto(targets.Get("tool"),
+//	                state.Updates{"messages": append(messages, response)},
+//	            ), nil
+//	        }
+//
+//	        return targets.Goto(targets.Get(graph.EndNode),
+//	            state.Updates{"messages": append(messages, response)},
+//	        ), nil
+//	    },
+//	)
+func (b *Builder[I, O]) AddCommandNode(name string, targetSet *TargetSet, fn CommandFunc) *Builder[I, O] {
+	node := &BaseCommandNode{
+		NodeName:        name,
+		Fn:              fn,
+		DeclaredTargets: targetSet,
+	}
+	_ = b.graph.AddNode(node)
+	return b
+}
+
+// AddCommandNodeWithRetry adds a Command node with automatic retry on failures.
+//
+// Example:
+//
+//	targets := graph.NewTargetSet("a", "b", graph.EndNode)
+//	builder.AddCommandNodeWithRetry("router", targets,
+//	    func(ctx, view) (*graph.Command, error) {
+//	        decision, err := unreliableService.Decide()
+//	        if err != nil {
+//	            return nil, err // Will be retried
+//	        }
+//	        return targets.Goto(targets.Get(decision), updates), nil
+//	    },
+//	    graph.NewRetryPolicy().WithMaxAttempts(5).Build(),
+//	)
+func (b *Builder[I, O]) AddCommandNodeWithRetry(name string, targetSet *TargetSet, fn CommandFunc, policy *RetryPolicy) *Builder[I, O] {
+	node := &BaseCommandNode{
+		NodeName:        name,
+		Fn:              fn,
+		DeclaredTargets: targetSet,
+		Retry:           policy,
+	}
+	_ = b.graph.AddNode(node)
+	return b
+}
+
+// SetEntryPoint declares which node(s) should execute first.
+// The entry point nodes will be automatically connected from the start node.
+//
+// Example:
+//
+//	builder.SetEntryPoint("input_handler")
+//	// or multiple entry points for parallel start
+//	builder.SetEntryPoint("worker1", "worker2", "worker3")
+func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
+	// Add edges from START to entry point nodes
+	for _, target := range targets {
+		_ = b.graph.SetEntryPoint(target) // Multiple calls add multiple edges
+	}
+	return b
+}
+
+// AddStaticNode is syntactic sugar for simple nodes with static routing.
+// For nodes with a single target: compute → go to first target → done.
+//
+// Example:
+//
+//	targets := graph.NewTargetSet("next")
+//	builder.AddStaticNode("process", targets, func(ctx, view) (state.Updates, error) {
+//	    result := process(view.Get("input"))
+//	    return state.Updates{"output": result}, nil
 //	})
-func (b *Builder[I, O]) AddNodeFunc(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error)) *Builder[I, O] {
-	_ = b.graph.AddNode(NewBaseNode(name, runFunc))
-	return b
+//
+// Equivalent to:
+//
+//	builder.AddCommandNode("process", targets, func(ctx, view) (*Command, error) {
+//	    result := process(view.Get("input"))
+//	    return targets.GotoFirst(state.Updates{"output": result}), nil
+//	})
+func (b *Builder[I, O]) AddStaticNode(name string, targetSet *TargetSet, compute func(context.Context, *state.ReadView) (state.Updates, error)) *Builder[I, O] {
+	// Wrap simple compute function as CommandFunc
+	fn := func(ctx context.Context, view *state.ReadView) (*Command, error) {
+		updates, err := compute(ctx, view)
+		if err != nil {
+			return nil, err
+		}
+		return targetSet.GotoFirst(updates), nil
+	}
+
+	return b.AddCommandNode(name, targetSet, fn)
 }
 
-// AddNodeFuncWithRetry adds a function-based node to the graph with a retry policy.
-// This is a convenience method for adding a node with automatic retry behavior.
-// Any errors will be caught during graph compilation in Compile().
+// AddStaticNodeWithRetry adds a static node with automatic retry on failures.
+// For simple nodes with a single target that need retry logic.
 //
 // Example:
 //
-//	builder.AddNodeFuncWithRetry("api_call", apiFunc,
-//	    graph.NewRetryPolicy().
-//	        WithMaxAttempts(5).
-//	        WithExponentialBackoff(time.Second, 2.0).
-//	        Build())
-func (b *Builder[I, O]) AddNodeFuncWithRetry(name string, runFunc func(ctx context.Context, view *state.ReadView) (state.Updates, error), retryPolicy *RetryPolicy) *Builder[I, O] {
-	_ = b.graph.AddNode(NewBaseNodeWithRetry(name, runFunc, retryPolicy))
-	return b
-}
-
-// SetNodeRetryPolicy sets or updates the retry policy for an existing node.
-// Returns an error if the node doesn't exist or doesn't support retry.
-//
-// Example:
-//
-//	builder.AddNodeFunc("process", processFunc)
-//	builder.SetNodeRetryPolicy("process",
-//	    graph.NewRetryPolicy().WithMaxAttempts(3).Build())
-func (b *Builder[I, O]) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
-	node, exists := b.graph.Nodes[name]
-	if !exists {
-		return fmt.Errorf("node not found: %s", name)
+//	targets := graph.NewTargetSet("next")
+//	builder.AddStaticNodeWithRetry("api_call", targets,
+//	    func(ctx, view) (state.Updates, error) {
+//	        result, err := unreliableAPI.Call()
+//	        if err != nil {
+//	            return nil, err // Will be retried
+//	        }
+//	        return state.Updates{"result": result}, nil
+//	    },
+//	    graph.NewRetryPolicy().WithMaxAttempts(3).Build(),
+//	)
+func (b *Builder[I, O]) AddStaticNodeWithRetry(name string, targetSet *TargetSet, compute func(context.Context, *state.ReadView) (state.Updates, error), policy *RetryPolicy) *Builder[I, O] {
+	// Wrap simple compute function as CommandFunc
+	fn := func(ctx context.Context, view *state.ReadView) (*Command, error) {
+		updates, err := compute(ctx, view)
+		if err != nil {
+			return nil, err
+		}
+		return targetSet.GotoFirst(updates), nil
 	}
 
-	// Only BaseNode supports setting retry policy after creation
-	baseNode, ok := node.(*BaseNode)
-	if !ok {
-		return fmt.Errorf("node %s does not support setting retry policy", name)
-	}
-
-	baseNode.retryPolicy = retryPolicy
-	return nil
-}
-
-// AddEdge adds a directed edge between two nodes.
-func (b *Builder[I, O]) AddEdge(from, to string) *Builder[I, O] {
-	b.graph.AddEdge(from, to)
-	return b
-}
-
-// AddConditionalEdges adds conditional routing based on runtime state.
-func (b *Builder[I, O]) AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) *Builder[I, O] {
-	b.graph.AddConditionalEdges(from, condition, targets)
-	return b
+	return b.AddCommandNodeWithRetry(name, targetSet, fn, policy)
 }
 
 // Graph returns the underlying graph.

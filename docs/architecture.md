@@ -279,17 +279,30 @@ builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView)
     }, nil
 })
 
-// Add static edge from writer to evaluator
-builder.AddEdge("writer", "evaluator")
+// Writer node routes to evaluator
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "writer",
+    DeclaredTargets: []string{"evaluator"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        draft := generateDraft()
+        return graph.Goto(map[string]any{"draft": draft}, "evaluator"), nil
+    },
+})
 
-// Use conditional edges to create cycle - routes based on state
-builder.AddConditionalEdges("evaluator", func(ctx context.Context, view *state.ReadView) []string {
-    done := state.GetFromView(view, DoneKey)
-    if done {
-        return []string{"END"}
-    }
-    return []string{"writer"}  // Creates a cycle!
-}, []string{"END", "writer"})
+// Evaluator uses commands to create cycle - routes based on state
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "evaluator",
+    DeclaredTargets: []string{graph.EndNode, "writer"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        draft := state.GetFromView(view, DraftKey)
+        if isGoodEnough(draft) {
+            return graph.End(map[string]any{"done": true}), nil
+        }
+        // Loop back to writer - creates a cycle!
+        updates := map[string]any{"feedback": "improve clarity", "done": false}
+        return graph.Goto(updates, "writer"), nil
+    },
+})
 ```
 
 This creates a loop where the writer improves the draft based on evaluator feedback, executing over multiple supersteps until quality is acceptable.
@@ -299,21 +312,27 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 
 builder := graph.NewBuilder()
 
-// Nodes execute in parallel when possible
-builder.AddNodeFunc("fetch_data", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-    // Fetch from API...
-    return map[string]any{"data": result}, nil
+// Nodes with Command-based routing
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "fetch_data",
+    DeclaredTargets: []string{"process"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // Fetch from API...
+        return graph.Goto(map[string]any{"data": result}, "process"), nil
+    },
 })
 
-builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-    data := view.Get("data")
-    // Process...
-    return map[string]any{"processed": true}, nil
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "process",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        data := state.GetFromView(view, DataKey)
+        // Process...
+        return graph.End(map[string]any{"processed": true}), nil
+    },
 })
 
-builder.AddEdge("START", "fetch_data")
-builder.AddEdge("fetch_data", "process")
-builder.AddEdge("process", "END")
+g.SetEntryPoint("fetch_data")
 
 compiled, _ := builder.Compile()
 ```
@@ -514,15 +533,22 @@ builder.AddNodeFunc("classifier", func(ctx context.Context, view *state.ReadView
     return map[string]any{"category": category}, nil
 })
 
-// Use conditional edge function to route based on state
-builder.AddConditionalEdges("classifier", func(ctx context.Context, view *state.ReadView) []string {
-    category := state.GetFromView(view, CategoryKey)
-    // Return different paths based on runtime data
-    if category == "urgent" {
-        return []string{"urgent_handler"}
-    }
-    return []string{"standard_handler"}
-}, []string{"urgent_handler", "standard_handler"})
+// Classifier node uses Commands to route based on state
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "classifier",
+    DeclaredTargets: []string{"urgent_handler", "standard_handler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        messages := state.GetFromView(view, agent.MessagesKey)
+        category := analyzeInput(messages)
+        updates := map[string]any{"category": category}
+        
+        // Return different paths based on runtime data
+        if category == "urgent" {
+            return graph.Goto(updates, "urgent_handler"), nil
+        }
+        return graph.Goto(updates, "standard_handler"), nil
+    },
+})
 ```
 
 **Gate Mechanism**:
@@ -1003,34 +1029,44 @@ The `graph.Builder` provides a fluent API for constructing agent workflows:
 ### Basic structure
 
 ```go
-builder := graph.NewBuilder()
+stateManager := state.NewManager()
+g, _ := graph.NewGraph(stateManager)
 
-// Add nodes (computation units)
-builder.AddNodeFunc("agent", agentFunction)
+// Add nodes with Command-based routing
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "agent",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn:              agentFunction,
+})
 
-// Add edges (define execution order)
-builder.AddEdge("START", "agent")
-builder.AddEdge("agent", "END")
+// Set entry point
+g.SetEntryPoint("agent")
 
 // Compile into executable graph
-compiled, err := builder.Compile()
+compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 ```
 
 ### Conditional routing
 
-Routes are determined dynamically based on node outputs:
+Routes are determined dynamically using commands:
 
 ```go
-builder.AddConditionalEdges("classifier", func(result *graph.NodeResult) []string {
-    category := result.Updates["category"].(string)
-    switch category {
-    case "urgent":
-        return []string{"urgent_handler"}
-    case "research":
-        return []string{"researcher"}
-    default:
-        return []string{"default_handler"}
-    }
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "classifier",
+    DeclaredTargets: []string{"urgent_handler", "researcher", "default_handler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        category := state.GetFromView(view, CategoryKey)
+        var nextNode string
+        switch category {
+        case "urgent":
+            nextNode = "urgent_handler"
+        case "research":
+            nextNode = "researcher"
+        default:
+            nextNode = "default_handler"
+        }
+        return graph.Goto(nil, nextNode), nil
+    },
 })
 ```
 

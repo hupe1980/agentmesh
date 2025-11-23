@@ -28,21 +28,32 @@ func createTestGraph() (*Graph, error) {
 	}
 
 	// Add nodes
-	g.AddNode(NewBaseNode("start_node", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
-	g.AddNode(NewBaseNode("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
-	g.AddNode(NewBaseNode("end_node", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "start_node",
+		DeclaredTargets: NewTargetSet("process"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("process"), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "process",
+		DeclaredTargets: NewTargetSet("end_node"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("end_node"), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "end_node",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
 
-	// Add edges
-	g.AddEdge(StartNode, "start_node")
-	g.AddEdge("start_node", "process")
-	g.AddEdge("process", "end_node")
-	g.AddEdge("end_node", EndNode)
+	// Set entry point (edges defined via DeclaredTargets)
+	if err := g.SetEntryPoint("start_node"); err != nil {
+		return nil, err
+	}
 
 	return g, nil
 }
@@ -72,8 +83,6 @@ func TestGraph_GetNodeInfo(t *testing.T) {
 		assert.Equal(t, "standard", info.Type)
 		assert.Equal(t, 1, info.IncomingEdges)
 		assert.Equal(t, 1, info.OutgoingEdges)
-		assert.False(t, info.IsConditional)
-		assert.False(t, info.IsConditionalGate)
 		assert.False(t, info.HasRetryPolicy)
 	})
 
@@ -89,9 +98,14 @@ func TestExportToMermaid_ComplexFlowWithBranches(t *testing.T) {
 	g, _ := NewGraph(mgr)
 
 	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
-	g.AddNode(NewBaseNodeWithRetry("retryable", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}, retryPolicy))
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "retryable",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+		Retry: retryPolicy,
+	})
 
 	info, err := g.GetNodeInfo("retryable")
 	require.NoError(t, err)
@@ -120,48 +134,66 @@ func TestGraph_GetEdges(t *testing.T) {
 
 	edges := g.GetEdges()
 
+	// Should have 1 direct edge (from SetEntryPoint) + 3 command edges (all nodes have DeclaredTargets)
 	assert.Len(t, edges, 4)
 
-	// Check that all edges are direct (no conditionals)
+	// Count edge types
+	directEdges := 0
+	commandEdges := 0
 	for _, edge := range edges {
-		assert.Equal(t, "direct", edge.Type)
+		if edge.Type == "direct" {
+			directEdges++
+		}
+		if edge.Type == "command" {
+			commandEdges++
+		}
 	}
+	assert.Equal(t, 1, directEdges, "should have 1 direct edge from SetEntryPoint")
+	assert.Equal(t, 3, commandEdges, "should have 3 command edges (start_node, process, end_node)")
 }
 
 func TestGraph_GetEdges_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(NewBaseNode("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
-	g.AddNode(NewBaseNode("option_a", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
-	g.AddNode(NewBaseNode("option_b", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return nil, nil
-	}))
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "router",
+		DeclaredTargets: NewTargetSet("option_a", "option_b"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("option_a"), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "option_a",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "option_b",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
 
-	g.AddEdge(StartNode, "router")
-	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
-		return []string{"option_a"}
-	}, []string{"option_a", "option_b"})
+	if err := g.SetEntryPoint("router"); err != nil {
+		t.Fatal(err)
+	}
 
 	edges := g.GetEdges()
 
-	// Should have 1 direct edge + 1 conditional edge
-	assert.Len(t, edges, 2)
+	// Should have 1 entry edge + 3 command edges (router, option_a, option_b)
+	assert.Len(t, edges, 4)
 
-	conditionalEdges := 0
+	commandEdges := 0
 	for _, edge := range edges {
-		if edge.Type == "conditional" {
-			conditionalEdges++
-			assert.Equal(t, "router", edge.From)
-			assert.Contains(t, edge.ConditionalTargets, "option_a")
-			assert.Contains(t, edge.ConditionalTargets, "option_b")
+		if edge.Type == "command" {
+			commandEdges++
 		}
 	}
-	assert.Equal(t, 1, conditionalEdges)
+	assert.Equal(t, 3, commandEdges, "should have Command edges for router, option_a, and option_b")
 }
 
 func TestGraph_GetTopology(t *testing.T) {
@@ -172,10 +204,12 @@ func TestGraph_GetTopology(t *testing.T) {
 	require.NotNil(t, topo)
 
 	assert.Len(t, topo.Nodes, 3)
+	// Should have 1 direct edge (from SetEntryPoint) + 3 command edges (all nodes have DeclaredTargets)
 	assert.Len(t, topo.Edges, 4)
 	assert.Equal(t, []string{"start_node"}, topo.EntryPoints)
 	assert.Equal(t, []string{"end_node"}, topo.ExitPoints)
-	assert.Empty(t, topo.ConditionalNodes)
+	// All nodes have Command routing, so they're in CommandNodes
+	assert.Len(t, topo.CommandNodes, 3, "all nodes use Command pattern")
 	assert.Empty(t, topo.IsolatedNodes)
 	assert.Greater(t, topo.MaxDepth, 0)
 	assert.Equal(t, 1, topo.TotalPaths)
@@ -185,20 +219,36 @@ func TestGraph_GetTopology_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(NewBaseNode("router", nil))
-	g.AddNode(NewBaseNode("high_priority", nil))
-	g.AddNode(NewBaseNode("normal", nil))
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "router",
+		DeclaredTargets: NewTargetSet("high_priority", "normal"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("high_priority"), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "high_priority",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "normal",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
 
-	g.AddEdge(StartNode, "router")
-	g.AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
-		return []string{"high_priority"}
-	}, []string{"high_priority", "normal"})
-	g.AddEdge("high_priority", EndNode)
-	g.AddEdge("normal", EndNode)
+	if err := g.SetEntryPoint("router"); err != nil {
+		t.Fatal(err)
+	}
 
 	topo := g.GetTopology()
 
-	assert.Contains(t, topo.ConditionalNodes, "router")
+	// In Command pattern, all nodes with DeclaredTargets are command nodes
+	assert.Contains(t, topo.CommandNodes, "router")
 	assert.Greater(t, topo.TotalPaths, 1)
 }
 
@@ -211,7 +261,6 @@ func TestGraph_GetMetrics(t *testing.T) {
 
 	assert.Equal(t, 3, metrics.TotalNodes)
 	assert.Equal(t, 4, metrics.TotalEdges)
-	assert.Equal(t, 0, metrics.ConditionalEdges)
 	assert.Greater(t, metrics.AverageFanOut, 0.0)
 	assert.Greater(t, metrics.AverageFanIn, 0.0)
 	assert.Contains(t, metrics.NodesByType, "standard")
@@ -262,4 +311,158 @@ func TestGraph_CalculateDepth(t *testing.T) {
 	assert.Greater(t, depthStartNode, 0)
 	assert.Greater(t, depthProcess, depthStartNode)
 	assert.Greater(t, depthEndNode, depthProcess)
+}
+
+func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
+	// Test that MermaidFlowchart doesn't generate duplicate edges
+	// This was a bug where edges were added twice in the loop
+	mgr := newTestManager()
+	g, err := NewGraph(mgr)
+	require.NoError(t, err)
+
+	// Create a graph with multiple nodes and branches
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "router",
+		DeclaredTargets: NewTargetSet("handler_a", "handler_b"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("handler_a"), nil
+		},
+	})
+
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "handler_a",
+		DeclaredTargets: NewTargetSet("aggregator"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("aggregator"), nil
+		},
+	})
+
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "handler_b",
+		DeclaredTargets: NewTargetSet("aggregator"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return GotoOne("aggregator"), nil
+		},
+	})
+
+	g.AddNode(&BaseCommandNode{
+		NodeName:        "aggregator",
+		DeclaredTargets: NewTargetSet(EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+			return End(nil), nil
+		},
+	})
+
+	g.SetEntryPoint("router")
+
+	// Compile the graph
+	executor := NewMessagePregelExecutor()
+	compiled, err := Compile(g, executor)
+	require.NoError(t, err)
+
+	// Generate Mermaid flowchart
+	flowchart := compiled.MermaidFlowchart("TD")
+
+	// Split into lines and count unique edges
+	lines := make(map[string]int)
+	for _, line := range splitLines(flowchart) {
+		trimmed := trimSpace(line)
+		if containsEdgeArrow(trimmed) {
+			lines[trimmed]++
+		}
+	}
+
+	// Check that each edge appears exactly once
+	for line, count := range lines {
+		assert.Equal(t, 1, count, "Edge should appear exactly once: %s", line)
+	}
+
+	// Verify expected edges are present
+	assert.Contains(t, flowchart, "__start__ --> router")
+	assert.Contains(t, flowchart, "router -.-> handler_a")
+	assert.Contains(t, flowchart, "router -.-> handler_b")
+	assert.Contains(t, flowchart, "handler_a -.-> aggregator")
+	assert.Contains(t, flowchart, "handler_b -.-> aggregator")
+	assert.Contains(t, flowchart, "aggregator -.-> __end__")
+
+	// Count occurrences of each edge to ensure no duplicates
+	assert.Equal(t, 1, countOccurrences(flowchart, "__start__ --> router"))
+	assert.Equal(t, 1, countOccurrences(flowchart, "router -.-> handler_a"))
+	assert.Equal(t, 1, countOccurrences(flowchart, "router -.-> handler_b"))
+	assert.Equal(t, 1, countOccurrences(flowchart, "handler_a -.-> aggregator"))
+	assert.Equal(t, 1, countOccurrences(flowchart, "handler_b -.-> aggregator"))
+	assert.Equal(t, 1, countOccurrences(flowchart, "aggregator -.-> __end__"))
+}
+
+// Helper functions for the test
+func splitLines(s string) []string {
+	lines := []string{}
+	current := ""
+	for _, ch := range s {
+		if ch == '\n' {
+			lines = append(lines, current)
+			current = ""
+		} else {
+			current += string(ch)
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func trimSpace(s string) string {
+	// Simple trim implementation
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}
+
+func containsEdgeArrow(s string) bool {
+	return contains(s, "-->") || contains(s, "-.->")
+}
+
+func contains(s, substr string) bool {
+	if len(substr) > len(s) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func countOccurrences(s, substr string) int {
+	count := 0
+	pos := 0
+	for {
+		idx := findSubstring(s[pos:], substr)
+		if idx == -1 {
+			break
+		}
+		count++
+		pos += idx + len(substr)
+	}
+	return count
+}
+
+func findSubstring(s, substr string) int {
+	if len(substr) > len(s) {
+		return -1
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }

@@ -1,13 +1,13 @@
 graph TD
-    aggregator[aggregator]
-    high_priority_handler[high_priority_handler]
     input_validator[input_validator]
-    normal_handler[normal_handler]
     router{router}
+    high_priority_handler[high_priority_handler]
+    normal_handler[normal_handler]
+    aggregator[aggregator]
     __start__ --> input_validator
-    input_validator --> router
-    high_priority_handler --> aggregator
-    normal_handler --> aggregator
-    aggregator --> __end__
+    input_validator -.-> router
     router -.-> high_priority_handler
     router -.-> normal_handler
+    high_priority_handler -.-> aggregator
+    normal_handler -.-> aggregator
+    aggregator -.-> __end__

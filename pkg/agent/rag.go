@@ -41,8 +41,8 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 var DocumentsKey = state.NewKey[[]string]("documents", nil)
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (state.Updates, error) {
-	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.Command, error) {
+	return func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 		messages := GetMessages(view)
 		if len(messages) == 0 {
 			return nil, fmt.Errorf("no query messages")
@@ -61,27 +61,40 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 		builder := state.NewUpdateBuilder()
 		state.SetUpdate(builder, DocumentsKey, extractDocumentContent(docs))
 
-		return builder.Build()
+		updates, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+
+		return graph.Goto("generate", updates), nil
 	}
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (state.Updates, error) {
-	return func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.Command, error) {
+	return func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 		messages := GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)
+		var updates state.Updates
+		var err error
+
 		if len(docs) == 0 {
 			// No documents found, generate without context
-			return generateWithModel(ctx, mdl, messages, "")
+			updates, err = generateWithModel(ctx, mdl, messages, "")
+		} else {
+			// Format context from documents
+			contextPrompt := config.promptTemplate.MustRender(map[string]any{
+				"Documents": docs,
+			})
+			updates, err = generateWithModel(ctx, mdl, messages, contextPrompt)
 		}
 
-		// Format context from documents
-		contextPrompt := config.promptTemplate.MustRender(map[string]any{
-			"Documents": docs,
-		})
+		if err != nil {
+			return nil, err
+		}
 
-		return generateWithModel(ctx, mdl, messages, contextPrompt)
+		return graph.End(updates), nil
 	}
 }
 
@@ -126,18 +139,26 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		return nil, fmt.Errorf("failed to create graph: %w", err)
 	}
 
-	if err := g.AddNode(graph.NewBaseNode("retrieve", createRetrieveNode(retriever))); err != nil {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "retrieve",
+		Fn:              createRetrieveNode(retriever),
+		DeclaredTargets: graph.NewTargetSet("generate"),
+	}); err != nil {
 		return nil, fmt.Errorf("failed to add retrieve node: %w", err)
 	}
 
-	if err := g.AddNode(graph.NewBaseNode("generate", createGenerateNode(mdl, config))); err != nil {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "generate",
+		Fn:              createGenerateNode(mdl, config),
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+	}); err != nil {
 		return nil, fmt.Errorf("failed to add generate node: %w", err)
 	}
 
-	// Chain: retrieve → generate
-	g.AddEdge(graph.StartNode, "retrieve")
-	g.AddEdge("retrieve", "generate")
-	g.AddEdge("generate", graph.EndNode)
+	// Entry point - Command pattern handles routing from retrieve → generate → END
+	if err := g.SetEntryPoint("retrieve"); err != nil {
+		return nil, fmt.Errorf("rag agent: failed to set entry point: %w", err)
+	}
 
 	// Compile the graph
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())

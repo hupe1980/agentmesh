@@ -137,10 +137,9 @@ Tool errors are returned to the agent for recovery:
 Combine multiple agents into larger workflows using graph:
 
 	builder := graph.NewBuilder()
-	builder.AddNodeFunc("classifier", classifierAgent)
-	builder.AddNodeFunc("researcher", researchAgent)
-	builder.AddNodeFunc("writer", writerAgent)
-	builder.AddConditionalEdges("classifier", routeByCategory)
+	builder.AddCommandNode("classifier", graph.NewTargetSet("researcher", "writer"), classifierAgent)
+	builder.AddStaticNode("researcher", graph.NewTargetSet("writer"), researchAgent)
+	builder.AddStaticNode("writer", graph.NewTargetSet(graph.EndNode), writerAgent)
 	// ...
 
 # Supervisor Pattern

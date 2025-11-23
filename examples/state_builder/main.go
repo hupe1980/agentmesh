@@ -36,19 +36,24 @@ func main() {
 		panic(err)
 	}
 
-	gph.AddNode(graph.NewBaseNode("init",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        "init",
+		DeclaredTargets: graph.NewTargetSet("process"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("[init] Initializing...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, phaseKey, "processing")
 			graphstate.SetUpdate(builder, attemptsKey, 1)
 			graphstate.AppendUpdate(builder, actionLogKey, "Initialized")
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.Goto("process", updates), nil
 		},
-	))
+	})
 
-	gph.AddNode(graph.NewBaseNode("process",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        "process",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("[process] Processing...")
 
 			// Read current attempts count
@@ -59,13 +64,14 @@ func main() {
 			graphstate.SetUpdate(builder, validatedKey, true)
 			graphstate.AppendUpdate(builder, actionLogKey, "Processed")
 			graphstate.SetUpdate(builder, taskResultsKey, map[string]any{"process": "success"})
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
 		},
-	))
+	})
 
-	gph.AddEdge(graph.StartNode, "init")
-	gph.AddEdge("init", "process")
-	gph.AddEdge("process", graph.EndNode)
+	if err := gph.SetEntryPoint("init"); err != nil {
+		panic(err)
+	}
 
 	compiled, _ := graph.Compile(gph, graph.NewMessagePregelExecutor())
 	ctx := context.Background()

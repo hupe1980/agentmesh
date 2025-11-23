@@ -7,41 +7,40 @@ import (
 
 // NodeInfo contains metadata about a node in the graph.
 type NodeInfo struct {
-	Name              string `json:"name"`
-	Type              string `json:"type"` // "standard", "start", "end"
-	IncomingEdges     int    `json:"incoming_edges"`
-	OutgoingEdges     int    `json:"outgoing_edges"`
-	IsConditional     bool   `json:"is_conditional"`
-	IsConditionalGate bool   `json:"is_conditional_gate"`
-	HasRetryPolicy    bool   `json:"has_retry_policy"`
-	RetryMaxAttempts  int    `json:"retry_max_attempts,omitempty"`
+	Name              string   `json:"name"`
+	Type              string   `json:"type"` // "standard", "start", "end"
+	IncomingEdges     int      `json:"incoming_edges"`
+	OutgoingEdges     int      `json:"outgoing_edges"`
+	HasRetryPolicy    bool     `json:"has_retry_policy"`
+	RetryMaxAttempts  int      `json:"retry_max_attempts,omitempty"`
+	DeclaredTargets   []string `json:"declared_targets,omitempty"`    // Command pattern: possible routing targets
+	HasCommandRouting bool     `json:"has_command_routing,omitempty"` // True if node uses Command pattern
 }
 
 // EdgeInfo contains metadata about an edge in the graph.
 type EdgeInfo struct {
-	From               string   `json:"from"`
-	To                 string   `json:"to"`
-	Type               string   `json:"type"` // "direct", "conditional"
-	ConditionalTargets []string `json:"conditional_targets,omitempty"`
+	From           string   `json:"from"`
+	To             string   `json:"to"`
+	Type           string   `json:"type"`                      // "direct", "command"
+	CommandTargets []string `json:"command_targets,omitempty"` // Command pattern: declared routing targets
 }
 
 // Topology provides a complete view of the graph structure.
 type Topology struct {
-	Nodes            []NodeInfo `json:"nodes"`
-	Edges            []EdgeInfo `json:"edges"`
-	EntryPoints      []string   `json:"entry_points"`
-	ExitPoints       []string   `json:"exit_points"`
-	ConditionalNodes []string   `json:"conditional_nodes"`
-	IsolatedNodes    []string   `json:"isolated_nodes"`
-	MaxDepth         int        `json:"max_depth"`
-	TotalPaths       int        `json:"total_paths"`
+	Nodes         []NodeInfo `json:"nodes"`
+	Edges         []EdgeInfo `json:"edges"`
+	EntryPoints   []string   `json:"entry_points"`
+	ExitPoints    []string   `json:"exit_points"`
+	CommandNodes  []string   `json:"command_nodes"` // Nodes using Command pattern
+	IsolatedNodes []string   `json:"isolated_nodes"`
+	MaxDepth      int        `json:"max_depth"`
+	TotalPaths    int        `json:"total_paths"`
 }
 
 // Metrics provides runtime execution metrics.
 type Metrics struct {
 	TotalNodes           int            `json:"total_nodes"`
 	TotalEdges           int            `json:"total_edges"`
-	ConditionalEdges     int            `json:"conditional_edges"`
 	AverageFanOut        float64        `json:"average_fan_out"`
 	MaxFanOut            int            `json:"max_fan_out"`
 	AverageFanIn         float64        `json:"average_fan_in"`
@@ -71,52 +70,30 @@ func (g *Graph) GetNodes() []string {
 }
 
 // GetNodeInfo returns detailed information about a specific node.
-//
-//nolint:gocyclo // Acceptable complexity for comprehensive node introspection
-func (g *Graph) GetNodeInfo(name string) (*NodeInfo, error) {
-	node, exists := g.Nodes[name]
+func (g *Graph) GetNodeInfo(nodeName string) (*NodeInfo, error) {
+	node, exists := g.Nodes[nodeName]
 	if !exists {
-		return nil, fmt.Errorf("node not found: %s", name)
+		return nil, fmt.Errorf("node not found: %s", nodeName)
 	}
 
-	// Count incoming edges
+	// Count incoming edges from entry point and DeclaredTargets
 	incomingCount := 0
-	for _, edge := range g.Edges {
-		if edge.To == name {
-			incomingCount++
-		}
+	// Check implicit edge from START to EntryPoint
+	if g.EntryPoint == nodeName {
+		incomingCount++
 	}
-
-	// Count outgoing edges
-	outgoingCount := 0
-	for _, edge := range g.Edges {
-		if edge.From == name {
-			outgoingCount++
-		}
-	}
-
-	// Check if node has conditional edges
-	hasConditional := false
-	for _, ce := range g.Branches {
-		if ce.From == name {
-			hasConditional = true
-			break
-		}
-	}
-
-	// Check if node is a conditional gate (target of conditional edges)
-	isConditionalGate := false
-	for _, ce := range g.Branches {
-		for _, target := range ce.Targets {
-			if target == name {
-				isConditionalGate = true
-				break
+	// Check DeclaredTargets from all nodes
+	for _, n := range g.Nodes {
+		targets := n.Targets()
+		for _, target := range targets {
+			if target == nodeName {
+				incomingCount++
 			}
 		}
-		if isConditionalGate {
-			break
-		}
 	}
+
+	// Count outgoing edges from this node's DeclaredTargets
+	outgoingCount := len(node.Targets())
 
 	// Check if node supports retry policy
 	var retryPolicy *RetryPolicy
@@ -125,16 +102,14 @@ func (g *Graph) GetNodeInfo(name string) (*NodeInfo, error) {
 	}
 
 	info := &NodeInfo{
-		Name:              name,
-		Type:              "standard",
-		IncomingEdges:     incomingCount,
-		OutgoingEdges:     outgoingCount,
-		IsConditional:     hasConditional,
-		IsConditionalGate: isConditionalGate,
-		HasRetryPolicy:    retryPolicy != nil,
+		Name:           nodeName,
+		Type:           "standard",
+		IncomingEdges:  incomingCount,
+		OutgoingEdges:  outgoingCount,
+		HasRetryPolicy: retryPolicy != nil,
 	}
 
-	switch name {
+	switch nodeName {
 	case StartNode:
 		info.Type = "start"
 	case EndNode:
@@ -143,6 +118,14 @@ func (g *Graph) GetNodeInfo(name string) (*NodeInfo, error) {
 
 	if retryPolicy != nil {
 		info.RetryMaxAttempts = retryPolicy.MaxAttempts
+	}
+
+	// Get declared targets from Command nodes
+	targets := node.Targets()
+	if len(targets) > 0 {
+		info.DeclaredTargets = make([]string, len(targets))
+		copy(info.DeclaredTargets, targets)
+		info.HasCommandRouting = true
 	}
 
 	return info, nil
@@ -167,75 +150,101 @@ func (g *Graph) GetAllNodeInfo() []NodeInfo {
 func (g *Graph) GetEdges() []EdgeInfo {
 	edges := make([]EdgeInfo, 0)
 
-	// Direct edges
-	for _, edge := range g.Edges {
+	// Direct edge from START to entry point (if set)
+	if g.EntryPoint != "" {
 		edges = append(edges, EdgeInfo{
-			From: edge.From,
-			To:   edge.To,
+			From: StartNode,
+			To:   g.EntryPoint,
 			Type: "direct",
 		})
 	}
 
-	// Conditional edges
-	for _, ce := range g.Branches {
-		targets := make([]string, len(ce.Targets))
-		copy(targets, ce.Targets)
-		sort.Strings(targets)
+	// Command pattern routing (nodes define their targets via DeclaredTargets)
+	for name, node := range g.Nodes {
+		targets := node.Targets()
+		if len(targets) > 0 {
+			cmdTargets := make([]string, len(targets))
+			copy(cmdTargets, targets)
+			sort.Strings(cmdTargets)
 
-		edges = append(edges, EdgeInfo{
-			From:               ce.From,
-			To:                 "", // Conditional edges don't have a single "to"
-			Type:               "conditional",
-			ConditionalTargets: targets,
-		})
+			edges = append(edges, EdgeInfo{
+				From:           name,
+				To:             "", // Command routing is dynamic
+				Type:           "command",
+				CommandTargets: cmdTargets,
+			})
+		}
 	}
 
 	return edges
 }
 
 // GetTopology returns a comprehensive view of the graph structure.
+//
+//nolint:gocyclo // Acceptable complexity for comprehensive topology analysis
 func (g *Graph) GetTopology() *Topology {
 	topo := &Topology{
-		Nodes:            g.GetAllNodeInfo(),
-		Edges:            g.GetEdges(),
-		EntryPoints:      make([]string, 0),
-		ExitPoints:       make([]string, 0),
-		ConditionalNodes: make([]string, 0),
-		IsolatedNodes:    make([]string, 0),
+		Nodes:         g.GetAllNodeInfo(),
+		Edges:         g.GetEdges(),
+		EntryPoints:   make([]string, 0),
+		ExitPoints:    make([]string, 0),
+		CommandNodes:  make([]string, 0),
+		IsolatedNodes: make([]string, 0),
 	}
 
-	// Find entry points (nodes with edges from START)
-	for _, edge := range g.Edges {
-		if edge.From == StartNode {
-			topo.EntryPoints = append(topo.EntryPoints, edge.To)
-		}
+	// Find entry points (nodes reachable from START)
+	if g.EntryPoint != "" {
+		topo.EntryPoints = append(topo.EntryPoints, g.EntryPoint)
 	}
 	sort.Strings(topo.EntryPoints)
 
-	// Find exit points (nodes with edges to END)
-	for _, edge := range g.Edges {
-		if edge.To == EndNode && edge.From != StartNode {
-			topo.ExitPoints = append(topo.ExitPoints, edge.From)
+	// Find exit points (nodes that target END in their DeclaredTargets)
+	for name, node := range g.Nodes {
+		targets := node.Targets()
+		for _, target := range targets {
+			if target == EndNode {
+				topo.ExitPoints = append(topo.ExitPoints, name)
+				break
+			}
 		}
 	}
 	sort.Strings(topo.ExitPoints)
 
-	// Find conditional nodes
-	for _, ce := range g.Branches {
-		topo.ConditionalNodes = append(topo.ConditionalNodes, ce.From)
-	}
-	sort.Strings(topo.ConditionalNodes)
+	// Command pattern: no conditional edges, all routing via DeclaredTargets
+	// ConditionalNodes field kept for backward compatibility but will be empty
 
-	// Find isolated nodes (no incoming or outgoing edges)
+	// Find Command nodes (nodes with declared targets)
+	for name, node := range g.Nodes {
+		if len(node.Targets()) > 0 {
+			topo.CommandNodes = append(topo.CommandNodes, name)
+		}
+	}
+	sort.Strings(topo.CommandNodes)
+
+	// Find isolated nodes (no incoming or outgoing edges/targets)
 	for name := range g.Nodes {
 		hasIncoming := false
 		hasOutgoing := false
 
-		for _, edge := range g.Edges {
-			if edge.To == name {
-				hasIncoming = true
+		// Check if any node targets this node in DeclaredTargets
+		if !hasIncoming {
+			for _, node := range g.Nodes {
+				targets := node.Targets()
+				for _, target := range targets {
+					if target == name {
+						hasIncoming = true
+						break
+					}
+				}
+				if hasIncoming {
+					break
+				}
 			}
-			if edge.From == name {
+		}
+
+		// Check if this node has DeclaredTargets
+		if !hasOutgoing {
+			if len(g.Nodes[name].Targets()) > 0 {
 				hasOutgoing = true
 			}
 		}
@@ -256,18 +265,35 @@ func (g *Graph) GetTopology() *Topology {
 }
 
 // GetMetrics returns runtime metrics about the graph.
+//
+//nolint:gocyclo // Acceptable complexity for comprehensive metrics calculation
 func (g *Graph) GetMetrics() *Metrics {
-	metrics := &Metrics{
-		TotalNodes:       len(g.Nodes),
-		TotalEdges:       len(g.Edges),
-		ConditionalEdges: len(g.Branches),
-		NodesByType:      make(map[string]int),
+	// Count total edges: implicit START->EntryPoint + DeclaredTargets
+	totalEdges := 0
+	if g.EntryPoint != "" {
+		totalEdges++ // START -> EntryPoint
+	}
+	for _, node := range g.Nodes {
+		totalEdges += len(node.Targets())
 	}
 
-	// Build outgoing map for fan-out calculation
+	metrics := &Metrics{
+		TotalNodes:  len(g.Nodes),
+		TotalEdges:  totalEdges,
+		NodesByType: make(map[string]int),
+	}
+
+	// Build outgoing map for fan-out calculation (include DeclaredTargets)
 	outgoing := make(map[string][]string)
-	for _, edge := range g.Edges {
-		outgoing[edge.From] = append(outgoing[edge.From], edge.To)
+	// Add implicit START -> EntryPoint edge
+	if g.EntryPoint != "" {
+		outgoing[StartNode] = append(outgoing[StartNode], g.EntryPoint)
+	}
+	for name, node := range g.Nodes {
+		targets := node.Targets()
+		if len(targets) > 0 {
+			outgoing[name] = append(outgoing[name], targets...)
+		}
 	}
 
 	// Calculate fan-out statistics
@@ -283,10 +309,16 @@ func (g *Graph) GetMetrics() *Metrics {
 		metrics.AverageFanOut = float64(totalFanOut) / float64(len(outgoing))
 	}
 
-	// Build incoming count map for fan-in calculation
+	// Build incoming count map for fan-in calculation (include DeclaredTargets)
 	incomingCount := make(map[string]int)
-	for _, edge := range g.Edges {
-		incomingCount[edge.To]++
+	// Implicit START -> EntryPoint
+	if g.EntryPoint != "" {
+		incomingCount[g.EntryPoint]++
+	}
+	for _, node := range g.Nodes {
+		for _, target := range node.Targets() {
+			incomingCount[target]++
+		}
 	}
 
 	// Calculate fan-in statistics
@@ -311,7 +343,7 @@ func (g *Graph) GetMetrics() *Metrics {
 
 	// Calculate cyclomatic complexity: E - N + 2P
 	// E = edges, N = nodes, P = connected components (assume 1)
-	metrics.CyclomaticComplexity = len(g.Edges) - len(g.Nodes) + 2
+	metrics.CyclomaticComplexity = totalEdges - len(g.Nodes) + 2
 
 	return metrics
 }
@@ -330,19 +362,24 @@ func (g *Graph) GetNodeDependencies(name string) (*NodeDependencies, error) {
 		AllSuccessors:      make([]string, 0),
 	}
 
-	// Find direct predecessors (nodes with edges to this node)
-	for _, edge := range g.Edges {
-		if edge.To == name {
-			deps.DirectPredecessors = append(deps.DirectPredecessors, edge.From)
+	// Find direct predecessors (nodes with edges to this node, including DeclaredTargets)
+	// Implicit edge from START to EntryPoint
+	if g.EntryPoint == name {
+		deps.DirectPredecessors = append(deps.DirectPredecessors, StartNode)
+	}
+	// Check DeclaredTargets from all nodes
+	for nodeName, node := range g.Nodes {
+		for _, target := range node.Targets() {
+			if target == name {
+				deps.DirectPredecessors = append(deps.DirectPredecessors, nodeName)
+			}
 		}
 	}
 	sort.Strings(deps.DirectPredecessors)
 
-	// Find direct successors
-	for _, edge := range g.Edges {
-		if edge.From == name {
-			deps.DirectSuccessors = append(deps.DirectSuccessors, edge.To)
-		}
+	// Find direct successors (from this node's DeclaredTargets)
+	if node, exists := g.Nodes[name]; exists {
+		deps.DirectSuccessors = append(deps.DirectSuccessors, node.Targets()...)
 	}
 	sort.Strings(deps.DirectSuccessors)
 
@@ -393,11 +430,23 @@ func (g *Graph) calculateDepthRecursive(name string, visited map[string]bool) in
 	visited[name] = true
 
 	maxPredDepth := -1
-	for _, edge := range g.Edges {
-		if edge.To == name {
-			predDepth := g.calculateDepthRecursive(edge.From, visited)
-			if predDepth > maxPredDepth {
-				maxPredDepth = predDepth
+
+	// Check implicit edge from START to EntryPoint
+	if g.EntryPoint == name {
+		predDepth := g.calculateDepthRecursive(StartNode, visited)
+		if predDepth > maxPredDepth {
+			maxPredDepth = predDepth
+		}
+	}
+
+	// Check DeclaredTargets from all nodes
+	for nodeName, node := range g.Nodes {
+		for _, target := range node.Targets() {
+			if target == name {
+				predDepth := g.calculateDepthRecursive(nodeName, visited)
+				if predDepth > maxPredDepth {
+					maxPredDepth = predDepth
+				}
 			}
 		}
 	}
@@ -409,13 +458,17 @@ func (g *Graph) calculateDepthRecursive(name string, visited map[string]bool) in
 }
 
 func (g *Graph) estimateTotalPaths() int {
-	// Simple estimation: count branches
+	// Simple estimation: count Command nodes with multiple declared targets
 	paths := 1
-	for _, ce := range g.Branches {
-		if len(ce.Targets) > 1 {
-			paths *= len(ce.Targets)
+
+	// Count Command nodes with multiple DeclaredTargets
+	for _, node := range g.Nodes {
+		targets := node.Targets()
+		if len(targets) > 1 {
+			paths *= len(targets)
 		}
 	}
+
 	return paths
 }
 
@@ -432,10 +485,13 @@ func (g *Graph) findAllPredecessorsRecursive(name string, visited map[string]boo
 	}
 	visited[name] = true
 
-	for _, edge := range g.Edges {
-		if edge.To == name && edge.From != StartNode {
-			*result = append(*result, edge.From)
-			g.findAllPredecessorsRecursive(edge.From, visited, result)
+	// Check DeclaredTargets from all nodes (including implicit START->EntryPoint)
+	for nodeName, node := range g.Nodes {
+		for _, target := range node.Targets() {
+			if target == name && nodeName != StartNode {
+				*result = append(*result, nodeName)
+				g.findAllPredecessorsRecursive(nodeName, visited, result)
+			}
 		}
 	}
 }
@@ -453,10 +509,13 @@ func (g *Graph) findAllSuccessorsRecursive(name string, visited map[string]bool,
 	}
 	visited[name] = true
 
-	for _, edge := range g.Edges {
-		if edge.From == name && edge.To != EndNode {
-			*result = append(*result, edge.To)
-			g.findAllSuccessorsRecursive(edge.To, visited, result)
+	// Check this node's DeclaredTargets
+	if node, exists := g.Nodes[name]; exists {
+		for _, target := range node.Targets() {
+			if target != EndNode {
+				*result = append(*result, target)
+				g.findAllSuccessorsRecursive(target, visited, result)
+			}
 		}
 	}
 }

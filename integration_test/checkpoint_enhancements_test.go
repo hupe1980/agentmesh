@@ -48,9 +48,13 @@ func TestInterruptConfiguration(t *testing.T) {
 	g, err := graph.NewGraph(manager)
 	assert.NoError(t, err)
 
-	node := graph.NewBaseNode("test", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		return graphstate.Updates{}, nil
-	})
+	node := &graph.BaseCommandNode{
+		NodeName:        "test",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+			return graph.End(graphstate.Updates{}), nil
+		},
+	}
 
 	g.AddNode(node)
 	g.AddInterruptBefore("test")

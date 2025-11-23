@@ -27,13 +27,16 @@ if err != nil {
     log.Fatal(err)
 }
 
-// Build a workflow using fluent API
-builder.
-    AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-        return map[string]any{"done": true}, nil
-    }).
-    AddEdge(graph.StartNode, "process").
-    AddEdge("process", graph.EndNode)
+// Build a workflow using command nodes
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "process",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.End(map[string]any{"done": true}), nil
+    },
+})
+
+g.SetEntryPoint("process")
 
 // Compile and run
 compiled, err := builder.Compile()
@@ -57,31 +60,40 @@ builder, err := graph.NewBuilder(
 )
 ```
 
-### Conditional Edges
+### Conditional Routing
 
 ```go
 routeKey := state.NewKey("route", "")
 
-builder.
-    AddNodeFunc("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-        return map[string]any{"route": "left"}, nil
-    }).
-    AddNodeFunc("left", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-        return map[string]any{"result": "left"}, nil
-    }).
-    AddNodeFunc("right", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-        return map[string]any{"result": "right"}, nil
-    }).
-    AddEdge(graph.StartNode, "router").
-    AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "router",
+    DeclaredTargets: []string{"left", "right"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
         route := state.GetFromView(view, routeKey)
         if route == "left" {
-            return []string{"left"}
+            return graph.Goto(map[string]any{"route": "left"}, "left"), nil
         }
-        return []string{"right"}
-    }, []string{"left", "right"}).
-    AddEdge("left", graph.EndNode).
-    AddEdge("right", graph.EndNode)
+        return graph.Goto(map[string]any{"route": "right"}, "right"), nil
+    },
+})
+
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "left",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.End(map[string]any{"result": "left"}), nil
+    },
+})
+
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "right",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.End(map[string]any{"result": "right"}), nil
+    },
+})
+
+g.SetEntryPoint("router")
 ```
 
 ## API Reference
@@ -130,22 +142,38 @@ builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (
 })
 ```
 
-#### `AddNodeFuncWithRetry(name string, runFunc func(context.Context, *state.ReadView) (state.Updates, error), retryPolicy *RetryPolicy) *Builder[I, O]`
-Adds a function-based node with automatic retry behavior.
+#### `AddCommandNode(name string, targetSet *TargetSet, fn CommandFunc) *Builder[I, O]`
+Adds a Command node to the graph (recommended for most use cases).
 
 ```go
-builder.AddNodeFuncWithRetry("api_call", apiFunc,
+targets := graph.NewTargetSet("success", "failure", graph.EndNode)
+builder.AddCommandNode("process", targets,
+    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // Your logic here
+        return targets.Goto("success", state.Updates{"done": true}), nil
+    })
+```
+
+#### `AddCommandNodeWithRetry(name string, targetSet *TargetSet, fn CommandFunc, retryPolicy *RetryPolicy) *Builder[I, O]`
+Adds a Command node with automatic retry behavior.
+
+```go
+targets := graph.NewTargetSet(graph.EndNode)
+builder.AddCommandNodeWithRetry("api_call", targets, apiFunc,
     graph.NewRetryPolicy().
         WithMaxAttempts(5).
         WithExponentialBackoff(time.Second, 2.0).
         Build())
 ```
 
-#### `AddEdge(from, to string) *Builder[I, O]`
-Adds a directed edge between two nodes.
+#### `SetEntryPoint(target string) error`
+Sets the entry point of the graph (the first node to execute).
 
-#### `AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) *Builder[I, O]`
-Adds conditional routing based on runtime state.
+```go
+g.SetEntryPoint("start_node")
+```
+
+**Note**: Graph construction now uses command-based routing. Nodes declare their targets via `DeclaredTargets` and use `graph.Goto()` or `graph.End()` commands for dynamic routing.
 
 #### `Compile(opts ...CompileOption) (*Compiled[I, O], error)`
 Compiles the graph into an executable workflow.

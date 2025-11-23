@@ -36,7 +36,7 @@ func main() {
 	completeKey := state.NewKey("complete", false)
 
 	// Add nodes
-	builder.AddNodeFunc("input_validator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("input_validator", graph.NewTargetSet("router"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, validKey, true)
@@ -44,48 +44,37 @@ func main() {
 		return b.Build()
 	})
 
-	builder.AddNodeFunc("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddCommandNode("router", graph.NewTargetSet("high_priority_handler", "normal_handler"), func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 		fmt.Println("✓ Routing request...")
-		return nil, nil
+		priority := state.GetFromView(view, priorityKey)
+		if priority == "high" {
+			return graph.GotoOne("high_priority_handler"), nil
+		}
+		return graph.GotoOne("normal_handler"), nil
 	})
 
-	builder.AddNodeFunc("high_priority_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("high_priority_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.AddNodeFunc("normal_handler", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("normal_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.AddNodeFunc("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("aggregator", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, completeKey, true)
 		return b.Build()
 	})
 
-	// Define edges
-	builder.AddEdge(graph.StartNode, "input_validator")
-	builder.AddEdge("input_validator", "router")
-
-	// Conditional routing based on priority
-	builder.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
-		priority := state.GetFromView(view, priorityKey)
-		if priority == "high" {
-			return []string{"high_priority_handler"}
-		}
-		return []string{"normal_handler"}
-	}, []string{"high_priority_handler", "normal_handler"})
-
-	builder.AddEdge("high_priority_handler", "aggregator")
-	builder.AddEdge("normal_handler", "aggregator")
-	builder.AddEdge("aggregator", graph.EndNode)
+	builder.SetEntryPoint("input_validator")
 
 	// Compile the graph - this is where topology is computed and validated
 	runnableGraph, err := builder.Compile()
@@ -117,9 +106,10 @@ func main() {
 		fmt.Printf("  Type:               %s\n", info.Type)
 		fmt.Printf("  Incoming Edges:     %d\n", info.IncomingEdges)
 		fmt.Printf("  Outgoing Edges:     %d\n", info.OutgoingEdges)
-		fmt.Printf("  Is Conditional:     %v\n", info.IsConditional)
-		fmt.Printf("  Is Conditional Gate: %v\n", info.IsConditionalGate)
 		fmt.Printf("  Has Retry Policy:   %v\n", info.HasRetryPolicy)
+		if info.HasCommandRouting {
+			fmt.Printf("  Declared Targets:   %v\n", info.DeclaredTargets)
+		}
 	}
 
 	// 3. Get topology overview
@@ -128,7 +118,7 @@ func main() {
 	topo := runnableGraph.GetTopology()
 	fmt.Printf("Entry Points:      %v\n", topo.EntryPoints)
 	fmt.Printf("Exit Points:       %v\n", topo.ExitPoints)
-	fmt.Printf("Conditional Nodes: %v\n", topo.ConditionalNodes)
+	fmt.Printf("Command Nodes:     %v\n", topo.CommandNodes)
 	fmt.Printf("Max Depth:         %d\n", topo.MaxDepth)
 	fmt.Printf("Estimated Paths:   %d\n", topo.TotalPaths)
 
@@ -138,7 +128,6 @@ func main() {
 	metrics := runnableGraph.GetMetrics()
 	fmt.Printf("Total Nodes:          %d\n", metrics.TotalNodes)
 	fmt.Printf("Total Edges:          %d\n", metrics.TotalEdges)
-	fmt.Printf("Conditional Edges:    %d\n", metrics.ConditionalEdges)
 	fmt.Printf("Average Fan-Out:      %.2f\n", metrics.AverageFanOut)
 	fmt.Printf("Max Fan-Out:          %d\n", metrics.MaxFanOut)
 	fmt.Printf("Average Fan-In:       %.2f\n", metrics.AverageFanIn)

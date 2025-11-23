@@ -39,9 +39,14 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	// Create a chain of 10 nodes where each increments a counter
 	for i := 0; i < 10; i++ {
 		nodeNum := i
-		err = g.AddNode(graph.NewBaseNode(
-			fmt.Sprintf("node_%d", i),
-			func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		nextNode := fmt.Sprintf("node_%d", i+1)
+		if i == 9 {
+			nextNode = graph.EndNode
+		}
+		err = g.AddNode(&graph.BaseCommandNode{
+			NodeName:        fmt.Sprintf("node_%d", i),
+			DeclaredTargets: graph.NewTargetSet(nextNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 				// Random failure injection
 				if rand.Float64() < failureRate {
 					failCount.Add(1)
@@ -53,20 +58,18 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 				newCount := count + 1
 
 				successCount.Add(1)
-				return map[string]any{"count": newCount}, nil
+				updates := map[string]any{"count": newCount}
+				return graph.Goto(nextNode, updates), nil
 			},
-		))
+		})
 		require.NoError(t, err)
 
-		// Add edge to next node
-		if i < 9 {
-			g.AddEdge(fmt.Sprintf("node_%d", i), fmt.Sprintf("node_%d", i+1))
-		}
 	}
 
-	// Connect START to first node and last node to END
-	g.AddEdge(graph.StartNode, "node_0")
-	g.AddEdge("node_9", graph.EndNode)
+	// Set entry point
+	if err := g.SetEntryPoint("node_0"); err != nil {
+		t.Fatal(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -116,8 +119,10 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		nodeNum := i
 
-		err = g.AddNode(graph.NewBaseNode(fmt.Sprintf("parallel_%d", i),
-			func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		err = g.AddNode(&graph.BaseCommandNode{
+			NodeName:        fmt.Sprintf("parallel_%d", i),
+			DeclaredTargets: graph.NewTargetSet("aggregator"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 				// Simulate work with random failure
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
@@ -125,34 +130,36 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 					return nil, fmt.Errorf("concurrent failure in parallel_%d", nodeNum)
 				}
 
-				return map[string]any{
+				updates := map[string]any{
 					fmt.Sprintf("result_%d", nodeNum): nodeNum * 10,
-				}, nil
+				}
+				return graph.Goto("aggregator", updates), nil
 			},
-		))
+		})
 		require.NoError(t, err)
 	}
 
 	// Aggregator node collects results
-	err = g.AddNode(graph.NewBaseNode("aggregator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		total := 0
-		for i := 0; i < 5; i++ {
-			resultKey := state.NewKey(fmt.Sprintf("result_%d", i), 0)
-			val := state.GetFromView(view, resultKey)
-			total += val
-		}
-		return map[string]any{"total": total}, nil
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "aggregator",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			total := 0
+			for i := 0; i < 5; i++ {
+				resultKey := state.NewKey(fmt.Sprintf("result_%d", i), 0)
+				val := state.GetFromView(view, resultKey)
+				total += val
+			}
+			updates := map[string]any{"total": total}
+			return graph.End(updates), nil
+		},
+	})
 	require.NoError(t, err)
 
-	// Connect START to parallel nodes, parallel nodes to aggregator, aggregator to END
+	// Set entry points for all parallel nodes
 	for i := 0; i < 5; i++ {
-		g.AddEdge(graph.StartNode, fmt.Sprintf("parallel_%d", i))
-		g.AddEdge(fmt.Sprintf("parallel_%d", i), "aggregator")
+		g.SetEntryPoint(fmt.Sprintf("parallel_%d", i))
 	}
-	g.AddEdge("aggregator", graph.EndNode)
-
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
@@ -186,20 +193,23 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(graph.NewBaseNode("slow_node", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		// Simulate slow operation that will timeout
-		select {
-		case <-time.After(5 * time.Second):
-			return map[string]any{"completed": true}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "slow_node",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			// Simulate slow operation that will timeout
+			select {
+			case <-time.After(5 * time.Second):
+				updates := map[string]any{"completed": true}
+				return graph.End(updates), nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	})
 	require.NoError(t, err)
 
-	g.AddEdge(graph.StartNode, "slow_node")
-	g.AddEdge("slow_node", graph.EndNode)
+	g.SetEntryPoint("slow_node")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -244,23 +254,28 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(graph.NewBaseNode("panicking_node", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		// This should be caught and converted to an error
-		panic("chaos: intentional panic for testing")
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "panicking_node",
+		DeclaredTargets: graph.NewTargetSet("recovery_node"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			// This should be caught and converted to an error
+			panic("chaos: intentional panic for testing")
+		},
+	})
 	require.NoError(t, err)
 
-	err = g.AddNode(graph.NewBaseNode("recovery_node", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		// This should not execute if previous panicked
-		return map[string]any{"recovered": true}, nil
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "recovery_node",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			// This should not execute if previous panicked
+			updates := map[string]any{"recovered": true}
+			return graph.End(updates), nil
+		},
+	})
 	require.NoError(t, err)
 
-	g.AddEdge(graph.StartNode, "panicking_node")
-	g.AddEdge("panicking_node", "recovery_node")
-	g.AddEdge("recovery_node", graph.EndNode)
+	g.SetEntryPoint("panicking_node")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -297,33 +312,40 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node that allocates large amounts of memory
-	err = g.AddNode(graph.NewBaseNode("memory_hog", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		// Allocate 100MB
-		data := make([]byte, 100*1024*1024)
-		for i := range data {
-			data[i] = byte(i % 256)
-		}
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "memory_hog",
+		DeclaredTargets: graph.NewTargetSet("consumer"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			// Allocate 100MB
+			data := make([]byte, 100*1024*1024)
+			for i := range data {
+				data[i] = byte(i % 256)
+			}
 
-		// Store large data
-		return map[string]any{"large_data": data}, nil
-	},
-	))
+			// Store large data
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, largeDataKey, data)
+			updates, _ := builder.Build()
+			return graph.Goto("consumer", updates), nil
+		},
+	})
 	require.NoError(t, err)
 
-	err = g.AddNode(graph.NewBaseNode("consumer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		data := state.GetFromView(view, largeDataKey)
-		require.NotNil(t, data)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "consumer",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			data := state.GetFromView(view, largeDataKey)
+			require.NotNil(t, data)
 
-		// Verify data integrity
-		assert.Equal(t, 100*1024*1024, len(data))
-		return nil, nil
-	},
-	))
+			// Verify data integrity
+			assert.Equal(t, 100*1024*1024, len(data))
+			return graph.End(nil), nil
+		},
+	})
 	require.NoError(t, err)
 
-	g.AddEdge(graph.StartNode, "memory_hog")
-	g.AddEdge("memory_hog", "consumer")
-	g.AddEdge("consumer", graph.EndNode)
+	g.SetEntryPoint("memory_hog")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -360,34 +382,44 @@ func TestChaos_NetworkPartition(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		err = g.AddNode(graph.NewBaseNode("partition_1_node", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			if !partition1Active.Load() {
-				return nil, fmt.Errorf("network partition: partition 1 unreachable")
-			}
-			return map[string]any{"p1_data": "partition1"}, nil
-		},
-		))
+		err = g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "partition_1_node",
+			DeclaredTargets: graph.NewTargetSet("partition_2_node"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				if !partition1Active.Load() {
+					return nil, fmt.Errorf("network partition: partition 1 unreachable")
+				}
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, p1DataKey, "partition1")
+				updates, _ := builder.Build()
+				return graph.Goto("partition_2_node", updates), nil
+			},
+		})
 		require.NoError(t, err)
 
-		err = g.AddNode(graph.NewBaseNode("partition_2_node", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			if !partition2Active.Load() {
-				return nil, fmt.Errorf("network partition: partition 2 unreachable")
-			}
+		err = g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "partition_2_node",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				if !partition2Active.Load() {
+					return nil, fmt.Errorf("network partition: partition 2 unreachable")
+				}
 
-			// Try to access data from partition 1
-			p1Data := state.GetFromView(view, p1DataKey)
-			if p1Data == "" {
-				return nil, fmt.Errorf("partition isolation: cannot access partition 1 data")
-			}
+				// Try to access data from partition 1
+				p1Data := state.GetFromView(view, p1DataKey)
+				if p1Data == "" {
+					return nil, fmt.Errorf("partition isolation: cannot access partition 1 data")
+				}
 
-			return map[string]any{"result": "partitions_connected"}, nil
-		},
-		))
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, resultKey, "partitions_connected")
+				updates, _ := builder.Build()
+				return graph.End(updates), nil
+			},
+		})
 		require.NoError(t, err)
 
-		g.AddEdge(graph.StartNode, "partition_1_node")
-		g.AddEdge("partition_1_node", "partition_2_node")
-		g.AddEdge("partition_2_node", graph.EndNode)
+		g.SetEntryPoint("partition_1_node")
 
 		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)

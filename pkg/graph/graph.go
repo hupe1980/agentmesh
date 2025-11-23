@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -10,11 +9,10 @@ import (
 // Graph represents a mutable computational graph with nodes and edges.
 type Graph struct {
 	Nodes           map[string]Node
-	Edges           []Edge
-	Branches        []ConditionalEdges
 	NodeConfigs     map[string]*NodeConfig // Execution policies per node
 	InterruptBefore []string               // Nodes to interrupt before execution
 	InterruptAfter  []string               // Nodes to interrupt after execution
+	EntryPoint      string                 // Name of the entry point node
 	manager         *state.Manager
 }
 
@@ -25,8 +23,6 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 	}
 	return &Graph{
 		Nodes:           make(map[string]Node),
-		Edges:           make([]Edge, 0),
-		Branches:        make([]ConditionalEdges, 0),
 		NodeConfigs:     make(map[string]*NodeConfig),
 		InterruptBefore: make([]string, 0), // Initialize interrupt lists
 		InterruptAfter:  make([]string, 0),
@@ -41,16 +37,6 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 //	g.AddNode(myNode, WithRetryPolicy(&RetryPolicy{
 //	    MaxAttempts: 3,
 //	    Backoff: ExponentialBackoff(100 * time.Millisecond),
-//	}))
-//
-// Example with cache policy:
-//
-//	g.AddNode(expensiveNode, WithCachePolicy(&CachePolicy{
-//	    Enabled: true,
-//	    TTL: 5 * time.Minute,
-//	    KeyFunc: func(ctx context.Context, state map[string]any) string {
-//	        return fmt.Sprintf("key:%v", state["input"])
-//	    },
 //	}))
 func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 	if n == nil {
@@ -79,37 +65,16 @@ func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 	return nil
 }
 
-// SetNodeRetryPolicy sets or updates the retry policy for an existing node.
-// Returns an error if the node doesn't exist or doesn't support retry.
-func (g *Graph) SetNodeRetryPolicy(name string, retryPolicy *RetryPolicy) error {
-	node, exists := g.Nodes[name]
-	if !exists {
-		return fmt.Errorf("node not found: %s", name)
+// SetEntryPoint sets the entry point node for the graph.
+// This is the node that will be executed first when the graph runs.
+// The entry point is validated at compile time, so nodes can be added after
+// calling SetEntryPoint (useful for builder pattern).
+func (g *Graph) SetEntryPoint(target string) error {
+	if target == "" {
+		return fmt.Errorf("entry point target cannot be empty")
 	}
-
-	// Only BaseNode supports setting retry policy after creation
-	baseNode, ok := node.(*BaseNode)
-	if !ok {
-		return fmt.Errorf("node %s does not support setting retry policy", name)
-	}
-
-	baseNode.retryPolicy = retryPolicy
+	g.EntryPoint = target
 	return nil
-}
-
-// AddEdge adds a directed edge between two nodes.
-func (g *Graph) AddEdge(from, to string) {
-	g.Edges = append(g.Edges, Edge{From: from, To: to})
-}
-
-// AddConditionalEdges adds conditional routing based on runtime state.
-// The condition function receives a ReadView and returns target node names.
-func (g *Graph) AddConditionalEdges(from string, condition func(context.Context, *state.ReadView) []string, targets []string) {
-	g.Branches = append(g.Branches, ConditionalEdges{
-		From:      from,
-		Condition: condition,
-		Targets:   targets,
-	})
 }
 
 // Manager returns the graph's state manager.
@@ -151,15 +116,4 @@ func (g *Graph) AddInterruptBefore(nodeName string) {
 //	    WithResumeValue(map[string]any{"edited_report": editedContent}))
 func (g *Graph) AddInterruptAfter(nodeName string) {
 	g.InterruptAfter = append(g.InterruptAfter, nodeName)
-}
-
-// Shutdown gracefully shuts down the graph and its plugins.
-// Call this when you're done using the graph to clean up resources.
-//
-// Example:
-//
-//	defer g.Shutdown(context.Background())
-func (g *Graph) Shutdown(ctx context.Context) error {
-	// No shutdown needed for graph itself
-	return nil
 }

@@ -36,12 +36,10 @@ func TestBuilder_BasicUsage(t *testing.T) {
 	}
 
 	// Add nodes using fluent API
-	builder.
-		AddNodeFunc("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+	builder.SetEntryPoint("process").
+		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"processed": true}, nil
-		}).
-		AddEdge(graph.StartNode, "process").
-		AddEdge("process", graph.EndNode)
+		})
 
 	// Compile the graph
 	compiled, err := builder.Compile()
@@ -83,16 +81,13 @@ func TestBuilder_WithOptions(t *testing.T) {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
-	builder.
-		AddNodeFunc("node1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+	builder.SetEntryPoint("node1").
+		AddStaticNode("node1", graph.NewTargetSet("node2"), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 1}, nil
 		}).
-		AddNodeFunc("node2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddStaticNode("node2", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 2}, nil
-		}).
-		AddEdge(graph.StartNode, "node1").
-		AddEdge("node1", "node2").
-		AddEdge("node2", graph.EndNode)
+		})
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -137,26 +132,18 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 		t.Fatalf("Failed to register result key: %v", err)
 	}
 
-	builder.
-		AddNodeFunc("router", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			return map[string]any{"route": "left"}, nil
+	builder.SetEntryPoint("router").
+		AddCommandNode("router", graph.NewTargetSet("left", "right"), func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			updates := map[string]any{"route": "left"}
+			route := "left"
+			return graph.Goto(route, updates), nil
 		}).
-		AddNodeFunc("left", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddStaticNode("left", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "left"}, nil
 		}).
-		AddNodeFunc("right", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+		AddStaticNode("right", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "right"}, nil
-		}).
-		AddEdge(graph.StartNode, "router").
-		AddConditionalEdges("router", func(ctx context.Context, s *state.ReadView) []string {
-			route := state.GetFromView(s, routeKey)
-			if route == "left" {
-				return []string{"left"}
-			}
-			return []string{"right"}
-		}, []string{"left", "right"}).
-		AddEdge("left", graph.EndNode).
-		AddEdge("right", graph.EndNode)
+		})
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -197,12 +184,10 @@ func TestBuilder_ManualCompile(t *testing.T) {
 		t.Fatalf("Failed to register key: %v", err)
 	}
 
-	builder.
-		AddNodeFunc("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
+	builder.SetEntryPoint("process").
+		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
 			return map[string]any{"done": true}, nil
-		}).
-		AddEdge(graph.StartNode, "process").
-		AddEdge("process", graph.EndNode)
+		})
 
 	// Compile using the builder
 	compiled, err := builder.Compile()

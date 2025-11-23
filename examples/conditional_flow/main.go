@@ -6,7 +6,7 @@
 //   - Execute the same graph with different inputs to show routing variations
 //
 // Key concepts:
-//   - AddConditionalEdges: Dynamic routing based on runtime state
+//   - Command-based routing: Dynamic routing via graph.Goto() in node logic
 //   - Reader: Read state values to make routing decisions
 //   - TopicChannel: Accumulate values without overwriting (like a list)
 //
@@ -67,8 +67,10 @@ func runScenario(choice string) {
 	}
 
 	// Decision node: Reads input and decides which path to take
-	mustAddNode(graph.NewBaseNode("decide",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "decide",
+		DeclaredTargets: graph.NewTargetSet("path_a", "path_b"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			choiceVal := graphstate.GetFromView(view, choiceKey)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
@@ -76,50 +78,46 @@ func runScenario(choice string) {
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, nextPathKey, choiceVal)
 			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))
-			return builder.Build()
+			updates, _ := builder.Build()
+
+			// Route to the chosen path
+			if choiceVal == "path_a" {
+				return graph.Goto("path_a", updates), nil
+			}
+			return graph.Goto("path_b", updates), nil
 		},
-	))
+	})
 
 	// Path A: Specialized processing for option A
-	mustAddNode(graph.NewBaseNode("path_a",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "path_a",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path A")
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
 		},
-	))
+	})
 
 	// Path B: Alternative processing for option B
-	mustAddNode(graph.NewBaseNode("path_b",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "path_b",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path B")
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
 		},
-	))
+	})
 
-	// Build the graph topology with conditional routing
-	gph.AddEdge(graph.StartNode, "decide")
-
-	// AddConditionalEdges allows runtime decisions about which nodes to execute next
-	// The evaluator function is called at runtime and can return different targets
-	// based on the current state
-	gph.AddConditionalEdges("decide", func(_ context.Context, view *graphstate.ReadView) []string {
-		// Read the decision from state
-		next := graphstate.GetFromView(view, nextPathKey)
-		if next != "" {
-			// Return the selected path as a slice (can return multiple for parallel execution)
-			return []string{next}
-		}
-		// Return empty slice if no valid path
-		return nil
-	}, []string{"path_a", "path_b"}) // All possible targets must be declared
-
-	// Both paths terminate at END
-	gph.AddEdge("path_a", graph.EndNode)
-	gph.AddEdge("path_b", graph.EndNode)
+	// Set entry point - Command pattern handles all routing internally
+	if err := gph.SetEntryPoint("decide"); err != nil {
+		panic(err)
+	}
 
 	// Compile the graph into executable form
 	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())

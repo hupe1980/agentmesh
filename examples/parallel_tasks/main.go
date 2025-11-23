@@ -55,8 +55,10 @@ func main() {
 	}
 
 	// Task A: Simulates data analysis (runs in parallel with Task B)
-	taskA := graph.NewBaseNode("task_a",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	taskA := &graph.BaseCommandNode{
+		NodeName:        "task_a",
+		DeclaredTargets: graph.NewTargetSet("combine"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
@@ -64,13 +66,16 @@ func main() {
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "task_a: analysis completed")
 			graphstate.SetUpdate(builder, resultAKey, "analysis result")
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.Goto("combine", updates), nil
 		},
-	)
+	}
 
 	// Task B: Simulates simulation work (runs in parallel with Task A)
-	taskB := graph.NewBaseNode("task_b",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	taskB := &graph.BaseCommandNode{
+		NodeName:        "task_b",
+		DeclaredTargets: graph.NewTargetSet("combine"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
@@ -78,14 +83,17 @@ func main() {
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "task_b: simulation completed")
 			graphstate.SetUpdate(builder, resultBKey, "simulation result")
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.Goto("combine", updates), nil
 		},
-	)
+	}
 
 	// Merge node: Aggregates results after all parallel tasks complete
 	// This demonstrates the fan-in pattern (many → one)
-	mergeResults := graph.NewBaseNode("combine",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mergeResults := &graph.BaseCommandNode{
+		NodeName:        "combine",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read results from both parallel tasks
@@ -101,11 +109,10 @@ func main() {
 			builder := graphstate.NewUpdateBuilder()
 			// graphstate.AppendUpdate(builder, actionHistoryKey, "combine: aggregated all results")
 			graphstate.SetUpdate(builder, summaryKey, results)
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
 		},
-	)
-
-	// Helper to add nodes with error checking
+	} // Helper to add nodes with error checking
 	mustAddNode := func(n graph.Node) {
 		if err := gph.AddNode(n); err != nil {
 			panic(err)
@@ -122,13 +129,14 @@ func main() {
 	//   START → task_b ↗
 	//
 	// This creates a fan-out/fan-in pattern where:
-	// - Fan-out: START has two outgoing edges (parallel execution)
+	// - Fan-out: START has multiple entry points (parallel execution)
 	// - Fan-in: combine has two incoming edges (synchronization point)
-	gph.AddEdge(graph.StartNode, "task_a")
-	gph.AddEdge(graph.StartNode, "task_b")
-	gph.AddEdge("task_a", "combine")
-	gph.AddEdge("task_b", "combine")
-	gph.AddEdge("combine", graph.EndNode)
+	if err := gph.SetEntryPoint("task_a"); err != nil {
+		panic(err)
+	}
+	if err := gph.SetEntryPoint("task_b"); err != nil {
+		panic(err)
+	}
 
 	// Compile the graph
 	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())

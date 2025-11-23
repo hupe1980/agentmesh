@@ -67,51 +67,69 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Node 1: Initialize state
-	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, 1.0) // Use float64 for JSON compatibility
-		state.SetUpdate(builder, dataKey, "A")
-		return builder.Build()
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node1",
+		DeclaredTargets: graph.NewTargetSet("node2"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, 1.0) // Use float64 for JSON compatibility
+			state.SetUpdate(builder, dataKey, "A")
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("node2", updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Read and modify state (should see node1's updates via Redis)
-	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		counter := state.GetFromView(view, counterKey)
-		data := state.GetFromView(view, dataKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node2",
+		DeclaredTargets: graph.NewTargetSet("node3"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			counter := state.GetFromView(view, counterKey)
+			data := state.GetFromView(view, dataKey)
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, counter+1.0) // Should be 2.0
-		state.SetUpdate(builder, dataKey, data+"B")       // Should be "AB"
-		return builder.Build()
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, counter+1.0) // Should be 2.0
+			state.SetUpdate(builder, dataKey, data+"B")       // Should be "AB"
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("node3", updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}
 
 	// Node 3: Final state update (should see node2's updates via Redis)
-	err = g.AddNode(graph.NewBaseNode("node3", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		counter := state.GetFromView(view, counterKey)
-		data := state.GetFromView(view, dataKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node3",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			counter := state.GetFromView(view, counterKey)
+			data := state.GetFromView(view, dataKey)
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, counter+1.0) // Should be 3.0
-		state.SetUpdate(builder, dataKey, data+"C")       // Should be "ABC"
-		return builder.Build()
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, counter+1.0) // Should be 3.0
+			state.SetUpdate(builder, dataKey, data+"C")       // Should be "ABC"
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node3: %v", err)
 	}
 
-	g.AddEdge(graph.StartNode, "node1")
-	g.AddEdge("node1", "node2")
-	g.AddEdge("node2", "node3")
-	g.AddEdge("node3", graph.EndNode)
+	g.SetEntryPoint("node1")
 
 	// Compile with state-based executor + Redis message bus
 	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
@@ -196,32 +214,44 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	}
 
 	// Node 1: Set counter = 1.0
-	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, 1.0)
-		return builder.Build()
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node1",
+		DeclaredTargets: graph.NewTargetSet("node2"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, 1.0)
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("node2", updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Try to read counter (should see 1.0 from local state, not redistributed)
-	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node2",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, counter+10.0) // Should be 11.0 (1.0 + 10.0)
-		return builder.Build()
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, counter+10.0) // Should be 11.0 (1.0 + 10.0)
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}
 
-	g.AddEdge(graph.StartNode, "node1")
-	g.AddEdge("node1", "node2")
-	g.AddEdge("node2", graph.EndNode)
+	g.SetEntryPoint("node1")
 
 	// Compile with distributed state DISABLED (routing-only)
 	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(

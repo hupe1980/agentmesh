@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
@@ -23,6 +25,7 @@ type ModelNode struct {
 	systemPrompt string
 	tools        []tool.Tool
 	outputSchema *schema.OutputSchema
+	targets      []string // Configurable routing targets
 }
 
 // ModelNodeOption configures a ModelNode.
@@ -40,6 +43,14 @@ func WithModelNodeName(name string) ModelNodeOption {
 func WithModelSystemPrompt(prompt string) ModelNodeOption {
 	return func(n *ModelNode) {
 		n.systemPrompt = prompt
+	}
+}
+
+// WithModelTargets sets the possible routing targets for this node.
+// Default is []string{"tool", graph.EndNode}.
+func WithModelTargets(targets []string) ModelNodeOption {
+	return func(n *ModelNode) {
+		n.targets = targets
 	}
 }
 
@@ -90,12 +101,13 @@ func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
 // Plugins are automatically retrieved from context when the node executes.
 func NewModelNode(mdl model.Model, opts ...ModelNodeOption) (*ModelNode, error) {
 	if mdl == nil {
-		return nil, fmt.Errorf("agent: model cannot be nil")
+		return nil, fmt.Errorf("model cannot be nil")
 	}
 
 	node := &ModelNode{
-		name:  "model",
-		model: mdl,
+		name:    "model",
+		model:   mdl,
+		targets: []string{"tool", graph.EndNode}, // Default targets
 	}
 
 	for _, opt := range opts {
@@ -110,8 +122,17 @@ func (n *ModelNode) Name() string {
 	return n.name
 }
 
+// Targets returns the possible routing destinations for this node.
+func (n *ModelNode) Targets() []string {
+	if len(n.targets) > 0 {
+		return n.targets
+	}
+	// Default targets for backward compatibility
+	return []string{"tool", graph.EndNode}
+}
+
 // Execute runs the model node logic.
-func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 	// Get messages from state
 	messages := GetMessages(view)
 
@@ -124,6 +145,7 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 	}
 
 	// Execute BeforeModel plugins from context
+	//nolint:nestif // Plugin callback pattern requires nested checks
 	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
 		resp, err := pm.ExecuteBeforeModel(ctx, req)
 		if err != nil {
@@ -133,7 +155,12 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 			// Short-circuit: use plugin response instead of calling model
 			builder := state.NewUpdateBuilder()
 			state.AppendUpdate(builder, MessagesKey, resp.Message)
-			return builder.Build()
+			updates, _ := builder.Build()
+			// ModelNode routes to tool if there are tool calls, otherwise ends
+			if aiMsg, ok := resp.Message.(*message.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
+				return graph.Goto("tool", updates), nil
+			}
+			return graph.End(updates), nil
 		}
 	}
 
@@ -206,12 +233,17 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (state.Up
 	// Return message in updates map (agent layer handles message storage)
 	builder := state.NewUpdateBuilder()
 	state.AppendUpdate(builder, MessagesKey, resp.Message)
+	updates, _ := builder.Build()
 
-	return builder.Build()
+	// Route based on tool calls
+	if aiMsg, ok := resp.Message.(*message.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
+		return graph.Goto("tool", updates), nil
+	}
+	return graph.End(updates), nil
 }
 
 // handleModelError processes model execution errors through plugins.
-func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, err error) (state.Updates, error) {
+func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, err error) (*graph.Command, error) {
 	// Execute OnModelError plugins from context
 	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
 		fallback, transformedErr := pm.ExecuteOnModelError(ctx, req, err)
@@ -219,7 +251,8 @@ func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, er
 			// Plugin provided fallback response
 			builder := state.NewUpdateBuilder()
 			state.AppendUpdate(builder, MessagesKey, fallback.Message)
-			return builder.Build()
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
 		}
 		if transformedErr != nil {
 			return nil, transformedErr

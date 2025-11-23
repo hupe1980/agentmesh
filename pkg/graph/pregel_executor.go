@@ -590,102 +590,24 @@ func (n *pregelNodeAdapter[I, O]) executeWithPolicies(
 	ctx context.Context,
 	node Node,
 	view *state.ReadView,
-) (state.Updates, error) {
-	config := n.compiled.graph.NodeConfigs[n.nodeName]
-	if config == nil {
-		config = defaultNodeConfig()
+) (*Command, error) {
+	// Priority 1: Check if node implements NodeWithRetry interface (modern approach)
+	var retryPolicy *RetryPolicy
+	if retryNode, ok := node.(NodeWithRetry); ok {
+		retryPolicy = retryNode.RetryPolicy()
 	}
 
-	// Try cache if enabled
-	if n.shouldUseCache(config) {
-		return n.executeWithCache(ctx, node, view, config)
-	}
-
-	// No caching - execute with retry
-	return n.executeWithRetry(ctx, node, view, config.RetryPolicy)
-}
-
-// shouldUseCache checks if caching is enabled and configured.
-func (n *pregelNodeAdapter[I, O]) shouldUseCache(config *NodeConfig) bool {
-	return config.CachePolicy != nil &&
-		config.CachePolicy.Enabled &&
-		config.CachePolicy.KeyFunc != nil &&
-		config.CachePolicy.Store != nil
-}
-
-// executeWithCache attempts to use cache, falling back to execution if needed.
-func (n *pregelNodeAdapter[I, O]) executeWithCache(
-	ctx context.Context,
-	node Node,
-	view *state.ReadView,
-	config *NodeConfig,
-) (state.Updates, error) {
-	store := config.CachePolicy.Store
-	cacheKey := n.generateCacheKey(ctx, view, config)
-
-	// Try cache lookup
-	if cacheKey != "" {
-		if updates, ok := n.getCachedResult(ctx, store, cacheKey, config); ok {
-			return updates, nil
+	// Priority 2: Fall back to NodeConfigs map (legacy approach via WithRetryPolicy option)
+	if retryPolicy == nil {
+		config := n.compiled.graph.NodeConfigs[n.nodeName]
+		if config == nil {
+			config = defaultNodeConfig()
 		}
+		retryPolicy = config.RetryPolicy
 	}
 
-	// Cache miss - execute and store
-	updates, err := n.executeWithRetry(ctx, node, view, config.RetryPolicy)
-	if err == nil && cacheKey != "" && updates != nil {
-		n.cacheResult(ctx, store, cacheKey, updates, config)
-	}
-
-	return updates, err
-}
-
-// generateCacheKey creates a cache key from the current state.
-func (n *pregelNodeAdapter[I, O]) generateCacheKey(
-	ctx context.Context,
-	view *state.ReadView,
-	config *NodeConfig,
-) string {
-	snapshotData := make(map[string]any)
-	for _, key := range view.Keys() {
-		if view.Has(key) {
-			snapshotData[key] = true // Placeholder - KeyFunc should use GetFromView
-		}
-	}
-	return config.CachePolicy.KeyFunc(ctx, snapshotData)
-}
-
-// getCachedResult attempts to retrieve a valid cached result.
-func (n *pregelNodeAdapter[I, O]) getCachedResult(
-	ctx context.Context,
-	store CacheStore,
-	cacheKey string,
-	config *NodeConfig,
-) (state.Updates, bool) {
-	entry, err := store.Get(ctx, cacheKey)
-	if err != nil || entry.Updates == nil {
-		return nil, false
-	}
-
-	// Check TTL
-	if config.CachePolicy.TTL > 0 && time.Since(entry.Timestamp) >= config.CachePolicy.TTL {
-		return nil, false
-	}
-
-	return entry.Updates, true
-}
-
-// cacheResult stores execution results in the cache.
-func (n *pregelNodeAdapter[I, O]) cacheResult(
-	ctx context.Context,
-	store CacheStore,
-	cacheKey string,
-	updates state.Updates,
-	config *NodeConfig,
-) {
-	_ = store.Set(ctx, cacheKey, CacheEntry{
-		Updates:   updates,
-		Timestamp: time.Now(),
-	}, config.CachePolicy.TTL)
+	// Execute with retry policy
+	return n.executeWithRetry(ctx, node, view, retryPolicy)
 }
 
 // executeWithRetry executes a node with retry policy applied.
@@ -694,21 +616,23 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 	node Node,
 	view *state.ReadView,
 	policy *RetryPolicy,
-) (state.Updates, error) {
+) (*Command, error) {
 	pm, hasPluginManager := getNodeCallbacks(ctx)
 
 	// Try BeforeNode callback - may short-circuit execution
 	if shortCircuit, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view); err != nil {
 		return nil, err
 	} else if shortCircuit != nil {
-		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, shortCircuit, nil)
+		// Wrap shortCircuit updates as Command
+		cmd := &Command{Updates: shortCircuit, Goto: []string{}}
+		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, cmd, nil)
 	}
 
-	// Execute node with retry logic
-	updates, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
+	// Execute node with retry logic (now returns Command)
+	cmd, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
 
 	// Execute AfterNode or OnNodeError callback
-	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, updates, lastErr)
+	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, cmd, lastErr)
 }
 
 // executeBeforeNodeCallback executes BeforeNode plugin callback.
@@ -737,7 +661,7 @@ func (n *pregelNodeAdapter[I, O]) executeNodeWithPolicy(
 	node Node,
 	view *state.ReadView,
 	policy *RetryPolicy,
-) (state.Updates, error) {
+) (*Command, error) {
 	if policy == nil || policy.MaxAttempts <= 1 {
 		return node.Execute(ctx, view)
 	}
@@ -751,14 +675,14 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
 	node Node,
 	view *state.ReadView,
 	policy *RetryPolicy,
-) (state.Updates, error) {
-	var updates state.Updates
+) (*Command, error) {
+	var cmd *Command
 	var lastErr error
 
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		updates, lastErr = node.Execute(ctx, view)
+		cmd, lastErr = node.Execute(ctx, view)
 		if lastErr == nil {
-			return updates, nil
+			return cmd, nil
 		}
 
 		// Check if error is retryable
@@ -795,11 +719,11 @@ func (n *pregelNodeAdapter[I, O]) executeAfterNodeCallback(
 	ctx context.Context,
 	pm NodeCallbacks,
 	hasPluginManager bool,
-	updates state.Updates,
+	cmd *Command,
 	lastErr error,
-) (state.Updates, error) {
+) (*Command, error) {
 	if !hasPluginManager {
-		return updates, lastErr
+		return cmd, lastErr
 	}
 
 	if lastErr != nil {
@@ -815,11 +739,13 @@ func (n *pregelNodeAdapter[I, O]) executeAfterNodeCallback(
 		return nil, fmt.Errorf("failed to create after-node view: %w", err)
 	}
 
-	if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, updates); err != nil {
-		return nil, fmt.Errorf("after node callback failed: %w", err)
+	if cmd != nil && cmd.Updates != nil {
+		if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, cmd.Updates); err != nil {
+			return nil, fmt.Errorf("after node callback failed: %w", err)
+		}
 	}
 
-	return updates, nil
+	return cmd, nil
 }
 
 // shouldInterruptBefore checks if this node is in the interrupt-before list.
@@ -1081,17 +1007,26 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 	}
 
-	// Execute node with retry and cache policies
-	updates, err := n.executeWithPolicies(ctxWithStream, node, view)
+	// Execute node with retry and cache policies (now returns Command)
+	cmd, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
 		// Wrap node execution errors with sentinel for identification
 		nodeErr = fmt.Errorf("%w: node %q: %w", state.ErrNodeExecution, n.nodeName, err)
 		return nodeErr
 	}
 
-	if updates == nil {
+	if cmd == nil {
 		return nil
 	}
+
+	// Validate routing decision
+	if len(cmd.Goto) == 0 {
+		nodeErr = fmt.Errorf("node %q must specify routing targets (use graph.EndNode to terminate)", n.nodeName)
+		return nodeErr
+	}
+
+	// Extract updates from Command
+	updates := cmd.Updates
 
 	// Check for interrupt-after (before applying updates)
 	if n.shouldInterruptAfter() {
@@ -1159,68 +1094,24 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	}
 
 	// Send routing signals (and optionally state) to next nodes via pregel runtime
+	// Use Command.Goto for routing instead of edges/conditional edges
 	var stateData state.Updates
-	if n.enableDistributedState && len(updates) > 0 {
+	if n.enableDistributedState && updates != nil && len(updates) > 0 {
 		stateData = updates
 	}
 
-	// Check for conditional edges first
-	condEdges := n.compiled.topology.conditionalByFrom
-	found := false
-	for idx, conditions := range condEdges {
-		for _, cond := range conditions {
-			if cond.From == n.nodeName {
-				found = true
-				// CONDITIONAL ROUTING SEMANTICS:
-				// Creates fresh snapshot to evaluate routing - sees node's own updates.
-				//
-				// What routing sees:
-				//   - State from superstep N-1 (last superstep's final state)
-				//   - This node's updates from superstep N (applied immediately at line 599)
-				//   - NOT other nodes' updates from superstep N (BSP isolation)
-				//
-				// This violates pure BSP but enables agent patterns (ReAct, tool routing).
-				// Example: Model node produces AIMessage with tool_calls → routing checks
-				// tool_calls → routes to tool executor. Routing MUST see the AIMessage.
-				//
-				// Trade-off:
-				// - Pure BSP: Routing uses superstep snapshot → can't see own output → agents break
-				// - Hybrid: Routing sees own updates → agent routing works → not pure BSP
-				condView, err := n.compiled.manager.CreateReadView(ctx)
-				if err != nil {
-					nodeErr = fmt.Errorf("failed to create read view for conditionals: %w", err)
-					return nodeErr
-				}
-				targets := cond.Condition(ctx, condView)
-				for _, target := range targets {
-					if target != EndNode {
-						vertex.Send(pregel.Message[state.Updates]{
-							From: n.nodeName,
-							To:   target,
-							Data: stateData,
-						})
-					}
-				}
-				_ = idx // Mark as used
-				break
-			}
+	// Use Command.Goto for routing (Command pattern - unified routing model)
+	// The routing targets come from the Command returned by the node
+	for _, target := range cmd.Goto {
+		if target != EndNode {
+			// Send message to target node
+			vertex.Send(pregel.Message[state.Updates]{
+				From: n.nodeName,
+				To:   target,
+				Data: stateData,
+			})
 		}
-		if found {
-			break
-		}
-	}
-
-	if !found {
-		// Use regular outgoing edges
-		for _, target := range vertex.State.topology.outgoing[n.nodeName] {
-			if target != EndNode {
-				vertex.Send(pregel.Message[state.Updates]{
-					From: n.nodeName,
-					To:   target,
-					Data: stateData,
-				})
-			}
-		}
+		// If target is EndNode, node execution terminates (no message sent)
 	}
 
 	return nil

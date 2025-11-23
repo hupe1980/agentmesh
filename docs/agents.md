@@ -298,17 +298,22 @@ builder.AddNodeFunc("handle_sales", func(ctx context.Context, view *state.ReadVi
     }, nil
 })
 
-// Define flow
-builder.AddEdge("START", "classify")
-builder.AddConditionalEdges("classify", func(result *graph.NodeResult) []string {
-    category := result.Updates["category"].(string)
-    if category == "support" {
-        return []string{"handle_support"}
-    }
-    return []string{"handle_sales"}
+// Classifier node uses Command pattern for routing
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "classify",
+    DeclaredTargets: []string{"handle_support", "handle_sales"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // Classify the query...
+        category := "support"  // or "sales"
+        updates := map[string]any{"category": category}
+        if category == "support" {
+            return graph.Goto(updates, "handle_support"), nil
+        }
+        return graph.Goto(updates, "handle_sales"), nil
+    },
 })
-builder.AddEdge("handle_support", "END")
-builder.AddEdge("handle_sales", "END")
+
+g.SetEntryPoint("classify")
 
 // Compile and execute
 compiled, err := builder.Compile()
@@ -350,30 +355,40 @@ RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, err
 
 ## Conditional routing {#conditional-routing}
 
-Direct execution flow dynamically based on node outputs:
+Direct execution flow dynamically using commands:
 
 ```go
-builder.AddConditionalEdges("router", func(result *graph.NodeResult) []string {
-    // Route based on node output
-    switch result.Updates["action"].(string) {
-    case "approve":
-        return []string{"approver"}
-    case "reject":
-        return []string{"rejector"}
-    case "escalate":
-        return []string{"human_review"}
-    default:
-        return []string{"default_handler"}
-    }
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "router",
+    DeclaredTargets: []string{"approver", "rejector", "human_review", "default_handler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        action := state.GetFromView(view, ActionKey)
+        var nextNode string
+        switch action {
+        case "approve":
+            nextNode = "approver"
+        case "reject":
+            nextNode = "rejector"
+        case "escalate":
+            nextNode = "human_review"
+        default:
+            nextNode = "default_handler"
+        }
+        return graph.Goto(nil, nextNode), nil
+    },
 })
 ```
 
-Routes can return multiple node names for parallel execution:
+Nodes can declare multiple targets for potential parallel execution:
 
 ```go
-builder.AddConditionalEdges("fanout", func(result *graph.NodeResult) []string {
-    // Execute all three analysts in parallel
-    return []string{"analyst_a", "analyst_b", "analyst_c"}
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "fanout",
+    DeclaredTargets: []string{"analyst_a", "analyst_b", "analyst_c"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // DeclaredTargets defines potential parallel execution paths
+        return graph.Goto(nil, "analyst_a"), nil
+    },
 })
 ```
 
@@ -381,21 +396,30 @@ builder.AddConditionalEdges("fanout", func(result *graph.NodeResult) []string {
 
 ## Parallel execution {#parallel-execution}
 
-Nodes with the same predecessors automatically execute in parallel:
+Nodes with declared targets can fan out to parallel execution:
 
 ```go
-// These three nodes execute concurrently
-builder.AddEdge("START", "fetch_data_a")
-builder.AddEdge("START", "fetch_data_b")
-builder.AddEdge("START", "fetch_data_c")
+// Entry node fans out to three concurrent tasks
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "start",
+    DeclaredTargets: []string{"fetch_data_a", "fetch_data_b", "fetch_data_c"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.Goto(nil, "fetch_data_a"), nil  // Fan-out via targets
+    },
+})
 
-// All converge to aggregator
-builder.AddEdge("fetch_data_a", "aggregator")
-builder.AddEdge("fetch_data_b", "aggregator")
-builder.AddEdge("fetch_data_c", "aggregator")
+// Each fetch task routes to aggregator
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "fetch_data_a",
+    DeclaredTargets: []string{"aggregator"},
+    Fn:              fetchAFunc,
+})
+// fetch_data_b and fetch_data_c similar...
+
+g.SetEntryPoint("start")
 ```
 
-The aggregator waits for all predecessors to complete before executing.
+The aggregator waits for all incoming nodes to complete before executing.
 
 ---
 

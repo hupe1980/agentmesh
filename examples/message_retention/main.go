@@ -64,8 +64,10 @@ func runExample(maxSize int) {
 	}
 
 	// Create a simple echo node
-	err = g.AddNode(graph.NewBaseNode("echo",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "echo",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
@@ -74,15 +76,20 @@ func runExample(maxSize int) {
 				message.Message(message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts()))),
 			)
 
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
 		},
-	))
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	g.AddEdge(graph.StartNode, "echo")
-	g.AddEdge("echo", graph.EndNode)
+	if err := g.SetEntryPoint("echo"); err != nil {
+		panic(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {

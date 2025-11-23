@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
@@ -25,6 +26,7 @@ type ToolNode struct {
 	errorPrefix     string
 	continueOnError bool
 	parallel        bool
+	targets         []string // Configurable routing targets
 }
 
 // ToolNodeOption configures a tool node.
@@ -58,6 +60,14 @@ func WithContinueOnToolError(continueOnError bool) ToolNodeOption {
 func WithParallelToolExecution(parallel bool) ToolNodeOption {
 	return func(n *ToolNode) {
 		n.parallel = parallel
+	}
+}
+
+// WithToolTargets sets the possible routing targets for this node.
+// Default is []string{"model"}.
+func WithToolTargets(targets []string) ToolNodeOption {
+	return func(n *ToolNode) {
+		n.targets = targets
 	}
 }
 
@@ -126,6 +136,7 @@ func NewToolNode(toolRegistry map[string]tool.Tool, opts ...ToolNodeOption) (*To
 		errorPrefix:     "tool node",
 		continueOnError: false,
 		parallel:        false,
+		targets:         []string{"model"}, // Default target
 	}
 
 	for _, opt := range opts {
@@ -140,23 +151,35 @@ func (n *ToolNode) Name() string {
 	return n.name
 }
 
+// Targets returns the possible routing destinations for this node.
+func (n *ToolNode) Targets() []string {
+	if len(n.targets) > 0 {
+		return n.targets
+	}
+	// Default target for backward compatibility
+	return []string{"model"}
+}
+
 // Execute processes tool calls from the last AI message.
 //
 // Tool node requires handling many event types and configurations
-func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 	// Get last message from state
 	lastMsg := LastMessage(view)
 	if lastMsg == nil {
-		return state.NoUpdate(), nil
+		// No message, route back to model
+		return graph.GotoOne("model"), nil
 	}
 
 	ai, ok := lastMsg.(*message.AIMessage)
 	if !ok || ai == nil {
-		return state.NoUpdate(), nil
+		// Not an AI message, route back to model
+		return graph.GotoOne("model"), nil
 	}
 
 	if len(ai.ToolCalls) == 0 {
-		return state.NoUpdate(), nil
+		// No tool calls, route back to model
+		return graph.GotoOne("model"), nil
 	}
 
 	var toolMessages []message.Message
@@ -176,8 +199,10 @@ func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (state.Upd
 
 	builder := state.NewUpdateBuilder()
 	state.AppendUpdate(builder, MessagesKey, toolMessages...)
+	updates, _ := builder.Build()
 
-	return builder.Build()
+	// Tool node always routes back to model after execution
+	return graph.Goto("model", updates), nil
 }
 
 // handleToolError processes tool execution errors with plugins and fallbacks.

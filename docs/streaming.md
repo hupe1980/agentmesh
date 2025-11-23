@@ -203,10 +203,18 @@ func main() {
         }, nil
     })
     
-    // Build graph topology
-    builder.AddEdge(graph.StartNode, "data_processor")
-    builder.AddEdge("data_processor", "analyzer")
-    builder.AddEdge("analyzer", graph.EndNode)
+    // Build graph with Command routing
+    g.AddNode(&graph.BaseCommandNode{
+        NodeName:        "data_processor",
+        DeclaredTargets: []string{"analyzer"},
+        Fn:              dataProcessorFunc,
+    })
+    g.AddNode(&graph.BaseCommandNode{
+        NodeName:        "analyzer",
+        DeclaredTargets: []string{graph.EndNode},
+        Fn:              analyzerFunc,
+    })
+    g.SetEntryPoint("data_processor")
     
     compiled, _ := builder.Compile()
     

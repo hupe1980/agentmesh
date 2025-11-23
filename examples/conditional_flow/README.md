@@ -4,7 +4,7 @@
 Demonstrates conditional routing and dynamic branching in AgentMesh graphs. Shows how to create decision trees where execution path depends on runtime state.
 
 ## Key Concepts
-- **Conditional Edges**: Dynamic routing based on state
+- **Command-Based Routing**: Dynamic next-node selection via commands
 - **Decision Trees**: Branch to different nodes based on conditions
 - **State-Based Routing**: Read state values to determine next node
 - **TopicChannel**: Accumulate action history
@@ -60,9 +60,19 @@ func routeByChoice(ctx context.Context, s state.Reader) (string, error) {
 }
 ```
 
-### 2. Add Conditional Edge
+### 2. Implement Router as Command Node
 ```go
-builder.AddConditionalEdges("router", routeByChoice)
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "router",
+    DeclaredTargets: []string{"path_a_handler", "path_b_handler", "error_handler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        next, err := routeByChoice(ctx, view)
+        if err != nil {
+            return nil, err
+        }
+        return graph.Goto(nil, next), nil
+    },
+})
 ```
 
 ### 3. Create Branch Nodes
@@ -125,7 +135,7 @@ func dataRoute(ctx context.Context, s state.Reader) (string, error) {
 ```
 
 ## What This Example Teaches
-- ✅ Conditional edge routing
+- ✅ Command-based conditional routing
 - ✅ Dynamic execution paths
 - ✅ State-based decision making
 - ✅ Building decision trees
@@ -171,6 +181,6 @@ func priorityRoute(ctx context.Context, s state.Reader) (string, error) {
 - See **examples/subgraph** for nested workflows
 
 ## See Also
-- [pkg/graph](../../pkg/graph) - Conditional edges API
+- [pkg/graph](../../pkg/graph) - Command-based routing API
 - [examples/subgraph](../subgraph) - Complex workflows
 - [examples/parallel_tasks](../parallel_tasks) - Parallel execution

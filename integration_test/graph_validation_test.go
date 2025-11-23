@@ -23,20 +23,26 @@ func TestGraphValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add reachable node
-		reachable := graph.NewBaseNode("reachable", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		reachable := &graph.BaseCommandNode{
+			NodeName:        "reachable",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		// Add unreachable node (no edges to it)
-		unreachable := graph.NewBaseNode("unreachable", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		unreachable := &graph.BaseCommandNode{
+			NodeName:        "unreachable",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(reachable)
 		g.AddNode(unreachable)
-		g.AddEdge(graph.StartNode, "reachable")
-		g.AddEdge("reachable", graph.EndNode)
-		// "unreachable" has no incoming edges - it won't execute but graph compiles
+		g.SetEntryPoint("reachable") // "unreachable" has no incoming edges - it won't execute but graph compiles
 
 		// Compilation succeeds (unreachable nodes are ignored during execution)
 		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
@@ -49,19 +55,25 @@ func TestGraphValidation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		step1 := graph.NewBaseNode("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		step1 := &graph.BaseCommandNode{
+			NodeName:        "step1",
+			DeclaredTargets: graph.NewTargetSet("step2"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.GotoOne("step2"), nil
+			},
+		}
 
-		step2 := graph.NewBaseNode("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		step2 := &graph.BaseCommandNode{
+			NodeName:        "step2",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(step1)
 		g.AddNode(step2)
-		g.AddEdge(graph.StartNode, "step1")
-		g.AddEdge("step1", "step2")
-		g.AddEdge("step2", graph.EndNode)
+		g.SetEntryPoint("step1")
 
 		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err, "valid graph should compile without errors")
@@ -76,30 +88,35 @@ func TestGraphValidation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		router := graph.NewBaseNode("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		router := &graph.BaseCommandNode{
+			NodeName:        "router",
+			DeclaredTargets: graph.NewTargetSet("pathA", "pathB"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.GotoOne("pathA"), nil
+			},
+		}
 
-		pathA := graph.NewBaseNode("pathA", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		pathA := &graph.BaseCommandNode{
+			NodeName:        "pathA",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
-		pathB := graph.NewBaseNode("pathB", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		pathB := &graph.BaseCommandNode{
+			NodeName:        "pathB",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(router)
 		g.AddNode(pathA)
 		g.AddNode(pathB)
 
-		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
-			return []string{"pathA"}
-		}, []string{"pathA", "pathB"})
-		g.AddEdge("pathA", graph.EndNode)
-		g.AddEdge("pathB", graph.EndNode)
-
-		// Both branches are reachable via conditional
+		g.SetEntryPoint("router") // Both branches are reachable via conditional
 		_, err = graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 	})
@@ -114,13 +131,16 @@ func TestErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedErr := errors.New("node failed")
-		failingNode := graph.NewBaseNode("failing", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, expectedErr
-		})
+		failingNode := &graph.BaseCommandNode{
+			NodeName:        "failing",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return nil, expectedErr
+			},
+		}
 
 		g.AddNode(failingNode)
-		g.AddEdge(graph.StartNode, "failing")
-		g.AddEdge("failing", graph.EndNode)
+		g.SetEntryPoint("failing")
 
 		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
@@ -144,22 +164,28 @@ func TestErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		node1Executed := false
-		node1 := graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			node1Executed = true
-			return nil, errors.New("error in node1")
-		})
+		node1 := &graph.BaseCommandNode{
+			NodeName:        "node1",
+			DeclaredTargets: graph.NewTargetSet("node2"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				node1Executed = true
+				return nil, errors.New("error in node1")
+			},
+		}
 
 		node2Executed := false
-		node2 := graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			node2Executed = true
-			return nil, nil
-		})
+		node2 := &graph.BaseCommandNode{
+			NodeName:        "node2",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				node2Executed = true
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(node1)
 		g.AddNode(node2)
-		g.AddEdge(graph.StartNode, "node1")
-		g.AddEdge("node1", "node2")
-		g.AddEdge("node2", graph.EndNode)
+		g.SetEntryPoint("node1")
 
 		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
@@ -192,52 +218,71 @@ func TestComplexGraphPatterns(t *testing.T) {
 		var executionOrderMu sync.Mutex
 
 		// Diamond pattern: start -> split -> (left, right) -> merge -> end
-		split := graph.NewBaseNode("split", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			executionOrderMu.Lock()
-			executionOrder = append(executionOrder, "split")
-			executionOrderMu.Unlock()
-			return map[string]any{"split_done": true}, nil
-		})
+		split := &graph.BaseCommandNode{
+			NodeName:        "split",
+			DeclaredTargets: graph.NewTargetSet("left", "right"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				executionOrderMu.Lock()
+				executionOrder = append(executionOrder, "split")
+				executionOrderMu.Unlock()
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, splitDoneKey, true)
+				updates, _ := builder.Build()
+				return graph.GotoAll([]string{"left", "right"}, updates), nil
+			},
+		}
 
-		left := graph.NewBaseNode("left", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			executionOrderMu.Lock()
-			executionOrder = append(executionOrder, "left")
-			executionOrderMu.Unlock()
-			return map[string]any{"left_done": true}, nil
-		})
+		left := &graph.BaseCommandNode{
+			NodeName:        "left",
+			DeclaredTargets: graph.NewTargetSet("merge"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				executionOrderMu.Lock()
+				executionOrder = append(executionOrder, "left")
+				executionOrderMu.Unlock()
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, leftDoneKey, true)
+				updates, _ := builder.Build()
+				return graph.Goto("merge", updates), nil
+			},
+		}
 
-		right := graph.NewBaseNode("right", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			executionOrderMu.Lock()
-			executionOrder = append(executionOrder, "right")
-			executionOrderMu.Unlock()
-			return map[string]any{"right_done": true}, nil
-		})
+		right := &graph.BaseCommandNode{
+			NodeName:        "right",
+			DeclaredTargets: graph.NewTargetSet("merge"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				executionOrderMu.Lock()
+				executionOrder = append(executionOrder, "right")
+				executionOrderMu.Unlock()
+				builder := state.NewUpdateBuilder()
+				state.SetUpdate(builder, rightDoneKey, true)
+				updates, _ := builder.Build()
+				return graph.Goto("merge", updates), nil
+			},
+		}
 
-		merge := graph.NewBaseNode("merge", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			executionOrderMu.Lock()
-			executionOrder = append(executionOrder, "merge")
-			executionOrderMu.Unlock()
-			// Both left and right should have executed
-			leftDone := state.GetFromView(view, leftDoneKey)
-			rightDone := state.GetFromView(view, rightDoneKey)
-			if !leftDone || !rightDone {
-				return nil, errors.New("left and right should have executed before merge")
-			}
-			return nil, nil
-		})
+		merge := &graph.BaseCommandNode{
+			NodeName:        "merge",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				executionOrderMu.Lock()
+				executionOrder = append(executionOrder, "merge")
+				executionOrderMu.Unlock()
+				// Both left and right should have executed
+				leftDone := state.GetFromView(view, leftDoneKey)
+				rightDone := state.GetFromView(view, rightDoneKey)
+				if !leftDone || !rightDone {
+					return nil, errors.New("left and right should have executed before merge")
+				}
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(split)
 		g.AddNode(left)
 		g.AddNode(right)
 		g.AddNode(merge)
 
-		g.AddEdge(graph.StartNode, "split")
-		g.AddConditionalEdges("split", func(ctx context.Context, view *state.ReadView) []string {
-			return []string{"left", "right"}
-		}, []string{"left", "right"})
-		g.AddEdge("left", "merge")
-		g.AddEdge("right", "merge")
-		g.AddEdge("merge", graph.EndNode)
+		g.SetEntryPoint("split")
 
 		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
@@ -279,22 +324,23 @@ func TestComplexGraphPatterns(t *testing.T) {
 		counter := 0
 		maxIterations := 3
 
-		loop := graph.NewBaseNode("loop", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			counter++
-			return map[string]any{"counter": counter}, nil
-		})
+		loop := &graph.BaseCommandNode{
+			NodeName:        "loop",
+			DeclaredTargets: graph.NewTargetSet("loop", graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				counter++
+				updates := map[string]any{"counter": counter}
+				// Routing determined by Command.Goto() or Command.End()
+				// Check counter within node and route accordingly
+				if counter >= maxIterations {
+					return graph.End(updates), nil
+				}
+				return graph.Goto("loop", updates), nil
+			},
+		}
 
 		g.AddNode(loop)
-		g.AddEdge(graph.StartNode, "loop")
-
-		// Conditional: loop back or exit
-		g.AddConditionalEdges("loop", func(ctx context.Context, view *state.ReadView) []string {
-			c := state.GetFromView(view, counterKey)
-			if c >= maxIterations {
-				return []string{graph.EndNode}
-			}
-			return []string{"loop"}
-		}, []string{"loop", graph.EndNode})
+		g.SetEntryPoint("loop")
 
 		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
@@ -316,13 +362,16 @@ func TestCompileOptions(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		node := graph.NewBaseNode("test", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		node := &graph.BaseCommandNode{
+			NodeName:        "test",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(node)
-		g.AddEdge(graph.StartNode, "test")
-		g.AddEdge("test", graph.EndNode)
+		g.SetEntryPoint("test")
 
 		// Compile with Sequential executor
 		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
@@ -341,13 +390,16 @@ func TestCompileOptions(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		node := graph.NewBaseNode("test", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		})
+		node := &graph.BaseCommandNode{
+			NodeName:        "test",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		}
 
 		g.AddNode(node)
-		g.AddEdge(graph.StartNode, "test")
-		g.AddEdge("test", graph.EndNode)
+		g.SetEntryPoint("test")
 
 		// Compile without executor option (should default to Pregel)
 		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
@@ -369,16 +421,22 @@ func TestTopologyComputation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(graph.NewBaseNode("a", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}))
-		g.AddNode(graph.NewBaseNode("b", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}))
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "a",
+			DeclaredTargets: graph.NewTargetSet("b"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.GotoOne("b"), nil
+			},
+		})
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "b",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		})
 
-		g.AddEdge(graph.StartNode, "a")
-		g.AddEdge("a", "b")
-		g.AddEdge("b", graph.EndNode)
+		g.SetEntryPoint("a")
 
 		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
@@ -396,28 +454,35 @@ func TestTopologyComputation(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		g.AddNode(graph.NewBaseNode("router", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}))
-		g.AddNode(graph.NewBaseNode("target1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}))
-		g.AddNode(graph.NewBaseNode("target2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}))
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "router",
+			DeclaredTargets: graph.NewTargetSet("target1", "target2"),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.GotoOne("target1"), nil
+			},
+		})
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "target1",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		})
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "target2",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				return graph.End(nil), nil
+			},
+		})
 
-		g.AddEdge(graph.StartNode, "router")
-		g.AddConditionalEdges("router", func(ctx context.Context, view *state.ReadView) []string {
-			return []string{"target1"}
-		}, []string{"target1", "target2"})
-		g.AddEdge("target1", graph.EndNode)
-		g.AddEdge("target2", graph.EndNode)
+		g.SetEntryPoint("router")
 
 		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
 		require.NoError(t, err)
 
-		// Verify topology includes conditional nodes
+		// Verify topology includes command nodes
 		topo := compiled.GetTopology()
-		assert.Contains(t, topo.ConditionalNodes, "router")
+		assert.Contains(t, topo.CommandNodes, "router")
 	})
 }

@@ -66,8 +66,10 @@ func main() {
 
 	// Add nodes that use providers via FromContext()
 	// Automatic instrumentation happens behind the scenes
-	if err := g.AddNode(graph.NewBaseNode("step1",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "step1",
+		DeclaredTargets: graph.NewTargetSet("step2"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -87,14 +89,20 @@ func main() {
 
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, counterKey, counter)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("step2", updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := g.AddNode(graph.NewBaseNode("step2",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "step2",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 
@@ -111,15 +119,19 @@ func main() {
 
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, counterKey, newValue)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		log.Fatal(err)
 	}
 
-	g.AddEdge(graph.StartNode, "step1")
-	g.AddEdge("step1", "step2")
-	g.AddEdge("step2", graph.EndNode)
+	if err := g.SetEntryPoint("step1"); err != nil {
+		panic(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {

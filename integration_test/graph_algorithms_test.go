@@ -11,11 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPageRank implements the PageRank algorithm to verify iterative convergence
+// TestPageRank verifies we can run a simple iterative
+// PageRank-like computation using a single Command-based entry node.
 func TestPageRank(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	stateManager := newTestManager()
 
 	const (
 		dampingFactor = 0.85
@@ -23,9 +25,7 @@ func TestPageRank(t *testing.T) {
 		tolerance     = 0.001
 	)
 
-	// Create a simple graph: A -> B, A -> C, B -> C, C -> A
-	stateManager := newTestManager()
-
+	// Three vertices with a fixed link structure encoded in state.
 	vertices := []string{"A", "B", "C"}
 	edges := map[string][]string{
 		"A": {"B", "C"},
@@ -33,13 +33,11 @@ func TestPageRank(t *testing.T) {
 		"C": {"A"},
 	}
 
-	// Create typed keys for each vertex
+	// Per-vertex rank and outgoing-edge keys.
 	rankKeys := make(map[string]state.Key[float64])
 	outgoingKeys := make(map[string]state.Key[[]string])
-	contribKeys := make(map[string]map[string]state.Key[float64])
 
 	initialRank := 1.0 / float64(len(vertices))
-
 	for _, v := range vertices {
 		rankKeys[v] = state.NewKey(fmt.Sprintf("rank_%s", v), initialRank)
 		state.RegisterKey(stateManager, rankKeys[v])
@@ -48,89 +46,52 @@ func TestPageRank(t *testing.T) {
 		state.RegisterKey(stateManager, outgoingKeys[v])
 	}
 
-	// Create contribution keys for each edge
-	contribKeys = make(map[string]map[string]state.Key[float64])
-	for _, source := range vertices {
-		contribKeys[source] = make(map[string]state.Key[float64])
-		for _, target := range vertices {
-			key := state.NewKey(fmt.Sprintf("contrib_%s_%s", source, target), 0.0)
-			state.RegisterKey(stateManager, key)
-			contribKeys[source][target] = key
-		}
-	}
-
+	// Single node that performs one PageRank iteration per execution.
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	// Create compute nodes for each vertex
-	for _, vertex := range vertices {
-		v := vertex // capture loop variable
-		err = g.AddNode(graph.NewBaseNode(v, func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			// Get outgoing edges
-			outgoingEdges := state.GetFromView(view, outgoingKeys[v])
-			if len(outgoingEdges) == 0 {
-				return nil, nil
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "pagerank",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			// Compute contributions from current ranks.
+			contrib := make(map[string]float64)
+			for _, v := range vertices {
+				outgoing := state.GetFromView(view, outgoingKeys[v])
+				if len(outgoing) == 0 {
+					continue
+				}
+				rank := state.GetFromView(view, rankKeys[v])
+				share := rank / float64(len(outgoing))
+				for _, target := range outgoing {
+					contrib[target] += share
+				}
 			}
-
-			// Get current rank
-			rank := state.GetFromView(view, rankKeys[v])
-
-			// Distribute rank to outgoing neighbors
-			contribution := rank / float64(len(outgoingEdges))
 
 			updates := make(map[string]any)
-			for _, target := range outgoingEdges {
-				key := fmt.Sprintf("contrib_%s_%s", v, target)
-				updates[key] = contribution
+			for _, v := range vertices {
+				newRank := (1-dampingFactor)/float64(len(vertices)) + dampingFactor*contrib[v]
+				updates[fmt.Sprintf("rank_%s", v)] = newRank
 			}
 
-			return updates, nil
+			return graph.End(updates), nil
 		},
-		))
-		require.NoError(t, err)
-		g.AddEdge(graph.StartNode, v)
-		g.AddEdge(v, graph.EndNode)
-	}
+	})
+	require.NoError(t, err)
+
+	g.SetEntryPoint("pagerank")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
-	// Run multiple iterations
+	// Run multiple iterations via repeated graph execution.
 	for i := 0; i < iterations; i++ {
-		// Execute one iteration
 		for _, err := range compiled.Run(context.Background(), nil) {
 			require.NoError(t, err)
 		}
-
-		// Get snapshot to read current state
-		view, err := stateManager.CreateReadView(ctx)
-		if err != nil {
-			t.Fatalf("CreateReadView failed: %v", err)
-		}
-
-		// Accumulate contributions for each vertex
-		newRanks := make(map[string]float64)
-		for _, v := range vertices {
-			// Sum all contributions to this vertex
-			totalContrib := 0.0
-			for _, source := range vertices {
-				contrib := state.GetFromView(view, contribKeys[source][v])
-				totalContrib += contrib
-			}
-
-			// Apply PageRank formula: (1-d)/N + d * sum(contributions)
-			newRank := (1-dampingFactor)/float64(len(vertices)) + dampingFactor*totalContrib
-			newRanks[v] = newRank
-		}
-
-		// Update all ranks for next iteration
-		ctx := context.Background()
-		for v, rank := range newRanks {
-			_ = state.Set(ctx, stateManager, rankKeys[v], rank)
-		}
 	}
 
-	// Verify ranks sum to approximately 1.0
+	// Verify ranks sum to approximately 1.0.
 	view, err := stateManager.CreateReadView(ctx)
 	if err != nil {
 		t.Fatalf("CreateReadView failed: %v", err)
@@ -140,15 +101,14 @@ func TestPageRank(t *testing.T) {
 	for _, v := range vertices {
 		rank := state.GetFromView(view, rankKeys[v])
 		totalRank += rank
-		// Each rank should be positive
 		require.Greater(t, rank, 0.0, "rank for %s should be positive", v)
 	}
 
-	// Total should be close to 1.0 (allowing for floating point errors)
 	require.InDelta(t, 1.0, totalRank, tolerance, "total PageRank should sum to 1.0")
 }
 
-// TestShortestPath implements Dijkstra-style single-source shortest path
+// TestShortestPath implements a simple single-source shortest path
+// relaxation using a single Command-based entry node.
 func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
@@ -183,37 +143,34 @@ func TestShortestPath(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	// Create relaxation nodes
-	for _, vertex := range vertices {
-		v := vertex
-		err = g.AddNode(graph.NewBaseNode(v, func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			dist := state.GetFromView(view, distKeys[v])
-			if dist == math.MaxInt32 {
-				return nil, nil
-			}
-
-			neighbors := state.GetFromView(view, edgeKeys[v])
-			if len(neighbors) == 0 {
-				return nil, nil
-			}
-
+	// Single node that performs relaxation for all vertices per execution.
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "shortest_path",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 			updates := make(map[string]any)
-			for neighbor, weight := range neighbors {
-				newDist := dist + weight
-				currentNeighborDist := state.GetFromView(view, distKeys[neighbor])
+			for _, v := range vertices {
+				dist := state.GetFromView(view, distKeys[v])
+				if dist == math.MaxInt32 {
+					continue
+				}
 
-				if newDist < currentNeighborDist {
-					updates[fmt.Sprintf("dist_%s", neighbor)] = newDist
+				neighbors := state.GetFromView(view, edgeKeys[v])
+				for neighbor, weight := range neighbors {
+					newDist := dist + weight
+					currentNeighborDist := state.GetFromView(view, distKeys[neighbor])
+					if newDist < currentNeighborDist {
+						updates[fmt.Sprintf("dist_%s", neighbor)] = newDist
+					}
 				}
 			}
 
-			return updates, nil
+			return graph.End(updates), nil
 		},
-		))
-		require.NoError(t, err)
-		g.AddEdge(graph.StartNode, v)
-		g.AddEdge(v, graph.EndNode)
-	}
+	})
+	require.NoError(t, err)
+
+	g.SetEntryPoint("shortest_path")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -257,24 +214,27 @@ func TestGraphConvergence(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(graph.NewBaseNode("incrementer", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		count := state.GetFromView(view, counterKey)
-		target := state.GetFromView(view, targetKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "incrementer",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			count := state.GetFromView(view, counterKey)
+			target := state.GetFromView(view, targetKey)
 
-		if count >= target {
-			// Converged - return empty result
-			return nil, nil
-		}
+			if count >= target {
+				// Converged - return empty result
+				return graph.End(nil), nil
+			}
 
-		return map[string]any{
-			"counter": count + 1,
-		}, nil
-	},
-	))
+			updates := map[string]any{
+				"counter": count + 1,
+			}
+			return graph.End(updates), nil
+		},
+	})
 	require.NoError(t, err)
 
-	g.AddEdge(graph.StartNode, "incrementer")
-	g.AddEdge("incrementer", graph.EndNode)
+	g.SetEntryPoint("incrementer")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -310,20 +270,23 @@ func TestIterativeComputation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node that halves the value each iteration
-	err = g.AddNode(graph.NewBaseNode("halvinator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		value := state.GetFromView(view, valueKey)
-		iteration := state.GetFromView(view, iterationKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "halvinator",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			value := state.GetFromView(view, valueKey)
+			iteration := state.GetFromView(view, iterationKey)
 
-		return map[string]any{
-			"value":     value / 2.0,
-			"iteration": iteration + 1,
-		}, nil
-	},
-	))
+			updates := map[string]any{
+				"value":     value / 2.0,
+				"iteration": iteration + 1,
+			}
+			return graph.End(updates), nil
+		},
+	})
 	require.NoError(t, err)
 
-	g.AddEdge(graph.StartNode, "halvinator")
-	g.AddEdge("halvinator", graph.EndNode)
+	g.SetEntryPoint("halvinator")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)

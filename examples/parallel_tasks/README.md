@@ -64,37 +64,47 @@ state.AddChannel(state.NewTopicChannel("messages", 100))
 
 ### 3. Create Parallel Nodes
 ```go
-builder.AddNodeFunc("task_a", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    time.Sleep(2 * time.Second) // Simulate work
-    return &graph.NodeResult{
-        Updates: map[string]any{
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "task_a",
+    DeclaredTargets: []string{"merge"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        time.Sleep(2 * time.Second) // Simulate work
+        updates := map[string]any{
             "results": map[string]any{"a": 100},
-        },
-    }, nil
+        }
+        return graph.Goto(updates, "merge"), nil
+    },
 })
 
-builder.AddNodeFunc("task_b", /* similar */)
-builder.AddNodeFunc("task_c", /* similar */)
+// task_b and task_c are similar, each Goto("merge") with their own updates
 ```
 
-### 4. Add Edges for Fan-Out
+### 4. Entry Point and Fan-Out
 ```go
-builder.AddEdge("start", "task_a")
-builder.AddEdge("start", "task_b")
-builder.AddEdge("start", "task_c")
+// Single entry node that starts the parallel tasks
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "start",
+    DeclaredTargets: []string{"task_a", "task_b", "task_c"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // Fan-out is modeled by command targets; no manual AddEdge calls
+        return graph.Goto(nil, "task_a"), nil
+    },
+})
+
+g.SetEntryPoint("start")
 ```
 
 ### 5. Add Merge Node for Fan-In
 ```go
-builder.AddNodeFunc("merge", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    results, _ := s.Get("results").(map[string]any)
-    fmt.Printf("Merged results: %v\n", results)
-    return nil, nil
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "merge",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        results := state.GetFromView(view, resultsKey)
+        fmt.Printf("Merged results: %v\n", results)
+        return graph.End(nil), nil
+    },
 })
-
-builder.AddEdge("task_a", "merge")
-builder.AddEdge("task_b", "merge")
-builder.AddEdge("task_c", "merge")
 ```
 
 ### 6. Control Concurrency

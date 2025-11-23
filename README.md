@@ -16,6 +16,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 
 ### 🎯 Core Capabilities
 - **🔄 Parallel Graph Execution** - Pregel-based BSP engine with optimized concurrency (4-10x faster state access, 50-250x better frontier scaling)
+- **⚡ Command Pattern** - Imperative routing with co-located state updates and routing decisions
 - **🧠 LLM Integration** - First-class support for OpenAI, Anthropic, and extensible model interfaces
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic JSON schema generation
 - **🔒 WASM Tool Sandboxing** - Memory-safe sandbox for executing untrusted code with strict isolation
@@ -523,10 +524,18 @@ builder.AddNodeFunc("step2", func(ctx context.Context, view *state.ReadView) (st
     return nil, nil
 })
 
-// Define flow
-builder.AddEdge(graph.StartNode, "step1")
-builder.AddEdge("step1", "step2")
-builder.AddEdge("step2", graph.EndNode)
+// Define flow with Command pattern
+builder.SetEntryPoint("step1")
+targets1 := graph.NewTargetSet("step2")
+builder.AddCommandNode("step1", targets1, func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    return targets1.Goto("step2", state.Updates{"result": "processed"}), nil
+})
+targets2 := graph.NewTargetSet(graph.EndNode)
+builder.AddCommandNode("step2", targets2, func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    result := state.GetFromView(view, ResultKey)
+    fmt.Println("Received:", result)
+    return targets2.End(nil), nil
+})
 
 // Compile with type-safe API (Go 1.24+ generics)
 compiled, err := builder.Compile()
@@ -671,23 +680,26 @@ compiled, _ := builder.Compile()
 Resilient execution with fluent builder API:
 
 ```go
-builder.AddNodeFunc("flaky_api", apiCallFunc)
+targets := graph.NewTargetSet(graph.EndNode)
 
 // Simple retry with defaults (3 attempts, exponential backoff)
-builder.SetRetryPolicy("flaky_api", graph.NewRetryPolicy().Build())
+builder.AddCommandNodeWithRetry("flaky_api", targets, apiCallFunc,
+    graph.NewRetryPolicy().Build())
 
 // Customized retry strategy
-builder.SetRetryPolicy("external_service", graph.NewRetryPolicy().
-    WithMaxAttempts(5).
-    WithExponentialBackoff(time.Second, 2.0).
-    WithRetryableErrors(ErrTransient, ErrTimeout).
-    Build())
+builder.AddCommandNodeWithRetry("external_service", targets, serviceCallFunc,
+    graph.NewRetryPolicy().
+        WithMaxAttempts(5).
+        WithExponentialBackoff(time.Second, 2.0).
+        WithRetryableErrors(ErrTransient, ErrTimeout).
+        Build())
 
 // Advanced: Capped exponential with jitter
 policy := graph.NewRetryPolicy().
     WithMaxAttempts(10).
     WithCustomBackoff(graph.JitteredExponentialBackoff(time.Second, 2.0, 0.1)).
     Build()
+builder.AddCommandNodeWithRetry("critical_service", targets, criticalFunc, policy)
 ```
 
 **Available backoff strategies:**

@@ -36,7 +36,9 @@ func main() {
 		log.Fatalf("Failed to create pipeline builder: %v", err)
 	}
 
-	pipeline.AddNodeFunc("init", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.SetEntryPoint("init")
+
+	pipeline.AddStaticNode("init", graph.NewTargetSet("validation"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := map[string]any{
 			"user_id": "12345",
 			"email":   "user@example.com",
@@ -47,7 +49,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.AddNodeFunc("validation", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddStaticNode("validation", graph.NewTargetSet("enrichment"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		builder := graphstate.NewUpdateBuilder()
 
@@ -67,7 +69,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.AddNodeFunc("enrichment", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddStaticNode("enrichment", graph.NewTargetSet("analysis"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		data := graphstate.GetFromView(view, dataKey)
 		valid := graphstate.GetFromView(view, validKey)
 		if !valid {
@@ -89,7 +91,7 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.AddNodeFunc("analysis", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddStaticNode("analysis", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		enrichedData := graphstate.GetFromView(view, enrichedDataKey)
 		analysis := map[string]any{
 			"processed":   true,
@@ -100,12 +102,6 @@ func main() {
 		graphstate.SetUpdate(builder, analysisKey, analysis)
 		return builder.Build()
 	})
-
-	pipeline.AddEdge(graph.StartNode, "init")
-	pipeline.AddEdge("init", "validation")
-	pipeline.AddEdge("validation", "enrichment")
-	pipeline.AddEdge("enrichment", "analysis")
-	pipeline.AddEdge("analysis", graph.EndNode)
 
 	compiled, err := pipeline.Compile()
 	if err != nil {

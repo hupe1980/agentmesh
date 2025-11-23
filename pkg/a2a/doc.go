@@ -48,14 +48,13 @@
 //	builder := graph.NewBuilder()
 //
 //	// Add regular nodes
-//	builder.AddNodeFunc("prepare", prepareFunc)
+//	builder.AddStaticNode("prepare", graph.NewTargetSet("external_agent"), prepareFunc)
 //
 //	// Add A2A agent node
 //	a2aNode := a2a.NewAgentNode("https://agent.example.com", "skill-id")
-//	builder.AddNodeFunc("external_agent", a2aNode)
+//	builder.AddCommandNode("external_agent", graph.NewTargetSet(graph.EndNode), a2aNode)
 //
-//	builder.AddEdge("prepare", "external_agent")
-//	builder.AddEdge("external_agent", "END")
+//	builder.SetEntryPoint("prepare", "external_agent")
 //
 // # Message Conversion
 //

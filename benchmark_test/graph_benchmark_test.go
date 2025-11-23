@@ -113,17 +113,22 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 
 		g, _ := graph.NewGraph(mgr)
 
-		g.AddNode(graph.NewBaseNode("increment",
-			func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        "increment",
+			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 				count := state.GetFromView(view, countKey)
 				builder := state.NewUpdateBuilder()
 				state.SetUpdate(builder, countKey, count+1)
-				return builder.Build()
+				updates, err := builder.Build()
+				if err != nil {
+					return nil, err
+				}
+				return graph.End(updates), nil
 			},
-		))
+		})
 
-		g.AddEdge(graph.StartNode, "increment")
-		g.AddEdge("increment", graph.EndNode)
+		g.SetEntryPoint("increment")
 
 		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
 		return compiled
@@ -152,24 +157,27 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 
 		for i := 0; i < length; i++ {
 			name := fmt.Sprintf("node_%d", i)
-			g.AddNode(graph.NewBaseNode(name,
-				func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			nextNode := graph.EndNode
+			if i < length-1 {
+				nextNode = fmt.Sprintf("node_%d", i+1)
+			}
+			g.AddNode(&graph.BaseCommandNode{
+				NodeName:        name,
+				DeclaredTargets: graph.NewTargetSet(nextNode),
+				Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 					val := state.GetFromView(view, valueKey)
 					builder := state.NewUpdateBuilder()
 					state.SetUpdate(builder, valueKey, val+1)
-					return builder.Build()
+					updates, err := builder.Build()
+					if err != nil {
+						return nil, err
+					}
+					return graph.Goto(nextNode, updates), nil
 				},
-			))
+			})
 
 			if i == 0 {
-				g.AddEdge(graph.StartNode, name)
-			} else {
-				prevName := fmt.Sprintf("node_%d", i-1)
-				g.AddEdge(prevName, name)
-			}
-
-			if i == length-1 {
-				g.AddEdge(name, graph.EndNode)
+				g.SetEntryPoint(name)
 			}
 		}
 
@@ -205,18 +213,19 @@ func BenchmarkGraph_Compile(b *testing.B) {
 
 		for i := 0; i < 10; i++ {
 			name := fmt.Sprintf("node_%d", i)
-			g.AddNode(graph.NewBaseNode(name,
-				func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-					return nil, nil
-				},
-			))
-			if i > 0 {
-				prevName := fmt.Sprintf("node_%d", i-1)
-				g.AddEdge(prevName, name)
+			nextNode := graph.EndNode
+			if i < 9 {
+				nextNode = fmt.Sprintf("node_%d", i+1)
 			}
+			g.AddNode(&graph.BaseCommandNode{
+				NodeName:        name,
+				DeclaredTargets: graph.NewTargetSet(nextNode),
+				Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+					return graph.GotoOne(nextNode), nil
+				},
+			})
 		}
-		g.AddEdge(graph.StartNode, "node_0")
-		g.AddEdge("node_9", graph.EndNode)
+		g.SetEntryPoint("node_0")
 
 		return g
 	}

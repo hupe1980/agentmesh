@@ -17,9 +17,8 @@ import (
 // This is commonly used in agent graphs to determine whether to execute tools
 // or finish the conversation.
 //
-// Example:
-//
-//	g.AddConditionalEdges("model", RouteOnToolCalls("tool", graph.EndNode), []string{"tool", graph.EndNode})
+// Note: This function is primarily used internally by agent implementations.
+// For custom routing, use Command pattern with DeclaredTargets instead.
 func RouteOnToolCalls(ifToolCalls, otherwise string) func(context.Context, *state.ReadView) []string {
 	return func(_ context.Context, view *state.ReadView) []string {
 		lastMsg := LastMessage(view)

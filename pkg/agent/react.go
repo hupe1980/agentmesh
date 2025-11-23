@@ -82,11 +82,12 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
 	}
 
-	// Model node: generate response with tools and system prompt
+	// Model node: generate response and route based on tool calls
 	// System prompt is sent per-request (Pydantic AI style) for token efficiency
 	modelNodeOpts := []ModelNodeOption{
 		WithModelTools(tools...),
 		WithModelSystemPrompt(config.systemPrompt),
+		WithModelTargets([]string{"tool", graph.EndNode}),
 	}
 	if config.outputSchema != nil {
 		modelNodeOpts = append(modelNodeOpts, WithOutputSchema(config.outputSchema))
@@ -97,19 +98,19 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 	_ = g.AddNode(modelNode)
 
-	// Tool node: execute tool calls
-	toolNode, err := NewToolNode(toolRegistry, WithToolErrorPrefix("react agent"))
+	// Tool node: execute tool calls and return to model
+	toolNode, err := NewToolNode(toolRegistry,
+		WithToolTargets([]string{"model"}),
+		WithToolErrorPrefix("react agent"))
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
 	}
 	_ = g.AddNode(toolNode)
 
-	// Build graph topology
-	g.AddEdge(graph.StartNode, "model")
-
-	g.AddConditionalEdges("model", RouteOnToolCalls("tool", graph.EndNode), []string{"tool", graph.EndNode})
-
-	g.AddEdge("tool", "model")
+	// Entry point - Command pattern handles all routing
+	if err := g.SetEntryPoint("model"); err != nil {
+		return nil, fmt.Errorf("react agent: failed to set entry point: %w", err)
+	}
 
 	// Compile the graph
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())

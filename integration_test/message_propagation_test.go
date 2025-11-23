@@ -29,36 +29,42 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node A sends updates to Node B
-	g.AddNode(graph.NewBaseNode("node_a", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		// Send data to node_b
-		return map[string]any{
-			"from_a":  "hello from A",
-			"counter": 1,
-		}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node_a",
+		DeclaredTargets: graph.NewTargetSet("node_b"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			// Send data to node_b
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, fromAKey, "hello from A")
+			state.SetUpdate(builder, counterKey, 1)
+			updates, _ := builder.Build()
+			return graph.Goto("node_b", updates), nil
+		},
+	})
 
 	// Node B receives updates from Node A
-	g.AddNode(graph.NewBaseNode("node_b", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		// Verify we received the update from node_a
-		fromA := state.GetFromView(s, fromAKey)
-		counter := state.GetFromView(s, counterKey)
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node_b",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			// Verify we received the update from node_a
+			fromA := state.GetFromView(s, fromAKey)
+			counter := state.GetFromView(s, counterKey)
 
-		// These should be available after node_a completes
-		require.NotEmpty(t, fromA, "Should receive update from node_a")
-		require.Equal(t, "hello from A", fromA)
-		require.Equal(t, 1, counter)
+			// These should be available after node_a completes
+			require.NotEmpty(t, fromA, "Should receive update from node_a")
+			require.Equal(t, "hello from A", fromA)
+			require.Equal(t, 1, counter)
 
-		return map[string]any{
-			"from_b": "hello from B",
-			"status": "received",
-		}, nil
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, fromBKey, "hello from B")
+			state.SetUpdate(builder, statusKey, "received")
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
+		},
+	})
 
-	g.AddEdge(graph.StartNode, "node_a")
-	g.AddEdge("node_a", "node_b")
-	g.AddEdge("node_b", graph.EndNode)
+	g.SetEntryPoint("node_a")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -97,37 +103,43 @@ func TestParallelMessagePropagation(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	// Two parallel nodes sending to the same target
-	g.AddNode(graph.NewBaseNode("parallel_a", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return map[string]any{"from_parallel_a": "data_a"}, nil
-	},
-	))
+	// Single entry node that simulates two parallel senders by writing
+	// both updates before routing to the aggregator.
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "parallel_entry",
+		DeclaredTargets: graph.NewTargetSet("aggregator"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, fromParallelAKey, "data_a")
+			state.SetUpdate(builder, fromParallelBKey, "data_b")
+			updates, _ := builder.Build()
+			return graph.Goto("aggregator", updates), nil
+		},
+	})
+	require.NoError(t, err)
 
-	g.AddNode(graph.NewBaseNode("parallel_b", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return map[string]any{"from_parallel_b": "data_b"}, nil
-	},
-	))
+	// Aggregator node receives from both logical senders
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "aggregator",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			dataA := state.GetFromView(s, fromParallelAKey)
+			dataB := state.GetFromView(s, fromParallelBKey)
 
-	// Aggregator node receives from both parallel nodes
-	g.AddNode(graph.NewBaseNode("aggregator", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		dataA := state.GetFromView(s, fromParallelAKey)
-		dataB := state.GetFromView(s, fromParallelBKey)
+			// Both updates should be present
+			require.NotEmpty(t, dataA, "Should receive update from parallel_a")
+			require.NotEmpty(t, dataB, "Should receive update from parallel_b")
+			require.Equal(t, "data_a", dataA)
+			require.Equal(t, "data_b", dataB)
 
-		// Both updates should be present
-		require.NotEmpty(t, dataA, "Should receive update from parallel_a")
-		require.NotEmpty(t, dataB, "Should receive update from parallel_b")
-		require.Equal(t, "data_a", dataA)
-		require.Equal(t, "data_b", dataB)
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, aggregatedKey, true)
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
+		},
+	})
 
-		return map[string]any{"aggregated": true}, nil
-	},
-	))
-
-	g.AddEdge(graph.StartNode, "parallel_a")
-	g.AddEdge(graph.StartNode, "parallel_b")
-	g.AddEdge("parallel_a", "aggregator")
-	g.AddEdge("parallel_b", "aggregator")
-	g.AddEdge("aggregator", graph.EndNode)
+	g.SetEntryPoint("parallel_entry")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
@@ -167,48 +179,57 @@ func TestMessagePropagationSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node 1: Sets initial values
-	g.AddNode(graph.NewBaseNode("node_1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return map[string]any{
-			"step": 1,
-			"data": "from_node_1",
-		}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node_1",
+		DeclaredTargets: graph.NewTargetSet("node_2"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, stepKey, 1)
+			state.SetUpdate(builder, dataKey, "from_node_1")
+			updates, _ := builder.Build()
+			return graph.Goto("node_2", updates), nil
+		},
+	})
 
 	// Node 2: Reads from node 1, adds its own data
-	g.AddNode(graph.NewBaseNode("node_2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		step := state.GetFromView(s, stepKey)
-		data := state.GetFromView(s, dataKey)
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node_2",
+		DeclaredTargets: graph.NewTargetSet("node_3"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			step := state.GetFromView(s, stepKey)
+			data := state.GetFromView(s, dataKey)
 
-		require.Equal(t, 1, step, "Should receive step from node_1")
-		require.Equal(t, "from_node_1", data)
+			require.Equal(t, 1, step, "Should receive step from node_1")
+			require.Equal(t, "from_node_1", data)
 
-		return map[string]any{
-			"step": 2,
-			"data": "from_node_2",
-		}, nil
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, stepKey, 2)
+			state.SetUpdate(builder, dataKey, "from_node_2")
+			updates, _ := builder.Build()
+			return graph.Goto("node_3", updates), nil
+		},
+	})
 
 	// Node 3: Reads from node 2, verifies propagation
-	g.AddNode(graph.NewBaseNode("node_3", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		step := state.GetFromView(s, stepKey)
-		data := state.GetFromView(s, dataKey)
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node_3",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			step := state.GetFromView(s, stepKey)
+			data := state.GetFromView(s, dataKey)
 
-		require.Equal(t, 2, step, "Should receive step from node_2")
-		require.Equal(t, "from_node_2", data)
+			require.Equal(t, 2, step, "Should receive step from node_2")
+			require.Equal(t, "from_node_2", data)
 
-		return map[string]any{
-			"step":  3,
-			"final": true,
-		}, nil
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, stepKey, 3)
+			state.SetUpdate(builder, finalKey, true)
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
+		},
+	})
 
-	g.AddEdge(graph.StartNode, "node_1")
-	g.AddEdge("node_1", "node_2")
-	g.AddEdge("node_2", "node_3")
-	g.AddEdge("node_3", graph.EndNode)
+	g.SetEntryPoint("node_1")
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)

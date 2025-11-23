@@ -58,51 +58,69 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	}
 
 	// Node 1: Initialize state with int
-	err = g.AddNode(graph.NewBaseNode("node1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, 1) // int, not float64
-		state.SetUpdate(builder, dataKey, "A")
-		return builder.Build()
-	},
-	))
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node1",
+		DeclaredTargets: graph.NewTargetSet("node2"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, 1) // int, not float64
+			state.SetUpdate(builder, dataKey, "A")
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("node2", updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node1: %v", err)
 	}
 
 	// Node 2: Increment counter (should stay int)
-	err = g.AddNode(graph.NewBaseNode("node2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		counter := state.GetFromView(view, counterKey)
-		data := state.GetFromView(view, dataKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node2",
+		DeclaredTargets: graph.NewTargetSet("node3"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			counter := state.GetFromView(view, counterKey)
+			data := state.GetFromView(view, dataKey)
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, counter+1) // Should be int 2
-		state.SetUpdate(builder, dataKey, data+"B")
-		return builder.Build()
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, counter+1) // Should be int 2
+			state.SetUpdate(builder, dataKey, data+"B")
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("node3", updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node2: %v", err)
 	}
 
 	// Node 3: Final increment
-	err = g.AddNode(graph.NewBaseNode("node3", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-		counter := state.GetFromView(view, counterKey)
-		data := state.GetFromView(view, dataKey)
+	err = g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "node3",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			counter := state.GetFromView(view, counterKey)
+			data := state.GetFromView(view, dataKey)
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, counterKey, counter+1) // Should be int 3
-		state.SetUpdate(builder, dataKey, data+"C")
-		return builder.Build()
-	},
-	))
+			builder := state.NewUpdateBuilder()
+			state.SetUpdate(builder, counterKey, counter+1) // Should be int 3
+			state.SetUpdate(builder, dataKey, data+"C")
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
+		},
+	})
 	if err != nil {
 		t.Fatalf("Failed to add node3: %v", err)
 	}
 
-	g.AddEdge(graph.StartNode, "node1")
-	g.AddEdge("node1", "node2")
-	g.AddEdge("node2", "node3")
-	g.AddEdge("node3", graph.EndNode)
+	g.SetEntryPoint("node1")
 
 	// Compile with state-based executor + Redis message bus with GOB codec
 	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(

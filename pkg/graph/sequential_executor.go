@@ -248,7 +248,7 @@ func (s *SequentialExecutor[I, O]) executeFromNode(
 			nodeErr = fmt.Errorf("failed to create read view: %w", err)
 			return nodeErr
 		}
-		updates, err := node.Execute(ctx, view)
+		cmd, err := node.Execute(ctx, view)
 		if err != nil {
 			nodeErr = err
 			// Yield error
@@ -258,6 +258,15 @@ func (s *SequentialExecutor[I, O]) executeFromNode(
 			}
 			return err
 		}
+
+		// Validate Command
+		if cmd == nil || len(cmd.Goto) == 0 {
+			nodeErr = fmt.Errorf("node %q must specify routing targets", nodeName)
+			return nodeErr
+		}
+
+		// Extract updates from Command
+		updates := cmd.Updates
 
 		// Process node updates
 		if updates != nil {
@@ -284,9 +293,12 @@ func (s *SequentialExecutor[I, O]) executeFromNode(
 			}
 		}
 
-		// Find next nodes to execute
-		nextNodes := s.findNextNodes(ctx, compiled, nodeName)
-		queue = append(queue, nextNodes...)
+		// Use Command.Goto for routing (filter out END)
+		for _, target := range cmd.Goto {
+			if target != EndNode {
+				queue = append(queue, target)
+			}
+		}
 	}
 
 	return nil
@@ -300,21 +312,11 @@ func (s *SequentialExecutor[I, O]) findNextNodes(
 ) []string {
 	var next []string
 
-	// Check for conditional edges in the branches list
-	for _, branch := range compiled.graph.Branches {
-		if branch.From == nodeName {
-			// Found conditional edges for this node
-			view, err := compiled.manager.CreateReadView(ctx)
-			if err != nil {
-				// If we can't create a read view, fall back to regular edges
-				if outgoing, ok := compiled.topology.outgoing[nodeName]; ok {
-					return outgoing
-				}
-				return nil
-			}
-
-			// Evaluate conditional function
-			targets := branch.Condition(ctx, view)
+	// Check if node has DeclaredTargets (Command pattern)
+	node, exists := compiled.graph.Nodes[nodeName]
+	if exists {
+		targets := node.Targets()
+		if len(targets) > 0 {
 			return targets
 		}
 	}

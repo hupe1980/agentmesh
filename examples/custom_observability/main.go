@@ -73,8 +73,10 @@ func main() {
 	}
 
 	// Node 1: Data Ingestion - demonstrates logger usage
-	if err := g.AddNode(graph.NewBaseNode("ingest_data",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "ingest_data",
+		DeclaredTargets: graph.NewTargetSet("process_data"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -94,15 +96,21 @@ func main() {
 			rawDataKey := graphstate.NewKey("raw_data", map[string]any{})
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, rawDataKey, data)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("process_data", updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		panic(err)
 	}
 
 	// Node 2: Data Processing - demonstrates tracer usage
-	if err := g.AddNode(graph.NewBaseNode("process_data",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "process_data",
+		DeclaredTargets: graph.NewTargetSet("validate_data"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -141,15 +149,21 @@ func main() {
 			processedDataKey := graphstate.NewKey("processed_data", map[string]any{})
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, processedDataKey, result)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("validate_data", updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		panic(err)
 	}
 
 	// Node 3: Data Validation - demonstrates metrics usage
-	if err := g.AddNode(graph.NewBaseNode("validate_data",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "validate_data",
+		DeclaredTargets: graph.NewTargetSet("generate_summary"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -210,15 +224,21 @@ func main() {
 			validationResultKey := graphstate.NewKey("validation_result", map[string]any{})
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, validationResultKey, result)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("generate_summary", updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		panic(err)
 	}
 
 	// Node 4: Summary - demonstrates all providers together
-	if err := g.AddNode(graph.NewBaseNode("generate_summary",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	if err := g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "generate_summary",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)
@@ -250,18 +270,20 @@ func main() {
 			summaryKey := graphstate.NewKey("summary", "")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, summaryKey, summary)
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
 		},
-	)); err != nil {
+	}); err != nil {
 		panic(err)
 	}
 
-	// Build execution graph
-	g.AddEdge(graph.StartNode, "ingest_data")
-	g.AddEdge("ingest_data", "process_data")
-	g.AddEdge("process_data", "validate_data")
-	g.AddEdge("validate_data", "generate_summary")
-	g.AddEdge("generate_summary", graph.EndNode)
+	// Set entry point
+	if err := g.SetEntryPoint("ingest_data"); err != nil {
+		log.Fatal(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {

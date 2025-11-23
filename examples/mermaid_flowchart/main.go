@@ -31,19 +31,16 @@ func simpleWorkflow() {
 	}
 
 	builder.
-		AddNodeFunc("preprocess", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("preprocess", graph.NewTargetSet("process"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("process", graph.NewTargetSet("postprocess"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("postprocess", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("postprocess", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddEdge(graph.StartNode, "preprocess").
-		AddEdge("preprocess", "process").
-		AddEdge("process", "postprocess").
-		AddEdge("postprocess", graph.EndNode)
+		SetEntryPoint("preprocess")
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -62,31 +59,27 @@ func conditionalWorkflow() {
 	}
 
 	builder.
-		AddNodeFunc("analyze", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddCommandNode("analyze", graph.NewTargetSet("simple_path", "complex_path"), func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 			b := state.NewUpdateBuilder()
 			state.SetUpdate(b, categoryKey, "simple")
-			return b.Build()
-		}).
-		AddNodeFunc("simple_path", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("complex_path", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("finalize", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddEdge(graph.StartNode, "analyze").
-		AddConditionalEdges("analyze", func(ctx context.Context, view *state.ReadView) []string {
-			category := state.GetFromView(view, categoryKey)
+			updates, _ := b.Build()
+
+			category := "simple" // Just set it above
 			if category == "simple" {
-				return []string{"simple_path"}
+				return graph.Goto("simple_path", updates), nil
 			}
-			return []string{"complex_path"}
-		}, []string{"simple_path", "complex_path"}).
-		AddEdge("simple_path", "finalize").
-		AddEdge("complex_path", "finalize").
-		AddEdge("finalize", graph.EndNode)
+			return graph.Goto("complex_path", updates), nil
+		}).
+		AddStaticNode("simple_path", graph.NewTargetSet("finalize"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("complex_path", graph.NewTargetSet("finalize"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("finalize", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		SetEntryPoint("analyze")
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -103,29 +96,22 @@ func parallelWorkflow() {
 	}
 
 	builder.
-		AddNodeFunc("split", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("split", graph.NewTargetSet("worker_1", "worker_2", "worker_3"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("worker_1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("worker_1", graph.NewTargetSet("merge"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("worker_2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("worker_2", graph.NewTargetSet("merge"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("worker_3", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("worker_3", graph.NewTargetSet("merge"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddNodeFunc("merge", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("merge", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 			return nil, nil
 		}).
-		AddEdge(graph.StartNode, "split").
-		AddEdge("split", "worker_1").
-		AddEdge("split", "worker_2").
-		AddEdge("split", "worker_3").
-		AddEdge("worker_1", "merge").
-		AddEdge("worker_2", "merge").
-		AddEdge("worker_3", "merge").
-		AddEdge("merge", graph.EndNode)
+		SetEntryPoint("split")
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -145,44 +131,37 @@ func complexWorkflow() {
 	}
 
 	builder.
-		AddNodeFunc("input_validation", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddCommandNode("input_validation", graph.NewTargetSet("high_priority", "normal_priority"), func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 			b := state.NewUpdateBuilder()
 			state.SetUpdate(b, validKey, true)
 			state.SetUpdate(b, priorityKey, "high")
-			return b.Build()
-		}).
-		AddNodeFunc("high_priority", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("normal_priority", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("transform", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("enrich", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("aggregate", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddNodeFunc("output", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
-		}).
-		AddEdge(graph.StartNode, "input_validation").
-		AddConditionalEdges("input_validation", func(ctx context.Context, view *state.ReadView) []string {
-			priority := state.GetFromView(view, priorityKey)
+			updates, _ := b.Build()
+
+			priority := "high" // Just set it above
 			if priority == "high" {
-				return []string{"high_priority"}
+				return graph.Goto("high_priority", updates), nil
 			}
-			return []string{"normal_priority"}
-		}, []string{"high_priority", "normal_priority"}).
-		AddEdge("high_priority", "transform").
-		AddEdge("normal_priority", "transform").
-		AddEdge("transform", "enrich").
-		AddEdge("enrich", "aggregate").
-		AddEdge("aggregate", "output").
-		AddEdge("output", graph.EndNode)
+			return graph.Goto("normal_priority", updates), nil
+		}).
+		AddStaticNode("high_priority", graph.NewTargetSet("transform"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("normal_priority", graph.NewTargetSet("transform"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("transform", graph.NewTargetSet("enrich"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("enrich", graph.NewTargetSet("aggregate"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("aggregate", graph.NewTargetSet("output"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		AddStaticNode("output", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+			return nil, nil
+		}).
+		SetEntryPoint("input_validation")
 
 	compiled, err := builder.Compile()
 	if err != nil {

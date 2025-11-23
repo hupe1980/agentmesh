@@ -103,8 +103,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	g.AddEdge(graph.StartNode, "flaky-service")
-	g.AddEdge("flaky-service", graph.EndNode)
+	if err := g.SetEntryPoint("flaky-service"); err != nil {
+		panic(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {

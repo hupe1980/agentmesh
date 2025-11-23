@@ -96,17 +96,22 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	mgr := newTestManager()
 	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
-	g.AddNode(graph.NewBaseNode("worker", func(ctx context.Context, view *stateif.ReadView) (stateif.Updates, error) {
-		if failOnce {
-			failOnce = false
-			return nil, assert.AnError
-		}
-		updates := stateif.Updates{}
-		updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
-		return updates, nil
-	}))
-	g.AddEdge(graph.StartNode, "worker")
-	g.AddEdge("worker", graph.EndNode)
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "worker",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *stateif.ReadView) (*graph.Command, error) {
+			if failOnce {
+				failOnce = false
+				return nil, assert.AnError
+			}
+			updates := stateif.Updates{}
+			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
+			return graph.End(updates), nil
+		},
+	})
+	if err := g.SetEntryPoint("worker"); err != nil {
+		t.Fatal(err)
+	}
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)
 
@@ -186,14 +191,19 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
 
-	g.AddNode(graph.NewBaseNode("worker", func(ctx context.Context, view *stateif.ReadView) (stateif.Updates, error) {
-		updates := stateif.Updates{}
-		updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
-		return updates, nil
-	}))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "worker",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *stateif.ReadView) (*graph.Command, error) {
+			updates := stateif.Updates{}
+			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
+			return graph.End(updates), nil
+		},
+	})
 
-	g.AddEdge(graph.StartNode, "worker")
-	g.AddEdge("worker", graph.EndNode)
+	if err := g.SetEntryPoint("worker"); err != nil {
+		t.Fatal(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	require.NoError(t, err)

@@ -45,77 +45,88 @@ func main() {
 	}
 
 	// Node 1: Type-safe updates using UpdateBuilder
-	gph.AddNode(graph.NewBaseNode("init", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		fmt.Println("→ Node: init")
+	gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        "init",
+		DeclaredTargets: graph.NewTargetSet("process"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+			fmt.Println("→ Node: init")
 
-		// Build type-safe updates
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, counterKey, 1)                    // ✓ Type-safe: int matches Key[int]
-		graphstate.SetUpdate(builder, statusKey, "initialized")         // ✓ Type-safe: string matches Key[string]
-		graphstate.AppendUpdate(builder, messagesKey, "System started") // ✓ Type-safe: string matches ListKey[string]
+			// Build type-safe updates
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, counterKey, 1)                    // ✓ Type-safe: int matches Key[int]
+			graphstate.SetUpdate(builder, statusKey, "initialized")         // ✓ Type-safe: string matches Key[string]
+			graphstate.AppendUpdate(builder, messagesKey, "System started") // ✓ Type-safe: string matches ListKey[string]
 
-		// Compile-time type safety examples:
-		// graphstate.SetUpdate(builder, counterKey, "wrong") // ✗ Compile error: string doesn't match Key[int]
-		// graphstate.AppendUpdate(builder, messagesKey, 123) // ✗ Compile error: int doesn't match ListKey[string]
+			// Compile-time type safety examples:
+			// graphstate.SetUpdate(builder, counterKey, "wrong") // ✗ Compile error: string doesn't match Key[int]
+			// graphstate.AppendUpdate(builder, messagesKey, 123) // ✗ Compile error: int doesn't match ListKey[string]
 
-		updates, err := builder.Build()
-		if err != nil {
-			return nil, fmt.Errorf("build failed: %w", err)
-		}
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, fmt.Errorf("build failed: %w", err)
+			}
 
-		fmt.Printf("  ✓ Type-safe updates: counter=%d, status=%s, messages appended\n",
-			1, "initialized")
-		return updates, nil
-	}))
+			fmt.Printf("  ✓ Type-safe updates: counter=%d, status=%s, messages appended\n",
+				1, "initialized")
+			return graph.Goto("process", updates), nil
+		},
+	})
 
 	// Node 2: Chained updates with validation
-	gph.AddNode(graph.NewBaseNode("process", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		fmt.Println("→ Node: process")
+	gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        "process",
+		DeclaredTargets: graph.NewTargetSet("finalize"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+			fmt.Println("→ Node: process")
 
-		// Read current values (type-safe)
-		currentCounter := graphstate.GetFromView(view, counterKey)
-		fmt.Printf("  Current counter: %d\n", currentCounter)
+			// Read current values (type-safe)
+			currentCounter := graphstate.GetFromView(view, counterKey)
+			fmt.Printf("  Current counter: %d\n", currentCounter)
 
-		// Build updates with chaining
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, counterKey, currentCounter+10)
-		graphstate.SetUpdate(builder, statusKey, "processing")
-		graphstate.AppendUpdate(builder, messagesKey, "Data processed", "Validation complete")
+			// Build updates with chaining
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, counterKey, currentCounter+10)
+			graphstate.SetUpdate(builder, statusKey, "processing")
+			graphstate.AppendUpdate(builder, messagesKey, "Data processed", "Validation complete")
 
-		updates, err := builder.Build()
-		if err != nil {
-			return nil, err
-		}
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
 
-		fmt.Printf("  ✓ Updated counter to %d\n", currentCounter+10)
-		return updates, nil
-	}))
+			fmt.Printf("  ✓ Updated counter to %d\n", currentCounter+10)
+			return graph.Goto("finalize", updates), nil
+		},
+	})
 
 	// Node 3: Demonstrate duplicate key detection
-	gph.AddNode(graph.NewBaseNode("finalize", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		fmt.Println("→ Node: finalize")
+	gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        "finalize",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+			fmt.Println("→ Node: finalize")
 
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, statusKey, "finalizing")
-		graphstate.AppendUpdate(builder, messagesKey, "Process complete")
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, statusKey, "finalizing")
+			graphstate.AppendUpdate(builder, messagesKey, "Process complete")
 
-		// Example of error handling for duplicate keys
-		// graphstate.SetUpdate(builder, statusKey, "duplicate") // Would cause Build() to return error
+			// Example of error handling for duplicate keys
+			// graphstate.SetUpdate(builder, statusKey, "duplicate") // Would cause Build() to return error
 
-		updates, err := builder.Build()
-		if err != nil {
-			return nil, fmt.Errorf("duplicate key error: %w", err)
-		}
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, fmt.Errorf("duplicate key error: %w", err)
+			}
 
-		fmt.Println("  ✓ Finalized successfully")
-		return updates, nil
-	}))
+			fmt.Println("  ✓ Finalized successfully")
+			return graph.End(updates), nil
+		},
+	})
 
 	// Build graph topology
-	gph.AddEdge(graph.StartNode, "init")
-	gph.AddEdge("init", "process")
-	gph.AddEdge("process", "finalize")
-	gph.AddEdge("finalize", graph.EndNode)
+	if err := gph.SetEntryPoint("init"); err != nil {
+		panic(err)
+	}
 
 	// Compile and execute
 	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())

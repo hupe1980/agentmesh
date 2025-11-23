@@ -50,10 +50,18 @@ var (
 type ConfigurableNode struct {
 	name    string
 	manager *state.Manager
+	next    string
 }
 
 func (n *ConfigurableNode) Name() string {
 	return n.name
+}
+
+func (n *ConfigurableNode) Targets() []string {
+	if n.next == "" {
+		return []string{graph.EndNode}
+	}
+	return []string{n.next}
 }
 
 func (n *ConfigurableNode) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
@@ -137,6 +145,10 @@ type MetricsNode struct {
 
 func (n *MetricsNode) Name() string {
 	return "metrics_reporter"
+}
+
+func (n *MetricsNode) Targets() []string {
+	return []string{graph.EndNode}
 }
 
 func (n *MetricsNode) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
@@ -227,26 +239,55 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Add nodes using graph.NewBaseNode
+	// Add nodes using BaseCommandNode
 	node1 := &ConfigurableNode{name: "processor_1", manager: mgr}
 	node2 := &ConfigurableNode{name: "processor_2", manager: mgr}
 	metricsNode := &MetricsNode{manager: mgr}
 
-	if err := gph.AddNode(graph.NewBaseNode(node1.Name(), node1.Compute)); err != nil {
+	if err := gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        node1.Name(),
+		DeclaredTargets: graph.NewTargetSet(node2.Name()),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			updates, err := node1.Compute(ctx, view)
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto(node2.Name(), updates), nil
+		},
+	}); err != nil {
 		log.Fatal(err)
 	}
-	if err := gph.AddNode(graph.NewBaseNode(node2.Name(), node2.Compute)); err != nil {
+	if err := gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        node2.Name(),
+		DeclaredTargets: graph.NewTargetSet(metricsNode.Name()),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			updates, err := node2.Compute(ctx, view)
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto(metricsNode.Name(), updates), nil
+		},
+	}); err != nil {
 		log.Fatal(err)
 	}
-	if err := gph.AddNode(graph.NewBaseNode(metricsNode.Name(), metricsNode.Compute)); err != nil {
+	if err := gph.AddNode(&graph.BaseCommandNode{
+		NodeName:        metricsNode.Name(),
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			updates, err := metricsNode.Compute(ctx, view)
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
+		},
+	}); err != nil {
 		log.Fatal(err)
 	}
 
-	// Connect nodes
-	gph.AddEdge(graph.StartNode, node1.Name())
-	gph.AddEdge(node1.Name(), node2.Name())
-	gph.AddEdge(node2.Name(), metricsNode.Name())
-	gph.AddEdge(metricsNode.Name(), graph.EndNode)
+	// Set entry point
+	if err := gph.SetEntryPoint(node1.Name()); err != nil {
+		log.Fatal(err)
+	}
 
 	// Compile graph
 	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())

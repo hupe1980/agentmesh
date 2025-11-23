@@ -140,24 +140,36 @@ import (
     "github.com/hupe1980/agentmesh/pkg/state"
 )
 
-builder, err := graph.NewBuilder()
+stateManager := state.NewManager()
+g, err := graph.NewGraph(stateManager)
 if err != nil {
     return err
 }
 
-// Add nodes
-builder.AddNodeFunc("fetch", fetchDataFunc)
-builder.AddNodeFunc("process", processDataFunc)
-builder.AddNodeFunc("save", saveDataFunc)
+// Add nodes with command-based routing
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "fetch",
+    DeclaredTargets: []string{"process"},
+    Fn:              fetchDataFunc,
+})
 
-// Define flow with edges
-builder.AddEdge("START", "fetch")
-builder.AddEdge("fetch", "process")
-builder.AddEdge("process", "save")
-builder.AddEdge("save", "END")
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "process",
+    DeclaredTargets: []string{"save"},
+    Fn:              processDataFunc,
+})
+
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "save",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn:              saveDataFunc,
+})
+
+// Set entry point
+g.SetEntryPoint("fetch")
 
 // Compile into executable graph
-compiled, err := builder.Compile()
+compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 if err != nil {
     return err
 }
@@ -202,20 +214,26 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (state.Updates, 
 
 ### Conditional routing
 
-Dynamically route to different nodes based on state:
+Dynamically route to different nodes based on state using commands:
 
 ```go
-builder.AddConditionalEdges("classifier", func(ctx context.Context, view *state.ReadView) []string {
-    category := state.GetFromView(view, CategoryKey)
-    switch category {
-    case "urgent":
-        return []string{"urgent_handler"}
-    case "normal":
-        return []string{"normal_handler"}
-    default:
-        return []string{"default_handler"}
-    }
-}, []string{"urgent_handler", "normal_handler", "default_handler"})
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "classifier",
+    DeclaredTargets: []string{"urgent_handler", "normal_handler", "default_handler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        category := state.GetFromView(view, CategoryKey)
+        var nextNode string
+        switch category {
+        case "urgent":
+            nextNode = "urgent_handler"
+        case "normal":
+            nextNode = "normal_handler"
+        default:
+            nextNode = "default_handler"
+        }
+        return graph.Goto(nil, nextNode), nil
+    },
+})
 ```
 
 ---
@@ -330,18 +348,27 @@ Superstep 3: [END]
 
 ### Parallel execution
 
-Nodes with the same dependencies execute concurrently:
+Nodes declare their targets and can fan out to multiple parallel tasks:
 
 ```go
-// These three nodes execute in parallel
-builder.AddEdge("START", "fetch_a")
-builder.AddEdge("START", "fetch_b")
-builder.AddEdge("START", "fetch_c")
+// Entry node that fans out to three parallel tasks
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "start",
+    DeclaredTargets: []string{"fetch_a", "fetch_b", "fetch_c"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.Goto(nil, "fetch_a"), nil  // Fan-out via DeclaredTargets
+    },
+})
 
-// All converge to aggregator
-builder.AddEdge("fetch_a", "aggregator")
-builder.AddEdge("fetch_b", "aggregator")
-builder.AddEdge("fetch_c", "aggregator")
+// Each fetch task routes to aggregator
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "fetch_a",
+    DeclaredTargets: []string{"aggregator"},
+    Fn:              fetchAFunc,
+})
+// fetch_b and fetch_c similar...
+
+g.SetEntryPoint("start")
 ```
 
 ### Cycles and loops
@@ -372,14 +399,20 @@ builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView)
     }, nil
 })
 
-// Use conditional edges to route based on state
-builder.AddConditionalEdges("evaluator", func(ctx context.Context, view *state.ReadView) []string {
-    done := state.GetFromView(view, DoneKey)
-    if done {
-        return []string{"END"}
-    }
-    return []string{"writer"}
-}, []string{"END", "writer"})
+// Evaluator node uses commands to route based on state
+g.AddNode(&graph.BaseCommandNode{
+    NodeName:        "evaluator",
+    DeclaredTargets: []string{graph.EndNode, "writer"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        draft := state.GetFromView(view, DraftKey)
+        if isGoodEnough(draft) {
+            return graph.End(map[string]any{"done": true}), nil
+        }
+        // Loop back to writer for refinement
+        updates := map[string]any{"feedback": "improve clarity", "done": false}
+        return graph.Goto(updates, "writer"), nil
+    },
+})
 ```
 
 ### Max iterations

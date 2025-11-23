@@ -30,37 +30,48 @@ func TestPregelExecutor(t *testing.T) {
 
 	var counter atomic.Int32
 
-	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		counter.Add(1)
-		return map[string]any{"started": true}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "start",
+		DeclaredTargets: graph.NewTargetSet("task1", "task2"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			counter.Add(1)
+			updates := map[string]any{"started": true}
+			return graph.GotoAll([]string{"task1", "task2"}, updates), nil
+		},
+	})
 
 	// Two nodes that can run in parallel
-	g.AddNode(graph.NewBaseNode("task1", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		counter.Add(1)
-		return map[string]any{"task1": "done"}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "task1",
+		DeclaredTargets: graph.NewTargetSet("end"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			counter.Add(1)
+			updates := map[string]any{"task1": "done"}
+			return graph.Goto("end", updates), nil
+		},
+	})
 
-	g.AddNode(graph.NewBaseNode("task2", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		counter.Add(1)
-		return map[string]any{"task2": "done"}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "task2",
+		DeclaredTargets: graph.NewTargetSet("end"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			counter.Add(1)
+			updates := map[string]any{"task2": "done"}
+			return graph.Goto("end", updates), nil
+		},
+	})
 
-	g.AddNode(graph.NewBaseNode("end", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		counter.Add(1)
-		return map[string]any{"completed": true}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "end",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			counter.Add(1)
+			updates := map[string]any{"completed": true}
+			return graph.End(updates), nil
+		},
+	})
 
-	g.AddEdge(graph.StartNode, "start")
-	g.AddEdge("start", "task1")
-	g.AddEdge("start", "task2")
-	g.AddEdge("task1", "end")
-	g.AddEdge("task2", "end")
-	g.AddEdge("end", graph.EndNode)
+	g.SetEntryPoint("start")
 
 	// Compile and execute with Pregel
 	runnable, err := graph.Compile(g, graph.NewStatePregelExecutor(graph.WithMaxWorkers[state.Updates, state.Updates](4)))

@@ -47,25 +47,44 @@ import (
     "time"
 )
 
-pm := callbacks.NewPluginManager()
+// Option 1: Using Builder API (recommended)
+targets := graph.NewTargetSet(graph.EndNode)
+builder.AddCommandNodeWithRetry("api_call", targets,
+    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        result, err := callExternalAPI()
+        if err != nil {
+            return nil, err // Will be retried automatically
+        }
+        return targets.End(state.Updates{"api_result": result}), nil
+    },
+    graph.NewRetryPolicy().
+        WithMaxAttempts(3).
+        WithCustomBackoff(func(attempt int) time.Duration {
+            return time.Duration(math.Pow(2, float64(attempt))) * time.Second
+        }).
+        WithRetryableFunc(func(err error) bool {
+            return isTransientError(err) // Only retry specific error types
+        }).
+        Build())
 
-// Add retry plugin with exponential backoff
-retry := plugin.NewRetryPlugin(
-    3,                   // maxRetries
-    100*time.Millisecond, // baseDelay
-    5*time.Second,       // maxDelay
-)
-pm.Register(retry)
-        return nil, err
-    }
-    return map[string]any{"api_result": result}, nil
-}, graph.WithRetryPolicy(&graph.RetryPolicy{
+// Option 2: Using Graph.AddNode with WithRetryPolicy option
+node := &graph.BaseCommandNode{
+    NodeName: "api_call",
+    DeclaredTargets: targets,
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        result, err := callExternalAPI()
+        if err != nil {
+            return nil, err
+        }
+        return targets.End(state.Updates{"api_result": result}), nil
+    },
+}
+g.AddNode(node, graph.WithRetryPolicy(&graph.RetryPolicy{
     MaxAttempts: 3,
     Backoff: func(attempt int) time.Duration {
         return time.Duration(math.Pow(2, float64(attempt))) * time.Second
     },
     Retryable: func(err error) bool {
-        // Only retry specific error types
         return isTransientError(err)
     },
 }))
@@ -624,8 +643,16 @@ subGraph.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) 
     }, nil
 })
 
-subGraph.AddEdge(graph.StartNode, "process")
-subGraph.AddEdge("process", graph.EndNode)
+subGraph.AddNode(&graph.BaseCommandNode{
+    NodeName:        "process",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        value := state.GetFromView(view, ValueKey)
+        doubled := value * 2
+        return graph.End(map[string]any{"result": doubled}), nil
+    },
+})
+subGraph.SetEntryPoint("process")
 
 // Compile the subgraph
 compiledSub, err := exec.CompileGraph(subGraph)
@@ -644,9 +671,15 @@ parent.AddNodeFunc("prepare", func(ctx context.Context, view *state.ReadView) (*
 // Embed subgraph as a node
 parent.AddSubgraph("doubler", compiledSub)
 
-parent.AddEdge(graph.StartNode, "prepare")
-parent.AddEdge("prepare", "doubler")
-parent.AddEdge("doubler", graph.EndNode)
+// Parent nodes use Command pattern
+parent.AddNode(&graph.BaseCommandNode{
+    NodeName:        "prepare",
+    DeclaredTargets: []string{"doubler"},
+    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        return graph.Goto(map[string]any{"value": 21}, "doubler"), nil
+    },
+})
+parent.SetEntryPoint("prepare")
 ```
 
 ### State Mapping
@@ -685,10 +718,23 @@ pipeline.AddSubgraph("validate", validationSub)
 pipeline.AddSubgraph("enrich", enrichmentSub)
 pipeline.AddSubgraph("analyze", analysisSub)
 
-pipeline.AddEdge(graph.StartNode, "validate")
-pipeline.AddEdge("validate", "enrich")
-pipeline.AddEdge("enrich", "analyze")
-pipeline.AddEdge("analyze", graph.EndNode)
+// Pipeline stages with Command routing
+pipeline.AddNode(&graph.BaseCommandNode{
+    NodeName:        "validate",
+    DeclaredTargets: []string{"enrich"},
+    Fn:              validateFunc,
+})
+pipeline.AddNode(&graph.BaseCommandNode{
+    NodeName:        "enrich",
+    DeclaredTargets: []string{"analyze"},
+    Fn:              enrichFunc,
+})
+pipeline.AddNode(&graph.BaseCommandNode{
+    NodeName:        "analyze",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn:              analyzeFunc,
+})
+pipeline.SetEntryPoint("validate")
 ```
 
 **Reusable components**:

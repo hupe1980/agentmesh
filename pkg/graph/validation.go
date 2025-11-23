@@ -92,7 +92,7 @@ func (v *validator) validate(g *Graph) []ValidationError {
 	// Basic structural validation
 	errors = append(errors, v.validateNodes(g)...)
 	errors = append(errors, v.validateEdges(g)...)
-	errors = append(errors, v.validateBranches(g)...)
+	errors = append(errors, v.validateCommandTargets(g)...) // Validate DeclaredTargets instead of branches
 	errors = append(errors, v.validateEntryPoints(g)...)
 
 	// Strict validation
@@ -135,59 +135,39 @@ func (v *validator) validateNodes(g *Graph) []ValidationError {
 	return errors
 }
 
-// validateEdges checks that all edges reference existing nodes.
+// validateEdges checks that the entry point references an existing node.
 func (v *validator) validateEdges(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	for _, edge := range g.Edges {
-		// Skip validation for virtual START/END nodes
-		if edge.From != StartNode && edge.From != EndNode {
-			if _, exists := g.Nodes[edge.From]; !exists {
-				errors = append(errors, ValidationError{
-					Type:    ErrorTypeInvalidEdge,
-					Node:    edge.From,
-					Message: fmt.Sprintf("edge references non-existent source node %q", edge.From),
-				})
-			}
-		}
-		if edge.To != StartNode && edge.To != EndNode {
-			if _, exists := g.Nodes[edge.To]; !exists {
-				errors = append(errors, ValidationError{
-					Type:    ErrorTypeInvalidEdge,
-					Node:    edge.To,
-					Message: fmt.Sprintf("edge references non-existent target node %q", edge.To),
-				})
-			}
+	// Check entry point exists
+	if g.EntryPoint != "" && g.EntryPoint != EndNode {
+		if _, exists := g.Nodes[g.EntryPoint]; !exists {
+			errors = append(errors, ValidationError{
+				Type:    ErrorTypeInvalidEdge,
+				Node:    StartNode,
+				Message: fmt.Sprintf("entry point references non-existent node %q", g.EntryPoint),
+			})
 		}
 	}
 
 	return errors
 }
 
-// validateBranches checks that all branches are valid.
-func (v *validator) validateBranches(g *Graph) []ValidationError {
+// validateCommandTargets checks that all node DeclaredTargets are valid.
+func (v *validator) validateCommandTargets(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	for _, branch := range g.Branches {
-		// Skip validation for virtual START/END nodes
-		if branch.From != StartNode && branch.From != EndNode {
-			if _, exists := g.Nodes[branch.From]; !exists {
-				errors = append(errors, ValidationError{
-					Type:    ErrorTypeInvalidBranch,
-					Node:    branch.From,
-					Message: "branch references non-existent source node",
-				})
-			}
-		}
-
-		// Check all branch targets exist (allow virtual START/END nodes)
-		for _, target := range branch.Targets {
+	// Validate each node's DeclaredTargets
+	for name, node := range g.Nodes {
+		targets := node.Targets()
+		for _, target := range targets {
+			// Allow virtual START/END nodes
 			if target != StartNode && target != EndNode {
 				if _, exists := g.Nodes[target]; !exists {
 					errors = append(errors, ValidationError{
-						Type:    ErrorTypeInvalidBranch,
-						Node:    target,
-						Message: fmt.Sprintf("branch target %q does not exist", target),
+						Type:    ErrorTypeInvalidBranch, // Reuse error type
+						Node:    name,
+						Message: fmt.Sprintf("node declares non-existent target %q", target),
 					})
 				}
 			}
@@ -201,14 +181,8 @@ func (v *validator) validateBranches(g *Graph) []ValidationError {
 func (v *validator) validateEntryPoints(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	// Check for START node connections
-	hasStartEdge := false
-	for _, edge := range g.Edges {
-		if edge.From == StartNode {
-			hasStartEdge = true
-			break
-		}
-	}
+	// Check for entry point
+	hasStartEdge := g.EntryPoint != ""
 
 	if !hasStartEdge {
 		errors = append(errors, ValidationError{
@@ -217,34 +191,25 @@ func (v *validator) validateEntryPoints(g *Graph) []ValidationError {
 		})
 	}
 
-	// Check for END node connections (can be via edges or branches)
+	// Check for END node connections (via Command node targets)
 	hasEndConnection := false
-	for _, edge := range g.Edges {
-		if edge.To == EndNode {
-			hasEndConnection = true
-			break
-		}
-	}
-
-	// Also check branches for END node targets
-	if !hasEndConnection {
-		for _, branch := range g.Branches {
-			for _, target := range branch.Targets {
-				if target == EndNode {
-					hasEndConnection = true
-					break
-				}
-			}
-			if hasEndConnection {
+	for _, node := range g.Nodes {
+		targets := node.Targets()
+		for _, target := range targets {
+			if target == EndNode {
+				hasEndConnection = true
 				break
 			}
+		}
+		if hasEndConnection {
+			break
 		}
 	}
 
 	if !hasEndConnection {
 		errors = append(errors, ValidationError{
 			Type:    ErrorTypeInvalidEndNode,
-			Message: fmt.Sprintf("graph has no edges or branches to %s node", EndNode),
+			Message: fmt.Sprintf("graph has no routing to %s node", EndNode),
 		})
 	}
 
@@ -263,17 +228,34 @@ func (v *validator) validateAcyclic(g *Graph) []ValidationError {
 		recStack[node] = true
 
 		//nolint:nestif // Acceptable nesting for cycle detection algorithm
-		for _, edge := range g.Edges {
-			if edge.From == node {
-				if !visited[edge.To] {
-					if hasCycle(edge.To) {
+		// Check entry point edge
+		if node == StartNode && g.EntryPoint != "" {
+			if !visited[g.EntryPoint] {
+				if hasCycle(g.EntryPoint) {
+					return true
+				}
+			} else if recStack[g.EntryPoint] {
+				errors = append(errors, ValidationError{
+					Type:    ErrorTypeCycle,
+					Node:    node,
+					Message: fmt.Sprintf("cycle detected: %s -> %s", node, g.EntryPoint),
+				})
+				return true
+			}
+		}
+		// Check node targets
+		//nolint:nestif // Cycle detection requires nested traversal
+		if n, exists := g.Nodes[node]; exists {
+			for _, target := range n.Targets() {
+				if !visited[target] {
+					if hasCycle(target) {
 						return true
 					}
-				} else if recStack[edge.To] {
+				} else if recStack[target] {
 					errors = append(errors, ValidationError{
 						Type:    ErrorTypeCycle,
 						Node:    node,
-						Message: fmt.Sprintf("cycle detected: %s -> %s", node, edge.To),
+						Message: fmt.Sprintf("cycle detected: %s -> %s", node, target),
 					})
 					return true
 				}
@@ -299,8 +281,16 @@ func (v *validator) validateConnectivity(g *Graph) []ValidationError {
 
 	// Build adjacency list
 	adj := make(map[string][]string)
-	for _, edge := range g.Edges {
-		adj[edge.From] = append(adj[edge.From], edge.To)
+	// Add entry point edge
+	if g.EntryPoint != "" {
+		adj[StartNode] = append(adj[StartNode], g.EntryPoint)
+	}
+	// Add node targets
+	for name, node := range g.Nodes {
+		targets := node.Targets()
+		if len(targets) > 0 {
+			adj[name] = append(adj[name], targets...)
+		}
 	}
 
 	// BFS from START node

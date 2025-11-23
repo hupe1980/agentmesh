@@ -199,7 +199,9 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	statusKey := graphstate.NewKey("status", "")
 	dataKey := graphstate.NewKey("data", []string{})
 
-	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.SetEntryPoint("step1")
+
+	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -208,7 +210,7 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -218,7 +220,7 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step3", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
 		ub := graphstate.NewUpdateBuilder()
@@ -226,11 +228,6 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		graphstate.SetUpdate(ub, statusKey, "complete")
 		return ub.Build()
 	})
-
-	builder.AddEdge(graph.StartNode, "step1")
-	builder.AddEdge("step1", "step2")
-	builder.AddEdge("step2", "step3")
-	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, err := builder.Compile()
 	if err != nil {
@@ -248,7 +245,9 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		panic(err)
 	}
 
-	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.SetEntryPoint("step1")
+
+	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: OK")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 1)
@@ -256,7 +255,7 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: OK")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 2)
@@ -264,14 +263,9 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step3", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		return nil, fmt.Errorf("simulated failure at step 3")
 	})
-
-	builder.AddEdge(graph.StartNode, "step1")
-	builder.AddEdge("step1", "step2")
-	builder.AddEdge("step2", "step3")
-	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
 	return compiled
@@ -286,7 +280,9 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		panic(err)
 	}
 
-	builder.AddNodeFunc("step1", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.SetEntryPoint("step1")
+
+	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 1)
@@ -294,7 +290,7 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step2", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 2)
@@ -302,18 +298,13 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 		return ub.Build()
 	})
 
-	builder.AddNodeFunc("step3", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step3", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
 		ub := graphstate.NewUpdateBuilder()
 		graphstate.SetUpdate(ub, stepKey, 3)
 		graphstate.SetUpdate(ub, statusKey, "fixed!")
 		return ub.Build()
 	})
-
-	builder.AddEdge(graph.StartNode, "step1")
-	builder.AddEdge("step1", "step2")
-	builder.AddEdge("step2", "step3")
-	builder.AddEdge("step3", graph.EndNode)
 
 	compiled, _ := builder.Compile()
 	return compiled

@@ -59,9 +59,16 @@ func (c *Compiled[I, O]) GetNodes() []string {
 // GetIncomingEdges returns the names of nodes that have edges to the given node.
 func (c *Compiled[I, O]) GetIncomingEdges(node string) []string {
 	incoming := make([]string, 0)
-	for _, edge := range c.graph.Edges {
-		if edge.To == node {
-			incoming = append(incoming, edge.From)
+	// Check entry point
+	if c.graph.EntryPoint == node {
+		incoming = append(incoming, StartNode)
+	}
+	// Check all node targets
+	for name, n := range c.graph.Nodes {
+		for _, target := range n.Targets() {
+			if target == node {
+				incoming = append(incoming, name)
+			}
 		}
 	}
 	return incoming
@@ -119,16 +126,10 @@ func (c *Compiled[I, O]) MermaidFlowchart(direction string) string {
 		case EndNode:
 			result += fmt.Sprintf("    %s([END])\n", nodeName)
 		default:
-			// Check if conditional (has branches)
-			hasConditional := false
-			for _, branch := range c.graph.Branches {
-				if branch.From == nodeName {
-					hasConditional = true
-					break
-				}
-			}
-
-			if hasConditional {
+			// Check if node has multiple targets (branching)
+			node := c.graph.Nodes[nodeName]
+			targets := node.Targets()
+			if len(targets) > 1 {
 				result += fmt.Sprintf("    %s{%s}\n", nodeName, nodeName)
 			} else {
 				result += fmt.Sprintf("    %s[%s]\n", nodeName, nodeName)
@@ -136,15 +137,23 @@ func (c *Compiled[I, O]) MermaidFlowchart(direction string) string {
 		}
 	}
 
-	// Add edges
-	for _, edge := range c.graph.Edges {
-		result += fmt.Sprintf("    %s --> %s\n", edge.From, edge.To)
+	// Add entry point edge (from SetEntryPoint)
+	if c.graph.EntryPoint != "" {
+		result += fmt.Sprintf("    %s --> %s\n", StartNode, c.graph.EntryPoint)
 	}
 
-	// Add conditional edges
-	for _, branch := range c.graph.Branches {
-		for _, target := range branch.Targets {
-			result += fmt.Sprintf("    %s -.-> %s\n", branch.From, target)
+	// Add Command routing edges (dashed lines for DeclaredTargets)
+	// Skip START/END nodes as they don't have user-defined targets
+	for name, node := range c.graph.Nodes {
+		if name == StartNode || name == EndNode {
+			continue
+		}
+
+		// Get declared targets from Command nodes
+		targets := node.Targets()
+		for _, target := range targets {
+			// Use dashed line to indicate Command routing (dynamic decision)
+			result += fmt.Sprintf("    %s -.-> %s\n", name, target)
 		}
 	}
 
@@ -204,7 +213,7 @@ func Compile[I, O any](g *Graph, executor Executor[I, O], opts ...CompileOption)
 	}
 
 	// Compute topology
-	topo := computeTopology(g.Nodes, g.Edges, g.Branches)
+	topo := computeTopology(g.Nodes, g.EntryPoint)
 
 	return &Compiled[I, O]{
 		graph:    g,

@@ -38,15 +38,18 @@ func example1_ValidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a simple linear graph
-	g.AddNode(graph.NewBaseNode("process",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "process",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 			fmt.Println("Processing...")
-			return nil, nil
+			return graph.End(nil), nil
 		},
-	))
+	})
 
-	g.AddEdge(graph.StartNode, "process")
-	g.AddEdge("process", graph.EndNode)
+	if err := g.SetEntryPoint("process"); err != nil {
+		panic(err)
+	}
 
 	// Compile with default validation
 	runnable, err := graph.Compile(g, graph.NewMessagePregelExecutor())
@@ -74,14 +77,16 @@ func example2_InvalidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create an invalid graph - edge to non-existent node
-	g.AddNode(graph.NewBaseNode("start_node",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "start_node",
+		DeclaredTargets: graph.NewTargetSet("non_existent_node"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			return graph.GotoOne("non_existent_node"), nil
 		},
-	))
+	})
 
 	// This edge references a node that doesn't exist
-	g.AddEdge("start_node", "non_existent_node")
+	// Removed invalid edge to demonstrate validation
 
 	// Compilation will fail with validation error
 	_, err := graph.Compile(g, graph.NewMessagePregelExecutor())
@@ -100,19 +105,24 @@ func example3_StrictValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with an unreachable node
-	g.AddNode(graph.NewBaseNode("reachable",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "reachable",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			return graph.End(nil), nil
 		},
-	))
-	g.AddNode(graph.NewBaseNode("unreachable",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
+	})
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "unreachable",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			return graph.End(nil), nil
 		},
-	))
+	})
 
-	g.AddEdge(graph.StartNode, "reachable")
-	g.AddEdge("reachable", graph.EndNode)
+	if err := g.SetEntryPoint("reachable"); err != nil {
+		panic(err)
+	}
 	// "unreachable" has no incoming edges
 
 	// Default validation allows unreachable nodes
@@ -140,22 +150,26 @@ func example4_CustomValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with a cycle (for iterative algorithms)
-	g.AddNode(graph.NewBaseNode("agent",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-			return nil, nil
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "agent",
+		DeclaredTargets: graph.NewTargetSet("evaluator"),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			return graph.GotoOne("evaluator"), nil
 		},
-	))
-	g.AddNode(graph.NewBaseNode("evaluator",
-		func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	})
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "evaluator",
+		DeclaredTargets: graph.NewTargetSet("agent", graph.EndNode),
+		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 			// Check quality and potentially loop back
-			return nil, nil
+			return graph.End(nil), nil
 		},
-	))
+	})
 
-	g.AddEdge(graph.StartNode, "agent")
-	g.AddEdge("agent", "evaluator")
-	g.AddEdge("evaluator", "agent") // Creates a cycle for refinement
-	g.AddEdge("evaluator", graph.EndNode)
+	if err := g.SetEntryPoint("agent"); err != nil {
+		panic(err)
+	}
+	// Note: Cycle is created via Command pattern routing in node logic
 
 	// Default validation allows cycles
 	_, err := graph.Compile(g, graph.NewMessagePregelExecutor())

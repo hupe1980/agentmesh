@@ -46,8 +46,10 @@ func main() {
 		}
 	}
 
-	mustAddNode(graph.NewBaseNode("research",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "research",
+		DeclaredTargets: graph.NewTargetSet("write"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
 			builder := graphstate.NewUpdateBuilder()
@@ -56,12 +58,18 @@ func main() {
 				fmt.Sprintf("Summarized findings for '%s'", topic),
 			)
 			graphstate.SetUpdate(builder, currentTaskKey, fmt.Sprintf("Write report for %s", topic))
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("write", updates), nil
 		},
-	))
+	})
 
-	mustAddNode(graph.NewBaseNode("write",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "write",
+		DeclaredTargets: graph.NewTargetSet("review"),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("write")
 			humanInput := graphstate.GetFromView(view, humanInputKey)
 			if humanInput == "" {
@@ -72,31 +80,34 @@ func main() {
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Drafted report for '%s'", task))
 			graphstate.SetUpdate(builder, draftKey, "draft report content")
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.Goto("review", updates), nil
 		},
-	))
+	})
 
-	mustAddNode(graph.NewBaseNode("review",
-		func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	mustAddNode(&graph.BaseCommandNode{
+		NodeName:        "review",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("review")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Reviewed draft")
 			graphstate.SetUpdate(builder, finalReportKey, "final report content")
-			return builder.Build()
+			updates, err := builder.Build()
+			if err != nil {
+				return nil, err
+			}
+			return graph.End(updates), nil
 		},
-	))
+	})
 
-	g.AddConditionalEdges("write", func(_ context.Context, view *graphstate.ReadView) []string {
-		draft := graphstate.GetFromView(view, draftKey)
-		if draft != "" {
-			return []string{"review"}
-		}
-		return nil
-	}, []string{"review"})
-
-	g.AddEdge(graph.StartNode, "research")
-	g.AddEdge("research", "write")
-	g.AddEdge("review", graph.EndNode)
+	// Entry point
+	if err := g.SetEntryPoint("research"); err != nil {
+		panic(err)
+	}
 
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {

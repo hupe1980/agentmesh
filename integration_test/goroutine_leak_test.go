@@ -27,23 +27,24 @@ func TestEarlyConsumerTermination(t *testing.T) {
 	// Add multiple nodes that would take time to execute
 	for i := 0; i < 10; i++ {
 		nodeName := string(rune('A' + i))
-		g.AddNode(graph.NewBaseNode(nodeName, func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-			// Simulate work
-			time.Sleep(10 * time.Millisecond)
-			return nil, nil
-		},
-		))
+		nextNode := string(rune('A' + i + 1))
+		if i == 9 {
+			nextNode = graph.EndNode
+		}
+		g.AddNode(&graph.BaseCommandNode{
+			NodeName:        nodeName,
+			DeclaredTargets: graph.NewTargetSet(nextNode),
+			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+				// Simulate work
+				time.Sleep(10 * time.Millisecond)
+				return graph.GotoOne(nextNode), nil
+			},
+		})
 
 		if i == 0 {
-			g.AddEdge(graph.StartNode, nodeName)
-		} else {
-			prevNode := string(rune('A' + i - 1))
-			g.AddEdge(prevNode, nodeName)
+			g.SetEntryPoint(nodeName)
 		}
 	}
-	// Connect last node to end
-	g.AddEdge("J", graph.EndNode)
-
 	// Compile the graph
 	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 	if err != nil {
@@ -102,20 +103,25 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 		// Simple 3-node graph
 		for i := 0; i < 3; i++ {
 			nodeName := string(rune('A' + i))
-			g.AddNode(graph.NewBaseNode(nodeName, func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-				time.Sleep(5 * time.Millisecond)
-				return nil, nil
-			},
-			))
+			nextNode := string(rune('A' + i + 1))
+			if i == 2 {
+				nextNode = graph.EndNode
+			}
+			g.AddNode(&graph.BaseCommandNode{
+				NodeName:        nodeName,
+				DeclaredTargets: graph.NewTargetSet(nextNode),
+				Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+					time.Sleep(5 * time.Millisecond)
+					return graph.GotoOne(nextNode), nil
+				},
+			})
 			if i == 0 {
-				g.AddEdge(graph.StartNode, nodeName)
+				g.SetEntryPoint(nodeName)
+
 			} else {
-				g.AddEdge(string(rune('A'+i-1)), nodeName)
 			}
 		}
 		// Connect last node to end
-		g.AddEdge("C", graph.EndNode)
-
 		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
 
 		// Stop after first result

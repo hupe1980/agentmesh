@@ -47,30 +47,28 @@ Final report: {...}
 ### 1. Create Validation Subgraph
 ```go
 func createValidationSubgraph() *graph.Graph {
-    state := graph.NewStateManager(0)
-    g := graph.NewGraph(state)
-    
-    g.AddNodeFunc("validate_format", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        // Validate data format
-        return &graph.NodeResult{
-            Updates: map[string]any{
-                "format_valid": true,
-            },
-        }, nil
+    stateManager := newStateManager()
+    g, _ := graph.NewGraph(stateManager)
+
+    g.AddNode(&graph.BaseCommandNode{
+        NodeName:        "validate_format",
+        DeclaredTargets: []string{"validate_schema"},
+        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+            updates := map[string]any{"format_valid": true}
+            return graph.Goto(updates, "validate_schema"), nil
+        },
     })
-    
-    g.AddNodeFunc("validate_schema", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        // Validate schema
-        return &graph.NodeResult{
-            Updates: map[string]any{
-                "schema_valid": true,
-            },
-        }, nil
+
+    g.AddNode(&graph.BaseCommandNode{
+        NodeName:        "validate_schema",
+        DeclaredTargets: []string{graph.EndNode},
+        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+            updates := map[string]any{"schema_valid": true}
+            return graph.End(updates), nil
+        },
     })
-    
-    g.AddEdge("validate_format", "validate_schema")
+
     g.SetEntryPoint("validate_format")
-    
     return g
 }
 ```
@@ -85,42 +83,37 @@ compiledAnalysis, _ := analysisSub.Compile()
 ### 3. Create Main Pipeline
 ```go
 func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
-    state := graph.NewStateManager(0)
-    pipeline := graph.NewGraph(state)
-    
+    stateManager := newStateManager()
+    pipeline, _ := graph.NewGraph(stateManager)
+
     // Stage 1: Validation subgraph
-    pipeline.AddNodeFunc("validation_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        // Run validation subgraph
-        result, _ := graph.Last(validation.Run(ctx, s))
-        return result, nil
-    })
-    
-    pipeline.AddNodeFunc("enrichment_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        data, _ := s.Get("data").(map[string]any)
-        result, _ := graph.Last(validation.Run(ctx, nil,
-            graph.WithInput(map[string]any{"data": data}),
-        ))
-        return &graph.NodeResult{
-            Updates: result.State,
-        }, nil
-    })
-    
-    // Stage 2: Enrichment subgraph
-    pipeline.AddNodeFunc("enrichment_stage", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        data, _ := s.Get("data").(map[string]any)
-        result, _ := graph.Last(enrichment.Run(ctx, nil,
-            graph.WithInput(map[string]any{"data": data}),
-        ))
-        return &graph.NodeResult{
-            Updates: result.State,
-        }, nil
+    pipeline.AddNode(&graph.BaseCommandNode{
+        NodeName:        "validation_stage",
+        DeclaredTargets: []string{"enrichment_stage"},
+        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+            // Run validation subgraph
+            result, _ := graph.Last(validation.Run(ctx, nil))
+            return graph.Goto(result.State, "enrichment_stage"), nil
         },
     })
-    
-    // Connect stages
-    pipeline.AddEdge("validation_stage", "enrichment_stage")
-    pipeline.AddEdge("enrichment_stage", "analysis_stage")
-    
+
+    // Stage 2: Enrichment subgraph
+    pipeline.AddNode(&graph.BaseCommandNode{
+        NodeName:        "enrichment_stage",
+        DeclaredTargets: []string{"analysis_stage"},
+        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+            data := state.GetFromView(view, dataKey)
+            result, _ := graph.Last(enrichment.Run(ctx, nil,
+                graph.WithInput(map[string]any{"data": data}),
+            ))
+            return graph.Goto(result.State, "analysis_stage"), nil
+        },
+    })
+
+    // Stage 3: Analysis subgraph (similar pattern)
+    // ...
+
+    pipeline.SetEntryPoint("validation_stage")
     return pipeline
 }
 ```

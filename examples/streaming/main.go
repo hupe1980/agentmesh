@@ -76,8 +76,10 @@ func main() {
 	_ = graphstate.RegisterKey(mgr, readyKey)
 	_ = graphstate.RegisterKey(mgr, verifiedKey)
 
+	builder.SetEntryPoint("data_processor")
+
 	// Node 1: Data processor with intermediate streaming
-	builder.AddNodeFunc("data_processor", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("data_processor", graph.NewTargetSet("llm_call"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -105,7 +107,7 @@ func main() {
 	})
 
 	// Node 2: LLM call with streaming
-	builder.AddNodeFunc("llm_call", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("llm_call", graph.NewTargetSet("analyzer"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
@@ -146,7 +148,7 @@ func main() {
 	})
 
 	// Node 3: Multi-step analyzer with detailed streaming
-	builder.AddNodeFunc("analyzer", func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("analyzer", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -186,12 +188,6 @@ func main() {
 		graphstate.SetUpdate(builder, verifiedKey, true)
 		return builder.Build()
 	})
-
-	// Define the graph flow
-	builder.AddEdge(graph.StartNode, "data_processor")
-	builder.AddEdge("data_processor", "llm_call")
-	builder.AddEdge("llm_call", "analyzer")
-	builder.AddEdge("analyzer", graph.EndNode)
 
 	compiled, err := builder.Compile()
 	if err != nil {

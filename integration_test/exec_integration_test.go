@@ -21,19 +21,25 @@ func TestNewArchitecture(t *testing.T) {
 		t.Fatalf("Failed to create graph: %v", err)
 	}
 
-	g.AddNode(graph.NewBaseNode("start", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return map[string]any{"step": "started"}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "start",
+		DeclaredTargets: graph.NewTargetSet("process"),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			updates := map[string]any{"step": "started"}
+			return graph.Goto("process", updates), nil
+		},
+	})
 
-	g.AddNode(graph.NewBaseNode("process", func(ctx context.Context, s *state.ReadView) (state.Updates, error) {
-		return map[string]any{"step": "processed"}, nil
-	},
-	))
+	g.AddNode(&graph.BaseCommandNode{
+		NodeName:        "process",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			updates := map[string]any{"step": "processed"}
+			return graph.End(updates), nil
+		},
+	})
 
-	g.AddEdge(graph.StartNode, "start")
-	g.AddEdge("start", "process")
-	g.AddEdge("process", graph.EndNode)
+	g.SetEntryPoint("start")
 
 	// Step 2: Compile and execute the graph
 	runnable, err := graph.Compile(g, graph.NewSequentialExecutor())
