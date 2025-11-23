@@ -53,8 +53,8 @@ func main() {
 			"email":   "user@example.com",
 			"score":   75,
 		}
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, inputDataKey, data)
+		builder := graph.NewUpdate()
+		graph.UpdateSet(builder, inputDataKey, data)
 		return builder.Build()
 	})
 
@@ -66,23 +66,23 @@ func main() {
 		validationNS,
 		func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			data := graphstate.GetFromView(view, inputDataKey)
-			builder := graphstate.NewUpdateBuilder()
+			builder := graph.NewUpdate()
 
 			required := []string{"user_id", "email", "score"}
 			for _, field := range required {
 				if _, ok := data[field]; !ok {
-					graphstate.SetUpdate(builder, validKey, false)
+					graph.UpdateSet(builder, validKey, false)
 					updates, _ := builder.Build()
 					return validationTargets.Goto("enrichment", updates), nil
 				}
 			}
 			score, ok := data["score"].(int)
 			if !ok || score < 0 || score > 100 {
-				graphstate.SetUpdate(builder, validKey, false)
+				graph.UpdateSet(builder, validKey, false)
 				updates, _ := builder.Build()
 				return validationTargets.Goto("enrichment", updates), nil
 			}
-			graphstate.SetUpdate(builder, validKey, true)
+			graph.UpdateSet(builder, validKey, true)
 			updates, _ := builder.Build()
 			return validationTargets.Goto("enrichment", updates), nil
 		},
@@ -114,8 +114,8 @@ func main() {
 				enriched["grade"] = "C"
 			}
 			enriched["status"] = "enriched"
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, enrichedDataKey, enriched)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, enrichedDataKey, enriched)
 			updates, _ := builder.Build()
 			return enrichmentTargets.Goto("analysis", updates), nil
 		},
@@ -137,8 +137,8 @@ func main() {
 				"score_grade": enrichedData["grade"],
 				"total_items": len(enrichedData),
 			}
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, analysisKey, analysis)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, analysisKey, analysis)
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

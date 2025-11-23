@@ -323,8 +323,8 @@ func TestChaos_MemoryPressure(t *testing.T) {
 			}
 
 			// Store large data
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, largeDataKey, data)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, largeDataKey, data)
 			updates, _ := builder.Build()
 			return graph.Goto("consumer", updates), nil
 		},
@@ -389,8 +389,8 @@ func TestChaos_NetworkPartition(t *testing.T) {
 				if !partition1Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 1 unreachable")
 				}
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, p1DataKey, "partition1")
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, p1DataKey, "partition1")
 				updates, _ := builder.Build()
 				return graph.Goto("partition_2_node", updates), nil
 			},
@@ -411,8 +411,8 @@ func TestChaos_NetworkPartition(t *testing.T) {
 					return nil, fmt.Errorf("partition isolation: cannot access partition 1 data")
 				}
 
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, resultKey, "partitions_connected")
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, resultKey, "partitions_connected")
 				updates, _ := builder.Build()
 				return graph.End(updates), nil
 			},

@@ -52,12 +52,12 @@ func main() {
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey,
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey,
 				fmt.Sprintf("Researched '%s'", topic),
 				fmt.Sprintf("Summarized findings for '%s'", topic),
 			)
-			graphstate.SetUpdate(builder, currentTaskKey, fmt.Sprintf("Write report for %s", topic))
+			graph.UpdateSet(builder, currentTaskKey, fmt.Sprintf("Write report for %s", topic))
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err
@@ -77,9 +77,9 @@ func main() {
 				return nil, graph.ErrHumanInterrupt
 			}
 			task := graphstate.GetFromView(view, currentTaskKey)
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Drafted report for '%s'", task))
-			graphstate.SetUpdate(builder, draftKey, "draft report content")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, fmt.Sprintf("Drafted report for '%s'", task))
+			graph.UpdateSet(builder, draftKey, "draft report content")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err
@@ -93,9 +93,9 @@ func main() {
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("review")
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "Reviewed draft")
-			graphstate.SetUpdate(builder, finalReportKey, "final report content")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, "Reviewed draft")
+			graph.UpdateSet(builder, finalReportKey, "final report content")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err

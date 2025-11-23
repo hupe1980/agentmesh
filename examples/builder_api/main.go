@@ -37,9 +37,9 @@ func main() {
 	builder.
 		AddStaticNode("analyze", graph.NewTargetSet("validate"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			fmt.Println("Analyzing input...")
-			b := state.NewUpdateBuilder()
-			state.SetUpdate(b, AnalysisKey, "Input looks good")
-			state.SetUpdate(b, ScoreKey, 0.95)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, AnalysisKey, "Input looks good")
+			graph.UpdateSet(b, ScoreKey, 0.95)
 			return b.Build()
 		}).
 		AddStaticNode("validate", graph.NewTargetSet("process"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
@@ -48,8 +48,8 @@ func main() {
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
-			b := state.NewUpdateBuilder()
-			state.SetUpdate(b, ValidKey, valid)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, ValidKey, valid)
 			return b.Build()
 		}).
 		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
@@ -59,14 +59,14 @@ func main() {
 				fmt.Println("Processing validated input...")
 				result := "Success!"
 				fmt.Printf("✓ Final result: %s\n", result)
-				b := state.NewUpdateBuilder()
-				state.SetUpdate(b, ResultKey, result)
+				b := graph.NewUpdate()
+				graph.UpdateSet(b, ResultKey, result)
 				return b.Build()
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
-			b := state.NewUpdateBuilder()
-			state.SetUpdate(b, ResultKey, result)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, ResultKey, result)
 			return b.Build()
 		}).
 		SetEntryPoint("analyze")

@@ -34,36 +34,55 @@ sidebar:
 
 ## Type-safe updates {#type-safe-updates}
 
-`UpdateBuilder` provides compile-time type safety for state updates using Go generics. This prevents runtime errors from type mismatches and typos. **All state updates must use UpdateBuilder.**
+AgentMesh provides two builder patterns for type-safe state updates:
 
-### Usage
+- **`CommandBuilder`** - For CommandNodes with dynamic routing (routing depends on logic)
+- **`UpdateBuilder`** - For StaticNodes with static routing (always same target)
+
+Both use Go generics for compile-time type safety, preventing runtime errors from type mismatches and typos.
+
+### CommandBuilder (for CommandNodes)
+
+Use `CommandBuilder` when your node needs to make routing decisions based on state or logic:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/state"
+import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // Define typed keys
 var (
     CounterKey = state.NewKey[int]("counter")
-    MessagesKey = state.NewListKey[string]("messages")
+    ValidKey = state.NewKey[bool]("valid")
 )
 
-// ✅ Compile-time type checking
-builder.AddNodeFunc("process", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    ub := state.NewUpdateBuilder()
-    state.SetUpdate(ub, CounterKey, 42)              // ✅ Type-checked: int
-    state.AppendUpdate(ub, MessagesKey, "hello")     // ✅ Type-checked: string
+// CommandNode with dynamic routing
+builder.AddCommandNode("decide", targets, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    valid := state.GetFromView(view, ValidKey)
     
-    // state.SetUpdate(ub, CounterKey, "wrong")      // ❌ Won't compile!
-    // state.AppendUpdate(ub, MessagesKey, 123)      // ❌ Won't compile!
+    // Build state updates + routing in one fluent chain
+    cmd := graph.NewCommand().
+        Set(CounterKey, 42).              // ✅ Type-checked: int
+        Set(ValidKey, true)               // ✅ Type-checked: bool
     
-    updates, err := ub.Build()  // ✅ Validated (no duplicate keys)
-    if err != nil {
-        return nil, err
+    // Dynamic routing based on logic
+    if valid {
+        return cmd.Goto("success")        // ✅ Returns (*Command, error)
     }
-    
-    return &graph.NodeResult{
-        Updates: updates,
-    }, nil
+    return cmd.Goto("retry")
+})
+```
+
+### UpdateBuilder (for StaticNodes)
+
+Use `UpdateBuilder` when your node always routes to the same target:
+
+```go
+// StaticNode with static routing
+builder.AddStaticNode("process", targets, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+    // Build state updates only - routing handled by StaticNode wrapper
+    return graph.NewUpdate().
+        Set(CounterKey, 42).              // ✅ Type-checked: int
+        Append(MessagesKey, "hello").     // ✅ Type-checked: string
+        Build()                           // ✅ Returns (state.Updates, error)
 })
 ```
 
@@ -74,36 +93,45 @@ builder.AddNodeFunc("process", func(ctx context.Context, s state.Writer) (*graph
 - Typos in key names prevented
 - Duplicate key detection
 
-**Operations:**
-- `SetUpdate[T]` - Set a single value with type checking
-- `AppendUpdate[T]` - Append to lists with type checking
-- `Delete()` - Mark keys for deletion
-- `SetRaw()` - Escape hatch for dynamic scenarios
+**CommandBuilder operations:**
+- `CommandSet[T](builder, key, value)` - Set a typed value
+- `CommandAppend[T](builder, key, values...)` - Append typed values to list
+- `SetRaw(keyName, value)` - Escape hatch for dynamic scenarios
+- `Delete(keyName)` - Mark key for deletion
+- **Terminals:** `Goto(target)`, `GotoAll(targets...)`, `End()` - Build command with routing
 
-**Example:**
+**UpdateBuilder operations:**
+- `UpdateSet[T](builder, key, value)` - Set a typed value
+- `UpdateAppend[T](builder, key, values...)` - Append typed values to list
+- `SetRaw(keyName, value)` - Escape hatch for dynamic scenarios
+- `Delete(keyName)` - Mark key for deletion
+- **Terminals:** `Build()`, `MustBuild()` - Build state updates map
+
+**Example - CommandBuilder:**
 
 ```go
-ub := state.NewUpdateBuilder()
-
-// Set values
-state.SetUpdate(ub, state.NewKey[int]("score"), 100)
-state.SetUpdate(ub, state.NewKey[string]("status"), "active")
-
-// Append to lists
-state.AppendUpdate(ub, state.NewListKey[string]("tags"), "urgent", "review")
-
-// Delete keys
-ub.Delete("old_field")
-
-// Build validates no duplicate keys
-updates, err := ub.Build()  // Returns (map[string]any, error)
-if err != nil {
-    return nil, err
-}
+// CommandNode with conditional routing
+return graph.NewCommand().
+    Set(scoreKey, 100).
+    Set(statusKey, "active").
+    Append(tagsKey, "urgent", "review").
+    Goto("next")  // Returns (*Command, error)
 ```
 
-### Complete example
+**Example - UpdateBuilder:**
 
+```go
+// StaticNode with fixed routing
+return graph.NewUpdate().
+    Set(scoreKey, 100).
+    Set(statusKey, "active").
+    Append(tagsKey, "urgent", "review").
+    Build()  // Returns (state.Updates, error)
+```
+
+### Migration from old API
+
+**Before (old API):**
 ```go
 ub := state.NewUpdateBuilder()
 state.SetUpdate(ub, CounterKey, value)
@@ -112,7 +140,23 @@ updates, err := ub.Build()
 if err != nil {
     return nil, err
 }
-return updates, nil
+return graph.Goto("next", updates), nil
+```
+
+**After (CommandBuilder for dynamic routing):**
+```go
+return graph.NewCommand().
+    Set(CounterKey, value).
+    Append(MessagesKey, msg).
+    Goto("next")
+```
+
+**After (UpdateBuilder for static routing):**
+```go
+return graph.NewUpdate().
+    Set(CounterKey, value).
+    Append(MessagesKey, msg).
+    Build()
 ```
 
 See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.

@@ -92,17 +92,17 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				sb := graphstate.NewUpdateBuilder()
-				graphstate.SetUpdate(sb, progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))
-				graphstate.SetUpdate(sb, currentChunkKey, chunk)
+				sb := graph.NewUpdate()
+				graph.UpdateSet(sb, progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))
+				graph.UpdateSet(sb, currentChunkKey, chunk)
 				updates, _ := sb.Build()
 				streamWriter(updates)
 			}
 		}
 
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, statusKey, "data_processed")
-		graphstate.SetUpdate(builder, chunksTotalKey, len(chunks))
+		builder := graph.NewUpdate()
+		graph.UpdateSet(builder, statusKey, "data_processed")
+		graph.UpdateSet(builder, chunksTotalKey, len(chunks))
 		return builder.Build()
 	})
 
@@ -114,8 +114,8 @@ func main() {
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			sb := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(sb, llmStatusKey, "starting")
+			sb := graph.NewUpdate()
+			graph.UpdateSet(sb, llmStatusKey, "starting")
 			updates, _ := sb.Build()
 			streamWriter(updates)
 		}
@@ -134,15 +134,15 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			sb := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(sb, llmStatusKey, "completed")
+			sb := graph.NewUpdate()
+			graph.UpdateSet(sb, llmStatusKey, "completed")
 			updates, _ := sb.Build()
 			streamWriter(updates)
 		}
 
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, statusKey, "llm_completed")
-		graphstate.AppendUpdate(builder, agent.MessagesKey, resp.Message)
+		builder := graph.NewUpdate()
+		graph.UpdateSet(builder, statusKey, "llm_completed")
+		graph.UpdateAppend(builder, agent.MessagesKey, resp.Message)
 
 		return builder.Build()
 	})
@@ -156,9 +156,9 @@ func main() {
 		// Step 1: Validation
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(sb, analysisStepKey, "validation")
-			graphstate.SetUpdate(sb, validationKey, "passed")
+			sb := graph.NewUpdate()
+			graph.UpdateSet(sb, analysisStepKey, "validation")
+			graph.UpdateSet(sb, validationKey, "passed")
 			updates, _ := sb.Build()
 			streamWriter(updates)
 		}
@@ -166,9 +166,9 @@ func main() {
 		// Step 2: Quality check
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(sb, analysisStepKey, "quality_check")
-			graphstate.SetUpdate(sb, qualityScoreKey, 0.95)
+			sb := graph.NewUpdate()
+			graph.UpdateSet(sb, analysisStepKey, "quality_check")
+			graph.UpdateSet(sb, qualityScoreKey, 0.95)
 			updates, _ := sb.Build()
 			streamWriter(updates)
 		}
@@ -176,16 +176,16 @@ func main() {
 		// Step 3: Finalization
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(sb, analysisStepKey, "finalization")
-			graphstate.SetUpdate(sb, readyKey, true)
+			sb := graph.NewUpdate()
+			graph.UpdateSet(sb, analysisStepKey, "finalization")
+			graph.UpdateSet(sb, readyKey, true)
 			updates, _ := sb.Build()
 			streamWriter(updates)
 		}
 
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, statusKey, "analysis_complete")
-		graphstate.SetUpdate(builder, verifiedKey, true)
+		builder := graph.NewUpdate()
+		graph.UpdateSet(builder, statusKey, "analysis_complete")
+		graph.UpdateSet(builder, verifiedKey, true)
 		return builder.Build()
 	})
 

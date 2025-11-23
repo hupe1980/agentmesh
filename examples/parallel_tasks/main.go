@@ -63,9 +63,9 @@ func main() {
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "task_a: analysis completed")
-			graphstate.SetUpdate(builder, resultAKey, "analysis result")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, "task_a: analysis completed")
+			graph.UpdateSet(builder, resultAKey, "analysis result")
 			updates, _ := builder.Build()
 			return graph.Goto("combine", updates), nil
 		},
@@ -80,9 +80,9 @@ func main() {
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "task_b: simulation completed")
-			graphstate.SetUpdate(builder, resultBKey, "simulation result")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, "task_b: simulation completed")
+			graph.UpdateSet(builder, resultBKey, "simulation result")
 			updates, _ := builder.Build()
 			return graph.Goto("combine", updates), nil
 		},
@@ -106,9 +106,9 @@ func main() {
 				"task_b": resultB,
 			}
 
-			builder := graphstate.NewUpdateBuilder()
-			// graphstate.AppendUpdate(builder, actionHistoryKey, "combine: aggregated all results")
-			graphstate.SetUpdate(builder, summaryKey, results)
+			builder := graph.NewUpdate()
+			// graph.UpdateAppend(builder, actionHistoryKey, "combine: aggregated all results")
+			graph.UpdateSet(builder, summaryKey, results)
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

@@ -53,8 +53,8 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
-			b := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(b, valueKey, newValue)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, valueKey, newValue)
 			return b.Build()
 		})
 
@@ -63,8 +63,8 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
-			b := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(b, valueKey, newValue)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, valueKey, newValue)
 			return b.Build()
 		})
 
@@ -73,8 +73,8 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)
-			b := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(b, valueKey, newValue)
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, valueKey, newValue)
 			return b.Build()
 		})
 

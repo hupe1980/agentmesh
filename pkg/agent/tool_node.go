@@ -158,8 +158,8 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Com
 		}
 	}
 
-	builder := state.NewUpdateBuilder()
-	state.AppendUpdate(builder, MessagesKey, toolMessages...)
+	builder := graph.NewUpdate()
+	graph.UpdateAppend(builder, MessagesKey, toolMessages...)
 	updates, _ := builder.Build()
 
 	// Tool node always routes back to model after execution

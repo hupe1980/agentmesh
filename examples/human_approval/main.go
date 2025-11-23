@@ -85,9 +85,9 @@ func runApprovalWorkflow(ctx context.Context) {
 
 			draft := fmt.Sprintf("Dear Team,\n\nThis is a reminder about: %s\n\nBest regards", topic)
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, draftKey, draft)
-			graphstate.SetUpdate(builder, statusKey, "drafted")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, draftKey, draft)
+			graph.UpdateSet(builder, statusKey, "drafted")
 			updates, _ := builder.Build()
 			return graph.Goto("send_email", updates), nil
 		},
@@ -107,9 +107,9 @@ func runApprovalWorkflow(ctx context.Context) {
 				// Check if user rejected
 				if approved, ok := resumeVals["approved"].(bool); ok && !approved {
 					fmt.Println("  ❌ User rejected - email not sent")
-					builder := graphstate.NewUpdateBuilder()
-					graphstate.SetUpdate(builder, sentKey, false)
-					graphstate.SetUpdate(builder, statusKey, "rejected")
+					builder := graph.NewUpdate()
+					graph.UpdateSet(builder, sentKey, false)
+					graph.UpdateSet(builder, statusKey, "rejected")
 					updates, _ := builder.Build()
 					return graph.End(updates), nil
 				}
@@ -117,10 +117,10 @@ func runApprovalWorkflow(ctx context.Context) {
 				// Check if user edited the draft
 				if editedDraft, ok := resumeVals["edited_draft"].(string); ok {
 					fmt.Println("  ✏️  User edited draft - sending edited version")
-					builder := graphstate.NewUpdateBuilder()
-					graphstate.SetUpdate(builder, draftKey, editedDraft)
-					graphstate.SetUpdate(builder, sentKey, true)
-					graphstate.SetUpdate(builder, statusKey, "sent_edited")
+					builder := graph.NewUpdate()
+					graph.UpdateSet(builder, draftKey, editedDraft)
+					graph.UpdateSet(builder, sentKey, true)
+					graph.UpdateSet(builder, statusKey, "sent_edited")
 					updates, _ := builder.Build()
 					return graph.End(updates), nil
 				}
@@ -133,9 +133,9 @@ func runApprovalWorkflow(ctx context.Context) {
 			draft := graphstate.GetFromView(view, draftKey)
 			fmt.Printf("→ Sending email:\n%s\n", draft)
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, sentKey, true)
-			graphstate.SetUpdate(builder, statusKey, "sent")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, sentKey, true)
+			graph.UpdateSet(builder, statusKey, "sent")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},
@@ -260,9 +260,9 @@ func runRejectionWorkflow(ctx context.Context) {
 			topic := graphstate.GetFromView(view, topicKey)
 			fmt.Printf("→ Drafting email about: %s\n", topic)
 			draft := fmt.Sprintf("Dear Team,\n\nExciting news about: %s\n\nBest regards", topic)
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, draftKey, draft)
-			graphstate.SetUpdate(builder, statusKey, "drafted")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, draftKey, draft)
+			graph.UpdateSet(builder, statusKey, "drafted")
 			updates, _ := builder.Build()
 			return graph.Goto("send_email", updates), nil
 		},
@@ -277,16 +277,16 @@ func runRejectionWorkflow(ctx context.Context) {
 				if approved, ok := resumeVals["approved"].(bool); ok && !approved {
 					reason := resumeVals["reason"].(string)
 					fmt.Printf("  ❌ User rejected: %s\n", reason)
-					builder := graphstate.NewUpdateBuilder()
-					graphstate.SetUpdate(builder, sentKey, false)
-					graphstate.SetUpdate(builder, statusKey, fmt.Sprintf("rejected: %s", reason))
+					builder := graph.NewUpdate()
+					graph.UpdateSet(builder, sentKey, false)
+					graph.UpdateSet(builder, statusKey, fmt.Sprintf("rejected: %s", reason))
 					updates, _ := builder.Build()
 					return graph.End(updates), nil
 				}
 			}
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, sentKey, true)
-			graphstate.SetUpdate(builder, statusKey, "sent")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, sentKey, true)
+			graph.UpdateSet(builder, statusKey, "sent")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

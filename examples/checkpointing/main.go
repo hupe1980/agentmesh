@@ -204,28 +204,28 @@ func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 1: Initializing...")
 		time.Sleep(300 * time.Millisecond)
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 1)
-		graphstate.SetUpdate(ub, statusKey, "initialized")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 1)
+		graph.UpdateSet(ub, statusKey, "initialized")
 		return ub.Build()
 	})
 
 	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 2: Processing data...")
 		time.Sleep(300 * time.Millisecond)
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 2)
-		graphstate.SetUpdate(ub, statusKey, "processing")
-		graphstate.SetUpdate(ub, dataKey, []string{"A", "B", "C"})
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 2)
+		graph.UpdateSet(ub, statusKey, "processing")
+		graph.UpdateSet(ub, dataKey, []string{"A", "B", "C"})
 		return ub.Build()
 	})
 
 	builder.AddStaticNode("step3", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("→ Step 3: Finalizing...")
 		time.Sleep(300 * time.Millisecond)
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 3)
-		graphstate.SetUpdate(ub, statusKey, "complete")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 3)
+		graph.UpdateSet(ub, statusKey, "complete")
 		return ub.Build()
 	})
 
@@ -249,17 +249,17 @@ func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] 
 
 	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: OK")
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 1)
-		graphstate.SetUpdate(ub, statusKey, "ok")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 1)
+		graph.UpdateSet(ub, statusKey, "ok")
 		return ub.Build()
 	})
 
 	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: OK")
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 2)
-		graphstate.SetUpdate(ub, statusKey, "ok")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 2)
+		graph.UpdateSet(ub, statusKey, "ok")
 		return ub.Build()
 	})
 
@@ -284,25 +284,25 @@ func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
 
 	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 1: Skipped (already completed)")
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 1)
-		graphstate.SetUpdate(ub, statusKey, "ok")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 1)
+		graph.UpdateSet(ub, statusKey, "ok")
 		return ub.Build()
 	})
 
 	builder.AddStaticNode("step2", graph.NewTargetSet("step3"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 2: Skipped (already completed)")
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 2)
-		graphstate.SetUpdate(ub, statusKey, "ok")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 2)
+		graph.UpdateSet(ub, statusKey, "ok")
 		return ub.Build()
 	})
 
 	builder.AddStaticNode("step3", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("  Step 3: Now succeeding (bug fixed)")
-		ub := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(ub, stepKey, 3)
-		graphstate.SetUpdate(ub, statusKey, "fixed!")
+		ub := graph.NewUpdate()
+		graph.UpdateSet(ub, stepKey, 3)
+		graph.UpdateSet(ub, statusKey, "fixed!")
 		return ub.Build()
 	})
 

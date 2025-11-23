@@ -87,8 +87,8 @@ func main() {
 			counter := graphstate.GetFromView(view, counterKey)
 			counter++
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, counterKey, counter)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, counter)
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err
@@ -117,8 +117,8 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			newValue := currentCounter + 10
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, counterKey, newValue)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, newValue)
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err

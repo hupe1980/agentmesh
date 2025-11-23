@@ -315,9 +315,9 @@ func TestStateManagement(t *testing.T) {
 			NodeName:        "writer",
 			DeclaredTargets: graph.NewTargetSet("reader"),
 			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, key1Key, "value1")
-				state.SetUpdate(builder, key2Key, 42)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, key1Key, "value1")
+				graph.UpdateSet(builder, key2Key, 42)
 				updates, _ := builder.Build()
 				return graph.Goto("reader", updates), nil
 			},

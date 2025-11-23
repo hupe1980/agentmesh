@@ -71,8 +71,8 @@ func runExample(maxSize int) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, agent.MessagesKey,
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, agent.MessagesKey,
 				message.Message(message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts()))),
 			)
 

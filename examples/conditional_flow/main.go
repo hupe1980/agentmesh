@@ -75,9 +75,9 @@ func runScenario(choice string) {
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
 			// Update state to indicate which path should be taken
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, nextPathKey, choiceVal)
-			graphstate.AppendUpdate(builder, actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, nextPathKey, choiceVal)
+			graph.UpdateAppend(builder, actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))
 			updates, _ := builder.Build()
 
 			// Route to the chosen path
@@ -94,8 +94,8 @@ func runScenario(choice string) {
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path A")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, "Completed: Path A")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},
@@ -107,8 +107,8 @@ func runScenario(choice string) {
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path B")
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, actionHistoryKey, "Completed: Path B")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

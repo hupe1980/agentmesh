@@ -118,13 +118,9 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				count := state.GetFromView(view, countKey)
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, countKey, count+1)
-				updates, err := builder.Build()
-				if err != nil {
-					return nil, err
-				}
-				return graph.End(updates), nil
+				builder := graph.NewCommand()
+				graph.CommandSet(builder, countKey, count+1)
+				return builder.End()
 			},
 		})
 
@@ -166,13 +162,9 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 				DeclaredTargets: graph.NewTargetSet(nextNode),
 				Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 					val := state.GetFromView(view, valueKey)
-					builder := state.NewUpdateBuilder()
-					state.SetUpdate(builder, valueKey, val+1)
-					updates, err := builder.Build()
-					if err != nil {
-						return nil, err
-					}
-					return graph.Goto(nextNode, updates), nil
+					builder := graph.NewCommand()
+					graph.CommandSet(builder, valueKey, val+1)
+					return builder.Goto(nextNode)
 				},
 			})
 

@@ -62,9 +62,9 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 					counter := state.GetFromView(s, counterKey)
 					newCounter := counter + 1
 
-					builder := state.NewUpdateBuilder()
-					state.SetUpdate(builder, counterKey, newCounter)
-					state.SetUpdate(builder, nodeExecutedKeys[nodeNum], true)
+					builder := graph.NewUpdate()
+					graph.UpdateSet(builder, counterKey, newCounter)
+					graph.UpdateSet(builder, nodeExecutedKeys[nodeNum], true)
 					updates, _ := builder.Build()
 					return graph.Goto(nextNode, updates), nil
 				},
@@ -202,9 +202,9 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 					counter := state.GetFromView(s, counterKey2)
 					newCounter := counter + 1
 
-					builder := state.NewUpdateBuilder()
-					state.SetUpdate(builder, counterKey2, newCounter)
-					state.SetUpdate(builder, completedStepKeys[nodeNum], true)
+					builder := graph.NewUpdate()
+					graph.UpdateSet(builder, counterKey2, newCounter)
+					graph.UpdateSet(builder, completedStepKeys[nodeNum], true)
 					updates, _ := builder.Build()
 					return graph.Goto(nextNode, updates), nil
 				},
@@ -326,9 +326,9 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 				log = append(log, "node_a")
 				logMu.Store(log)
 
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, valueKey, 42)
-				state.SetUpdate(builder, nodeADoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, valueKey, 42)
+				graph.UpdateSet(builder, nodeADoneKey, true)
 				updates, _ := builder.Build()
 				return graph.Goto("node_b", updates), nil
 			},
@@ -346,9 +346,9 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 				value := state.GetFromView(s, valueKey)
 				newValue := value * 2
 
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, valueKey, newValue)
-				state.SetUpdate(builder, nodeBDoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, valueKey, newValue)
+				graph.UpdateSet(builder, nodeBDoneKey, true)
 				updates, _ := builder.Build()
 				return graph.Goto("node_c", updates), nil
 			},
@@ -366,9 +366,9 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 				value := state.GetFromView(s, valueKey)
 				newValue := value + 10
 
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, valueKey, newValue)
-				state.SetUpdate(builder, nodeCDoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, valueKey, newValue)
+				graph.UpdateSet(builder, nodeCDoneKey, true)
 				updates, _ := builder.Build()
 				return graph.End(updates), nil
 			},
@@ -459,8 +459,8 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 		NodeName:        "node_1",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, dataKey, "checkpoint_data")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, dataKey, "checkpoint_data")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

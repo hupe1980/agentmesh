@@ -8,6 +8,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -169,8 +170,8 @@ func AgentNode(ctx context.Context, agentCardURL string, skillID string, opts ..
 				return nil, fmt.Errorf("failed to convert response: %w", err)
 			}
 
-			builder := state.NewUpdateBuilder()
-			state.AppendUpdate(builder, agent.MessagesKey, resultMessages...)
+			builder := graph.NewUpdate()
+			graph.UpdateAppend(builder, agent.MessagesKey, resultMessages...)
 
 			return builder.Build()
 		}
@@ -237,8 +238,8 @@ func StreamingAgentNode(ctx context.Context, agentCardURL string, skillID string
 			}
 		}
 
-		builder := state.NewUpdateBuilder()
-		state.AppendUpdate(builder, agent.MessagesKey, resultMessages...)
+		builder := graph.NewUpdate()
+		graph.UpdateAppend(builder, agent.MessagesKey, resultMessages...)
 
 		return builder.Build()
 	}

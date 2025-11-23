@@ -52,14 +52,14 @@ func main() {
 			fmt.Println("→ Node: init")
 
 			// Build type-safe updates
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, counterKey, 1)                    // ✓ Type-safe: int matches Key[int]
-			graphstate.SetUpdate(builder, statusKey, "initialized")         // ✓ Type-safe: string matches Key[string]
-			graphstate.AppendUpdate(builder, messagesKey, "System started") // ✓ Type-safe: string matches ListKey[string]
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, 1)                    // ✓ Type-safe: int matches Key[int]
+			graph.UpdateSet(builder, statusKey, "initialized")         // ✓ Type-safe: string matches Key[string]
+			graph.UpdateAppend(builder, messagesKey, "System started") // ✓ Type-safe: string matches ListKey[string]
 
 			// Compile-time type safety examples:
-			// graphstate.SetUpdate(builder, counterKey, "wrong") // ✗ Compile error: string doesn't match Key[int]
-			// graphstate.AppendUpdate(builder, messagesKey, 123) // ✗ Compile error: int doesn't match ListKey[string]
+			// graph.UpdateSet(builder, counterKey, "wrong") // ✗ Compile error: string doesn't match Key[int]
+			// graph.UpdateAppend(builder, messagesKey, 123) // ✗ Compile error: int doesn't match ListKey[string]
 
 			updates, err := builder.Build()
 			if err != nil {
@@ -84,10 +84,10 @@ func main() {
 			fmt.Printf("  Current counter: %d\n", currentCounter)
 
 			// Build updates with chaining
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, counterKey, currentCounter+10)
-			graphstate.SetUpdate(builder, statusKey, "processing")
-			graphstate.AppendUpdate(builder, messagesKey, "Data processed", "Validation complete")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, currentCounter+10)
+			graph.UpdateSet(builder, statusKey, "processing")
+			graph.UpdateAppend(builder, messagesKey, "Data processed", "Validation complete")
 
 			updates, err := builder.Build()
 			if err != nil {
@@ -106,12 +106,12 @@ func main() {
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("→ Node: finalize")
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, statusKey, "finalizing")
-			graphstate.AppendUpdate(builder, messagesKey, "Process complete")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, statusKey, "finalizing")
+			graph.UpdateAppend(builder, messagesKey, "Process complete")
 
 			// Example of error handling for duplicate keys
-			// graphstate.SetUpdate(builder, statusKey, "duplicate") // Would cause Build() to return error
+			// graph.UpdateSet(builder, statusKey, "duplicate") // Would cause Build() to return error
 
 			updates, err := builder.Build()
 			if err != nil {

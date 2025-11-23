@@ -62,9 +62,9 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 		NodeName:        "node1",
 		DeclaredTargets: graph.NewTargetSet("node2"),
 		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, counterKey, 1) // int, not float64
-			state.SetUpdate(builder, dataKey, "A")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, 1) // int, not float64
+			graph.UpdateSet(builder, dataKey, "A")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err
@@ -84,9 +84,9 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, counterKey, counter+1) // Should be int 2
-			state.SetUpdate(builder, dataKey, data+"B")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, counter+1) // Should be int 2
+			graph.UpdateSet(builder, dataKey, data+"B")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err
@@ -106,9 +106,9 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, counterKey, counter+1) // Should be int 3
-			state.SetUpdate(builder, dataKey, data+"C")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, counterKey, counter+1) // Should be int 3
+			graph.UpdateSet(builder, dataKey, data+"C")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err

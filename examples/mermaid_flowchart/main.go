@@ -60,8 +60,8 @@ func conditionalWorkflow() {
 
 	builder.
 		AddCommandNode("analyze", graph.NewTargetSet("simple_path", "complex_path"), func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			b := state.NewUpdateBuilder()
-			state.SetUpdate(b, categoryKey, "simple")
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, categoryKey, "simple")
 			updates, _ := b.Build()
 
 			category := "simple" // Just set it above
@@ -132,9 +132,9 @@ func complexWorkflow() {
 
 	builder.
 		AddCommandNode("input_validation", graph.NewTargetSet("high_priority", "normal_priority"), func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			b := state.NewUpdateBuilder()
-			state.SetUpdate(b, validKey, true)
-			state.SetUpdate(b, priorityKey, "high")
+			b := graph.NewUpdate()
+			graph.UpdateSet(b, validKey, true)
+			graph.UpdateSet(b, priorityKey, "high")
 			updates, _ := b.Build()
 
 			priority := "high" // Just set it above

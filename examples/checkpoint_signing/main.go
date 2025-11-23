@@ -179,9 +179,9 @@ func productionExample(ctx context.Context) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		b := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(b, counterKey, counter)
-		graphstate.SetUpdate(b, statusKey, "processed")
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, counterKey, counter)
+		graph.UpdateSet(b, statusKey, "processed")
 		return b.Build()
 	})
 
@@ -189,9 +189,9 @@ func productionExample(ctx context.Context) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		b := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(b, counterKey, counter)
-		graphstate.SetUpdate(b, statusKey, "finalized")
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, counterKey, counter)
+		graph.UpdateSet(b, statusKey, "finalized")
 		return b.Build()
 	})
 

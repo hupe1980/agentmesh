@@ -20,7 +20,8 @@ func main() {
 	attemptsKey := graphstate.NewKey("attempts", 0)
 	validatedKey := graphstate.NewKey("validated", false)
 	actionLogKey := graphstate.NewListKey[string]("action_log", 0)
-	taskResultsKey := graphstate.NewKey("task_results", map[string]any{})
+	var defaultMap map[string]any
+	taskResultsKey := graphstate.NewKey("task_results", defaultMap)
 
 	// Create state and register keys
 	mgr := graphstate.NewManager()
@@ -41,12 +42,11 @@ func main() {
 		DeclaredTargets: graph.NewTargetSet("process"),
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("[init] Initializing...")
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, phaseKey, "processing")
-			graphstate.SetUpdate(builder, attemptsKey, 1)
-			graphstate.AppendUpdate(builder, actionLogKey, "Initialized")
-			updates, _ := builder.Build()
-			return graph.Goto("process", updates), nil
+			builder := graph.NewCommand()
+			graph.CommandSet(builder, phaseKey, "processing")
+			graph.CommandSet(builder, attemptsKey, 1)
+			graph.CommandAppend(builder, actionLogKey, "Initialized")
+			return builder.Goto("process")
 		},
 	})
 
@@ -59,13 +59,12 @@ func main() {
 			// Read current attempts count
 			currentAttempts := graphstate.GetFromView(view, attemptsKey)
 
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, attemptsKey, currentAttempts+1)
-			graphstate.SetUpdate(builder, validatedKey, true)
-			graphstate.AppendUpdate(builder, actionLogKey, "Processed")
-			graphstate.SetUpdate(builder, taskResultsKey, map[string]any{"process": "success"})
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			builder := graph.NewCommand()
+			graph.CommandSet(builder, attemptsKey, currentAttempts+1)
+			graph.CommandSet(builder, validatedKey, true)
+			graph.CommandAppend(builder, actionLogKey, "Processed")
+			graph.CommandSet(builder, taskResultsKey, map[string]any{"process": "success"})
+			return builder.End()
 		},
 	})
 

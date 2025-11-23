@@ -161,8 +161,8 @@ func (n *ModelNode) Execute(ctx context.Context, view state.ReadView) (*graph.Co
 	}
 
 	// Return message in updates map (agent layer handles message storage)
-	builder := state.NewUpdateBuilder()
-	state.AppendUpdate(builder, MessagesKey, resp.Message)
+	builder := graph.NewUpdate()
+	graph.UpdateAppend(builder, MessagesKey, resp.Message)
 	updates, _ := builder.Build()
 
 	// Route based on tool calls

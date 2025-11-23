@@ -38,9 +38,9 @@ func main() {
 	// Add nodes
 	builder.AddStaticNode("input_validator", graph.NewTargetSet("router"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		b := state.NewUpdateBuilder()
-		state.SetUpdate(b, validKey, true)
-		state.SetUpdate(b, priorityKey, "high")
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, validKey, true)
+		graph.UpdateSet(b, priorityKey, "high")
 		return b.Build()
 	})
 
@@ -55,22 +55,22 @@ func main() {
 
 	builder.AddStaticNode("high_priority_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		b := state.NewUpdateBuilder()
-		state.SetUpdate(b, processedKey, true)
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, processedKey, true)
 		return b.Build()
 	})
 
 	builder.AddStaticNode("normal_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		b := state.NewUpdateBuilder()
-		state.SetUpdate(b, processedKey, true)
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, processedKey, true)
 		return b.Build()
 	})
 
 	builder.AddStaticNode("aggregator", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		b := state.NewUpdateBuilder()
-		state.SetUpdate(b, completeKey, true)
+		b := graph.NewUpdate()
+		graph.UpdateSet(b, completeKey, true)
 		return b.Build()
 	})
 

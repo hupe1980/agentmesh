@@ -225,8 +225,8 @@ func TestComplexGraphPatterns(t *testing.T) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "split")
 				executionOrderMu.Unlock()
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, splitDoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, splitDoneKey, true)
 				updates, _ := builder.Build()
 				return graph.GotoAll([]string{"left", "right"}, updates), nil
 			},
@@ -239,8 +239,8 @@ func TestComplexGraphPatterns(t *testing.T) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "left")
 				executionOrderMu.Unlock()
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, leftDoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, leftDoneKey, true)
 				updates, _ := builder.Build()
 				return graph.Goto("merge", updates), nil
 			},
@@ -253,8 +253,8 @@ func TestComplexGraphPatterns(t *testing.T) {
 				executionOrderMu.Lock()
 				executionOrder = append(executionOrder, "right")
 				executionOrderMu.Unlock()
-				builder := state.NewUpdateBuilder()
-				state.SetUpdate(builder, rightDoneKey, true)
+				builder := graph.NewUpdate()
+				graph.UpdateSet(builder, rightDoneKey, true)
 				updates, _ := builder.Build()
 				return graph.Goto("merge", updates), nil
 			},

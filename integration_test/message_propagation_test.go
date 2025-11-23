@@ -34,9 +34,9 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 		DeclaredTargets: graph.NewTargetSet("node_b"),
 		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			// Send data to node_b
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, fromAKey, "hello from A")
-			state.SetUpdate(builder, counterKey, 1)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, fromAKey, "hello from A")
+			graph.UpdateSet(builder, counterKey, 1)
 			updates, _ := builder.Build()
 			return graph.Goto("node_b", updates), nil
 		},
@@ -56,9 +56,9 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			require.Equal(t, "hello from A", fromA)
 			require.Equal(t, 1, counter)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, fromBKey, "hello from B")
-			state.SetUpdate(builder, statusKey, "received")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, fromBKey, "hello from B")
+			graph.UpdateSet(builder, statusKey, "received")
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},
@@ -109,9 +109,9 @@ func TestParallelMessagePropagation(t *testing.T) {
 		NodeName:        "parallel_entry",
 		DeclaredTargets: graph.NewTargetSet("aggregator"),
 		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, fromParallelAKey, "data_a")
-			state.SetUpdate(builder, fromParallelBKey, "data_b")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, fromParallelAKey, "data_a")
+			graph.UpdateSet(builder, fromParallelBKey, "data_b")
 			updates, _ := builder.Build()
 			return graph.Goto("aggregator", updates), nil
 		},
@@ -132,8 +132,8 @@ func TestParallelMessagePropagation(t *testing.T) {
 			require.Equal(t, "data_a", dataA)
 			require.Equal(t, "data_b", dataB)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, aggregatedKey, true)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, aggregatedKey, true)
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},
@@ -183,9 +183,9 @@ func TestMessagePropagationSequential(t *testing.T) {
 		NodeName:        "node_1",
 		DeclaredTargets: graph.NewTargetSet("node_2"),
 		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, stepKey, 1)
-			state.SetUpdate(builder, dataKey, "from_node_1")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, stepKey, 1)
+			graph.UpdateSet(builder, dataKey, "from_node_1")
 			updates, _ := builder.Build()
 			return graph.Goto("node_2", updates), nil
 		},
@@ -202,9 +202,9 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, 1, step, "Should receive step from node_1")
 			require.Equal(t, "from_node_1", data)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, stepKey, 2)
-			state.SetUpdate(builder, dataKey, "from_node_2")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, stepKey, 2)
+			graph.UpdateSet(builder, dataKey, "from_node_2")
 			updates, _ := builder.Build()
 			return graph.Goto("node_3", updates), nil
 		},
@@ -221,9 +221,9 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, 2, step, "Should receive step from node_2")
 			require.Equal(t, "from_node_2", data)
 
-			builder := state.NewUpdateBuilder()
-			state.SetUpdate(builder, stepKey, 3)
-			state.SetUpdate(builder, finalKey, true)
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, stepKey, 3)
+			graph.UpdateSet(builder, finalKey, true)
 			updates, _ := builder.Build()
 			return graph.End(updates), nil
 		},

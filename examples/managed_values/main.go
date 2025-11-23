@@ -124,10 +124,10 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (st
 	metrics.RecordExecution(n.name, latency)
 
 	// Return persistent state updates (these WILL be checkpointed)
-	builder := state.NewUpdateBuilder()
-	state.SetUpdate(builder, CounterKey, counter+1)
-	state.SetUpdate(builder, LastNodeKey, n.name)
-	state.AppendUpdate(builder, HistoryKey, fmt.Sprintf("%s executed by user %s", n.name, session.UserID))
+	builder := graph.NewUpdate()
+	graph.UpdateSet(builder, CounterKey, counter+1)
+	graph.UpdateSet(builder, LastNodeKey, n.name)
+	graph.UpdateAppend(builder, HistoryKey, fmt.Sprintf("%s executed by user %s", n.name, session.UserID))
 	return builder.Build()
 }
 
@@ -167,8 +167,8 @@ func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) (state.U
 	}
 	fmt.Printf("======================\n\n")
 
-	builder := state.NewUpdateBuilder()
-	state.AppendUpdate(builder, HistoryKey, "Metrics reported")
+	builder := graph.NewUpdate()
+	graph.UpdateAppend(builder, HistoryKey, "Metrics reported")
 	return builder.Build()
 }
 

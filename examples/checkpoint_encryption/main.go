@@ -83,10 +83,10 @@ func basicEncryptionExample(ctx context.Context) {
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
 		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  Processing sensitive data...")
-			builder := graphstate.NewUpdateBuilder()
-			graphstate.SetUpdate(builder, creditCardKey, "4111-1111-1111-1111")
-			graphstate.SetUpdate(builder, ssnKey, "123-45-6789")
-			graphstate.SetUpdate(builder, passwordKey, "super-secret")
+			builder := graph.NewUpdate()
+			graph.UpdateSet(builder, creditCardKey, "4111-1111-1111-1111")
+			graph.UpdateSet(builder, ssnKey, "123-45-6789")
+			graph.UpdateSet(builder, passwordKey, "super-secret")
 			updates, err := builder.Build()
 			if err != nil {
 				return nil, err

@@ -58,8 +58,8 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, sta
 			return nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
-		builder := state.NewUpdateBuilder()
-		state.SetUpdate(builder, DocumentsKey, extractDocumentContent(docs))
+		builder := graph.NewUpdate()
+		graph.UpdateSet(builder, DocumentsKey, extractDocumentContent(docs))
 
 		updates, err := builder.Build()
 		if err != nil {
@@ -226,8 +226,8 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 	}
 
 	// Return message in updates map
-	builder := state.NewUpdateBuilder()
-	state.AppendUpdate(builder, MessagesKey, resp.Message)
+	builder := graph.NewUpdate()
+	graph.UpdateAppend(builder, MessagesKey, resp.Message)
 
 	return builder.Build()
 }
