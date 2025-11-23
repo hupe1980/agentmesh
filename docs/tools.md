@@ -133,11 +133,13 @@ executor := tool.NewParallelExecutor(registry,
     tool.WithContinueOnError(true))
 
 // Execute tools directly (without graph)
-calls := []tool.Call{{
-    ID:        "call_1",
-    Name:      "search",
-    Arguments: `{"query":"AgentMesh","limit":10}`,
-}}
+calls := []tool.Call{
+    {
+        ID:        "call_1",
+        Name:      "search",
+        Arguments: `{"query":"AgentMesh","limit":10}`,
+    },
+}
 
 results, err := executor.Execute(ctx, calls)
 for _, result := range results {
