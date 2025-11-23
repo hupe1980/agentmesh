@@ -49,7 +49,9 @@ func NewChannelRegistry() *ChannelRegistry {
 func (r *ChannelRegistry) GetOrCreateChannel(name string) channel.Channel {
 	// Fast path: lock-free read
 	if val, ok := r.channels.Load(name); ok {
-		return val.(*ChannelMetadata).Channel
+		if meta, ok := val.(*ChannelMetadata); ok && meta != nil {
+			return meta.Channel
+		}
 	}
 
 	// Slow path: create new channel with lock
@@ -58,7 +60,9 @@ func (r *ChannelRegistry) GetOrCreateChannel(name string) channel.Channel {
 
 	// Double-check after acquiring lock
 	if val, ok := r.channels.Load(name); ok {
-		return val.(*ChannelMetadata).Channel
+		if meta, ok := val.(*ChannelMetadata); ok && meta != nil {
+			return meta.Channel
+		}
 	}
 
 	// Create new channel with default LastValue behavior
@@ -138,7 +142,10 @@ func (r *ChannelRegistry) GetChannel(name string) channel.Channel {
 	if !ok {
 		return nil
 	}
-	return val.(*ChannelMetadata).Channel
+	if meta, ok := val.(*ChannelMetadata); ok && meta != nil {
+		return meta.Channel
+	}
+	return nil
 }
 
 // GetChannelMetadata retrieves metadata for a channel.
