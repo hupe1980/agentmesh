@@ -503,7 +503,7 @@ func (m *Manager) Close() error {
 
 // CreateReadView creates a read-only view of the current state for BSP execution.
 // This allows nodes to read state concurrently without mutations.
-func (m *Manager) CreateReadView(ctx context.Context) (*ReadView, error) {
+func (m *Manager) CreateReadView(ctx context.Context) (ReadView, error) {
 	// Take a snapshot for concurrent reads
 	versionedSnapshot, err := m.Snapshot(ctx, nil)
 	if err != nil {

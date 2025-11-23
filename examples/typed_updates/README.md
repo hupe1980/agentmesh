@@ -65,7 +65,7 @@ state.AppendUpdate(builder, messagesKey, "msg1", "msg2", "msg3")
 ### Before: Raw Updates Map
 
 ```go
-func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
     return state.Updates{
         "counter": 42,              // No type checking
         "mesages": "typo",          // Typo not caught!
@@ -83,7 +83,7 @@ func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
 ### After: UpdateBuilder
 
 ```go
-func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
     builder := state.NewUpdateBuilder()
     state.SetUpdate(builder, counterKey, 42)          // ✓ Type-checked
     state.AppendUpdate(builder, messagesKey, "hello") // ✓ Type-checked

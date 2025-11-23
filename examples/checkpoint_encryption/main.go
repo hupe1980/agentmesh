@@ -81,7 +81,7 @@ func basicEncryptionExample(ctx context.Context) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "secure_node",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  Processing sensitive data...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, creditCardKey, "4111-1111-1111-1111")

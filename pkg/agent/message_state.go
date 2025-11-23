@@ -22,7 +22,7 @@ var MessagesKey = state.NewListKey[message.Message](graph.MessagesKeyName, 0)
 //	for _, msg := range messages {
 //	    fmt.Println(msg.Content())
 //	}
-func GetMessages(view *state.ReadView) []message.Message {
+func GetMessages(view state.ReadView) []message.Message {
 	return state.GetFromView(view, MessagesKey.Key)
 }
 
@@ -35,7 +35,7 @@ func GetMessages(view *state.ReadView) []message.Message {
 //	if lastMsg != nil {
 //	    fmt.Println("Last:", lastMsg.Content())
 //	}
-func LastMessage(view *state.ReadView) message.Message {
+func LastMessage(view state.ReadView) message.Message {
 	msgs := GetMessages(view)
 	if len(msgs) == 0 {
 		return nil

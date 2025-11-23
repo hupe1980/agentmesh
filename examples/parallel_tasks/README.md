@@ -67,7 +67,7 @@ state.AddChannel(state.NewTopicChannel("messages", 100))
 g.AddNode(&graph.BaseCommandNode{
     NodeName:        "task_a",
     DeclaredTargets: []string{"merge"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
         time.Sleep(2 * time.Second) // Simulate work
         updates := map[string]any{
             "results": map[string]any{"a": 100},
@@ -85,7 +85,7 @@ g.AddNode(&graph.BaseCommandNode{
 g.AddNode(&graph.BaseCommandNode{
     NodeName:        "start",
     DeclaredTargets: []string{"task_a", "task_b", "task_c"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
         // Fan-out is modeled by command targets; no manual AddEdge calls
         return graph.Goto(nil, "task_a"), nil
     },
@@ -99,7 +99,7 @@ g.SetEntryPoint("start")
 g.AddNode(&graph.BaseCommandNode{
     NodeName:        "merge",
     DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
         results := state.GetFromView(view, resultsKey)
         fmt.Printf("Merged results: %v\n", results)
         return graph.End(nil), nil

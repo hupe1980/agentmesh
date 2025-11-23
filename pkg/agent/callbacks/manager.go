@@ -77,7 +77,7 @@ func (pm *PluginManager) Shutdown(ctx context.Context) error {
 
 // ExecuteBeforeNode runs all plugins BeforeNode hooks.
 // Returns non-nil state.Updates if any plugin short-circuits execution.
-func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
+func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
@@ -98,7 +98,7 @@ func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string,
 
 // ExecuteAfterNode runs all plugins AfterNode hooks.
 // Plugins can mutate the updates map to enrich or transform the node's output.
-func (pm *PluginManager) ExecuteAfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
+func (pm *PluginManager) ExecuteAfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()

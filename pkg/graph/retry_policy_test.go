@@ -27,7 +27,7 @@ func TestRetryPolicyExecution(t *testing.T) {
 
 		// Node that fails twice, then succeeds
 		builder.AddCommandNodeWithRetry("retry_node", targets,
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				attemptCount++
 				if attemptCount < 3 {
 					return nil, errors.New("transient error")
@@ -68,7 +68,7 @@ func TestRetryPolicyExecution(t *testing.T) {
 
 		// Node that always fails
 		builder.AddCommandNodeWithRetry("always_fails", targets,
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				attemptCount++
 				return nil, errors.New("permanent error")
 			},
@@ -107,7 +107,7 @@ func TestRetryPolicyExecution(t *testing.T) {
 			targets := NewTargetSet(EndNode)
 
 			builder.AddCommandNodeWithRetry("selective_node", targets,
-				func(ctx context.Context, view *state.ReadView) (*Command, error) {
+				func(ctx context.Context, view state.ReadView) (*Command, error) {
 					attemptCount++
 					return nil, ErrPermanent // Not in retryable list
 				},
@@ -142,7 +142,7 @@ func TestRetryPolicyExecution(t *testing.T) {
 			targets := NewTargetSet(EndNode)
 
 			builder.AddCommandNodeWithRetry("selective_node", targets,
-				func(ctx context.Context, view *state.ReadView) (*Command, error) {
+				func(ctx context.Context, view state.ReadView) (*Command, error) {
 					attemptCount++
 					if attemptCount < 3 {
 						return nil, ErrTransient // Retryable
@@ -184,7 +184,7 @@ func TestRetryPolicyPriority(t *testing.T) {
 
 		// Add node with retry policy via Builder
 		builder.AddCommandNodeWithRetry("test_node", targets,
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				return End(state.Updates{
 					MessagesKeyName: []message.Message{message.NewAIMessageFromText("done")},
 				}), nil

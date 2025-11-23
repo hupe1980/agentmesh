@@ -27,8 +27,8 @@ import (
 // module (graph) defines the contract it needs, and the low-level module (callbacks)
 // implements it.
 type NodeCallbacks interface {
-	ExecuteBeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error)
-	ExecuteAfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error
+	ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error)
+	ExecuteAfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error
 	ExecuteOnNodeError(ctx context.Context, nodeName string, err error) error
 }
 

@@ -35,14 +35,14 @@ func main() {
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
-		AddStaticNode("analyze", graph.NewTargetSet("validate"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("analyze", graph.NewTargetSet("validate"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			fmt.Println("Analyzing input...")
 			b := state.NewUpdateBuilder()
 			state.SetUpdate(b, AnalysisKey, "Input looks good")
 			state.SetUpdate(b, ScoreKey, 0.95)
 			return b.Build()
 		}).
-		AddStaticNode("validate", graph.NewTargetSet("process"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("validate", graph.NewTargetSet("process"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			// Type-safe read - no casting needed, compile-time checked
 			score := state.GetFromView(view, ScoreKey)
 			fmt.Printf("Validating with score: %.2f\n", score)
@@ -52,7 +52,7 @@ func main() {
 			state.SetUpdate(b, ValidKey, valid)
 			return b.Build()
 		}).
-		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			// Type-safe read with default value - never panics
 			valid := state.GetFromView(view, ValidKey)
 			if valid {

@@ -61,7 +61,7 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node1",
 		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, counterKey, 1) // int, not float64
 			state.SetUpdate(builder, dataKey, "A")
@@ -80,7 +80,7 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node2",
 		DeclaredTargets: graph.NewTargetSet("node3"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
@@ -102,7 +102,7 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node3",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 

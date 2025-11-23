@@ -49,7 +49,7 @@ func buildTypeSafeGraph() (*graph.Compiled[[]message.Message, message.Message], 
 
 	// Router node with type-safe targets
 	builder.AddCommandNode("router", routerTargets,
-		func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Type-safe routing - if we typo a target name, targets.Get() returns ""
 			// which will fail at runtime with a clear error
 
@@ -79,7 +79,7 @@ func buildTypeSafeGraph() (*graph.Compiled[[]message.Message, message.Message], 
 	)
 
 	builder.AddCommandNode("validation", validationTargets,
-		func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			fmt.Println("  -> Validation: Passed")
 
 			// Route to processing using type-safe target
@@ -94,7 +94,7 @@ func buildTypeSafeGraph() (*graph.Compiled[[]message.Message, message.Message], 
 	processingTargets := graph.NewTargetSet(graph.EndNode)
 
 	builder.AddCommandNode("processing", processingTargets,
-		func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			fmt.Println("  -> Processing: Complete")
 
 			// End execution by routing to EndNode
@@ -128,7 +128,7 @@ func exampleFluentAPI() error {
 
 	// Use fluent API with type-safe targets
 	builder.AddCommandNode("example", targets,
-		func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Type-safe routing with Goto
 			hasError := false
 			if hasError {

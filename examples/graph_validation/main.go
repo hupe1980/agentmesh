@@ -41,7 +41,7 @@ func example1_ValidGraph() {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "process",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			fmt.Println("Processing...")
 			return graph.End(nil), nil
 		},
@@ -80,7 +80,7 @@ func example2_InvalidGraph() {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "start_node",
 		DeclaredTargets: graph.NewTargetSet("non_existent_node"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			return graph.GotoOne("non_existent_node"), nil
 		},
 	})
@@ -108,14 +108,14 @@ func example3_StrictValidation() {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "reachable",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			return graph.End(nil), nil
 		},
 	})
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "unreachable",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			return graph.End(nil), nil
 		},
 	})
@@ -153,14 +153,14 @@ func example4_CustomValidation() {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "agent",
 		DeclaredTargets: graph.NewTargetSet("evaluator"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			return graph.GotoOne("evaluator"), nil
 		},
 	})
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "evaluator",
 		DeclaredTargets: graph.NewTargetSet("agent", graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Check quality and potentially loop back
 			return graph.End(nil), nil
 		},

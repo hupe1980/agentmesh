@@ -24,7 +24,7 @@ func TestNewArchitecture(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "start",
 		DeclaredTargets: graph.NewTargetSet("process"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			updates := map[string]any{"step": "started"}
 			return graph.Goto("process", updates), nil
 		},
@@ -33,7 +33,7 @@ func TestNewArchitecture(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "process",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			updates := map[string]any{"step": "processed"}
 			return graph.End(updates), nil
 		},

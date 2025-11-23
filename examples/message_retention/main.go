@@ -67,7 +67,7 @@ func runExample(maxSize int) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "echo",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 

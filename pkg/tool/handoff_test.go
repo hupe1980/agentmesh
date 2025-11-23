@@ -99,7 +99,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "worker",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *stateif.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view stateif.ReadView) (*graph.Command, error) {
 			if failOnce {
 				failOnce = false
 				return nil, assert.AnError
@@ -194,7 +194,7 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "worker",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *stateif.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view stateif.ReadView) (*graph.Command, error) {
 			updates := stateif.Updates{}
 			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
 			return graph.End(updates), nil

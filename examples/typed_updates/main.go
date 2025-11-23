@@ -48,7 +48,7 @@ func main() {
 	gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        "init",
 		DeclaredTargets: graph.NewTargetSet("process"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("→ Node: init")
 
 			// Build type-safe updates
@@ -76,7 +76,7 @@ func main() {
 	gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        "process",
 		DeclaredTargets: graph.NewTargetSet("finalize"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("→ Node: process")
 
 			// Read current values (type-safe)
@@ -103,7 +103,7 @@ func main() {
 	gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        "finalize",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("→ Node: finalize")
 
 			builder := graphstate.NewUpdateBuilder()

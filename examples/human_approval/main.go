@@ -79,7 +79,7 @@ func runApprovalWorkflow(ctx context.Context) {
 	draftNode := &graph.BaseCommandNode{
 		NodeName:        "draft_email",
 		DeclaredTargets: graph.NewTargetSet("send_email"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			topic := graphstate.GetFromView(view, topicKey)
 			fmt.Printf("→ Drafting email about: %s\n", topic)
 
@@ -97,7 +97,7 @@ func runApprovalWorkflow(ctx context.Context) {
 	sendNode := &graph.BaseCommandNode{
 		NodeName:        "send_email",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			// Check for resume value (user decision)
 			resumeVals := graph.ResumeValueFromContext(ctx)
 
@@ -256,7 +256,7 @@ func runRejectionWorkflow(ctx context.Context) {
 	draftNode := &graph.BaseCommandNode{
 		NodeName:        "draft_email",
 		DeclaredTargets: graph.NewTargetSet("send_email"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			topic := graphstate.GetFromView(view, topicKey)
 			fmt.Printf("→ Drafting email about: %s\n", topic)
 			draft := fmt.Sprintf("Dear Team,\n\nExciting news about: %s\n\nBest regards", topic)
@@ -271,7 +271,7 @@ func runRejectionWorkflow(ctx context.Context) {
 	sendNode := &graph.BaseCommandNode{
 		NodeName:        "send_email",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			resumeVals := graph.ResumeValueFromContext(ctx)
 			if resumeVals != nil {
 				if approved, ok := resumeVals["approved"].(bool); ok && !approved {

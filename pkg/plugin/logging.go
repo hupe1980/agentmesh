@@ -41,13 +41,13 @@ func (p *LoggingPlugin) Shutdown(ctx context.Context) error {
 }
 
 // BeforeNode logs before node execution.
-func (p *LoggingPlugin) BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
+func (p *LoggingPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
 	p.logger.Printf("%s Before node: %s", p.prefix, nodeName)
 	return nil, nil // No short-circuit
 }
 
 // AfterNode logs after node execution.
-func (p *LoggingPlugin) AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
+func (p *LoggingPlugin) AfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error {
 	p.logger.Printf("%s After node: %s", p.prefix, nodeName)
 	return nil
 }

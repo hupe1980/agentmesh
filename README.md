@@ -509,11 +509,11 @@ import (
 builder := graph.NewBuilder(graph.NewPregelExecutor())
 
 // Add nodes with functions
-builder.AddNodeFunc("step1", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("step1", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
     return map[string]any{"result": "processed"}, nil
 })
 
-builder.AddNodeFunc("step2", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
     // Recommended: Use typed keys for compile-time safety
     // var ResultKey = state.NewKey[string]("result")
     // result := state.GetFromView(view, ResultKey)
@@ -527,11 +527,11 @@ builder.AddNodeFunc("step2", func(ctx context.Context, view *state.ReadView) (st
 // Define flow with Command pattern
 builder.SetEntryPoint("step1")
 targets1 := graph.NewTargetSet("step2")
-builder.AddCommandNode("step1", targets1, func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+builder.AddCommandNode("step1", targets1, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
     return targets1.Goto("step2", state.Updates{"result": "processed"}), nil
 })
 targets2 := graph.NewTargetSet(graph.EndNode)
-builder.AddCommandNode("step2", targets2, func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+builder.AddCommandNode("step2", targets2, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
     result := state.GetFromView(view, ResultKey)
     fmt.Println("Received:", result)
     return targets2.End(nil), nil
@@ -943,7 +943,7 @@ state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
 // In nodes - contribute via normal Updates
-builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
     // Read current accumulated value
     total, _ := state.GetFromView(view, totalCostKey)
     fmt.Printf("Total cost so far: %v\n", total)
@@ -1054,7 +1054,7 @@ for _, err := range executor.Run(ctx, compiled, input,
 }
 
 // Access user decision in node
-func (n *Node) Invoke(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *Node) Invoke(ctx context.Context, view state.ReadView) (state.Updates, error) {
     resumeVals := graph.ResumeValueFromContext(ctx)
     if resumeVals != nil {
         if approved := resumeVals["approved"].(bool); !approved {
@@ -1094,7 +1094,7 @@ Compose complex workflows from reusable components:
 researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
-builder.AddNodeFunc("research", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("research", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
     parentMessages := graph.ExtractMessages(view.MessagesSnapshot())
     events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {

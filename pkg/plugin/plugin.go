@@ -54,13 +54,13 @@ type Plugin interface {
 	//
 	// Example - Cache check:
 	//
-	//	func (p *CachePlugin) BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
+	//	func (p *CachePlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
 	//	    if cached := p.cache.Get(nodeName, view); cached != nil {
 	//	        return cached, nil // Short-circuit with cached result
 	//	    }
 	//	    return nil, nil // Continue to node execution
 	//	}
-	BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error)
+	BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error)
 
 	// AfterNode is called after a graph node executes successfully.
 	// view provides read-only access to the state after node execution.
@@ -70,12 +70,12 @@ type Plugin interface {
 	//
 	// Example - Add metadata:
 	//
-	//	func (p *MetadataPlugin) AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
+	//	func (p *MetadataPlugin) AfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error {
 	//	    updates["_last_node"] = nodeName
 	//	    updates["_timestamp"] = time.Now()
 	//	    return nil
 	//	}
-	AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error
+	AfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error
 
 	// OnNodeError is called when a node execution fails (after all retries).
 	//

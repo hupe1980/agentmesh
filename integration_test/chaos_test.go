@@ -46,7 +46,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 		err = g.AddNode(&graph.BaseCommandNode{
 			NodeName:        fmt.Sprintf("node_%d", i),
 			DeclaredTargets: graph.NewTargetSet(nextNode),
-			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				// Random failure injection
 				if rand.Float64() < failureRate {
 					failCount.Add(1)
@@ -122,7 +122,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 		err = g.AddNode(&graph.BaseCommandNode{
 			NodeName:        fmt.Sprintf("parallel_%d", i),
 			DeclaredTargets: graph.NewTargetSet("aggregator"),
-			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				// Simulate work with random failure
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
@@ -143,7 +143,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "aggregator",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			total := 0
 			for i := 0; i < 5; i++ {
 				resultKey := state.NewKey(fmt.Sprintf("result_%d", i), 0)
@@ -196,7 +196,7 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "slow_node",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Simulate slow operation that will timeout
 			select {
 			case <-time.After(5 * time.Second):
@@ -257,7 +257,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "panicking_node",
 		DeclaredTargets: graph.NewTargetSet("recovery_node"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// This should be caught and converted to an error
 			panic("chaos: intentional panic for testing")
 		},
@@ -267,7 +267,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "recovery_node",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// This should not execute if previous panicked
 			updates := map[string]any{"recovered": true}
 			return graph.End(updates), nil
@@ -315,7 +315,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "memory_hog",
 		DeclaredTargets: graph.NewTargetSet("consumer"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Allocate 100MB
 			data := make([]byte, 100*1024*1024)
 			for i := range data {
@@ -334,7 +334,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "consumer",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			data := state.GetFromView(view, largeDataKey)
 			require.NotNil(t, data)
 
@@ -385,7 +385,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 		err = g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "partition_1_node",
 			DeclaredTargets: graph.NewTargetSet("partition_2_node"),
-			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				if !partition1Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 1 unreachable")
 				}
@@ -400,7 +400,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 		err = g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "partition_2_node",
 			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				if !partition2Active.Load() {
 					return nil, fmt.Errorf("network partition: partition 2 unreachable")
 				}

@@ -116,7 +116,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 		g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "increment",
 			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 				count := state.GetFromView(view, countKey)
 				builder := state.NewUpdateBuilder()
 				state.SetUpdate(builder, countKey, count+1)
@@ -164,7 +164,7 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			g.AddNode(&graph.BaseCommandNode{
 				NodeName:        name,
 				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 					val := state.GetFromView(view, valueKey)
 					builder := state.NewUpdateBuilder()
 					state.SetUpdate(builder, valueKey, val+1)
@@ -220,7 +220,7 @@ func BenchmarkGraph_Compile(b *testing.B) {
 			g.AddNode(&graph.BaseCommandNode{
 				NodeName:        name,
 				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 					return graph.GotoOne(nextNode), nil
 				},
 			})

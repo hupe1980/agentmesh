@@ -36,7 +36,7 @@ func main() {
 	completeKey := state.NewKey("complete", false)
 
 	// Add nodes
-	builder.AddStaticNode("input_validator", graph.NewTargetSet("router"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("input_validator", graph.NewTargetSet("router"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Validating input...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, validKey, true)
@@ -44,7 +44,7 @@ func main() {
 		return b.Build()
 	})
 
-	builder.AddCommandNode("router", graph.NewTargetSet("high_priority_handler", "normal_handler"), func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+	builder.AddCommandNode("router", graph.NewTargetSet("high_priority_handler", "normal_handler"), func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 		fmt.Println("✓ Routing request...")
 		priority := state.GetFromView(view, priorityKey)
 		if priority == "high" {
@@ -53,21 +53,21 @@ func main() {
 		return graph.GotoOne("normal_handler"), nil
 	})
 
-	builder.AddStaticNode("high_priority_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("high_priority_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.AddStaticNode("normal_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("normal_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, processedKey, true)
 		return b.Build()
 	})
 
-	builder.AddStaticNode("aggregator", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("aggregator", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
 		b := state.NewUpdateBuilder()
 		state.SetUpdate(b, completeKey, true)

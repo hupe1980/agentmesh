@@ -11,7 +11,7 @@ import (
 
 // Safe execution wrappers with panic recovery for all plugin hooks
 
-func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view *state.ReadView) (updates state.Updates, err error) {
+func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView) (updates state.Updates, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("plugin.BeforeNode panicked: %v", r)
@@ -21,7 +21,7 @@ func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string
 	return p.BeforeNode(ctx, nodeName, view)
 }
 
-func safeExecuteAfterNode(ctx context.Context, p plugin.Plugin, nodeName string, view *state.ReadView, updates state.Updates) (err error) {
+func safeExecuteAfterNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView, updates state.Updates) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("plugin.AfterNode panicked: %v", r)

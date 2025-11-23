@@ -109,13 +109,13 @@ func TestAddNodeWithTargetSet(t *testing.T) {
 		targets := NewTargetSet("node_b", EndNode)
 
 		builder.AddCommandNode("node_a", targets,
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				return targets.Goto(targets.Get("node_b"), state.Updates{}), nil
 			},
 		)
 
 		builder.AddCommandNode("node_b", NewTargetSet(EndNode),
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				return End(state.Updates{}), nil
 			},
 		)
@@ -145,14 +145,14 @@ func TestAddNodeWithTargetSet(t *testing.T) {
 
 		// Just verify the node is added with retry policy
 		builder.AddCommandNodeWithRetry("node_a", targets,
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				return targets.Goto(targets.Get("success"), state.Updates{}), nil
 			},
 			NewRetryPolicy().WithMaxAttempts(3).Build(),
 		)
 
 		builder.AddCommandNode("success", NewTargetSet(EndNode),
-			func(ctx context.Context, view *state.ReadView) (*Command, error) {
+			func(ctx context.Context, view state.ReadView) (*Command, error) {
 				return End(state.Updates{}), nil
 			},
 		)

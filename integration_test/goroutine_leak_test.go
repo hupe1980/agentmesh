@@ -34,7 +34,7 @@ func TestEarlyConsumerTermination(t *testing.T) {
 		g.AddNode(&graph.BaseCommandNode{
 			NodeName:        nodeName,
 			DeclaredTargets: graph.NewTargetSet(nextNode),
-			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 				// Simulate work
 				time.Sleep(10 * time.Millisecond)
 				return graph.GotoOne(nextNode), nil
@@ -110,7 +110,7 @@ func TestMultipleEarlyTerminations(t *testing.T) {
 			g.AddNode(&graph.BaseCommandNode{
 				NodeName:        nodeName,
 				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 					time.Sleep(5 * time.Millisecond)
 					return graph.GotoOne(nextNode), nil
 				},

@@ -64,7 +64,7 @@ func (n *ConfigurableNode) Targets() []string {
 	return []string{n.next}
 }
 
-func (n *ConfigurableNode) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (state.Updates, error) {
 	start := time.Now()
 
 	// Access persistent state (checkpointed)
@@ -151,7 +151,7 @@ func (n *MetricsNode) Targets() []string {
 	return []string{graph.EndNode}
 }
 
-func (n *MetricsNode) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) (state.Updates, error) {
 	// Read metrics (managed value)
 	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
 	if err != nil {
@@ -247,7 +247,7 @@ func main() {
 	if err := gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        node1.Name(),
 		DeclaredTargets: graph.NewTargetSet(node2.Name()),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			updates, err := node1.Compute(ctx, view)
 			if err != nil {
 				return nil, err
@@ -260,7 +260,7 @@ func main() {
 	if err := gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        node2.Name(),
 		DeclaredTargets: graph.NewTargetSet(metricsNode.Name()),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			updates, err := node2.Compute(ctx, view)
 			if err != nil {
 				return nil, err
@@ -273,7 +273,7 @@ func main() {
 	if err := gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        metricsNode.Name(),
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			updates, err := metricsNode.Compute(ctx, view)
 			if err != nil {
 				return nil, err

@@ -97,7 +97,7 @@ func withResumeValueContext(ctx context.Context, value map[string]any) context.C
 //
 // Nodes can check for resume values to handle human-in-the-loop scenarios:
 //
-//	func (n *MyNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+//	func (n *MyNode) Execute(ctx context.Context, view state.ReadView) (state.Updates, error) {
 //	    if resume := graph.ResumeValueFromContext(ctx); resume != nil {
 //	        // Resuming with human input
 //	        if approval, ok := resume["approval"]; ok {
@@ -151,7 +151,7 @@ func WithStreamWriter(ctx context.Context, writer StreamWriter) context.Context 
 //
 // Example usage in a node function:
 //
-//	func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+//	func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
 //	    streamWriter := graph.GetStreamWriter(ctx)
 //
 //	    // Emit intermediate progress

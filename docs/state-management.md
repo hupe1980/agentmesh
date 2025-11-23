@@ -18,6 +18,8 @@ sidebar:
     url: "#type-safe-updates"
   - title: Namespaces
     url: "#namespaces"
+  - title: Node-level namespaces
+    url: "#node-level-namespaces"
   - title: Checkpointing
     url: "#checkpointing"
   - title: Storage backends
@@ -366,6 +368,274 @@ researcherNS := state.MustNamespace("researcher_team1")
 - **No nested namespaces:** Only one level of hierarchy (single dot)
 
 See [examples/namespaces](https://github.com/hupe1980/agentmesh/tree/main/examples/namespaces) for a complete working example.
+
+### Node-level namespace scoping {#node-level-namespaces}
+
+For guaranteed state isolation, nodes can declare which namespace they operate in. This is ideal for multi-agent systems and pipeline stages where you want to enforce strict boundaries.
+
+#### NamespacedNode interface
+
+Nodes implement the optional `NamespacedNode` interface to declare their namespace:
+
+```go
+type NamespacedNode interface {
+    Node
+    Namespace() state.Namespace
+}
+```
+
+When a node implements this interface:
+- It **declares** which namespace it uses (for documentation and introspection)
+- State isolation is **enforced** through namespaced key names
+- Keys from different namespaces cannot collide (e.g., `"agent1.status"` vs `"agent2.status"`)
+
+#### Creating namespaced nodes
+
+Use `NewNamespacedCommandNode()` for convenient namespaced nodes:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Define namespaces
+validationNS := state.MustNamespace("validation")
+enrichmentNS := state.MustNamespace("enrichment")
+
+// Define keys per namespace
+validKey := state.TypedKey[bool](validationNS, "is_valid", false)
+enrichedKey := state.TypedKey[map[string]any](enrichmentNS, "data", nil)
+
+// Create namespaced nodes
+validationNode := graph.NewNamespacedCommandNode(
+    "validation",
+    validationNS,
+    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // This node only works with "validation.*" keys
+        ub := state.NewUpdateBuilder()
+        state.SetUpdate(ub, validKey, true)
+        updates, _ := ub.Build()
+        
+        return graph.Goto("enrichment", updates), nil
+    },
+    graph.NewTargetSet(graph.NewEdge("enrichment")),
+)
+
+enrichmentNode := graph.NewNamespacedCommandNode(
+    "enrichment",
+    enrichmentNS,
+    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        // This node only works with "enrichment.*" keys
+        // Cannot access "validation.*" keys (different namespace)
+        ub := state.NewUpdateBuilder()
+        enrichedData := map[string]any{"status": "enriched"}
+        state.SetUpdate(ub, enrichedKey, enrichedData)
+        updates, _ := ub.Build()
+        
+        return graph.End(updates), nil
+    },
+    graph.NewTargetSet(graph.End()),
+)
+```
+
+#### With retry policies
+
+Namespace-scoped nodes also support retry policies:
+
+```go
+retryPolicy := graph.RetryPolicy{
+    MaxAttempts:    3,
+    InitialBackoff: 100 * time.Millisecond,
+    MaxBackoff:     time.Second,
+    BackoffFactor:  2.0,
+}
+
+node := graph.NewNamespacedCommandNodeWithRetry(
+    "processor",
+    processorNS,
+    commandFunc,
+    retryPolicy,
+    targets,
+)
+```
+
+#### When to use namespaced nodes
+
+**Use `NamespacedCommandNode` when:**
+- Building multi-agent systems with strict state isolation
+- Creating reusable pipeline stages with clear boundaries
+- You want compile-time safety that nodes can't access each other's state
+- Documentation should clearly show which namespace each node uses
+
+**Use regular nodes when:**
+- Single agent with naturally unique keys
+- Nodes need to share state freely
+- Simplicity is more important than isolation
+
+#### How enforcement works
+
+State isolation is enforced through **runtime view filtering and update validation**:
+
+1. When a `NamespacedCommandNode` executes, it receives a `NamespacedReadView` (not full `ReadView`)
+2. `NamespacedReadView` is a filtered wrapper that only exposes keys from the node's namespace
+3. Calling `view.Keys()` returns only keys from that namespace
+4. Calling `view.Has("other_namespace.key")` returns `false` (filtered out)
+5. The node physically cannot access keys from other namespaces
+6. **Returned updates are validated** - attempting to update keys outside the namespace causes an error
+7. Optionally, global (non-namespaced) keys can be included via `includeGlobal` parameter
+
+```go
+// Keys are created with namespace prefixes
+agent1Status := state.TypedKey[string](agent1NS, "status", "")  // "agent1.status"
+agent2Status := state.TypedKey[string](agent2NS, "status", "")  // "agent2.status"
+
+// Both keys exist in state
+state.Set(ctx, mgr, agent1Status, "processing")
+state.Set(ctx, mgr, agent2Status, "idle")
+
+// But when agent1 node executes:
+// - view.Keys() returns ["status"] (only agent1's keys, without prefix)
+// - view.Has("agent1.status") returns true
+// - view.Has("agent2.status") returns false (filtered out!)
+// - Cannot access agent2's state at all
+```
+
+#### NamespacedReadView (automatic)
+
+`NamespacedCommandNode` automatically receives a `NamespacedReadView` during execution. You don't need to create it manually - it's provided automatically:
+
+```go
+// When you create a NamespacedCommandNode:
+node := graph.NewNamespacedCommandNode(
+    "validation",
+    validationNS,
+    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+        // 'view' is actually a NamespacedReadView filtered to validationNS
+        // It only exposes keys from "validation" namespace
+        
+        keys := view.Keys()  // Returns: ["is_valid", "score"] (WITHOUT prefix)
+        
+        // Can only see validation.* keys
+        valid := state.GetFromView(view, validKey)  // Works
+        
+        // Cannot see other namespace keys
+        exists := view.Has("enrichment.data")  // Returns false (filtered out)
+        
+        return graph.End(), nil
+    },
+    targets,
+)
+```
+
+The filtering is automatic and enforced at runtime by the framework.
+
+#### Best practices
+
+**1. One namespace per agent/stage:**
+```go
+// ✅ Clear separation
+researcherNS := state.MustNamespace("researcher")
+writerNS := state.MustNamespace("writer")
+
+researcherNode := graph.NewNamespacedCommandNode("researcher", researcherNS, ...)
+writerNode := graph.NewNamespacedCommandNode("writer", writerNS, ...)
+```
+
+**2. Use package-level namespace and keys:**
+```go
+// pkg/pipeline/validation/node.go
+package validation
+
+var (
+    NS = state.MustNamespace("validation")
+    IsValidKey = state.TypedKey[bool](NS, "is_valid", false)
+    ScoreKey = state.TypedKey[int](NS, "score", 0)
+)
+
+func NewNode() graph.Node {
+    return graph.NewNamespacedCommandNode("validation", NS, commandFunc, targets)
+}
+```
+
+**3. Document namespace usage:**
+```go
+// ValidationNode checks input data quality
+// Namespace: "validation"
+// Keys: is_valid (bool), score (int)
+func NewValidationNode() graph.Node {
+    return graph.NewNamespacedCommandNode("validation", validationNS, ...)
+}
+```
+
+**4. Introspection:**
+```go
+// Check if node declares namespace
+if nsNode, ok := node.(graph.NamespacedNode); ok {
+    fmt.Printf("Node uses namespace: %s\n", nsNode.Namespace().Name())
+}
+```
+
+#### Global state access
+
+By default, `NamespacedCommandNode` only sees keys from its own namespace. Set `includeGlobal=true` to also expose global (non-namespaced) keys:
+
+```go
+// Node that can access both its namespace AND global keys
+configNode := graph.NewNamespacedCommandNode(
+    "config_reader",
+    agentNS,
+    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+        // Can read agent1.* keys
+        agentData := state.GetFromView(view, agentDataKey)
+        
+        // Can also read global keys
+        globalConfig := state.GetFromView(view, globalConfigKey)
+        
+        // Can update both
+        updates := state.Updates{
+            "agent1.result": computeResult(agentData, globalConfig),
+            "global_counter": incrementCounter(), // Allowed!
+        }
+        return graph.End(updates), nil
+    },
+    targets,
+    true, // includeGlobal: expose global keys
+)
+```
+
+**Use cases for includeGlobal:**
+- Reading shared configuration
+- Updating global counters or metrics
+- Accessing system-wide state
+- Coordinating between namespaces through global keys
+
+**Important:** Even with `includeGlobal=true`, nodes still cannot access keys from *other* namespaces.
+
+#### Update validation
+
+`NamespacedCommandNode` validates all returned updates:
+
+```go
+validationNode := graph.NewNamespacedCommandNode(
+    "validator",
+    agent1NS,
+    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+        updates := state.Updates{
+            "agent1.status": "ok",      // ✅ Allowed (own namespace)
+            "agent2.status": "failed",  // ❌ ERROR: wrong namespace
+        }
+        return graph.End(updates), nil  // Will return error
+    },
+    targets,
+    false,
+)
+
+// Execution will fail with:
+// "node 'validator' in namespace 'agent1' attempted to update key 
+//  'agent2.status' which belongs to a different namespace"
+```
+
+This prevents accidental cross-namespace pollution and enforces state boundaries at runtime.
+
+See [examples/subgraph](https://github.com/hupe1980/agentmesh/tree/main/examples/subgraph) for a complete working example with namespaced pipeline stages.
 
 ---
 

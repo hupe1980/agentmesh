@@ -41,8 +41,8 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 var DocumentsKey = state.NewKey[[]string]("documents", nil)
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *state.ReadView) (*graph.Command, error) {
-	return func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, state.ReadView) (*graph.Command, error) {
+	return func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 		messages := GetMessages(view)
 		if len(messages) == 0 {
 			return nil, fmt.Errorf("no query messages")
@@ -71,8 +71,8 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, *st
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, *state.ReadView) (*graph.Command, error) {
-	return func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, state.ReadView) (*graph.Command, error) {
+	return func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 		messages := GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)

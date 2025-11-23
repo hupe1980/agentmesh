@@ -24,7 +24,7 @@
 //	// Add Command node with dynamic routing
 //	builder.AddCommandNode("router",
 //	    []string{"option_a", "option_b", graph.EndNode},
-//	    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+//	    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 //	        decision := analyze(view)
 //	        updates := state.Updates{"decision": decision}
 //

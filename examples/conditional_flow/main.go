@@ -70,7 +70,7 @@ func runScenario(choice string) {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "decide",
 		DeclaredTargets: graph.NewTargetSet("path_a", "path_b"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			choiceVal := graphstate.GetFromView(view, choiceKey)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
@@ -92,7 +92,7 @@ func runScenario(choice string) {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "path_a",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path A")
@@ -105,7 +105,7 @@ func runScenario(choice string) {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "path_b",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Completed: Path B")

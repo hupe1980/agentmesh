@@ -39,7 +39,7 @@ func main() {
 	gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        "init",
 		DeclaredTargets: graph.NewTargetSet("process"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("[init] Initializing...")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.SetUpdate(builder, phaseKey, "processing")
@@ -53,7 +53,7 @@ func main() {
 	gph.AddNode(&graph.BaseCommandNode{
 		NodeName:        "process",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("[process] Processing...")
 
 			// Read current attempts count

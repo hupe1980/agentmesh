@@ -30,12 +30,12 @@ func (NoopPlugin) Init(ctx context.Context) error { return nil }
 func (NoopPlugin) Shutdown(ctx context.Context) error { return nil }
 
 // BeforeNode implements Plugin.BeforeNode as a no-op.
-func (NoopPlugin) BeforeNode(ctx context.Context, nodeName string, view *state.ReadView) (state.Updates, error) {
+func (NoopPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
 	return nil, nil
 }
 
 // AfterNode implements Plugin.AfterNode as a no-op.
-func (NoopPlugin) AfterNode(ctx context.Context, nodeName string, view *state.ReadView, updates state.Updates) error {
+func (NoopPlugin) AfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error {
 	return nil
 }
 

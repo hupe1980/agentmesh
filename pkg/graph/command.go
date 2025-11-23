@@ -32,12 +32,12 @@ type Command struct {
 //
 // The function receives:
 //   - ctx: Context for cancellation and request-scoped values
-//   - view: Read-only view of the current state
+//   - view: Read-only view of the current state (can be full ReadView or NamespacedReadView)
 //
 // It must return:
 //   - *Command: State updates and routing decision
 //   - error: Any execution error (nil on success)
-type CommandFunc func(ctx context.Context, view *state.ReadView) (*Command, error)
+type CommandFunc func(ctx context.Context, view state.ReadView) (*Command, error)
 
 // Goto creates a Command that routes to a single target with optional updates.
 //

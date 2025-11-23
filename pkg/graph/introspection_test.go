@@ -31,21 +31,21 @@ func createTestGraph() (*Graph, error) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "start_node",
 		DeclaredTargets: NewTargetSet("process"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("process"), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "process",
 		DeclaredTargets: NewTargetSet("end_node"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("end_node"), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "end_node",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})
@@ -101,7 +101,7 @@ func TestExportToMermaid_ComplexFlowWithBranches(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "retryable",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 		Retry: retryPolicy,
@@ -159,21 +159,21 @@ func TestGraph_GetEdges_WithConditionals(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "router",
 		DeclaredTargets: NewTargetSet("option_a", "option_b"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("option_a"), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "option_a",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "option_b",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})
@@ -222,21 +222,21 @@ func TestGraph_GetTopology_WithConditionals(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "router",
 		DeclaredTargets: NewTargetSet("high_priority", "normal"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("high_priority"), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "high_priority",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "normal",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})
@@ -324,7 +324,7 @@ func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "router",
 		DeclaredTargets: NewTargetSet("handler_a", "handler_b"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("handler_a"), nil
 		},
 	})
@@ -332,7 +332,7 @@ func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "handler_a",
 		DeclaredTargets: NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("aggregator"), nil
 		},
 	})
@@ -340,7 +340,7 @@ func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "handler_b",
 		DeclaredTargets: NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return GotoOne("aggregator"), nil
 		},
 	})
@@ -348,7 +348,7 @@ func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
 	g.AddNode(&BaseCommandNode{
 		NodeName:        "aggregator",
 		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
 			return End(nil), nil
 		},
 	})

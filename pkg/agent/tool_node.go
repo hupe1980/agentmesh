@@ -102,7 +102,7 @@ func (n *ToolNode) Targets() []string {
 }
 
 // Execute processes tool calls from the last AI message by delegating to the executor.
-func (n *ToolNode) Execute(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 	// Get last message from state
 	lastMsg := LastMessage(view)
 	if lastMsg == nil {

@@ -137,7 +137,7 @@ func (n *ModelNode) Targets() []string {
 }
 
 // Execute runs the model node logic by delegating to the executor.
-func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+func (n *ModelNode) Execute(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 	// Get messages from state
 	messages := GetMessages(view)
 

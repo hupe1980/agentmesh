@@ -33,7 +33,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "start",
 		DeclaredTargets: graph.NewTargetSet("task1", "task2"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			counter.Add(1)
 			updates := map[string]any{"started": true}
 			return graph.GotoAll([]string{"task1", "task2"}, updates), nil
@@ -44,7 +44,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "task1",
 		DeclaredTargets: graph.NewTargetSet("end"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			counter.Add(1)
 			updates := map[string]any{"task1": "done"}
 			return graph.Goto("end", updates), nil
@@ -54,7 +54,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "task2",
 		DeclaredTargets: graph.NewTargetSet("end"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			counter.Add(1)
 			updates := map[string]any{"task2": "done"}
 			return graph.Goto("end", updates), nil
@@ -64,7 +64,7 @@ func TestPregelExecutor(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "end",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			counter.Add(1)
 			updates := map[string]any{"completed": true}
 			return graph.End(updates), nil

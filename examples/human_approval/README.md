@@ -49,7 +49,7 @@ Injects user decisions into the resumed execution. Values are accessible in node
 ### 4. ResumeValueFromContext
 
 ```go
-func (n *Node) Compute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func (n *Node) Compute(ctx context.Context, view state.ReadView) (state.Updates, error) {
     resumeVals := graph.ResumeValueFromContext(ctx)
     if resumeVals != nil {
         if approved := resumeVals["approved"].(bool); approved {

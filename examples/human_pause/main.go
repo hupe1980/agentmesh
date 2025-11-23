@@ -49,7 +49,7 @@ func main() {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "research",
 		DeclaredTargets: graph.NewTargetSet("write"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
 			builder := graphstate.NewUpdateBuilder()
@@ -69,7 +69,7 @@ func main() {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "write",
 		DeclaredTargets: graph.NewTargetSet("review"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("write")
 			humanInput := graphstate.GetFromView(view, humanInputKey)
 			if humanInput == "" {
@@ -91,7 +91,7 @@ func main() {
 	mustAddNode(&graph.BaseCommandNode{
 		NodeName:        "review",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("review")
 			builder := graphstate.NewUpdateBuilder()
 			graphstate.AppendUpdate(builder, actionHistoryKey, "Reviewed draft")

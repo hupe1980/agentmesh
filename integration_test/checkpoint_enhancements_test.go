@@ -51,7 +51,7 @@ func TestInterruptConfiguration(t *testing.T) {
 	node := &graph.BaseCommandNode{
 		NodeName:        "test",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			return graph.End(graphstate.Updates{}), nil
 		},
 	}

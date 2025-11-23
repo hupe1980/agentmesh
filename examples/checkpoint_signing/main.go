@@ -175,7 +175,7 @@ func productionExample(ctx context.Context) {
 	counterKey := graphstate.NewKey("counter", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
@@ -185,7 +185,7 @@ func productionExample(ctx context.Context) {
 		return b.Build()
 	})
 
-	builder.AddStaticNode("step2", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step2", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)

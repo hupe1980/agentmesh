@@ -278,7 +278,7 @@ func WithCheckpoint(cp *checkpoint.Checkpoint) RunOption {
 //	)
 //
 //	// In node:
-//	func (n *MyNode) Execute(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+//	func (n *MyNode) Execute(ctx context.Context, view state.ReadView) (state.Updates, error) {
 //	    if resume := graph.ResumeValueFromContext(ctx); resume != nil {
 //	        if resume["approval"] == "APPROVED" {
 //	            // Use human-approved path

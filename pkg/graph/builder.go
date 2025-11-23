@@ -274,9 +274,9 @@ func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
 //	    result := process(view.Get("input"))
 //	    return targets.GotoFirst(state.Updates{"output": result}), nil
 //	})
-func (b *Builder[I, O]) AddStaticNode(name string, targetSet *TargetSet, compute func(context.Context, *state.ReadView) (state.Updates, error)) *Builder[I, O] {
+func (b *Builder[I, O]) AddStaticNode(name string, targetSet *TargetSet, compute func(context.Context, state.ReadView) (state.Updates, error)) *Builder[I, O] {
 	// Wrap simple compute function as CommandFunc
-	fn := func(ctx context.Context, view *state.ReadView) (*Command, error) {
+	fn := func(ctx context.Context, view state.ReadView) (*Command, error) {
 		updates, err := compute(ctx, view)
 		if err != nil {
 			return nil, err
@@ -303,9 +303,9 @@ func (b *Builder[I, O]) AddStaticNode(name string, targetSet *TargetSet, compute
 //	    },
 //	    graph.NewRetryPolicy().WithMaxAttempts(3).Build(),
 //	)
-func (b *Builder[I, O]) AddStaticNodeWithRetry(name string, targetSet *TargetSet, compute func(context.Context, *state.ReadView) (state.Updates, error), policy *RetryPolicy) *Builder[I, O] {
+func (b *Builder[I, O]) AddStaticNodeWithRetry(name string, targetSet *TargetSet, compute func(context.Context, state.ReadView) (state.Updates, error), policy *RetryPolicy) *Builder[I, O] {
 	// Wrap simple compute function as CommandFunc
-	fn := func(ctx context.Context, view *state.ReadView) (*Command, error) {
+	fn := func(ctx context.Context, view state.ReadView) (*Command, error) {
 		updates, err := compute(ctx, view)
 		if err != nil {
 			return nil, err

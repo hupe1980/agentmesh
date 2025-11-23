@@ -477,7 +477,7 @@ type pregelGraphAdapter[I, O any] struct {
 
 	// BSP barrier support: one ReadView snapshot per superstep
 	// Nodes read from this shared snapshot for BSP-correct state access
-	currentSuperstepView *state.ReadView
+	currentSuperstepView state.ReadView
 	mu                   sync.RWMutex
 
 	// Track which nodes executed in previous superstep for trigger-based optimization
@@ -585,7 +585,7 @@ func (a *pregelGraphAdapter[I, O]) prepareSuperstep(ctx context.Context) error {
 }
 
 // getSuperstepView returns the read-only view for the current superstep.
-func (a *pregelGraphAdapter[I, O]) getSuperstepView() *state.ReadView {
+func (a *pregelGraphAdapter[I, O]) getSuperstepView() state.ReadView {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.currentSuperstepView
@@ -612,7 +612,7 @@ func (n *pregelNodeAdapter[I, O]) Name() string {
 func (n *pregelNodeAdapter[I, O]) executeWithPolicies(
 	ctx context.Context,
 	node Node,
-	view *state.ReadView,
+	view state.ReadView,
 ) (*Command, error) {
 	// Priority 1: Check if node implements NodeWithRetry interface (modern approach)
 	var retryPolicy *RetryPolicy
@@ -637,7 +637,7 @@ func (n *pregelNodeAdapter[I, O]) executeWithPolicies(
 func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 	ctx context.Context,
 	node Node,
-	view *state.ReadView,
+	view state.ReadView,
 	policy *RetryPolicy,
 ) (*Command, error) {
 	pm, hasPluginManager := getNodeCallbacks(ctx)
@@ -664,7 +664,7 @@ func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
 	ctx context.Context,
 	pm NodeCallbacks,
 	hasPluginManager bool,
-	view *state.ReadView,
+	view state.ReadView,
 ) (state.Updates, error) {
 	if !hasPluginManager {
 		return nil, nil
@@ -679,10 +679,12 @@ func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
 }
 
 // executeNodeWithPolicy executes the node with retry policy.
+// For NamespacedNodes, enforcement happens through namespaced keys -
+// the CommandFunc should only use keys from its declared namespace.
 func (n *pregelNodeAdapter[I, O]) executeNodeWithPolicy(
 	ctx context.Context,
 	node Node,
-	view *state.ReadView,
+	view state.ReadView,
 	policy *RetryPolicy,
 ) (*Command, error) {
 	if policy == nil || policy.MaxAttempts <= 1 {
@@ -696,7 +698,7 @@ func (n *pregelNodeAdapter[I, O]) executeNodeWithPolicy(
 func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
 	ctx context.Context,
 	node Node,
-	view *state.ReadView,
+	view state.ReadView,
 	policy *RetryPolicy,
 ) (*Command, error) {
 	var cmd *Command

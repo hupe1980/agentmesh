@@ -53,7 +53,7 @@ func TestPageRank(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "pagerank",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			// Compute contributions from current ranks.
 			contrib := make(map[string]float64)
 			for _, v := range vertices {
@@ -147,7 +147,7 @@ func TestShortestPath(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "shortest_path",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			updates := make(map[string]any)
 			for _, v := range vertices {
 				dist := state.GetFromView(view, distKeys[v])
@@ -217,7 +217,7 @@ func TestGraphConvergence(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "incrementer",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			count := state.GetFromView(view, counterKey)
 			target := state.GetFromView(view, targetKey)
 
@@ -273,7 +273,7 @@ func TestIterativeComputation(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "halvinator",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			value := state.GetFromView(view, valueKey)
 			iteration := state.GetFromView(view, iterationKey)
 

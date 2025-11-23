@@ -24,7 +24,7 @@ g, _ := graph.NewGraph(stateManager)
 g.AddNode(&graph.BaseCommandNode{
     NodeName:        "process",
     DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
         // Do some work and then end
         return graph.End(nil), nil
     },

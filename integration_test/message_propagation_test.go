@@ -32,7 +32,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_a",
 		DeclaredTargets: graph.NewTargetSet("node_b"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			// Send data to node_b
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, fromAKey, "hello from A")
@@ -46,7 +46,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_b",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			// Verify we received the update from node_a
 			fromA := state.GetFromView(s, fromAKey)
 			counter := state.GetFromView(s, counterKey)
@@ -108,7 +108,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "parallel_entry",
 		DeclaredTargets: graph.NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, fromParallelAKey, "data_a")
 			state.SetUpdate(builder, fromParallelBKey, "data_b")
@@ -122,7 +122,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "aggregator",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			dataA := state.GetFromView(s, fromParallelAKey)
 			dataB := state.GetFromView(s, fromParallelBKey)
 
@@ -182,7 +182,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_1",
 		DeclaredTargets: graph.NewTargetSet("node_2"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, stepKey, 1)
 			state.SetUpdate(builder, dataKey, "from_node_1")
@@ -195,7 +195,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_2",
 		DeclaredTargets: graph.NewTargetSet("node_3"),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			step := state.GetFromView(s, stepKey)
 			data := state.GetFromView(s, dataKey)
 
@@ -214,7 +214,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 	g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_3",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			step := state.GetFromView(s, stepKey)
 			data := state.GetFromView(s, dataKey)
 

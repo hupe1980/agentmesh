@@ -58,7 +58,7 @@ func TestCheckpointResume_BasicResume(t *testing.T) {
 			require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 				NodeName:        fmt.Sprintf("step_%d", i),
 				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 					counter := state.GetFromView(s, counterKey)
 					newCounter := counter + 1
 
@@ -189,7 +189,7 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 			require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 				NodeName:        fmt.Sprintf("step_%d", i),
 				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 					// Check if this step should fail
 					if nodeNum == 3 {
 						// Step 3 fails on first attempt unless retry_allowed is set
@@ -321,7 +321,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "node_a",
 			DeclaredTargets: graph.NewTargetSet("node_b"),
-			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_a")
 				logMu.Store(log)
@@ -338,7 +338,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "node_b",
 			DeclaredTargets: graph.NewTargetSet("node_c"),
-			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_b")
 				logMu.Store(log)
@@ -358,7 +358,7 @@ func TestCheckpointResume_StateConsistency(t *testing.T) {
 		require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 			NodeName:        "node_c",
 			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 				log := logMu.Load().([]string)
 				log = append(log, "node_c")
 				logMu.Store(log)
@@ -458,7 +458,7 @@ func TestCheckpointResume_VersionValidation(t *testing.T) {
 	require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_1",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, dataKey, "checkpoint_data")
 			updates, _ := builder.Build()
@@ -556,7 +556,7 @@ func TestCheckpointResume_TimeTravel(t *testing.T) {
 		require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 			NodeName:        fmt.Sprintf("step_%d", i),
 			DeclaredTargets: graph.NewTargetSet(nextNode),
-			Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 				updates := map[string]any{
 					"step":                                nodeNum,
 					fmt.Sprintf("checkpoint_%d", nodeNum): fmt.Sprintf("data_at_step_%d", nodeNum),
@@ -653,7 +653,7 @@ func TestCheckpointResume_ConcurrentSaves(t *testing.T) {
 			require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 				NodeName:        "work",
 				DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-				Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+				Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 					time.Sleep(10 * time.Millisecond) // Simulate work
 					updates := map[string]any{
 						"workflow_id": workflowID,
@@ -729,7 +729,7 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 	require.NoError(t, g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node_1",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
 			updates := map[string]any{"executed": true}
 			return graph.End(updates), nil
 		},

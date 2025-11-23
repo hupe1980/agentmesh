@@ -47,7 +47,7 @@ func main() {
 
 	pipeline.SetEntryPoint("init")
 
-	pipeline.AddStaticNode("init", graph.NewTargetSet("validation"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddStaticNode("init", graph.NewTargetSet("validation"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		data := map[string]any{
 			"user_id": "12345",
 			"email":   "user@example.com",
@@ -58,59 +58,94 @@ func main() {
 		return builder.Build()
 	})
 
-	pipeline.AddStaticNode("validation", graph.NewTargetSet("enrichment"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		data := graphstate.GetFromView(view, inputDataKey)
-		builder := graphstate.NewUpdateBuilder()
+	// Use NamespacedCommandNode for validation stage
+	// This node can only access validation.* keys
+	validationTargets := graph.NewTargetSet("enrichment")
+	validationNode := graph.NewNamespacedCommandNode(
+		"validation",
+		validationNS,
+		func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+			data := graphstate.GetFromView(view, inputDataKey)
+			builder := graphstate.NewUpdateBuilder()
 
-		required := []string{"user_id", "email", "score"}
-		for _, field := range required {
-			if _, ok := data[field]; !ok {
-				graphstate.SetUpdate(builder, validKey, false)
-				return builder.Build()
+			required := []string{"user_id", "email", "score"}
+			for _, field := range required {
+				if _, ok := data[field]; !ok {
+					graphstate.SetUpdate(builder, validKey, false)
+					updates, _ := builder.Build()
+					return validationTargets.Goto("enrichment", updates), nil
+				}
 			}
-		}
-		score, ok := data["score"].(int)
-		if !ok || score < 0 || score > 100 {
-			graphstate.SetUpdate(builder, validKey, false)
-			return builder.Build()
-		}
-		graphstate.SetUpdate(builder, validKey, true)
-		return builder.Build()
-	})
+			score, ok := data["score"].(int)
+			if !ok || score < 0 || score > 100 {
+				graphstate.SetUpdate(builder, validKey, false)
+				updates, _ := builder.Build()
+				return validationTargets.Goto("enrichment", updates), nil
+			}
+			graphstate.SetUpdate(builder, validKey, true)
+			updates, _ := builder.Build()
+			return validationTargets.Goto("enrichment", updates), nil
+		},
+		validationTargets,
+		false, // Don't include global state
+	)
+	pipeline.AddNode(validationNode)
 
-	pipeline.AddStaticNode("enrichment", graph.NewTargetSet("analysis"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		data := graphstate.GetFromView(view, inputDataKey)
-		valid := graphstate.GetFromView(view, validKey)
-		if !valid {
-			return nil, nil
-		}
-		enriched := make(map[string]any)
-		maps.Copy(enriched, data)
-		score := data["score"].(int)
-		if score >= 80 {
-			enriched["grade"] = "A"
-		} else if score >= 60 {
-			enriched["grade"] = "B"
-		} else {
-			enriched["grade"] = "C"
-		}
-		enriched["status"] = "enriched"
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, enrichedDataKey, enriched)
-		return builder.Build()
-	})
+	// Use NamespacedCommandNode for enrichment stage
+	// This node can only access enrichment.* keys (and reads validation.valid)
+	enrichmentTargets := graph.NewTargetSet("analysis")
+	enrichmentNode := graph.NewNamespacedCommandNode(
+		"enrichment",
+		enrichmentNS,
+		func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+			data := graphstate.GetFromView(view, inputDataKey)
+			valid := graphstate.GetFromView(view, validKey)
+			if !valid {
+				return enrichmentTargets.Goto("analysis", graphstate.NoUpdate()), nil
+			}
+			enriched := make(map[string]any)
+			maps.Copy(enriched, data)
+			score := data["score"].(int)
+			if score >= 80 {
+				enriched["grade"] = "A"
+			} else if score >= 60 {
+				enriched["grade"] = "B"
+			} else {
+				enriched["grade"] = "C"
+			}
+			enriched["status"] = "enriched"
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, enrichedDataKey, enriched)
+			updates, _ := builder.Build()
+			return enrichmentTargets.Goto("analysis", updates), nil
+		},
+		enrichmentTargets,
+		false, // Don't include global state
+	)
+	pipeline.AddNode(enrichmentNode)
 
-	pipeline.AddStaticNode("analysis", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		enrichedData := graphstate.GetFromView(view, enrichedDataKey)
-		analysis := map[string]any{
-			"processed":   true,
-			"score_grade": enrichedData["grade"],
-			"total_items": len(enrichedData),
-		}
-		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, analysisKey, analysis)
-		return builder.Build()
-	})
+	// Use NamespacedCommandNode for analysis stage
+	// This node can only access analysis.* keys
+	analysisTargets := graph.NewTargetSet(graph.EndNode)
+	analysisNode := graph.NewNamespacedCommandNode(
+		"analysis",
+		analysisNS,
+		func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+			enrichedData := graphstate.GetFromView(view, enrichedDataKey)
+			analysis := map[string]any{
+				"processed":   true,
+				"score_grade": enrichedData["grade"],
+				"total_items": len(enrichedData),
+			}
+			builder := graphstate.NewUpdateBuilder()
+			graphstate.SetUpdate(builder, analysisKey, analysis)
+			updates, _ := builder.Build()
+			return graph.End(updates), nil
+		},
+		analysisTargets,
+		false, // Don't include global state
+	)
+	pipeline.AddNode(analysisNode)
 
 	compiled, err := pipeline.Compile()
 	if err != nil {

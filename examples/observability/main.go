@@ -69,7 +69,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "step1",
 		DeclaredTargets: graph.NewTargetSet("step2"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -102,7 +102,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "step2",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 

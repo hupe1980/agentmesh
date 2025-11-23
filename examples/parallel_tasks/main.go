@@ -58,7 +58,7 @@ func main() {
 	taskA := &graph.BaseCommandNode{
 		NodeName:        "task_a",
 		DeclaredTargets: graph.NewTargetSet("combine"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
@@ -75,7 +75,7 @@ func main() {
 	taskB := &graph.BaseCommandNode{
 		NodeName:        "task_b",
 		DeclaredTargets: graph.NewTargetSet("combine"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
@@ -93,7 +93,7 @@ func main() {
 	mergeResults := &graph.BaseCommandNode{
 		NodeName:        "combine",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read results from both parallel tasks

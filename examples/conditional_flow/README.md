@@ -65,7 +65,7 @@ func routeByChoice(ctx context.Context, s state.Reader) (string, error) {
 g.AddNode(&graph.BaseCommandNode{
     NodeName:        "router",
     DeclaredTargets: []string{"path_a_handler", "path_b_handler", "error_handler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
         next, err := routeByChoice(ctx, view)
         if err != nil {
             return nil, err

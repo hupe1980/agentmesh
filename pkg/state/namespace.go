@@ -152,8 +152,8 @@ func ExtractNamespace(keyName string) string {
 //	view, _ := mgr.CreateReadView(ctx)
 //	modelState := state.GetNamespaceView(view, modelNS)
 //	// modelState contains: {"messages": [...], "context": "..."}
-func GetNamespaceView(view *ReadView, ns Namespace) map[string]any {
-	data := view.snap.Data()
+func GetNamespaceView(view ReadView, ns Namespace) map[string]any {
+	data := view.snapshot().Data()
 
 	if ns.IsGlobal() {
 		// For global namespace, return all non-namespaced keys
@@ -187,7 +187,7 @@ func GetNamespaceView(view *ReadView, ns Namespace) map[string]any {
 //	view, _ := mgr.CreateReadView(ctx)
 //	namespaces := state.ListNamespaces(view)
 //	// namespaces: []Namespace{"model", "tool", "agent1"}
-func ListNamespaces(view *ReadView) []Namespace {
+func ListNamespaces(view ReadView) []Namespace {
 	namespaces := make(map[string]bool)
 
 	for _, key := range view.Keys() {

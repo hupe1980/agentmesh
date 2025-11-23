@@ -1,13 +1,14 @@
-# Example: Subgraph with Namespaces
+# Example: Subgraph with Namespace-Scoped Nodes
 
 ## Overview
-Demonstrates multi-stage data processing pipeline using namespaces for state isolation. Shows how to organize complex workflows with separate state for each pipeline stage.
+Demonstrates multi-stage data processing pipeline using **namespace-scoped nodes** for state isolation. Shows how to use `NamespacedCommandNode` to ensure each pipeline stage can only access its own namespace, preventing accidental cross-contamination of state.
 
 ## Key Concepts
-- **Namespace Isolation**: Each pipeline stage has its own state space
-- **State Organization**: Clear separation between validation, enrichment, and analysis state
-- **Key Naming**: Same key names (e.g., "data") can be used in different namespaces
-- **Modular Workflows**: Reusable pipeline stages with isolated state
+- **Namespace-Scoped Nodes**: Nodes that declare their namespace scope using `NamespacedNode` interface
+- **State Isolation**: Each pipeline stage (validation, enrichment, analysis) operates in its own namespace
+- **Compile-Time Safety**: Type-safe keys with namespace prefixes (e.g., `validation.data`)
+- **Clear Boundaries**: Explicit declaration of which state each node can access
+- **Modular Workflows**: Reusable pipeline stages with guaranteed isolation
 
 ## Running
 ```bash
@@ -53,7 +54,7 @@ func createValidationSubgraph() *graph.Graph {
     g.AddNode(&graph.BaseCommandNode{
         NodeName:        "validate_format",
         DeclaredTargets: []string{"validate_schema"},
-        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
             updates := map[string]any{"format_valid": true}
             return graph.Goto(updates, "validate_schema"), nil
         },
@@ -62,7 +63,7 @@ func createValidationSubgraph() *graph.Graph {
     g.AddNode(&graph.BaseCommandNode{
         NodeName:        "validate_schema",
         DeclaredTargets: []string{graph.EndNode},
-        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
             updates := map[string]any{"schema_valid": true}
             return graph.End(updates), nil
         },
@@ -90,7 +91,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
     pipeline.AddNode(&graph.BaseCommandNode{
         NodeName:        "validation_stage",
         DeclaredTargets: []string{"enrichment_stage"},
-        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
             // Run validation subgraph
             result, _ := graph.Last(validation.Run(ctx, nil))
             return graph.Goto(result.State, "enrichment_stage"), nil
@@ -101,7 +102,7 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
     pipeline.AddNode(&graph.BaseCommandNode{
         NodeName:        "enrichment_stage",
         DeclaredTargets: []string{"analysis_stage"},
-        Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
             data := state.GetFromView(view, dataKey)
             result, _ := graph.Last(enrichment.Run(ctx, nil,
                 graph.WithInput(map[string]any{"data": data}),

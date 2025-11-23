@@ -76,7 +76,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "ingest_data",
 		DeclaredTargets: graph.NewTargetSet("process_data"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -110,7 +110,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "process_data",
 		DeclaredTargets: graph.NewTargetSet("validate_data"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -163,7 +163,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "validate_data",
 		DeclaredTargets: graph.NewTargetSet("generate_summary"),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -238,7 +238,7 @@ func main() {
 	if err := g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "generate_summary",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *graphstate.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)

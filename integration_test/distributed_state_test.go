@@ -70,7 +70,7 @@ func TestDistributedStateSync(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node1",
 		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, counterKey, 1.0) // Use float64 for JSON compatibility
 			state.SetUpdate(builder, dataKey, "A")
@@ -89,7 +89,7 @@ func TestDistributedStateSync(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node2",
 		DeclaredTargets: graph.NewTargetSet("node3"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
@@ -111,7 +111,7 @@ func TestDistributedStateSync(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node3",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
@@ -217,7 +217,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node1",
 		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			builder := state.NewUpdateBuilder()
 			state.SetUpdate(builder, counterKey, 1.0)
 			updates, err := builder.Build()
@@ -235,7 +235,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	err = g.AddNode(&graph.BaseCommandNode{
 		NodeName:        "node2",
 		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
 			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
 			builder := state.NewUpdateBuilder()
