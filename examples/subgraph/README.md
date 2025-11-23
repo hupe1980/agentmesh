@@ -1,13 +1,13 @@
-# Example: Subgraph
+# Example: Subgraph with Namespaces
 
 ## Overview
-Demonstrates multi-stage data processing pipeline using nested subgraphs. Shows how to compose complex workflows from smaller, reusable graph components.
+Demonstrates multi-stage data processing pipeline using namespaces for state isolation. Shows how to organize complex workflows with separate state for each pipeline stage.
 
 ## Key Concepts
-- **Subgraph Composition**: Nested graphs as building blocks
-- **Modular Workflows**: Reusable pipeline stages
-- **State Mapping**: Transform state between subgraphs
-- **Isolation**: Independent execution contexts
+- **Namespace Isolation**: Each pipeline stage has its own state space
+- **State Organization**: Clear separation between validation, enrichment, and analysis state
+- **Key Naming**: Same key names (e.g., "data") can be used in different namespaces
+- **Modular Workflows**: Reusable pipeline stages with isolated state
 
 ## Running
 ```bash

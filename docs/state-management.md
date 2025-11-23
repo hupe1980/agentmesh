@@ -16,6 +16,8 @@ hero:
 sidebar:
   - title: Type-safe updates
     url: "#type-safe-updates"
+  - title: Namespaces
+    url: "#namespaces"
   - title: Checkpointing
     url: "#checkpointing"
   - title: Storage backends
@@ -112,6 +114,258 @@ return updates, nil
 ```
 
 See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.
+
+---
+
+## Namespaces {#namespaces}
+
+Namespaces provide state isolation for multi-agent systems, subgraphs, and tools. They allow different components to use the same key names without conflicts.
+
+### Philosophy: Global First
+
+AgentMesh follows a **global-first** approach:
+- **Default:** Use simple global keys (no namespace prefix)
+- **Opt-in:** Add namespaces only when you need isolation
+- **Zero overhead:** Namespaces are just string prefixes (e.g., `"agent1.status"`)
+
+### When to use namespaces
+
+**Use namespaces when:**
+- Running multiple instances of the same agent/component
+- Building multi-agent systems with separate state
+- Isolating subgraph state from parent graph
+- Preventing key collisions between tools
+
+**Don't use namespaces when:**
+- You have a single agent
+- Keys are naturally unique
+- Simplicity is more important than organization
+
+### Basic usage
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/state"
+
+// 1. Global keys (default) - simple, no prefix
+var GlobalConfig = state.NewKey[string]("config", "")
+var GlobalCounter = state.NewKey[int]("counter", 0)
+
+// 2. Namespaced keys - isolated with dot notation
+agent1NS := state.MustNamespace("agent1")
+agent2NS := state.MustNamespace("agent2")
+
+// Create namespaced keys: "agent1.status", "agent2.status"
+agent1Status := state.TypedKey[string](agent1NS, "status", "idle")
+agent2Status := state.TypedKey[string](agent2NS, "status", "idle")
+
+// No collisions - each agent has its own "status" key
+mgr := state.NewManager()
+state.RegisterKey(mgr, agent1Status)
+state.RegisterKey(mgr, agent2Status)
+
+state.Set(ctx, mgr, agent1Status, "processing")  // agent1.status = "processing"
+state.Set(ctx, mgr, agent2Status, "waiting")     // agent2.status = "waiting"
+```
+
+### Creating namespaces
+
+```go
+// Create namespace (returns error if invalid)
+ns, err := state.NewNamespace("agent1")
+if err != nil {
+    return err
+}
+
+// Create namespace (panics if invalid) - use for package-level variables
+var agentNS = state.MustNamespace("agent")
+
+// Global namespace (no prefix)
+globalNS := state.Global
+
+// Check if namespace is global
+if ns.IsGlobal() {
+    fmt.Println("No prefix")
+}
+```
+
+**Validation rules:**
+- Must start with letter or underscore
+- Can contain letters, numbers, underscores
+- Cannot contain dots (reserved for key separation)
+- Empty string = global namespace
+
+### Creating namespaced keys
+
+```go
+// Regular keys
+modelNS := state.MustNamespace("model")
+counterKey := state.TypedKey[int](modelNS, "counter", 0)        // "model.counter"
+statusKey := state.TypedKey[string](modelNS, "status", "idle")  // "model.status"
+
+// List keys
+toolNS := state.MustNamespace("tool")
+resultsKey := state.TypedListKey[string](toolNS, "results", 100, nil)  // "tool.results"
+
+// Global keys (no prefix)
+configKey := state.TypedKey[string](state.Global, "config", "")  // "config"
+```
+
+### Namespace operations
+
+**Get namespace view** - Filter state by namespace:
+
+```go
+view, err := mgr.CreateReadView(ctx)
+if err != nil {
+    return err
+}
+
+// Get all keys in a namespace
+agent1NS := state.MustNamespace("agent1")
+agent1View := state.GetNamespaceView(view, agent1NS)
+// Returns: map[string]any{"status": "processing", "progress": 50}
+// Note: Keys are returned WITHOUT namespace prefix
+
+// Get global keys
+globalView := state.GetNamespaceView(view, state.Global)
+// Returns: map[string]any{"config": "production", "counter": 100}
+```
+
+**List namespaces** - Discover active namespaces:
+
+```go
+view, _ := mgr.CreateReadView(ctx)
+namespaces := state.ListNamespaces(view)
+
+for _, ns := range namespaces {
+    if ns.IsGlobal() {
+        fmt.Println("(global)")
+    } else {
+        fmt.Printf("%s\n", ns.Name())
+    }
+}
+// Output:
+// agent1
+// agent2
+// tool
+```
+
+**Copy namespace** - Transfer state between agents (useful for handoffs):
+
+```go
+agent1NS := state.MustNamespace("agent1")
+agent2NS := state.MustNamespace("agent2")
+
+// IMPORTANT: Target keys must be registered first!
+agent1Status := state.TypedKey[string](agent1NS, "status", "")
+agent2Status := state.TypedKey[string](agent2NS, "status", "")
+
+state.RegisterKey(mgr, agent1Status)
+state.RegisterKey(mgr, agent2Status)
+
+// Set source state
+state.Set(ctx, mgr, agent1Status, "processing")
+
+// Copy agent1 state to agent2
+err := state.CopyNamespace(ctx, mgr, agent1NS, agent2NS)
+// Now agent2.status = "processing"
+```
+
+### Key introspection
+
+```go
+// Check if key is namespaced
+isNS := state.IsNamespaced("agent1.status")  // true
+isNS = state.IsNamespaced("config")          // false
+
+// Parse namespaced key
+ns, local := state.ParseNamespacedKey("agent1.status")
+// ns = "agent1", local = "status"
+
+ns, local = state.ParseNamespacedKey("config")
+// ns = "", local = "config" (global)
+
+// Extract namespace object
+ns := state.ExtractNamespace("agent1.status")
+// Returns: Namespace{name: "agent1"}
+```
+
+### Multi-agent example
+
+```go
+// Define namespaces for each agent
+researcherNS := state.MustNamespace("researcher")
+writerNS := state.MustNamespace("writer")
+editorNS := state.MustNamespace("editor")
+
+// Each agent has its own "status" and "progress" keys
+researcherStatus := state.TypedKey[string](researcherNS, "status", "")
+writerStatus := state.TypedKey[string](writerNS, "status", "")
+editorStatus := state.TypedKey[string](editorNS, "status", "")
+
+// Register all keys
+mgr := state.NewManager()
+state.RegisterKey(mgr, researcherStatus)
+state.RegisterKey(mgr, writerStatus)
+state.RegisterKey(mgr, editorStatus)
+
+// Each agent updates its own state independently
+state.Set(ctx, mgr, researcherStatus, "researching")
+state.Set(ctx, mgr, writerStatus, "writing")
+state.Set(ctx, mgr, editorStatus, "editing")
+
+// No collisions - each has separate namespace
+```
+
+### Best practices
+
+**1. Package-level namespace constants:**
+```go
+// pkg/agent/researcher/keys.go
+package researcher
+
+var (
+    NS = state.MustNamespace("researcher")
+    StatusKey = state.TypedKey[string](NS, "status", "idle")
+    ResultsKey = state.TypedListKey[string](NS, "results", 100, nil)
+)
+```
+
+**2. Namespace naming conventions:**
+- Use lowercase with underscores: `"agent_name"`, `"tool_1"`
+- Keep names short and descriptive
+- Avoid abbreviations unless well-known
+
+**3. Documentation:**
+```go
+// Keys for the model execution subsystem
+// Namespace: "model"
+// Keys:
+//   - counter: int - Number of API calls
+//   - status: string - Current execution status
+var (
+    ModelNS = state.MustNamespace("model")
+    CounterKey = state.TypedKey[int](ModelNS, "counter", 0)
+    StatusKey = state.TypedKey[string](ModelNS, "status", "idle")
+)
+```
+
+**4. Avoid deeply nested namespaces:**
+```go
+// ❌ Too complex
+ns := state.MustNamespace("agent.researcher.team1")
+
+// ✅ Keep it simple
+researcherNS := state.MustNamespace("researcher_team1")
+```
+
+### Limitations
+
+- **No key deletion:** `DeleteNamespace()` is not implemented (channels cannot be deleted)
+- **Copy requires registration:** Target keys must be registered before `CopyNamespace()`
+- **No nested namespaces:** Only one level of hierarchy (single dot)
+
+See [examples/namespaces](https://github.com/hupe1980/agentmesh/tree/main/examples/namespaces) for a complete working example.
 
 ---
 

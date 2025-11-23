@@ -1,4 +1,5 @@
-// Package main demonstrates a multi-stage data processing pipeline.
+// Package main demonstrates a multi-stage data processing pipeline with namespace isolation.
+// This example shows how to use namespaces to isolate state between pipeline stages.
 
 package main
 
@@ -17,16 +18,24 @@ import (
 func main() {
 	ctx := context.Background()
 
-	dataKey := graphstate.NewKey("data", map[string]any{})
-	validKey := graphstate.NewKey("valid", false)
-	enrichedDataKey := graphstate.NewKey("enriched_data", map[string]any{})
-	analysisKey := graphstate.NewKey("analysis", map[string]any{})
+	// Create namespaces for each pipeline stage to isolate state
+	// This prevents keys from different stages interfering with each other
+	validationNS := graphstate.MustNamespace("validation")
+	enrichmentNS := graphstate.MustNamespace("enrichment")
+	analysisNS := graphstate.MustNamespace("analysis")
+
+	// Define namespaced keys - each stage has its own "data" key
+	// validation.data, enrichment.data, analysis.data
+	inputDataKey := graphstate.TypedKey[map[string]any](validationNS, "data", map[string]any{})
+	validKey := graphstate.TypedKey[bool](validationNS, "valid", false)
+	enrichedDataKey := graphstate.TypedKey[map[string]any](enrichmentNS, "data", map[string]any{})
+	analysisKey := graphstate.TypedKey[map[string]any](analysisNS, "result", map[string]any{})
 
 	mgr := graphstate.NewManager()
 	if err := agent.RegisterMessagesKey(mgr); err != nil {
 		log.Fatal(err)
 	}
-	graphstate.RegisterKey(mgr, dataKey)
+	graphstate.RegisterKey(mgr, inputDataKey)
 	graphstate.RegisterKey(mgr, validKey)
 	graphstate.RegisterKey(mgr, enrichedDataKey)
 	graphstate.RegisterKey(mgr, analysisKey)
@@ -45,12 +54,12 @@ func main() {
 			"score":   75,
 		}
 		builder := graphstate.NewUpdateBuilder()
-		graphstate.SetUpdate(builder, dataKey, data)
+		graphstate.SetUpdate(builder, inputDataKey, data)
 		return builder.Build()
 	})
 
 	pipeline.AddStaticNode("validation", graph.NewTargetSet("enrichment"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		data := graphstate.GetFromView(view, dataKey)
+		data := graphstate.GetFromView(view, inputDataKey)
 		builder := graphstate.NewUpdateBuilder()
 
 		required := []string{"user_id", "email", "score"}
@@ -70,7 +79,7 @@ func main() {
 	})
 
 	pipeline.AddStaticNode("enrichment", graph.NewTargetSet("analysis"), func(ctx context.Context, view *graphstate.ReadView) (graphstate.Updates, error) {
-		data := graphstate.GetFromView(view, dataKey)
+		data := graphstate.GetFromView(view, inputDataKey)
 		valid := graphstate.GetFromView(view, validKey)
 		if !valid {
 			return nil, nil
@@ -115,6 +124,10 @@ func main() {
 	}
 
 	fmt.Println("\n=== Pipeline Results ===")
+	fmt.Println("Note: Each stage has isolated state in its own namespace:")
+	fmt.Println("  - validation.data, validation.valid")
+	fmt.Println("  - enrichment.data")
+	fmt.Println("  - analysis.result")
 	view, err := mgr.CreateReadView(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create read view: %v", err)
