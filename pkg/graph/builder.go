@@ -44,6 +44,7 @@ import (
 type Builder[I, O any] struct {
 	graph    *Graph
 	executor Executor[I, O]
+	err      error // Accumulated error from builder operations
 }
 
 // BuilderOption is a functional option for configuring the Builder.
@@ -139,14 +140,19 @@ func WithInterruptAfter[I, O any](nodes ...string) BuilderOption[I, O] {
 }
 
 // AddNode adds a custom node implementation to the graph.
-// Any errors will be caught during graph compilation in Compile().
+// Errors are accumulated and returned during Compile().
 //
 // Example:
 //
 //	customNode := &MyNode{name: "custom"}
 //	builder.AddNode(customNode)
 func (b *Builder[I, O]) AddNode(node Node) *Builder[I, O] {
-	_ = b.graph.AddNode(node)
+	if b.err != nil {
+		return b // Short-circuit if previous error
+	}
+	if err := b.graph.AddNode(node); err != nil {
+		b.err = fmt.Errorf("AddNode(%s): %w", node.Name(), err)
+	}
 	return b
 }
 
@@ -184,12 +190,17 @@ func (b *Builder[I, O]) AddNode(node Node) *Builder[I, O] {
 //	    },
 //	)
 func (b *Builder[I, O]) AddCommandNode(name string, targetSet *TargetSet, fn CommandFunc) *Builder[I, O] {
+	if b.err != nil {
+		return b // Short-circuit if previous error
+	}
 	node := &BaseCommandNode{
 		NodeName:        name,
 		Fn:              fn,
 		DeclaredTargets: targetSet,
 	}
-	_ = b.graph.AddNode(node)
+	if err := b.graph.AddNode(node); err != nil {
+		b.err = fmt.Errorf("AddCommandNode(%s): %w", name, err)
+	}
 	return b
 }
 
@@ -209,13 +220,18 @@ func (b *Builder[I, O]) AddCommandNode(name string, targetSet *TargetSet, fn Com
 //	    graph.NewRetryPolicy().WithMaxAttempts(5).Build(),
 //	)
 func (b *Builder[I, O]) AddCommandNodeWithRetry(name string, targetSet *TargetSet, fn CommandFunc, policy *RetryPolicy) *Builder[I, O] {
+	if b.err != nil {
+		return b // Short-circuit if previous error
+	}
 	node := &BaseCommandNode{
 		NodeName:        name,
 		Fn:              fn,
 		DeclaredTargets: targetSet,
 		Retry:           policy,
 	}
-	_ = b.graph.AddNode(node)
+	if err := b.graph.AddNode(node); err != nil {
+		b.err = fmt.Errorf("AddCommandNodeWithRetry(%s): %w", name, err)
+	}
 	return b
 }
 
@@ -228,9 +244,15 @@ func (b *Builder[I, O]) AddCommandNodeWithRetry(name string, targetSet *TargetSe
 //	// or multiple entry points for parallel start
 //	builder.SetEntryPoint("worker1", "worker2", "worker3")
 func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
+	if b.err != nil {
+		return b // Short-circuit if previous error
+	}
 	// Add edges from START to entry point nodes
 	for _, target := range targets {
-		_ = b.graph.SetEntryPoint(target) // Multiple calls add multiple edges
+		if err := b.graph.SetEntryPoint(target); err != nil {
+			b.err = fmt.Errorf("SetEntryPoint(%s): %w", target, err)
+			return b
+		}
 	}
 	return b
 }
@@ -305,7 +327,7 @@ func (b *Builder[I, O]) Manager() *state.Manager {
 }
 
 // Compile compiles the graph into a Compiled[I,O] using the executor.
-// Returns an error if the graph is invalid or compilation fails.
+// Returns any accumulated builder errors or compilation errors.
 //
 // Example:
 //
@@ -317,6 +339,10 @@ func (b *Builder[I, O]) Manager() *state.Manager {
 //	// Or with options:
 //	compiled, err := builder.Compile(graph.WithStrictValidation())
 func (b *Builder[I, O]) Compile(opts ...CompileOption) (*Compiled[I, O], error) {
+	// Return accumulated builder errors first
+	if b.err != nil {
+		return nil, fmt.Errorf("builder error: %w", b.err)
+	}
 	if b.executor == nil {
 		return nil, fmt.Errorf("executor not set - use NewBuilder with an executor")
 	}
