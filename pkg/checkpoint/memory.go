@@ -235,7 +235,9 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 	dst := &Checkpoint{
 		RunID:     src.RunID,
 		Superstep: src.Superstep,
+		Version:   src.Version,
 		Timestamp: src.Timestamp,
+		Committed: src.Committed,
 	}
 
 	// Deep copy Signature
@@ -262,6 +264,12 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 	if src.PausedNodes != nil {
 		dst.PausedNodes = make([]string, len(src.PausedNodes))
 		copy(dst.PausedNodes, src.PausedNodes)
+	}
+
+	// Deep copy PendingWrites
+	if src.PendingWrites != nil {
+		dst.PendingWrites = make([]PendingWrite, len(src.PendingWrites))
+		copy(dst.PendingWrites, src.PendingWrites)
 	}
 
 	// Deep copy Metadata

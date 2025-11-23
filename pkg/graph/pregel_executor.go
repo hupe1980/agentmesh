@@ -310,13 +310,7 @@ func (p *PregelExecutor[I, O]) Run(
 			var zero O
 			yield(zero, err)
 			return
-		} // Start checkpoint worker
-		worker := p.startCheckpointWorker(runCtx, runOpts)
-		defer func() {
-			if err := p.stopCheckpointWorker(runCtx, worker, runOpts.CheckpointStopTimeout); err != nil {
-				logging.FromContext(runCtx).Warn("Failed to stop checkpoint worker gracefully", "error", err)
-			}
-		}()
+		}
 
 		// Convert input to initial state using adapter
 		var inputValue any = input
@@ -398,10 +392,15 @@ func (p *PregelExecutor[I, O]) Run(
 
 		runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
 			func(ctx context.Context, superstep int64) error {
-				// Save checkpoint after superstep completes
-				// Updates are already applied immediately per node
+				// Two-phase commit: Save checkpoint with PendingWrites (if enabled), then apply updates
+				// This ensures transactional semantics - if crash occurs during this window,
+				// checkpoint contains PendingWrites that will be applied on resume
 				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-					p.saveCheckpoint(ctx, compiled, runOpts, superstep, worker)
+					// Checkpoint enabled: saveCheckpoint handles both save and apply
+					p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter)
+				} else {
+					// No checkpoint: apply updates directly
+					p.applyPendingUpdates(ctx, compiled, adapter)
 				}
 				return nil
 			},
@@ -418,6 +417,7 @@ func (p *PregelExecutor[I, O]) Run(
 		}
 
 		// Execute runtime and forward events to result channel
+		var runtimeErr error
 		for _, err := range rt.Run(runCtx) {
 			// Update metrics with current superstep
 			if p.metrics != nil {
@@ -428,6 +428,8 @@ func (p *PregelExecutor[I, O]) Run(
 			select {
 			case <-runCtx.Done():
 				// Stop immediately when context cancelled
+				// Still need to apply pending updates before closing
+				p.applyPendingUpdates(runCtx, compiled, adapter)
 				close(resultChan)
 				<-yieldDone
 				return
@@ -437,9 +439,25 @@ func (p *PregelExecutor[I, O]) Run(
 			if err != nil {
 				// Fatal error - BSP execution terminated
 				// Yield error and stop iteration
+				runtimeErr = err
 				var zero O
 				safeYield(zero, err)
 				break
+			}
+		}
+
+		// Handle final state: ensure any remaining pending updates are applied and save final checkpoint
+		// After successful completion, save one last checkpoint with fully committed state
+		if runtimeErr == nil {
+			finalSuperstep := rt.CurrentSuperstep()
+
+			// Apply any remaining updates (should be no-op if OnSuperstepComplete was called)
+			p.applyPendingUpdates(runCtx, compiled, adapter)
+
+			// Save final committed checkpoint (State contains all applied updates, PendingWrites empty)
+			// This ensures tests and resume scenarios get clean final state
+			if runOpts.Checkpointer != nil && runOpts.RunID != "" {
+				p.saveFinalCheckpoint(runCtx, compiled, runOpts, finalSuperstep)
 			}
 		}
 
@@ -465,6 +483,11 @@ type pregelGraphAdapter[I, O any] struct {
 	// Track which nodes executed in previous superstep for trigger-based optimization
 	// Only nodes triggered by previously executed nodes will run in subsequent supersteps
 	executedNodes map[string]bool
+
+	// Two-phase commit support: collect updates from all nodes in superstep
+	// before applying them (after checkpoint save)
+	pendingUpdates []checkpoint.PendingWrite
+	updatesMu      sync.Mutex
 }
 
 // RootNodes returns nodes that should execute in the current superstep.
@@ -1053,16 +1076,23 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	n.graphAdapter.executedNodes[n.nodeName] = true
 	n.graphAdapter.mu.Unlock()
 
-	// Apply updates to local state manager
-	// These updates will be visible in the next superstep (BSP-compliant)
-	// For distributed execution, updates are propagated via message bus
+	// Collect updates for two-phase commit (defer application until after checkpoint save)
+	// These updates will be applied at superstep completion, after checkpoint is saved
+	// This ensures transactional semantics: if crash happens, checkpoint has pending writes
 	if len(updates) > 0 {
-		if err := n.compiled.manager.ApplyUpdates(ctx, updates); err != nil {
-			nodeErr = fmt.Errorf("failed to apply state updates: %w", err)
-			return nodeErr
+		n.graphAdapter.updatesMu.Lock()
+		timestamp := time.Now()
+		for channel, value := range updates {
+			n.graphAdapter.pendingUpdates = append(n.graphAdapter.pendingUpdates, checkpoint.PendingWrite{
+				NodeName:  n.nodeName,
+				Channel:   channel,
+				Value:     value,
+				Timestamp: timestamp,
+			})
 		}
+		n.graphAdapter.updatesMu.Unlock()
 
-		// Notify state change callbacks
+		// Notify state change callbacks (before actual application)
 		if stateCallbacks, ok := getStateCallbacks(ctx); ok {
 			if err := stateCallbacks.ExecuteOnStateChange(ctx, n.nodeName, updates); err != nil {
 				logger.Warn("state change callback failed", "node", n.nodeName, "error", err)

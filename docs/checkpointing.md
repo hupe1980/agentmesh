@@ -83,13 +83,22 @@ type Checkpoint struct {
     Superstep      int64                  // Iteration number (0, 1, 2, ...)
     Timestamp      time.Time              // When checkpoint was created
     State          map[string]any         // Graph state including message history (via MessagesKey)
+    PendingWrites  []PendingWrite         // Uncommitted state updates (for two-phase commit)
+    Committed      bool                   // Whether PendingWrites already applied to state
     CompletedNodes []string               // Nodes that finished execution (for monitoring)
     PausedNodes    []string               // Nodes paused for human input (for human-in-the-loop)
     Metadata       map[string]any         // Custom execution metadata
 }
+
+type PendingWrite struct {
+    ChannelName string  // State channel name to update
+    Value       any     // New value to apply
+}
 ```
 
 **Note**: Message history is stored in the `State` map via `MessagesKey` channel, not as a separate field. This provides consistent state management and allows message history to be treated like any other state channel.
+
+**Two-Phase Commit**: The `PendingWrites` field contains uncommitted state updates that will be applied after the checkpoint is saved. This ensures transactional consistency - if a crash occurs between checkpoint save and update application, the `PendingWrites` will be replayed on resume. The `Committed` flag prevents double-application.
 
 ### 3. Superstep Progression
 
@@ -149,6 +158,135 @@ seq = compiled.Run(ctx, messages,
     graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
 )
 // Continues from where it left off
+```
+
+---
+
+## Transactional Semantics
+
+AgentMesh implements a **two-phase commit protocol** to ensure transactional consistency between checkpoints and state updates:
+
+### How It Works
+
+```
+Phase 1: Collect updates from nodes (buffered, not applied)
+Phase 2: Save checkpoint with PendingWrites → Apply updates to state
+```
+
+This guarantees that:
+- ✅ **Atomicity**: State updates only applied after checkpoint is safely persisted
+- ✅ **Consistency**: Checkpoint always reflects uncommitted state (before updates applied)
+- ✅ **Crash Recovery**: If crash occurs between save and apply, PendingWrites are replayed on resume
+
+### Example: Two-Phase Commit in Action
+
+```go
+// Superstep N execution:
+// 1. Nodes execute and collect updates (not applied yet)
+nodeResult := &graph.NodeResult{
+    Updates: map[string]any{
+        "counter": currentValue + 1,
+        "status":  "processed",
+    },
+}
+
+// 2. Save checkpoint WITH PendingWrites (uncommitted updates)
+checkpoint := &checkpoint.Checkpoint{
+    RunID:     "workflow-123",
+    Superstep: N,
+    State:     currentState,  // Before updates
+    PendingWrites: []checkpoint.PendingWrite{
+        {ChannelName: "counter", Value: currentValue + 1},
+        {ChannelName: "status", Value: "processed"},
+    },
+    Committed: false,  // Not yet applied
+}
+checkpointer.Save(ctx, checkpoint)
+
+// 3. Apply updates to state (after checkpoint saved)
+state.UpdateValue("counter", currentValue + 1)
+state.UpdateValue("status", "processed")
+
+// 4. If crash happens here, resume will:
+//    - Load checkpoint with PendingWrites
+//    - Check Committed = false
+//    - Replay PendingWrites to state
+//    - Mark Committed = true
+//    - Continue execution
+```
+
+### Crash Recovery Scenarios
+
+**Scenario 1: Crash BEFORE checkpoint save**
+```
+❌ Updates never saved → Resume from previous superstep → Re-execute node
+✅ No data loss, no inconsistency
+```
+
+**Scenario 2: Crash AFTER checkpoint save, BEFORE updates applied**
+```
+✅ Checkpoint contains PendingWrites
+✅ Resume applies PendingWrites to state
+✅ Sets Committed = true to prevent double-application
+✅ Continues from next superstep
+```
+
+**Scenario 3: Crash AFTER updates applied**
+```
+✅ Normal checkpoint resume
+✅ Committed = true → Skip PendingWrites replay
+✅ Continue from next superstep
+```
+
+### Implementation Details
+
+**PendingWrites Field**:
+```go
+type Checkpoint struct {
+    RunID          string
+    Superstep      int64
+    State          map[string]any
+    PendingWrites  []PendingWrite  // Uncommitted updates
+    Committed      bool            // Whether PendingWrites already applied
+    // ... other fields
+}
+
+type PendingWrite struct {
+    ChannelName string  // State channel to update
+    Value       any     // New value to apply
+}
+```
+
+**Synchronous Checkpointing**:
+AgentMesh uses **synchronous checkpointing** for two-phase commit correctness:
+- Checkpoint saved in same goroutine as node execution
+- Updates applied immediately after checkpoint save
+- No async checkpoint workers (would break transactional guarantees)
+
+**Final Checkpoint**:
+After all nodes complete, a final checkpoint is saved with:
+- `Committed = true` (all updates already applied)
+- `PendingWrites = []` (empty, nothing pending)
+- Clean state for resume or analysis
+
+### Why This Matters
+
+**Without two-phase commit** (old implementation):
+```go
+// ❌ WRONG: Apply updates first
+state.UpdateValue("counter", newValue)
+checkpointer.Save(ctx, checkpoint)
+// 💥 Crash here = updates lost (not in checkpoint)
+```
+
+**With two-phase commit** (current implementation):
+```go
+// ✅ CORRECT: Save checkpoint first
+checkpoint.PendingWrites = collectUpdates()
+checkpointer.Save(ctx, checkpoint)
+// 💾 Checkpoint contains updates
+applyUpdates(checkpoint.PendingWrites)
+// 💥 Crash here = no problem (PendingWrites will be replayed on resume)
 ```
 
 ---

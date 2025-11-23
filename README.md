@@ -27,7 +27,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 ### 📊 Production Features
 - **✅ Graph Validation** - Comprehensive pre-execution validation catches errors at compile time (missing nodes, cycles, unreachable nodes)
 - **📈 Observability** - Built-in OpenTelemetry metrics and distributed tracing
-- **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities
+- **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities and two-phase commit for transactional consistency
 - **🔐 Checkpoint Signing** - HMAC-SHA256 signatures prevent state tampering and ensure integrity
 - **🛡️ Input Validation** - Configurable size/count limits protect against DoS and resource exhaustion
 - **⏱️ Execution Control** - Max iterations, timeouts, and graceful termination
@@ -566,7 +566,7 @@ This enables:
 - ⚡ **Parallel execution** of independent nodes (~6μs overhead per node)
 - 🔒 **Deterministic** ordering within supersteps
 - 📊 **Easy reasoning** about distributed state
-- 💾 **Automatic checkpointing** at superstep boundaries
+- 💾 **Automatic checkpointing** at superstep boundaries with two-phase commit for crash recovery
 
 ---
 

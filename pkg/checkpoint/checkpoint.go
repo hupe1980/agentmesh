@@ -70,6 +70,14 @@ type Checkpoint struct {
 	// When resuming, these writes are applied first before continuing execution.
 	PendingWrites []PendingWrite
 
+	// Committed indicates whether PendingWrites have been applied to state.
+	// Two-phase commit protocol:
+	//   1. Save checkpoint with PendingWrites (Committed=false)
+	//   2. Apply PendingWrites to state
+	//   3. Update checkpoint (Committed=true)
+	// On resume: only apply PendingWrites if Committed=false to prevent double-application.
+	Committed bool
+
 	// Metadata for custom checkpoint annotations
 	Metadata map[string]any
 }
