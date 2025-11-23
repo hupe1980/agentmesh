@@ -65,6 +65,8 @@ func main() {
 
 	// Register state keys before use
 	mgr := builder.Manager()
+	// Register messages key for MessagePregelExecutor (required for streaming)
+	_ = graphstate.RegisterListKey(mgr, agent.MessagesKey)
 	_ = graphstate.RegisterKey(mgr, progressKey)
 	_ = graphstate.RegisterKey(mgr, currentChunkKey)
 	_ = graphstate.RegisterKey(mgr, statusKey)

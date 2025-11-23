@@ -295,19 +295,24 @@ func (tc *TopicChannel) Clone() VersionedChannel {
 	}
 }
 
+// boxed wraps any value to ensure atomic.Value always stores the same concrete type.
+// This prevents "inconsistently typed value" panics when different concrete types
+// are stored in the same atomic.Value (e.g., int vs int64, empty map vs populated map).
+type boxed struct {
+	V any
+}
+
 // LastValueChannel stores only the most recent value (overwrite semantics).
 // Each update replaces the previous value completely.
 //
 // Thread-safety: Uses atomic.Value for lock-free reads and atomic operations
-// for version tracking. This eliminates the data race that occurred with the
-// previous readCached implementation.
+// for version tracking. All values are wrapped in boxed{} to ensure type consistency.
 //
 // Nil Value Handling: Write() returns ErrNilValue if attempting to store nil.
-// This is a limitation of atomic.Value which cannot store nil values in Go.
 // To clear a value, delete the channel instead or use a sentinel value pattern.
 type LastValueChannel struct {
 	name     string
-	value    atomic.Value // Stores the actual value
+	value    atomic.Value // Stores boxed{V: actual_value}
 	version  atomic.Int64 // Version counter
 	hasValue atomic.Bool  // Tracks if value has been set
 }
@@ -328,16 +333,17 @@ func (lvc *LastValueChannel) Read(ctx context.Context) (any, error) {
 	if !lvc.hasValue.Load() {
 		return nil, nil
 	}
-	return lvc.value.Load(), nil
+	b := lvc.value.Load().(boxed)
+	return b.V, nil
 }
 
 // Write stores a new value, replacing any previous value.
-// Returns ErrNilValue if value is nil, as atomic.Value cannot store nil.
+// Returns ErrNilValue if value is nil.
 func (lvc *LastValueChannel) Write(ctx context.Context, value any) error {
 	if value == nil {
 		return ErrNilValue
 	}
-	lvc.value.Store(value)
+	lvc.value.Store(boxed{V: value})
 	lvc.hasValue.Store(true)
 	lvc.version.Add(1)
 	return nil

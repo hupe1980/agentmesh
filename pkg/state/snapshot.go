@@ -10,6 +10,16 @@ type Snapshot struct {
 	version uint64
 }
 
+// unwrapChannelTypes unwraps channel-native types like SliceOf[T] before type assertion.
+// This handles values coming from channels that wrap data in specialized types.
+func unwrapChannelTypes(v any) any {
+	// Handle SliceValue interface (includes SliceOf[T])
+	if sv, ok := v.(SliceValue); ok {
+		return sv.ToSlice()
+	}
+	return v
+}
+
 // GetFromSnapshot retrieves a typed value from the snapshot.
 // Returns the key's zero value if the key doesn't exist.
 func GetFromSnapshot[T any](snap *Snapshot, key Key[T]) T {
@@ -17,6 +27,9 @@ func GetFromSnapshot[T any](snap *Snapshot, key Key[T]) T {
 	if !ok {
 		return key.zero
 	}
+
+	// Unwrap channel-native types first
+	val = unwrapChannelTypes(val)
 
 	// Try direct type assertion first (fast path)
 	if typed, ok := val.(T); ok {

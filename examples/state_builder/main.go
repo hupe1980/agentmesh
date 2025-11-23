@@ -20,8 +20,9 @@ func main() {
 	attemptsKey := graphstate.NewKey("attempts", 0)
 	validatedKey := graphstate.NewKey("validated", false)
 	actionLogKey := graphstate.NewListKey[string]("action_log", 0)
-	var defaultMap map[string]any
-	taskResultsKey := graphstate.NewKey("task_results", defaultMap)
+	// Use make() to ensure consistent map type for atomic.Value
+	defaultTaskResults := make(map[string]any)
+	taskResultsKey := graphstate.NewKey("task_results", defaultTaskResults)
 
 	// Create state and register keys
 	mgr := graphstate.NewManager()
