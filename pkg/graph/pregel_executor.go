@@ -64,32 +64,32 @@ func yieldSlice[T any](slice []T, yield func(any) bool) bool {
 // PregelExecutor is a Bulk-Synchronous Parallel (BSP) executor using the pregel runtime.
 // This is the default executor for agent workflows and chat systems.
 //
-// # BSP Semantics (Hybrid Model)
+// # BSP Semantics with Command Pattern
 //
-// AgentMesh implements a hybrid BSP model that balances theoretical purity with practical
-// agent workflow requirements:
+// AgentMesh implements pure BSP semantics using the Command pattern:
 //
-// BSP-Compliant Features:
-//   - Inter-node isolation: Nodes read from shared superstep snapshot
+// BSP Execution Model:
+//   - Inter-node isolation: Nodes read from shared superstep snapshot (read-only view)
 //   - Superstep barriers: All nodes finish before next superstep begins
 //   - Distributed state: Updates propagated via messages, delivered next superstep
 //   - Aggregators: Thread-safe accumulation across nodes
 //
-// Non-BSP Features (Deliberate Trade-offs):
-//   - Conditional edge routing: Evaluates using FRESH state (sees node's own updates)
-//   - Immediate local updates: Applied per-node (not buffered until barrier)
+// Command Pattern for Routing:
+//   - Nodes receive read-only state snapshot (BSP-compliant)
+//   - Nodes compute results and routing decision atomically
+//   - Return Command{Updates, Goto} - both determined from snapshot
+//   - Updates applied after node execution, visible next superstep
 //
-// Why Violate Pure BSP?
+// Agent Workflow Example (ReAct):
 //
-// Agent patterns (ReAct) require conditional routing to see node outputs:
+//	Model node reads messages from snapshot → generates AIMessage → returns:
+//	  Command{
+//	    Updates: {"messages": append(msgs, aiMsg)},
+//	    Goto: aiMsg.HasToolCalls() ? []string{"tool"} : []string{EndNode}
+//	  }
 //
-//	Model → [AIMessage with tool_calls] → Route based on tool_calls → Tool Executor
-//
-// Pure BSP would use superstep snapshot for routing, which can't see the AIMessage.
-// This breaks agent workflows. The hybrid model maintains inter-node isolation while
-// allowing intra-node visibility for routing decisions.
-//
-// See _prompts/BSP_SEMANTICS.md for detailed analysis.
+// The routing decision is made within the node logic using the snapshot state,
+// not by evaluating fresh state after updates. This maintains pure BSP semantics.
 type PregelExecutor[I, O any] struct {
 	maxWorkers             int
 	maxIters               int
@@ -1053,8 +1053,9 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	n.graphAdapter.executedNodes[n.nodeName] = true
 	n.graphAdapter.mu.Unlock()
 
-	// Apply updates immediately for routing decisions within the same node
-	// BSP semantics are maintained because other nodes use the superstep snapshot
+	// Apply updates to local state manager
+	// These updates will be visible in the next superstep (BSP-compliant)
+	// For distributed execution, updates are propagated via message bus
 	if len(updates) > 0 {
 		if err := n.compiled.manager.ApplyUpdates(ctx, updates); err != nil {
 			nodeErr = fmt.Errorf("failed to apply state updates: %w", err)
