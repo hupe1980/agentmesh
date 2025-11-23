@@ -58,6 +58,13 @@ type MessageBus[M any] interface {
 // Thread-safety: All methods are thread-safe using sharded locks (32 shards).
 // Backpressure: Send blocks when channel is full until space is available or context cancelled.
 // Memory bounds: Each vertex mailbox has a bounded channel (maxSize > 0) or unbounded buffer (maxSize = 0).
+//
+// ⚠️ DANGER ZONE: maxSize = 0 (unbounded mode)
+// Unbounded buffers can grow without limit, leading to memory exhaustion (OOM).
+// This mode provides no backpressure and should ONLY be used for trusted workloads
+// where message production rates are guaranteed to be bounded.
+// ALWAYS prefer maxSize > 0 for production deployments.
+//
 // Combiner support: Merges messages for the same target if configured.
 //
 // Performance: Uses DefaultShardCount-shard map with per-shard mutex to reduce lock contention
@@ -81,7 +88,20 @@ type messageShard[M any] struct {
 // NewInMemoryMessageBus creates an in-memory message bus with backpressure.
 // maxSize controls mailbox capacity per vertex:
 //   - maxSize > 0: Uses buffered channels, Send blocks when full (backpressure)
-//   - maxSize = 0: Uses unbounded buffer, Send never blocks (legacy behavior)
+//   - maxSize = 0: Uses unbounded buffer, Send never blocks
+//
+// ⚠️ WARNING: maxSize = 0 is DANGEROUS and should only be used for trusted workloads
+// where message production rates are known and bounded. Unbounded buffers can lead to:
+//   - Uncontrolled memory growth (potential OOM)
+//   - No backpressure to slow down message producers
+//   - Resource exhaustion in high-throughput scenarios
+//   - Difficult to debug memory issues
+//
+// RECOMMENDED: Always use maxSize > 0 (e.g., 10000) for production workloads.
+// Only use maxSize = 0 for:
+//   - Trusted, well-tested workloads with known message bounds
+//   - Development/testing environments with monitoring
+//   - Scenarios where you have external rate limiting
 //
 // combiner, if provided, merges messages for the same target.
 //
@@ -170,6 +190,8 @@ func (bus *InMemoryMessageBus[M]) getShardForVertex(vertex string) *messageShard
 }
 
 // sendToUnboundedMailbox delivers a message to an unbounded buffer, applying combiner if configured.
+// ⚠️ WARNING: This method can cause unbounded memory growth. Only called when maxSize = 0.
+// See NewInMemoryMessageBus documentation for safety considerations.
 func (bus *InMemoryMessageBus[M]) sendToUnboundedMailbox(shard *messageShard[M], msg Message[M]) error {
 	shard.mu.Lock()
 	defer shard.mu.Unlock()
