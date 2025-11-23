@@ -283,28 +283,20 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			parts = message.Parts{message.NewTextPart(text)}
 		}
 
-		aiMessage := message.NewAIMessage(parts)
+	aiMessage := message.NewAIMessage(parts)
 
-		//nolint:nestif // OpenAI SDK types make extraction complex, complexity is manageable
-		if len(choice.Message.ToolCalls) > 0 {
+	if len(choice.Message.ToolCalls) > 0 {
 			toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
 			for idx := range choice.Message.ToolCalls {
 				if choice.Message.ToolCalls[idx].Type != "function" {
 					continue
 				}
 				fn := choice.Message.ToolCalls[idx].AsFunction()
-				var args map[string]any
-				if fn.Function.Arguments != "" {
-					if err := json.Unmarshal([]byte(fn.Function.Arguments), &args); err != nil {
-						yield(nil, fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err))
-						return
-					}
-				}
 				toolCalls = append(toolCalls, message.ToolCall{
 					ID:        fn.ID,
 					Name:      fn.Function.Name,
 					Type:      string(fn.Type),
-					Arguments: args,
+					Arguments: fn.Function.Arguments,
 				})
 			}
 			if len(toolCalls) > 0 {
@@ -447,19 +439,11 @@ func (m *Model) streamGenerate(
 
 		for _, idx := range indices {
 			acc := toolCalls[int64(idx)]
-			argsRaw := strings.TrimSpace(acc.arguments.String())
-			var args map[string]any
-			if argsRaw != "" {
-				if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
-					yield(nil, fmt.Errorf("tool call[%d]: parse arguments: %w", idx, err))
-					return
-				}
-			}
 			aiMessage.ToolCalls = append(aiMessage.ToolCalls, message.ToolCall{
 				ID:        acc.id,
 				Name:      acc.name.String(),
 				Type:      acc.typ,
-				Arguments: args,
+				Arguments: strings.TrimSpace(acc.arguments.String()),
 			})
 		}
 	}
@@ -622,7 +606,7 @@ func convertToolCalls(calls []message.ToolCall) ([]openai.ChatCompletionMessageT
 		}
 
 		arguments := "{}"
-		if len(call.Arguments) > 0 {
+		if call.Arguments != "" {
 			payload, err := json.Marshal(call.Arguments)
 			if err != nil {
 				return nil, fmt.Errorf("tool call[%d]: marshal arguments: %w", idx, err)

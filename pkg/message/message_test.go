@@ -30,18 +30,16 @@ func TestHumanMessage(t *testing.T) {
 func TestAIMessageCloneToolCalls(t *testing.T) {
 	msg := NewAIMessageFromText("hi")
 	msg.ToolCalls = []ToolCall{{
-		ID:   "call-1",
-		Name: "math",
-		Type: "tool",
-		Arguments: map[string]any{
-			"x": 1,
-		},
+		ID:        "call-1",
+		Name:      "math",
+		Type:      "tool",
+		Arguments: `{"x":1}`,
 	}}
 
 	clone := msg.Clone().(*AIMessage)
-	msg.ToolCalls[0].Arguments["x"] = 42
-	if clone.ToolCalls[0].Arguments["x"].(int) != 1 {
-		t.Fatalf("expected clone to preserve original tool call arguments")
+	msg.ToolCalls[0].Arguments = `{"x":42}`
+	if clone.ToolCalls[0].Arguments != `{"x":1}` {
+		t.Fatalf("expected clone to preserve original tool call arguments, got %s", clone.ToolCalls[0].Arguments)
 	}
 }
 

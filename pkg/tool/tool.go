@@ -4,6 +4,23 @@ import (
 	"context"
 )
 
+// Plugin defines the lifecycle hooks for tool execution.
+// The callbacks.PluginManager implements this interface.
+// This design avoids import cycles while allowing executors to invoke plugins.
+type Plugin interface {
+	// ExecuteBeforeTool is called before tool execution.
+	// It can modify arguments or short-circuit execution.
+	ExecuteBeforeTool(ctx context.Context, name string, input any) error
+
+	// ExecuteAfterTool is called after successful tool execution.
+	// It can transform or log the result.
+	ExecuteAfterTool(ctx context.Context, name string, result any) error
+
+	// ExecuteOnToolError is called when tool execution fails.
+	// It can provide a fallback result or transform the error.
+	ExecuteOnToolError(ctx context.Context, name string, err error) error
+}
+
 // FunctionDefinition describes an individual function (tool) exposed to the model.
 // Parameters is a JSON Schema object (draft agnostic, minimal subset expected).
 type FunctionDefinition struct {

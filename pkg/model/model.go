@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 
@@ -10,6 +11,28 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
+
+var (
+	// ErrNoResponse is returned when a model generates no responses.
+	ErrNoResponse = errors.New("model: no response generated")
+)
+
+// Plugin defines the lifecycle hooks for model execution.
+// The callbacks.PluginManager implements this interface.
+// This design avoids import cycles while allowing executors to invoke plugins.
+type Plugin interface {
+	// ExecuteBeforeModel is called before model generation.
+	// If it returns a non-nil response, generation is short-circuited.
+	ExecuteBeforeModel(ctx context.Context, req *Request) (*Response, error)
+
+	// ExecuteAfterModel is called after successful model generation.
+	// It can transform or replace the response.
+	ExecuteAfterModel(ctx context.Context, req *Request, resp *Response) (*Response, error)
+
+	// ExecuteOnModelError is called when model generation fails.
+	// It can provide a fallback response or transform the error.
+	ExecuteOnModelError(ctx context.Context, req *Request, err error) (*Response, error)
+}
 
 // TokenLogprob represents log probability information for a single token.
 type TokenLogprob struct {

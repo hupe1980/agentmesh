@@ -236,7 +236,7 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			stream := m.client.Messages().NewStreaming(ctx, params)
 			if stream.Err() == nil {
 				// Streaming successful
-				m.streamGenerate(stream, yield)
+				m.streamingGenerate(stream, yield)
 				return
 			}
 			// If streaming fails, fall through to non-streaming
@@ -274,10 +274,8 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 	}
 }
 
-// streamGenerate handles streaming responses from Anthropic API
-//
-//nolint:gocyclo // Streaming requires handling many event types
-func (m *Model) streamGenerate(
+// streamingGenerate handles streaming responses from Anthropic API
+func (m *Model) streamingGenerate(
 	stream *ssestream.Stream[anthropic.MessageStreamEventUnion],
 	yield func(*model.Response, error) bool,
 ) {
@@ -306,15 +304,12 @@ func (m *Model) streamGenerate(
 
 		case anthropic.ContentBlockStartEvent:
 			if toolUse, ok := e.ContentBlock.AsAny().(anthropic.ToolUseBlock); ok {
-				var inputMap map[string]any
-				if err := json.Unmarshal([]byte(toolUse.JSON.Input.Raw()), &inputMap); err == nil {
-					toolCalls = append(toolCalls, message.ToolCall{
-						ID:        toolUse.ID,
-						Name:      toolUse.Name,
-						Type:      "function",
-						Arguments: inputMap,
-					})
-				}
+				toolCalls = append(toolCalls, message.ToolCall{
+					ID:        toolUse.ID,
+					Name:      toolUse.Name,
+					Type:      "function",
+					Arguments: toolUse.JSON.Input.Raw(),
+				})
 			}
 
 		case anthropic.MessageDeltaEvent:
@@ -482,16 +477,11 @@ func convertAnthropicResponseToMessage(resp *anthropic.Message) (message.Message
 			textParts = append(textParts, message.TextPart{Text: b.Text})
 
 		case anthropic.ToolUseBlock:
-			var inputMap map[string]any
-			if err := json.Unmarshal([]byte(b.JSON.Input.Raw()), &inputMap); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
-			}
-
 			toolCalls = append(toolCalls, message.ToolCall{
 				ID:        b.ID,
 				Name:      b.Name,
 				Type:      "function",
-				Arguments: inputMap,
+				Arguments: b.JSON.Input.Raw(),
 			})
 		}
 	}

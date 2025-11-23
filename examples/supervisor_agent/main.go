@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -181,8 +182,14 @@ func displayTranscript(query string, messages []message.Message) {
 				fmt.Printf("\n🎯 Supervisor Routing:\n")
 				for _, call := range m.ToolCalls {
 					fmt.Printf("   → Delegating to: %s\n", call.Name)
-					if args, ok := call.Arguments["task"].(string); ok {
-						fmt.Printf("   → Task: %s\n", args)
+					// Parse Arguments string to get task field
+					if call.Arguments != "" {
+						var args map[string]any
+						if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil {
+							if task, ok := args["task"].(string); ok {
+								fmt.Printf("   → Task: %s\n", task)
+							}
+						}
 					}
 				}
 			} else {

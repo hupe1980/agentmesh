@@ -621,6 +621,217 @@ go run main.go
 
 ## 🔧 Advanced Features
 
+### 🔌 Executor Pattern
+
+AgentMesh uses an **executor pattern** to separate execution concerns from graph orchestration. This provides clean boundaries, reusability, and extensibility.
+
+#### Model Executor
+
+The `model.Executor` interface handles model generation lifecycle:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/model"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+// Create executor wrapping a model
+mdl := openai.NewModel(openai.WithModel("gpt-4o"))
+executor := model.NewExecutor(mdl, model.WithExecutorName("gpt-4o"))
+
+// Use directly (without graph)
+req := &model.Request{
+    Messages: messages,
+    SystemPrompt: "You are a helpful assistant",
+}
+
+// Non-streaming: get final response
+resp, err := model.Last(executor.Generate(ctx, req))
+
+// Streaming: process incremental responses
+for resp, err := range executor.Generate(ctx, req) {
+    if err != nil { return err }
+    fmt.Print(message.Stringify(resp.Message))
+}
+```
+
+**Benefits:**
+- ✅ Reusable across graphs, chains, and direct calls
+- ✅ Centralized observability (tracing, metrics, logging)
+- ✅ Consistent plugin handling (BeforeModel, AfterModel, OnModelError)
+- ✅ Custom implementations (retry, caching, rate limiting)
+
+**Custom Executor Example:**
+```go
+// RetryExecutor wraps another executor with retry logic
+type RetryExecutor struct {
+    wrapped    model.Executor
+    maxRetries int
+}
+
+func (e *RetryExecutor) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+    return func(yield func(*model.Response, error) bool) {
+        for attempt := 0; attempt <= e.maxRetries; attempt++ {
+            for resp, err := range e.wrapped.Generate(ctx, req) {
+                if err == nil || attempt == e.maxRetries {
+                    if !yield(resp, err) { return }
+                }
+            }
+        }
+    }
+}
+
+// Use custom executor
+retryExecutor := &RetryExecutor{
+    wrapped:    model.NewExecutor(mdl),
+    maxRetries: 3,
+}
+```
+
+#### Tool Executor
+
+The `tool.Executor` interface handles tool execution lifecycle with support for sequential and parallel execution strategies:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/tool"
+)
+
+// Sequential execution (one tool at a time)
+executor := tool.NewSequentialExecutor(toolRegistry,
+    tool.WithContinueOnError(false),
+    tool.WithErrorPrefix("tool error"))
+
+// Parallel execution (concurrent tools)
+executor := tool.NewParallelExecutor(toolRegistry,
+    tool.WithMaxConcurrency(5),
+    tool.WithContinueOnError(true))
+
+// Execute tools directly (without graph)
+calls := []tool.Call{{
+    ID:        "call_1",
+    Name:      "get_weather",
+    Arguments: `{"location":"Berlin","unit":"celsius"}`,
+}}
+
+results, err := executor.Execute(ctx, calls)
+for _, result := range results {
+    if result.Error != nil {
+        log.Printf("Tool %s failed: %v", result.ToolName, result.Error)
+    } else {
+        fmt.Printf("Tool %s result: %v (took %v)\n", 
+            result.ToolName, result.Result, result.Duration)
+    }
+}
+```
+
+**Arguments as JSON Strings:**
+
+Tool arguments are passed as JSON strings (not maps) to eliminate wasteful marshal/unmarshal cycles:
+
+```
+LLM generates: {"location": "Berlin", "unit": "celsius"}
+    ↓
+ToolCall.Arguments: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
+    ↓
+tool.Call.Arguments: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
+    ↓
+Tool receives: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
+```
+
+This avoids: JSON string → map → JSON string → tool unmarshal
+
+**Custom Executor Example:**
+```go
+// CachedExecutor caches deterministic tool results
+type CachedExecutor struct {
+    wrapped tool.Executor
+    cache   map[string]tool.ExecutionResult
+    mu      sync.RWMutex
+}
+
+func (e *CachedExecutor) Execute(ctx context.Context, calls []tool.Call) ([]tool.ExecutionResult, error) {
+    results := make([]tool.ExecutionResult, len(calls))
+    uncached := []int{}
+    
+    e.mu.RLock()
+    for i, call := range calls {
+        key := call.Name + call.Arguments
+        if cached, ok := e.cache[key]; ok {
+            results[i] = cached
+        } else {
+            uncached = append(uncached, i)
+        }
+    }
+    e.mu.RUnlock()
+    
+    if len(uncached) > 0 {
+        // Execute uncached calls
+        uncachedCalls := make([]tool.Call, len(uncached))
+        for i, idx := range uncached {
+            uncachedCalls[i] = calls[idx]
+        }
+        
+        uncachedResults, err := e.wrapped.Execute(ctx, uncachedCalls)
+        if err != nil { return nil, err }
+        
+        // Store results in cache
+        e.mu.Lock()
+        for i, result := range uncachedResults {
+            idx := uncached[i]
+            key := calls[idx].Name + calls[idx].Arguments
+            e.cache[key] = result
+            results[idx] = result
+        }
+        e.mu.Unlock()
+    }
+    
+    return results, nil
+}
+```
+
+**Using Executors in Graphs:**
+
+Nodes accept executor interfaces, making them thin orchestration layers:
+
+```go
+// Create executors
+modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("gpt-4o"))
+toolExecutor := tool.NewParallelExecutor(registry)
+
+// Create nodes with executors
+modelNode, _ := agent.NewModelNode(modelExecutor,
+    agent.WithModelSystemPrompt("You are helpful"),
+    agent.WithModelTools(searchTool, calcTool))
+
+toolNode, _ := agent.NewToolNode(toolExecutor)
+
+// Add to graph
+g.AddNode(modelNode)
+g.AddNode(toolNode)
+```
+
+**Architecture Benefits:**
+
+```
+┌─────────────┐
+│  ModelNode  │  Graph layer: state extraction, routing
+└──────┬──────┘
+       │ delegates to
+┌──────▼──────┐
+│  Executor   │  Execution layer: lifecycle, plugins, observability
+└──────┬──────┘
+       │ calls
+┌──────▼──────┐
+│    Model    │  Core layer: API calls, streaming
+└─────────────┘
+```
+
+- **Separation of Concerns**: Nodes handle orchestration, executors handle execution
+- **Reusability**: Use executors outside of graphs (chains, direct calls)
+- **Testability**: Test execution logic independently
+- **Extensibility**: Custom executors without modifying core code
+
 ### ⏱️ Max Iterations
 
 Prevent infinite loops in cyclic graphs:

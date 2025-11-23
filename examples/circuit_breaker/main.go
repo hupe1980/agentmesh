@@ -90,8 +90,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Create model executor with circuit breaker
+	modelExecutor := model.NewExecutor(flakyModel, model.WithExecutorName("flaky-service"))
+
 	modelNode, err := agent.NewModelNode(
-		flakyModel,
+		modelExecutor,
 		agent.WithModelNodeName("flaky-service"),
 	)
 	if err != nil {

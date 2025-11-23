@@ -445,11 +445,12 @@ aiMsg := message.NewAIMessageFromText("It's sunny and 72°F")
 // System prompt
 systemMsg := message.NewSystemMessageFromText("You are a helpful assistant")
 
-// Tool call
+// Tool call (Arguments is a JSON string, not a map)
 toolCall := message.ToolCall{
-    ID:   "call_123",
-    Name: "get_weather",
-    Arguments: map[string]any{"location": "Paris"},
+    ID:        "call_123",
+    Name:      "get_weather",
+    Type:      "function",
+    Arguments: `{"location":"Paris"}`,  // JSON string for performance
 }
 aiWithTool := message.NewAIMessage(message.NewTextPart("Let me check"), toolCall)
 

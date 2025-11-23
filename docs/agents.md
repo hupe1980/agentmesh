@@ -88,9 +88,36 @@ START → model → tools → model → END
          └──────────────┘
 ```
 
-1. **Model node**: Generates response or tool calls
-2. **Tool node**: Executes requested tools in parallel
-3. **Conditional routing**: Loops back to model if tools were called, otherwise proceeds to END
+**Architecture:**
+
+1. **Model node**: Uses `model.Executor` to generate response or tool calls
+   - Delegates execution to executor (handles plugins, observability, streaming)
+   - Routes to "tool" if tool calls present, otherwise routes to END
+
+2. **Tool node**: Uses `tool.Executor` to execute requested tools
+   - Parallel execution via `ParallelExecutor` by default
+   - Formats results as ToolMessages
+   - Routes back to model node
+
+3. **Executor pattern benefits**:
+   - Clean separation: nodes handle orchestration, executors handle execution
+   - Reusable: same executors work in graphs, chains, or direct calls
+   - Extensible: custom executors (retry, caching) without modifying nodes
+   - Efficient: Arguments stay as JSON strings (no extra conversions)
+
+**Under the hood:**
+
+```go
+// ReActAgent creates executors and nodes
+modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react_model"))
+toolExecutor := tool.NewParallelExecutor(toolRegistry)
+
+modelNode := agent.NewModelNode(modelExecutor,
+    agent.WithModelSystemPrompt(systemPrompt),
+    agent.WithModelTools(tools...))
+
+toolNode := agent.NewToolNode(toolExecutor)
+```
 
 ---
 

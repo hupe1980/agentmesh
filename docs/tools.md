@@ -105,6 +105,121 @@ timeTool, _ := tool.NewFuncTool(
 
 ---
 
+## Tool execution {#tool-execution}
+
+### Executor pattern
+
+AgentMesh uses an executor pattern to separate tool execution from graph orchestration:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/tool"
+)
+
+// Create tool registry
+registry := map[string]tool.Tool{
+    "search": searchTool,
+    "calculate": calcTool,
+}
+
+// Sequential execution (one at a time)
+executor := tool.NewSequentialExecutor(registry,
+    tool.WithContinueOnError(false),
+    tool.WithErrorPrefix("execution failed"))
+
+// Parallel execution (concurrent)
+executor := tool.NewParallelExecutor(registry,
+    tool.WithMaxConcurrency(5),
+    tool.WithContinueOnError(true))
+
+// Execute tools directly (without graph)
+calls := []tool.Call{{
+    ID:        "call_1",
+    Name:      "search",
+    Arguments: `{"query":"AgentMesh","limit":10}`,
+}}
+
+results, err := executor.Execute(ctx, calls)
+for _, result := range results {
+    fmt.Printf("Tool: %s, Duration: %v\n", result.ToolName, result.Duration)
+    if result.Error != nil {
+        log.Printf("Error: %v", result.Error)
+    } else {
+        fmt.Printf("Result: %v\n", result.Result)
+    }
+}
+```
+
+### Arguments as JSON strings
+
+Tool arguments are passed as **JSON strings** (not maps) to eliminate wasteful marshal/unmarshal cycles:
+
+```
+LLM generates: {"query": "weather", "location": "Berlin"}
+    ↓
+ToolCall.Arguments: "{\"query\": \"weather\", \"location\": \"Berlin\"}"  (string)
+    ↓
+tool.Call.Arguments: "{\"query\": \"weather\", \"location\": \"Berlin\"}"  (string)
+    ↓
+Tool receives: "{\"query\": \"weather\", \"location\": \"Berlin\"}"  (string)
+    ↓
+Tool unmarshals to struct
+```
+
+This design avoids the inefficient pattern:
+1. ❌ Unmarshal JSON string to map (from LLM)
+2. ❌ Marshal map back to JSON string (to tool)
+3. ❌ Unmarshal JSON string to struct (in tool)
+
+Instead, arguments stay as JSON strings throughout the pipeline until the tool unmarshals them once.
+
+**Example:**
+```go
+// In your code (creating tool calls)
+call := tool.Call{
+    ID:        "call_abc",
+    Name:      "get_weather",
+    Arguments: `{"location":"Berlin","unit":"celsius"}`,  // JSON string
+}
+
+// Tool receives the JSON string and unmarshals once
+func (t *WeatherTool) Run(ctx context.Context, input string) (any, error) {
+    var args WeatherArgs
+    if err := json.Unmarshal([]byte(input), &args); err != nil {
+        return nil, err
+    }
+    // Use args...
+}
+```
+
+### Custom executors
+
+Create custom executors for specialized behavior:
+
+```go
+// Cached executor for deterministic tools
+type CachedExecutor struct {
+    wrapped tool.Executor
+    cache   map[string]tool.ExecutionResult
+    mu      sync.RWMutex
+}
+
+func (e *CachedExecutor) Execute(ctx context.Context, calls []tool.Call) ([]tool.ExecutionResult, error) {
+    // Check cache first
+    // Execute uncached calls
+    // Store results
+    return results, nil
+}
+
+// Use custom executor
+cachedExec := &CachedExecutor{
+    wrapped: tool.NewSequentialExecutor(registry),
+    cache:   make(map[string]tool.ExecutionResult),
+}
+```
+
+---
+
 ## Tool interface {#tool-interface}
 
 For more control, implement the `tool.Tool` interface:

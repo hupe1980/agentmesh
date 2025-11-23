@@ -3,29 +3,49 @@ package agent
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
-	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-// ModelNode is a reusable graph node that generates responses using a language model.
-// It implements the graph.Node interface and handles conversion between state and model inputs/outputs.
+// ModelNode is a graph node that executes a model.Executor to generate responses.
+//
+// The ModelNode is a thin orchestration layer that:
+//   - Extracts messages from state
+//   - Builds a Request with messages + configuration (system prompt, tools, schema)
+//   - Delegates execution to the provided Executor
+//   - Routes based on tool calls in the response
+//
+// Routing logic:
+//   - If the AI message contains tool calls -> routes to "tool" node
+//   - Otherwise -> routes to END
+//
+// The Executor handles execution concerns:
+//   - Plugin lifecycle (BeforeModel, AfterModel, OnModelError)
+//   - Observability (tracing, metrics, logging)
+//   - Streaming support
+//
+// Configuration (system prompt, tools, output schema) is stored in the node
+// and used to build the Request on each execution.
+//
+// Example:
+//
+//	executor := model.NewExecutor(myModel, model.WithExecutorName("gpt-4"))
+//	node, err := agent.NewModelNode(executor,
+//	    agent.WithModelSystemPrompt("You are a helpful assistant"),
+//	    agent.WithModelTools(searchTool, calculatorTool))
 type ModelNode struct {
 	name         string
-	model        model.Model
+	executor     model.Executor
 	systemPrompt string
 	tools        []tool.Tool
 	outputSchema *schema.OutputSchema
-	targets      []string // Configurable routing targets
+	targets      []string
 }
 
 // ModelNodeOption configures a ModelNode.
@@ -46,14 +66,6 @@ func WithModelSystemPrompt(prompt string) ModelNodeOption {
 	}
 }
 
-// WithModelTargets sets the possible routing targets for this node.
-// Default is []string{"tool", graph.EndNode}.
-func WithModelTargets(targets []string) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.targets = targets
-	}
-}
-
 // WithModelTools sets the tools available to the model for this node.
 // The tools are passed to the model along with the request.
 func WithModelTools(tools ...tool.Tool) ModelNodeOption {
@@ -62,52 +74,45 @@ func WithModelTools(tools ...tool.Tool) ModelNodeOption {
 	}
 }
 
-// WithOutputSchema sets a structured output schema with metadata.
+// WithOutputSchema sets a structured output schema for the model.
 // The schema constrains the model to generate valid JSON matching the schema.
-// Only works with models that support structured output (check Capabilities().StructuredOutput).
-//
-// This option provides better type safety and includes metadata like name, description, and strict mode.
-// Model implementations can use the Strict flag, Description, and other metadata for provider-specific behavior.
-//
-// Example:
-//
-//	type AnalysisResult struct {
-//	    Category   string  `json:"category" jsonschema:"required,description=The category"`
-//	    Confidence float64 `json:"confidence" jsonschema:"required,description=Confidence score"`
-//	}
-//	outputSchema, _ := schema.NewOutputSchema("analysis", AnalysisResult{},
-//	    schema.WithStrict(true),
-//	    schema.WithDescription("Analysis result with category and confidence"))
-//	node, err := NewModelNode(myModel, WithOutputSchema(&outputSchema))
+// Only works with models that support structured output (check model.Capabilities().StructuredOutput).
 func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
 	return func(n *ModelNode) {
 		n.outputSchema = outputSchema
 	}
 }
 
-// NewModelNode creates a reusable graph node that generates responses using the provided model.
-// The node takes the current message history from the state and produces a new AI message.
+// WithModelTargets sets the possible routing targets for this node.
+// Default is []string{"tool", graph.EndNode}.
+func WithModelTargets(targets []string) ModelNodeOption {
+	return func(n *ModelNode) {
+		n.targets = targets
+	}
+}
+
+// NewModelNode creates a new model node that executes the provided executor.
 //
-// This component is commonly used in agent implementations to delegate response generation
-// to a language model. It automatically handles the conversion between state and model inputs/outputs.
-//
-// Returns an error if the model parameter is nil.
+// The executor encapsulates all model execution logic including configuration,
+// plugins, and observability. This allows for flexible executor implementations
+// that can be swapped without modifying the node.
 //
 // Example:
 //
-//	node, err := NewModelNode(myModel)
-//	node, err := NewModelNode(myModel, WithModelNodeName("generator"))
-//
-// Plugins are automatically retrieved from context when the node executes.
-func NewModelNode(mdl model.Model, opts ...ModelNodeOption) (*ModelNode, error) {
-	if mdl == nil {
-		return nil, fmt.Errorf("model cannot be nil")
+//	executor := model.NewExecutor(myModel,
+//	    model.WithExecutorName("assistant"))
+//	node, err := agent.NewModelNode(executor,
+//	    agent.WithModelNodeName("model"),
+//	    agent.WithModelTargets([]string{"tool", graph.EndNode}))
+func NewModelNode(executor model.Executor, opts ...ModelNodeOption) (*ModelNode, error) {
+	if executor == nil {
+		return nil, fmt.Errorf("executor cannot be nil")
 	}
 
 	node := &ModelNode{
-		name:    "model",
-		model:   mdl,
-		targets: []string{"tool", graph.EndNode}, // Default targets
+		name:     "model",
+		executor: executor,
+		targets:  []string{"tool", graph.EndNode}, // Default targets
 	}
 
 	for _, opt := range opts {
@@ -131,12 +136,12 @@ func (n *ModelNode) Targets() []string {
 	return []string{"tool", graph.EndNode}
 }
 
-// Execute runs the model node logic.
+// Execute runs the model node logic by delegating to the executor.
 func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
 	// Get messages from state
 	messages := GetMessages(view)
 
-	// Create request
+	// Build request with messages + node configuration
 	req := &model.Request{
 		Messages:     messages,
 		SystemPrompt: n.systemPrompt,
@@ -144,90 +149,15 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (*graph.C
 		OutputSchema: n.outputSchema,
 	}
 
-	// Execute BeforeModel plugins from context
-	//nolint:nestif // Plugin callback pattern requires nested checks
-	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
-		resp, err := pm.ExecuteBeforeModel(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		if resp != nil {
-			// Short-circuit: use plugin response instead of calling model
-			builder := state.NewUpdateBuilder()
-			state.AppendUpdate(builder, MessagesKey, resp.Message)
-			updates, _ := builder.Build()
-			// ModelNode routes to tool if there are tool calls, otherwise ends
-			if aiMsg, ok := resp.Message.(*message.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
-				return graph.Goto("tool", updates), nil
-			}
-			return graph.End(updates), nil
-		}
+	// Inject plugin manager from context into executor context
+	if pm := callbacks.FromContext(ctx); pm != nil {
+		ctx = model.WithPlugin(ctx, pm)
 	}
 
-	// Observability: Create model call span
-	tp := trace.FromContext(ctx)
-	tracer := tp.Tracer("agentmesh.agent")
-	modelName := n.name // Use node name as model identifier
-	ctx, modelSpan := tracer.Start(ctx, "model.call",
-		trace.Attr{Key: "model.node", Value: modelName},
-		trace.Attr{Key: "model.messages", Value: len(messages)})
-	var modelErr error
-	defer func() {
-		modelSpan.End(modelErr)
-	}()
-
-	// Observability: Log model call start
-	logger := logging.FromContext(ctx)
-	logger.Debug("model call starting", "model", modelName, "messages", len(messages))
-
-	// Observability: Record model call metrics
-	mp := metrics.FromContext(ctx)
-	modelStartTime := time.Now()
-	modelCallCounter := mp.Counter("model.requests")
-	modelCallCounter.Add(ctx, 1, metrics.Attr{Key: "model", Value: modelName})
-
-	// Call the model
-	resp, err := model.Last(n.model.Generate(ctx, req))
-
-	// Observability: Record metrics after call
-	duration := time.Since(modelStartTime)
-	modelDuration := mp.Histogram("model.duration_ms")
-	modelDuration.Record(ctx, float64(duration.Milliseconds()),
-		metrics.Attr{Key: "model", Value: modelName})
-
+	// Execute via the executor - it handles plugins, observability, streaming, etc.
+	resp, err := model.Last(n.executor.Generate(ctx, req))
 	if err != nil {
-		modelErr = err
-		// Record error metric
-		modelErrors := mp.Counter("model.errors")
-		modelErrors.Add(ctx, 1, metrics.Attr{Key: "model", Value: modelName})
-		logger.Error("model call failed", "model", modelName, "error", err, "duration_ms", duration.Milliseconds())
-		return n.handleModelError(ctx, req, err)
-	}
-
-	// Record token usage if available
-	if resp.Usage != nil {
-		tokensUsed := mp.Counter("model.tokens_used")
-		tokensUsed.Add(ctx, float64(resp.Usage.TotalTokens),
-			metrics.Attr{Key: "model", Value: modelName},
-			metrics.Attr{Key: "type", Value: "total"})
-		logger.Debug("model call completed", "model", modelName,
-			"duration_ms", duration.Milliseconds(),
-			"tokens_used", resp.Usage.TotalTokens,
-			"prompt_tokens", resp.Usage.PromptTokens,
-			"completion_tokens", resp.Usage.CompletionTokens)
-	} else {
-		logger.Debug("model call completed", "model", modelName, "duration_ms", duration.Milliseconds())
-	}
-
-	// Execute AfterModel plugins from context
-	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
-		transformed, err := pm.ExecuteAfterModel(ctx, req, resp)
-		if err != nil {
-			return nil, err
-		}
-		if transformed != nil {
-			resp = transformed
-		}
+		return nil, err
 	}
 
 	// Return message in updates map (agent layer handles message storage)
@@ -240,23 +170,4 @@ func (n *ModelNode) Execute(ctx context.Context, view *state.ReadView) (*graph.C
 		return graph.Goto("tool", updates), nil
 	}
 	return graph.End(updates), nil
-}
-
-// handleModelError processes model execution errors through plugins.
-func (n *ModelNode) handleModelError(ctx context.Context, req *model.Request, err error) (*graph.Command, error) {
-	// Execute OnModelError plugins from context
-	if pm := callbacks.FromContext(ctx); pm != nil && pm.HasPlugins() {
-		fallback, transformedErr := pm.ExecuteOnModelError(ctx, req, err)
-		if fallback != nil {
-			// Plugin provided fallback response
-			builder := state.NewUpdateBuilder()
-			state.AppendUpdate(builder, MessagesKey, fallback.Message)
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
-		}
-		if transformedErr != nil {
-			return nil, transformedErr
-		}
-	}
-	return nil, err
 }

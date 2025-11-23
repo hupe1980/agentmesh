@@ -323,17 +323,18 @@ func (m *Model) streamGenerate(
 
 			if part.FunctionCall != nil {
 				// Accumulate tool calls for final message
-				args := make(map[string]any)
+				// Marshal args to JSON string
+				argsJSON := "{}"
 				if part.FunctionCall.Args != nil {
-					for k, v := range part.FunctionCall.Args {
-						args[k] = v
+					if b, err := json.Marshal(part.FunctionCall.Args); err == nil {
+						argsJSON = string(b)
 					}
 				}
 				toolCalls = append(toolCalls, message.ToolCall{
 					ID:        part.FunctionCall.Name, // Gemini uses name as ID
 					Name:      part.FunctionCall.Name,
 					Type:      "function",
-					Arguments: args,
+					Arguments: argsJSON,
 				})
 			}
 		}
@@ -411,17 +412,18 @@ func (m *Model) blockingGenerate(
 		}
 
 		if part.FunctionCall != nil {
-			args := make(map[string]any)
+			// Marshal args to JSON string
+			argsJSON := "{}"
 			if part.FunctionCall.Args != nil {
-				for k, v := range part.FunctionCall.Args {
-					args[k] = v
+				if b, err := json.Marshal(part.FunctionCall.Args); err == nil {
+					argsJSON = string(b)
 				}
 			}
 			toolCalls = append(toolCalls, message.ToolCall{
 				ID:        part.FunctionCall.Name, // Gemini uses name as ID
 				Name:      part.FunctionCall.Name,
 				Type:      "function",
-				Arguments: args,
+				Arguments: argsJSON,
 			})
 		}
 	}
@@ -568,10 +570,15 @@ func convertMessagesToGemini(msgs []message.Message) ([]*genai.Content, string) 
 
 			// Add tool calls
 			for _, tc := range aiMsg.ToolCalls {
+				// Unmarshal Arguments string to map for Gemini
+				var args map[string]any
+				if tc.Arguments != "" {
+					_ = json.Unmarshal([]byte(tc.Arguments), &args)
+				}
 				gParts = append(gParts, &genai.Part{
 					FunctionCall: &genai.FunctionCall{
 						Name: tc.Name,
-						Args: tc.Arguments,
+						Args: args,
 					},
 				})
 			}

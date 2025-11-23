@@ -82,26 +82,35 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
 	}
 
-	// Model node: generate response and route based on tool calls
-	// System prompt is sent per-request (Pydantic AI style) for token efficiency
+	// Create model executor - encapsulates model lifecycle management
+	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
+
+	// Model node: orchestration layer that builds requests and delegates to executor
+	// System prompt, tools, and schema are stored in the node and used per-request
 	modelNodeOpts := []ModelNodeOption{
-		WithModelTools(tools...),
+		WithModelNodeName("model"),
 		WithModelSystemPrompt(config.systemPrompt),
+		WithModelTools(tools...),
 		WithModelTargets([]string{"tool", graph.EndNode}),
 	}
 	if config.outputSchema != nil {
 		modelNodeOpts = append(modelNodeOpts, WithOutputSchema(config.outputSchema))
 	}
-	modelNode, err := NewModelNode(mdl, modelNodeOpts...)
+	modelNode, err := NewModelNode(modelExecutor, modelNodeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
 	}
 	_ = g.AddNode(modelNode)
 
-	// Tool node: execute tool calls and return to model
-	toolNode, err := NewToolNode(toolRegistry,
-		WithToolTargets([]string{"model"}),
-		WithToolErrorPrefix("react agent"))
+	// Create tool executor - use sequential by default for deterministic behavior
+	toolExecutor := tool.NewSequentialExecutor(toolRegistry,
+		tool.WithErrorPrefix("react agent"),
+		tool.WithContinueOnError(false))
+
+	// Tool node: orchestration layer that extracts calls and delegates to executor
+	toolNode, err := NewToolNode(toolExecutor,
+		WithToolNodeName("tool"),
+		WithToolTargets([]string{"model"}))
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
 	}

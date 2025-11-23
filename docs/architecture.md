@@ -133,6 +133,47 @@ AgentMesh follows a **clean, interface-based architecture** with strict separati
 
 > **📖 For detailed executor architecture and implementation guide, see [EXECUTOR.md](/docs/EXECUTOR.md)**
 
+### Execution Abstraction Layer
+
+AgentMesh uses an **executor pattern** to separate execution concerns from orchestration:
+
+**Model Execution** (`pkg/model/executor.go`):
+- `model.Executor` interface: Handles model generation lifecycle
+- `DefaultExecutor`: Standard implementation with plugins, observability, streaming
+- Custom executors: Retry, caching, rate limiting, circuit breakers
+- **Unified Interface**: `iter.Seq2[*Response, error]` for streaming and non-streaming
+
+**Tool Execution** (`pkg/tool/executor.go`):
+- `tool.Executor` interface: Handles tool execution lifecycle
+- `SequentialExecutor`: One tool at a time (safe for dependent tools)
+- `ParallelExecutor`: Concurrent execution with optional concurrency limits
+- Custom executors: Caching, batching, circuit breakers
+- **Arguments as JSON Strings**: `Call.Arguments` is `string` (not `map[string]any`)
+  - Eliminates wasteful marshal/unmarshal cycles
+  - Arguments flow as JSON from LLM → ToolCall → Executor → Tool
+
+**Node Architecture**:
+```
+┌─────────────┐
+│  ModelNode  │  Graph layer: state extraction, routing
+└──────┬──────┘
+       │ delegates to
+┌──────▼──────┐
+│model.Executor│ Execution layer: lifecycle, plugins, observability
+└──────┬──────┘
+       │ calls
+┌──────▼──────┐
+│    Model    │  Core layer: API calls, streaming
+└─────────────┘
+```
+
+**Benefits**:
+- ✅ **Reusability**: Use executors in graphs, chains, or direct calls
+- ✅ **Testability**: Test execution independently from graph/state
+- ✅ **Extensibility**: Custom implementations without modifying core
+- ✅ **Performance**: Arguments stay as JSON strings (no extra conversions)
+- ✅ **Clean Boundaries**: Nodes are thin orchestration layers (~130-180 lines)
+
 The rest of this document explores the **Pregel BSP execution engine** (PregelExecutor) that powers the framework.
 
 ---

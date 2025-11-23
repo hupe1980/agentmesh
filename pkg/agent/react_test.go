@@ -17,27 +17,29 @@ import (
 
 // Tests - Nil Checking
 
-func TestNewModelNode_NilModel(t *testing.T) {
+func TestNewModelNode_NilExecutor(t *testing.T) {
 	_, err := NewModelNode(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model cannot be nil")
+	assert.Contains(t, err.Error(), "executor cannot be nil")
 }
 
-func TestNewToolNode_NilRegistry(t *testing.T) {
+func TestNewToolNode_NilExecutor(t *testing.T) {
 	_, err := NewToolNode(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "toolRegistry cannot be nil")
+	assert.Contains(t, err.Error(), "executor cannot be nil")
 }
 
-func TestNewModelNode_ValidModel(t *testing.T) {
-	node, err := NewModelNode(&testutil.MockModel{})
+func TestNewModelNode_ValidExecutor(t *testing.T) {
+	executor := model.NewExecutor(&testutil.MockModel{})
+	node, err := NewModelNode(executor)
 	require.NoError(t, err)
 	assert.NotNil(t, node)
 }
 
-func TestNewToolNode_ValidRegistry(t *testing.T) {
+func TestNewToolNode_ValidExecutor(t *testing.T) {
 	registry := make(map[string]tool.Tool)
-	node, err := NewToolNode(registry)
+	executor := tool.NewSequentialExecutor(registry)
+	node, err := NewToolNode(executor)
 	require.NoError(t, err)
 	assert.NotNil(t, node)
 }
@@ -166,7 +168,7 @@ func TestAgent_ToolCalling(t *testing.T) {
 					{
 						ID:        "call_1",
 						Name:      "weather",
-						Arguments: map[string]any{"location": "Berlin"},
+						Arguments: `{"location":"Berlin"}`,
 					},
 				}
 				return aiMsg, nil

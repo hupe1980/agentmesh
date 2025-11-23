@@ -130,11 +130,31 @@ func Stringify(m Message) string {
 }
 
 // ToolCall mirrors LangChain tool invocation metadata.
+//
+// The Arguments field is a JSON string (not a map) to avoid wasteful
+// marshal/unmarshal cycles in the execution pipeline. Arguments flow as
+// JSON strings from LLM generation through message processing to tool execution.
+//
+// This design eliminates the need to:
+//   1. Unmarshal JSON string to map (from LLM)
+//   2. Marshal map back to JSON string (to tool)
+//
+// Instead, arguments stay as JSON strings throughout:
+//   LLM → ToolCall.Arguments (string) → tool.Call.Arguments (string) → Tool
+//
+// Example:
+//
+//	toolCall := message.ToolCall{
+//	    ID:        "call_abc123",
+//	    Name:      "get_weather",
+//	    Type:      "function",
+//	    Arguments: `{"location":"Berlin","unit":"celsius"}`,
+//	}
 type ToolCall struct {
-	ID        string
-	Name      string
-	Type      string
-	Arguments map[string]any
+	ID        string // Unique identifier for this tool call
+	Name      string // Tool/function name to invoke
+	Type      string // Call type (typically "function")
+	Arguments string // Tool arguments as JSON string (not map[string]any)
 }
 
 // Message represents the minimal shape shared across message variants.
@@ -577,9 +597,11 @@ func cloneToolCalls(calls []ToolCall) []ToolCall {
 	}
 	out := make([]ToolCall, len(calls))
 	for i, call := range calls {
-		out[i] = ToolCall{ID: call.ID, Name: call.Name, Type: call.Type}
-		if len(call.Arguments) > 0 {
-			out[i].Arguments = cloneMap(call.Arguments)
+		out[i] = ToolCall{
+			ID:        call.ID,
+			Name:      call.Name,
+			Type:      call.Type,
+			Arguments: call.Arguments,
 		}
 	}
 	return out
