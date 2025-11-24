@@ -17,58 +17,58 @@ import (
 //   - Audit trail of what was written vs what was applied
 type PendingWrite struct {
 	// NodeName is the node that produced this write
-	NodeName string
+	NodeName string `json:"nodeName"`
 
 	// Channel is the state channel being updated
-	Channel string
+	Channel string `json:"channel"`
 
 	// Value is the update value to be applied
-	Value any
+	Value any `json:"value"`
 
 	// Timestamp when this write was created
-	Timestamp time.Time
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // Checkpoint represents a snapshot of graph execution state at a specific point in time.
 // It captures all information needed to resume execution from that point.
 type Checkpoint struct {
 	// RunID uniquely identifies the execution run
-	RunID string
+	RunID string `json:"runID"`
 
 	// Superstep is the BSP superstep number when this checkpoint was created
-	Superstep int64
+	Superstep int64 `json:"superstep"`
 
 	// Version is a monotonically increasing counter for checkpoint validation.
 	// Each state mutation increments the version, enabling detection of checkpoint corruption,
 	// concurrent modifications, or incorrect restore sequences.
-	Version uint64
+	Version uint64 `json:"version"`
 
 	// Timestamp when the checkpoint was created
-	Timestamp time.Time
+	Timestamp time.Time `json:"timestamp"`
 
 	// Signature is an HMAC-SHA256 signature of the checkpoint data for integrity verification.
 	// When signing is enabled, this field is populated during Save() and verified during Load().
 	// An empty signature indicates the checkpoint was saved without signing enabled.
-	Signature []byte
+	Signature []byte `json:"signature,omitempty"`
 
 	// State contains all channel values including message history (via MessagesKey),
 	// conversation state, and any custom state registered with the state manager.
 	// Message history is stored in state, not as a separate Messages field.
-	State map[string]any
+	State map[string]any `json:"state"`
 
 	// CompletedNodes tracks which nodes have finished execution.
 	// Needed for smart resume: skip re-executing completed nodes.
-	CompletedNodes []string
+	CompletedNodes []string `json:"completedNodes"`
 
 	// PausedNodes tracks which nodes are paused (e.g., waiting for human input).
 	// Critical for human-in-the-loop workflows: resume from the exact pause point.
-	PausedNodes []string
+	PausedNodes []string `json:"pausedNodes,omitempty"`
 
 	// PendingWrites are state updates produced by nodes but not yet applied.
 	// Used for two-phase commit: checkpoint after node execution but before
 	// state application. Enables fine-grained interrupts and human review.
 	// When resuming, these writes are applied first before continuing execution.
-	PendingWrites []PendingWrite
+	PendingWrites []PendingWrite `json:"pendingWrites,omitempty"`
 
 	// Committed indicates whether PendingWrites have been applied to state.
 	// Two-phase commit protocol:
@@ -76,10 +76,10 @@ type Checkpoint struct {
 	//   2. Apply PendingWrites to state
 	//   3. Update checkpoint (Committed=true)
 	// On resume: only apply PendingWrites if Committed=false to prevent double-application.
-	Committed bool
+	Committed bool `json:"committed"`
 
 	// Metadata for custom checkpoint annotations
-	Metadata map[string]any
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Checkpointer defines the interface for checkpoint persistence.

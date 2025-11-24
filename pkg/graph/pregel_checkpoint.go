@@ -239,11 +239,21 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 	// PHASE 2: Apply PendingWrites to state (now safe - checkpoint is durable)
 	p.applyPendingUpdates(ctx, compiled, adapter)
 
-	// NOTE: We don't set chkpt.Committed=true here because:
-	// 1. The checkpoint object may be reused/modified by test code
-	// 2. The Committed flag is not persisted back to storage anyway
-	// 3. On next checkpoint save, applied writes will be in State (not PendingWrites)
-	// 4. The two-phase commit guarantee is achieved by save-then-apply sequence
+	// PHASE 3: Mark checkpoint as committed to prevent double-application on resume
+	// This is critical for correctness: without this, resuming from this checkpoint
+	// would replay the pending writes again, causing duplicate state updates.
+	chkpt.Committed = true
+	chkpt.PendingWrites = nil // Clear pending writes since they're now committed
+
+	if err := p.saveCheckpointSync(ctx, opts, chkpt); err != nil {
+		logger.Warn("failed to update checkpoint committed status",
+			"run_id", opts.RunID,
+			"superstep", superstep,
+			"error", err)
+		// Non-fatal: updates were applied, so execution can continue.
+		// Worst case: resume will attempt to replay PendingWrites but state
+		// will already contain the updates (idempotent if updates are idempotent).
+	}
 
 	logger.Debug("two-phase commit completed",
 		"run_id", opts.RunID,

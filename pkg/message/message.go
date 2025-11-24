@@ -32,23 +32,23 @@ const (
 
 // TextPart is a plain UTF-8 text content segment.
 type TextPart struct {
-	Text string
+	Text string `json:"text"`
 }
 
 func (TextPart) isPart() {}
 
 // DataPart is a structured data segment (for example a JSON object map).
 type DataPart struct {
-	Data map[string]any
+	Data map[string]any `json:"data"`
 }
 
 func (DataPart) isPart() {}
 
 // FilePart represents a file segment within a message or artifact.
 type FilePart struct {
-	File     FilePartContent
-	MimeType string
-	Name     string
+	File     FilePartContent `json:"file"`
+	MimeType string          `json:"mimeType"`
+	Name     string          `json:"name"`
 }
 
 func (FilePart) isPart() {}
@@ -58,22 +58,22 @@ type FilePartContent interface{ isFilePartContent() }
 
 // FileRawBytes represents a file with its content provided directly as raw bytes.
 type FileRawBytes struct {
-	Bytes []byte
+	Bytes []byte `json:"bytes"`
 }
 
 // FileBase64 represents a file with its content provided as a base64-encoded string.
 type FileBase64 struct {
-	Base64 string
+	Base64 string `json:"base64"`
 }
 
 // FilePath represents a local filesystem path to a file.
 type FilePath struct {
-	Path string
+	Path string `json:"path"`
 }
 
 // FileURI represents a file whose content is available via URI.
 type FileURI struct {
-	URI string
+	URI string `json:"uri"`
 }
 
 func (FileRawBytes) isFilePartContent() {}
@@ -90,7 +90,7 @@ type FunctionCall struct {
 
 // FunctionCallPart wraps a FunctionCall as a content part.
 type FunctionCallPart struct {
-	FunctionCall *FunctionCall
+	FunctionCall *FunctionCall `json:"functionCall"`
 }
 
 func (FunctionCallPart) isPart() {}
@@ -104,7 +104,7 @@ type FunctionResponse struct {
 
 // FunctionResponsePart wraps a FunctionResponse as a content part.
 type FunctionResponsePart struct {
-	FunctionResponse *FunctionResponse
+	FunctionResponse *FunctionResponse `json:"functionResponse"`
 }
 
 func (FunctionResponsePart) isPart() {}
@@ -152,10 +152,10 @@ func Stringify(m Message) string {
 //	    Arguments: `{"location":"Berlin","unit":"celsius"}`,
 //	}
 type ToolCall struct {
-	ID        string // Unique identifier for this tool call
-	Name      string // Tool/function name to invoke
-	Type      string // Call type (typically "function")
-	Arguments string // Tool arguments as JSON string (not map[string]any)
+	ID        string `json:"id"`        // Unique identifier for this tool call
+	Name      string `json:"name"`      // Tool/function name to invoke
+	Type      string `json:"type"`      // Call type (typically "function")
+	Arguments string `json:"arguments"` // Tool arguments as JSON string (not map[string]any)
 }
 
 // Message represents the minimal shape shared across message variants.
