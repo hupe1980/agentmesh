@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -180,8 +181,6 @@ func (g *Graph) GetEdges() []EdgeInfo {
 }
 
 // GetTopology returns a comprehensive view of the graph structure.
-//
-//nolint:gocyclo // Acceptable complexity for comprehensive topology analysis
 func (g *Graph) GetTopology() *Topology {
 	topo := &Topology{
 		Nodes:         g.GetAllNodeInfo(),
@@ -201,11 +200,8 @@ func (g *Graph) GetTopology() *Topology {
 	// Find exit points (nodes that target END in their DeclaredTargets)
 	for name, node := range g.Nodes {
 		targets := node.Targets()
-		for _, target := range targets {
-			if target == EndNode {
-				topo.ExitPoints = append(topo.ExitPoints, name)
-				break
-			}
+		if slices.Contains(targets, EndNode) {
+			topo.ExitPoints = append(topo.ExitPoints, name)
 		}
 	}
 	sort.Strings(topo.ExitPoints)
@@ -230,11 +226,8 @@ func (g *Graph) GetTopology() *Topology {
 		if !hasIncoming {
 			for _, node := range g.Nodes {
 				targets := node.Targets()
-				for _, target := range targets {
-					if target == name {
-						hasIncoming = true
-						break
-					}
+				if slices.Contains(targets, name) {
+					hasIncoming = true
 				}
 				if hasIncoming {
 					break

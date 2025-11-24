@@ -804,7 +804,6 @@ func (n *pregelNodeAdapter[I, O]) shouldInterruptAfter() bool {
 // createInterruptCheckpoint creates a checkpoint with pending writes and pauses execution.
 func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
 	ctx context.Context,
-	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
 	updates state.Updates,
 	isBefore bool,
 ) {
@@ -981,7 +980,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 
 	if !isResuming && n.shouldInterruptBefore() {
 		// Create checkpoint with pending writes (node not executed yet)
-		n.createInterruptCheckpoint(ctx, vertex, nil, true)
+		n.createInterruptCheckpoint(ctx, nil, true)
 		// Mark node as paused so it doesn't execute again until resumed
 		if n.executor != nil && n.executor.metrics != nil {
 			n.executor.metrics.AddPaused(n.nodeName)
@@ -1066,7 +1065,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// Check for interrupt-after (before applying updates)
 	if n.shouldInterruptAfter() {
 		// Create checkpoint with pending writes (updates not yet applied)
-		n.createInterruptCheckpoint(ctx, vertex, updates, false)
+		n.createInterruptCheckpoint(ctx, updates, false)
 		// Mark node as paused so execution doesn't continue
 		if n.executor != nil && n.executor.metrics != nil {
 			n.executor.metrics.AddPaused(n.nodeName)

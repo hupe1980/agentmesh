@@ -286,7 +286,7 @@ func TestInMemoryMessageBus_Stats(t *testing.T) {
 		t.Fatalf("Send failed: %v", err)
 	}
 
-	stats := bus.Stats()
+	stats := bus.Stats(context.Background())
 	if stats.TotalMessages != 3 {
 		t.Errorf("Expected 3 total messages, got %d", stats.TotalMessages)
 	}
@@ -346,7 +346,7 @@ func TestInMemoryMessageBus_BackpressureNoMessageLoss(t *testing.T) {
 	}
 
 	// Verify mailbox is full
-	stats := bus.Stats()
+	stats := bus.Stats(context.Background())
 	if stats.TotalMessages != mailboxSize {
 		t.Errorf("Expected %d messages in mailbox, got %d", mailboxSize, stats.TotalMessages)
 	}

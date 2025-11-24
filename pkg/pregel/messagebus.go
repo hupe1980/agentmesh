@@ -341,6 +341,8 @@ func (store *InMemoryMessageBus[M]) Clear(vertex string) error {
 
 // Close releases resources and closes all channels.
 // Closes all shards and their associated mailboxes.
+// Note: Close is typically called during shutdown and doesn't take context,
+// but checks are minimal so cancellation is not critical here.
 func (store *InMemoryMessageBus[M]) Close() error {
 	store.globalMu.Lock()
 	defer store.globalMu.Unlock()
@@ -351,7 +353,7 @@ func (store *InMemoryMessageBus[M]) Close() error {
 
 	store.closed = true
 
-	// Close all shards
+	// Close all shards (fast operation, no context check needed)
 	for i := range store.shards {
 		shard := &store.shards[i]
 		shard.mu.Lock()
@@ -382,12 +384,20 @@ type MessageStoreStats struct {
 
 // Stats returns statistics about the message store state.
 // Only available for InMemoryMessageBus.
-// Aggregates stats from all shards.
-func (store *InMemoryMessageBus[M]) Stats() MessageStoreStats {
+// Aggregates stats from all shards with context cancellation support.
+func (store *InMemoryMessageBus[M]) Stats(ctx context.Context) MessageStoreStats {
 	stats := MessageStoreStats{}
 
 	// Aggregate stats from all shards
 	for i := range store.shards {
+		// Check context cancellation every 32 shards
+		if i%32 == 0 {
+			if err := ctx.Err(); err != nil {
+				// Context cancelled - return partial stats
+				return stats
+			}
+		}
+
 		shard := &store.shards[i]
 		shard.mu.Lock()
 

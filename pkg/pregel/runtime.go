@@ -78,10 +78,19 @@ func (sf *shardedFrontier) Add(vertexID string) {
 // Returns a flat map of all vertices that had pending messages.
 // This operation locks all shards sequentially (not performance-critical
 // as it only happens once per superstep at barrier synchronization point).
-func (sf *shardedFrontier) Drain() map[string]struct{} {
+// Respects context cancellation to allow graceful shutdown.
+func (sf *shardedFrontier) Drain(ctx context.Context) map[string]struct{} {
 	result := make(map[string]struct{})
 
 	for i := range shardCount {
+		// Check context cancellation every 32 shards (balance responsiveness vs overhead)
+		if i%32 == 0 {
+			if err := ctx.Err(); err != nil {
+				// Context cancelled - return partial results for graceful shutdown
+				return result
+			}
+		}
+
 		shard := &sf.shards[i]
 		shard.mu.Lock()
 		for v := range shard.vertices {
@@ -532,7 +541,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			}
 		}
 
-		frontier, err = r.consumeNextFrontier()
+		frontier, err = r.consumeNextFrontier(ctx)
 		if err != nil {
 			logger.Error("failed to consume next frontier",
 				"superstep", superstep,
@@ -562,7 +571,8 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 
 	// Drain nextFrontier to include any vertices that received messages via Deliver()
 	// before Run() was called. This handles pre-seeded messages.
-	predelivered := r.nextFrontier.Drain()
+	// Use background context since this is called before execution starts
+	predelivered := r.nextFrontier.Drain(context.Background())
 	for name := range predelivered {
 		frontier[name] = struct{}{}
 	}
@@ -570,10 +580,11 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 	return frontier
 }
 
-func (r *Runtime[S, M]) consumeNextFrontier() (map[string]struct{}, error) {
+func (r *Runtime[S, M]) consumeNextFrontier(ctx context.Context) (map[string]struct{}, error) {
 	// Drain all shards and reset for next superstep
 	// This is lock-free from the perspective of message senders (each shard locks independently)
-	frontier := r.nextFrontier.Drain()
+	// Respects context cancellation for graceful shutdown
+	frontier := r.nextFrontier.Drain(ctx)
 
 	if len(frontier) == 0 {
 		return nil, nil // No error, just no work
