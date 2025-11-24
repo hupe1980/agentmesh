@@ -128,6 +128,54 @@ func (b *CommandBuilder) Goto(target string) (*Command, error) {
 	}, nil
 }
 
+// GotoIf conditionally routes to a target based on a boolean condition.
+// This is a terminal operation that builds the Command if condition is true.
+// If condition is false, returns nil to allow chaining with other GotoIf calls.
+//
+// This enables fluent conditional routing patterns:
+//
+// Example - Simple conditional:
+//
+//	if hasToolCalls {
+//	    return graph.NewCommand().
+//	        Set(statusKey, "calling_tools").
+//	        GotoIf("tool", hasToolCalls)
+//	}
+//	return graph.NewCommand().GotoIf("end", !hasToolCalls)
+//
+// Example - Chained conditionals:
+//
+//	cmd := graph.NewCommand().Set(processedKey, true)
+//	if result, err := cmd.GotoIf("tool", hasToolCalls); err != nil {
+//	    return nil, err
+//	} else if result != nil {
+//	    return result, nil
+//	}
+//	return cmd.GotoIf("end", true) // Fallback route
+//
+// Example - Multi-way routing:
+//
+//	cmd := graph.NewCommand().Set(stateKey, "routing")
+//	if result, _ := cmd.GotoIf("urgent", priority == "high"); result != nil {
+//	    return result, nil
+//	}
+//	if result, _ := cmd.GotoIf("normal", priority == "medium"); result != nil {
+//	    return result, nil
+//	}
+//	return cmd.GotoIf("low_priority", true)
+func (b *CommandBuilder) GotoIf(target string, condition bool) (*Command, error) {
+	if len(b.errors) > 0 {
+		return nil, errors.Join(b.errors...)
+	}
+	if !condition {
+		return nil, nil
+	}
+	return &Command{
+		Updates: b.updates,
+		Goto:    []string{target},
+	}, nil
+}
+
 // GotoAll creates a command that routes to multiple targets (parallel execution).
 // This is a terminal operation that builds the Command and returns any validation errors.
 //
