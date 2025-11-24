@@ -107,19 +107,18 @@ AgentMesh follows a **component-based architecture** with clean separation of co
     │  • State versioning    │  │  • Execution Statistics    │
     └────────────────────────┘  └──────────┬─────────────────┘
                                            │
-                         ┌─────────────────┴─────────────────┐
-                         │ implements                        │ implements
-                         ▼                                   ▼
-            ┌─────────────────────────┐      ┌─────────────────────────┐
-            │ PregelExecutor[I,O]     │      │ SequentialExecutor[I,O] │
-            │ (BSP + graphRuntime)    │      │ (sequential)            │
-            │                         │      │                         │
-            │ • BSP Supersteps        │      │ • Topological order     │
-            │ • Parallel execution    │      │ • Single-threaded       │
-            │ • Worker Pool           │      │ • No synchronization    │
-            │ • Mailbox System        │      │ • For debugging         │
-            │ • pkg/pregel runtime    │      │                         │
-            └─────────────────────────┘      └─────────────────────────┘
+                                           │ implements
+                                           ▼
+                              ┌─────────────────────────┐
+                              │ PregelExecutor[I,O]     │
+                              │ (BSP + graphRuntime)    │
+                              │                         │
+                              │ • BSP Supersteps        │
+                              │ • Parallel execution    │
+                              │ • Worker Pool           │
+                              │ • Mailbox System        │
+                              │ • pkg/pregel runtime    │
+                              └─────────────────────────┘
 ```
 
 ### Component Layers
@@ -136,9 +135,9 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 **Core Framework** (`pkg/graph`) - **Unified Package**
 - **Compiled[I,O]**: Generic compiled graph that orchestrates execution via StateManager + Executor
 - **Builder[I,O]**: Fluent API for graph construction with generics
-- **Executor[I,O]**: Generic interface for execution strategies
+- **Executor[I,O]**: Generic interface for pluggable execution strategies
   - `PregelExecutor[I,O]`: Default BSP parallel execution via `graphRuntime` + `pkg/pregel`
-  - `SequentialExecutor[I,O]`: Sequential execution for debugging
+  - Custom executors can be implemented by users as needed
 - **Validation**: Comprehensive pre-execution validation (topology, cycles, reachability)
 - **StateManager**: Composed interface with focused sub-interfaces
   - `Reader`: Read-only state access for nodes
@@ -690,15 +689,15 @@ retryExecutor := &RetryExecutor{
 
 #### Tool Executor
 
-The `tool.Executor` interface handles tool execution lifecycle with support for sequential and parallel execution strategies:
+The `tool.Executor` interface handles tool execution lifecycle:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-// Sequential execution (one tool at a time)
-executor := tool.NewSequentialExecutor(toolRegistry,
+// Default executor (sequential, one tool at a time)
+executor := tool.NewExecutor(toolRegistry,
     tool.WithContinueOnError(false),
     tool.WithErrorPrefix("tool error"))
 

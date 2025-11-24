@@ -122,8 +122,8 @@ registry := map[string]tool.Tool{
     "calculate": calcTool,
 }
 
-// Sequential execution (one at a time)
-executor := tool.NewSequentialExecutor(registry,
+// Default executor (sequential, one at a time)
+executor := tool.NewExecutor(registry,
     tool.WithContinueOnError(false),
     tool.WithErrorPrefix("execution failed"))
 

@@ -226,7 +226,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.SetEntryPoint("decider")
 
 		// Conditional routing based on "choice" value		// Use Sequential executor for deterministic routing
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -283,7 +283,7 @@ func TestConditionalRouting(t *testing.T) {
 		g.SetEntryPoint("source")
 
 		// Route to both targets		// Use Sequential to avoid repeated executions
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()

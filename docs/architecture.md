@@ -131,8 +131,6 @@ AgentMesh follows a **clean, interface-based architecture** with strict separati
    - No changes to Compiled or Graph needed
    - Full access to topology via Structure interface
 
-> **📖 For detailed executor architecture and implementation guide, see [EXECUTOR.md](/docs/EXECUTOR.md)**
-
 ### Execution Abstraction Layer
 
 AgentMesh uses an **executor pattern** to separate execution concerns from orchestration:
@@ -145,7 +143,7 @@ AgentMesh uses an **executor pattern** to separate execution concerns from orche
 
 **Tool Execution** (`pkg/tool/executor.go`):
 - `tool.Executor` interface: Handles tool execution lifecycle
-- `SequentialExecutor`: One tool at a time (safe for dependent tools)
+- `tool.NewExecutor`: Default sequential executor, one tool at a time
 - `ParallelExecutor`: Concurrent execution with optional concurrency limits
 - Custom executors: Caching, batching, circuit breakers
 - **Arguments as JSON Strings**: `Call.Arguments` is `string` (not `map[string]any`)
@@ -1219,19 +1217,6 @@ runOptions (interface{} bridge) → pregel.Runtime (typed execution)
 ```
 
 The bridging pattern allows clean separation while maintaining type safety at both configuration and execution time.
-
-### Alternative: SimpleGraphExecutor
-
-For **debugging** or **testing**, you can use `SequentialExecutor` (sequential, single-threaded):
-
-```go
-// For debugging: Sequential execution
-g := graph.New()
-// ... build graph ...
-compiled, _ := graph.Compile(g, graph.NewSequentialExecutor())
-
-results := compiled.Run(ctx, initialMessages)  // Sequential execution
-```
 
 ### Custom Executors
 

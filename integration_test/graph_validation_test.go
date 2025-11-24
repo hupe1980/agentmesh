@@ -187,7 +187,7 @@ func TestErrorHandling(t *testing.T) {
 		g.AddNode(node2)
 		g.SetEntryPoint("node1")
 
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -342,7 +342,7 @@ func TestComplexGraphPatterns(t *testing.T) {
 		g.AddNode(loop)
 		g.SetEntryPoint("loop")
 
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -374,7 +374,7 @@ func TestCompileOptions(t *testing.T) {
 		g.SetEntryPoint("test")
 
 		// Compile with Sequential executor
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 		require.NotNil(t, compiled)
 
@@ -438,7 +438,7 @@ func TestTopologyComputation(t *testing.T) {
 
 		g.SetEntryPoint("a")
 
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		// Verify topology can be retrieved
@@ -478,7 +478,7 @@ func TestTopologyComputation(t *testing.T) {
 
 		g.SetEntryPoint("router")
 
-		compiled, err := graph.Compile(g, graph.NewSequentialExecutor())
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 		require.NoError(t, err)
 
 		// Verify topology includes command nodes

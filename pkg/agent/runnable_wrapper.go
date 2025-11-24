@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
@@ -28,6 +29,69 @@ func (r *RunnableWithCallbacks) Run(ctx context.Context, input []message.Message
 
 	// Execute with enriched context
 	return r.inner.Run(ctx, input, opts...)
+}
+
+// Unwrap returns the inner MessageRunnable for introspection
+func (r *RunnableWithCallbacks) Unwrap() MessageRunnable {
+	return r.inner
+}
+
+// Delegate introspection methods using clean interface checks
+
+// Graph returns the underlying graph if the inner runnable supports it
+func (r *RunnableWithCallbacks) Graph() *graph.Graph {
+	if provider, ok := r.inner.(GraphProvider); ok {
+		return provider.Graph()
+	}
+	return nil
+}
+
+// GetNodes returns the list of node names if supported
+func (r *RunnableWithCallbacks) GetNodes() []string {
+	if provider, ok := r.inner.(TopologyProvider); ok {
+		return provider.GetNodes()
+	}
+	return nil
+}
+
+// GetTopology returns the graph topology if supported
+func (r *RunnableWithCallbacks) GetTopology() *graph.Topology {
+	if provider, ok := r.inner.(TopologyProvider); ok {
+		return provider.GetTopology()
+	}
+	return nil
+}
+
+// GetNodeInfo returns detailed node information if supported
+func (r *RunnableWithCallbacks) GetNodeInfo(name string) (*graph.NodeInfo, error) {
+	if introspector, ok := r.inner.(NodeIntrospector); ok {
+		return introspector.GetNodeInfo(name)
+	}
+	return nil, fmt.Errorf("node introspection not supported")
+}
+
+// GetMetrics returns execution metrics if supported
+func (r *RunnableWithCallbacks) GetMetrics() *graph.Metrics {
+	if provider, ok := r.inner.(MetricsProvider); ok {
+		return provider.GetMetrics()
+	}
+	return nil
+}
+
+// GetNodeDependencies returns node dependencies if supported
+func (r *RunnableWithCallbacks) GetNodeDependencies(name string) (*graph.NodeDependencies, error) {
+	if introspector, ok := r.inner.(NodeIntrospector); ok {
+		return introspector.GetNodeDependencies(name)
+	}
+	return nil, fmt.Errorf("node introspection not supported")
+}
+
+// MermaidFlowchart generates a Mermaid diagram if supported
+func (r *RunnableWithCallbacks) MermaidFlowchart(direction string) string {
+	if generator, ok := r.inner.(DiagramGenerator); ok {
+		return generator.MermaidFlowchart(direction)
+	}
+	return "graph LR\n    Start[Agent] --> End[Output]"
 }
 
 // WrapWithCallbacks wraps a MessageRunnable with automatic callback injection if a plugin manager is provided.

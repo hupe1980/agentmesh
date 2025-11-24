@@ -211,3 +211,52 @@ func TestBuilder_ManualCompile(t *testing.T) {
 		t.Error("Expected done to be true")
 	}
 }
+
+// TestInterruptConfiguration verifies interrupt configuration
+func TestInterruptConfiguration(t *testing.T) {
+	manager := state.NewManager()
+	g, err := graph.NewGraph(manager)
+	if err != nil {
+		t.Fatalf("Failed to create graph: %v", err)
+	}
+
+	node := &graph.BaseCommandNode{
+		NodeName:        "test",
+		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
+		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			return graph.End(state.Updates{}), nil
+		},
+	}
+
+	err = g.AddNode(node)
+	if err != nil {
+		t.Fatalf("Failed to add node: %v", err)
+	}
+
+	g.AddInterruptBefore("test")
+
+	if len(g.InterruptBefore) == 0 {
+		t.Error("Expected InterruptBefore to contain 'test'")
+	}
+	found := false
+	for _, name := range g.InterruptBefore {
+		if name == "test" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected InterruptBefore to contain 'test'")
+	}
+}
+
+// TestResumeValueContext verifies resume values context handling
+func TestResumeValueContext(t *testing.T) {
+	ctx := context.Background()
+
+	// Context without resume value should return nil
+	resumeVal := graph.ResumeValueFromContext(ctx)
+	if resumeVal != nil {
+		t.Error("Expected nil resume value from empty context")
+	}
+}

@@ -282,9 +282,9 @@ func TestCheckpointResume_PartialExecution(t *testing.T) {
 	finalCheckpoint := finalCheckpoints[0]
 	finalCounter := finalCheckpoint.State["counter"]
 	require.NotNil(t, finalCounter)
-	// Counter is 7 because: first run (steps 1,2) = 2, then resume runs all steps (1,2,3,4,5) = 5 more
-	// The checkpoint restores state but re-executes the full graph
-	assert.Equal(t, 7, finalCounter.(int), "Counter should be 7 (2 from partial + 5 from resume)")
+	// Counter is 5 because: first run (steps 1,2) = 2, then resume skips completed (1,2) and runs (3,4,5) = 3 more
+	// When resuming, completed nodes are properly skipped, execution continues from where it failed
+	assert.Equal(t, 5, finalCounter.(int), "Counter should be 5 (2 from partial + 3 from resume)")
 	t.Log("Resume from partial execution: SUCCESS")
 }
 

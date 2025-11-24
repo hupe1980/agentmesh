@@ -102,6 +102,9 @@ type PregelExecutor[I, O any] struct {
 	inputToState  func(I) state.Updates // Convert input to initial state
 	outputKey     string                // Which state key to yield as output
 	outputAdapter func(any) O           // Convert state value to output type
+
+	// Checkpoint resume state (set during checkpoint restore)
+	resumeEntryPoints []string // Nodes to execute when resuming from checkpoint
 }
 
 // PregelOption configures a Pregel executor.
@@ -368,7 +371,11 @@ func (p *PregelExecutor[I, O]) Run(
 			enableDistributedState: p.enableDistributedState,
 			executor:               p,
 			checkpointer:           runOpts.Checkpointer, // For interrupt checkpoints
-		} // Configure pregel runtime options
+		}
+
+		// Resume logic is handled in RootNodes() via resumeEntryPoints
+
+		// Configure pregel runtime options
 		runtimeOpts := []pregel.RuntimeOption[*Compiled[I, O], state.Updates]{
 			pregel.WithMaxWorkers[*Compiled[I, O], state.Updates](p.maxWorkers),
 			pregel.WithMaxIterations[*Compiled[I, O], state.Updates](p.maxIters),
@@ -492,14 +499,25 @@ type pregelGraphAdapter[I, O any] struct {
 
 // RootNodes returns nodes that should execute in the current superstep.
 // Uses trigger-based optimization to avoid unnecessary node execution:
+// - Checkpoint resume: explicit resume entry points from checkpoint
+// - Paused resume: nodes that were explicitly paused (human-in-loop)
 // - First superstep: nodes directly connected from START
 // - Subsequent supersteps: nodes triggered by previously executed nodes
 func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
-	// If resuming from a checkpoint, return the resuming nodes as roots
+	// PRIORITY 1: Checkpoint resume with explicit entry points
+	// This is the new, explicit mechanism that tells us exactly where to resume
+	if a.executor != nil && len(a.executor.resumeEntryPoints) > 0 {
+		resumePoints := a.executor.resumeEntryPoints
+		a.executor.resumeEntryPoints = nil // Clear after first use
+		return resumePoints
+	}
+
+	// PRIORITY 2: Paused node resume (human-in-loop workflows)
+	// If resuming from a pause, return the resuming nodes as roots
 	if a.executor != nil && a.executor.metrics != nil {
 		snapshot := a.executor.metrics.Snapshot()
 		if len(snapshot.ResumingNodes) > 0 {
-			// When resuming, start execution from the paused nodes
+			// When resuming from pause, start execution from the paused nodes
 			return snapshot.ResumingNodes
 		}
 	}
@@ -508,7 +526,7 @@ func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
 	executedNodes := a.executedNodes
 	a.mu.RUnlock()
 
-	// First superstep: return nodes directly connected from START
+	// PRIORITY 3: First superstep - return nodes directly connected from START
 	if len(executedNodes) == 0 {
 		if outgoing := a.compiled.topology.outgoing[StartNode]; len(outgoing) > 0 {
 			return outgoing
@@ -904,19 +922,11 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		return nil // Skip missing nodes
 	}
 
-	// Check if node is already completed or paused (checkpoint resume scenario)
+	// Check if node is paused (waiting for external resume signal)
+	// Note: Completed node skipping is now handled by RootNodes() via resumeEntryPoints,
+	// so we only need to check for paused nodes here.
 	if n.executor != nil && n.executor.metrics != nil {
 		snapshot := n.executor.metrics.Snapshot()
-
-		// Only skip completed nodes if we're resuming from an interrupt (have resuming nodes)
-		// This allows normal auto-restore to re-execute from the start
-		if len(snapshot.ResumingNodes) > 0 {
-			// Skip completed nodes - they already executed before interrupt
-			if slices.Contains(snapshot.CompletedNodes, n.nodeName) {
-				// Node already completed before interrupt, skip re-execution
-				return nil
-			}
-		}
 
 		// Skip paused nodes - they require external resume signal
 		for _, pausedNode := range snapshot.PausedNodes {

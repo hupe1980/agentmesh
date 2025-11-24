@@ -58,6 +58,8 @@ type Checkpoint struct {
 
 	// CompletedNodes tracks which nodes have finished execution.
 	// Needed for smart resume: skip re-executing completed nodes.
+	// On resume, the BSP executor calculates which nodes to execute next based on
+	// CompletedNodes and graph topology (immediate successors of completed nodes).
 	CompletedNodes []string `json:"completedNodes"`
 
 	// PausedNodes tracks which nodes are paused (e.g., waiting for human input).

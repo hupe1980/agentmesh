@@ -29,7 +29,7 @@ func (p *PregelExecutor[I, O]) restoreCheckpoint(ctx context.Context, compiled *
 		return err
 	}
 
-	p.restoreExecutionMetadata(ctx, chkpt)
+	p.restoreExecutionMetadata(ctx, compiled, chkpt)
 
 	logger.Info("checkpoint restored successfully",
 		"run_id", chkpt.RunID,
@@ -133,7 +133,7 @@ func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled
 }
 
 // restoreExecutionMetadata restores completed and paused nodes tracking.
-func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, chkpt *checkpoint.Checkpoint) {
+func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, compiled *Compiled[I, O], chkpt *checkpoint.Checkpoint) {
 	if p.metrics == nil {
 		return
 	}
@@ -149,11 +149,79 @@ func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, chk
 		p.metrics.ResumePaused(nodeName)
 	}
 
+	// Calculate resume entry points from completed nodes using graph topology
+	// This follows BSP principles: checkpoint stores state, executor derives next steps
+	if len(chkpt.CompletedNodes) > 0 {
+		p.resumeEntryPoints = calculateResumePoints(compiled, chkpt.CompletedNodes)
+		logger := logging.FromContext(ctx)
+		logger.Debug("calculated resume entry points",
+			"completed_nodes", chkpt.CompletedNodes,
+			"resume_from", p.resumeEntryPoints)
+	}
+
 	logger := logging.FromContext(ctx)
 	logger.Info("restored execution metadata",
 		"run_id", chkpt.RunID,
 		"completed_nodes", len(chkpt.CompletedNodes),
 		"resumed_nodes", len(chkpt.PausedNodes))
+}
+
+// calculateResumePoints determines which nodes should execute when resuming from a checkpoint.
+// Called during checkpoint restore to calculate resume entry points from CompletedNodes.
+// This follows BSP principles: checkpoints store state, the executor derives next execution steps.
+//
+// Logic:
+//  1. If no nodes completed yet → start from entry point (graph.EntryPoint)
+//  2. If some nodes completed → return immediate successors that aren't already completed
+//  3. Filters out END node (execution done) and already-completed nodes
+//  4. Deduplicates nodes (multiple completed nodes might point to same successor)
+//
+// Example:
+//
+//	step_1 → step_2 → step_3
+//	If CompletedNodes = [step_1], returns [step_2]
+//	If CompletedNodes = [step_1, step_2], returns [step_3]
+func calculateResumePoints[I, O any](compiled *Compiled[I, O], completedNodes []string) []string {
+	if len(completedNodes) == 0 {
+		// No nodes completed → start from entry point
+		if compiled.Graph().EntryPoint != "" {
+			return []string{compiled.Graph().EntryPoint}
+		}
+		return []string{}
+	}
+
+	// Create set of completed nodes for quick lookup
+	completedSet := make(map[string]bool, len(completedNodes))
+	for _, nodeName := range completedNodes {
+		completedSet[nodeName] = true
+	}
+
+	// Collect all immediate successors of completed nodes
+	// We need to get targets from the actual nodes, not topology.outgoing
+	// because topology.outgoing is only populated for StartNode
+	successorSet := make(map[string]bool)
+	for _, nodeName := range completedNodes {
+		node := compiled.Graph().Nodes[nodeName]
+		if node == nil {
+			continue
+		}
+		// Get targets declared by this node
+		targets := node.Targets()
+		for _, target := range targets {
+			// Don't include END node or already-completed nodes
+			if target != EndNode && !completedSet[target] {
+				successorSet[target] = true
+			}
+		}
+	}
+
+	// Convert set to slice
+	resumePoints := make([]string, 0, len(successorSet))
+	for node := range successorSet {
+		resumePoints = append(resumePoints, node)
+	}
+
+	return resumePoints
 }
 
 // saveCheckpoint creates and saves a checkpoint with two-phase commit semantics.
@@ -239,9 +307,22 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 	// PHASE 2: Apply PendingWrites to state (now safe - checkpoint is durable)
 	p.applyPendingUpdates(ctx, compiled, adapter)
 
-	// PHASE 3: Mark checkpoint as committed to prevent double-application on resume
-	// This is critical for correctness: without this, resuming from this checkpoint
-	// would replay the pending writes again, causing duplicate state updates.
+	// PHASE 3: Update checkpoint with applied state and mark as committed
+	// Take a new snapshot that includes the applied updates
+	vsnap2, err := compiled.manager.Snapshot(ctx, map[string]string{
+		"run_id":    opts.RunID,
+		"superstep": fmt.Sprintf("%d", superstep),
+	})
+	if err != nil {
+		logger.Warn("failed to snapshot state after applying updates",
+			"run_id", opts.RunID,
+			"superstep", superstep,
+			"error", err)
+		// Non-fatal, but checkpoint will have stale state
+	} else {
+		chkpt.State = vsnap2.Data // Update with applied state
+	}
+
 	chkpt.Committed = true
 	chkpt.PendingWrites = nil // Clear pending writes since they're now committed
 
