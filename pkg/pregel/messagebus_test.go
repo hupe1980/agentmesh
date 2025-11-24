@@ -205,39 +205,6 @@ func splitByComma(s string) []string {
 	return result
 }
 
-func TestInMemoryMessageBus_Pending(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](100, nil)
-	defer bus.Close()
-
-	// Send messages to multiple targets
-	err := bus.Send(context.Background(), []Message[string]{
-		{To: "a", Data: "msg1"},
-		{To: "b", Data: "msg2"},
-		{To: "c", Data: "msg3"},
-	})
-	if err != nil {
-		t.Fatalf("Send failed: %v", err)
-	}
-
-	// Get pending vertices
-	pending, err := bus.Pending()
-	if err != nil {
-		t.Fatalf("Pending failed: %v", err)
-	}
-	if len(pending) != 3 {
-		t.Errorf("Expected 3 pending vertices, got %d", len(pending))
-	}
-
-	// Second call should return empty (frontier consumed)
-	pending2, err := bus.Pending()
-	if err != nil {
-		t.Fatalf("Second Pending failed: %v", err)
-	}
-	if len(pending2) != 0 {
-		t.Errorf("Expected empty frontier after consumption, got %d", len(pending2))
-	}
-}
-
 func TestInMemoryMessageBus_Close(t *testing.T) {
 	bus := NewInMemoryMessageBus[string](100, nil)
 	defer bus.Close()
@@ -344,10 +311,16 @@ func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
 		t.Fatalf("Send failed: %v", err)
 	}
 
-	// Only "a" should have messages
-	pending, _ := bus.Pending()
-	if len(pending) != 1 || pending[0] != "a" {
-		t.Errorf("Expected only 'a' in pending, got %v", pending)
+	// Only "a" should have messages (verify by receiving)
+	msgs, _ := bus.Receive("a")
+	if len(msgs) != 1 || msgs[0].Data != "msg2" {
+		t.Errorf("Expected only message to 'a', got %v", msgs)
+	}
+
+	// Empty target should have no messages
+	emptyMsgs, _ := bus.Receive("")
+	if len(emptyMsgs) != 0 {
+		t.Errorf("Expected no messages for empty target, got %d", len(emptyMsgs))
 	}
 }
 

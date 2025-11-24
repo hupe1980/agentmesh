@@ -48,9 +48,6 @@ type MessageBus[M any] interface {
     // Clear removes all messages for a vertex
     Clear(vertex string) error
     
-    // Pending returns vertices with messages waiting
-    Pending() ([]string, error)
-    
     // Close releases resources
     Close() error
 }

@@ -159,7 +159,7 @@ type Runtime[S any, M any] struct {
 	graph Graph[S, M]
 	opts  RuntimeOptions[S, M]
 
-	messageBus MessageBus[M] // Pluggable message delivery backend
+	messageBus MessageBus[M] // Pluggable message storage backend
 
 	aggMu          sync.Mutex // Protects aggregator state (see concurrency model above)
 	aggregators    map[string]Aggregator
@@ -560,13 +560,11 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 		frontier[name] = struct{}{}
 	}
 
-	// Add nodes with pending messages (fallback to message bus for initial setup)
-	// This handles cases where messages were delivered before Run() started
-	pending, err := r.messageBus.Pending()
-	if err == nil {
-		for _, name := range pending {
-			frontier[name] = struct{}{}
-		}
+	// Drain nextFrontier to include any vertices that received messages via Deliver()
+	// before Run() was called. This handles pre-seeded messages.
+	predelivered := r.nextFrontier.Drain()
+	for name := range predelivered {
+		frontier[name] = struct{}{}
 	}
 
 	return frontier

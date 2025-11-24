@@ -53,17 +53,6 @@ func (m *mockSlowMessageBus) Clear(vertex string) error {
 	return nil
 }
 
-func (m *mockSlowMessageBus) Pending() ([]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	pending := make([]string, 0, len(m.mailboxes))
-	for vertex := range m.mailboxes {
-		pending = append(pending, vertex)
-	}
-	return pending, nil
-}
-
 func (m *mockSlowMessageBus) Close() error {
 	return nil
 }

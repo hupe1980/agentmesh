@@ -1542,13 +1542,6 @@ func (r *RedisMessageBus) Send(ctx context.Context, from, to string, data MyMess
     }
 }
 
-func (r *RedisMessageBus) Pending(vertex string) ([]pregel.Message[MyMessageType], error) {
-    // Fetch pending messages from Redis queue
-    messages, _ := r.client.LRange(ctx, vertex, 0, -1).Result()
-    // Deserialize and return
-    return parseMessages(messages)
-}
-
 // Use with custom runtime
 runtime := pregel.NewRuntime(
     graphAdapter,

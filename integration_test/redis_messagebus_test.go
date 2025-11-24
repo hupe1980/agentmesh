@@ -56,16 +56,6 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 		t.Fatalf("Failed to send messages: %v", err)
 	}
 
-	// Test Pending
-	pending, err := bus.Pending()
-	if err != nil {
-		t.Fatalf("Failed to get pending: %v", err)
-	}
-
-	if len(pending) != 2 {
-		t.Errorf("Expected 2 pending vertices, got %d", len(pending))
-	}
-
 	// Test Receive
 	received1, err := bus.Receive("node1")
 	if err != nil {
@@ -228,15 +218,7 @@ func TestRedisMessageBus_Persistence(t *testing.T) {
 	})
 	defer bus2.Close()
 
-	pending, err := bus2.Pending()
-	if err != nil {
-		t.Fatalf("Failed to get pending: %v", err)
-	}
-
-	if len(pending) != 2 {
-		t.Errorf("Expected 2 pending vertices after reconnect, got %d", len(pending))
-	}
-
+	// Verify messages are still there after reconnect
 	received, err := bus2.Receive("vertex1")
 	if err != nil {
 		t.Fatalf("Failed to receive: %v", err)
@@ -361,15 +343,6 @@ func TestRedisMessageBus_CleanNamespace(t *testing.T) {
 	if stats.TotalMessages != 0 {
 		t.Errorf("Expected 0 messages after cleanup, got %d", stats.TotalMessages)
 	}
-
-	pending, err := bus.Pending()
-	if err != nil {
-		t.Fatalf("Failed to get pending after cleanup: %v", err)
-	}
-
-	if len(pending) != 0 {
-		t.Errorf("Expected 0 pending vertices after cleanup, got %d", len(pending))
-	}
 }
 
 // TestRedisMessageBus_Stats tests statistics gathering
@@ -456,16 +429,7 @@ func TestRedisMessageBus_EmptyOperations(t *testing.T) {
 		t.Errorf("Receive from nonexistent vertex should not error: %v", err)
 	}
 	if msgs != nil {
-		t.Errorf("Expected nil from nonexistent vertex, got %d messages", len(msgs))
-	}
-
-	// Pending with no messages
-	pending, err := bus.Pending()
-	if err != nil {
-		t.Errorf("Pending with no messages should not error: %v", err)
-	}
-	if pending != nil {
-		t.Errorf("Expected nil pending, got %d vertices", len(pending))
+		t.Errorf("Expected nil messages from nonexistent vertex, got %d", len(msgs))
 	}
 
 	// Clear non-existent vertex
@@ -512,10 +476,6 @@ func TestRedisMessageBus_ClosedOperations(t *testing.T) {
 
 	if _, err := bus.Receive("node"); err == nil {
 		t.Error("Expected error when receiving after close")
-	}
-
-	if _, err := bus.Pending(); err == nil {
-		t.Error("Expected error when getting pending after close")
 	}
 
 	if err := bus.Clear("node"); err == nil {
