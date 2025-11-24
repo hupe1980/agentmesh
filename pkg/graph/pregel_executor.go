@@ -660,13 +660,12 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 ) (*Command, error) {
 	pm, hasPluginManager := getNodeCallbacks(ctx)
 
-	// Try BeforeNode callback - may short-circuit execution
-	if shortCircuit, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view); err != nil {
+	// Try BeforeNode callback - may short-circuit execution with full Command
+	if shortCircuitCmd, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view); err != nil {
 		return nil, err
-	} else if shortCircuit != nil {
-		// Wrap shortCircuit updates as Command
-		cmd := &Command{Updates: shortCircuit, Goto: []string{}}
-		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, cmd, nil)
+	} else if shortCircuitCmd != nil {
+		// Callback provided a Command to short-circuit - use it directly (must have valid routing)
+		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, shortCircuitCmd, nil)
 	}
 
 	// Execute node with retry logic (now returns Command)
@@ -677,23 +676,23 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 }
 
 // executeBeforeNodeCallback executes BeforeNode plugin callback.
-// Returns short-circuit updates if callback provides them.
+// Returns short-circuit Command if callback provides one (must include routing).
 func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
 	ctx context.Context,
 	pm NodeCallbacks,
 	hasPluginManager bool,
 	view state.ReadView,
-) (state.Updates, error) {
+) (*Command, error) {
 	if !hasPluginManager {
 		return nil, nil
 	}
 
-	shortCircuit, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
+	shortCircuitCmd, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
 	if err != nil {
 		return nil, fmt.Errorf("before node callback failed: %w", err)
 	}
 
-	return shortCircuit, nil
+	return shortCircuitCmd, nil
 }
 
 // executeNodeWithPolicy executes the node with retry policy.

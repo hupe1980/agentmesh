@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -11,11 +12,11 @@ import (
 
 // Safe execution wrappers with panic recovery for all plugin hooks
 
-func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView) (updates state.Updates, err error) {
+func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView) (cmd *graph.Command, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("plugin.BeforeNode panicked: %v", r)
-			updates = nil
+			cmd = nil
 		}
 	}()
 	return p.BeforeNode(ctx, nodeName, view)

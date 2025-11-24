@@ -22,12 +22,12 @@ import (
 //	pm := callbacks.NewPluginManager()
 //	pm.Register(ctx, myPlugin)
 //	ctx = graph.WithNodeCallbacks(ctx, pm)  // PluginManager implements NodeCallbacks
-//
-// This is not duplication - it's proper dependency inversion where the high-level
-// module (graph) defines the contract it needs, and the low-level module (callbacks)
-// implements it.
 type NodeCallbacks interface {
-	ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error)
+	// ExecuteBeforeNode is called before a node executes.
+	// Can return a Command to short-circuit node execution (node won't run).
+	// The Command must include valid routing (Goto targets).
+	// Return nil to proceed with normal node execution.
+	ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*Command, error)
 	ExecuteAfterNode(ctx context.Context, nodeName string, view state.ReadView, updates state.Updates) error
 	ExecuteOnNodeError(ctx context.Context, nodeName string, err error) error
 }

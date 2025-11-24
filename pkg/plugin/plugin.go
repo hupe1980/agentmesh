@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -48,19 +49,19 @@ type Plugin interface {
 
 	// BeforeNode is called before a graph node executes.
 	// view provides read-only access to the current state snapshot.
-	// Returning non-nil state.Updates short-circuits node execution and uses those updates.
+	// Returning non-nil *graph.Command short-circuits node execution with that command (must include routing).
 	//
 	// Use cases: caching, conditional skipping, pre-computed results, circuit breakers.
 	//
 	// Example - Cache check:
 	//
-	//	func (p *CachePlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
+	//	func (p *CachePlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*graph.Command, error) {
 	//	    if cached := p.cache.Get(nodeName, view); cached != nil {
-	//	        return cached, nil // Short-circuit with cached result
+	//	        return graph.End(cached), nil // Short-circuit with cached result
 	//	    }
 	//	    return nil, nil // Continue to node execution
 	//	}
-	BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error)
+	BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*graph.Command, error)
 
 	// AfterNode is called after a graph node executes successfully.
 	// view provides read-only access to the state after node execution.

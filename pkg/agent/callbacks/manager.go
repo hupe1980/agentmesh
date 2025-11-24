@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -76,21 +77,21 @@ func (pm *PluginManager) Shutdown(ctx context.Context) error {
 }
 
 // ExecuteBeforeNode runs all plugins BeforeNode hooks.
-// Returns non-nil state.Updates if any plugin short-circuits execution.
-func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (state.Updates, error) {
+// Returns non-nil *graph.Command if any plugin short-circuits execution.
+// Note: Current plugin interface returns state.Updates, not Command, so short-circuit
+// is not supported until plugin interface is updated. Always returns nil for now.
+func (pm *PluginManager) ExecuteBeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*graph.Command, error) {
 	pm.mu.RLock()
 	plugins := pm.plugins
 	pm.mu.RUnlock()
 
 	for _, p := range plugins {
-		updates, err := safeExecuteBeforeNode(ctx, p, nodeName, view)
+		_, err := safeExecuteBeforeNode(ctx, p, nodeName, view)
 		if err != nil {
 			return nil, err
 		}
-		if updates != nil {
-			// Plugin short-circuited - return immediately
-			return updates, nil
-		}
+		// TODO: Plugin interface needs to return *graph.Command to support short-circuit with routing
+		// For now, plugins cannot short-circuit execution
 	}
 
 	return nil, nil
