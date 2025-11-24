@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"time"
@@ -78,6 +79,34 @@ type Options struct {
 	// WriteTimeout sets timeout for write operations.
 	// Defaults to 3 seconds.
 	WriteTimeout time.Duration
+
+	// TLSConfig enables TLS/SSL encryption for Redis connections.
+	// STRONGLY RECOMMENDED for production deployments to prevent:
+	//   - Network eavesdropping (messages sent in cleartext)
+	//   - Man-in-the-middle attacks
+	//   - Credential theft (password sent unencrypted)
+	//
+	// Security Best Practices:
+	//   ✅ REQUIRED for production: Always use TLS when Redis is not on localhost
+	//   ✅ Use TLS 1.3 minimum (set MinVersion: tls.VersionTLS13)
+	//   ✅ Verify server certificates (do not set InsecureSkipVerify: true)
+	//   ✅ Use strong cipher suites (default is usually fine)
+	//
+	// Example - Production TLS Config:
+	//   tlsConfig := &tls.Config{
+	//       MinVersion: tls.VersionTLS13,
+	//       // Server certificate verification (default, recommended)
+	//       InsecureSkipVerify: false,
+	//   }
+	//
+	// Example - Development with Self-Signed Certs:
+	//   tlsConfig := &tls.Config{
+	//       MinVersion: tls.VersionTLS12,
+	//       InsecureSkipVerify: true, // Only for dev/testing!
+	//   }
+	//
+	// If nil, connection will be unencrypted (only safe for localhost).
+	TLSConfig *tls.Config
 }
 
 // NewMessageBus creates a Redis-backed message bus for distributed execution.
@@ -87,12 +116,31 @@ type Options struct {
 // db: Redis database number (0-15)
 // opts: Optional configuration (can be nil for defaults)
 //
-// Example:
+// Example (Development - localhost, no TLS):
 //
 //	bus := redis.NewMessageBus[MyMessage]("localhost:6379", "", 0, &redis.Options{
 //	    Namespace: "mygraph",
 //	    TTL: 1 * time.Hour,
 //	})
+//	defer bus.Close()
+//
+// Example (Production - with TLS and authentication):
+//
+//	tlsConfig := &tls.Config{
+//	    MinVersion: tls.VersionTLS13,
+//	    // InsecureSkipVerify: false (default - verify server cert)
+//	}
+//
+//	bus := redis.NewMessageBus[MyMessage](
+//	    "redis.example.com:6380",
+//	    "your-secure-password",
+//	    0,
+//	    &redis.Options{
+//	        Namespace: "production-graph",
+//	        TTL:       1 * time.Hour,
+//	        TLSConfig: tlsConfig,
+//	    },
+//	)
 //	defer bus.Close()
 func NewMessageBus[M any](addr, password string, db int, opts *Options) *MessageBus[M] {
 	if opts == nil {
@@ -130,6 +178,7 @@ func NewMessageBus[M any](addr, password string, db int, opts *Options) *Message
 		DialTimeout:     opts.DialTimeout,
 		ReadTimeout:     opts.ReadTimeout,
 		WriteTimeout:    opts.WriteTimeout,
+		TLSConfig:       opts.TLSConfig,                 // Enable TLS if provided
 		PoolSize:        10,                             // Connection pool size
 		MinIdleConns:    2,                              // Maintain idle connections
 		ConnMaxIdleTime: 5 * time.Minute,                // Close idle connections after 5 min
