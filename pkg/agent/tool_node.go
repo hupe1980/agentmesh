@@ -158,12 +158,11 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Com
 		}
 	}
 
-	builder := graph.NewUpdate()
-	graph.UpdateAppend(builder, MessagesKey, toolMessages...)
-	updates, _ := builder.Build()
+	cmd := graph.NewCommand()
+	graph.CommandAppend(cmd, MessagesKey, toolMessages...)
 
 	// Tool node always routes back to model after execution
-	return graph.Goto("model", updates), nil
+	return cmd.Goto("model")
 }
 
 // formatToolResult converts a tool result to a string representation.

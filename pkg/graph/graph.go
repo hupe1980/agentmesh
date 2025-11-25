@@ -3,6 +3,7 @@ package graph
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -18,8 +19,8 @@ type Graph struct {
 
 // NewGraph creates a new graph with the given state manager.
 func NewGraph(manager *state.Manager) (*Graph, error) {
-	if manager == nil {
-		return nil, fmt.Errorf("manager cannot be nil")
+	if err := validate.NotNil(manager, "manager"); err != nil {
+		return nil, err
 	}
 	return &Graph{
 		Nodes:           make(map[string]Node),
@@ -39,11 +40,11 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 //	    Backoff: ExponentialBackoff(100 * time.Millisecond),
 //	}))
 func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
-	if n == nil {
-		return fmt.Errorf("node cannot be nil")
-	}
-	if n.Name() == "" {
-		return fmt.Errorf("node name cannot be empty")
+	if err := validate.All(
+		validate.NotNil(n, "node"),
+		validate.NotEmpty(n.Name(), "node name"),
+	); err != nil {
+		return err
 	}
 
 	// Create config with defaults
@@ -70,8 +71,8 @@ func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 // The entry point is validated at compile time, so nodes can be added after
 // calling SetEntryPoint (useful for builder pattern).
 func (g *Graph) SetEntryPoint(target string) error {
-	if target == "" {
-		return fmt.Errorf("entry point target cannot be empty")
+	if err := validate.NotEmpty(target, "entry point target"); err != nil {
+		return err
 	}
 	g.EntryPoint = target
 	return nil

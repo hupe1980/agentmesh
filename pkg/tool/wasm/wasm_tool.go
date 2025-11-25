@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -73,11 +74,11 @@ type RuntimeOptions struct {
 // NewWASMTool creates a new WASM tool from compiled bytecode.
 // The tool is immediately validated and compiled, but not instantiated until Call().
 func NewWASMTool(ctx context.Context, name, description string, wasmBytes []byte, opts ...ToolOption) (*WASMTool, error) {
-	if name == "" {
-		return nil, errors.New("tool name cannot be empty")
-	}
-	if len(wasmBytes) == 0 {
-		return nil, errors.New("WASM bytecode cannot be empty")
+	if err := validate.All(
+		validate.NotEmpty(name, "tool name"),
+		validate.NotEmptySlice(wasmBytes, "WASM bytecode"),
+	); err != nil {
+		return nil, err
 	}
 
 	tool := &WASMTool{

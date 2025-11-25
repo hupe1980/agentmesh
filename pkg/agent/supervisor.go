@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -129,8 +130,8 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerRetries(2),
 //	)
 func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (MessageRunnable, error) {
-	if mdl == nil {
-		return nil, fmt.Errorf("model must not be nil")
+	if err := validate.NotNil(mdl, "model"); err != nil {
+		return nil, err
 	}
 
 	config := supervisorOptions{
@@ -144,8 +145,8 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (MessageRunna
 		opt(&config)
 	}
 
-	if len(config.workers) == 0 {
-		return nil, fmt.Errorf("supervisor: at least one worker agent is required")
+	if err := validate.NotEmptySlice(config.workers, "workers"); err != nil {
+		return nil, fmt.Errorf("supervisor: %w", err)
 	}
 
 	// Create handoff tools for each worker

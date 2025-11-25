@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/hupe1980/agentmesh/internal/validate"
 )
 
 // Namespace represents a state scope for creating isolated keys.
@@ -24,8 +26,8 @@ type Namespace struct {
 //	    return err
 //	}
 func NewNamespace(name string) (Namespace, error) {
-	if name == "" {
-		return Namespace{}, fmt.Errorf("namespace cannot be empty (use Global for global namespace)")
+	if err := validate.NotEmpty(name, "namespace"); err != nil {
+		return Namespace{}, fmt.Errorf("%w (use Global for global namespace)", err)
 	}
 	if strings.Contains(name, ".") {
 		return Namespace{}, fmt.Errorf("namespace cannot contain dots: %q", name)

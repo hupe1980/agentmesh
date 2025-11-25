@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -58,15 +59,9 @@ func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, sta
 			return nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
-		builder := graph.NewUpdate()
-		graph.UpdateSet(builder, DocumentsKey, extractDocumentContent(docs))
-
-		updates, err := builder.Build()
-		if err != nil {
-			return nil, err
-		}
-
-		return graph.Goto("generate", updates), nil
+		b := graph.NewCommand()
+		graph.CommandSet(b, DocumentsKey, extractDocumentContent(docs))
+		return b.Goto("generaete")
 	}
 }
 
@@ -114,11 +109,11 @@ func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
 func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (MessageRunnable, error) {
-	if mdl == nil {
-		return nil, fmt.Errorf("model must not be nil")
-	}
-	if retriever == nil {
-		return nil, fmt.Errorf("retriever must not be nil")
+	if err := validate.All(
+		validate.NotNil(mdl, "model"),
+		validate.NotNil(retriever, "retriever"),
+	); err != nil {
+		return nil, err
 	}
 
 	config := defaultRAGOptions()

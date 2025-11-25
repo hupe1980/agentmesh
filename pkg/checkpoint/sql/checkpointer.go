@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
@@ -28,8 +29,8 @@ var (
 // - Rejects SQL keywords, special characters, and comment sequences
 // - No hyphens (they require quoting and can cause SQL ambiguity)
 func sanitizeTableName(name string) (string, error) {
-	if name == "" {
-		return "", fmt.Errorf("table name cannot be empty")
+	if err := validate.NotEmpty(name, "table name"); err != nil {
+		return "", err
 	}
 
 	// Check length (most databases have 64-character limit)

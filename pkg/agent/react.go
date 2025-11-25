@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -40,8 +41,8 @@ import (
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
 func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error) {
-	if mdl == nil {
-		return nil, fmt.Errorf("model must not be nil")
+	if err := validate.NotNil(mdl, "model"); err != nil {
+		return nil, err
 	}
 
 	config := defaultReActOptions()

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -543,8 +544,8 @@ func convertTools(tools []tool.Tool) ([]openai.ChatCompletionToolUnionParam, err
 func convertMessagesToOpenAI(messages []message.Message) ([]openai.ChatCompletionMessageParamUnion, error) {
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
 	for idx, msg := range messages {
-		if msg == nil {
-			return nil, fmt.Errorf("messages[%d]: message must not be nil", idx)
+		if err := validate.NotNil(msg, fmt.Sprintf("messages[%d]", idx)); err != nil {
+			return nil, err
 		}
 
 		text, err := joinTextParts(msg.Parts())

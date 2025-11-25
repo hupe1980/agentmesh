@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/jsonschema"
+	"github.com/hupe1980/agentmesh/internal/validate"
 )
 
 // Func is the signature for tool implementation functions with typed arguments and results.
@@ -42,11 +43,11 @@ func NewFuncTool[T any, R any](
 	name, description string,
 	fn Func[T, R],
 ) (*FuncTool[T, R], error) {
-	if name == "" {
-		return nil, fmt.Errorf("tool name must not be empty")
-	}
-	if fn == nil {
-		return nil, fmt.Errorf("tool function must not be nil")
+	if err := validate.All(
+		validate.NotEmpty(name, "tool name"),
+		validate.NotNil(fn, "tool function"),
+	); err != nil {
+		return nil, err
 	}
 
 	schema, err := jsonschema.MapFromStruct(*new(T))

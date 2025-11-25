@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores"
@@ -39,8 +40,8 @@ func NewRetrieverFromVectorStore(vectorStore vectorstores.VectorStore, optFns ..
 // NewRetriever wraps an existing LangChain retriever.
 // Returns an error if the retriever parameter is nil.
 func NewRetriever(retriever schema.Retriever) (*Retriever, error) {
-	if retriever == nil {
-		return nil, fmt.Errorf("langchaingo: retriever cannot be nil")
+	if err := validate.NotNil(retriever, "retriever"); err != nil {
+		return nil, fmt.Errorf("langchaingo: %w", err)
 	}
 
 	return &Retriever{
@@ -51,8 +52,8 @@ func NewRetriever(retriever schema.Retriever) (*Retriever, error) {
 // Retrieve fetches relevant documents from the underlying LangChain retriever.
 func (r *Retriever) Retrieve(ctx context.Context, query string) ([]retrieval.Document, error) {
 	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, fmt.Errorf("langchaingo retriever: query cannot be empty")
+	if err := validate.NotEmpty(query, "query"); err != nil {
+		return nil, fmt.Errorf("langchaingo retriever: %w", err)
 	}
 
 	lcDocs, err := r.retriever.GetRelevantDocuments(ctx, query)

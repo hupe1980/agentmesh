@@ -160,14 +160,13 @@ func (n *ModelNode) Execute(ctx context.Context, view state.ReadView) (*graph.Co
 		return nil, err
 	}
 
-	// Return message in updates map (agent layer handles message storage)
-	builder := graph.NewUpdate()
-	graph.UpdateAppend(builder, MessagesKey, resp.Message)
-	updates, _ := builder.Build()
+	// Build command with message update
+	cmd := graph.NewCommand()
+	graph.CommandAppend(cmd, MessagesKey, resp.Message)
 
 	// Route based on tool calls
 	if aiMsg, ok := resp.Message.(*message.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
-		return graph.Goto("tool", updates), nil
+		return cmd.Goto("tool")
 	}
-	return graph.End(updates), nil
+	return cmd.End()
 }
