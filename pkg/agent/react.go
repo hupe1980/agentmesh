@@ -6,6 +6,7 @@ import (
 	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -72,15 +73,10 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		}
 	}
 
-	// Create state - StateBuilder no longer exists
+	// Create state manager
 	mgr := state.NewManager()
 	if err := RegisterMessagesKey(mgr); err != nil {
 		return nil, fmt.Errorf("react agent: failed to register messages key: %w", err)
-	}
-
-	g, err := graph.NewGraph(mgr)
-	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to create graph: %w", err)
 	}
 
 	// Create model executor - encapsulates model lifecycle management
@@ -101,7 +97,6 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
 	}
-	_ = g.AddNode(modelNode)
 
 	// Create tool executor - use sequential by default for deterministic behavior
 	toolExecutor := tool.NewSequentialExecutor(toolRegistry,
@@ -115,17 +110,20 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
 	}
-	_ = g.AddNode(toolNode)
 
-	// Entry point - Command pattern handles all routing
-	if err := g.SetEntryPoint("model"); err != nil {
-		return nil, fmt.Errorf("react agent: failed to set entry point: %w", err)
+	// Build graph using fluent builder API
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+	if err != nil {
+		return nil, fmt.Errorf("react agent: failed to create builder: %w", err)
 	}
 
-	// Compile the graph
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	compiled, err := builder.
+		AddNode(modelNode).
+		AddNode(toolNode).
+		SetEntryPoint("model").
+		Compile()
 	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to compile graph: %w", err)
+		return nil, fmt.Errorf("react agent: failed to build graph: %w", err)
 	}
 
 	// Wrap with automatic callback injection if plugin manager is provided

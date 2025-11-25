@@ -129,36 +129,19 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		return nil, fmt.Errorf("failed to register documents key: %w", err)
 	}
 
-	g, err := graph.NewGraph(mgr)
+	// Build graph using fluent builder API
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create graph: %w", err)
+		return nil, fmt.Errorf("failed to create builder: %w", err)
 	}
 
-	if err := g.AddNode(&graph.BaseCommandNode{
-		NodeName:        "retrieve",
-		Fn:              createRetrieveNode(retriever),
-		DeclaredTargets: graph.NewTargetSet("generate"),
-	}); err != nil {
-		return nil, fmt.Errorf("failed to add retrieve node: %w", err)
-	}
-
-	if err := g.AddNode(&graph.BaseCommandNode{
-		NodeName:        "generate",
-		Fn:              createGenerateNode(mdl, config),
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-	}); err != nil {
-		return nil, fmt.Errorf("failed to add generate node: %w", err)
-	}
-
-	// Entry point - Command pattern handles routing from retrieve → generate → END
-	if err := g.SetEntryPoint("retrieve"); err != nil {
-		return nil, fmt.Errorf("rag agent: failed to set entry point: %w", err)
-	}
-
-	// Compile the graph
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	compiled, err := builder.
+		AddCommandNode("retrieve", graph.NewTargetSet("generate"), createRetrieveNode(retriever)).
+		AddCommandNode("generate", graph.NewTargetSet(graph.EndNode), createGenerateNode(mdl, config)).
+		SetEntryPoint("retrieve").
+		Compile()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build graph: %w", err)
 	}
 
 	// Wrap with automatic callback injection if plugin manager is provided
