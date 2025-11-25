@@ -199,11 +199,11 @@ type testGraph struct {
 	mu    sync.Mutex
 }
 
-func (g *testGraph) RootNodes() []string {
+func (g *testGraph) RootVertices() []string {
 	return g.roots
 }
 
-func (g *testGraph) NodeByName(name string) Node[*testState, testMessage] {
+func (g *testGraph) VertexByName(name string) Vertex[*testState, testMessage] {
 	return g.nodes[name]
 }
 

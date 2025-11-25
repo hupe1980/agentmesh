@@ -550,13 +550,13 @@ type pregelGraphAdapter[I, O any] struct {
 	updatesMu      sync.Mutex
 }
 
-// RootNodes returns nodes that should execute in the current superstep.
-// Uses trigger-based optimization to avoid unnecessary node execution:
+// RootVertices returns vertices that should execute in the current superstep.
+// Uses trigger-based optimization to avoid unnecessary vertex execution:
 // - Checkpoint resume: explicit resume entry points from checkpoint
 // - Paused resume: nodes that were explicitly paused (human-in-loop)
 // - First superstep: nodes directly connected from START
 // - Subsequent supersteps: nodes triggered by previously executed nodes
-func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
+func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
 	// PRIORITY 1: Checkpoint resume with explicit entry points
 	// This is the new, explicit mechanism that tells us exactly where to resume
 	if a.executor != nil && len(a.executor.resumeEntryPoints) > 0 {
@@ -608,13 +608,13 @@ func (a *pregelGraphAdapter[I, O]) RootNodes() []string {
 	return result
 }
 
-// Outgoing returns outgoing edges for a node.
-func (a *pregelGraphAdapter[I, O]) Outgoing(nodeName string) []string {
-	return a.compiled.topology.outgoing[nodeName]
+// Outgoing returns outgoing edges for a vertex.
+func (a *pregelGraphAdapter[I, O]) Outgoing(vertexName string) []string {
+	return a.compiled.topology.outgoing[vertexName]
 }
 
-// NodeByName returns a pregel node adapter.
-func (a *pregelGraphAdapter[I, O]) NodeByName(name string) pregel.Node[*Compiled[I, O], state.Updates] {
+// VertexByName returns a pregel vertex adapter.
+func (a *pregelGraphAdapter[I, O]) VertexByName(name string) pregel.Vertex[*Compiled[I, O], state.Updates] {
 	return &pregelNodeAdapter[I, O]{
 		nodeName:               name,
 		compiled:               a.compiled,
@@ -662,7 +662,7 @@ func (a *pregelGraphAdapter[I, O]) getSuperstepView() state.ReadView {
 	return a.currentSuperstepView
 }
 
-// pregelNodeAdapter adapts a graph.Node to pregel.Node interface.
+// pregelNodeAdapter adapts a graph.Node to pregel.Vertex interface.
 type pregelNodeAdapter[I, O any] struct {
 	nodeName               string
 	compiled               *Compiled[I, O]
@@ -1021,7 +1021,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	}
 
 	// Check if node is paused (waiting for external resume signal)
-	// Note: Completed node skipping is now handled by RootNodes() via resumeEntryPoints,
+	// Note: Completed node skipping is now handled by RootVertices() via resumeEntryPoints,
 	// so we only need to check for paused nodes here.
 	if n.executor != nil && n.executor.metrics != nil {
 		snapshot := n.executor.metrics.Snapshot()

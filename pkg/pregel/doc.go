@@ -36,7 +36,7 @@
 // sent in superstep N are delivered in superstep N+1.
 //
 // Frontier: The set of vertices active in the next superstep. Vertices enter the frontier
-// when they receive messages or are root nodes.
+// when they receive messages or are root vertices.
 //
 // Mailbox: Per-vertex message queue. Messages are buffered and delivered at the start of
 // the next superstep. Mailbox size can be bounded to prevent memory exhaustion.

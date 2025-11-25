@@ -25,7 +25,7 @@ func TestSafeEventChan_ConcurrentSendAndClose(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 			for j := 0; j < sendsPerWorker; j++ {
-				ch.Send(Event[any]{Node: "test"}, nil)
+				ch.Send(Event[any]{Vertex: "test"}, nil)
 			}
 		}(i)
 	}
@@ -43,7 +43,7 @@ func TestSafeEventChan_ConcurrentSendAndClose(t *testing.T) {
 	}
 
 	// Additional sends should return false
-	if ch.Send(Event[any]{Node: "after-close"}, nil) {
+	if ch.Send(Event[any]{Vertex: "after-close"}, nil) {
 		t.Error("Send should return false after close")
 	}
 }
@@ -67,13 +67,13 @@ func TestSafeEventChan_SendTimeout(t *testing.T) {
 	ch := newSafeEventChan[any](1)
 
 	// Fill the buffer
-	if !ch.Send(Event[any]{Node: "first"}, nil) {
+	if !ch.Send(Event[any]{Vertex: "first"}, nil) {
 		t.Fatal("First send should succeed")
 	}
 
 	// This should timeout since no one is receiving
 	start := time.Now()
-	result := ch.Send(Event[any]{Node: "second"}, nil)
+	result := ch.Send(Event[any]{Vertex: "second"}, nil)
 	elapsed := time.Since(start)
 
 	if result {
@@ -167,7 +167,7 @@ func TestRuntime_RaceConditionFix_ConcurrentEmit(t *testing.T) {
 			defer wg.Done()
 			// Continuously emit events
 			for j := 0; j < 100; j++ {
-				rt.emitEvent(Event[mockMessage]{Node: "test-worker", Superstep: int64(j)}, nil)
+				rt.emitEvent(Event[mockMessage]{Vertex: "test-worker", Superstep: int64(j)}, nil)
 				time.Sleep(time.Microsecond)
 			}
 		}(i)
@@ -222,14 +222,14 @@ func TestRuntime_EmitEventAfterClose(t *testing.T) {
 	}
 
 	// Try to emit after run completed - should return false, not panic
-	result := rt.emitEvent(Event[mockMessage]{Node: "after-close"}, nil)
+	result := rt.emitEvent(Event[mockMessage]{Vertex: "after-close"}, nil)
 	if result {
 		t.Error("emitEvent should return false after runtime closed")
 	}
 
 	// Multiple calls should also be safe
 	for i := 0; i < 10; i++ {
-		if rt.emitEvent(Event[mockMessage]{Node: "test"}, nil) {
+		if rt.emitEvent(Event[mockMessage]{Vertex: "test"}, nil) {
 			t.Error("emitEvent should return false after runtime closed")
 		}
 	}

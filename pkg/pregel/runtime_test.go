@@ -72,14 +72,14 @@ type mockGraph struct {
 	mu        sync.Mutex
 }
 
-func (g *mockGraph) RootNodes() []string { return g.rootNodes }
+func (g *mockGraph) RootVertices() []string { return g.rootNodes }
 func (g *mockGraph) Outgoing(node string) []string {
 	if n, ok := g.nodes[node]; ok && n.next != "" {
 		return []string{n.next}
 	}
 	return nil
 }
-func (g *mockGraph) NodeByName(name string) Node[mockState, mockMessage] { return g.nodes[name] }
+func (g *mockGraph) VertexByName(name string) Vertex[mockState, mockMessage] { return g.nodes[name] }
 func (g *mockGraph) State() mockState {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -274,9 +274,9 @@ func (e *errorNode) Run(ctx context.Context, vertex VertexContext[mockState, moc
 
 type errorGraph struct{ state mockState }
 
-func (g *errorGraph) RootNodes() []string           { return []string{"X"} }
+func (g *errorGraph) RootVertices() []string        { return []string{"X"} }
 func (g *errorGraph) Outgoing(node string) []string { return nil }
-func (g *errorGraph) NodeByName(name string) Node[mockState, mockMessage] {
+func (g *errorGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 	return &errorNode{name}
 }
 func (g *errorGraph) State() mockState { return g.state }
@@ -304,9 +304,9 @@ func (n *panicNode) Run(ctx context.Context, vertex VertexContext[mockState, moc
 
 type panicGraph struct{ state mockState }
 
-func (g *panicGraph) RootNodes() []string           { return []string{"P"} }
+func (g *panicGraph) RootVertices() []string        { return []string{"P"} }
 func (g *panicGraph) Outgoing(node string) []string { return nil }
-func (g *panicGraph) NodeByName(name string) Node[mockState, mockMessage] {
+func (g *panicGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 	return &panicNode{name: name}
 }
 func (g *panicGraph) State() mockState { return g.state }
@@ -397,10 +397,10 @@ func (n *aggregatorProbe) Run(_ context.Context, vertex VertexContext[mockState,
 
 type singleNodeGraph struct {
 	name string
-	node Node[mockState, mockMessage]
+	node Vertex[mockState, mockMessage]
 }
 
-func (g *singleNodeGraph) RootNodes() []string { return []string{g.name} }
+func (g *singleNodeGraph) RootVertices() []string { return []string{g.name} }
 
 func (g *singleNodeGraph) Outgoing(node string) []string {
 	if node == g.name {
@@ -409,7 +409,7 @@ func (g *singleNodeGraph) Outgoing(node string) []string {
 	return nil
 }
 
-func (g *singleNodeGraph) NodeByName(name string) Node[mockState, mockMessage] {
+func (g *singleNodeGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 	if name == g.name {
 		return g.node
 	}
@@ -463,7 +463,7 @@ type combinerGraph struct {
 	sink     *combinerSink
 }
 
-func (g *combinerGraph) RootNodes() []string { return []string{g.producer.Name()} }
+func (g *combinerGraph) RootVertices() []string { return []string{g.producer.Name()} }
 
 func (g *combinerGraph) Outgoing(name string) []string {
 	switch name {
@@ -474,7 +474,7 @@ func (g *combinerGraph) Outgoing(name string) []string {
 	}
 }
 
-func (g *combinerGraph) NodeByName(name string) Node[mockState, mockMessage] {
+func (g *combinerGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 	switch name {
 	case g.producer.Name():
 		return g.producer
@@ -549,11 +549,11 @@ func newDeliverGraph() *deliverGraph {
 	return &deliverGraph{state: state, node: node}
 }
 
-func (g *deliverGraph) RootNodes() []string { return nil }
+func (g *deliverGraph) RootVertices() []string { return nil }
 
 func (g *deliverGraph) Outgoing(string) []string { return nil }
 
-func (g *deliverGraph) NodeByName(name string) Node[*deliverState, mockMessage] {
+func (g *deliverGraph) VertexByName(name string) Vertex[*deliverState, mockMessage] {
 	if name == g.node.Name() {
 		return g.node
 	}
@@ -644,10 +644,10 @@ type noopState struct{}
 
 type noopGraph struct{}
 
-func (noopGraph) RootNodes() []string                            { return nil }
-func (noopGraph) Outgoing(string) []string                       { return nil }
-func (noopGraph) NodeByName(string) Node[noopState, mockMessage] { return nil }
-func (noopGraph) State() noopState                               { return noopState{} }
+func (noopGraph) RootVertices() []string                             { return nil }
+func (noopGraph) Outgoing(string) []string                           { return nil }
+func (noopGraph) VertexByName(string) Vertex[noopState, mockMessage] { return nil }
+func (noopGraph) State() noopState                                   { return noopState{} }
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
 	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)

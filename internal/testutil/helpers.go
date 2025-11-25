@@ -107,15 +107,15 @@ func NewMockModelWithToolCalls(toolCalls ...message.ToolCall) *MockModel {
 
 // NewCountingMockNode creates a MockNode that counts executions and tracks incoming messages.
 // This is useful for verifying graph execution order and message delivery.
-func NewCountingMockNode[S any, M any](name string, nextNode string) (*MockNode[S, M], *int, *[]pregel.Message[M]) {
+func NewCountingMockNode[S any, M any](name string, nextVertex string) (*MockNode[S, M], *int, *[]pregel.Message[M]) {
 	called := 0
 	messages := []pregel.Message[M]{}
 	var callMu sync.Mutex
 	var msgMu sync.Mutex
 
-	node := &MockNode[S, M]{
+	vertex := &MockNode[S, M]{
 		NameValue:  name,
-		NextNode:   nextNode,
+		NextNode:   nextVertex,
 		Called:     &called,
 		CallMu:     &callMu,
 		Messages:   &messages,
@@ -129,12 +129,12 @@ func NewCountingMockNode[S any, M any](name string, nextNode string) (*MockNode[
 			messages = append(messages, incoming...)
 			msgMu.Unlock()
 
-			// Send message to next node if specified
-			if nextNode != "" && len(incoming) > 0 {
-				// Forward first message to next node
+			// Send message to next vertex if specified
+			if nextVertex != "" && len(incoming) > 0 {
+				// Forward first message to next vertex
 				vertex.Send(pregel.Message[M]{
 					From: name,
-					To:   nextNode,
+					To:   nextVertex,
 					Data: incoming[0].Data,
 				})
 			}
@@ -143,50 +143,50 @@ func NewCountingMockNode[S any, M any](name string, nextNode string) (*MockNode[
 		},
 	}
 
-	return node, &called, &messages
+	return vertex, &called, &messages
 }
 
-// NewSimpleChainGraph creates a simple chain graph: root -> node1 -> node2 -> ... -> nodeN
-// Each node forwards messages to the next. Returns the graph and execution counters for each node.
-func NewSimpleChainGraph[S any, M any](nodeNames []string, state S) (*MockGraph[S, M], map[string]*int) {
-	nodes := make(map[string]pregel.Node[S, M])
+// NewSimpleChainGraph creates a simple chain graph: root -> vertex1 -> vertex2 -> ... -> vertexN
+// Each vertex forwards messages to the next. Returns the graph and execution counters for each vertex.
+func NewSimpleChainGraph[S any, M any](vertexNames []string, state S) (*MockGraph[S, M], map[string]*int) {
+	vertices := make(map[string]pregel.Vertex[S, M])
 	edges := make(map[string][]string)
 	counters := make(map[string]*int)
 
-	for i, name := range nodeNames {
-		var nextNode string
-		if i < len(nodeNames)-1 {
-			nextNode = nodeNames[i+1]
-			edges[name] = []string{nextNode}
+	for i, name := range vertexNames {
+		var nextVertex string
+		if i < len(vertexNames)-1 {
+			nextVertex = vertexNames[i+1]
+			edges[name] = []string{nextVertex}
 		}
 
-		node, counter, _ := NewCountingMockNode[S, M](name, nextNode)
-		nodes[name] = node
+		vertex, counter, _ := NewCountingMockNode[S, M](name, nextVertex)
+		vertices[name] = vertex
 		counters[name] = counter
 	}
 
-	rootNodes := []string{nodeNames[0]}
-	return NewMockGraph(rootNodes, nodes, edges, state), counters
+	rootVertices := []string{vertexNames[0]}
+	return NewMockGraph(rootVertices, vertices, edges, state), counters
 }
 
-// NewParallelFanOutGraph creates a graph with one root that fans out to multiple parallel nodes:
-// root -> [node1, node2, ..., nodeN]
+// NewParallelFanOutGraph creates a graph with one root that fans out to multiple parallel vertices:
+// root -> [vertex1, vertex2, ..., vertexN]
 // Useful for testing parallel execution.
-func NewParallelFanOutGraph[S any, M any](rootName string, parallelNodes []string, state S) (*MockGraph[S, M], map[string]*int) {
-	nodes := make(map[string]pregel.Node[S, M])
+func NewParallelFanOutGraph[S any, M any](rootName string, parallelVertices []string, state S) (*MockGraph[S, M], map[string]*int) {
+	vertices := make(map[string]pregel.Vertex[S, M])
 	edges := make(map[string][]string)
 	counters := make(map[string]*int)
 
-	// Create root node that broadcasts to all parallel nodes
-	rootNode, rootCounter, _ := NewCountingMockNode[S, M](rootName, "")
-	rootNode.RunFunc = func(ctx context.Context, vertex pregel.VertexContext[S, M], incoming []pregel.Message[M]) error {
-		rootNode.CallMu.Lock()
-		*rootNode.Called++
-		rootNode.CallMu.Unlock()
+	// Create root vertex that broadcasts to all parallel vertices
+	rootVertex, rootCounter, _ := NewCountingMockNode[S, M](rootName, "")
+	rootVertex.RunFunc = func(ctx context.Context, vertex pregel.VertexContext[S, M], incoming []pregel.Message[M]) error {
+		rootVertex.CallMu.Lock()
+		*rootVertex.Called++
+		rootVertex.CallMu.Unlock()
 
-		// Send to all parallel nodes
+		// Send to all parallel vertices
 		var zeroM M
-		for _, target := range parallelNodes {
+		for _, target := range parallelVertices {
 			vertex.Send(pregel.Message[M]{
 				From: rootName,
 				To:   target,
@@ -195,33 +195,33 @@ func NewParallelFanOutGraph[S any, M any](rootName string, parallelNodes []strin
 		}
 		return nil
 	}
-	nodes[rootName] = rootNode
+	vertices[rootName] = rootVertex
 	counters[rootName] = rootCounter
-	edges[rootName] = parallelNodes
+	edges[rootName] = parallelVertices
 
-	// Create parallel nodes
-	for _, name := range parallelNodes {
-		node, counter, _ := NewCountingMockNode[S, M](name, "")
-		nodes[name] = node
+	// Create parallel vertices
+	for _, name := range parallelVertices {
+		vertex, counter, _ := NewCountingMockNode[S, M](name, "")
+		vertices[name] = vertex
 		counters[name] = counter
 	}
 
-	return NewMockGraph([]string{rootName}, nodes, edges, state), counters
+	return NewMockGraph([]string{rootName}, vertices, edges, state), counters
 }
 
-// RequireAllNodesExecuted checks that all nodes in the graph were executed at least once.
+// RequireAllNodesExecuted checks that all vertices in the graph were executed at least once.
 // This is a common assertion pattern for graph execution tests.
 func RequireAllNodesExecuted(t interface {
 	Errorf(format string, args ...any)
 }, counters map[string]*int) {
 	for name, counter := range counters {
 		if *counter == 0 {
-			t.Errorf("node %q was never executed", name)
+			t.Errorf("vertex %q was never executed", name)
 		}
 	}
 }
 
-// RequireExecutionOrder checks that nodes were executed in the expected order.
+// RequireExecutionOrder checks that vertices were executed in the expected order.
 // This is useful for testing sequential execution.
 func RequireExecutionOrder(t interface {
 	Errorf(format string, args ...any)
@@ -239,7 +239,7 @@ func RequireExecutionOrder(t interface {
 	}
 
 	if len(executions) != len(expectedOrder) {
-		t.Errorf("expected %d nodes to execute, got %d", len(expectedOrder), len(executions))
+		t.Errorf("expected %d vertices to execute, got %d", len(expectedOrder), len(executions))
 		return
 	}
 
@@ -252,7 +252,7 @@ func RequireExecutionOrder(t interface {
 			}
 		}
 		if !found {
-			t.Errorf("expected node %q at position %d, but it was not executed", expected, i)
+			t.Errorf("expected vertex %q at position %d, but it was not executed", expected, i)
 		}
 	}
 }

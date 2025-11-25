@@ -123,7 +123,7 @@ func (t *MockTool) Call(ctx context.Context, args string) (any, error) {
 	return "mock result", nil
 }
 
-// MockNode is a mock implementation of pregel.Node for testing BSP graphs.
+// MockNode is a mock implementation of pregel.Vertex for testing BSP graphs.
 type MockNode[S any, M any] struct {
 	NameValue  string
 	NextNode   string
@@ -135,7 +135,7 @@ type MockNode[S any, M any] struct {
 	RunFunc    func(ctx context.Context, vertex pregel.VertexContext[S, M], incoming []pregel.Message[M]) error
 }
 
-// Name returns the node's identifier.
+// Name returns the vertex's identifier.
 func (n *MockNode[S, M]) Name() string {
 	if n.NameValue == "" {
 		return "mock_node"
@@ -143,7 +143,7 @@ func (n *MockNode[S, M]) Name() string {
 	return n.NameValue
 }
 
-// Run executes the node's computation.
+// Run executes the vertex's computation.
 // If RunFunc is set, it delegates to that function.
 // Otherwise, implements default behavior: increments counter, optionally sends message to NextNode.
 func (n *MockNode[S, M]) Run(ctx context.Context, vertex pregel.VertexContext[S, M], incoming []pregel.Message[M]) error {
@@ -172,27 +172,27 @@ func (n *MockNode[S, M]) Run(ctx context.Context, vertex pregel.VertexContext[S,
 // MockGraph is a mock implementation of pregel.Graph for testing.
 type MockGraph[S any, M any] struct {
 	RootNodesValue []string
-	Nodes          map[string]pregel.Node[S, M]
+	Nodes          map[string]pregel.Vertex[S, M]
 	OutgoingEdges  map[string][]string
 	StateValue     S
 	StateMu        sync.Mutex
 }
 
-// RootNodes returns the initial vertices to activate.
-func (g *MockGraph[S, M]) RootNodes() []string {
+// RootVertices returns the initial vertices to activate.
+func (g *MockGraph[S, M]) RootVertices() []string {
 	return g.RootNodesValue
 }
 
-// Outgoing returns the destination vertices for a given node.
-func (g *MockGraph[S, M]) Outgoing(node string) []string {
-	if edges, ok := g.OutgoingEdges[node]; ok {
+// Outgoing returns the destination vertices for a given vertex.
+func (g *MockGraph[S, M]) Outgoing(vertex string) []string {
+	if edges, ok := g.OutgoingEdges[vertex]; ok {
 		return edges
 	}
 	return nil
 }
 
-// NodeByName returns the node with the given name.
-func (g *MockGraph[S, M]) NodeByName(name string) pregel.Node[S, M] {
+// VertexByName returns the vertex with the given name.
+func (g *MockGraph[S, M]) VertexByName(name string) pregel.Vertex[S, M] {
 	return g.Nodes[name]
 }
 
@@ -204,7 +204,7 @@ func (g *MockGraph[S, M]) State() S {
 }
 
 // NewMockGraph creates a new MockGraph with the given configuration.
-func NewMockGraph[S any, M any](rootNodes []string, nodes map[string]pregel.Node[S, M], edges map[string][]string, state S) *MockGraph[S, M] {
+func NewMockGraph[S any, M any](rootNodes []string, nodes map[string]pregel.Vertex[S, M], edges map[string][]string, state S) *MockGraph[S, M] {
 	return &MockGraph[S, M]{
 		RootNodesValue: rootNodes,
 		Nodes:          nodes,

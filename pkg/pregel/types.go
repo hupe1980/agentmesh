@@ -5,9 +5,9 @@ import "context"
 // Graph defines the minimal contract the runtime needs to traverse a graph.
 // Generic over global state `S` and message payload `M`.
 type Graph[S any, M any] interface {
-	RootNodes() []string
-	Outgoing(node string) []string
-	NodeByName(name string) Node[S, M]
+	RootVertices() []string
+	Outgoing(vertex string) []string
+	VertexByName(name string) Vertex[S, M]
 	State() S
 }
 
@@ -36,13 +36,14 @@ type VertexContext[S any, M any] struct {
 	Aggregates map[string]any
 }
 
-// Node represents a unit of computation (vertex).
-type Node[S any, M any] interface {
+// Vertex represents a unit of computation in the BSP model.
+// Each vertex receives messages, performs computation, and can send messages to other vertices.
+type Vertex[S any, M any] interface {
 	Name() string
 	Run(ctx context.Context, vertex VertexContext[S, M], incoming []Message[M]) error
 }
 
-// Message represents a typed, directed message sent between nodes.
+// Message represents a typed, directed message sent between vertices.
 type Message[M any] struct {
 	From string
 	To   string
@@ -61,14 +62,14 @@ type Message[M any] struct {
 //	        // Examples: context canceled, max iterations exceeded, quota exceeded
 //	        return err
 //	    }
-//	    // Process event (superstep progress, node output, diagnostics)
+//	    // Process event (superstep progress, vertex output, diagnostics)
 //	}
 //
-// For non-fatal node-level errors (where execution should continue),
+// For non-fatal vertex-level errors (where execution should continue),
 // use evt.Output to pass error information rather than the iterator's error return.
 type Event[M any] struct {
-	Node        string
+	Vertex      string
 	Superstep   int64
-	Output      any // Node output (can include error information for non-fatal failures)
+	Output      any // Vertex output (can include error information for non-fatal failures)
 	Diagnostics any // Debug/diagnostic information
 }

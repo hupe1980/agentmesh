@@ -148,7 +148,7 @@ func (sf *shardedFrontier) Len() int {
 //   - Combiner reduces message volume by merging messages for same target
 //
 // Execution Flow:
-//  1. Initialize frontier from graph root nodes
+//  1. Initialize frontier from graph root vertices
 //  2. For each superstep:
 //     a. Execute vertices in parallel (worker pool)
 //     - Each worker drains its own mailbox (parallel draining)
@@ -560,8 +560,8 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 	frontier := make(map[string]struct{})
 
-	// Add root nodes
-	for _, name := range r.graph.RootNodes() {
+	// Add root vertices
+	for _, name := range r.graph.RootVertices() {
 		frontier[name] = struct{}{}
 	}
 
@@ -609,8 +609,8 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	// Observability: Record superstep metrics
 	mp := metrics.FromContext(ctx)
 	superstepStart := time.Now()
-	activeNodesGauge := mp.Counter("superstep.active_nodes")
-	activeNodesGauge.Add(ctx, float64(len(frontier)))
+	activeVerticesGauge := mp.Counter("superstep.active_vertices")
+	activeVerticesGauge.Add(ctx, float64(len(frontier)))
 	defer func() {
 		duration := time.Since(superstepStart)
 		superstepDuration := mp.Histogram("superstep.duration_ms")
@@ -755,11 +755,11 @@ func (r *Runtime[S, M]) workerLoop(
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {
-	// Don't check ctx.Err() here - let the node handle it and wrap appropriately
-	node := r.graph.NodeByName(name)
-	if node == nil {
-		err := fmt.Errorf("superstep %d: node %q: %w", superstep, name, ErrUnknownNode)
-		r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
+	// Don't check ctx.Err() here - let the vertex handle it and wrap appropriately
+	vertex := r.graph.VertexByName(name)
+	if vertex == nil {
+		err := fmt.Errorf("superstep %d: vertex %q: %w", superstep, name, ErrUnknownVertex)
+		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
 		return err
 	}
 
@@ -783,7 +783,7 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	if len(r.aggregators) > 0 {
 		aggregateFn = r.recordAggregation
 	}
-	vertex := VertexContext[S, M]{
+	vertexContext := VertexContext[S, M]{
 		State:      state,
 		Send:       send,
 		Aggregate:  aggregateFn,
@@ -792,16 +792,16 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	defer func() {
 		if rec := recover(); rec != nil {
 			stack := debug.Stack()
-			recovered := fmt.Errorf("superstep %d: node %q: %w: %v", superstep, name, ErrNodePanicked, rec)
-			r.emitEvent(Event[M]{Node: name, Superstep: superstep, Diagnostics: stack}, recovered)
+			recovered := fmt.Errorf("superstep %d: vertex %q: %w: %v", superstep, name, ErrVertexPanicked, rec)
+			r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Diagnostics: stack}, recovered)
 			err = recovered
 		}
 	}()
 
-	runErr := node.Run(vertexCtx, vertex, incoming)
+	runErr := vertex.Run(vertexCtx, vertexContext, incoming)
 	if runErr != nil {
-		err = fmt.Errorf("superstep %d: node %q failed: %w", superstep, name, runErr)
-		r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
+		err = fmt.Errorf("superstep %d: vertex %q failed: %w", superstep, name, runErr)
+		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
 		return err
 	}
 
@@ -810,13 +810,13 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		// Use context from executeVertex to support backpressure
 		if deliverErr := r.recordDeliveries(ctx, sent); deliverErr != nil {
 			// If message delivery fails due to backpressure/timeout, treat as error
-			err = fmt.Errorf("superstep %d: node %q: failed to deliver messages: %w", superstep, name, deliverErr)
-			r.emitEvent(Event[M]{Node: name, Superstep: superstep}, err)
+			err = fmt.Errorf("superstep %d: vertex %q: failed to deliver messages: %w", superstep, name, deliverErr)
+			r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
 			return err
 		}
 	}
 
-	r.emitEvent(Event[M]{Node: name, Superstep: superstep}, nil)
+	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, nil)
 	return nil
 }
 

@@ -12,7 +12,7 @@
 // MockModel: Configurable mock of model.Model with customizable response generation
 // MockTool: Configurable mock of tool.Tool with customizable execution behavior
 // MockCheckpointer: In-memory mock of checkpoint.Checkpointer for state persistence tests
-// MockNode: Configurable mock of pregel.Node for BSP graph testing
+// MockNode: Configurable mock of pregel.Vertex for BSP graph testing
 // MockGraph: Complete mock graph implementation for pregel runtime tests
 //
 // # Usage Examples
@@ -48,12 +48,12 @@
 // MockGraph for pregel tests:
 //
 //	graph := testutil.NewMockGraph(
-//	    []string{"A"},                   // root nodes
-//	    map[string]pregel.Node[S, M]{    // nodes
+//	    []string{"A"},                      // root vertices
+//	    map[string]pregel.Vertex[S, M]{     // vertices
 //	        "A": &testutil.MockNode[S, M]{NameValue: "A", NextNode: "B"},
 //	        "B": &testutil.MockNode[S, M]{NameValue: "B"},
 //	    },
-//	    map[string][]string{"A": {"B"}}, // edges
-//	    mockState,                       // initial state
+//	    map[string][]string{"A": {"B"}},    // edges
+//	    mockState,                          // initial state
 //	)
 package testutil
