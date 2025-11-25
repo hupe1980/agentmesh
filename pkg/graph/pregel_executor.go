@@ -20,6 +20,27 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
+const (
+	// defaultResultChanSize buffers up to 100 results to prevent backpressure
+	// when the yield consumer (caller iterating results) is slower than the
+	// producer (graph execution). This provides:
+	//   - Smoother execution flow without blocking nodes
+	//   - Tolerance for bursty output patterns
+	//   - Balance between memory usage (~8KB per channel) and throughput
+	// For workloads with >100 concurrent results, execution may block briefly
+	// until the consumer catches up. Typical agents produce <10 results/superstep.
+	defaultResultChanSize = 100
+
+	// defaultMaxIterations is the default maximum number of supersteps (iterations)
+	// before execution terminates to prevent infinite loops. This provides:
+	//   - Protection against buggy graphs with infinite routing cycles
+	//   - Reasonable default for most agent workflows (simple: <10, complex: <100)
+	//   - Can be overridden via WithMaxIterations() for specialized workloads
+	// Agents typically complete in 5-20 iterations. Exceeding 1000 often indicates
+	// a routing bug (e.g., node always routes back to itself without termination).
+	defaultMaxIterations = 1000
+)
+
 // unfoldValue attempts to unfold a value if it's a slice, yielding each element.
 // Returns true if the value was a slice and was unfolded, false otherwise.
 // This replaces reflection-based slice handling with type assertions for common types.
@@ -270,7 +291,7 @@ func NewPregelExecutor[I, O any](
 ) *PregelExecutor[I, O] {
 	p := &PregelExecutor[I, O]{
 		maxWorkers:    runtime.NumCPU(),
-		maxIters:      1000,
+		maxIters:      defaultMaxIterations,
 		metrics:       NewRuntimeMetrics(),
 		inputToState:  inputToState,
 		outputKey:     outputKey,
@@ -330,7 +351,7 @@ func (p *PregelExecutor[I, O]) setupYieldChannel(
 	resultChan := make(chan struct {
 		output O
 		err    error
-	}, 100)
+	}, defaultResultChanSize)
 
 	yieldDone := make(chan struct{})
 	go func() {
@@ -939,9 +960,56 @@ func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
 	}
 }
 
+// notifyStateChangeCallbacks executes state change callbacks if available.
+func (n *pregelNodeAdapter[I, O]) notifyStateChangeCallbacks(
+	ctx context.Context,
+	updates state.Updates,
+	logger logging.Logger,
+) {
+	stateCallbacks, ok := getStateCallbacks(ctx)
+	if !ok {
+		return
+	}
+
+	if err := stateCallbacks.ExecuteOnStateChange(ctx, n.nodeName, updates); err != nil {
+		logger.Warn("state change callback failed", "node", n.nodeName, "error", err)
+		// Don't fail execution if callbacks fail
+	}
+}
+
+// yieldOutputFromUpdates extracts output from updates and yields it.
+// Returns false if yielding was cancelled, true otherwise.
+func (n *pregelNodeAdapter[I, O]) yieldOutputFromUpdates(updates state.Updates) bool {
+	// Yield entire state.Updates for wildcard output key
+	if n.executor.outputKey == "*" {
+		output := n.executor.outputAdapter(updates)
+		return n.yield(output, nil)
+	}
+
+	// Yield specific key value
+	value, ok := updates[n.executor.outputKey]
+	if !ok {
+		return true // Key not in updates, continue
+	}
+
+	// Try to unfold slices and yield each element
+	wasUnfolded := unfoldValue(value, func(elem any) bool {
+		output := n.executor.outputAdapter(elem)
+		return n.yield(output, nil)
+	})
+
+	if wasUnfolded {
+		return true // Slice was unfolded and yielded
+	}
+
+	// For non-slice values, apply adapter and yield once
+	output := n.executor.outputAdapter(value)
+	return n.yield(output, nil)
+}
+
 // Run executes the node.
 //
-//nolint:gocyclo,nestif // BSP node execution requires complex state management
+//nolint:gocyclo // BSP node execution requires complex state management
 func (n *pregelNodeAdapter[I, O]) Run(
 	ctx context.Context,
 	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
@@ -959,11 +1027,9 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		snapshot := n.executor.metrics.Snapshot()
 
 		// Skip paused nodes - they require external resume signal
-		for _, pausedNode := range snapshot.PausedNodes {
-			if pausedNode == n.nodeName {
-				// Node is paused, wait for external ResumePaused call
-				return nil
-			}
+		if slices.Contains(snapshot.PausedNodes, n.nodeName) {
+			// Node is paused, wait for external ResumePaused call
+			return nil
 		}
 	}
 
@@ -1075,8 +1141,11 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// Execute node with retry and cache policies (now returns Command)
 	cmd, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
-		// Wrap node execution errors with sentinel for identification
-		nodeErr = fmt.Errorf("%w: node %q: %w", state.ErrNodeExecution, n.nodeName, err)
+		// Wrap node execution errors with structured error type
+		nodeErr = &NodeExecutionError{
+			NodeName: n.nodeName,
+			Err:      err,
+		}
 		return nodeErr
 	}
 
@@ -1135,34 +1204,11 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		n.graphAdapter.updatesMu.Unlock()
 
 		// Notify state change callbacks (before actual application)
-		if stateCallbacks, ok := getStateCallbacks(ctx); ok {
-			if err := stateCallbacks.ExecuteOnStateChange(ctx, n.nodeName, updates); err != nil {
-				logger.Warn("state change callback failed", "node", n.nodeName, "error", err)
-				// Don't fail execution if callbacks fail
-			}
-		}
+		n.notifyStateChangeCallbacks(ctx, updates, logger)
 
 		// Extract output from updates based on configured key and yield
-		if n.executor.outputKey == "*" {
-			// Yield entire state.Updates (for state-only executor)
-			output := n.executor.outputAdapter(updates)
-			if !n.yield(output, nil) {
-				return nil
-			}
-		} else if value, ok := updates[n.executor.outputKey]; ok {
-			// Special handling for slices: unfold and yield each element individually
-			wasUnfolded := unfoldValue(value, func(elem any) bool {
-				output := n.executor.outputAdapter(elem)
-				return n.yield(output, nil)
-			})
-
-			if !wasUnfolded {
-				// For non-slice values, apply adapter and yield once
-				output := n.executor.outputAdapter(value)
-				if !n.yield(output, nil) {
-					return nil
-				}
-			}
+		if !n.yieldOutputFromUpdates(updates) {
+			return nil
 		}
 	}
 

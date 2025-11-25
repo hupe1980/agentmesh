@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -42,6 +43,32 @@ const MessagesKeyName = "__messages__"
 //	    return &NodeResult{...}, nil
 //	}
 var ErrHumanInterrupt = errors.New("human interrupt: execution paused for user input")
+
+// ErrNodeExecution is a sentinel error that wraps node execution failures.
+// Used to distinguish node-level errors from system-level errors in execution.
+var ErrNodeExecution = errors.New("node execution failed")
+
+// NodeExecutionError wraps node execution failures with context about which node failed.
+// This type preserves error unwrapping capabilities while providing structured error information.
+type NodeExecutionError struct {
+	NodeName string
+	Err      error
+}
+
+// Error implements the error interface.
+func (e *NodeExecutionError) Error() string {
+	return fmt.Sprintf("node %q: %v", e.NodeName, e.Err)
+}
+
+// Unwrap returns the wrapped error for errors.Is/As compatibility.
+func (e *NodeExecutionError) Unwrap() error {
+	return e.Err
+}
+
+// Is checks if the target error is ErrNodeExecution.
+func (e *NodeExecutionError) Is(target error) bool {
+	return target == ErrNodeExecution
+}
 
 // ============================================================================
 // Executor Interface
