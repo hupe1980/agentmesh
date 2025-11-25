@@ -253,7 +253,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	if opts.MessageBus != nil {
 		messageBus = opts.MessageBus
 	} else {
-		messageBus = NewInMemoryMessageBus[M](opts.MaxMailboxSize, opts.Combiner)
+		messageBus = NewInMemoryMessageBus(opts.MaxMailboxSize, opts.Combiner)
 	}
 
 	// Create quota manager if configured
@@ -389,6 +389,20 @@ func (r *Runtime[S, M]) finalizeAggregators() {
 	}
 }
 
+// checkQuotas checks all resource quotas and returns an error if any are exceeded.
+func (r *Runtime[S, M]) checkQuotas(ctx context.Context) error {
+	if r.quotaManager == nil {
+		return nil
+	}
+	if err := r.quotaManager.CheckMemory(ctx); err != nil {
+		return fmt.Errorf("memory quota: %w", err)
+	}
+	if err := r.quotaManager.CheckTime(ctx); err != nil {
+		return fmt.Errorf("time quota: %w", err)
+	}
+	return nil
+}
+
 // Run executes all supersteps until the computation quiesces.
 // Returns an iterator that yields events as the computation progresses.
 //
@@ -483,19 +497,10 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		}
 
 		// Check resource quotas
-		if r.quotaManager != nil {
-			// Check memory
-			if err := r.quotaManager.CheckMemory(ctx); err != nil {
-				logger.Error("memory quota exceeded", "superstep", superstep, "error", err)
-				r.emitEvent(Event[M]{Superstep: superstep}, err)
-				return
-			}
-			// Check execution time
-			if err := r.quotaManager.CheckTime(ctx); err != nil {
-				logger.Error("time quota exceeded", "superstep", superstep, "error", err)
-				r.emitEvent(Event[M]{Superstep: superstep}, err)
-				return
-			}
+		if err := r.checkQuotas(ctx); err != nil {
+			logger.Error("quota exceeded", "superstep", superstep, "error", err)
+			r.emitEvent(Event[M]{Superstep: superstep}, err)
+			return
 		}
 
 		// Check max iterations limit (if configured)
@@ -522,10 +527,7 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 			"total_messages", r.messages.Load())
 
 		if err := r.runSuperstep(ctx, frontier, nextSuperstep); err != nil {
-			logger.Error("superstep execution failed",
-				"superstep", nextSuperstep,
-				"error", err)
-			r.emitEvent(Event[M]{Superstep: nextSuperstep}, err)
+			_ = r.handleExecutionError(logger, nextSuperstep, "superstep execution failed", err)
 			return
 		}
 		superstep = nextSuperstep
@@ -533,20 +535,14 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		// Call superstep completion callback (useful for checkpointing and applying updates)
 		if r.opts.OnSuperstepComplete != nil {
 			if err := r.opts.OnSuperstepComplete(ctx, superstep); err != nil {
-				logger.Error("superstep completion callback failed",
-					"superstep", superstep,
-					"error", err)
-				r.emitEvent(Event[M]{Superstep: superstep}, err)
+				_ = r.handleExecutionError(logger, superstep, "superstep completion callback failed", err)
 				return
 			}
 		}
 
 		frontier, err = r.consumeNextFrontier(ctx)
 		if err != nil {
-			logger.Error("failed to consume next frontier",
-				"superstep", superstep,
-				"error", err)
-			r.emitEvent(Event[M]{Superstep: superstep}, err)
+			_ = r.handleExecutionError(logger, superstep, "failed to consume next frontier", err)
 			return
 		}
 
@@ -632,7 +628,12 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	superCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	names := r.sortedFrontierNames(frontier)
+	// Extract and sort vertex names for deterministic execution order
+	names := make([]string, 0, len(frontier))
+	for name := range frontier {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 
 	// Execute vertices in parallel (draining happens inside worker loop)
 	if err := r.executeVerticesParallel(superCtx, names, superstep, cancel); err != nil {
@@ -645,16 +646,6 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	return ctx.Err()
 }
 
-// sortedFrontierNames extracts and sorts vertex names from the frontier.
-func (r *Runtime[S, M]) sortedFrontierNames(frontier map[string]struct{}) []string {
-	names := make([]string, 0, len(frontier))
-	for name := range frontier {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // executeVerticesParallel executes all vertices in parallel using a worker pool.
 // Each worker drains its mailbox and executes the vertex in parallel, eliminating
 // the sequential draining bottleneck for distributed deployments.
@@ -664,9 +655,16 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 	superstep int64,
 	cancel context.CancelFunc,
 ) error {
-	workers := r.calculateWorkerCount(len(names))
-	tasks := make(chan string)
+	// Calculate worker count (min of MaxWorkers and frontier size)
+	workers := r.opts.MaxWorkers
+	if workers <= 0 {
+		workers = 1
+	}
+	if workers > len(names) {
+		workers = len(names)
+	}
 
+	tasks := make(chan string)
 	var wg sync.WaitGroup
 	var once sync.Once
 	var runErr error
@@ -682,58 +680,41 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 	}
 
 	// Start worker pool
-	r.startWorkerPool(ctx, &wg, workers, tasks, superstep, recordErr)
-
-	// Schedule tasks
-	r.scheduleTasks(ctx, tasks, names)
-
-	// Wait for completion
-	wg.Wait()
-
-	return runErr
-}
-
-// calculateWorkerCount determines the optimal number of workers based on configuration and frontier size.
-func (r *Runtime[S, M]) calculateWorkerCount(frontierSize int) int {
-	workers := r.opts.MaxWorkers
-	if workers <= 0 {
-		workers = 1
-	}
-	if workers > frontierSize {
-		workers = frontierSize
-	}
-	return workers
-}
-
-// startWorkerPool starts the configured number of worker goroutines.
-func (r *Runtime[S, M]) startWorkerPool(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	workers int,
-	tasks <-chan string,
-	superstep int64,
-	recordErr func(error),
-) {
 	for range workers {
 		// Acquire goroutine quota before spawning
 		if r.quotaManager != nil {
 			if err := r.quotaManager.AcquireGoroutine(ctx); err != nil {
 				recordErr(fmt.Errorf("goroutine quota exceeded: %w", err))
-				return
+				return runErr
 			}
 		}
 
 		wg.Add(1)
 		go func() {
 			defer func() {
-				// Release goroutine quota when done
 				if r.quotaManager != nil {
 					r.quotaManager.ReleaseGoroutine()
 				}
 			}()
-			r.workerLoop(ctx, wg, tasks, superstep, recordErr)
+			r.workerLoop(ctx, &wg, tasks, superstep, recordErr)
 		}()
 	}
+
+	// Schedule tasks
+	go func() {
+		defer close(tasks)
+		for _, name := range names {
+			select {
+			case <-ctx.Done():
+				return
+			case tasks <- name:
+			}
+		}
+	}()
+
+	// Wait for completion
+	wg.Wait()
+	return runErr
 }
 
 // workerLoop is the main loop for a worker goroutine.
@@ -769,18 +750,6 @@ func (r *Runtime[S, M]) workerLoop(
 				recordErr(err)
 				return
 			}
-		}
-	}
-}
-
-// scheduleTasks sends all tasks to the worker pool, respecting context cancellation.
-func (r *Runtime[S, M]) scheduleTasks(ctx context.Context, tasks chan<- string, names []string) {
-	defer close(tasks)
-	for _, name := range names {
-		select {
-		case <-ctx.Done():
-			return
-		case tasks <- name:
 		}
 	}
 }
@@ -913,4 +882,12 @@ func (r *Runtime[S, M]) emitEvent(event Event[M], err error) bool {
 		return false
 	}
 	return r.eventChan.Send(event, err)
+}
+
+// handleExecutionError logs an error and emits an event, then returns the error.
+// This consolidates the repetitive error handling pattern in execute().
+func (r *Runtime[S, M]) handleExecutionError(logger logging.Logger, superstep int64, message string, err error) error {
+	logger.Error(message, "superstep", superstep, "error", err)
+	r.emitEvent(Event[M]{Superstep: superstep}, err)
+	return err
 }

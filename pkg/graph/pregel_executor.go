@@ -282,9 +282,177 @@ func NewPregelExecutor[I, O any](
 	return p
 }
 
+// initializeRun handles run initialization: resume values, checkpoint restore, and initial state.
+func (p *PregelExecutor[I, O]) initializeRun(
+	ctx context.Context,
+	compiled *Compiled[I, O],
+	input I,
+	opts RunOptions,
+) (string, error) {
+	// Inject resume values into context if provided
+	if opts.ResumeValue != nil {
+		ctx = withResumeValueContext(ctx, opts.ResumeValue)
+	}
+
+	runID := opts.RunID
+	if runID == "" {
+		runID = uuid.New().String()
+	}
+
+	// Restore from checkpoint if configured
+	if err := p.restoreCheckpoint(ctx, compiled, opts); err != nil {
+		return "", err
+	}
+
+	// Convert input to initial state using adapter
+	var inputValue any = input
+	if inputValue != nil {
+		initialState := p.inputToState(input)
+		if len(initialState) > 0 {
+			if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
+				return "", fmt.Errorf("failed to apply initial state: %w", err)
+			}
+		}
+	}
+
+	return runID, nil
+}
+
+// setupYieldChannel creates the result channel and yield goroutine for thread-safe result delivery.
+func (p *PregelExecutor[I, O]) setupYieldChannel(
+	ctx context.Context,
+	yield func(O, error) bool,
+	cancel context.CancelFunc,
+) (chan struct {
+	output O
+	err    error
+}, chan struct{}, func(O, error) bool) {
+	resultChan := make(chan struct {
+		output O
+		err    error
+	}, 100)
+
+	yieldDone := make(chan struct{})
+	go func() {
+		defer close(yieldDone)
+		for item := range resultChan {
+			if !yield(item.output, item.err) {
+				cancel()
+				//nolint:revive // Need to drain channel
+				for range resultChan {
+				}
+				return
+			}
+		}
+	}()
+
+	safeYield := func(output O, err error) bool {
+		select {
+		case resultChan <- struct {
+			output O
+			err    error
+		}{output, err}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	return resultChan, yieldDone, safeYield
+}
+
+// buildRuntimeOptions constructs pregel runtime options with BSP callbacks.
+func (p *PregelExecutor[I, O]) buildRuntimeOptions(
+	compiled *Compiled[I, O],
+	runOpts RunOptions,
+	adapter *pregelGraphAdapter[I, O],
+) []pregel.RuntimeOption[*Compiled[I, O], state.Updates] {
+	runtimeOpts := []pregel.RuntimeOption[*Compiled[I, O], state.Updates]{
+		pregel.WithMaxWorkers[*Compiled[I, O], state.Updates](p.maxWorkers),
+		pregel.WithMaxIterations[*Compiled[I, O], state.Updates](p.maxIters),
+	}
+
+	if p.messageBus != nil {
+		runtimeOpts = append(runtimeOpts, pregel.WithMessageBus[*Compiled[I, O]](p.messageBus))
+	}
+
+	if len(p.aggregators) > 0 {
+		runtimeOpts = append(runtimeOpts, pregel.WithAggregators[*Compiled[I, O], state.Updates](p.aggregators))
+	}
+
+	// BSP barrier callbacks
+	runtimeOpts = append(runtimeOpts,
+		pregel.WithOnSuperstepStart[*Compiled[I, O], state.Updates](
+			func(ctx context.Context, superstep int64) error {
+				return adapter.prepareSuperstep(ctx)
+			},
+		),
+		pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
+			func(ctx context.Context, superstep int64) error {
+				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
+					p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter)
+				} else {
+					p.applyPendingUpdates(ctx, compiled, adapter)
+				}
+				return nil
+			},
+		),
+	)
+
+	return runtimeOpts
+}
+
+// executeRuntimeLoop runs the pregel runtime and handles events, errors, and final state.
+func (p *PregelExecutor[I, O]) executeRuntimeLoop(
+	ctx context.Context,
+	rt *pregel.Runtime[*Compiled[I, O], state.Updates],
+	compiled *Compiled[I, O],
+	runOpts RunOptions,
+	adapter *pregelGraphAdapter[I, O],
+	safeYield func(O, error) bool,
+	resultChan chan struct {
+		output O
+		err    error
+	},
+	yieldDone chan struct{},
+) {
+	var runtimeErr error
+	for _, err := range rt.Run(ctx) {
+		if p.metrics != nil {
+			p.metrics.SetSuperstep(rt.CurrentSuperstep())
+		}
+
+		select {
+		case <-ctx.Done():
+			p.applyPendingUpdates(ctx, compiled, adapter)
+			close(resultChan)
+			<-yieldDone
+			return
+		default:
+		}
+
+		if err != nil {
+			runtimeErr = err
+			var zero O
+			safeYield(zero, err)
+			break
+		}
+	}
+
+	// Handle final state
+	if runtimeErr == nil {
+		finalSuperstep := rt.CurrentSuperstep()
+		p.applyPendingUpdates(ctx, compiled, adapter)
+		if runOpts.Checkpointer != nil && runOpts.RunID != "" {
+			p.saveFinalCheckpoint(ctx, compiled, runOpts, finalSuperstep)
+		}
+	}
+
+	close(resultChan)
+	<-yieldDone
+}
+
 // Run executes the compiled graph using the pregel BSP runtime.
-//
-//nolint:gocyclo // Complex graph orchestration logic cannot be easily simplified
 func (p *PregelExecutor[I, O]) Run(
 	ctx context.Context,
 	compiled *Compiled[I, O],
@@ -298,70 +466,16 @@ func (p *PregelExecutor[I, O]) Run(
 		runCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		// Inject resume values into context if provided
-		if runOpts.ResumeValue != nil {
-			runCtx = withResumeValueContext(runCtx, runOpts.ResumeValue)
-		}
-
-		runID := runOpts.RunID
-		if runID == "" {
-			runID = uuid.New().String()
-		}
-
-		// Restore from checkpoint if configured
-		if err := p.restoreCheckpoint(runCtx, compiled, runOpts); err != nil {
+		// Initialize run context and state
+		runID, err := p.initializeRun(runCtx, compiled, input, runOpts)
+		if err != nil {
 			var zero O
 			yield(zero, err)
 			return
 		}
 
-		// Convert input to initial state using adapter
-		var inputValue any = input
-		if inputValue != nil {
-			initialState := p.inputToState(input)
-			if len(initialState) > 0 {
-				if err := compiled.manager.ApplyUpdates(runCtx, initialState); err != nil {
-					var zero O
-					yield(zero, fmt.Errorf("failed to apply initial state: %w", err))
-					return
-				}
-			}
-		}
-
-		// Create result channel to serialize all yields from a single goroutine
-		resultChan := make(chan struct {
-			output O
-			err    error
-		}, 100)
-
-		// Single goroutine that calls yield - ensures thread safety
-		yieldDone := make(chan struct{})
-		go func() {
-			defer close(yieldDone)
-			for item := range resultChan {
-				if !yield(item.output, item.err) {
-					cancel() // Consumer stopped, cancel the runtime context
-					// Drain remaining items to prevent goroutine leak
-					//nolint:revive // Need to drain channel
-					for range resultChan {
-					}
-					return
-				}
-			}
-		}()
-
-		// Helper to send results to the yield goroutine
-		safeYield := func(output O, err error) bool {
-			select {
-			case resultChan <- struct {
-				output O
-				err    error
-			}{output, err}:
-				return true
-			case <-runCtx.Done():
-				return false
-			}
-		}
+		// Setup result channel and safe yielding
+		resultChan, yieldDone, safeYield := p.setupYieldChannel(runCtx, yield, cancel)
 
 		// Create adapter to make compiled graph work with pregel runtime
 		adapter := &pregelGraphAdapter[I, O]{
@@ -373,45 +487,8 @@ func (p *PregelExecutor[I, O]) Run(
 			checkpointer:           runOpts.Checkpointer, // For interrupt checkpoints
 		}
 
-		// Resume logic is handled in RootNodes() via resumeEntryPoints
-
-		// Configure pregel runtime options
-		runtimeOpts := []pregel.RuntimeOption[*Compiled[I, O], state.Updates]{
-			pregel.WithMaxWorkers[*Compiled[I, O], state.Updates](p.maxWorkers),
-			pregel.WithMaxIterations[*Compiled[I, O], state.Updates](p.maxIters),
-		}
-
-		if p.messageBus != nil {
-			runtimeOpts = append(runtimeOpts, pregel.WithMessageBus[*Compiled[I, O], state.Updates](p.messageBus))
-		}
-
-		if len(p.aggregators) > 0 {
-			runtimeOpts = append(runtimeOpts, pregel.WithAggregators[*Compiled[I, O], state.Updates](p.aggregators))
-		}
-
-		// Add BSP barrier callbacks for proper state snapshot management
-		runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepStart[*Compiled[I, O], state.Updates](
-			func(ctx context.Context, superstep int64) error {
-				// Create snapshot at start of superstep (BSP read barrier)
-				return adapter.prepareSuperstep(ctx)
-			},
-		))
-
-		runtimeOpts = append(runtimeOpts, pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
-			func(ctx context.Context, superstep int64) error {
-				// Two-phase commit: Save checkpoint with PendingWrites (if enabled), then apply updates
-				// This ensures transactional semantics - if crash occurs during this window,
-				// checkpoint contains PendingWrites that will be applied on resume
-				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-					// Checkpoint enabled: saveCheckpoint handles both save and apply
-					p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter)
-				} else {
-					// No checkpoint: apply updates directly
-					p.applyPendingUpdates(ctx, compiled, adapter)
-				}
-				return nil
-			},
-		))
+		// Configure pregel runtime with callbacks
+		runtimeOpts := p.buildRuntimeOptions(compiled, runOpts, adapter)
 
 		// Create and run the pregel runtime
 		rt, err := pregel.NewRuntime(adapter, runtimeOpts...)
@@ -423,53 +500,8 @@ func (p *PregelExecutor[I, O]) Run(
 			return
 		}
 
-		// Execute runtime and forward events to result channel
-		var runtimeErr error
-		for _, err := range rt.Run(runCtx) {
-			// Update metrics with current superstep
-			if p.metrics != nil {
-				p.metrics.SetSuperstep(rt.CurrentSuperstep())
-			}
-
-			// Check if context was cancelled (consumer stopped iterating)
-			select {
-			case <-runCtx.Done():
-				// Stop immediately when context cancelled
-				// Still need to apply pending updates before closing
-				p.applyPendingUpdates(runCtx, compiled, adapter)
-				close(resultChan)
-				<-yieldDone
-				return
-			default:
-			}
-
-			if err != nil {
-				// Fatal error - BSP execution terminated
-				// Yield error and stop iteration
-				runtimeErr = err
-				var zero O
-				safeYield(zero, err)
-				break
-			}
-		}
-
-		// Handle final state: ensure any remaining pending updates are applied and save final checkpoint
-		// After successful completion, save one last checkpoint with fully committed state
-		if runtimeErr == nil {
-			finalSuperstep := rt.CurrentSuperstep()
-
-			// Apply any remaining updates (should be no-op if OnSuperstepComplete was called)
-			p.applyPendingUpdates(runCtx, compiled, adapter)
-
-			// Save final committed checkpoint (State contains all applied updates, PendingWrites empty)
-			// This ensures tests and resume scenarios get clean final state
-			if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-				p.saveFinalCheckpoint(runCtx, compiled, runOpts, finalSuperstep)
-			}
-		}
-
-		close(resultChan)
-		<-yieldDone // Wait for yield goroutine to finish
+		// Execute runtime and handle completion
+		p.executeRuntimeLoop(runCtx, rt, compiled, runOpts, adapter, safeYield, resultChan, yieldDone)
 	}
 }
 
