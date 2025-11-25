@@ -75,13 +75,10 @@ func (c *Compiled[I, O]) GetIncomingEdges(node string) []string {
 }
 
 // GetOutgoingEdges returns the names of nodes that the given node has edges to.
+// Returns the internal slice directly as topology is immutable after compilation.
+// Returns nil if the node has no outgoing edges.
 func (c *Compiled[I, O]) GetOutgoingEdges(node string) []string {
-	if outgoing, ok := c.topology.outgoing[node]; ok {
-		result := make([]string, len(outgoing))
-		copy(result, outgoing)
-		return result
-	}
-	return nil
+	return c.topology.outgoing[node]
 }
 
 // GetNodeInfo returns detailed information about a specific node.

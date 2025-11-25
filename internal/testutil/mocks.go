@@ -184,11 +184,9 @@ func (g *MockGraph[S, M]) RootVertices() []string {
 }
 
 // Outgoing returns the destination vertices for a given vertex.
+// Returns nil if the vertex has no outgoing edges.
 func (g *MockGraph[S, M]) Outgoing(vertex string) []string {
-	if edges, ok := g.OutgoingEdges[vertex]; ok {
-		return edges
-	}
-	return nil
+	return g.OutgoingEdges[vertex]
 }
 
 // VertexByName returns the vertex with the given name.

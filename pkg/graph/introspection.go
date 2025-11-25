@@ -124,8 +124,7 @@ func (g *Graph) GetNodeInfo(nodeName string) (*NodeInfo, error) {
 	// Get declared targets from Command nodes
 	targets := node.Targets()
 	if len(targets) > 0 {
-		info.DeclaredTargets = make([]string, len(targets))
-		copy(info.DeclaredTargets, targets)
+		info.DeclaredTargets = targets
 		info.HasCommandRouting = true
 	}
 
