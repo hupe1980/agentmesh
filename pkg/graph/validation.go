@@ -139,14 +139,16 @@ func (v *validator) validateNodes(g *Graph) []ValidationError {
 func (v *validator) validateEdges(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	// Check entry point exists
-	if g.EntryPoint != "" && g.EntryPoint != EndNode {
-		if _, exists := g.Nodes[g.EntryPoint]; !exists {
-			errors = append(errors, ValidationError{
-				Type:    ErrorTypeInvalidEdge,
-				Node:    StartNode,
-				Message: fmt.Sprintf("entry point references non-existent node %q", g.EntryPoint),
-			})
+	// Check all entry points exist
+	for _, entryPoint := range g.EntryPoints {
+		if entryPoint != EndNode {
+			if _, exists := g.Nodes[entryPoint]; !exists {
+				errors = append(errors, ValidationError{
+					Type:    ErrorTypeInvalidEdge,
+					Node:    StartNode,
+					Message: fmt.Sprintf("entry point references non-existent node %q", entryPoint),
+				})
+			}
 		}
 	}
 
@@ -181,13 +183,11 @@ func (v *validator) validateCommandTargets(g *Graph) []ValidationError {
 func (v *validator) validateEntryPoints(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	// Check for entry point
-	hasStartEdge := g.EntryPoint != ""
-
-	if !hasStartEdge {
+	// Check for at least one entry point
+	if len(g.EntryPoints) == 0 {
 		errors = append(errors, ValidationError{
 			Type:    ErrorTypeInvalidEntryNode,
-			Message: fmt.Sprintf("graph has no edges from %s node", StartNode),
+			Message: fmt.Sprintf("graph has no entry points (no edges from %s node)", StartNode),
 		})
 	}
 
@@ -228,19 +228,21 @@ func (v *validator) validateAcyclic(g *Graph) []ValidationError {
 		recStack[node] = true
 
 		//nolint:nestif // Acceptable nesting for cycle detection algorithm
-		// Check entry point edge
-		if node == StartNode && g.EntryPoint != "" {
-			if !visited[g.EntryPoint] {
-				if hasCycle(g.EntryPoint) {
+		// Check entry point edges
+		if node == StartNode {
+			for _, entryPoint := range g.EntryPoints {
+				if !visited[entryPoint] {
+					if hasCycle(entryPoint) {
+						return true
+					}
+				} else if recStack[entryPoint] {
+					errors = append(errors, ValidationError{
+						Type:    ErrorTypeCycle,
+						Node:    node,
+						Message: fmt.Sprintf("cycle detected: %s -> %s", node, entryPoint),
+					})
 					return true
 				}
-			} else if recStack[g.EntryPoint] {
-				errors = append(errors, ValidationError{
-					Type:    ErrorTypeCycle,
-					Node:    node,
-					Message: fmt.Sprintf("cycle detected: %s -> %s", node, g.EntryPoint),
-				})
-				return true
 			}
 		}
 		// Check node targets
@@ -281,10 +283,8 @@ func (v *validator) validateConnectivity(g *Graph) []ValidationError {
 
 	// Build adjacency list
 	adj := make(map[string][]string)
-	// Add entry point edge
-	if g.EntryPoint != "" {
-		adj[StartNode] = append(adj[StartNode], g.EntryPoint)
-	}
+	// Add entry point edges
+	adj[StartNode] = append(adj[StartNode], g.EntryPoints...)
 	// Add node targets
 	for name, node := range g.Nodes {
 		targets := node.Targets()

@@ -231,18 +231,21 @@ func (b *Builder[I, O]) AddNodeFuncWithRetry(name string, targets []string, fn N
 }
 
 // SetEntryPoint declares which node(s) should execute first.
-// The entry point nodes will be automatically connected from the start node.
+// Multiple entry points will execute in parallel in the same superstep.
 //
 // Example:
 //
+//	// Single entry point
 //	builder.SetEntryPoint("input_handler")
-//	// or multiple entry points for parallel start
+//
+//	// Multiple entry points for parallel start
 //	builder.SetEntryPoint("worker1", "worker2", "worker3")
 func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
 	if b.err != nil {
 		return b // Short-circuit if previous error
 	}
-	// Add edges from START to entry point nodes
+
+	// Add each target as an entry point
 	for _, target := range targets {
 		if err := b.graph.SetEntryPoint(target); err != nil {
 			b.err = fmt.Errorf("SetEntryPoint(%s): %w", target, err)

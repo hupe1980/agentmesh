@@ -59,9 +59,12 @@ func (c *Compiled[I, O]) GetNodes() []string {
 // GetIncomingEdges returns the names of nodes that have edges to the given node.
 func (c *Compiled[I, O]) GetIncomingEdges(node string) []string {
 	incoming := make([]string, 0)
-	// Check entry point
-	if c.graph.EntryPoint == node {
-		incoming = append(incoming, StartNode)
+	// Check entry points
+	for _, ep := range c.graph.EntryPoints {
+		if ep == node {
+			incoming = append(incoming, StartNode)
+			break
+		}
 	}
 	// Check all node targets
 	for name, n := range c.graph.Nodes {
@@ -134,9 +137,9 @@ func (c *Compiled[I, O]) MermaidFlowchart(direction string) string {
 		}
 	}
 
-	// Add entry point edge (from SetEntryPoint)
-	if c.graph.EntryPoint != "" {
-		result += fmt.Sprintf("    %s --> %s\n", StartNode, c.graph.EntryPoint)
+	// Add entry point edges (from SetEntryPoint)
+	for _, entryPoint := range c.graph.EntryPoints {
+		result += fmt.Sprintf("    %s --> %s\n", StartNode, entryPoint)
 	}
 
 	// Add Command routing edges (dashed lines for DeclaredTargets)
@@ -210,7 +213,7 @@ func Compile[I, O any](g *Graph, executor Executor[I, O], opts ...CompileOption)
 	}
 
 	// Compute topology
-	topo := computeTopology(g.Nodes, g.EntryPoint)
+	topo := computeTopology(g.Nodes, g.EntryPoints)
 
 	return &Compiled[I, O]{
 		graph:    g,

@@ -15,7 +15,7 @@ type topology struct {
 
 // computeTopology analyzes the graph structure and builds topology metadata.
 // This computes incoming/outgoing edges and prepares data structures needed for execution.
-func computeTopology(nodes map[string]Node, entryPoint string) *topology {
+func computeTopology(nodes map[string]Node, entryPoints []string) *topology {
 	topo := &topology{
 		incoming: make(map[string]int, len(nodes)),
 		outgoing: make(map[string][]string),
@@ -26,8 +26,8 @@ func computeTopology(nodes map[string]Node, entryPoint string) *topology {
 		topo.incoming[name] = 0
 	}
 
-	// Process entry point (START -> entryPoint)
-	if entryPoint != "" {
+	// Process entry points (START -> each entryPoint)
+	for _, entryPoint := range entryPoints {
 		topo.outgoing[StartNode] = append(topo.outgoing[StartNode], entryPoint)
 		if entryPoint != EndNode && entryPoint != "" {
 			if _, ok := topo.incoming[entryPoint]; !ok {

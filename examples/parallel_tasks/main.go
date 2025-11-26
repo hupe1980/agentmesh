@@ -128,6 +128,8 @@ func main() {
 	// This creates a fan-out/fan-in pattern where:
 	// - Fan-out: START has multiple entry points (parallel execution)
 	// - Fan-in: combine has two incoming edges (synchronization point)
+	//
+	// SetEntryPoint can be called multiple times to add parallel entry points
 	if err := gph.SetEntryPoint("task_a"); err != nil {
 		panic(err)
 	}

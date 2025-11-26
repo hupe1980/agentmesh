@@ -13,7 +13,7 @@ type Graph struct {
 	NodeConfigs     map[string]*NodeConfig // Execution policies per node
 	InterruptBefore []string               // Nodes to interrupt before execution
 	InterruptAfter  []string               // Nodes to interrupt after execution
-	EntryPoint      string                 // Name of the entry point node
+	EntryPoints     []string               // Names of entry point nodes (parallel start)
 	manager         *state.Manager
 }
 
@@ -27,6 +27,7 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 		NodeConfigs:     make(map[string]*NodeConfig),
 		InterruptBefore: make([]string, 0), // Initialize interrupt lists
 		InterruptAfter:  make([]string, 0),
+		EntryPoints:     make([]string, 0), // Initialize entry points
 		manager:         manager,
 	}, nil
 }
@@ -66,15 +67,24 @@ func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 	return nil
 }
 
-// SetEntryPoint sets the entry point node for the graph.
-// This is the node that will be executed first when the graph runs.
-// The entry point is validated at compile time, so nodes can be added after
+// SetEntryPoint adds entry point nodes to the graph.
+// Entry points are the nodes that will be executed first when the graph runs,
+// all in parallel in the same superstep.
+// The entry points are validated at compile time, so nodes can be added after
 // calling SetEntryPoint (useful for builder pattern).
 func (g *Graph) SetEntryPoint(target string) error {
 	if err := validate.NotEmpty(target, "entry point target"); err != nil {
 		return err
 	}
-	g.EntryPoint = target
+
+	// Check for duplicates
+	for _, ep := range g.EntryPoints {
+		if ep == target {
+			return fmt.Errorf("entry point %q already exists", target)
+		}
+	}
+
+	g.EntryPoints = append(g.EntryPoints, target)
 	return nil
 }
 

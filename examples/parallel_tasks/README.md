@@ -79,19 +79,19 @@ g.AddNode(&graph.BaseNode{
 // task_b and task_c are similar, each Goto("merge") with their own updates
 ```
 
-### 4. Entry Point and Fan-Out
+### 4. Multiple Entry Points for Parallel Execution
 ```go
-// Single entry node that starts the parallel tasks
-g.AddNode(&graph.BaseNode{
-    NodeName:        "start",
-    DeclaredTargets: []string{"task_a", "task_b", "task_c"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Fan-out: return all parallel targets
-        return []string{"task_a", "task_b", "task_c"}, nil, nil
-    },
-})
+// Set multiple entry points to start parallel execution
+// Both task_a and task_b will start in superstep 1
+if err := g.SetEntryPoint("task_a"); err != nil {
+    panic(err)
+}
+if err := g.SetEntryPoint("task_b"); err != nil {
+    panic(err)
+}
 
-g.SetEntryPoint("start")
+// Or using the Builder API (variadic):
+builder.SetEntryPoint("task_a", "task_b")
 ```
 
 ### 5. Add Merge Node for Fan-In

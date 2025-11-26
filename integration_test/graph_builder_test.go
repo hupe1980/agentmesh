@@ -53,8 +53,8 @@ func TestBasicGraphBuilding(t *testing.T) {
 
 		g.SetEntryPoint("test")
 
-		// EntryPoint should be set correctly; routing defined by DeclaredTargets
-		assert.Equal(t, "test", g.EntryPoint)
+		// EntryPoints should contain the set entry point; routing defined by DeclaredTargets
+		assert.Equal(t, []string{"test"}, g.EntryPoints)
 	})
 
 	t.Run("adds command nodes with multiple targets", func(t *testing.T) {

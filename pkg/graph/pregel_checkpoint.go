@@ -171,7 +171,7 @@ func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, com
 // This follows BSP principles: checkpoints store state, the executor derives next execution steps.
 //
 // Logic:
-//  1. If no nodes completed yet → start from entry point (graph.EntryPoint)
+//  1. If no nodes completed yet → start from entry points (graph.EntryPoints)
 //  2. If some nodes completed → return immediate successors that aren't already completed
 //  3. Filters out END node (execution done) and already-completed nodes
 //  4. Deduplicates nodes (multiple completed nodes might point to same successor)
@@ -183,11 +183,8 @@ func (p *PregelExecutor[I, O]) restoreExecutionMetadata(ctx context.Context, com
 //	If CompletedNodes = [step_1, step_2], returns [step_3]
 func calculateResumePoints[I, O any](compiled *Compiled[I, O], completedNodes []string) []string {
 	if len(completedNodes) == 0 {
-		// No nodes completed → start from entry point
-		if compiled.Graph().EntryPoint != "" {
-			return []string{compiled.Graph().EntryPoint}
-		}
-		return []string{}
+		// No nodes completed → start from entry points
+		return compiled.Graph().EntryPoints
 	}
 
 	// Create set of completed nodes for quick lookup

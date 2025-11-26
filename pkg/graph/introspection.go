@@ -77,11 +77,14 @@ func (g *Graph) GetNodeInfo(nodeName string) (*NodeInfo, error) {
 		return nil, fmt.Errorf("node not found: %s", nodeName)
 	}
 
-	// Count incoming edges from entry point and DeclaredTargets
+	// Count incoming edges from entry points and DeclaredTargets
 	incomingCount := 0
-	// Check implicit edge from START to EntryPoint
-	if g.EntryPoint == nodeName {
-		incomingCount++
+	// Check implicit edges from START to EntryPoints
+	for _, ep := range g.EntryPoints {
+		if ep == nodeName {
+			incomingCount++
+			break
+		}
 	}
 	// Check DeclaredTargets from all nodes
 	for _, n := range g.Nodes {
@@ -150,11 +153,11 @@ func (g *Graph) GetAllNodeInfo() []NodeInfo {
 func (g *Graph) GetEdges() []EdgeInfo {
 	edges := make([]EdgeInfo, 0)
 
-	// Direct edge from START to entry point (if set)
-	if g.EntryPoint != "" {
+	// Direct edges from START to all entry points
+	for _, entryPoint := range g.EntryPoints {
 		edges = append(edges, EdgeInfo{
 			From: StartNode,
-			To:   g.EntryPoint,
+			To:   entryPoint,
 			Type: "direct",
 		})
 	}
@@ -190,10 +193,9 @@ func (g *Graph) GetTopology() *Topology {
 		IsolatedNodes: make([]string, 0),
 	}
 
-	// Find entry points (nodes reachable from START)
-	if g.EntryPoint != "" {
-		topo.EntryPoints = append(topo.EntryPoints, g.EntryPoint)
-	}
+	// Entry points are explicitly defined
+	topo.EntryPoints = make([]string, len(g.EntryPoints))
+	copy(topo.EntryPoints, g.EntryPoints)
 	sort.Strings(topo.EntryPoints)
 
 	// Find exit points (nodes that target END in their DeclaredTargets)
@@ -260,11 +262,8 @@ func (g *Graph) GetTopology() *Topology {
 //
 //nolint:gocyclo // Acceptable complexity for comprehensive metrics calculation
 func (g *Graph) GetMetrics() *Metrics {
-	// Count total edges: implicit START->EntryPoint + DeclaredTargets
-	totalEdges := 0
-	if g.EntryPoint != "" {
-		totalEdges++ // START -> EntryPoint
-	}
+	// Count total edges: implicit START->EntryPoints + DeclaredTargets
+	totalEdges := len(g.EntryPoints) // START -> each entry point
 	for _, node := range g.Nodes {
 		totalEdges += len(node.Targets())
 	}
@@ -277,9 +276,10 @@ func (g *Graph) GetMetrics() *Metrics {
 
 	// Build outgoing map for fan-out calculation (include DeclaredTargets)
 	outgoing := make(map[string][]string)
-	// Add implicit START -> EntryPoint edge
-	if g.EntryPoint != "" {
-		outgoing[StartNode] = append(outgoing[StartNode], g.EntryPoint)
+	// Add implicit START -> EntryPoints edges
+	if len(g.EntryPoints) > 0 {
+		outgoing[StartNode] = make([]string, len(g.EntryPoints))
+		copy(outgoing[StartNode], g.EntryPoints)
 	}
 	for name, node := range g.Nodes {
 		targets := node.Targets()
@@ -303,9 +303,9 @@ func (g *Graph) GetMetrics() *Metrics {
 
 	// Build incoming count map for fan-in calculation (include DeclaredTargets)
 	incomingCount := make(map[string]int)
-	// Implicit START -> EntryPoint
-	if g.EntryPoint != "" {
-		incomingCount[g.EntryPoint]++
+	// Implicit START -> EntryPoints
+	for _, ep := range g.EntryPoints {
+		incomingCount[ep]++
 	}
 	for _, node := range g.Nodes {
 		for _, target := range node.Targets() {
@@ -355,9 +355,12 @@ func (g *Graph) GetNodeDependencies(name string) (*NodeDependencies, error) {
 	}
 
 	// Find direct predecessors (nodes with edges to this node, including DeclaredTargets)
-	// Implicit edge from START to EntryPoint
-	if g.EntryPoint == name {
-		deps.DirectPredecessors = append(deps.DirectPredecessors, StartNode)
+	// Implicit edges from START to EntryPoints
+	for _, ep := range g.EntryPoints {
+		if ep == name {
+			deps.DirectPredecessors = append(deps.DirectPredecessors, StartNode)
+			break
+		}
 	}
 	// Check DeclaredTargets from all nodes
 	for nodeName, node := range g.Nodes {
@@ -423,8 +426,15 @@ func (g *Graph) calculateDepthRecursive(name string, visited map[string]bool) in
 
 	maxPredDepth := -1
 
-	// Check implicit edge from START to EntryPoint
-	if g.EntryPoint == name {
+	// Check implicit edges from START to EntryPoints
+	isEntryPoint := false
+	for _, ep := range g.EntryPoints {
+		if ep == name {
+			isEntryPoint = true
+			break
+		}
+	}
+	if isEntryPoint {
 		predDepth := g.calculateDepthRecursive(StartNode, visited)
 		if predDepth > maxPredDepth {
 			maxPredDepth = predDepth

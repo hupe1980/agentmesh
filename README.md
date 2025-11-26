@@ -558,6 +558,21 @@ This enables:
 - 📊 **Easy reasoning** about distributed state
 - 💾 **Automatic checkpointing** at superstep boundaries with two-phase commit for crash recovery
 
+#### Multiple Entry Points
+
+Set multiple entry points for true parallel execution at graph start:
+
+```go
+// Graph API - call multiple times
+g.SetEntryPoint("task_a")
+g.SetEntryPoint("task_b")
+
+// Builder API - variadic for convenience
+builder.SetEntryPoint("task_a", "task_b", "task_c")
+```
+
+All entry points execute in **superstep 1** in parallel, enabling fan-out patterns from the start.
+
 ---
 
 ## 🎨 Examples
