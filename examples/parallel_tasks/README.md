@@ -64,15 +64,15 @@ state.AddChannel(state.NewTopicChannel("messages", 100))
 
 ### 3. Create Parallel Nodes
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "task_a",
     DeclaredTargets: []string{"merge"},
-    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         time.Sleep(2 * time.Second) // Simulate work
-        updates := map[string]any{
+        updates := state.Updates{
             "results": map[string]any{"a": 100},
         }
-        return graph.Goto(updates, "merge"), nil
+        return []string{"merge"}, updates, nil
     },
 })
 
@@ -82,12 +82,12 @@ g.AddNode(&graph.BaseCommandNode{
 ### 4. Entry Point and Fan-Out
 ```go
 // Single entry node that starts the parallel tasks
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "start",
     DeclaredTargets: []string{"task_a", "task_b", "task_c"},
-    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-        // Fan-out is modeled by command targets; no manual AddEdge calls
-        return graph.Goto(nil, "task_a"), nil
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // Fan-out: return all parallel targets
+        return []string{"task_a", "task_b", "task_c"}, nil, nil
     },
 })
 
@@ -96,13 +96,13 @@ g.SetEntryPoint("start")
 
 ### 5. Add Merge Node for Fan-In
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "merge",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    DeclaredTargets: []string{graph.END},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         results := state.GetFromView(view, resultsKey)
         fmt.Printf("Merged results: %v\n", results)
-        return graph.End(nil), nil
+        return []string{graph.END}, nil, nil
     },
 })
 ```

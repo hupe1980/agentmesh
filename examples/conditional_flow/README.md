@@ -62,15 +62,15 @@ func routeByChoice(ctx context.Context, s state.Reader) (string, error) {
 
 ### 2. Implement Router as Command Node
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "router",
     DeclaredTargets: []string{"path_a_handler", "path_b_handler", "error_handler"},
-    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         next, err := routeByChoice(ctx, view)
         if err != nil {
-            return nil, err
+            return nil, nil, err
         }
-        return graph.Goto(nil, next), nil
+        return []string{next}, nil, nil
     },
 })
 ```

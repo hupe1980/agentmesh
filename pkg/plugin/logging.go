@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -42,9 +41,9 @@ func (p *LoggingPlugin) Shutdown(ctx context.Context) error {
 }
 
 // BeforeNode logs before node execution.
-func (p *LoggingPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*graph.Command, error) {
+func (p *LoggingPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) ([]string, state.Updates, error) {
 	p.logger.Printf("%s Before node: %s", p.prefix, nodeName)
-	return nil, nil // No short-circuit
+	return nil, nil, nil // No short-circuit
 }
 
 // AfterNode logs after node execution.

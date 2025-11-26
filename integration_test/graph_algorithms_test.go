@@ -50,10 +50,10 @@ func TestPageRank(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "pagerank",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			// Compute contributions from current ranks.
 			contrib := make(map[string]float64)
 			for _, v := range vertices {
@@ -68,13 +68,13 @@ func TestPageRank(t *testing.T) {
 				}
 			}
 
-			updates := make(map[string]any)
+			cmd := graph.NewCommand()
 			for _, v := range vertices {
 				newRank := (1-dampingFactor)/float64(len(vertices)) + dampingFactor*contrib[v]
-				updates[fmt.Sprintf("rank_%s", v)] = newRank
+				cmd.Set(rankKeys[v], newRank)
 			}
 
-			return graph.End(updates), nil
+			return cmd.To(graph.EndNode)
 		},
 	})
 	require.NoError(t, err)
@@ -144,11 +144,11 @@ func TestShortestPath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Single node that performs relaxation for all vertices per execution.
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "shortest_path",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			updates := make(map[string]any)
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			cmd := graph.NewCommand()
 			for _, v := range vertices {
 				dist := state.GetFromView(view, distKeys[v])
 				if dist == math.MaxInt32 {
@@ -160,12 +160,12 @@ func TestShortestPath(t *testing.T) {
 					newDist := dist + weight
 					currentNeighborDist := state.GetFromView(view, distKeys[neighbor])
 					if newDist < currentNeighborDist {
-						updates[fmt.Sprintf("dist_%s", neighbor)] = newDist
+						cmd.Set(distKeys[neighbor], newDist)
 					}
 				}
 			}
 
-			return graph.End(updates), nil
+			return cmd.To(graph.EndNode)
 		},
 	})
 	require.NoError(t, err)
@@ -214,22 +214,21 @@ func TestGraphConvergence(t *testing.T) {
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
 
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "incrementer",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			count := state.GetFromView(view, counterKey)
 			target := state.GetFromView(view, targetKey)
 
 			if count >= target {
 				// Converged - return empty result
-				return graph.End(nil), nil
+				return []string{graph.EndNode}, nil, nil
 			}
 
-			updates := map[string]any{
-				"counter": count + 1,
-			}
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(counterKey, count+1).
+				To(graph.EndNode)
 		},
 	})
 	require.NoError(t, err)
@@ -270,18 +269,17 @@ func TestIterativeComputation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node that halves the value each iteration
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "halvinator",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			value := state.GetFromView(view, valueKey)
 			iteration := state.GetFromView(view, iterationKey)
 
-			updates := map[string]any{
-				"value":     value / 2.0,
-				"iteration": iteration + 1,
-			}
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(valueKey, value/2.0).
+				Set(iterationKey, iteration+1).
+				To(graph.EndNode)
 		},
 	})
 	require.NoError(t, err)

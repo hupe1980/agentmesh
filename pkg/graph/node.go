@@ -8,23 +8,26 @@ import (
 )
 
 // Node is the unified interface for all graph nodes.
-// Every node returns Command - ONE execution model.
+// Every node returns a tuple: (targets, updates, error) - simple and idiomatic Go.
 //
 // All nodes must:
 //   - Execute with read-only state access
-//   - Return Command with state updates and routing decision
+//   - Return tuple: ([]string targets, state.Updates, error)
 //   - Declare all possible routing targets for validation
 type Node interface {
 	// Name returns the unique identifier for this node in the graph.
 	Name() string
 
 	// Execute runs the node logic with read-only state access.
-	// Returns Command with state updates and routing decision.
-	Execute(ctx context.Context, view state.ReadView) (*Command, error)
+	// Returns (targets, updates, error) tuple:
+	//   - targets: where to route next (e.g., []string{"tool"}, []string{END})
+	//   - updates: state changes to apply (can be nil if no changes)
+	//   - error: any execution error
+	Execute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error)
 
 	// Targets returns all possible routing destinations this node can route to.
 	// Used for build-time validation and graph visualization.
-	// Must include all targets that Execute() might return in Command.Goto.
+	// Must include all targets that Execute() might return.
 	Targets() []string
 }
 
@@ -35,7 +38,7 @@ type NodeWithRetry interface {
 	RetryPolicy() *RetryPolicy
 }
 
-// NamespacedNode is an optional interface for nodes that operate within a specific namespace.
+// NodeWithNamespace is an optional interface for nodes that operate within a specific namespace.
 // Nodes implementing this interface receive a filtered ReadView during execution that ONLY exposes
 // keys from their declared namespace. This provides runtime enforcement of state isolation.
 //
@@ -56,80 +59,97 @@ type NodeWithRetry interface {
 //	agentNS := state.MustNamespace("agent1")
 //	statusKey := state.TypedKey[string](agentNS, "status", "idle")  // Creates "agent1.status"
 //
-//	node := graph.NewNamespacedCommandNode(
+//	node := graph.NewNamespacedNode(
 //	    "agent1_process",
 //	    agentNS,
-//	    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+//	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        // view is filtered - can ONLY access agent1.* keys
 //	        status := state.GetFromView(view, statusKey)  // Works
 //	        keys := view.Keys()  // Returns only ["status", ...] from agent1
 //	        // view.Has("agent2.data") returns false (filtered out)
+//	        return []string{graph.END}, updates, nil
 //	    },
-//	    targets,
+//	    []string{graph.END},
 //	    false, // includeGlobal: don't expose global keys
 //	)
-type NamespacedNode interface {
+type NodeWithNamespace interface {
 	Node
 	Namespace() state.Namespace
 }
 
-// BaseCommandNode is THE standard Node implementation.
-// All nodes use this - wraps CommandFunc with target declaration.
+// NodeFunc is THE function signature for all node logic.
+// Returns a tuple: (targets, updates, error)
 //
-// Use this to create reusable nodes that can be instantiated multiple times:
+// The function receives:
+//   - ctx: Context for cancellation and request-scoped values
+//   - view: Read-only view of the current state
 //
-//	targets := graph.NewTargetSet("target1", graph.EndNode)
-//	node := &graph.BaseCommandNode{
+// It returns:
+//   - []string: Target nodes to route to (e.g., []string{"tool"}, []string{END})
+//   - state.Updates: State changes to apply (can be nil if no changes)
+//   - error: Any execution error (nil on success)
+//
+// Example:
+//
+//	func routerNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+//	    msgs := state.GetFromView(view, messagesKey)
+//	    if needsTool {
+//	        return []string{"tool"}, nil, nil
+//	    }
+//	    return []string{graph.END}, state.Updates{
+//	        messagesKey.Name(): append(msgs, response),
+//	    }, nil
+//	}
+type NodeFunc func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error)
+
+// BaseNode is THE standard Node implementation.
+// All nodes use this - wraps NodeFunc with target declaration.
+//
+// Use this to create reusable nodes:
+//
+//	node := &graph.BaseNode{
 //	    NodeName: "router",
-//	    Fn: func(ctx, view) (*graph.Command, error) {
+//	    Fn: func(ctx, view) ([]string, state.Updates, error) {
 //	        if condition {
-//	            return targets.Goto(targets.Get("target1"), updates), nil
+//	            return []string{"tool"}, updates, nil
 //	        }
-//	        return targets.Goto(targets.Get(graph.EndNode), updates), nil
+//	        return []string{graph.END}, updates, nil
 //	    },
-//	    DeclaredTargets: targets,
-//	    RetryPolicy: graph.NewRetryPolicy().WithMaxAttempts(5).Build(), // Optional
+//	    DeclaredTargets: []string{"tool", graph.END},
+//	    Retry: graph.NewRetryPolicy().WithMaxAttempts(5).Build(), // Optional
 //	}
 //	builder.AddNode(node)
-type BaseCommandNode struct {
+type BaseNode struct {
 	NodeName        string
-	Fn              CommandFunc
-	DeclaredTargets *TargetSet
+	Fn              NodeFunc
+	DeclaredTargets []string
 	Retry           *RetryPolicy // Optional: enables automatic retry on errors
 }
 
 // Name returns the node's name.
-func (n *BaseCommandNode) Name() string {
+func (n *BaseNode) Name() string {
 	return n.NodeName
 }
 
-// Execute runs the node's CommandFunc.
-func (n *BaseCommandNode) Execute(ctx context.Context, view state.ReadView) (*Command, error) {
+// Execute runs the node's NodeFunc.
+func (n *BaseNode) Execute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 	if n.Fn == nil {
-		return End(), nil
+		return []string{EndNode}, nil, nil
 	}
 	return n.Fn(ctx, view)
 }
 
-// Targets returns the declared routing targets as a slice.
-func (n *BaseCommandNode) Targets() []string {
-	if n.DeclaredTargets == nil {
-		return nil
-	}
-	return n.DeclaredTargets.All()
-}
-
-// TargetSet returns the node's TargetSet.
-func (n *BaseCommandNode) TargetSet() *TargetSet {
+// Targets returns the declared routing targets.
+func (n *BaseNode) Targets() []string {
 	return n.DeclaredTargets
 }
 
 // RetryPolicy returns the node's retry policy if set.
-func (n *BaseCommandNode) RetryPolicy() *RetryPolicy {
+func (n *BaseNode) RetryPolicy() *RetryPolicy {
 	return n.Retry
 }
 
-// NamespacedCommandNode is a Node implementation that operates within a specific namespace.
+// NamespacedNode is a Node implementation that operates within a specific namespace.
 // During execution, the node receives a NamespacedReadView that ONLY exposes keys from its declared namespace.
 // Optionally, global (non-namespaced) keys can also be exposed via the includeGlobal parameter.
 // This provides actual runtime enforcement of state isolation with validation of returned updates.
@@ -137,65 +157,64 @@ func (n *BaseCommandNode) RetryPolicy() *RetryPolicy {
 // Use this to create nodes with guaranteed isolated state:
 //
 //	agentNS := state.MustNamespace("agent1")
-//	node := graph.NewNamespacedCommandNode(
+//	node := graph.NewNamespacedNode(
 //	    "agent1_process",
 //	    agentNS,
-//	    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+//	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        // This view is filtered - only contains "agent1.*" keys
 //	        // Attempting to access other namespace keys will fail
 //	        // Returned updates are validated to only contain agent1.* keys
 //	        status := state.GetFromView(view, statusKey)
-//	        // view.Keys() only returns ["status", ...] from agent1 namespace
-//	        return graph.End(), nil
+//	        // view.Keys() returns only ["status", ...] from agent1 namespace
+//	        return []string{graph.END}, updates, nil
 //	    },
-//	    targets,
+//	    []string{graph.END},
 //	    false, // includeGlobal
 //	)
-type NamespacedCommandNode struct {
-	BaseCommandNode
+type NamespacedNode struct {
+	BaseNode
 	namespace     state.Namespace
 	includeGlobal bool // If true, node can also access and update global keys
 }
 
-// NewNamespacedCommandNode creates a new namespaced command node.
+// NewNamespacedNode creates a new namespaced node.
 // The node receives a filtered NamespacedReadView during execution that only exposes keys from its namespace.
 // Returned updates are validated to ensure they only contain keys from the allowed namespaces.
 //
 // Parameters:
 //   - name: unique node identifier
 //   - ns: namespace to scope state access to
-//   - fn: command function that receives filtered view
+//   - fn: node function that receives filtered view and returns (targets, updates, error)
 //   - targets: declared routing targets
 //   - includeGlobal: if true, global (non-namespaced) keys are also visible and can be updated
 //
 // Example:
 //
 //	validationNS := state.MustNamespace("validation")
-//	targets := graph.NewTargetSet("enrich", graph.EndNode)
-//	node := graph.NewNamespacedCommandNode(
+//	node := graph.NewNamespacedNode(
 //	    "validate",
 //	    validationNS,
-//	    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+//	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        // view is filtered - only validation.* keys are visible
 //	        // view.Keys() returns only ["data", "valid", ...] without namespace prefix
 //	        data := state.GetFromView(view, validationDataKey)
 //	        if !isValid(data) {
-//	            return targets.End(updates), nil
+//	            return []string{graph.END}, updates, nil
 //	        }
-//	        return targets.Goto(targets.Get("enrich"), updates), nil
+//	        return []string{"enrich"}, updates, nil
 //	    },
-//	    targets,
+//	    []string{"enrich", graph.END},
 //	    false, // includeGlobal: only validation.* keys
 //	)
-func NewNamespacedCommandNode(
+func NewNamespacedNode(
 	name string,
 	ns state.Namespace,
-	fn CommandFunc,
-	targets *TargetSet,
+	fn NodeFunc,
+	targets []string,
 	includeGlobal bool,
-) *NamespacedCommandNode {
-	return &NamespacedCommandNode{
-		BaseCommandNode: BaseCommandNode{
+) *NamespacedNode {
+	return &NamespacedNode{
+		BaseNode: BaseNode{
 			NodeName:        name,
 			Fn:              fn,
 			DeclaredTargets: targets,
@@ -205,17 +224,17 @@ func NewNamespacedCommandNode(
 	}
 }
 
-// NewNamespacedCommandNodeWithRetry creates a namespaced node with retry policy.
-func NewNamespacedCommandNodeWithRetry(
+// NewNamespacedNodeWithRetry creates a namespaced node with retry policy.
+func NewNamespacedNodeWithRetry(
 	name string,
 	ns state.Namespace,
-	fn CommandFunc,
-	targets *TargetSet,
+	fn NodeFunc,
+	targets []string,
 	retry *RetryPolicy,
 	includeGlobal bool,
-) *NamespacedCommandNode {
-	return &NamespacedCommandNode{
-		BaseCommandNode: BaseCommandNode{
+) *NamespacedNode {
+	return &NamespacedNode{
+		BaseNode: BaseNode{
 			NodeName:        name,
 			Fn:              fn,
 			DeclaredTargets: targets,
@@ -227,39 +246,39 @@ func NewNamespacedCommandNodeWithRetry(
 }
 
 // Namespace returns the namespace this node is scoped to.
-func (n *NamespacedCommandNode) Namespace() state.Namespace {
+func (n *NamespacedNode) Namespace() state.Namespace {
 	return n.namespace
 }
 
-// Execute runs the node's CommandFunc with a namespace-filtered view.
-// The CommandFunc receives a NamespacedReadView that only exposes keys from this node's namespace.
+// Execute runs the node's NodeFunc with a namespace-filtered view.
+// The NodeFunc receives a NamespacedReadView that only exposes keys from this node's namespace.
 // If includeGlobal is true, global (non-namespaced) keys are also visible.
 // Validates that returned updates only contain keys from the node's allowed namespaces.
-func (n *NamespacedCommandNode) Execute(ctx context.Context, view state.ReadView) (*Command, error) {
+func (n *NamespacedNode) Execute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 	if n.Fn == nil {
-		return End(), nil
+		return []string{EndNode}, nil, nil
 	}
 
 	// Create a filtered view that only exposes this node's namespace (and global if allowed)
 	namespacedView := state.NewNamespacedReadView(view, n.namespace, n.includeGlobal)
 
-	cmd, err := n.Fn(ctx, namespacedView)
+	targets, updates, err := n.Fn(ctx, namespacedView)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Validate that updates only contain keys from allowed namespaces
-	if cmd != nil && cmd.Updates != nil {
-		if err := n.validateUpdates(cmd.Updates); err != nil {
-			return nil, err
+	if updates != nil {
+		if err := n.validateUpdates(updates); err != nil {
+			return nil, nil, err
 		}
 	}
 
-	return cmd, nil
+	return targets, updates, nil
 }
 
 // validateUpdates checks that all update keys belong to the node's namespace or global (if allowed).
-func (n *NamespacedCommandNode) validateUpdates(updates state.Updates) error {
+func (n *NamespacedNode) validateUpdates(updates state.Updates) error {
 	for key := range updates {
 		if !n.isAllowedKey(key) {
 			if n.includeGlobal {
@@ -274,7 +293,7 @@ func (n *NamespacedCommandNode) validateUpdates(updates state.Updates) error {
 }
 
 // isAllowedKey checks if a key is allowed for this node (belongs to node's namespace or is global if allowed).
-func (n *NamespacedCommandNode) isAllowedKey(key string) bool {
+func (n *NamespacedNode) isAllowedKey(key string) bool {
 	// Check if key belongs to node's namespace
 	if state.IsNamespaced(key) {
 		ns, _ := state.ParseNamespacedKey(key)

@@ -203,13 +203,13 @@ func main() {
         }, nil
     })
     
-    // Build graph with Command routing
-    g.AddNode(&graph.BaseCommandNode{
+    // Build graph with tuple return routing
+    g.AddNode(&graph.BaseNode{
         NodeName:        "data_processor",
         DeclaredTargets: []string{"analyzer"},
         Fn:              dataProcessorFunc,
     })
-    g.AddNode(&graph.BaseCommandNode{
+    g.AddNode(&graph.BaseNode{
         NodeName:        "analyzer",
         DeclaredTargets: []string{graph.EndNode},
         Fn:              analyzerFunc,

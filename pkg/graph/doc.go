@@ -1,17 +1,21 @@
 // Package graph provides the unified graph structure, compilation, and execution for AgentMesh.
 //
 // This package defines the fundamental building blocks of a computational graph:
-//   - Nodes: Executable units that return Commands with state updates and routing
-//   - Command: Atomic combination of state updates and routing decisions
+//   - Nodes: Executable units that return tuples (targets, updates, error)
 //   - Edges: Static directed connections between nodes
 //   - Graph: The graph structure and builder
 //   - Compiled: Validated, executable graph
 //   - Executors: Pluggable execution strategies (Pregel/BSP)
+//   - Command: Fluent builder for constructing state updates (optional)
 //
-// COMMAND PATTERN (RECOMMENDED):
+// TUPLE-BASED API:
 //
-// The Command pattern is the unified execution model where nodes return both
-// state updates and routing decisions atomically. This provides:
+// Nodes return a simple tuple: ([]string, state.Updates, error)
+//   - []string: Target node names for routing
+//   - state.Updates: Map of state updates
+//   - error: Any errors encountered
+//
+// This provides:
 //   - Co-located logic: routing decision right where state is computed
 //   - Type safety: routing targets validated at build time
 //   - Clear visualization: Mermaid shows all possible routes
@@ -21,24 +25,36 @@
 //
 //	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
 //
-//	// Add Command node with dynamic routing
-//	builder.AddCommandNode("router",
-//	    []string{"option_a", "option_b", graph.EndNode},
-//	    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+//	var DecisionKey = state.NewKey[string]("decision", "")
+//	var ResultKey = state.NewKey[string]("result", "")
+//
+//	// Add node with dynamic routing using map literal
+//	builder.AddNode("router",
+//	    []string{"option_a", "option_b", graph.END},
+//	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        decision := analyze(view)
-//	        updates := state.Updates{"decision": decision}
+//	        updates := state.Updates{DecisionKey.Name(): decision}
 //
 //	        if decision == "simple" {
-//	            return graph.Goto(updates, "option_a"), nil
+//	            return []string{"option_a"}, updates, nil
 //	        }
-//	        return graph.Goto(updates, "option_b"), nil
+//	        return []string{"option_b"}, updates, nil
 //	    },
 //	)
 //
-//	// Add static node (syntactic sugar)
-//	builder.AddStaticNode("option_a", []string{graph.EndNode},
-//	    func(ctx, view) (state.Updates, error) {
-//	        return state.Updates{"result": "done"}, nil
+//	// Or use Command builder for cleaner syntax
+//	builder.AddNode("router",
+//	    []string{"option_a", "option_b", graph.END},
+//	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+//	        decision := analyze(view)
+//	        if decision == "simple" {
+//	            return graph.NewCommand().
+//	                Set(DecisionKey, decision).
+//	                To("option_a")
+//	        }
+//	        return graph.NewCommand().
+//	            Set(DecisionKey, decision).
+//	            To("option_b")
 //	    },
 //	)
 //
@@ -51,29 +67,27 @@
 // ARCHITECTURE:
 //
 //	pkg/graph - Unified package containing:
-//	  - Command: State updates + routing decisions
-//	  - Node: Interface with Execute() returning *Command
+//	  - Node: Interface with Execute() returning tuple
 //	  - Graph: Structure (nodes, edges, builder)
 //	  - Compiled: Validated, executable graph
 //	  - Executor: Pluggable execution strategy
+//	  - Command: Optional fluent builder for state updates
 //	  - Introspection: Topology analysis and Mermaid generation
 //
 // API METHODS:
 //
 // Primary methods for building graphs:
 //
-//	AddCommandNode(name, targets, fn)       - Main method for nodes with routing
-//	AddCommandNodeWithRetry(name, ...)      - Command node with retry policy
-//	AddStaticNode(name, targets, fn)        - Syntactic sugar for simple nodes
+//	AddNode(name, targets, fn)              - Main method for adding nodes
+//	AddNodeWithRetry(name, ...)             - Node with retry policy
 //	AddNode(node)                           - Add pre-constructed node instance
 //
-// Helper functions for creating Commands:
+// Helper for creating state updates:
 //
-//	Goto(updates, targets...)               - Route to node(s)
-//	End(updates...)                         - Terminate execution
-//	GotoOne(target, updates...)             - Route to single node
-//	Update(updates).Goto(targets...)        - Fluent API
-//	Update(updates).End()                   - Fluent API
+//	NewCommand()                            - Create Command builder
+//	  .Set(key, value)                      - Add state update
+//	  .Build()                              - Get (updates, error)
+//	  .To(targets...)                       - Get complete tuple
 //
-// See examples/ directory for comprehensive examples of Command pattern usage.
+// See examples/ directory for comprehensive examples.
 package graph

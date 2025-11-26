@@ -66,10 +66,10 @@ func main() {
 
 	// Add nodes that use providers via FromContext()
 	// Automatic instrumentation happens behind the scenes
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "step1",
-		DeclaredTargets: graph.NewTargetSet("step2"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"step2"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			// Access logger and tracer from context if needed for custom instrumentation
 			log := logging.FromContext(ctx)
 			log.Info("Processing step1", "node", "step1")
@@ -87,22 +87,19 @@ func main() {
 			counter := graphstate.GetFromView(view, counterKey)
 			counter++
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("step2", updates), nil
+			updates := graphstate.Updates{}
+			updates[counterKey.Name()] = counter
+
+			return []string{"step2"}, updates, nil
 		},
 	}); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "step2",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Processing step2", "node", "step2")
 
@@ -117,13 +114,10 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			newValue := currentCounter + 10
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, newValue)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			updates[counterKey.Name()] = newValue
+
+			return []string{graph.EndNode}, updates, nil
 		},
 	}); err != nil {
 		log.Fatal(err)

@@ -175,24 +175,24 @@ func productionExample(ctx context.Context) {
 	counterKey := graphstate.NewKey("counter", 0)
 	statusKey := graphstate.NewKey("status", "")
 
-	builder.AddStaticNode("step1", graph.NewTargetSet("step2"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step1", []string{"step2"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, counterKey, counter)
-		graph.UpdateSet(b, statusKey, "processed")
-		return b.Build()
+		updates := graphstate.Updates{}
+		updates[counterKey.Name()] = counter
+		updates[statusKey.Name()] = "processed"
+		return updates, nil
 	})
 
-	builder.AddStaticNode("step2", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("step2", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		counter := graphstate.GetFromView(view, counterKey)
 		counter++
 		fmt.Printf("  → Processing step %d\n", counter)
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, counterKey, counter)
-		graph.UpdateSet(b, statusKey, "finalized")
-		return b.Build()
+		updates := graphstate.Updates{}
+		updates[counterKey.Name()] = counter
+		updates[statusKey.Name()] = "finalized"
+		return updates, nil
 	})
 
 	builder.SetEntryPoint("step1")

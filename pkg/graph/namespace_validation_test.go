@@ -31,41 +31,41 @@ func TestNamespacedNodeValidatesUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("allows updates to own namespace", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				// Update own namespace - should be allowed
 				updates := state.Updates{
 					"agent1.data": "value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			false, // Don't include global
 		)
 
-		cmd, err := node.Execute(ctx, view)
+		_, cmd, err := node.Execute(ctx, view)
 		require.NoError(t, err)
 		assert.NotNil(t, cmd)
 	})
 
 	t.Run("rejects updates to other namespace", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				// Try to update different namespace - should fail
 				updates := state.Updates{
 					"agent2.data": "value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			false, // Don't include global
 		)
 
-		_, err := node.Execute(ctx, view)
+		_, _, err := node.Execute(ctx, view)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "attempted to update key")
 		assert.Contains(t, err.Error(), "agent2.data")
@@ -73,88 +73,88 @@ func TestNamespacedNodeValidatesUpdates(t *testing.T) {
 	})
 
 	t.Run("rejects global updates when includeGlobal=false", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				// Try to update global key - should fail
 				updates := state.Updates{
 					"global": "value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			false, // Don't include global
 		)
 
-		_, err := node.Execute(ctx, view)
+		_, _, err := node.Execute(ctx, view)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "attempted to update key")
 		assert.Contains(t, err.Error(), "global")
 	})
 
 	t.Run("allows global updates when includeGlobal=true", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				// Update both namespace and global - should be allowed
 				updates := state.Updates{
 					"agent1.data": "value",
 					"global":      "global_value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			true, // Include global
 		)
 
-		cmd, err := node.Execute(ctx, view)
+		_, cmd, err := node.Execute(ctx, view)
 		require.NoError(t, err)
 		assert.NotNil(t, cmd)
 	})
 
 	t.Run("rejects other namespace even with includeGlobal=true", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				// Try to update different namespace - should still fail
 				updates := state.Updates{
 					"agent2.data": "value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			true, // Include global
 		)
 
-		_, err := node.Execute(ctx, view)
+		_, _, err := node.Execute(ctx, view)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agent2.data")
 	})
 
 	t.Run("allows mixed updates with includeGlobal=true", func(t *testing.T) {
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				updates := state.Updates{
 					"agent1.data":   "namespace_value",
 					"agent1.status": "active",
 					"global":        "global_value",
 					"config":        "config_value",
 				}
-				return graph.End(updates), nil
+				return []string{graph.EndNode}, updates, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			true, // Include global
 		)
 
-		cmd, err := node.Execute(ctx, view)
+		_, updates, err := node.Execute(ctx, view)
 		require.NoError(t, err)
-		assert.NotNil(t, cmd)
-		assert.Len(t, cmd.Updates, 4)
+		assert.NotNil(t, updates)
+		assert.Len(t, updates, 4)
 	})
 }
 
@@ -180,23 +180,23 @@ func TestNamespacedNodeIncludeGlobalView(t *testing.T) {
 
 	t.Run("includeGlobal=false hides global keys", func(t *testing.T) {
 		var seenKeys []string
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agentNS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				seenKeys = view.Keys()
 
 				// Check global key is not visible
 				hasGlobal := view.Has("global")
 				assert.False(t, hasGlobal, "Global key should not be visible")
 
-				return graph.End(), nil
+				return []string{graph.EndNode}, nil, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			false, // Don't include global
 		)
 
-		_, err := node.Execute(ctx, view)
+		_, _, err := node.Execute(ctx, view)
 		require.NoError(t, err)
 
 		assert.Len(t, seenKeys, 1)
@@ -206,10 +206,10 @@ func TestNamespacedNodeIncludeGlobalView(t *testing.T) {
 
 	t.Run("includeGlobal=true exposes global keys", func(t *testing.T) {
 		var seenKeys []string
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"agent1",
 			agentNS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				seenKeys = view.Keys()
 
 				// Check global key is visible
@@ -220,13 +220,13 @@ func TestNamespacedNodeIncludeGlobalView(t *testing.T) {
 				globalValue := state.GetFromView(view, globalKey)
 				assert.Equal(t, "global_value", globalValue)
 
-				return graph.End(), nil
+				return []string{graph.EndNode}, nil, nil
 			},
-			graph.NewTargetSet(graph.EndNode),
+			[]string{graph.EndNode},
 			true, // Include global
 		)
 
-		_, err := node.Execute(ctx, view)
+		_, _, err := node.Execute(ctx, view)
 		require.NoError(t, err)
 
 		assert.Len(t, seenKeys, 2)

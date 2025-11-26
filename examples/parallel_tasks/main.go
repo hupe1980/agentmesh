@@ -55,45 +55,43 @@ func main() {
 	}
 
 	// Task A: Simulates data analysis (runs in parallel with Task B)
-	taskA := &graph.BaseCommandNode{
+	taskA := &graph.BaseNode{
 		NodeName:        "task_a",
-		DeclaredTargets: graph.NewTargetSet("combine"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"combine"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [task_a] Starting analysis...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_a] ✓ Analysis complete")
 
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, "task_a: analysis completed")
-			graph.UpdateSet(builder, resultAKey, "analysis result")
-			updates, _ := builder.Build()
-			return graph.Goto("combine", updates), nil
+			updates := graphstate.Updates{}
+			updates[actionHistoryKey.Name()] = []string{"task_a: analysis completed"}
+			updates[resultAKey.Name()] = "analysis result"
+			return []string{"combine"}, updates, nil
 		},
 	}
 
 	// Task B: Simulates simulation work (runs in parallel with Task A)
-	taskB := &graph.BaseCommandNode{
+	taskB := &graph.BaseNode{
 		NodeName:        "task_b",
-		DeclaredTargets: graph.NewTargetSet("combine"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"combine"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [task_b] Starting simulation...")
 			time.Sleep(300 * time.Millisecond) // Simulate work
 			fmt.Println("  [task_b] ✓ Simulation complete")
 
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, "task_b: simulation completed")
-			graph.UpdateSet(builder, resultBKey, "simulation result")
-			updates, _ := builder.Build()
-			return graph.Goto("combine", updates), nil
+			updates := graphstate.Updates{}
+			updates[actionHistoryKey.Name()] = []string{"task_b: simulation completed"}
+			updates[resultBKey.Name()] = "simulation result"
+			return []string{"combine"}, updates, nil
 		},
 	}
 
 	// Merge node: Aggregates results after all parallel tasks complete
 	// This demonstrates the fan-in pattern (many → one)
-	mergeResults := &graph.BaseCommandNode{
+	mergeResults := &graph.BaseNode{
 		NodeName:        "combine",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [combine] Aggregating parallel task results...")
 
 			// Read results from both parallel tasks
@@ -106,11 +104,10 @@ func main() {
 				"task_b": resultB,
 			}
 
-			builder := graph.NewUpdate()
-			// graph.UpdateAppend(builder, actionHistoryKey, "combine: aggregated all results")
-			graph.UpdateSet(builder, summaryKey, results)
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			// updates[actionHistoryKey.Name()] = []string{"combine: aggregated all results"}
+			updates[summaryKey.Name()] = results
+			return []string{graph.EndNode}, updates, nil
 		},
 	} // Helper to add nodes with error checking
 	mustAddNode := func(n graph.Node) {

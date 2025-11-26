@@ -64,23 +64,19 @@ func runExample(maxSize int) {
 	}
 
 	// Create a simple echo node
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "echo",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			messages := agent.GetMessages(view)
 			lastMsg := messages[len(messages)-1]
 
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, agent.MessagesKey,
-				message.Message(message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts()))),
-			)
-
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
+			updates := graphstate.Updates{}
+			updates[agent.MessagesKey.Name()] = []message.Message{
+				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
 			}
-			return graph.End(updates), nil
+
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 	if err != nil {

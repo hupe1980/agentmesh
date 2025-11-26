@@ -76,28 +76,28 @@ func runApprovalWorkflow(ctx context.Context) {
 	}
 
 	// Node 1: Draft email
-	draftNode := &graph.BaseCommandNode{
+	draftNode := &graph.BaseNode{
 		NodeName:        "draft_email",
-		DeclaredTargets: graph.NewTargetSet("send_email"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"send_email"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			topic := graphstate.GetFromView(view, topicKey)
 			fmt.Printf("→ Drafting email about: %s\n", topic)
 
 			draft := fmt.Sprintf("Dear Team,\n\nThis is a reminder about: %s\n\nBest regards", topic)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, draftKey, draft)
-			graph.UpdateSet(builder, statusKey, "drafted")
-			updates, _ := builder.Build()
-			return graph.Goto("send_email", updates), nil
+			updates := graphstate.Updates{}
+			updates[draftKey.Name()] = draft
+			updates[statusKey.Name()] = "drafted"
+
+			return []string{"send_email"}, updates, nil
 		},
 	}
 
 	// Node 2: Send email (with interrupt handling)
-	sendNode := &graph.BaseCommandNode{
+	sendNode := &graph.BaseNode{
 		NodeName:        "send_email",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			// Check for resume value (user decision)
 			resumeVals := graph.ResumeValueFromContext(ctx)
 
@@ -107,22 +107,22 @@ func runApprovalWorkflow(ctx context.Context) {
 				// Check if user rejected
 				if approved, ok := resumeVals["approved"].(bool); ok && !approved {
 					fmt.Println("  ❌ User rejected - email not sent")
-					builder := graph.NewUpdate()
-					graph.UpdateSet(builder, sentKey, false)
-					graph.UpdateSet(builder, statusKey, "rejected")
-					updates, _ := builder.Build()
-					return graph.End(updates), nil
+					updates := graphstate.Updates{}
+					updates[sentKey.Name()] = false
+					updates[statusKey.Name()] = "rejected"
+
+					return []string{graph.EndNode}, updates, nil
 				}
 
 				// Check if user edited the draft
 				if editedDraft, ok := resumeVals["edited_draft"].(string); ok {
 					fmt.Println("  ✏️  User edited draft - sending edited version")
-					builder := graph.NewUpdate()
-					graph.UpdateSet(builder, draftKey, editedDraft)
-					graph.UpdateSet(builder, sentKey, true)
-					graph.UpdateSet(builder, statusKey, "sent_edited")
-					updates, _ := builder.Build()
-					return graph.End(updates), nil
+					updates := graphstate.Updates{}
+					updates[draftKey.Name()] = editedDraft
+					updates[sentKey.Name()] = true
+					updates[statusKey.Name()] = "sent_edited"
+
+					return []string{graph.EndNode}, updates, nil
 				}
 
 				// User approved without edits
@@ -133,11 +133,11 @@ func runApprovalWorkflow(ctx context.Context) {
 			draft := graphstate.GetFromView(view, draftKey)
 			fmt.Printf("→ Sending email:\n%s\n", draft)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, sentKey, true)
-			graph.UpdateSet(builder, statusKey, "sent")
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			updates[sentKey.Name()] = true
+			updates[statusKey.Name()] = "sent"
+
+			return []string{graph.EndNode}, updates, nil
 		},
 	} // Add nodes to graph
 	if err := g.AddNode(draftNode); err != nil {
@@ -253,42 +253,42 @@ func runRejectionWorkflow(ctx context.Context) {
 	// Build graph (same structure)
 	g, _ := graph.NewGraph(mgr)
 
-	draftNode := &graph.BaseCommandNode{
+	draftNode := &graph.BaseNode{
 		NodeName:        "draft_email",
-		DeclaredTargets: graph.NewTargetSet("send_email"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"send_email"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			topic := graphstate.GetFromView(view, topicKey)
 			fmt.Printf("→ Drafting email about: %s\n", topic)
 			draft := fmt.Sprintf("Dear Team,\n\nExciting news about: %s\n\nBest regards", topic)
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, draftKey, draft)
-			graph.UpdateSet(builder, statusKey, "drafted")
-			updates, _ := builder.Build()
-			return graph.Goto("send_email", updates), nil
+			updates := graphstate.Updates{}
+			updates[draftKey.Name()] = draft
+			updates[statusKey.Name()] = "drafted"
+
+			return []string{"send_email"}, updates, nil
 		},
 	}
 
-	sendNode := &graph.BaseCommandNode{
+	sendNode := &graph.BaseNode{
 		NodeName:        "send_email",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			resumeVals := graph.ResumeValueFromContext(ctx)
 			if resumeVals != nil {
 				if approved, ok := resumeVals["approved"].(bool); ok && !approved {
 					reason := resumeVals["reason"].(string)
 					fmt.Printf("  ❌ User rejected: %s\n", reason)
-					builder := graph.NewUpdate()
-					graph.UpdateSet(builder, sentKey, false)
-					graph.UpdateSet(builder, statusKey, fmt.Sprintf("rejected: %s", reason))
-					updates, _ := builder.Build()
-					return graph.End(updates), nil
+					updates := graphstate.Updates{}
+					updates[sentKey.Name()] = false
+					updates[statusKey.Name()] = fmt.Sprintf("rejected: %s", reason)
+
+					return []string{graph.EndNode}, updates, nil
 				}
 			}
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, sentKey, true)
-			graph.UpdateSet(builder, statusKey, "sent")
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			updates[sentKey.Name()] = true
+			updates[statusKey.Name()] = "sent"
+
+			return []string{graph.EndNode}, updates, nil
 		},
 	}
 

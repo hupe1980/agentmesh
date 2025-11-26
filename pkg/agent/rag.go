@@ -42,54 +42,52 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 var DocumentsKey = state.NewKey[[]string]("documents", nil)
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) func(context.Context, state.ReadView) (*graph.Command, error) {
-	return func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
+	return func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 		messages := GetMessages(view)
 		if len(messages) == 0 {
-			return nil, fmt.Errorf("no query messages")
+			return nil, nil, fmt.Errorf("no query messages")
 		}
 
 		query, err := extractUserQuery(messages)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		docs, err := retriever.Retrieve(ctx, query)
 		if err != nil {
-			return nil, fmt.Errorf("retrieval failed: %w", err)
+			return nil, nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
-		b := graph.NewCommand()
-		graph.CommandSet(b, DocumentsKey, extractDocumentContent(docs))
-		return b.Goto("generaete")
+		return graph.NewCommand().Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
 	}
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) func(context.Context, state.ReadView) (*graph.Command, error) {
-	return func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
+	return func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 		messages := GetMessages(view)
 
 		docs := state.GetFromView(view, DocumentsKey)
-		var updates state.Updates
 		var err error
 
+		var newMsg message.Message
 		if len(docs) == 0 {
 			// No documents found, generate without context
-			updates, err = generateWithModel(ctx, mdl, messages, "")
+			newMsg, err = generateWithModel(ctx, mdl, messages, "")
 		} else {
 			// Format context from documents
 			contextPrompt := config.promptTemplate.MustRender(map[string]any{
 				"Documents": docs,
 			})
-			updates, err = generateWithModel(ctx, mdl, messages, contextPrompt)
+			newMsg, err = generateWithModel(ctx, mdl, messages, contextPrompt)
 		}
 
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		return graph.End(updates), nil
+		return graph.NewCommand().Set(MessagesKey, []message.Message{newMsg}).To(graph.EndNode)
 	}
 }
 
@@ -136,8 +134,8 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 	}
 
 	compiled, err := builder.
-		AddCommandNode("retrieve", graph.NewTargetSet("generate"), createRetrieveNode(retriever)).
-		AddCommandNode("generate", graph.NewTargetSet(graph.EndNode), createGenerateNode(mdl, config)).
+		AddNodeFunc("retrieve", []string{"generate"}, createRetrieveNode(retriever)).
+		AddNodeFunc("generate", []string{graph.EndNode}, createGenerateNode(mdl, config)).
 		SetEntryPoint("retrieve").
 		Compile()
 	if err != nil {
@@ -187,15 +185,16 @@ func WithRAGPluginManager(pm *callbacks.PluginManager) RAGOption {
 }
 
 // Helper function to generate response with optional context
-func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Message, context string) (state.Updates, error) {
-	// Prepend context if provided
+func generateWithModel(ctx context.Context, mdl model.Model, existingMsgs []message.Message, context string) (message.Message, error) {
+	// Build request messages with optional context prepended
+	requestMsgs := existingMsgs
 	if context != "" {
 		contextMsg := message.NewSystemMessageFromText(context)
-		msgs = append([]message.Message{contextMsg}, msgs...)
+		requestMsgs = append([]message.Message{contextMsg}, existingMsgs...)
 	}
 
 	req := &model.Request{
-		Messages: msgs,
+		Messages: requestMsgs,
 	}
 
 	resp, err := model.Last(mdl.Generate(ctx, req))
@@ -203,9 +202,6 @@ func generateWithModel(ctx context.Context, mdl model.Model, msgs []message.Mess
 		return nil, err
 	}
 
-	// Return message in updates map
-	builder := graph.NewUpdate()
-	graph.UpdateAppend(builder, MessagesKey, resp.Message)
-
-	return builder.Build()
+	// Return only the NEW message
+	return resp.Message, nil
 }

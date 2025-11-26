@@ -23,18 +23,18 @@ func TestRetryPolicyExecution(t *testing.T) {
 		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
 		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
 
-		targets := NewTargetSet(EndNode)
+		targets := []string{EndNode}
 
 		// Node that fails twice, then succeeds
-		builder.AddCommandNodeWithRetry("retry_node", targets,
-			func(ctx context.Context, view state.ReadView) (*Command, error) {
+		builder.AddNodeFuncWithRetry("retry_node", targets,
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				attemptCount++
 				if attemptCount < 3 {
-					return nil, errors.New("transient error")
+					return nil, nil, errors.New("transient error")
 				}
-				return End(state.Updates{
+				return []string{EndNode}, state.Updates{
 					MessagesKeyName: []message.Message{message.NewAIMessageFromText("success")},
-				}), nil
+				}, nil
 			},
 			NewRetryPolicy().
 				WithMaxAttempts(5).
@@ -64,13 +64,13 @@ func TestRetryPolicyExecution(t *testing.T) {
 		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
 		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
 
-		targets := NewTargetSet(EndNode)
+		targets := []string{EndNode}
 
 		// Node that always fails
-		builder.AddCommandNodeWithRetry("always_fails", targets,
-			func(ctx context.Context, view state.ReadView) (*Command, error) {
+		builder.AddNodeFuncWithRetry("always_fails", targets,
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				attemptCount++
-				return nil, errors.New("permanent error")
+				return nil, nil, errors.New("permanent error")
 			},
 			NewRetryPolicy().
 				WithMaxAttempts(3).
@@ -104,12 +104,12 @@ func TestRetryPolicyExecution(t *testing.T) {
 			messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
 			require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
 
-			targets := NewTargetSet(EndNode)
+			targets := []string{EndNode}
 
-			builder.AddCommandNodeWithRetry("selective_node", targets,
-				func(ctx context.Context, view state.ReadView) (*Command, error) {
+			builder.AddNodeFuncWithRetry("selective_node", targets,
+				func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 					attemptCount++
-					return nil, ErrPermanent // Not in retryable list
+					return nil, nil, ErrPermanent // Not in retryable list
 				},
 				NewRetryPolicy().
 					WithMaxAttempts(5).
@@ -139,17 +139,17 @@ func TestRetryPolicyExecution(t *testing.T) {
 			messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
 			require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
 
-			targets := NewTargetSet(EndNode)
+			targets := []string{EndNode}
 
-			builder.AddCommandNodeWithRetry("selective_node", targets,
-				func(ctx context.Context, view state.ReadView) (*Command, error) {
+			builder.AddNodeFuncWithRetry("selective_node", targets,
+				func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 					attemptCount++
 					if attemptCount < 3 {
-						return nil, ErrTransient // Retryable
+						return nil, nil, ErrTransient // Retryable
 					}
-					return End(state.Updates{
+					return []string{EndNode}, state.Updates{
 						MessagesKeyName: []message.Message{message.NewAIMessageFromText("success")},
-					}), nil
+					}, nil
 				},
 				NewRetryPolicy().
 					WithMaxAttempts(5).
@@ -180,14 +180,14 @@ func TestRetryPolicyPriority(t *testing.T) {
 		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
 		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
 
-		targets := NewTargetSet(EndNode)
+		targets := []string{EndNode}
 
 		// Add node with retry policy via Builder
-		builder.AddCommandNodeWithRetry("test_node", targets,
-			func(ctx context.Context, view state.ReadView) (*Command, error) {
-				return End(state.Updates{
+		builder.AddNodeFuncWithRetry("test_node", targets,
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+				return []string{EndNode}, state.Updates{
 					MessagesKeyName: []message.Message{message.NewAIMessageFromText("done")},
-				}), nil
+				}, nil
 			},
 			NewRetryPolicy().WithMaxAttempts(5).Build(),
 		)

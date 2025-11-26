@@ -319,28 +319,26 @@ builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView)
 })
 
 // Writer node routes to evaluator
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "writer",
-    DeclaredTargets: []string{"evaluator"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        draft := generateDraft()
-        return graph.Goto(map[string]any{"draft": draft}, "evaluator"), nil
-    },
+builder.AddNodeFunc("writer", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    draft := generateDraft()
+    return graph.NewCommand().
+        Set(draftKey, draft).
+        To("evaluator")
 })
 
-// Evaluator uses commands to create cycle - routes based on state
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "evaluator",
-    DeclaredTargets: []string{graph.EndNode, "writer"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        draft := state.GetFromView(view, DraftKey)
-        if isGoodEnough(draft) {
-            return graph.End(map[string]any{"done": true}), nil
-        }
-        // Loop back to writer - creates a cycle!
-        updates := map[string]any{"feedback": "improve clarity", "done": false}
-        return graph.Goto(updates, "writer"), nil
-    },
+// Evaluator uses Command pattern to create cycle - routes based on state
+builder.AddNodeFunc("evaluator", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    draft := state.GetFromView(view, DraftKey)
+    if isGoodEnough(draft) {
+        return graph.NewCommand().
+            Set(doneKey, true).
+            To(graph.EndNode)
+    }
+    // Loop back to writer - creates a cycle!
+    return graph.NewCommand().
+        Set(feedbackKey, "improve clarity").
+        Set(doneKey, false).
+        To("writer")
 })
 ```
 
@@ -351,24 +349,21 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 
 builder := graph.NewBuilder()
 
-// Nodes with Command-based routing
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "fetch_data",
-    DeclaredTargets: []string{"process"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        // Fetch from API...
-        return graph.Goto(map[string]any{"data": result}, "process"), nil
-    },
+// Nodes with Command pattern routing
+builder.AddNodeFunc("fetch_data", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Fetch from API...
+    result := fetchData()
+    return graph.NewCommand().
+        Set(dataKey, result).
+        To("process")
 })
 
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "process",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        data := state.GetFromView(view, DataKey)
-        // Process...
-        return graph.End(map[string]any{"processed": true}), nil
-    },
+builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    data := state.GetFromView(view, DataKey)
+    // Process...
+    return graph.NewCommand().
+        Set(processedKey, true).
+        To(graph.EndNode)
 })
 
 g.SetEntryPoint("fetch_data")
@@ -572,21 +567,18 @@ builder.AddNodeFunc("classifier", func(ctx context.Context, view *state.ReadView
     return map[string]any{"category": category}, nil
 })
 
-// Classifier node uses Commands to route based on state
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "classifier",
-    DeclaredTargets: []string{"urgent_handler", "standard_handler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        messages := state.GetFromView(view, agent.MessagesKey)
-        category := analyzeInput(messages)
-        updates := map[string]any{"category": category}
-        
-        // Return different paths based on runtime data
-        if category == "urgent" {
-            return graph.Goto(updates, "urgent_handler"), nil
-        }
-        return graph.Goto(updates, "standard_handler"), nil
-    },
+// Classifier node uses Command pattern to route based on state
+builder.AddNodeFunc("classifier", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    messages := state.GetFromView(view, agent.MessagesKey)
+    category := analyzeInput(messages)
+    
+    cmd := graph.NewCommand().Set(categoryKey, category)
+    
+    // Return different paths based on runtime data
+    if category == "urgent" {
+        return cmd.To("urgent_handler")
+    }
+    return cmd.To("standard_handler")
 })
 ```
 
@@ -1072,7 +1064,7 @@ stateManager := state.NewManager()
 g, _ := graph.NewGraph(stateManager)
 
 // Add nodes with Command-based routing
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "agent",
     DeclaredTargets: []string{graph.EndNode},
     Fn:              agentFunction,
@@ -1090,10 +1082,10 @@ compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
 Routes are determined dynamically using commands:
 
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "classifier",
     DeclaredTargets: []string{"urgent_handler", "researcher", "default_handler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         category := state.GetFromView(view, CategoryKey)
         var nextNode string
         switch category {
@@ -1104,7 +1096,7 @@ g.AddNode(&graph.BaseCommandNode{
         default:
             nextNode = "default_handler"
         }
-        return graph.Goto(nil, nextNode), nil
+        return graph.NewCommand().To(nextNode)
     },
 })
 ```

@@ -10,7 +10,7 @@ import (
 	"runtime"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/state"
+	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Helper function to repeat strings
@@ -30,48 +30,48 @@ func main() {
 	}
 
 	// Define state keys
-	validKey := state.NewKey("valid", false)
-	priorityKey := state.NewKey("priority", "")
-	processedKey := state.NewKey("processed", false)
-	completeKey := state.NewKey("complete", false)
+	validKey := graphstate.NewKey("valid", false)
+	priorityKey := graphstate.NewKey("priority", "")
+	processedKey := graphstate.NewKey("processed", false)
+	completeKey := graphstate.NewKey("complete", false)
 
 	// Add nodes
-	builder.AddStaticNode("input_validator", graph.NewTargetSet("router"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("input_validator", []string{"router"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, validKey, true)
-		graph.UpdateSet(b, priorityKey, "high")
-		return b.Build()
+		return graph.NewCommand().
+			Set(validKey, true).
+			Set(priorityKey, "high").
+			Build()
 	})
 
-	builder.AddCommandNode("router", graph.NewTargetSet("high_priority_handler", "normal_handler"), func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+	builder.AddNodeFunc("router", []string{"high_priority_handler", "normal_handler"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Routing request...")
-		priority := state.GetFromView(view, priorityKey)
+		priority := graphstate.GetFromView(view, priorityKey)
 		if priority == "high" {
-			return graph.GotoOne("high_priority_handler"), nil
+			return []string{"high_priority_handler"}, nil, nil
 		}
-		return graph.GotoOne("normal_handler"), nil
+		return []string{"normal_handler"}, nil, nil
 	})
 
-	builder.AddStaticNode("high_priority_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("high_priority_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, processedKey, true)
-		return b.Build()
+		return graph.NewCommand().
+			Set(processedKey, true).
+			Build()
 	})
 
-	builder.AddStaticNode("normal_handler", graph.NewTargetSet("aggregator"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("normal_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, processedKey, true)
-		return b.Build()
+		return graph.NewCommand().
+			Set(processedKey, true).
+			Build()
 	})
 
-	builder.AddStaticNode("aggregator", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+	builder.AddStaticNode("aggregator", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		b := graph.NewUpdate()
-		graph.UpdateSet(b, completeKey, true)
-		return b.Build()
+		return graph.NewCommand().
+			Set(completeKey, true).
+			Build()
 	})
 
 	builder.SetEntryPoint("input_validator")

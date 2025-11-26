@@ -113,14 +113,13 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 
 		g, _ := graph.NewGraph(mgr)
 
-		g.AddNode(&graph.BaseCommandNode{
+		g.AddNode(&graph.BaseNode{
 			NodeName:        "increment",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				count := state.GetFromView(view, countKey)
-				builder := graph.NewCommand()
-				graph.CommandSet(builder, countKey, count+1)
-				return builder.End()
+				updates := state.Updates{countKey.Name(): count + 1}
+				return []string{graph.EndNode}, updates, nil
 			},
 		})
 
@@ -157,14 +156,13 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			if i < length-1 {
 				nextNode = fmt.Sprintf("node_%d", i+1)
 			}
-			g.AddNode(&graph.BaseCommandNode{
+			g.AddNode(&graph.BaseNode{
 				NodeName:        name,
-				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+				DeclaredTargets: []string{nextNode},
+				Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 					val := state.GetFromView(view, valueKey)
-					builder := graph.NewCommand()
-					graph.CommandSet(builder, valueKey, val+1)
-					return builder.Goto(nextNode)
+					updates := state.Updates{valueKey.Name(): val + 1}
+					return []string{nextNode}, updates, nil
 				},
 			})
 
@@ -209,11 +207,11 @@ func BenchmarkGraph_Compile(b *testing.B) {
 			if i < 9 {
 				nextNode = fmt.Sprintf("node_%d", i+1)
 			}
-			g.AddNode(&graph.BaseCommandNode{
+			g.AddNode(&graph.BaseNode{
 				NodeName:        name,
-				DeclaredTargets: graph.NewTargetSet(nextNode),
-				Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-					return graph.GotoOne(nextNode), nil
+				DeclaredTargets: []string{nextNode},
+				Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+					return []string{nextNode}, nil, nil
 				},
 			})
 		}

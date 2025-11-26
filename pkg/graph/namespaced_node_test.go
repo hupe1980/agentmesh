@@ -13,13 +13,13 @@ import (
 func TestNamespacedCommandNode(t *testing.T) {
 	t.Run("Creates node with namespace", func(t *testing.T) {
 		agentNS := state.MustNamespace("agent1")
-		targets := graph.NewTargetSet(graph.EndNode)
+		targets := []string{graph.EndNode}
 
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"test_node",
 			agentNS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-				return graph.End(), nil
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+				return []string{graph.EndNode}, nil, nil
 			},
 			targets,
 			false, // includeGlobal
@@ -32,9 +32,9 @@ func TestNamespacedCommandNode(t *testing.T) {
 
 	t.Run("Implements NamespacedNode interface", func(t *testing.T) {
 		agentNS := state.MustNamespace("agent1")
-		targets := graph.NewTargetSet(graph.EndNode)
+		targets := []string{graph.EndNode}
 
-		node := graph.NewNamespacedCommandNode(
+		node := graph.NewNamespacedNode(
 			"test_node",
 			agentNS,
 			nil,
@@ -43,7 +43,7 @@ func TestNamespacedCommandNode(t *testing.T) {
 		)
 
 		// Verify it implements NamespacedNode
-		var _ graph.NamespacedNode = node
+		var _ *graph.NamespacedNode = node
 
 		// Verify it also implements Node
 		var _ graph.Node = node
@@ -51,14 +51,14 @@ func TestNamespacedCommandNode(t *testing.T) {
 
 	t.Run("WithRetry creates node with retry policy", func(t *testing.T) {
 		agentNS := state.MustNamespace("agent1")
-		targets := graph.NewTargetSet(graph.EndNode)
+		targets := []string{graph.EndNode}
 		retry := graph.NewRetryPolicy().WithMaxAttempts(3).Build()
 
-		node := graph.NewNamespacedCommandNodeWithRetry(
+		node := graph.NewNamespacedNodeWithRetry(
 			"test_node",
 			agentNS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-				return graph.End(), nil
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+				return []string{graph.EndNode}, nil, nil
 			},
 			targets,
 			retry,
@@ -107,29 +107,29 @@ func TestNamespacedNodeIsolation(t *testing.T) {
 
 	t.Run("Namespaced nodes in graph execution", func(t *testing.T) {
 		// Create nodes for different agents
-		targets := graph.NewTargetSet(graph.EndNode)
+		targets := []string{graph.EndNode}
 
-		agent1Node := graph.NewNamespacedCommandNode(
+		agent1Node := graph.NewNamespacedNode(
 			"agent1_process",
 			agent1NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				status := state.GetFromView(view, agent1StatusKey)
 				updates := state.NoUpdate()
 				updates[agent1StatusKey.Name()] = status + "_processed"
-				return graph.End(), nil
+				return []string{graph.EndNode}, nil, nil
 			},
 			targets,
 			false, // includeGlobal
 		)
 
-		agent2Node := graph.NewNamespacedCommandNode(
+		agent2Node := graph.NewNamespacedNode(
 			"agent2_process",
 			agent2NS,
-			func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				status := state.GetFromView(view, agent2StatusKey)
 				updates := state.NoUpdate()
 				updates[agent2StatusKey.Name()] = status + "_processed"
-				return graph.End(), nil
+				return []string{graph.EndNode}, nil, nil
 			},
 			targets,
 			false, // includeGlobal

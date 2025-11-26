@@ -38,34 +38,34 @@ func main() {
 		panic(err)
 	}
 
-	gph.AddNode(&graph.BaseCommandNode{
+	gph.AddNode(&graph.BaseNode{
 		NodeName:        "init",
-		DeclaredTargets: graph.NewTargetSet("process"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"process"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("[init] Initializing...")
-			builder := graph.NewCommand()
-			graph.CommandSet(builder, phaseKey, "processing")
-			graph.CommandSet(builder, attemptsKey, 1)
-			graph.CommandAppend(builder, actionLogKey, "Initialized")
-			return builder.Goto("process")
+			updates := graphstate.Updates{}
+			updates[phaseKey.Name()] = "processing"
+			updates[attemptsKey.Name()] = 1
+			updates[actionLogKey.Name()] = []string{"Initialized"}
+			return []string{"process"}, updates, nil
 		},
 	})
 
-	gph.AddNode(&graph.BaseCommandNode{
+	gph.AddNode(&graph.BaseNode{
 		NodeName:        "process",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("[process] Processing...")
 
 			// Read current attempts count
 			currentAttempts := graphstate.GetFromView(view, attemptsKey)
 
-			builder := graph.NewCommand()
-			graph.CommandSet(builder, attemptsKey, currentAttempts+1)
-			graph.CommandSet(builder, validatedKey, true)
-			graph.CommandAppend(builder, actionLogKey, "Processed")
-			graph.CommandSet(builder, taskResultsKey, map[string]any{"process": "success"})
-			return builder.End()
+			updates := graphstate.Updates{}
+			updates[attemptsKey.Name()] = currentAttempts + 1
+			updates[validatedKey.Name()] = true
+			updates[actionLogKey.Name()] = []string{"Processed"}
+			updates[taskResultsKey.Name()] = map[string]any{"process": "success"}
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 

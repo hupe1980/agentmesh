@@ -27,13 +27,11 @@ if err != nil {
     log.Fatal(err)
 }
 
-// Build a workflow using command nodes
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "process",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.End(map[string]any{"done": true}), nil
-    },
+// Build a workflow using tuple return API
+builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(doneKey, true).
+        To(graph.EndNode)
 })
 
 g.SetEntryPoint("process")
@@ -65,32 +63,28 @@ builder, err := graph.NewBuilder(
 ```go
 routeKey := state.NewKey("route", "")
 
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "router",
-    DeclaredTargets: []string{"left", "right"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        route := state.GetFromView(view, routeKey)
-        if route == "left" {
-            return graph.Goto(map[string]any{"route": "left"}, "left"), nil
-        }
-        return graph.Goto(map[string]any{"route": "right"}, "right"), nil
-    },
+builder.AddNodeFunc("router", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    route := state.GetFromView(view, routeKey)
+    if route == "left" {
+        return graph.NewCommand().
+            Set(routeKey, "left").
+            To("left")
+    }
+    return graph.NewCommand().
+        Set(routeKey, "right").
+        To("right")
 })
 
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "left",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.End(map[string]any{"result": "left"}), nil
-    },
+builder.AddNodeFunc("left", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(resultKey, "left").
+        To(graph.EndNode)
 })
 
-g.AddNode(&graph.BaseCommandNode{
-    NodeName:        "right",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.End(map[string]any{"result": "right"}), nil
-    },
+builder.AddNodeFunc("right", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(resultKey, "right").
+        To(graph.EndNode)
 })
 
 g.SetEntryPoint("router")
@@ -133,33 +127,31 @@ customNode := &MyCustomNode{name: "custom"}
 builder.AddNode(customNode)
 ```
 
-#### `AddNodeFunc(name string, runFunc func(context.Context, *state.ReadView) (state.Updates, error)) *Builder[I, O]`
-Adds a function-based node to the graph.
+#### `AddNodeFunc(name string, runFunc func(context.Context, state.ReadView) ([]string, state.Updates, error)) *Builder[I, O]`
+Adds a function-based node to the graph using tuple return API.
 
 ```go
-builder.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-    return map[string]any{"done": true}, nil
+builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(doneKey, true).
+        To(graph.EndNode)
 })
 ```
 
-#### `AddCommandNode(name string, targetSet *TargetSet, fn CommandFunc) *Builder[I, O]`
-Adds a Command node to the graph (recommended for most use cases).
+#### `AddNodeFuncWithRetry(name string, runFunc NodeFunc, retryPolicy *RetryPolicy) *Builder[I, O]`
+Adds a node with automatic retry behavior.
 
 ```go
-targets := graph.NewTargetSet("success", "failure", graph.EndNode)
-builder.AddCommandNode("process", targets,
-    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        // Your logic here
-        return targets.Goto("success", state.Updates{"done": true}), nil
-    })
-```
-
-#### `AddCommandNodeWithRetry(name string, targetSet *TargetSet, fn CommandFunc, retryPolicy *RetryPolicy) *Builder[I, O]`
-Adds a Command node with automatic retry behavior.
-
-```go
-targets := graph.NewTargetSet(graph.EndNode)
-builder.AddCommandNodeWithRetry("api_call", targets, apiFunc,
+builder.AddNodeFuncWithRetry("api_call",
+    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        result, err := callExternalAPI()
+        if err != nil {
+            return nil, nil, err // Will be retried
+        }
+        return graph.NewCommand().
+            Set(resultKey, result).
+            To(graph.EndNode)
+    },
     graph.NewRetryPolicy().
         WithMaxAttempts(5).
         WithExponentialBackoff(time.Second, 2.0).
@@ -173,7 +165,7 @@ Sets the entry point of the graph (the first node to execute).
 g.SetEntryPoint("start_node")
 ```
 
-**Note**: Graph construction now uses command-based routing. Nodes declare their targets via `DeclaredTargets` and use `graph.Goto()` or `graph.End()` commands for dynamic routing.
+**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `graph.NewCommand().Set(key, value).To(target)` for clean, type-safe state updates and routing.
 
 #### `Compile(opts ...CompileOption) (*Compiled[I, O], error)`
 Compiles the graph into an executable workflow.

@@ -58,18 +58,14 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	}
 
 	// Node 1: Initialize state with int
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node1",
-		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, 1) // int, not float64
-			graph.UpdateSet(builder, dataKey, "A")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("node2", updates), nil
+		DeclaredTargets: []string{"node2"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			updates := state.Updates{}
+			updates[counterKey.Name()] = 1 // int, not float64
+			updates[dataKey.Name()] = "A"
+			return []string{"node2"}, updates, nil
 		},
 	})
 	if err != nil {
@@ -77,21 +73,17 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	}
 
 	// Node 2: Increment counter (should stay int)
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node2",
-		DeclaredTargets: graph.NewTargetSet("node3"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"node3"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter+1) // Should be int 2
-			graph.UpdateSet(builder, dataKey, data+"B")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("node3", updates), nil
+			updates := state.Updates{}
+			updates[counterKey.Name()] = counter + 1 // Should be int 2
+			updates[dataKey.Name()] = data + "B"
+			return []string{"node3"}, updates, nil
 		},
 	})
 	if err != nil {
@@ -99,21 +91,17 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	}
 
 	// Node 3: Final increment
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node3",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter+1) // Should be int 3
-			graph.UpdateSet(builder, dataKey, data+"C")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			updates := state.Updates{}
+			updates[counterKey.Name()] = counter + 1 // Should be int 3
+			updates[dataKey.Name()] = data + "C"
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 	if err != nil {

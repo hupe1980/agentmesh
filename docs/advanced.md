@@ -48,14 +48,15 @@ import (
 )
 
 // Option 1: Using Builder API (recommended)
-targets := graph.NewTargetSet(graph.EndNode)
-builder.AddCommandNodeWithRetry("api_call", targets,
-    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+builder.AddNodeFuncWithRetry("api_call",
+    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         result, err := callExternalAPI()
         if err != nil {
-            return nil, err // Will be retried automatically
+            return nil, nil, err // Will be retried automatically
         }
-        return targets.End(state.Updates{"api_result": result}), nil
+        return graph.NewCommand().
+            Set(apiResultKey, result).
+            To(graph.EndNode)
     },
     graph.NewRetryPolicy().
         WithMaxAttempts(3).
@@ -68,15 +69,17 @@ builder.AddCommandNodeWithRetry("api_call", targets,
         Build())
 
 // Option 2: Using Graph.AddNode with WithRetryPolicy option
-node := &graph.BaseCommandNode{
+node := &graph.BaseNode{
     NodeName: "api_call",
-    DeclaredTargets: targets,
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         result, err := callExternalAPI()
         if err != nil {
-            return nil, err
+            return nil, nil, err
         }
-        return targets.End(state.Updates{"api_result": result}), nil
+        return graph.NewCommand().
+            Set(apiResultKey, result).
+            To(graph.EndNode)
     },
 }
 g.AddNode(node, graph.WithRetryPolicy(&graph.RetryPolicy{
@@ -185,16 +188,16 @@ mgr := state.NewManager()
 totalProcessedKey := state.NewKey[any]("total_processed", 0)
 state.RegisterAggregateKey(mgr, totalProcessedKey, &aggregators.SumAggregator{})
 
-// In nodes - contribute via Updates
-func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+// In nodes - contribute via Command pattern
+func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read current total
     total, _ := state.GetFromView(view, totalProcessedKey)
     fmt.Printf("Total processed: %v\n", total)
     
-    // Contribute new count
-    return state.Updates{
-        totalProcessedKey.Name(): 42.0,
-    }, nil
+    // Contribute new count using Command pattern
+    return graph.NewCommand().
+        Set(totalProcessedKey, 42.0).
+        To(graph.EndNode)
 }
 
 // After execution, read final sum
@@ -214,11 +217,11 @@ maxPriorityKey := state.NewKey[any]("max_priority", float64(-1e308))
 state.RegisterAggregateKey(mgr, minCostKey, &aggregators.MinAggregator{})
 state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 
-// Contribute via Updates
-return state.Updates{
-    minCostKey.Name():      estimatedCost,
-    maxPriorityKey.Name():  taskPriority,
-}, nil
+// Contribute via Command pattern
+return graph.NewCommand().
+    Set(minCostKey, estimatedCost).
+    Set(maxPriorityKey, taskPriority).
+    To(graph.EndNode)
 ```
 
 **Returns**: `float64` - Minimum or maximum value observed
@@ -232,9 +235,9 @@ avgLatencyKey := state.NewKey[any]("avg_latency", nil)
 state.RegisterAggregateKey(mgr, avgLatencyKey, &aggregators.AvgAggregator{})
 
 // In node
-return state.Updates{
-    avgLatencyKey.Name(): responseTime,
-}, nil
+return graph.NewCommand().
+    Set(avgLatencyKey, responseTime).
+    To(graph.EndNode)
 
 // Read result (returns AvgState)
 avgStateAny, _ := state.Get(ctx, mgr, avgLatencyKey)
@@ -254,9 +257,9 @@ varianceKey := state.NewKey[any]("latency_variance", nil)
 state.RegisterAggregateKey(mgr, varianceKey, &aggregators.VarianceAggregator{})
 
 // In node
-return state.Updates{
-    varianceKey.Name(): responseTime,
-}, nil
+return graph.NewCommand().
+    Set(varianceKey, responseTime).
+    To(graph.EndNode)
 
 // Read result
 varStateAny, _ := state.Get(ctx, mgr, varianceKey)
@@ -276,9 +279,9 @@ activeNodesKey := state.NewKey[any]("active_nodes", 0)
 state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
 // In node - any non-nil value increments
-return state.Updates{
-    activeNodesKey.Name(): 1,
-}, nil
+return graph.NewCommand().
+    Set(activeNodesKey, 1).
+    To(graph.EndNode)
 ```
 
 **Returns**: `int` - Total count
@@ -295,10 +298,10 @@ state.RegisterAggregateKey(mgr, allConvergedKey, &aggregators.AllTrueAggregator{
 state.RegisterAggregateKey(mgr, hasErrorsKey, &aggregators.AnyTrueAggregator{})
 
 // In node
-return state.Updates{
-    allConvergedKey.Name(): isConverged,
-    hasErrorsKey.Name():    hasError,
-}, nil
+return graph.NewCommand().
+    Set(allConvergedKey, isConverged).
+    Set(hasErrorsKey, hasError).
+    To(graph.EndNode)
 
 // Check convergence
 if allConverged, _ := state.Get(ctx, mgr, allConvergedKey); allConverged.(bool) {
@@ -313,7 +316,7 @@ if allConverged, _ := state.Get(ctx, mgr, allConvergedKey); allConverged.(bool) 
 Nodes contribute to aggregators via normal `state.Updates` and read accumulated values from `state.ReadView`:
 
 ```go
-func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read current aggregated values
     totalProcessed, _ := state.GetFromView(view, totalProcessedKey)
     avgLatency, _ := state.GetFromView(view, avgLatencyKey)
@@ -324,11 +327,11 @@ func processorNode(ctx context.Context, view *state.ReadView) (state.Updates, er
     itemsProcessed := 42
     latency := 150.0
     
-    // Contribute to aggregators via Updates
-    return state.Updates{
-        totalProcessedKey.Name(): float64(itemsProcessed),
-        avgLatencyKey.Name():     latency,
-    }, nil
+    // Contribute to aggregators via Command pattern
+    return graph.NewCommand().
+        Set(totalProcessedKey, float64(itemsProcessed)).
+        Set(avgLatencyKey, latency).
+        To(graph.EndNode)
 }
 ```
 
@@ -386,9 +389,9 @@ medianKey := state.NewKey[any]("latency_median", nil)
 state.RegisterAggregateKey(mgr, medianKey, &MedianAggregator{})
 
 // In node
-return state.Updates{
-    medianKey.Name(): latency,
-}, nil
+return graph.NewCommand().
+    Set(medianKey, latency).
+    To(graph.EndNode)
 
 // After execution, compute median from collected values
 medianStateAny, _ := state.Get(ctx, mgr, medianKey)
@@ -643,13 +646,15 @@ subGraph.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) 
     }, nil
 })
 
-subGraph.AddNode(&graph.BaseCommandNode{
+subGraph.AddNode(&graph.BaseNode{
     NodeName:        "process",
     DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         value := state.GetFromView(view, ValueKey)
         doubled := value * 2
-        return graph.End(map[string]any{"result": doubled}), nil
+        return graph.NewCommand().
+            Set(resultKey, doubled).
+            To(graph.EndNode)
     },
 })
 subGraph.SetEntryPoint("process")
@@ -661,22 +666,23 @@ compiledSub, err := exec.CompileGraph(subGraph)
 parentState := graph.NewStateManager(0)
 parent := graph.NewGraph(parentState)
 
-parent.AddNodeFunc("prepare", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    return &graph.NodeResult{
-        Updates: map[string]any{"value": 21},
-    }, nil
-    },
+parent.AddNodeFunc("prepare", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(valueKey, 21).
+        To("doubler")
 })
 
 // Embed subgraph as a node
 parent.AddSubgraph("doubler", compiledSub)
 
-// Parent nodes use Command pattern
-parent.AddNode(&graph.BaseCommandNode{
+// Parent nodes use tuple return
+parent.AddNode(&graph.BaseNode{
     NodeName:        "prepare",
     DeclaredTargets: []string{"doubler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.Goto(map[string]any{"value": 21}, "doubler"), nil
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        return graph.NewCommand().
+            Set(valueKey, 21).
+            To("doubler")
     },
 })
 parent.SetEntryPoint("prepare")
@@ -718,18 +724,18 @@ pipeline.AddSubgraph("validate", validationSub)
 pipeline.AddSubgraph("enrich", enrichmentSub)
 pipeline.AddSubgraph("analyze", analysisSub)
 
-// Pipeline stages with Command routing
-pipeline.AddNode(&graph.BaseCommandNode{
+// Pipeline stages with tuple return routing
+pipeline.AddNode(&graph.BaseNode{
     NodeName:        "validate",
     DeclaredTargets: []string{"enrich"},
     Fn:              validateFunc,
 })
-pipeline.AddNode(&graph.BaseCommandNode{
+pipeline.AddNode(&graph.BaseNode{
     NodeName:        "enrich",
     DeclaredTargets: []string{"analyze"},
     Fn:              enrichFunc,
 })
-pipeline.AddNode(&graph.BaseCommandNode{
+pipeline.AddNode(&graph.BaseNode{
     NodeName:        "analyze",
     DeclaredTargets: []string{graph.EndNode},
     Fn:              analyzeFunc,

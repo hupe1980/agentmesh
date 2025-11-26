@@ -73,10 +73,10 @@ func main() {
 	}
 
 	// Node 1: Data Ingestion - demonstrates logger usage
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "ingest_data",
-		DeclaredTargets: graph.NewTargetSet("process_data"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"process_data"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			// Retrieve logger from context
 			log := logging.FromContext(ctx)
 			log.Info("Starting data ingestion", "node", "ingest_data")
@@ -94,23 +94,20 @@ func main() {
 				"timestamp", data["timestamp"])
 
 			rawDataKey := graphstate.NewKey("raw_data", map[string]any{})
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, rawDataKey, data)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("process_data", updates), nil
+			updates := graphstate.Updates{}
+			updates[rawDataKey.Name()] = data
+
+			return []string{"process_data"}, updates, nil
 		},
 	}); err != nil {
 		panic(err)
 	}
 
 	// Node 2: Data Processing - demonstrates tracer usage
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "process_data",
-		DeclaredTargets: graph.NewTargetSet("validate_data"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"validate_data"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data processing", "node", "process_data")
 
@@ -147,23 +144,20 @@ func main() {
 			log.Info("Processing completed", "processed_count", len(processedRecords))
 
 			processedDataKey := graphstate.NewKey("processed_data", map[string]any{})
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, processedDataKey, result)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("validate_data", updates), nil
+			updates := graphstate.Updates{}
+			updates[processedDataKey.Name()] = result
+
+			return []string{"validate_data"}, updates, nil
 		},
 	}); err != nil {
 		panic(err)
 	}
 
 	// Node 3: Data Validation - demonstrates metrics usage
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "validate_data",
-		DeclaredTargets: graph.NewTargetSet("generate_summary"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"generate_summary"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			log.Info("Starting data validation", "node", "validate_data")
 
@@ -222,23 +216,20 @@ func main() {
 				"duration_ms", duration.Milliseconds())
 
 			validationResultKey := graphstate.NewKey("validation_result", map[string]any{})
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, validationResultKey, result)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("generate_summary", updates), nil
+			updates := graphstate.Updates{}
+			updates[validationResultKey.Name()] = result
+
+			return []string{"generate_summary"}, updates, nil
 		},
 	}); err != nil {
 		panic(err)
 	}
 
 	// Node 4: Summary - demonstrates all providers together
-	if err := g.AddNode(&graph.BaseCommandNode{
+	if err := g.AddNode(&graph.BaseNode{
 		NodeName:        "generate_summary",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			log := logging.FromContext(ctx)
 			tp := trace.FromContext(ctx)
 			mp := metrics.FromContext(ctx)
@@ -268,13 +259,10 @@ func main() {
 			log.Info("Summary generated", "summary", summary)
 
 			summaryKey := graphstate.NewKey("summary", "")
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, summaryKey, summary)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			updates[summaryKey.Name()] = summary
+
+			return []string{graph.EndNode}, updates, nil
 		},
 	}); err != nil {
 		panic(err)

@@ -46,61 +46,49 @@ func main() {
 		}
 	}
 
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "research",
-		DeclaredTargets: graph.NewTargetSet("write"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"write"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("research")
 			topic := graphstate.GetFromView(view, currentTaskKey)
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey,
+			updates := graphstate.Updates{}
+			updates[actionHistoryKey.Name()] = []string{
 				fmt.Sprintf("Researched '%s'", topic),
 				fmt.Sprintf("Summarized findings for '%s'", topic),
-			)
-			graph.UpdateSet(builder, currentTaskKey, fmt.Sprintf("Write report for %s", topic))
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
 			}
-			return graph.Goto("write", updates), nil
+			updates[currentTaskKey.Name()] = fmt.Sprintf("Write report for %s", topic)
+			return []string{"write"}, updates, nil
 		},
 	})
 
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "write",
-		DeclaredTargets: graph.NewTargetSet("review"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"review"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("write")
 			humanInput := graphstate.GetFromView(view, humanInputKey)
 			if humanInput == "" {
 				fmt.Println("write paused: awaiting human approval")
-				return nil, graph.ErrHumanInterrupt
+				return nil, nil, graph.ErrHumanInterrupt
 			}
 			task := graphstate.GetFromView(view, currentTaskKey)
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, fmt.Sprintf("Drafted report for '%s'", task))
-			graph.UpdateSet(builder, draftKey, "draft report content")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("review", updates), nil
+			updates := graphstate.Updates{}
+			updates[actionHistoryKey.Name()] = []string{fmt.Sprintf("Drafted report for '%s'", task)}
+			updates[draftKey.Name()] = "draft report content"
+			return []string{"review"}, updates, nil
 		},
 	})
 
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "review",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("review")
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, "Reviewed draft")
-			graph.UpdateSet(builder, finalReportKey, "final report content")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			updates := graphstate.Updates{}
+			updates[actionHistoryKey.Name()] = []string{"Reviewed draft"}
+			updates[finalReportKey.Name()] = "final report content"
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 

@@ -81,7 +81,7 @@ func main() {
 	builder.SetEntryPoint("data_processor")
 
 	// Node 1: Data processor with intermediate streaming
-	builder.AddStaticNode("data_processor", graph.NewTargetSet("llm_call"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("data_processor", []string{"llm_call"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -94,31 +94,29 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				sb := graph.NewUpdate()
-				graph.UpdateSet(sb, progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))
-				graph.UpdateSet(sb, currentChunkKey, chunk)
-				updates, _ := sb.Build()
+				updates, _ := graph.NewCommand().
+					Set(progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks))).
+					Set(currentChunkKey, chunk).
+					Build()
 				streamWriter(updates)
 			}
 		}
 
-		builder := graph.NewUpdate()
-		graph.UpdateSet(builder, statusKey, "data_processed")
-		graph.UpdateSet(builder, chunksTotalKey, len(chunks))
-		return builder.Build()
+		return graph.NewCommand().
+			Set(statusKey, "data_processed").
+			Set(chunksTotalKey, len(chunks)).
+			Build()
 	})
 
 	// Node 2: LLM call with streaming
-	builder.AddStaticNode("llm_call", graph.NewTargetSet("analyzer"), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("llm_call", []string{"analyzer"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			sb := graph.NewUpdate()
-			graph.UpdateSet(sb, llmStatusKey, "starting")
-			updates, _ := sb.Build()
+			updates, _ := graph.NewCommand().Set(llmStatusKey, "starting").Build()
 			streamWriter(updates)
 		}
 
@@ -136,21 +134,18 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			sb := graph.NewUpdate()
-			graph.UpdateSet(sb, llmStatusKey, "completed")
-			updates, _ := sb.Build()
-			streamWriter(updates)
+			streamUpdates, _ := graph.NewCommand().Set(llmStatusKey, "completed").Build()
+			streamWriter(streamUpdates)
 		}
 
-		builder := graph.NewUpdate()
-		graph.UpdateSet(builder, statusKey, "llm_completed")
-		graph.UpdateAppend(builder, agent.MessagesKey, resp.Message)
-
-		return builder.Build()
+		return graph.NewCommand().
+			Set(statusKey, "llm_completed").
+			Set(agent.MessagesKey, []message.Message{resp.Message}).
+			Build()
 	})
 
 	// Node 3: Multi-step analyzer with detailed streaming
-	builder.AddStaticNode("analyzer", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddStaticNode("analyzer", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -158,37 +153,37 @@ func main() {
 		// Step 1: Validation
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graph.NewUpdate()
-			graph.UpdateSet(sb, analysisStepKey, "validation")
-			graph.UpdateSet(sb, validationKey, "passed")
-			updates, _ := sb.Build()
+			updates, _ := graph.NewCommand().
+				Set(analysisStepKey, "validation").
+				Set(validationKey, "passed").
+				Build()
 			streamWriter(updates)
 		}
 
 		// Step 2: Quality check
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graph.NewUpdate()
-			graph.UpdateSet(sb, analysisStepKey, "quality_check")
-			graph.UpdateSet(sb, qualityScoreKey, 0.95)
-			updates, _ := sb.Build()
+			updates, _ := graph.NewCommand().
+				Set(analysisStepKey, "quality_check").
+				Set(qualityScoreKey, 0.95).
+				Build()
 			streamWriter(updates)
 		}
 
 		// Step 3: Finalization
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			sb := graph.NewUpdate()
-			graph.UpdateSet(sb, analysisStepKey, "finalization")
-			graph.UpdateSet(sb, readyKey, true)
-			updates, _ := sb.Build()
+			updates, _ := graph.NewCommand().
+				Set(analysisStepKey, "finalization").
+				Set(readyKey, true).
+				Build()
 			streamWriter(updates)
 		}
 
-		builder := graph.NewUpdate()
-		graph.UpdateSet(builder, statusKey, "analysis_complete")
-		graph.UpdateSet(builder, verifiedKey, true)
-		return builder.Build()
+		return graph.NewCommand().
+			Set(statusKey, "analysis_complete").
+			Set(verifiedKey, true).
+			Build()
 	})
 
 	compiled, err := builder.Compile()

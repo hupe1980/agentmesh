@@ -326,17 +326,20 @@ builder.AddNodeFunc("handle_sales", func(ctx context.Context, view *state.ReadVi
 })
 
 // Classifier node uses Command pattern for routing
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "classify",
     DeclaredTargets: []string{"handle_support", "handle_sales"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Classify the query...
         category := "support"  // or "sales"
-        updates := map[string]any{"category": category}
+        
+        cmd := graph.NewCommand().Set(categoryKey, category)
+        
         if category == "support" {
-            return graph.Goto(updates, "handle_support"), nil
+            return cmd.To("handle_support")
+        } else {
+            return cmd.To("handle_sales")
         }
-        return graph.Goto(updates, "handle_sales"), nil
     },
 })
 
@@ -382,13 +385,13 @@ RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, err
 
 ## Conditional routing {#conditional-routing}
 
-Direct execution flow dynamically using commands:
+Direct execution flow dynamically using tuple returns:
 
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "router",
     DeclaredTargets: []string{"approver", "rejector", "human_review", "default_handler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         action := state.GetFromView(view, ActionKey)
         var nextNode string
         switch action {
@@ -401,7 +404,7 @@ g.AddNode(&graph.BaseCommandNode{
         default:
             nextNode = "default_handler"
         }
-        return graph.Goto(nil, nextNode), nil
+        return graph.NewCommand().To(nextNode)
     },
 })
 ```
@@ -409,12 +412,12 @@ g.AddNode(&graph.BaseCommandNode{
 Nodes can declare multiple targets for potential parallel execution:
 
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "fanout",
     DeclaredTargets: []string{"analyst_a", "analyst_b", "analyst_c"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        // DeclaredTargets defines potential parallel execution paths
-        return graph.Goto(nil, "analyst_a"), nil
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // Use Command pattern for parallel execution
+        return graph.NewCommand().To("analyst_a", "analyst_b", "analyst_c")
     },
 })
 ```
@@ -427,16 +430,17 @@ Nodes with declared targets can fan out to parallel execution:
 
 ```go
 // Entry node fans out to three concurrent tasks
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "start",
     DeclaredTargets: []string{"fetch_data_a", "fetch_data_b", "fetch_data_c"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.Goto(nil, "fetch_data_a"), nil  // Fan-out via targets
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // Use Command pattern for parallel execution
+        return graph.NewCommand().To("fetch_data_a", "fetch_data_b", "fetch_data_c")
     },
 })
 
 // Each fetch task routes to aggregator
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "fetch_data_a",
     DeclaredTargets: []string{"aggregator"},
     Fn:              fetchAFunc,

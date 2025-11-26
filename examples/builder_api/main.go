@@ -35,39 +35,39 @@ func main() {
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
-		AddStaticNode("analyze", graph.NewTargetSet("validate"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddStaticNode("analyze", []string{"validate"}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			fmt.Println("Analyzing input...")
-			b := graph.NewUpdate()
-			graph.UpdateSet(b, AnalysisKey, "Input looks good")
-			graph.UpdateSet(b, ScoreKey, 0.95)
-			return b.Build()
+			updates := state.Updates{}
+			updates[AnalysisKey.Name()] = "Input looks good"
+			updates[ScoreKey.Name()] = 0.95
+			return updates, nil
 		}).
-		AddStaticNode("validate", graph.NewTargetSet("process"), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddStaticNode("validate", []string{"process"}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			// Type-safe read - no casting needed, compile-time checked
 			score := state.GetFromView(view, ScoreKey)
 			fmt.Printf("Validating with score: %.2f\n", score)
 
 			valid := score > 0.8
-			b := graph.NewUpdate()
-			graph.UpdateSet(b, ValidKey, valid)
-			return b.Build()
+			updates := state.Updates{}
+			updates[ValidKey.Name()] = valid
+			return updates, nil
 		}).
-		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
 			// Type-safe read with default value - never panics
 			valid := state.GetFromView(view, ValidKey)
 			if valid {
 				fmt.Println("Processing validated input...")
 				result := "Success!"
 				fmt.Printf("✓ Final result: %s\n", result)
-				b := graph.NewUpdate()
-				graph.UpdateSet(b, ResultKey, result)
-				return b.Build()
+				updates := state.Updates{}
+				updates[ResultKey.Name()] = result
+				return updates, nil
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
-			b := graph.NewUpdate()
-			graph.UpdateSet(b, ResultKey, result)
-			return b.Build()
+			updates := state.Updates{}
+			updates[ResultKey.Name()] = result
+			return updates, nil
 		}).
 		SetEntryPoint("analyze")
 

@@ -27,26 +27,26 @@ func createTestGraph() (*Graph, error) {
 		return nil, err
 	}
 
-	// Add nodes
-	g.AddNode(&BaseCommandNode{
+	// Add nodes using new tuple-based API
+	g.AddNode(&BaseNode{
 		NodeName:        "start_node",
-		DeclaredTargets: NewTargetSet("process"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("process"), nil
+		DeclaredTargets: []string{"process"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"process"}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "process",
-		DeclaredTargets: NewTargetSet("end_node"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("end_node"), nil
+		DeclaredTargets: []string{"end_node"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"end_node"}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "end_node",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
 
@@ -98,11 +98,11 @@ func TestExportToMermaid_ComplexFlowWithBranches(t *testing.T) {
 	g, _ := NewGraph(mgr)
 
 	retryPolicy := NewRetryPolicy().WithMaxAttempts(5).Build()
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "retryable",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 		Retry: retryPolicy,
 	})
@@ -156,25 +156,25 @@ func TestGraph_GetEdges_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "router",
-		DeclaredTargets: NewTargetSet("option_a", "option_b"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("option_a"), nil
+		DeclaredTargets: []string{"option_a", "option_b"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"option_a"}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "option_a",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "option_b",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
 
@@ -219,25 +219,25 @@ func TestGraph_GetTopology_WithConditionals(t *testing.T) {
 	mgr := newTestManager()
 	g, _ := NewGraph(mgr)
 
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "router",
-		DeclaredTargets: NewTargetSet("high_priority", "normal"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("high_priority"), nil
+		DeclaredTargets: []string{"high_priority", "normal"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"high_priority"}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "high_priority",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "normal",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
 
@@ -321,35 +321,35 @@ func TestMermaidFlowchart_NoDuplicateEdges(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a graph with multiple nodes and branches
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "router",
-		DeclaredTargets: NewTargetSet("handler_a", "handler_b"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("handler_a"), nil
+		DeclaredTargets: []string{"handler_a", "handler_b"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"handler_a"}, nil, nil
 		},
 	})
 
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "handler_a",
-		DeclaredTargets: NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("aggregator"), nil
+		DeclaredTargets: []string{"aggregator"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"aggregator"}, nil, nil
 		},
 	})
 
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "handler_b",
-		DeclaredTargets: NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return GotoOne("aggregator"), nil
+		DeclaredTargets: []string{"aggregator"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"aggregator"}, nil, nil
 		},
 	})
 
-	g.AddNode(&BaseCommandNode{
+	g.AddNode(&BaseNode{
 		NodeName:        "aggregator",
-		DeclaredTargets: NewTargetSet(EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*Command, error) {
-			return End(nil), nil
+		DeclaredTargets: []string{EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{EndNode}, nil, nil
 		},
 	})
 

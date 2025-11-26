@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/safego"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/plugin"
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -13,15 +12,22 @@ import (
 
 // Safe execution wrappers with panic recovery for all plugin hooks
 
-func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView) (*graph.Command, error) {
-	return safego.CallWith(
-		func() (*graph.Command, error) {
-			return p.BeforeNode(ctx, nodeName, view)
+type beforeNodeResult struct {
+	targets []string
+	updates state.Updates
+}
+
+func safeExecuteBeforeNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView) ([]string, state.Updates, error) {
+	result, err := safego.CallWith(
+		func() (beforeNodeResult, error) {
+			targets, updates, err := p.BeforeNode(ctx, nodeName, view)
+			return beforeNodeResult{targets: targets, updates: updates}, err
 		},
 		func(r any) error {
 			return fmt.Errorf("plugin.BeforeNode panicked: %v", r)
 		},
 	)
+	return result.targets, result.updates, err
 }
 
 func safeExecuteAfterNode(ctx context.Context, p plugin.Plugin, nodeName string, view state.ReadView, updates state.Updates) error {

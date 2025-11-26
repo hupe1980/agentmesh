@@ -34,129 +34,149 @@ sidebar:
 
 ## Type-safe updates {#type-safe-updates}
 
-AgentMesh provides two builder patterns for type-safe state updates:
+AgentMesh uses a simple tuple-based API for type-safe state updates. Nodes return `([]string, state.Updates, error)` directly. Two patterns are supported for creating updates:
 
-- **`CommandBuilder`** - For CommandNodes with dynamic routing (routing depends on logic)
-- **`UpdateBuilder`** - For StaticNodes with static routing (always same target)
+1. **Map literal** - Explicit, traditional approach
+2. **Command builder** - Fluent, ergonomic approach (recommended for complex updates)
 
-Both use Go generics for compile-time type safety, preventing runtime errors from type mismatches and typos.
+### Basic pattern
 
-### CommandBuilder (for CommandNodes)
-
-Use `CommandBuilder` when your node needs to make routing decisions based on state or logic:
+All nodes use the same signature with Go generics for compile-time type safety:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/graph"
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/state"
+)
 
 // Define typed keys
 var (
-    CounterKey = state.NewKey[int]("counter")
-    ValidKey = state.NewKey[bool]("valid")
+    CounterKey = state.NewKey[int]("counter", 0)
+    StatusKey  = state.NewKey[string]("status", "")
 )
 
-// CommandNode with dynamic routing
-builder.AddCommandNode("decide", targets, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-    valid := state.GetFromView(view, ValidKey)
+// Node function returns tuple: (targets, updates, error)
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Read current state
+    counter := state.GetFromView(view, CounterKey)
     
-    // Build state updates + routing in one fluent chain
-    cmd := graph.NewCommand().
-        Set(CounterKey, 42).              // ✅ Type-checked: int
-        Set(ValidKey, true)               // ✅ Type-checked: bool
-    
-    // Dynamic routing based on logic
-    if valid {
-        return cmd.Goto("success")        // ✅ Returns (*Command, error)
-    }
-    return cmd.Goto("retry")
-})
+    // Recommended: Command pattern for fluent, type-safe updates
+    return graph.NewCommand().
+        Set(CounterKey, counter+1).
+        Set(StatusKey, "processing").
+        To("next_node")
+}
 ```
 
-### UpdateBuilder (for StaticNodes)
+### Command builder pattern
 
-Use `UpdateBuilder` when your node always routes to the same target:
+The Command builder provides a fluent API that eliminates `.Name()` calls:
 
 ```go
-// StaticNode with static routing
-builder.AddStaticNode("process", targets, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
-    // Build state updates only - routing handled by StaticNode wrapper
-    return graph.NewUpdate().
-        Set(CounterKey, 42).              // ✅ Type-checked: int
-        Append(MessagesKey, "hello").     // ✅ Type-checked: string
-        Build()                           // ✅ Returns (state.Updates, error)
-})
+// Command pattern (recommended) - fluent, clean, type-safe
+return graph.NewCommand().
+    Set(CounterKey, 42).
+    Set(StatusKey, "ready").
+    To("next")
+
+// Manual updates (alternative) - more verbose
+updates := state.Updates{}
+updates[CounterKey.Name()] = 42
+updates[StatusKey.Name()] = "ready"
+return []string{"next"}, updates, nil
 ```
 
-### Key features
+The builder automatically calls `.Name()` on keys and constructs the tuple in one expression. Both patterns work - use whichever fits your style.
+
+### Node patterns
+
+**Pattern 1: Single target with updates**
+```go
+func processNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(ResultKey, "processed").
+        To("next")
+}
+```
+
+**Pattern 2: Multiple targets (parallel execution)**
+```go
+func splitNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(StatusKey, "splitting").
+        To("worker1", "worker2", "worker3")
+}
+```
+
+**Pattern 3: Conditional routing**
+```go
+func decideNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    score := state.GetFromView(view, ScoreKey)
+    
+    cmd := graph.NewCommand().Set(ScoreKey, score+10)
+    
+    if score > 50 {
+        return cmd.To("high_priority")
+    }
+    return cmd.To("normal_priority")
+}
+```
+
+**Pattern 4: End node (no further targets)**
+```go
+func finalNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return graph.NewCommand().
+        Set(StatusKey, "complete").
+        To(graph.END)
+}
+```
+
+**Pattern 5: No updates (read-only or pass-through)**
+```go
+func readOnlyNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Just read and route - no state changes
+    data := state.GetFromView(view, DataKey)
+    fmt.Printf("Data: %v\n", data)
+    return []string{"next"}, nil, nil
+}
+```
+
+### Type safety features
 
 **Compile-time guarantees:**
 - Type mismatches caught during compilation
-- Typos in key names prevented
-- Duplicate key detection
+- Typed key definitions with `state.NewKey[T]()`
+- Type-safe reads with `state.GetFromView(view, TypedKey)`
+- Zero runtime overhead for type checking
 
-**CommandBuilder operations:**
-- `CommandSet[T](builder, key, value)` - Set a typed value
-- `CommandAppend[T](builder, key, values...)` - Append typed values to list
-- `SetRaw(keyName, value)` - Escape hatch for dynamic scenarios
-- `Delete(keyName)` - Mark key for deletion
-- **Terminals:** `Goto(target)`, `GotoAll(targets...)`, `End()` - Build command with routing
-
-**UpdateBuilder operations:**
-- `UpdateSet[T](builder, key, value)` - Set a typed value
-- `UpdateAppend[T](builder, key, values...)` - Append typed values to list
-- `SetRaw(keyName, value)` - Escape hatch for dynamic scenarios
-- `Delete(keyName)` - Mark key for deletion
-- **Terminals:** `Build()`, `MustBuild()` - Build state updates map
-
-**Example - CommandBuilder:**
-
+**Using typed keys:**
 ```go
-// CommandNode with conditional routing
-return graph.NewCommand().
-    Set(scoreKey, 100).
-    Set(statusKey, "active").
-    Append(tagsKey, "urgent", "review").
-    Goto("next")  // Returns (*Command, error)
-```
+// Define typed keys upfront
+var (
+    CounterKey  = state.NewKey[int]("counter", 0)
+    StatusKey   = state.NewKey[string]("status", "")
+    ValidKey    = state.NewKey[bool]("valid", false)
+    TagsKey     = state.NewListKey[string]("tags", 100)
+    MessagesKey = message.MessagesKey  // Built-in message list key
+)
 
-**Example - UpdateBuilder:**
-
-```go
-// StaticNode with fixed routing
-return graph.NewUpdate().
-    Set(scoreKey, 100).
-    Set(statusKey, "active").
-    Append(tagsKey, "urgent", "review").
-    Build()  // Returns (state.Updates, error)
-```
-
-### Migration from old API
-
-**Before (old API):**
-```go
-ub := state.NewUpdateBuilder()
-state.SetUpdate(ub, CounterKey, value)
-state.AppendUpdate(ub, MessagesKey, msg)
-updates, err := ub.Build()
-if err != nil {
-    return nil, err
+// Use in node function
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // ✅ Type-safe reads
+    counter := state.GetFromView(view, CounterKey)   // int
+    status := state.GetFromView(view, StatusKey)     // string
+    valid := state.GetFromView(view, ValidKey)       // bool
+    tags := state.GetFromView(view, TagsKey)         // []string
+    
+    // ✅ Type-safe updates
+    updates := state.Updates{}
+    updates[CounterKey.Name()] = counter + 1         // Must be int
+    updates[StatusKey.Name()] = "active"             // Must be string
+    updates[ValidKey.Name()] = true                  // Must be bool
+    updates[TagsKey.Name()] = []string{"new"}        // Must be []string
+    
+    return []string{"next"}, updates, nil
 }
-return graph.Goto("next", updates), nil
-```
-
-**After (CommandBuilder for dynamic routing):**
-```go
-return graph.NewCommand().
-    Set(CounterKey, value).
-    Append(MessagesKey, msg).
-    Goto("next")
-```
-
-**After (UpdateBuilder for static routing):**
-```go
-return graph.NewUpdate().
-    Set(CounterKey, value).
-    Append(MessagesKey, msg).
-    Build()
 ```
 
 See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.
@@ -449,35 +469,33 @@ validKey := state.TypedKey[bool](validationNS, "is_valid", false)
 enrichedKey := state.TypedKey[map[string]any](enrichmentNS, "data", nil)
 
 // Create namespaced nodes
-validationNode := graph.NewNamespacedCommandNode(
-    "validation",
-    validationNS,
-    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+validationNode := &graph.BaseNode{
+    NodeName: "validation",
+    Namespace: validationNS,
+    DeclaredTargets: []string{"enrichment"},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // This node only works with "validation.*" keys
-        ub := state.NewUpdateBuilder()
-        state.SetUpdate(ub, validKey, true)
-        updates, _ := ub.Build()
+        updates := state.Updates{}
+        updates[validKey.Name()] = true
         
-        return graph.Goto("enrichment", updates), nil
+        return []string{"enrichment"}, updates, nil
     },
-    graph.NewTargetSet(graph.NewEdge("enrichment")),
-)
+}
 
-enrichmentNode := graph.NewNamespacedCommandNode(
-    "enrichment",
-    enrichmentNS,
-    func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+enrichmentNode := &graph.BaseNode{
+    NodeName: "enrichment",
+    Namespace: enrichmentNS,
+    DeclaredTargets: []string{graph.END},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // This node only works with "enrichment.*" keys
         // Cannot access "validation.*" keys (different namespace)
-        ub := state.NewUpdateBuilder()
+        updates := state.Updates{}
         enrichedData := map[string]any{"status": "enriched"}
-        state.SetUpdate(ub, enrichedKey, enrichedData)
-        updates, _ := ub.Build()
+        updates[enrichedKey.Name()] = enrichedData
         
-        return graph.End(updates), nil
+        return []string{graph.END}, updates, nil
     },
-    graph.NewTargetSet(graph.End()),
-)
+}
 ```
 
 #### With retry policies
@@ -551,7 +569,7 @@ state.Set(ctx, mgr, agent2Status, "idle")
 node := graph.NewNamespacedCommandNode(
     "validation",
     validationNS,
-    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // 'view' is actually a NamespacedReadView filtered to validationNS
         // It only exposes keys from "validation" namespace
         
@@ -563,7 +581,7 @@ node := graph.NewNamespacedCommandNode(
         // Cannot see other namespace keys
         exists := view.Has("enrichment.data")  // Returns false (filtered out)
         
-        return graph.End(), nil
+        return graph.NewCommand().To(graph.EndNode)
     },
     targets,
 )
@@ -626,19 +644,18 @@ By default, `NamespacedCommandNode` only sees keys from its own namespace. Set `
 configNode := graph.NewNamespacedCommandNode(
     "config_reader",
     agentNS,
-    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Can read agent1.* keys
         agentData := state.GetFromView(view, agentDataKey)
         
         // Can also read global keys
         globalConfig := state.GetFromView(view, globalConfigKey)
         
-        // Can update both
-        updates := state.Updates{
-            "agent1.result": computeResult(agentData, globalConfig),
-            "global_counter": incrementCounter(), // Allowed!
-        }
-        return graph.End(updates), nil
+        // Can update both using Command pattern
+        return graph.NewCommand().
+            Set(agent1ResultKey, computeResult(agentData, globalConfig)).
+            Set(globalCounterKey, incrementCounter()). // Allowed!
+            To(graph.EndNode)
     },
     targets,
     true, // includeGlobal: expose global keys
@@ -661,12 +678,12 @@ configNode := graph.NewNamespacedCommandNode(
 validationNode := graph.NewNamespacedCommandNode(
     "validator",
     agent1NS,
-    func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-        updates := state.Updates{
-            "agent1.status": "ok",      // ✅ Allowed (own namespace)
-            "agent2.status": "failed",  // ❌ ERROR: wrong namespace
-        }
-        return graph.End(updates), nil  // Will return error
+    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // ❌ This will cause a validation error:
+        return graph.NewCommand().
+            Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
+            Set(agent2StatusKey, "failed").  // ❌ ERROR: wrong namespace
+            To(graph.EndNode) // Will return error
     },
     targets,
     false,

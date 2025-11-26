@@ -37,7 +37,7 @@ func TestBuilder_BasicUsage(t *testing.T) {
 
 	// Add nodes using fluent API
 	builder.SetEntryPoint("process").
-		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"processed": true}, nil
 		})
 
@@ -82,10 +82,10 @@ func TestBuilder_WithOptions(t *testing.T) {
 	}
 
 	builder.SetEntryPoint("node1").
-		AddStaticNode("node1", graph.NewTargetSet("node2"), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("node1", []string{"node2"}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 1}, nil
 		}).
-		AddStaticNode("node2", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("node2", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"step": 2}, nil
 		})
 
@@ -133,15 +133,15 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	}
 
 	builder.SetEntryPoint("router").
-		AddCommandNode("router", graph.NewTargetSet("left", "right"), func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		AddNodeFunc("router", []string{"left", "right"}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			updates := map[string]any{"route": "left"}
 			route := "left"
-			return graph.Goto(route, updates), nil
+			return []string{route}, updates, nil
 		}).
-		AddStaticNode("left", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("left", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "left"}, nil
 		}).
-		AddStaticNode("right", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("right", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"result": "right"}, nil
 		})
 
@@ -185,7 +185,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	}
 
 	builder.SetEntryPoint("process").
-		AddStaticNode("process", graph.NewTargetSet(graph.EndNode), func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
 			return map[string]any{"done": true}, nil
 		})
 
@@ -220,11 +220,11 @@ func TestInterruptConfiguration(t *testing.T) {
 		t.Fatalf("Failed to create graph: %v", err)
 	}
 
-	node := &graph.BaseCommandNode{
+	node := &graph.BaseNode{
 		NodeName:        "test",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			return graph.End(state.Updates{}), nil
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, state.Updates{}, nil
 		},
 	}
 

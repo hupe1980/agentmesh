@@ -38,12 +38,12 @@ func example1_ValidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a simple linear graph
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "process",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			fmt.Println("Processing...")
-			return graph.End(nil), nil
+			return []string{graph.EndNode}, nil, nil
 		},
 	})
 
@@ -77,11 +77,11 @@ func example2_InvalidGraph() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create an invalid graph - edge to non-existent node
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "start_node",
-		DeclaredTargets: graph.NewTargetSet("non_existent_node"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			return graph.GotoOne("non_existent_node"), nil
+		DeclaredTargets: []string{"non_existent_node"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{"non_existent_node"}, nil, nil
 		},
 	})
 
@@ -105,18 +105,18 @@ func example3_StrictValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with an unreachable node
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "reachable",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			return graph.End(nil), nil
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, nil, nil
 		},
 	})
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "unreachable",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			return graph.End(nil), nil
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, nil, nil
 		},
 	})
 
@@ -150,19 +150,19 @@ func example4_CustomValidation() {
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with a cycle (for iterative algorithms)
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "agent",
-		DeclaredTargets: graph.NewTargetSet("evaluator"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			return graph.GotoOne("evaluator"), nil
+		DeclaredTargets: []string{"evaluator"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{"evaluator"}, nil, nil
 		},
 	})
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "evaluator",
-		DeclaredTargets: graph.NewTargetSet("agent", graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"agent", graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			// Check quality and potentially loop back
-			return graph.End(nil), nil
+			return []string{graph.EndNode}, nil, nil
 		},
 	})
 

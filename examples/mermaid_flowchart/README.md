@@ -21,12 +21,12 @@ This example demonstrates how to generate [Mermaid](https://mermaid.js.org/) flo
 stateManager := newStateManager()
 g, _ := graph.NewGraph(stateManager)
 
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "process",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+    DeclaredTargets: []string{graph.END},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Do some work and then end
-        return graph.End(nil), nil
+        return []string{graph.END}, nil, nil
     },
 })
 

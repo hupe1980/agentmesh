@@ -146,20 +146,20 @@ if err != nil {
     return err
 }
 
-// Add nodes with command-based routing
-g.AddNode(&graph.BaseCommandNode{
+// Add nodes with tuple-based routing
+g.AddNode(&graph.BaseNode{
     NodeName:        "fetch",
     DeclaredTargets: []string{"process"},
     Fn:              fetchDataFunc,
 })
 
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "process",
     DeclaredTargets: []string{"save"},
     Fn:              processDataFunc,
 })
 
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "save",
     DeclaredTargets: []string{graph.EndNode},
     Fn:              saveDataFunc,
@@ -188,7 +188,7 @@ var (
     MessagesKey      = agent.MessagesKey  // From agent package
 )
 
-func processDataFunc(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func processDataFunc(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read from state using typed keys
     data := state.GetFromView(view, RawDataKey)
     messages := state.GetFromView(view, MessagesKey)
@@ -196,14 +196,14 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (state.Updates, 
     // Process...
     processed := transform(data)
     
-    // Return updates (including messages via message.MessagesKey)
-    return map[string]any{
-        "processed_data": processed,
-        "status": "complete",
-        message.MessagesKey: []message.Message{
+    // Use Command pattern for fluent, type-safe updates
+    return graph.NewCommand().
+        Set(ProcessedDataKey, processed).
+        Set(StatusKey, "complete").
+        Set(message.MessagesKey, []message.Message{
             message.NewAIMessageFromText("Processing complete"),
-        },
-    }, nil
+        }).
+        To("save")
 }
 ```
 
@@ -214,13 +214,13 @@ func processDataFunc(ctx context.Context, view *state.ReadView) (state.Updates, 
 
 ### Conditional routing
 
-Dynamically route to different nodes based on state using commands:
+Dynamically route to different nodes based on state:
 
 ```go
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "classifier",
     DeclaredTargets: []string{"urgent_handler", "normal_handler", "default_handler"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         category := state.GetFromView(view, CategoryKey)
         var nextNode string
         switch category {
@@ -231,7 +231,8 @@ g.AddNode(&graph.BaseCommandNode{
         default:
             nextNode = "default_handler"
         }
-        return graph.Goto(nil, nextNode), nil
+        // Use Command pattern for routing
+        return graph.NewCommand().To(nextNode)
     },
 })
 ```
@@ -254,44 +255,45 @@ var (
     MessagesKey = agent.MessagesKey  // From agent package
 )
 
-func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read values using typed keys
     counter := state.GetFromView(view, CounterKey)
     status := state.GetFromView(view, StatusKey)
     messages := state.GetFromView(view, MessagesKey)
     
-    return nil, nil
+    // Use Command pattern for routing
+    return graph.NewCommand().To("next_node")
 }
 ```
 
 ### Updating state
 
-**Recommended: Type-safe updates with UpdateBuilder**
+**Type-safe updates with direct map creation**
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/state"
 
 // Define typed keys
 var (
-    CounterKey = state.NewKey[int]("counter")
-    StatusKey  = state.NewKey[string]("status")
+    CounterKey = state.NewKey[int]("counter", 0)
+    StatusKey  = state.NewKey[string]("status", "")
 )
 
-func myNode(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-    ub := state.NewUpdateBuilder()
-    state.SetUpdate(ub, CounterKey, counter + 1)        // ✅ Type-checked
-    state.SetUpdate(ub, StatusKey, "processing")        // ✅ Type-checked
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    counter := state.GetFromView(view, CounterKey)
     
-    // Add messages to updates
-    state.AppendUpdate(ub, message.MessagesKey, 
-        message.NewAIMessageFromText("Updated successfully"),
-    )
-    
-    return ub.Build()  // ✅ Returns (Updates, error) with validation
+    // Use Command pattern for fluent, type-safe updates
+    return graph.NewCommand().
+        Set(CounterKey, counter + 1).
+        Set(StatusKey, "processing").
+        Set(message.MessagesKey, []message.Message{
+            message.NewAIMessageFromText("Updated successfully"),
+        }).
+        To("next_node")
 }
 ```
 
-> **Type Safety:** `UpdateBuilder` provides compile-time type checking and duplicate key detection. All state updates must use this type-safe pattern. See [State Management](/state-management/#type-safe-updates) for details.
+> **Type Safety:** Typed keys with generics provide compile-time type checking. All state updates use this direct pattern. See [State Management](/state-management/#type-safe-updates) for details.
 
 ### State initialization
 
@@ -352,16 +354,17 @@ Nodes declare their targets and can fan out to multiple parallel tasks:
 
 ```go
 // Entry node that fans out to three parallel tasks
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "start",
     DeclaredTargets: []string{"fetch_a", "fetch_b", "fetch_c"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
-        return graph.Goto(nil, "fetch_a"), nil  // Fan-out via DeclaredTargets
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // Fan-out using Command pattern
+        return graph.NewCommand().To("fetch_a", "fetch_b", "fetch_c")
     },
 })
 
 // Each fetch task routes to aggregator
-g.AddNode(&graph.BaseCommandNode{
+g.AddNode(&graph.BaseNode{
     NodeName:        "fetch_a",
     DeclaredTargets: []string{"aggregator"},
     Fn:              fetchAFunc,
@@ -386,31 +389,40 @@ builder.AddNodeFunc("writer", func(ctx context.Context, view *state.ReadView) (*
     return map[string]any{"draft": draft}, nil
 })
 
-builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("evaluator", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     draft := state.GetFromView(view, DraftKey)
+    
     if isGoodEnough(draft) {
-        // Set done flag to route to END
-        return map[string]any{"done": true}, nil
+        // Route to END with Command pattern
+        return graph.NewCommand().
+            Set(DoneKey, true).
+            To(graph.EndNode)
+    } else {
+        // Loop back to writer for refinement
+        return graph.NewCommand().
+            Set(FeedbackKey, "improve clarity").
+            Set(DoneKey, false).
+            To("writer")
     }
-    // Loop back to writer for refinement
-    return map[string]any{
-        "feedback": "improve clarity",
-        "done": false,
-    }, nil
 })
 
-// Evaluator node uses commands to route based on state
-g.AddNode(&graph.BaseCommandNode{
+// Evaluator node with explicit routing using Command pattern
+g.AddNode(&graph.BaseNode{
     NodeName:        "evaluator",
     DeclaredTargets: []string{graph.EndNode, "writer"},
-    Fn: func(ctx context.Context, view *state.ReadView) (*graph.Command, error) {
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         draft := state.GetFromView(view, DraftKey)
+        
         if isGoodEnough(draft) {
-            return graph.End(map[string]any{"done": true}), nil
+            return graph.NewCommand().
+                Set(DoneKey, true).
+                To(graph.EndNode)
+        } else {
+            return graph.NewCommand().
+                Set(FeedbackKey, "improve clarity").
+                Set(DoneKey, false).
+                To("writer")
         }
-        // Loop back to writer for refinement
-        updates := map[string]any{"feedback": "improve clarity", "done": false}
-        return graph.Goto(updates, "writer"), nil
     },
 })
 ```

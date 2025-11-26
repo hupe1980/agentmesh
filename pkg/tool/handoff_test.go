@@ -96,17 +96,17 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	mgr := newTestManager()
 	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "worker",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view stateif.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view stateif.ReadView) ([]string, stateif.Updates, error) {
 			if failOnce {
 				failOnce = false
-				return nil, assert.AnError
+				return nil, nil, assert.AnError
 			}
 			updates := stateif.Updates{}
 			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
-			return graph.End(updates), nil
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 	if err := g.SetEntryPoint("worker"); err != nil {
@@ -191,13 +191,13 @@ func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]messa
 	g, err := graph.NewGraph(mgr)
 	require.NoError(t, err)
 
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "worker",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view stateif.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view stateif.ReadView) ([]string, stateif.Updates, error) {
 			updates := stateif.Updates{}
 			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
-			return graph.End(updates), nil
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 

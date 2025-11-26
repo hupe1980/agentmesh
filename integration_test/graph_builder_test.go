@@ -24,12 +24,12 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		node := &graph.BaseCommandNode{
+		node := &graph.BaseNode{
 			NodeName:        "test_node",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				updates := map[string]any{"executed": true}
-				return graph.End(updates), nil
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				updates := state.Updates{"executed": true}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 
@@ -42,11 +42,11 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		node := &graph.BaseCommandNode{
+		node := &graph.BaseNode{
 			NodeName:        "test",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				return graph.End(nil), nil
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				return []string{graph.EndNode}, nil, nil
 			},
 		}
 		g.AddNode(node)
@@ -61,25 +61,25 @@ func TestBasicGraphBuilding(t *testing.T) {
 		stateManager := newTestManager()
 		g, _ := graph.NewGraph(stateManager)
 
-		g.AddNode(&graph.BaseCommandNode{
+		g.AddNode(&graph.BaseNode{
 			NodeName:        "source",
-			DeclaredTargets: graph.NewTargetSet("target1", "target2"),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				return graph.GotoOne("target1"), nil
+			DeclaredTargets: []string{"target1", "target2"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				return []string{"target1"}, nil, nil
 			},
 		})
-		g.AddNode(&graph.BaseCommandNode{
+		g.AddNode(&graph.BaseNode{
 			NodeName:        "target1",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				return graph.End(nil), nil
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				return []string{graph.EndNode}, nil, nil
 			},
 		})
-		g.AddNode(&graph.BaseCommandNode{
+		g.AddNode(&graph.BaseNode{
 			NodeName:        "target2",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				return graph.End(nil), nil
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				return []string{graph.EndNode}, nil, nil
 			},
 		})
 
@@ -102,13 +102,13 @@ func TestSimpleGraphExecution(t *testing.T) {
 		require.NoError(t, err)
 
 		executed := false
-		node := &graph.BaseCommandNode{
+		node := &graph.BaseNode{
 			NodeName:        "test",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				executed = true
-				updates := map[string]any{"result": "success"}
-				return graph.End(updates), nil
+				updates := state.Updates{"result": "success"}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 
@@ -137,24 +137,24 @@ func TestSimpleGraphExecution(t *testing.T) {
 
 		var executionOrder []string
 
-		node1 := &graph.BaseCommandNode{
+		node1 := &graph.BaseNode{
 			NodeName:        "node1",
-			DeclaredTargets: graph.NewTargetSet("node2"),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{"node2"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				executionOrder = append(executionOrder, "node1")
-				updates := map[string]any{"count": 1}
-				return graph.Goto("node2", updates), nil
+				updates := state.Updates{"count": 1}
+				return []string{"node2"}, updates, nil
 			},
 		}
 
-		node2 := &graph.BaseCommandNode{
+		node2 := &graph.BaseNode{
 			NodeName:        "node2",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				executionOrder = append(executionOrder, "node2")
 				count := state.GetFromView(s, countKey)
-				updates := map[string]any{"count": count + 1}
-				return graph.End(updates), nil
+				updates := state.Updates{"count": count + 1}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 
@@ -188,34 +188,34 @@ func TestConditionalRouting(t *testing.T) {
 		require.NoError(t, err)
 
 		// Decision node that sets routing choice
-		decider := &graph.BaseCommandNode{
+		decider := &graph.BaseNode{
 			NodeName:        "decider",
-			DeclaredTargets: graph.NewTargetSet("left", "right"),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				updates := map[string]any{"choice": "left"}
-				return graph.Goto("left", updates), nil
+			DeclaredTargets: []string{"left", "right"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				updates := state.Updates{"choice": "left"}
+				return []string{"left"}, updates, nil
 			},
 		}
 
 		leftExecuted := false
-		leftNode := &graph.BaseCommandNode{
+		leftNode := &graph.BaseNode{
 			NodeName:        "left",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				leftExecuted = true
-				updates := map[string]any{"result": "went_left"}
-				return graph.End(updates), nil
+				updates := state.Updates{"result": "went_left"}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 
 		rightExecuted := false
-		rightNode := &graph.BaseCommandNode{
+		rightNode := &graph.BaseNode{
 			NodeName:        "right",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				rightExecuted = true
-				updates := map[string]any{"result": "went_right"}
-				return graph.End(updates), nil
+				updates := state.Updates{"result": "went_right"}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 
@@ -247,32 +247,32 @@ func TestConditionalRouting(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		source := &graph.BaseCommandNode{
+		source := &graph.BaseNode{
 			NodeName:        "source",
-			DeclaredTargets: graph.NewTargetSet("target1", "target2"),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				updates := map[string]any{"broadcast": true}
-				return graph.GotoAll([]string{"target1", "target2"}, updates), nil
+			DeclaredTargets: []string{"target1", "target2"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				updates := state.Updates{"broadcast": true}
+				return []string{"target1", "target2"}, updates, nil
 			},
 		}
 
 		target1Executed := false
-		target1 := &graph.BaseCommandNode{
+		target1 := &graph.BaseNode{
 			NodeName:        "target1",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				target1Executed = true
-				return graph.End(nil), nil
+				return []string{graph.EndNode}, nil, nil
 			},
 		}
 
 		target2Executed := false
-		target2 := &graph.BaseCommandNode{
+		target2 := &graph.BaseNode{
 			NodeName:        "target2",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				target2Executed = true
-				return graph.End(nil), nil
+				return []string{graph.EndNode}, nil, nil
 			},
 		}
 
@@ -311,28 +311,27 @@ func TestStateManagement(t *testing.T) {
 		require.NoError(t, err)
 
 		// First node writes state
-		writer := &graph.BaseCommandNode{
+		writer := &graph.BaseNode{
 			NodeName:        "writer",
-			DeclaredTargets: graph.NewTargetSet("reader"),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-				builder := graph.NewUpdate()
-				graph.UpdateSet(builder, key1Key, "value1")
-				graph.UpdateSet(builder, key2Key, 42)
-				updates, _ := builder.Build()
-				return graph.Goto("reader", updates), nil
+			DeclaredTargets: []string{"reader"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				updates := state.Updates{}
+				updates[key1Key.Name()] = "value1"
+				updates[key2Key.Name()] = 42
+				return []string{"reader"}, updates, nil
 			},
 		}
 
 		// Second node reads state
 		var readValue1 string
 		var readValue2 int
-		reader := &graph.BaseCommandNode{
+		reader := &graph.BaseNode{
 			NodeName:        "reader",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				readValue1 = state.GetFromView(s, key1Key)
 				readValue2 = state.GetFromView(s, key2Key)
-				return graph.End(nil), nil
+				return []string{graph.EndNode}, nil, nil
 			},
 		}
 
@@ -367,13 +366,13 @@ func TestStateManagement(t *testing.T) {
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
 
-		incrementer := &graph.BaseCommandNode{
+		incrementer := &graph.BaseNode{
 			NodeName:        "increment",
-			DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-			Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+			DeclaredTargets: []string{graph.EndNode},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				counter := state.GetFromView(s, counterKey)
-				updates := map[string]any{"counter": counter + 1}
-				return graph.End(updates), nil
+				updates := state.Updates{"counter": counter + 1}
+				return []string{graph.EndNode}, updates, nil
 			},
 		}
 

@@ -64,7 +64,7 @@ func (n *ConfigurableNode) Targets() []string {
 	return []string{n.next}
 }
 
-func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (state.Updates, error) {
+func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 	start := time.Now()
 
 	// Access persistent state (checkpointed)
@@ -74,17 +74,17 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (st
 	// Access managed values (ephemeral, NOT checkpointed)
 	config, err := state.GetManagedValue[*RuntimeConfig](ctx, n.manager, "runtime_config")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config: %w", err)
+		return nil, nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
 	session, err := state.GetManagedValue[*SessionInfo](ctx, n.manager, "session")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
+		return nil, nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
 	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metrics: %w", err)
+		return nil, nil, fmt.Errorf("failed to get metrics: %w", err)
 	}
 
 	// Use configuration
@@ -116,7 +116,7 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (st
 	case <-workDone:
 		fmt.Printf("\n[%s] Work completed within timeout\n", n.name)
 	case <-time.After(config.Timeout):
-		return nil, fmt.Errorf("timeout exceeded")
+		return nil, nil, fmt.Errorf("timeout exceeded")
 	}
 
 	// Record metrics (updates managed value in-place)
@@ -124,11 +124,15 @@ func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) (st
 	metrics.RecordExecution(n.name, latency)
 
 	// Return persistent state updates (these WILL be checkpointed)
-	builder := graph.NewUpdate()
-	graph.UpdateSet(builder, CounterKey, counter+1)
-	graph.UpdateSet(builder, LastNodeKey, n.name)
-	graph.UpdateAppend(builder, HistoryKey, fmt.Sprintf("%s executed by user %s", n.name, session.UserID))
-	return builder.Build()
+	updates := state.Updates{}
+	updates[CounterKey.Name()] = counter + 1
+	updates[LastNodeKey.Name()] = n.name
+	updates[HistoryKey.Name()] = []string{fmt.Sprintf("%s executed by user %s", n.name, session.UserID)}
+
+	if n.next == "" {
+		return []string{graph.EndNode}, updates, nil
+	}
+	return []string{n.next}, updates, nil
 }
 
 func maskAPIKey(key string) string {
@@ -151,11 +155,11 @@ func (n *MetricsNode) Targets() []string {
 	return []string{graph.EndNode}
 }
 
-func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) (state.Updates, error) {
+func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 	// Read metrics (managed value)
 	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	fmt.Printf("\n=== Runtime Metrics ===\n")
@@ -167,9 +171,9 @@ func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) (state.U
 	}
 	fmt.Printf("======================\n\n")
 
-	builder := graph.NewUpdate()
-	graph.UpdateAppend(builder, HistoryKey, "Metrics reported")
-	return builder.Build()
+	updates := state.Updates{}
+	updates[HistoryKey.Name()] = []string{"Metrics reported"}
+	return []string{graph.EndNode}, updates, nil
 }
 
 func main() {
@@ -239,46 +243,34 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Add nodes using BaseCommandNode
-	node1 := &ConfigurableNode{name: "processor_1", manager: mgr}
-	node2 := &ConfigurableNode{name: "processor_2", manager: mgr}
+	// Add nodes using BaseNode
+	node1 := &ConfigurableNode{name: "processor_1", manager: mgr, next: "processor_2"}
+	node2 := &ConfigurableNode{name: "processor_2", manager: mgr, next: "metrics_reporter"}
 	metricsNode := &MetricsNode{manager: mgr}
 
-	if err := gph.AddNode(&graph.BaseCommandNode{
+	if err := gph.AddNode(&graph.BaseNode{
 		NodeName:        node1.Name(),
-		DeclaredTargets: graph.NewTargetSet(node2.Name()),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			updates, err := node1.Compute(ctx, view)
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto(node2.Name(), updates), nil
+		DeclaredTargets: []string{node2.Name()},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return node1.Compute(ctx, view)
 		},
 	}); err != nil {
 		log.Fatal(err)
 	}
-	if err := gph.AddNode(&graph.BaseCommandNode{
+	if err := gph.AddNode(&graph.BaseNode{
 		NodeName:        node2.Name(),
-		DeclaredTargets: graph.NewTargetSet(metricsNode.Name()),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			updates, err := node2.Compute(ctx, view)
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto(metricsNode.Name(), updates), nil
+		DeclaredTargets: []string{metricsNode.Name()},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return node2.Compute(ctx, view)
 		},
 	}); err != nil {
 		log.Fatal(err)
 	}
-	if err := gph.AddNode(&graph.BaseCommandNode{
+	if err := gph.AddNode(&graph.BaseNode{
 		NodeName:        metricsNode.Name(),
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			updates, err := metricsNode.Compute(ctx, view)
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return metricsNode.Compute(ctx, view)
 		},
 	}); err != nil {
 		log.Fatal(err)

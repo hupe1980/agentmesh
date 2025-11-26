@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -31,8 +30,8 @@ func (NoopPlugin) Init(ctx context.Context) error { return nil }
 func (NoopPlugin) Shutdown(ctx context.Context) error { return nil }
 
 // BeforeNode implements Plugin.BeforeNode as a no-op.
-func (NoopPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) (*graph.Command, error) {
-	return nil, nil
+func (NoopPlugin) BeforeNode(ctx context.Context, nodeName string, view state.ReadView) ([]string, state.Updates, error) {
+	return nil, nil, nil
 }
 
 // AfterNode implements Plugin.AfterNode as a no-op.

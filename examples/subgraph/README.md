@@ -51,21 +51,21 @@ func createValidationSubgraph() *graph.Graph {
     stateManager := newStateManager()
     g, _ := graph.NewGraph(stateManager)
 
-    g.AddNode(&graph.BaseCommandNode{
+    g.AddNode(&graph.BaseNode{
         NodeName:        "validate_format",
         DeclaredTargets: []string{"validate_schema"},
-        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-            updates := map[string]any{"format_valid": true}
-            return graph.Goto(updates, "validate_schema"), nil
+        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+            updates := state.Updates{"format_valid": true}
+            return []string{"validate_schema"}, updates, nil
         },
     })
 
-    g.AddNode(&graph.BaseCommandNode{
+    g.AddNode(&graph.BaseNode{
         NodeName:        "validate_schema",
-        DeclaredTargets: []string{graph.EndNode},
-        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-            updates := map[string]any{"schema_valid": true}
-            return graph.End(updates), nil
+        DeclaredTargets: []string{graph.END},
+        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+            updates := state.Updates{"schema_valid": true}
+            return []string{graph.END}, updates, nil
         },
     })
 
@@ -88,26 +88,26 @@ func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Gra
     pipeline, _ := graph.NewGraph(stateManager)
 
     // Stage 1: Validation subgraph
-    pipeline.AddNode(&graph.BaseCommandNode{
+    pipeline.AddNode(&graph.BaseNode{
         NodeName:        "validation_stage",
         DeclaredTargets: []string{"enrichment_stage"},
-        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
             // Run validation subgraph
             result, _ := graph.Last(validation.Run(ctx, nil))
-            return graph.Goto(result.State, "enrichment_stage"), nil
+            return []string{"enrichment_stage"}, result.State, nil
         },
     })
 
     // Stage 2: Enrichment subgraph
-    pipeline.AddNode(&graph.BaseCommandNode{
+    pipeline.AddNode(&graph.BaseNode{
         NodeName:        "enrichment_stage",
         DeclaredTargets: []string{"analysis_stage"},
-        Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
             data := state.GetFromView(view, dataKey)
             result, _ := graph.Last(enrichment.Run(ctx, nil,
                 graph.WithInput(map[string]any{"data": data}),
             ))
-            return graph.Goto(result.State, "analysis_stage"), nil
+            return []string{"analysis_stage"}, result.State, nil
         },
     })
 

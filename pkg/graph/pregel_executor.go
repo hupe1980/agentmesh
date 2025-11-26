@@ -684,7 +684,7 @@ func (n *pregelNodeAdapter[I, O]) executeWithPolicies(
 	ctx context.Context,
 	node Node,
 	view state.ReadView,
-) (*Command, error) {
+) ([]string, state.Updates, error) {
 	// Priority 1: Check if node implements NodeWithRetry interface (modern approach)
 	var retryPolicy *RetryPolicy
 	if retryNode, ok := node.(NodeWithRetry); ok {
@@ -710,42 +710,44 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 	node Node,
 	view state.ReadView,
 	policy *RetryPolicy,
-) (*Command, error) {
+) ([]string, state.Updates, error) {
 	pm, hasPluginManager := getNodeCallbacks(ctx)
 
-	// Try BeforeNode callback - may short-circuit execution with full Command
-	if shortCircuitCmd, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view); err != nil {
-		return nil, err
-	} else if shortCircuitCmd != nil {
-		// Callback provided a Command to short-circuit - use it directly (must have valid routing)
-		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, shortCircuitCmd, nil)
+	// Try BeforeNode callback - may short-circuit execution with tuple
+	scTargets, scUpdates, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(scTargets) > 0 {
+		// Callback provided a result to short-circuit - use it directly
+		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, scTargets, scUpdates, nil)
 	}
 
-	// Execute node with retry logic (now returns Command)
-	cmd, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
+	// Execute node with retry logic (now returns tuple)
+	targets, updates, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
 
 	// Execute AfterNode or OnNodeError callback
-	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, cmd, lastErr)
+	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, targets, updates, lastErr)
 }
 
 // executeBeforeNodeCallback executes BeforeNode plugin callback.
-// Returns short-circuit Command if callback provides one (must include routing).
+// Returns short-circuit tuple (targets, updates, error) if callback provides one.
 func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
 	ctx context.Context,
 	pm NodeCallbacks,
 	hasPluginManager bool,
 	view state.ReadView,
-) (*Command, error) {
+) ([]string, state.Updates, error) {
 	if !hasPluginManager {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	shortCircuitCmd, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
+	targets, updates, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
 	if err != nil {
-		return nil, fmt.Errorf("before node callback failed: %w", err)
+		return nil, nil, fmt.Errorf("before node callback failed: %w", err)
 	}
 
-	return shortCircuitCmd, nil
+	return targets, updates, nil
 }
 
 // executeNodeWithPolicy executes the node with retry policy.
@@ -756,7 +758,7 @@ func (n *pregelNodeAdapter[I, O]) executeNodeWithPolicy(
 	node Node,
 	view state.ReadView,
 	policy *RetryPolicy,
-) (*Command, error) {
+) ([]string, state.Updates, error) {
 	if policy == nil || policy.MaxAttempts <= 1 {
 		return node.Execute(ctx, view)
 	}
@@ -770,14 +772,15 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
 	node Node,
 	view state.ReadView,
 	policy *RetryPolicy,
-) (*Command, error) {
-	var cmd *Command
+) ([]string, state.Updates, error) {
+	var targets []string
+	var updates state.Updates
 	var lastErr error
 
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		cmd, lastErr = node.Execute(ctx, view)
+		targets, updates, lastErr = node.Execute(ctx, view)
 		if lastErr == nil {
-			return cmd, nil
+			return targets, updates, nil
 		}
 
 		// Check if error is retryable
@@ -788,15 +791,15 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
 		// Apply backoff before next attempt
 		if attempt < policy.MaxAttempts && policy.Backoff != nil {
 			if err := n.applyBackoff(ctx, policy, attempt); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 
 	if policy.MaxAttempts > 1 {
-		return nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
+		return nil, nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
 	}
-	return nil, lastErr
+	return nil, nil, lastErr
 }
 
 // applyBackoff waits for backoff duration or context cancellation.
@@ -814,33 +817,34 @@ func (n *pregelNodeAdapter[I, O]) executeAfterNodeCallback(
 	ctx context.Context,
 	pm NodeCallbacks,
 	hasPluginManager bool,
-	cmd *Command,
+	targets []string,
+	updates state.Updates,
 	lastErr error,
-) (*Command, error) {
+) ([]string, state.Updates, error) {
 	if !hasPluginManager {
-		return cmd, lastErr
+		return targets, updates, lastErr
 	}
 
 	if lastErr != nil {
 		if err := pm.ExecuteOnNodeError(ctx, n.nodeName, lastErr); err != nil {
-			return nil, fmt.Errorf("on node error callback failed: %w", err)
+			return nil, nil, fmt.Errorf("on node error callback failed: %w", err)
 		}
-		return nil, lastErr
+		return nil, nil, lastErr
 	}
 
 	// Success - execute AfterNode callback
 	afterView, err := n.compiled.manager.CreateReadView(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create after-node view: %w", err)
+		return nil, nil, fmt.Errorf("failed to create after-node view: %w", err)
 	}
 
-	if cmd != nil && cmd.Updates != nil {
-		if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, cmd.Updates); err != nil {
-			return nil, fmt.Errorf("after node callback failed: %w", err)
+	if updates != nil {
+		if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, updates); err != nil {
+			return nil, nil, fmt.Errorf("after node callback failed: %w", err)
 		}
 	}
 
-	return cmd, nil
+	return targets, updates, nil
 }
 
 // shouldInterruptBefore checks if this node is in the interrupt-before list.
@@ -1138,8 +1142,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 	}
 
-	// Execute node with retry and cache policies (now returns Command)
-	cmd, err := n.executeWithPolicies(ctxWithStream, node, view)
+	// Execute node with retry and cache policies (now returns tuple)
+	targets, updates, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
 		// Wrap node execution errors with structured error type
 		nodeErr = &NodeExecutionError{
@@ -1149,18 +1153,15 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		return nodeErr
 	}
 
-	if cmd == nil {
+	if targets == nil {
 		return nil
 	}
 
 	// Validate routing decision
-	if len(cmd.Goto) == 0 {
+	if len(targets) == 0 {
 		nodeErr = fmt.Errorf("node %q must specify routing targets (use graph.EndNode to terminate)", n.nodeName)
 		return nodeErr
 	}
-
-	// Extract updates from Command
-	updates := cmd.Updates
 
 	// Check for interrupt-after (before applying updates)
 	if n.shouldInterruptAfter() {
@@ -1213,15 +1214,15 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	}
 
 	// Send routing signals (and optionally state) to next nodes via pregel runtime
-	// Use Command.Goto for routing instead of edges/conditional edges
+	// Use routing targets from tuple instead of edges/conditional edges
 	var stateData state.Updates
 	if n.enableDistributedState && updates != nil && len(updates) > 0 {
 		stateData = updates
 	}
 
-	// Use Command.Goto for routing (Command pattern - unified routing model)
-	// The routing targets come from the Command returned by the node
-	for _, target := range cmd.Goto {
+	// Use routing targets from tuple (unified routing model)
+	// The routing targets come from the tuple returned by the node
+	for _, target := range targets {
 		if target != EndNode {
 			// Send message to target node
 			vertex.Send(pregel.Message[state.Updates]{

@@ -30,44 +30,44 @@ func TestPregelExecutor(t *testing.T) {
 
 	var counter atomic.Int32
 
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "start",
-		DeclaredTargets: graph.NewTargetSet("task1", "task2"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"task1", "task2"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates := map[string]any{"started": true}
-			return graph.GotoAll([]string{"task1", "task2"}, updates), nil
+			updates, _ := graph.NewCommand().Set(state.NewKey("started", false), true).Build()
+			return []string{"task1", "task2"}, updates, nil
 		},
 	})
 
 	// Two nodes that can run in parallel
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "task1",
-		DeclaredTargets: graph.NewTargetSet("end"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"end"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates := map[string]any{"task1": "done"}
-			return graph.Goto("end", updates), nil
+			updates, _ := graph.NewCommand().Set(state.NewKey("task1", ""), "done").Build()
+			return []string{"end"}, updates, nil
 		},
 	})
 
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "task2",
-		DeclaredTargets: graph.NewTargetSet("end"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"end"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates := map[string]any{"task2": "done"}
-			return graph.Goto("end", updates), nil
+			updates := state.Updates{"task2": "done"}
+			return []string{"end"}, updates, nil
 		},
 	})
 
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "end",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates := map[string]any{"completed": true}
-			return graph.End(updates), nil
+			updates := state.Updates{"completed": true}
+			return []string{graph.EndNode}, updates, nil
 		},
 	})
 

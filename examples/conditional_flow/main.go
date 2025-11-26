@@ -46,12 +46,12 @@ func runScenario(choice string) {
 	graphstate.RegisterKey(mgr, nextPathKey)
 	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
 
-	// Set initial values
-	updates := graphstate.Updates{
-		choiceKey.Name():   choice,
-		nextPathKey.Name(): "",
+	// Set initial values using Command pattern
+	initCtx := context.Background()
+	if err := graphstate.Set(initCtx, mgr, choiceKey, choice); err != nil {
+		panic(err)
 	}
-	if err := mgr.ApplyUpdates(context.Background(), updates); err != nil {
+	if err := graphstate.Set(initCtx, mgr, nextPathKey, ""); err != nil {
 		panic(err)
 	}
 
@@ -67,50 +67,47 @@ func runScenario(choice string) {
 	}
 
 	// Decision node: Reads input and decides which path to take
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "decide",
-		DeclaredTargets: graph.NewTargetSet("path_a", "path_b"),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"path_a", "path_b"},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			choiceVal := graphstate.GetFromView(view, choiceKey)
 			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
 			// Update state to indicate which path should be taken
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, nextPathKey, choiceVal)
-			graph.UpdateAppend(builder, actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))
-			updates, _ := builder.Build()
+			cmd := graph.NewCommand().
+				Set(nextPathKey, choiceVal).
+				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), fmt.Sprintf("Decision: route to %s", choiceVal)))
 
 			// Route to the chosen path
 			if choiceVal == "path_a" {
-				return graph.Goto("path_a", updates), nil
+				return cmd.To("path_a")
 			}
-			return graph.Goto("path_b", updates), nil
+			return cmd.To("path_b")
 		},
 	})
 
 	// Path A: Specialized processing for option A
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "path_a",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, "Completed: Path A")
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), "Completed: Path A")).
+				To(graph.EndNode)
 		},
 	})
 
 	// Path B: Alternative processing for option B
-	mustAddNode(&graph.BaseCommandNode{
+	mustAddNode(&graph.BaseNode{
 		NodeName:        "path_b",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view graphstate.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
-			builder := graph.NewUpdate()
-			graph.UpdateAppend(builder, actionHistoryKey, "Completed: Path B")
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), "Completed: Path B")).
+				To(graph.EndNode)
 		},
 	})
 

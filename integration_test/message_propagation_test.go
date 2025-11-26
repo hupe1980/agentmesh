@@ -29,24 +29,23 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node A sends updates to Node B
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "node_a",
-		DeclaredTargets: graph.NewTargetSet("node_b"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"node_b"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			// Send data to node_b
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, fromAKey, "hello from A")
-			graph.UpdateSet(builder, counterKey, 1)
-			updates, _ := builder.Build()
-			return graph.Goto("node_b", updates), nil
+			return graph.NewCommand().
+				Set(fromAKey, "hello from A").
+				Set(counterKey, 1).
+				To("node_b")
 		},
 	})
 
 	// Node B receives updates from Node A
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "node_b",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			// Verify we received the update from node_a
 			fromA := state.GetFromView(s, fromAKey)
 			counter := state.GetFromView(s, counterKey)
@@ -56,11 +55,10 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			require.Equal(t, "hello from A", fromA)
 			require.Equal(t, 1, counter)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, fromBKey, "hello from B")
-			graph.UpdateSet(builder, statusKey, "received")
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(fromBKey, "hello from B").
+				Set(statusKey, "received").
+				To(graph.EndNode)
 		},
 	})
 
@@ -105,24 +103,23 @@ func TestParallelMessagePropagation(t *testing.T) {
 
 	// Single entry node that simulates two parallel senders by writing
 	// both updates before routing to the aggregator.
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "parallel_entry",
-		DeclaredTargets: graph.NewTargetSet("aggregator"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, fromParallelAKey, "data_a")
-			graph.UpdateSet(builder, fromParallelBKey, "data_b")
-			updates, _ := builder.Build()
-			return graph.Goto("aggregator", updates), nil
+		DeclaredTargets: []string{"aggregator"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return graph.NewCommand().
+				Set(fromParallelAKey, "data_a").
+				Set(fromParallelBKey, "data_b").
+				To("aggregator")
 		},
 	})
 	require.NoError(t, err)
 
 	// Aggregator node receives from both logical senders
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "aggregator",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			dataA := state.GetFromView(s, fromParallelAKey)
 			dataB := state.GetFromView(s, fromParallelBKey)
 
@@ -132,10 +129,9 @@ func TestParallelMessagePropagation(t *testing.T) {
 			require.Equal(t, "data_a", dataA)
 			require.Equal(t, "data_b", dataB)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, aggregatedKey, true)
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(aggregatedKey, true).
+				To(graph.EndNode)
 		},
 	})
 
@@ -179,53 +175,50 @@ func TestMessagePropagationSequential(t *testing.T) {
 	require.NoError(t, err)
 
 	// Node 1: Sets initial values
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "node_1",
-		DeclaredTargets: graph.NewTargetSet("node_2"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, stepKey, 1)
-			graph.UpdateSet(builder, dataKey, "from_node_1")
-			updates, _ := builder.Build()
-			return graph.Goto("node_2", updates), nil
+		DeclaredTargets: []string{"node_2"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return graph.NewCommand().
+				Set(stepKey, 1).
+				Set(dataKey, "from_node_1").
+				To("node_2")
 		},
 	})
 
 	// Node 2: Reads from node 1, adds its own data
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "node_2",
-		DeclaredTargets: graph.NewTargetSet("node_3"),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"node_3"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			step := state.GetFromView(s, stepKey)
 			data := state.GetFromView(s, dataKey)
 
 			require.Equal(t, 1, step, "Should receive step from node_1")
 			require.Equal(t, "from_node_1", data)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, stepKey, 2)
-			graph.UpdateSet(builder, dataKey, "from_node_2")
-			updates, _ := builder.Build()
-			return graph.Goto("node_3", updates), nil
+			return graph.NewCommand().
+				Set(stepKey, 2).
+				Set(dataKey, "from_node_2").
+				To("node_3")
 		},
 	})
 
 	// Node 3: Reads from node 2, verifies propagation
-	g.AddNode(&graph.BaseCommandNode{
+	g.AddNode(&graph.BaseNode{
 		NodeName:        "node_3",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, s state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			step := state.GetFromView(s, stepKey)
 			data := state.GetFromView(s, dataKey)
 
 			require.Equal(t, 2, step, "Should receive step from node_2")
 			require.Equal(t, "from_node_2", data)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, stepKey, 3)
-			graph.UpdateSet(builder, finalKey, true)
-			updates, _ := builder.Build()
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(stepKey, 3).
+				Set(finalKey, true).
+				To(graph.EndNode)
 		},
 	})
 

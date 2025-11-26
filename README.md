@@ -16,7 +16,6 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 
 ### 🎯 Core Capabilities
 - **🔄 Parallel Graph Execution** - Pregel-based BSP engine with optimized concurrency (4-10x faster state access, 50-250x better frontier scaling)
-- **⚡ Command Pattern** - Imperative routing with co-located state updates and routing decisions
 - **🧠 LLM Integration** - First-class support for OpenAI, Anthropic, and extensible model interfaces
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic JSON schema generation
 - **🔒 WASM Tool Sandboxing** - Memory-safe sandbox for executing untrusted code with strict isolation
@@ -148,7 +147,7 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 
 **Supporting Packages**
 - `pkg/state`: State management with Topic, LastValue, BinaryOp channels
-  - **Type-Safe Updates**: All state updates use `UpdateBuilder` with generics for compile-time type checking ([examples/typed_updates](examples/typed_updates))
+  - **Type-Safe Updates**: All state updates use typed keys with generics for compile-time type checking ([examples/typed_updates](examples/typed_updates))
 - `pkg/checkpoint`: Memory, SQL, DynamoDB persistence
 - `pkg/message`: Human, AI, Tool message types
 
@@ -507,34 +506,26 @@ import (
 // Create a graph builder with Pregel executor
 builder := graph.NewBuilder(graph.NewPregelExecutor())
 
-// Add nodes with functions
-builder.AddNodeFunc("step1", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
-    return map[string]any{"result": "processed"}, nil
+// Add nodes with functions using Command pattern
+builder.AddNodeFunc("step1", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Recommended: Use Command pattern for clean, fluent API
+    return graph.NewCommand().
+        Set(resultKey, "processed").
+        To("step2")
 })
 
-builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
-    // Recommended: Use typed keys for compile-time safety
-    // var ResultKey = state.NewKey[string]("result")
-    // result := state.GetFromView(view, ResultKey)
+builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Use typed keys for compile-time safety
+    result := state.GetFromView(view, resultKey)
+    fmt.Println("Received:", result)
     
-    // Or use untyped access (runtime type assertion)
-    result := view.Get("result").(string)
-    fmt.Println("Received:", result)
-    return nil, nil
+    return graph.NewCommand().To(graph.EndNode)
 })
 
-// Define flow with Command pattern
+// Define flow with tuple return pattern
 builder.SetEntryPoint("step1")
-targets1 := graph.NewTargetSet("step2")
-builder.AddCommandNode("step1", targets1, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-    return targets1.Goto("step2", state.Updates{"result": "processed"}), nil
-})
-targets2 := graph.NewTargetSet(graph.EndNode)
-builder.AddCommandNode("step2", targets2, func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-    result := state.GetFromView(view, ResultKey)
-    fmt.Println("Received:", result)
-    return targets2.End(nil), nil
-})
+builder.AddEdge("step1", "step2")
+builder.AddEdge("step2", graph.END)
 
 // Compile with type-safe API (Go 1.24+ generics)
 compiled, err := builder.Compile()
@@ -890,14 +881,12 @@ compiled, _ := builder.Compile()
 Resilient execution with fluent builder API:
 
 ```go
-targets := graph.NewTargetSet(graph.EndNode)
-
 // Simple retry with defaults (3 attempts, exponential backoff)
-builder.AddCommandNodeWithRetry("flaky_api", targets, apiCallFunc,
+builder.AddNodeFuncWithRetry("flaky_api", apiCallFunc,
     graph.NewRetryPolicy().Build())
 
 // Customized retry strategy
-builder.AddCommandNodeWithRetry("external_service", targets, serviceCallFunc,
+builder.AddNodeFuncWithRetry("external_service", serviceCallFunc,
     graph.NewRetryPolicy().
         WithMaxAttempts(5).
         WithExponentialBackoff(time.Second, 2.0).
@@ -909,7 +898,7 @@ policy := graph.NewRetryPolicy().
     WithMaxAttempts(10).
     WithCustomBackoff(graph.JitteredExponentialBackoff(time.Second, 2.0, 0.1)).
     Build()
-builder.AddCommandNodeWithRetry("critical_service", targets, criticalFunc, policy)
+builder.AddNodeFuncWithRetry("critical_service", criticalFunc, policy)
 ```
 
 **Available backoff strategies:**
@@ -941,18 +930,18 @@ state.RegisterAggregateKey(mgr, totalCostKey, &aggregators.SumAggregator{})
 state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
-// In nodes - contribute via normal Updates
-builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+// In nodes - contribute via Command pattern
+builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read current accumulated value
     total, _ := state.GetFromView(view, totalCostKey)
     fmt.Printf("Total cost so far: %v\n", total)
     
-    // Contribute new value (will be aggregated)
-    return state.Updates{
-        totalCostKey.Name():     42.0,    // Added to sum
-        maxPriorityKey.Name():   priority, // Compared for max
-        activeNodesKey.Name():   1,        // Counted
-    }, nil
+    // Contribute new values (will be aggregated)
+    return graph.NewCommand().
+        Set(totalCostKey, 42.0).       // Added to sum
+        Set(maxPriorityKey, priority).  // Compared for max
+        Set(activeNodesKey, 1).         // Counted
+        To(graph.EndNode)
 })
 
 // After execution, read final aggregated values
@@ -1053,14 +1042,17 @@ for _, err := range executor.Run(ctx, compiled, input,
 }
 
 // Access user decision in node
-func (n *Node) Invoke(ctx context.Context, view state.ReadView) (state.Updates, error) {
+func (n *Node) Invoke(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     resumeVals := graph.ResumeValueFromContext(ctx)
     if resumeVals != nil {
         if approved := resumeVals["approved"].(bool); !approved {
             return handleRejection()
         }
     }
-    // ... proceed with action
+    // ... proceed with action using Command pattern
+    return graph.NewCommand().
+        Set(resultKey, "approved").
+        To(graph.EndNode)
 }
 ```
 
@@ -1093,15 +1085,16 @@ Compose complex workflows from reusable components:
 researchGraph := createResearchSubgraph()
 
 // Embed in parent workflow
-builder.AddNodeFunc("research", func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+builder.AddNodeFunc("research", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     parentMessages := graph.ExtractMessages(view.MessagesSnapshot())
     events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
     if err != nil {
-        return nil, err
+        return nil, nil, err
     }
-    return state.Updates{
-        message.MessagesKey: graph.ExtractMessages(events),
-    }, nil
+    
+    return graph.NewCommand().
+        Set(message.MessagesKey, graph.ExtractMessages(events)).
+        To(graph.EndNode)
 })
 ```
 

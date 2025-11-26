@@ -67,18 +67,14 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Node 1: Initialize state
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node1",
-		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, 1.0) // Use float64 for JSON compatibility
-			graph.UpdateSet(builder, dataKey, "A")
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("node2", updates), nil
+		DeclaredTargets: []string{"node2"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return graph.NewCommand().
+				Set(counterKey, 1.0). // Use float64 for JSON compatibility
+				Set(dataKey, "A").
+				To("node2")
 		},
 	})
 	if err != nil {
@@ -86,21 +82,17 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Node 2: Read and modify state (should see node1's updates via Redis)
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node2",
-		DeclaredTargets: graph.NewTargetSet("node3"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{"node3"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter+1.0) // Should be 2.0
-			graph.UpdateSet(builder, dataKey, data+"B")       // Should be "AB"
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("node3", updates), nil
+			return graph.NewCommand().
+				Set(counterKey, counter+1.0). // Should be 2.0
+				Set(dataKey, data+"B").       // Should be "AB"
+				To("node3")
 		},
 	})
 	if err != nil {
@@ -108,21 +100,17 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Node 3: Final state update (should see node2's updates via Redis)
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node3",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter+1.0) // Should be 3.0
-			graph.UpdateSet(builder, dataKey, data+"C")       // Should be "ABC"
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(counterKey, counter+1.0). // Should be 3.0
+				Set(dataKey, data+"C").       // Should be "ABC"
+				To(graph.EndNode)
 		},
 	})
 	if err != nil {
@@ -214,17 +202,13 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	}
 
 	// Node 1: Set counter = 1.0
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node1",
-		DeclaredTargets: graph.NewTargetSet("node2"),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, 1.0)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.Goto("node2", updates), nil
+		DeclaredTargets: []string{"node2"},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return graph.NewCommand().
+				Set(counterKey, 1.0).
+				To("node2")
 		},
 	})
 	if err != nil {
@@ -232,19 +216,15 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	}
 
 	// Node 2: Try to read counter (should see 1.0 from local state, not redistributed)
-	err = g.AddNode(&graph.BaseCommandNode{
+	err = g.AddNode(&graph.BaseNode{
 		NodeName:        "node2",
-		DeclaredTargets: graph.NewTargetSet(graph.EndNode),
-		Fn: func(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
-			builder := graph.NewUpdate()
-			graph.UpdateSet(builder, counterKey, counter+10.0) // Should be 11.0 (1.0 + 10.0)
-			updates, err := builder.Build()
-			if err != nil {
-				return nil, err
-			}
-			return graph.End(updates), nil
+			return graph.NewCommand().
+				Set(counterKey, counter+10.0). // Should be 11.0 (1.0 + 10.0)
+				To(graph.EndNode)
 		},
 	})
 	if err != nil {

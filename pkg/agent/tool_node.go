@@ -102,23 +102,23 @@ func (n *ToolNode) Targets() []string {
 }
 
 // Execute processes tool calls from the last AI message by delegating to the executor.
-func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Command, error) {
+func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 	// Get last message from state
 	lastMsg := LastMessage(view)
 	if lastMsg == nil {
-		// No message, route back to model
-		return graph.GotoOne("model"), nil
+		// No message, route back to model (no updates needed)
+		return []string{"model"}, nil, nil
 	}
 
 	ai, ok := lastMsg.(*message.AIMessage)
 	if !ok || ai == nil {
 		// Not an AI message, route back to model
-		return graph.GotoOne("model"), nil
+		return []string{"model"}, nil, nil
 	}
 
 	if len(ai.ToolCalls) == 0 {
 		// No tool calls, route back to model
-		return graph.GotoOne("model"), nil
+		return []string{"model"}, nil, nil
 	}
 
 	// Convert message.ToolCall to tool.Call format
@@ -139,7 +139,7 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Com
 	// Execute via the executor - it handles plugins, observability, parallel/sequential, etc.
 	results, err := n.executor.Execute(ctx, calls)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Convert results to ToolMessages
@@ -158,11 +158,9 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) (*graph.Com
 		}
 	}
 
-	cmd := graph.NewCommand()
-	graph.CommandAppend(cmd, MessagesKey, toolMessages...)
-
-	// Tool node always routes back to model after execution
-	return cmd.Goto("model")
+	// Return only the NEW tool messages generated
+	// The state manager will append them to the existing messages list
+	return graph.NewCommand().Set(MessagesKey, toolMessages).To("model")
 }
 
 // formatToolResult converts a tool result to a string representation.

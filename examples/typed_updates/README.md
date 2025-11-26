@@ -1,6 +1,6 @@
-# Type-Safe State Updates with UpdateBuilder
+# Type-Safe State Updates
 
-This example demonstrates type-safe state management using the `UpdateBuilder` API, which provides compile-time guarantees for state updates.
+This example demonstrates type-safe state management using typed keys with Go generics, which provides compile-time guarantees for state updates.
 
 ## Features
 
@@ -8,13 +8,13 @@ This example demonstrates type-safe state management using the `UpdateBuilder` A
 
 ```go
 counterKey := state.NewKey[int]("counter", 0)
-builder := state.NewUpdateBuilder()
 
 // ✓ Type-safe: int matches Key[int]
-state.SetUpdate(builder, counterKey, 42)
+updates := state.Updates{}
+updates[counterKey.Name()] = 42
 
 // ✗ Compile error: string doesn't match Key[int]
-// state.SetUpdate(builder, counterKey, "wrong")
+// updates[counterKey.Name()] = "wrong"  // IDE will show type error
 ```
 
 ### Typo Prevention
@@ -33,40 +33,40 @@ Use typed keys:
 ```go
 // New way - compile-time checking
 messagesKey := state.NewListKey[string]("messages", 100)
-builder := state.NewUpdateBuilder()
-state.AppendUpdate(builder, messagesKey, "value") // ✓ No typos possible
+updates := state.Updates{}
+updates[messagesKey.Name()] = []string{"value"} // ✓ No typos possible
 ```
 
-### Duplicate Key Detection
+### Type-Safe Operations
 
 ```go
-builder := state.NewUpdateBuilder()
-state.SetUpdate(builder, counterKey, 1)
-state.SetUpdate(builder, counterKey, 2) // Duplicate!
-
-updates, err := builder.Build()
-// Returns error: "duplicate key \"counter\" in updates"
-```
-
-### Type-Safe Append Operations
-
-```go
+counterKey := state.NewKey[int]("counter", 0)
 messagesKey := state.NewListKey[string]("messages", 100)
 
-// Compile-time check ensures all values match the list type
-state.AppendUpdate(builder, messagesKey, "msg1", "msg2", "msg3")
-
-// ✗ Compile error if types don't match
-// state.AppendUpdate(builder, messagesKey, 123) 
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Read with type safety
+    counter := state.GetFromView(view, counterKey)  // Returns int
+    messages := state.GetFromView(view, messagesKey) // Returns []string
+    
+    // Update with type safety
+    updates := state.Updates{}
+    updates[counterKey.Name()] = counter + 1      // Must be int
+    updates[messagesKey.Name()] = []string{"new"} // Must be []string
+    
+    return []string{"next"}, updates, nil
+}
 ```
 
 ## Comparison
 
-### Before: Raw Updates Map
+### Without Type Safety (Raw Strings)
 
 ```go
-func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
-    return state.Updates{
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // No IDE autocomplete, no type checking
+    counter := view.Get("counter").(int)  // Runtime cast - risky!
+    
+    return []string{"next"}, state.Updates{
         "counter": 42,              // No type checking
         "mesages": "typo",          // Typo not caught!
         "items": []int{1, 2, 3},    // No compile-time verification
@@ -79,16 +79,28 @@ func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
 - ❌ Typos cause runtime errors
 - ❌ No IDE autocomplete
 - ❌ Hard to refactor (find all usages)
+- ❌ Runtime casts required
 
-### After: UpdateBuilder
+### With Typed Keys (Current API)
 
 ```go
-func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
-    builder := state.NewUpdateBuilder()
-    state.SetUpdate(builder, counterKey, 42)          // ✓ Type-checked
-    state.AppendUpdate(builder, messagesKey, "hello") // ✓ Type-checked
-    state.AppendUpdate(builder, itemsKey, 1, 2, 3)    // ✓ Type-checked
-    return builder.Build()
+var (
+    counterKey  = state.NewKey[int]("counter", 0)
+    messagesKey = state.NewListKey[string]("messages", 100)
+    itemsKey    = state.NewListKey[int]("items", 100)
+)
+
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Type-safe reads - no casts needed
+    counter := state.GetFromView(view, counterKey) // Returns int
+    
+    // Type-safe updates
+    updates := state.Updates{}
+    updates[counterKey.Name()] = 42                  // ✓ Type-checked
+    updates[messagesKey.Name()] = []string{"hello"}  // ✓ Type-checked
+    updates[itemsKey.Name()] = []int{1, 2, 3}        // ✓ Type-checked
+    
+    return []string{"next"}, updates, nil
 }
 ```
 
@@ -97,40 +109,22 @@ func myNode(ctx context.Context, view state.ReadView) (state.Updates, error) {
 - ✅ IDE autocomplete
 - ✅ Typo prevention
 - ✅ Easy refactoring
+- ✅ No runtime casts needed
 
-## Migration Guide
+## Usage Guide
 
 ### Step 1: Define Typed Keys
 
 ```go
-// Instead of using raw strings:
-// "counter", "status", "messages"
-
-// Define typed keys:
-counterKey := state.NewKey[int]("counter", 0)
-statusKey := state.NewKey[string]("status", "")
-messagesKey := state.NewListKey[string]("messages", 100)
+// Define typed keys with default values
+var (
+    counterKey  = state.NewKey[int]("counter", 0)
+    statusKey   = state.NewKey[string]("status", "")
+    messagesKey = state.NewListKey[string]("messages", 100)
+)
 ```
 
-### Step 2: Use UpdateBuilder
-
-```go
-// Old:
-return state.Updates{
-    "counter": 42,
-    "status": "ok",
-    "messages": []string{"hello"},
-}, nil
-
-// New:
-builder := state.NewUpdateBuilder()
-state.SetUpdate(builder, counterKey, 42)
-state.SetUpdate(builder, statusKey, "ok")
-state.AppendUpdate(builder, messagesKey, "hello")
-return builder.Build()
-```
-
-### Step 3: Register Keys (if not already done)
+### Step 2: Register Keys with State Manager
 
 ```go
 mgr := state.NewManager()
@@ -139,43 +133,60 @@ state.RegisterKey(mgr, statusKey)
 state.RegisterListKey(mgr, messagesKey)
 ```
 
+### Step 3: Use in Node Functions
+
+```go
+func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Read values with type safety
+    counter := state.GetFromView(view, counterKey)   // int
+    status := state.GetFromView(view, statusKey)     // string
+    messages := state.GetFromView(view, messagesKey) // []string
+    
+    // Create updates with type safety
+    updates := state.Updates{}
+    updates[counterKey.Name()] = counter + 1
+    updates[statusKey.Name()] = "processing"
+    updates[messagesKey.Name()] = append(messages, "new message")
+    
+    return []string{"next"}, updates, nil
+}
+```
+
 ## API Reference
 
-### Creating Builders
+### Creating Typed Keys
 
 ```go
-builder := state.NewUpdateBuilder()
+// Simple keys
+key := state.NewKey[T](name string, defaultValue T) Key[T]
+
+// List keys
+listKey := state.NewListKey[T](name string, maxSize int) ListKey[T]
 ```
 
-### Setting Values
+### Reading State
 
 ```go
-state.SetUpdate[T](builder, key Key[T], value T) *UpdateBuilder
+value := state.GetFromView(view, key)  // Returns T
 ```
 
-### Appending to Lists
+### Updating State
 
 ```go
-state.AppendUpdate[T](builder, key ListKey[T], values ...T) *UpdateBuilder
+updates := state.Updates{}
+updates[key.Name()] = newValue        // Set value
+updates[listKey.Name()] = []T{items}  // Set list
 ```
 
-### Building Updates
+### Special Operations
 
 ```go
-updates, err := builder.Build() // Returns error if validation fails
-updates := builder.MustBuild()   // Panics on error (use in tests)
-```
+// Append to existing list
+messages := state.GetFromView(view, messagesKey)
+updates[messagesKey.Name()] = append(messages, "new")
 
-### Raw Updates (Escape Hatch)
-
-```go
-builder.SetRaw("dynamic_key", value) // When you don't have a typed key
-```
-
-### Deletion
-
-```go
-builder.Delete("key_to_remove") // Mark key for deletion
+// Delete a key
+updates[key.Name()] = nil  // or omit the key
 ```
 
 ## Running the Example
