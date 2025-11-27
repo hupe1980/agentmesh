@@ -169,7 +169,7 @@ func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Up
     fmt.Printf("Total processed: %v\n", total)
     
     // Contribute new count using Command pattern
-    return graph.NewCommand().
+    return command.New().
         Set(totalProcessedKey, 42.0).
         To(graph.EndNode)
 }
@@ -192,7 +192,7 @@ state.RegisterAggregateKey(mgr, minCostKey, &aggregators.MinAggregator{})
 state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
 
 // Contribute via Command pattern
-return graph.NewCommand().
+return command.New().
     Set(minCostKey, estimatedCost).
     Set(maxPriorityKey, taskPriority).
     To(graph.EndNode)
@@ -209,7 +209,7 @@ avgLatencyKey := state.NewKey[any]("avg_latency", nil)
 state.RegisterAggregateKey(mgr, avgLatencyKey, &aggregators.AvgAggregator{})
 
 // In node
-return graph.NewCommand().
+return command.New().
     Set(avgLatencyKey, responseTime).
     To(graph.EndNode)
 
@@ -231,7 +231,7 @@ varianceKey := state.NewKey[any]("latency_variance", nil)
 state.RegisterAggregateKey(mgr, varianceKey, &aggregators.VarianceAggregator{})
 
 // In node
-return graph.NewCommand().
+return command.New().
     Set(varianceKey, responseTime).
     To(graph.EndNode)
 
@@ -253,7 +253,7 @@ activeNodesKey := state.NewKey[any]("active_nodes", 0)
 state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
 
 // In node - any non-nil value increments
-return graph.NewCommand().
+return command.New().
     Set(activeNodesKey, 1).
     To(graph.EndNode)
 ```
@@ -272,7 +272,7 @@ state.RegisterAggregateKey(mgr, allConvergedKey, &aggregators.AllTrueAggregator{
 state.RegisterAggregateKey(mgr, hasErrorsKey, &aggregators.AnyTrueAggregator{})
 
 // In node
-return graph.NewCommand().
+return command.New().
     Set(allConvergedKey, isConverged).
     Set(hasErrorsKey, hasError).
     To(graph.EndNode)
@@ -302,7 +302,7 @@ func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Up
     latency := 150.0
     
     // Contribute to aggregators via Command pattern
-    return graph.NewCommand().
+    return command.New().
         Set(totalProcessedKey, float64(itemsProcessed)).
         Set(avgLatencyKey, latency).
         To(graph.EndNode)
@@ -363,7 +363,7 @@ medianKey := state.NewKey[any]("latency_median", nil)
 state.RegisterAggregateKey(mgr, medianKey, &MedianAggregator{})
 
 // In node
-return graph.NewCommand().
+return command.New().
     Set(medianKey, latency).
     To(graph.EndNode)
 
@@ -626,7 +626,7 @@ subGraph.AddNode(&graph.BaseNode{
     Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         value := state.GetFromView(view, ValueKey)
         doubled := value * 2
-        return graph.NewCommand().
+        return command.New().
             Set(resultKey, doubled).
             To(graph.EndNode)
     },
@@ -641,7 +641,7 @@ parentState := graph.NewStateManager(0)
 parent := graph.NewGraph(parentState)
 
 parent.AddNodeFunc("prepare", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(valueKey, 21).
         To("doubler")
 })
@@ -654,7 +654,7 @@ parent.AddNode(&graph.BaseNode{
     NodeName:        "prepare",
     DeclaredTargets: []string{"doubler"},
     Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        return graph.NewCommand().
+        return command.New().
             Set(valueKey, 21).
             To("doubler")
     },

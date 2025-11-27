@@ -187,93 +187,126 @@ func TestExecutionController_EnableBreakpoint(t *testing.T) {
 	assert.True(t, ec.GetBreakpoints()[0].Enabled)
 }
 
-func TestExecutionController_CheckBreakpoint_Node(t *testing.T) {
-	ctx := context.Background()
-	ec := NewExecutionController(ctx, "test-run")
-
-	bp := &Breakpoint{
-		Type: BreakpointNode,
-		Node: "test-node",
+func TestExecutionController_CheckBreakpoint(t *testing.T) {
+	tests := []struct {
+		name          string
+		breakpoint    *Breakpoint
+		checkNode     string
+		checkStep     int64
+		checkHasError bool
+		disableBP     bool
+		wantBreak     bool
+		wantState     ExecutionState
+		checkHitCount bool
+	}{
+		{
+			name: "node_match",
+			breakpoint: &Breakpoint{
+				Type: BreakpointNode,
+				Node: "test-node",
+			},
+			checkNode:     "test-node",
+			checkStep:     1,
+			checkHasError: false,
+			wantBreak:     true,
+			wantState:     StatePaused,
+			checkHitCount: true,
+		},
+		{
+			name: "node_no_match",
+			breakpoint: &Breakpoint{
+				Type: BreakpointNode,
+				Node: "test-node",
+			},
+			checkNode:     "other-node",
+			checkStep:     1,
+			checkHasError: false,
+			wantBreak:     false,
+		},
+		{
+			name: "superstep_before",
+			breakpoint: &Breakpoint{
+				Type:      BreakpointSuperstep,
+				Superstep: 5,
+			},
+			checkNode:     "any-node",
+			checkStep:     3,
+			checkHasError: false,
+			wantBreak:     false,
+		},
+		{
+			name: "superstep_match",
+			breakpoint: &Breakpoint{
+				Type:      BreakpointSuperstep,
+				Superstep: 5,
+			},
+			checkNode:     "any-node",
+			checkStep:     5,
+			checkHasError: false,
+			wantBreak:     true,
+			wantState:     StatePaused,
+		},
+		{
+			name: "error_no_error",
+			breakpoint: &Breakpoint{
+				Type: BreakpointError,
+			},
+			checkNode:     "any-node",
+			checkStep:     1,
+			checkHasError: false,
+			wantBreak:     false,
+		},
+		{
+			name: "error_with_error",
+			breakpoint: &Breakpoint{
+				Type: BreakpointError,
+			},
+			checkNode:     "any-node",
+			checkStep:     1,
+			checkHasError: true,
+			wantBreak:     true,
+			wantState:     StatePaused,
+		},
+		{
+			name: "disabled",
+			breakpoint: &Breakpoint{
+				ID:   "bp1",
+				Type: BreakpointNode,
+				Node: "test-node",
+			},
+			checkNode:     "test-node",
+			checkStep:     1,
+			checkHasError: false,
+			disableBP:     true,
+			wantBreak:     false,
+		},
 	}
 
-	ec.AddBreakpoint(bp)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ec := NewExecutionController(ctx, "test-run")
 
-	// Should break on matching node
-	shouldBreak := ec.CheckBreakpoint("test-node", 1, false)
-	assert.True(t, shouldBreak)
-	assert.Equal(t, StatePaused, ec.GetState())
+			ec.AddBreakpoint(tt.breakpoint)
 
-	// Verify hit count
-	breakpoints := ec.GetBreakpoints()
-	assert.Equal(t, 1, breakpoints[0].HitCount)
+			if tt.disableBP && tt.breakpoint.ID != "" {
+				ec.EnableBreakpoint(tt.breakpoint.ID, false)
+			}
 
-	// Reset state
-	ec.SetState(StateRunning)
+			shouldBreak := ec.CheckBreakpoint(tt.checkNode, tt.checkStep, tt.checkHasError)
 
-	// Should not break on different node
-	shouldBreak = ec.CheckBreakpoint("other-node", 1, false)
-	assert.False(t, shouldBreak)
-}
+			assert.Equal(t, tt.wantBreak, shouldBreak)
 
-func TestExecutionController_CheckBreakpoint_Superstep(t *testing.T) {
-	ctx := context.Background()
-	ec := NewExecutionController(ctx, "test-run")
+			if tt.wantState != "" {
+				assert.Equal(t, tt.wantState, ec.GetState())
+			}
 
-	bp := &Breakpoint{
-		Type:      BreakpointSuperstep,
-		Superstep: 5,
+			if tt.checkHitCount && tt.wantBreak {
+				breakpoints := ec.GetBreakpoints()
+				assert.Equal(t, 1, breakpoints[0].HitCount)
+			}
+		})
 	}
-
-	ec.AddBreakpoint(bp)
-
-	// Should not break before superstep
-	shouldBreak := ec.CheckBreakpoint("any-node", 3, false)
-	assert.False(t, shouldBreak)
-
-	// Should break at superstep
-	shouldBreak = ec.CheckBreakpoint("any-node", 5, false)
-	assert.True(t, shouldBreak)
-	assert.Equal(t, StatePaused, ec.GetState())
-}
-
-func TestExecutionController_CheckBreakpoint_Error(t *testing.T) {
-	ctx := context.Background()
-	ec := NewExecutionController(ctx, "test-run")
-
-	bp := &Breakpoint{
-		Type: BreakpointError,
-	}
-
-	ec.AddBreakpoint(bp)
-
-	// Should not break when no error
-	shouldBreak := ec.CheckBreakpoint("any-node", 1, false)
-	assert.False(t, shouldBreak)
-
-	// Should break when error
-	shouldBreak = ec.CheckBreakpoint("any-node", 1, true)
-	assert.True(t, shouldBreak)
-	assert.Equal(t, StatePaused, ec.GetState())
-}
-
-func TestExecutionController_CheckBreakpoint_Disabled(t *testing.T) {
-	ctx := context.Background()
-	ec := NewExecutionController(ctx, "test-run")
-
-	bp := &Breakpoint{
-		ID:   "bp1",
-		Type: BreakpointNode,
-		Node: "test-node",
-	}
-
-	ec.AddBreakpoint(bp)
-
-	// Disable breakpoint
-	ec.EnableBreakpoint("bp1", false)
-
-	// Should not break when disabled
-	shouldBreak := ec.CheckBreakpoint("test-node", 1, false)
-	assert.False(t, shouldBreak)
 }
 
 func TestExecutionController_MultipleBreakpoints(t *testing.T) {

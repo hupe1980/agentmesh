@@ -32,11 +32,11 @@ type KMSCheckpointer struct {
 //   - Alias ARN: "arn:aws:kms:us-east-1:123456789012:alias/my-key"
 func NewKMSCheckpointer(base checkpoint.Checkpointer, kmsClient Client, keyID string) (*KMSCheckpointer, error) {
 	if keyID == "" {
-		return nil, fmt.Errorf("KMS key ID is required")
+		return nil, fmt.Errorf("kms key ID is required")
 	}
 
 	if kmsClient == nil {
-		return nil, fmt.Errorf("KMS client is required")
+		return nil, fmt.Errorf("kms client is required")
 	}
 
 	return &KMSCheckpointer{
@@ -62,7 +62,7 @@ func (kc *KMSCheckpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) 
 		Plaintext: data,
 	})
 	if err != nil {
-		return fmt.Errorf("KMS encryption failed: %w", err)
+		return fmt.Errorf("kms encryption failed: %w", err)
 	}
 
 	// Create wrapper checkpoint with encrypted payload
@@ -100,7 +100,7 @@ func (kc *KMSCheckpointer) Load(ctx context.Context, runID string) (*checkpoint.
 	// Decode base64 payload
 	payloadStr, ok := encryptedCP.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("KMS encrypted checkpoint missing payload")
+		return nil, fmt.Errorf("kms encrypted checkpoint missing payload")
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)
@@ -114,7 +114,7 @@ func (kc *KMSCheckpointer) Load(ctx context.Context, runID string) (*checkpoint.
 		KeyId:          aws.String(kc.keyID),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("KMS decryption failed: %w", err)
+		return nil, fmt.Errorf("kms decryption failed: %w", err)
 	}
 
 	// Unmarshal original checkpoint
@@ -155,7 +155,7 @@ func (kc *KMSCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 	// Decrypt (reuse Load logic)
 	payloadStr, ok := cp.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("KMS encrypted checkpoint missing payload")
+		return nil, fmt.Errorf("kms encrypted checkpoint missing payload")
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)
@@ -168,7 +168,7 @@ func (kc *KMSCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 		KeyId:          aws.String(kc.keyID),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("KMS decryption failed: %w", err)
+		return nil, fmt.Errorf("kms decryption failed: %w", err)
 	}
 
 	checkpoint := &checkpoint.Checkpoint{}

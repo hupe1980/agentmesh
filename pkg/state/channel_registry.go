@@ -31,12 +31,11 @@ type ChannelMetadata struct {
 // ChannelRegistry manages channels with different semantic behaviors.
 // This is the core storage layer for the unified state system.
 //
-// Performance: Uses sync.Map for lock-free reads, providing high-performance
-// concurrent access patterns required by Pregel's BSP execution model where
-// all workers read state concurrently at superstep boundaries.
+// Performance: sync.Map enables concurrent reads for BSP execution where
+// all workers read state simultaneously at superstep boundaries.
 type ChannelRegistry struct {
-	channels sync.Map   // map[string]*ChannelMetadata - lock-free reads
-	mu       sync.Mutex // Only for operations requiring consistency across multiple channels
+	channels sync.Map   // map[string]*ChannelMetadata
+	mu       sync.Mutex // For operations requiring consistency across multiple channels
 }
 
 // NewChannelRegistry creates a new channel registry.

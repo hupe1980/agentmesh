@@ -321,7 +321,7 @@ builder.AddNodeFunc("evaluator", func(ctx context.Context, view *state.ReadView)
 // Writer node routes to evaluator
 builder.AddNodeFunc("writer", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     draft := generateDraft()
-    return graph.NewCommand().
+    return command.New().
         Set(draftKey, draft).
         To("evaluator")
 })
@@ -330,12 +330,12 @@ builder.AddNodeFunc("writer", func(ctx context.Context, view state.ReadView) ([]
 builder.AddNodeFunc("evaluator", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     draft := state.GetFromView(view, DraftKey)
     if isGoodEnough(draft) {
-        return graph.NewCommand().
+        return command.New().
             Set(doneKey, true).
             To(graph.EndNode)
     }
     // Loop back to writer - creates a cycle!
-    return graph.NewCommand().
+    return command.New().
         Set(feedbackKey, "improve clarity").
         Set(doneKey, false).
         To("writer")
@@ -353,7 +353,7 @@ builder := graph.NewBuilder()
 builder.AddNodeFunc("fetch_data", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Fetch from API...
     result := fetchData()
-    return graph.NewCommand().
+    return command.New().
         Set(dataKey, result).
         To("process")
 })
@@ -361,7 +361,7 @@ builder.AddNodeFunc("fetch_data", func(ctx context.Context, view state.ReadView)
 builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     data := state.GetFromView(view, DataKey)
     // Process...
-    return graph.NewCommand().
+    return command.New().
         Set(processedKey, true).
         To(graph.EndNode)
 })
@@ -572,7 +572,7 @@ builder.AddNodeFunc("classifier", func(ctx context.Context, view state.ReadView)
     messages := state.GetFromView(view, agent.MessagesKey)
     category := analyzeInput(messages)
     
-    cmd := graph.NewCommand().Set(categoryKey, category)
+    cmd := command.New().Set(categoryKey, category)
     
     // Return different paths based on runtime data
     if category == "urgent" {
@@ -1096,7 +1096,7 @@ g.AddNode(&graph.BaseNode{
         default:
             nextNode = "default_handler"
         }
-        return graph.NewCommand().To(nextNode)
+        return command.New().To(nextNode)
     },
 })
 ```

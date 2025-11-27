@@ -29,6 +29,13 @@ const (
 	EventCheckpoint EventType = "checkpoint"
 	// EventInterrupt indicates execution was interrupted
 	EventInterrupt EventType = "interrupt"
+
+	// defaultEventCapacity is the initial capacity for event slices.
+	// Pre-allocating capacity for 100 events provides:
+	//   - Reduced memory allocations during typical execution (most runs < 100 events)
+	//   - Automatic growth for longer executions (Go slice doubling strategy)
+	//   - Balance between memory overhead (~8KB per run) and performance
+	defaultEventCapacity = 100
 )
 
 // EventIndex provides fast lookup for events
@@ -102,7 +109,7 @@ func (es *EventStore) InitRun(runID, graphID string) {
 		es.runs[runID] = &RunEvents{
 			RunID:   runID,
 			GraphID: graphID,
-			Events:  make([]ExecutionEvent, 0, 100),
+			Events:  make([]ExecutionEvent, 0, defaultEventCapacity),
 			Status:  StatusRunning,
 			Index:   newEventIndex(),
 		}
@@ -118,7 +125,7 @@ func (es *EventStore) Append(event ExecutionEvent) error {
 	if !exists {
 		run = &RunEvents{
 			RunID:     event.RunID,
-			Events:    make([]ExecutionEvent, 0, 100),
+			Events:    make([]ExecutionEvent, 0, defaultEventCapacity),
 			StartTime: event.Timestamp,
 			Status:    StatusRunning,
 			Index:     newEventIndex(),

@@ -20,13 +20,13 @@ import (
 func TestNewModelNode_NilExecutor(t *testing.T) {
 	_, err := NewModelNode(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "executor cannot be nil")
+	assert.Contains(t, err.Error(), "executor must not be nil")
 }
 
 func TestNewToolNode_NilExecutor(t *testing.T) {
 	_, err := NewToolNode(nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "executor cannot be nil")
+	assert.Contains(t, err.Error(), "executor must not be nil")
 }
 
 func TestNewModelNode_ValidExecutor(t *testing.T) {

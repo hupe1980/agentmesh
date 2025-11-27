@@ -11,6 +11,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -29,8 +30,8 @@ type ClientWrapper struct {
 // NewClientWrapper creates a new ClientWrapper.
 // Returns an error if the client parameter is nil.
 func NewClientWrapper(client *anthropic.Client) (*ClientWrapper, error) {
-	if client == nil {
-		return nil, fmt.Errorf("anthropic: client cannot be nil")
+	if err := validate.NotNil(client, "anthropic: client"); err != nil {
+		return nil, err
 	}
 
 	return &ClientWrapper{inner: client}, nil

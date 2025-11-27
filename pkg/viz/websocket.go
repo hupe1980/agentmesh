@@ -14,6 +14,17 @@ const (
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 512 * 1024 // 512 KB
+
+	// websocketBufferSize is the buffer size for WebSocket message channels.
+	// This provides:
+	//   - Buffering for bursty message patterns
+	//   - Prevents blocking when client is temporarily slow
+	//   - Balance between memory usage and throughput
+	websocketBufferSize = 256
+
+	// maxWebSocketClients limits concurrent WebSocket connections to prevent
+	// resource exhaustion. Each client consumes memory for buffers and goroutines.
+	maxWebSocketClients = 1000
 )
 
 var upgrader = websocket.Upgrader{
@@ -47,11 +58,11 @@ type WebSocketHub struct {
 func NewWebSocketHub() *WebSocketHub {
 	return &WebSocketHub{
 		clients:    make(map[*WebSocketClient]bool),
-		broadcast:  make(chan Message, 256),
+		broadcast:  make(chan Message, websocketBufferSize),
 		register:   make(chan *WebSocketClient),
 		unregister: make(chan *WebSocketClient),
 		shutdown:   make(chan struct{}),
-		maxClients: 1000, // Prevent resource exhaustion
+		maxClients: maxWebSocketClients,
 	}
 }
 
@@ -159,7 +170,7 @@ func NewWebSocketClient(hub *WebSocketHub, conn *websocket.Conn) *WebSocketClien
 	return &WebSocketClient{
 		hub:           hub,
 		conn:          conn,
-		send:          make(chan Message, 256),
+		send:          make(chan Message, websocketBufferSize),
 		subscriptions: make(map[string]*Subscription),
 	}
 }

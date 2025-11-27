@@ -109,53 +109,64 @@ func TestSetModelResponseTool_Definition(t *testing.T) {
 	assert.NotNil(t, def.Function.Parameters["required"])
 }
 
-func TestSetModelResponseTool_Call_Valid(t *testing.T) {
+func TestSetModelResponseTool_Call(t *testing.T) {
 	type TestOutput struct {
-		Message string `json:"message" jsonschema:"required,description=The message"`
-		Status  string `json:"status" jsonschema:"required,description=The status"`
+		Message  string `json:"message" jsonschema:"required,description=The message"`
+		Status   string `json:"status" jsonschema:"required,description=The status"`
+		Optional string `json:"optional,omitempty" jsonschema:"description=Optional field"`
 	}
 
 	tool, err := NewSetModelResponseTool(TestOutput{})
 	require.NoError(t, err)
 
-	validArgs := `{"message": "Hello", "status": "success"}`
-
-	result, err := tool.Call(context.Background(), validArgs)
-	require.NoError(t, err)
-
-	// Result should be the validated JSON string
-	assert.Equal(t, validArgs, result)
-}
-
-func TestSetModelResponseTool_Call_Invalid(t *testing.T) {
-	type TestOutput struct {
-		Required string `json:"required" jsonschema:"required,description=Required field"`
+	tests := []struct {
+		name        string
+		args        string
+		wantErr     bool
+		errContains string
+		wantResult  string
+	}{
+		{
+			name:       "valid",
+			args:       `{"message": "Hello", "status": "success"}`,
+			wantErr:    false,
+			wantResult: `{"message": "Hello", "status": "success"}`,
+		},
+		{
+			name:        "invalid_missing_required",
+			args:        `{"optional": "value"}`,
+			wantErr:     true,
+			errContains: "invalid model response",
+		},
+		{
+			name:    "invalid_json",
+			args:    `{invalid json}`,
+			wantErr: true,
+		},
+		{
+			name:       "valid_with_optional",
+			args:       `{"message": "Hi", "status": "ok", "optional": "extra"}`,
+			wantErr:    false,
+			wantResult: `{"message": "Hi", "status": "ok", "optional": "extra"}`,
+		},
 	}
 
-	tool, err := NewSetModelResponseTool(TestOutput{})
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tool.Call(context.Background(), tt.args)
 
-	// Missing required field
-	invalidArgs := `{"optional": "value"}`
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
 
-	_, err = tool.Call(context.Background(), invalidArgs)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid model response")
-}
-
-func TestSetModelResponseTool_Call_InvalidJSON(t *testing.T) {
-	type TestOutput struct {
-		Field string `json:"field" jsonschema:"required"`
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantResult, result)
+		})
 	}
-
-	tool, err := NewSetModelResponseTool(TestOutput{})
-	require.NoError(t, err)
-
-	// Invalid JSON
-	invalidArgs := `{invalid json}`
-
-	_, err = tool.Call(context.Background(), invalidArgs)
-	assert.Error(t, err)
 }
 
 func TestSetModelResponseTool_Instruction(t *testing.T) {

@@ -68,7 +68,7 @@ func TestNewModelFromClientWrapper(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, mdl)
-		assert.Contains(t, err.Error(), "wrapper cannot be nil")
+		assert.Contains(t, err.Error(), "wrapper must not be nil")
 	})
 }
 
@@ -282,6 +282,6 @@ func TestNewClientWrapper(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, wrapper)
-		assert.Contains(t, err.Error(), "client cannot be nil")
+		assert.Contains(t, err.Error(), "client must not be nil")
 	})
 }

@@ -61,7 +61,7 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     counter := state.GetFromView(view, CounterKey)
     
     // Recommended: Command pattern for fluent, type-safe updates
-    return graph.NewCommand().
+    return command.New().
         Set(CounterKey, counter+1).
         Set(StatusKey, "processing").
         To("next_node")
@@ -74,7 +74,7 @@ The Command builder provides a fluent API that eliminates `.Name()` calls:
 
 ```go
 // Command pattern (recommended) - fluent, clean, type-safe
-return graph.NewCommand().
+return command.New().
     Set(CounterKey, 42).
     Set(StatusKey, "ready").
     To("next")
@@ -93,7 +93,7 @@ The builder automatically calls `.Name()` on keys and constructs the tuple in on
 **Pattern 1: Single target with updates**
 ```go
 func processNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(ResultKey, "processed").
         To("next")
 }
@@ -102,7 +102,7 @@ func processNode(ctx context.Context, view state.ReadView) ([]string, state.Upda
 **Pattern 2: Multiple targets (parallel execution)**
 ```go
 func splitNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(StatusKey, "splitting").
         To("worker1", "worker2", "worker3")
 }
@@ -113,7 +113,7 @@ func splitNode(ctx context.Context, view state.ReadView) ([]string, state.Update
 func decideNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     score := state.GetFromView(view, ScoreKey)
     
-    cmd := graph.NewCommand().Set(ScoreKey, score+10)
+    cmd := command.New().Set(ScoreKey, score+10)
     
     if score > 50 {
         return cmd.To("high_priority")
@@ -125,7 +125,7 @@ func decideNode(ctx context.Context, view state.ReadView) ([]string, state.Updat
 **Pattern 4: End node (no further targets)**
 ```go
 func finalNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(StatusKey, "complete").
         To(graph.END)
 }
@@ -581,7 +581,7 @@ node := graph.NewNamespacedCommandNode(
         // Cannot see other namespace keys
         exists := view.Has("enrichment.data")  // Returns false (filtered out)
         
-        return graph.NewCommand().To(graph.EndNode)
+        return command.New().To(graph.EndNode)
     },
     targets,
 )
@@ -652,7 +652,7 @@ configNode := graph.NewNamespacedCommandNode(
         globalConfig := state.GetFromView(view, globalConfigKey)
         
         // Can update both using Command pattern
-        return graph.NewCommand().
+        return command.New().
             Set(agent1ResultKey, computeResult(agentData, globalConfig)).
             Set(globalCounterKey, incrementCounter()). // Allowed!
             To(graph.EndNode)
@@ -680,7 +680,7 @@ validationNode := graph.NewNamespacedCommandNode(
     agent1NS,
     func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // ❌ This will cause a validation error:
-        return graph.NewCommand().
+        return command.New().
             Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
             Set(agent2StatusKey, "failed").  // ❌ ERROR: wrong namespace
             To(graph.EndNode) // Will return error

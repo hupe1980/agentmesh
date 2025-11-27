@@ -1,4 +1,4 @@
-package graph
+package command
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ func TestCommand_Set(t *testing.T) {
 		{
 			name: "single key",
 			setup: func() *Command {
-				return NewCommand().Set(msgKey, "hello")
+				return New().Set(msgKey, "hello")
 			},
 			validate: func(t *testing.T, cmd *Command) {
 				if len(cmd.m) != 1 {
@@ -33,7 +33,7 @@ func TestCommand_Set(t *testing.T) {
 		{
 			name: "multiple keys",
 			setup: func() *Command {
-				return NewCommand().
+				return New().
 					Set(msgKey, "hello").
 					Set(countKey, 42)
 			},
@@ -52,7 +52,7 @@ func TestCommand_Set(t *testing.T) {
 		{
 			name: "overwrite key",
 			setup: func() *Command {
-				return NewCommand().
+				return New().
 					Set(msgKey, "first").
 					Set(msgKey, "second")
 			},
@@ -77,7 +77,7 @@ func TestCommand_Build(t *testing.T) {
 	countKey := state.NewKey[int]("count", 0)
 
 	t.Run("empty command", func(t *testing.T) {
-		updates, err := NewCommand().Build()
+		updates, err := New().Build()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestCommand_Build(t *testing.T) {
 	})
 
 	t.Run("with updates", func(t *testing.T) {
-		updates, err := NewCommand().
+		updates, err := New().
 			Set(msgKey, "hello").
 			Set(countKey, 42).
 			Build()
@@ -106,7 +106,7 @@ func TestCommand_Build(t *testing.T) {
 	})
 
 	t.Run("returns state.Updates type", func(t *testing.T) {
-		updates, err := NewCommand().Set(msgKey, "test").Build()
+		updates, err := New().Set(msgKey, "test").Build()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -120,7 +120,7 @@ func TestCommand_To(t *testing.T) {
 	countKey := state.NewKey[int]("count", 0)
 
 	t.Run("single target", func(t *testing.T) {
-		targets, updates, err := NewCommand().
+		targets, updates, err := New().
 			Set(msgKey, "hello").
 			To("next")
 
@@ -136,7 +136,7 @@ func TestCommand_To(t *testing.T) {
 	})
 
 	t.Run("multiple targets", func(t *testing.T) {
-		targets, updates, err := NewCommand().
+		targets, updates, err := New().
 			Set(countKey, 42).
 			To("task1", "task2", "task3")
 
@@ -154,21 +154,21 @@ func TestCommand_To(t *testing.T) {
 		}
 	})
 
-	t.Run("EndNode target", func(t *testing.T) {
-		targets, _, err := NewCommand().
+	t.Run("end target", func(t *testing.T) {
+		targets, _, err := New().
 			Set(msgKey, "done").
-			To(EndNode)
+			To("__end__")
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(targets) != 1 || targets[0] != EndNode {
-			t.Errorf("expected targets [%s], got %v", EndNode, targets)
+		if len(targets) != 1 || targets[0] != "__end__" {
+			t.Errorf("expected targets [%s], got %v", "__end__", targets)
 		}
 	})
 
 	t.Run("no updates", func(t *testing.T) {
-		targets, updates, err := NewCommand().To("next")
+		targets, updates, err := New().To("next")
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -186,7 +186,7 @@ func TestCommand_ErrorHandling(t *testing.T) {
 	msgKey := state.NewKey[string]("messages", "")
 
 	t.Run("error skips subsequent Set calls", func(t *testing.T) {
-		cmd := NewCommand()
+		cmd := New()
 		errTest := fmt.Errorf("test error")
 		cmd.err = errTest
 
@@ -201,7 +201,7 @@ func TestCommand_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("Build returns error", func(t *testing.T) {
-		cmd := NewCommand()
+		cmd := New()
 		errTest := fmt.Errorf("test error")
 		cmd.err = errTest
 
@@ -216,7 +216,7 @@ func TestCommand_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("To returns error", func(t *testing.T) {
-		cmd := NewCommand()
+		cmd := New()
 		errTest := fmt.Errorf("test error")
 		cmd.err = errTest
 
@@ -240,7 +240,7 @@ func TestCommand_Chaining(t *testing.T) {
 	tempKey := state.NewKey[float64]("temperature", 0.7)
 
 	t.Run("long chain", func(t *testing.T) {
-		targets, updates, err := NewCommand().
+		targets, updates, err := New().
 			Set(msgKey, "hello").
 			Set(countKey, 1).
 			Set(tempKey, 0.9).
@@ -269,7 +269,7 @@ func ExampleCommand() {
 		newMsg := "processed"
 
 		// Use Command builder for clean syntax
-		return NewCommand().
+		return New().
 			Set(messagesKey, append(msgs, newMsg)).
 			Set(countKey, count+1).
 			To("next")

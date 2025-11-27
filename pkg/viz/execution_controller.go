@@ -6,6 +6,13 @@ import (
 	"sync"
 )
 
+const (
+	// executionCommandQueueSize is the buffer size for execution control commands.
+	// A small buffer (10) is sufficient since commands are control signals
+	// (pause, resume, step) that are infrequent and should be processed quickly.
+	executionCommandQueueSize = 10
+)
+
 // ExecutionCommand represents a control command for graph execution
 type ExecutionCommand string
 
@@ -80,7 +87,7 @@ func NewExecutionController(ctx context.Context, runID string) *ExecutionControl
 		runID:        runID,
 		state:        StateRunning,
 		breakpoints:  make(map[string]*Breakpoint),
-		commandQueue: make(chan ExecutionCommand, 10),
+		commandQueue: make(chan ExecutionCommand, executionCommandQueueSize),
 		ctx:          ctxWithCancel,
 		cancel:       cancel,
 	}

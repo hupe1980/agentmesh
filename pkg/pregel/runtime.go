@@ -19,6 +19,13 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
+const (
+	// contextCheckInterval defines how often to check for context cancellation
+	// during shard iteration. Checking every 32 shards balances responsiveness
+	// (detecting cancellation quickly) with performance overhead (syscall cost).
+	contextCheckInterval = 32
+)
+
 // FrontierInfo contains diagnostics about the active frontier in a superstep.
 type FrontierInfo struct {
 	// Size is the number of vertices in the frontier
@@ -92,8 +99,8 @@ func (sf *shardedFrontier) Drain(ctx context.Context) map[string]struct{} {
 	result := make(map[string]struct{})
 
 	for i := range shardCount {
-		// Check context cancellation every 32 shards (balance responsiveness vs overhead)
-		if i%32 == 0 {
+		// Check context cancellation periodically
+		if i%contextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				// Context cancelled - return partial results for graceful shutdown
 				return result

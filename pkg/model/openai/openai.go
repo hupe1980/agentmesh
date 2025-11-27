@@ -39,8 +39,8 @@ type ClientWrapper struct {
 // NewClientWrapper creates a new ClientWrapper.
 // Returns an error if the client parameter is nil.
 func NewClientWrapper(client *openai.Client) (*ClientWrapper, error) {
-	if client == nil {
-		return nil, fmt.Errorf("openai: client cannot be nil")
+	if err := validate.NotNil(client, "openai: client"); err != nil {
+		return nil, err
 	}
 
 	return &ClientWrapper{
@@ -98,8 +98,8 @@ func NewModelFromClient(client *openai.Client, optFns ...func(o *Options)) (*Mod
 // NewModelFromClientWrapper creates a model from a wrapped client.
 // Returns an error if the wrapper is nil.
 func NewModelFromClientWrapper(wrapper *ClientWrapper, optFns ...func(o *Options)) (*Model, error) {
-	if wrapper == nil {
-		return nil, fmt.Errorf("openai: wrapper cannot be nil")
+	if err := validate.NotNil(wrapper, "openai: wrapper"); err != nil {
+		return nil, err
 	}
 
 	opts := Options{

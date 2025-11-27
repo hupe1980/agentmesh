@@ -240,7 +240,7 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 	// Call execute(inputPtr, inputLen) - stores result in globals
 	_, err = executeFunc.Call(ctx, uint64(inputPtr), uint64(inputLen))
 	if err != nil {
-		return nil, fmt.Errorf("WASM execution failed: %w", err)
+		return nil, fmt.Errorf("wasm execution failed: %w", err)
 	}
 
 	// Get result pointer and length from exported functions
@@ -264,7 +264,7 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 	resultLen := uint32(lenResults[0]) // #nosec G115 - WASM length values are 32-bit
 
 	if resultLen == 0 {
-		return nil, fmt.Errorf("WASM returned empty result")
+		return nil, fmt.Errorf("wasm returned empty result")
 	}
 
 	resultJSON, err := w.readString(mod, resultPtr, resultLen)

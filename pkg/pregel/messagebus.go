@@ -390,8 +390,8 @@ func (store *InMemoryMessageBus[M]) Stats(ctx context.Context) MessageStoreStats
 
 	// Aggregate stats from all shards
 	for i := range store.shards {
-		// Check context cancellation every 32 shards
-		if i%32 == 0 {
+		// Check context cancellation periodically
+		if i%contextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				// Context cancelled - return partial stats
 				return stats

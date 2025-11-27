@@ -23,16 +23,14 @@ import (
 //
 // Concurrency Model (Optimized for BSP Execution):
 // - REMOVED global RWMutex to eliminate serialization bottleneck (4-10x improvement)
-// - ChannelRegistry uses sync.Map for lock-free reads during BSP supersteps
-// - registeredKeys uses sync.Map for concurrent registration and lookup
-// - managedValues uses sync.Map for concurrent managed value access
+// - sync.Map used throughout for lock-free reads during BSP supersteps
 // - Per-channel locking handled by individual Channel implementations
 // - Result: Linear scalability with worker count for read-heavy BSP workloads
 type Manager struct {
 	store           Store
 	channels        *ChannelRegistry
-	registeredKeys  sync.Map // map[string]keyInfo - lock-free concurrent access
-	managedValues   sync.Map // map[string]*ManagedValueAny - lock-free concurrent access
+	registeredKeys  sync.Map // map[string]keyInfo
+	managedValues   sync.Map // map[string]*ManagedValueAny
 	snapshots       *SnapshotManager
 	checkpointer    checkpoint.Checkpointer
 	checkpointRunID string

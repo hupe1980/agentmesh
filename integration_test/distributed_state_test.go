@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
@@ -71,7 +72,7 @@ func TestDistributedStateSync(t *testing.T) {
 		NodeName:        "node1",
 		DeclaredTargets: []string{"node2"},
 		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, 1.0). // Use float64 for JSON compatibility
 				Set(dataKey, "A").
 				To("node2")
@@ -89,7 +90,7 @@ func TestDistributedStateSync(t *testing.T) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, counter+1.0). // Should be 2.0
 				Set(dataKey, data+"B").       // Should be "AB"
 				To("node3")
@@ -107,7 +108,7 @@ func TestDistributedStateSync(t *testing.T) {
 			counter := state.GetFromView(view, counterKey)
 			data := state.GetFromView(view, dataKey)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, counter+1.0). // Should be 3.0
 				Set(dataKey, data+"C").       // Should be "ABC"
 				To(graph.EndNode)
@@ -206,7 +207,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 		NodeName:        "node1",
 		DeclaredTargets: []string{"node2"},
 		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, 1.0).
 				To("node2")
 		},
@@ -222,7 +223,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, counter+10.0). // Should be 11.0 (1.0 + 10.0)
 				To(graph.EndNode)
 		},

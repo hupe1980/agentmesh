@@ -48,11 +48,11 @@
 //	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        decision := analyze(view)
 //	        if decision == "simple" {
-//	            return graph.NewCommand().
+//	            return command.New().
 //	                Set(DecisionKey, decision).
 //	                To("option_a")
 //	        }
-//	        return graph.NewCommand().
+//	        return command.New().
 //	            Set(DecisionKey, decision).
 //	            To("option_b")
 //	    },

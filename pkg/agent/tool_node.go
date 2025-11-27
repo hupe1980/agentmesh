@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/internal/validate"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -69,8 +70,8 @@ func WithToolTargets(targets []string) ToolNodeOption {
 //	    agent.WithToolNodeName("tools"),
 //	    agent.WithToolTargets([]string{"model"}))
 func NewToolNode(executor tool.Executor, opts ...ToolNodeOption) (*ToolNode, error) {
-	if executor == nil {
-		return nil, fmt.Errorf("agent: executor cannot be nil")
+	if err := validate.NotNil(executor, "agent: executor"); err != nil {
+		return nil, err
 	}
 
 	node := &ToolNode{
@@ -154,7 +155,7 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) ([]string, 
 
 	// Return only the NEW tool messages generated
 	// The state manager will append them to the existing messages list
-	return graph.NewCommand().Set(MessagesKey, toolMessages).To("model")
+	return command.New().Set(MessagesKey, toolMessages).To("model")
 }
 
 // formatToolResult converts a tool result to a string representation.

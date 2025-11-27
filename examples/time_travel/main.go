@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -35,9 +36,9 @@ func main() {
 			log.Fatal(err)
 		}
 		graphstate.RegisterKey(mgr, valueKey)
-		if err := mgr.ApplyUpdates(context.Background(), graphstate.Updates{
-			valueKey.Name(): initialValue,
-		}); err != nil {
+		if err := mgr.ApplyUpdates(context.Background(), graphstate.NewUpdateBuilder().
+			Set(valueKey, initialValue).
+			Build()); err != nil {
 			panic(err)
 		}
 
@@ -53,7 +54,7 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
-			return []string{"add_ten"}, graphstate.Updates{valueKey.Name(): newValue}, nil
+			return command.New().Set(valueKey, newValue).To("add_ten")
 		})
 
 		// Step 2: Add 10
@@ -61,7 +62,7 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
-			return []string{"multiply_three"}, graphstate.Updates{valueKey.Name(): newValue}, nil
+			return command.New().Set(valueKey, newValue).To("multiply_three")
 		})
 
 		// Step 3: Multiply by 3
@@ -69,7 +70,7 @@ func main() {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)
-			return []string{graph.EndNode}, graphstate.Updates{valueKey.Name(): newValue}, nil
+			return command.New().Set(valueKey, newValue).To(graph.EndNode)
 		})
 
 		compiled, err := builder.Compile()

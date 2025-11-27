@@ -30,6 +30,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
@@ -94,7 +95,7 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				updates, _ := graph.NewCommand().
+				updates, _ := command.New().
 					Set(progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks))).
 					Set(currentChunkKey, chunk).
 					Build()
@@ -102,7 +103,7 @@ func main() {
 			}
 		}
 
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(statusKey, "data_processed").
 			Set(chunksTotalKey, len(chunks)).
 			Build()
@@ -117,7 +118,7 @@ func main() {
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			updates, _ := graph.NewCommand().Set(llmStatusKey, "starting").Build()
+			updates, _ := command.New().Set(llmStatusKey, "starting").Build()
 			streamWriter(updates)
 		}
 
@@ -135,11 +136,11 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			streamUpdates, _ := graph.NewCommand().Set(llmStatusKey, "completed").Build()
+			streamUpdates, _ := command.New().Set(llmStatusKey, "completed").Build()
 			streamWriter(streamUpdates)
 		}
 
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(statusKey, "llm_completed").
 			Set(agent.MessagesKey, []message.Message{resp.Message}).
 			Build()
@@ -155,7 +156,7 @@ func main() {
 		// Step 1: Validation
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			updates, _ := graph.NewCommand().
+			updates, _ := command.New().
 				Set(analysisStepKey, "validation").
 				Set(validationKey, "passed").
 				Build()
@@ -165,7 +166,7 @@ func main() {
 		// Step 2: Quality check
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			updates, _ := graph.NewCommand().
+			updates, _ := command.New().
 				Set(analysisStepKey, "quality_check").
 				Set(qualityScoreKey, 0.95).
 				Build()
@@ -175,14 +176,14 @@ func main() {
 		// Step 3: Finalization
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
-			updates, _ := graph.NewCommand().
+			updates, _ := command.New().
 				Set(analysisStepKey, "finalization").
 				Set(readyKey, true).
 				Build()
 			streamWriter(updates)
 		}
 
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(statusKey, "analysis_complete").
 			Set(verifiedKey, true).
 			Build()

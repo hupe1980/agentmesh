@@ -508,12 +508,12 @@ import (
 // Create a graph builder with Pregel executor
 builder := graph.NewBuilder(graph.NewPregelExecutor())
 
-// Add nodes with functions using Command pattern
+// Add nodes with functions using type-safe builders
 builder.AddNodeFunc("step1", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Recommended: Use Command pattern for clean, fluent API
-    return graph.NewCommand().
+    // Recommended: Use Command pattern for routing + state updates
+    return command.New().
         Set(resultKey, "processed").
-        To("step2")
+        To("step2")  // Returns ([]string, state.Updates, error)
 })
 
 builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
@@ -521,7 +521,8 @@ builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) ([]s
     result := state.GetFromView(view, resultKey)
     fmt.Println("Received:", result)
     
-    return graph.NewCommand().To(graph.EndNode)
+    // For list operations, use type-safe Append helpers
+    return command.Append(messagesKey, "Completed").To(graph.EndNode)
 })
 
 // Define flow with tuple return pattern
@@ -574,6 +575,72 @@ builder.SetEntryPoint("task_a", "task_b", "task_c")
 ```
 
 All entry points execute in **superstep 1** in parallel, enabling fan-out patterns from the start.
+
+---
+
+### 🛡️ Type-Safe State Updates
+
+AgentMesh provides **two type-safe builder APIs** for constructing state updates:
+
+#### 1. **command.Command** - For node functions with routing
+
+Use `command.New()` when returning `([]string, state.Updates, error)` from node functions:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/command"
+
+// Basic usage with Set
+return command.New().
+    Set(statusKey, "completed").
+    Set(counterKey, 42).
+    To("next_node")  // Returns ([]string, state.Updates, error)
+
+// For list operations, use type-safe Append helpers
+return command.Append(messagesKey, "New message").To("next")
+
+// Or AppendMany for multiple values
+return command.AppendMany(messagesKey, []string{"msg1", "msg2"}).To("next")
+```
+
+**Key benefits:**
+- Clean API: `command.New()` instead of `command.New()`
+- `.To(targets...)` returns the full `([]string, state.Updates, error)` tuple
+- `.Build()` returns just `(state.Updates, error)` if you need manual routing
+- No manual `.Name()` calls needed - handled automatically
+- Fluent API with method chaining
+
+#### 2. **state.UpdateBuilder** - For standalone state construction
+
+Use `state.NewUpdateBuilder()` for building Updates outside node functions:
+
+```go
+// Build updates for ApplyUpdates or initial state
+updates := state.NewUpdateBuilder().
+    Set(statusKey, "initialized").
+    Set(counterKey, 0).
+    Build()  // Returns state.Updates
+
+mgr.ApplyUpdates(ctx, updates)
+
+// For list operations, use type-safe helper functions
+listUpdates := state.AppendUpdate(messagesKey, "First message").Build()
+batchUpdates := state.AppendManyUpdates(messagesKey, []string{"msg1", "msg2"}).Build()
+```
+
+**Key benefits:**
+- Type-safe: `Set(Key[T], T)` ensures value matches key type at compile time
+- `AppendUpdate[T](ListKey[T], T)` automatically wraps in `SliceOf[T]`
+- `AppendManyUpdates[T](ListKey[T], []T)` handles batch list operations
+- No runtime type assertions or casting needed
+
+#### Why Two Builders?
+
+- **command.Command**: High-level API for node functions (routing + updates)
+- **state.UpdateBuilder**: Low-level API for state construction (updates only)
+
+Both eliminate manual map construction and provide compile-time type safety through Go generics.
+
+See [examples/typed_updates](examples/typed_updates) for comprehensive demonstration.
 
 ---
 
@@ -954,7 +1021,7 @@ builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([
     fmt.Printf("Total cost so far: %v\n", total)
     
     // Contribute new values (will be aggregated)
-    return graph.NewCommand().
+    return command.New().
         Set(totalCostKey, 42.0).       // Added to sum
         Set(maxPriorityKey, priority).  // Compared for max
         Set(activeNodesKey, 1).         // Counted
@@ -1067,7 +1134,7 @@ func (n *Node) Invoke(ctx context.Context, view state.ReadView) ([]string, state
         }
     }
     // ... proceed with action using Command pattern
-    return graph.NewCommand().
+    return command.New().
         Set(resultKey, "approved").
         To(graph.EndNode)
 }
@@ -1109,7 +1176,7 @@ builder.AddNodeFunc("research", func(ctx context.Context, view state.ReadView) (
         return nil, nil, err
     }
     
-    return graph.NewCommand().
+    return command.New().
         Set(message.MessagesKey, graph.ExtractMessages(events)).
         To(graph.EndNode)
 })

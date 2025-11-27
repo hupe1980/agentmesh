@@ -11,6 +11,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -53,7 +54,7 @@ func main() {
 			"email":   "user@example.com",
 			"score":   75,
 		}
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(inputDataKey, data).
 			Build()
 		return []string{"validation"}, updates, err
@@ -70,14 +71,14 @@ func main() {
 			required := []string{"user_id", "email", "score"}
 			for _, field := range required {
 				if _, ok := data[field]; !ok {
-					return graph.NewCommand().Set(validKey, false).To("enrichment")
+					return command.New().Set(validKey, false).To("enrichment")
 				}
 			}
 			score, ok := data["score"].(int)
 			if !ok || score < 0 || score > 100 {
-				return graph.NewCommand().Set(validKey, false).To("enrichment")
+				return command.New().Set(validKey, false).To("enrichment")
 			}
-			return graph.NewCommand().Set(validKey, true).To("enrichment")
+			return command.New().Set(validKey, true).To("enrichment")
 		},
 		[]string{"enrichment"},
 		false, // Don't include global state
@@ -106,7 +107,7 @@ func main() {
 				enriched["grade"] = "C"
 			}
 			enriched["status"] = "enriched"
-			return graph.NewCommand().
+			return command.New().
 				Set(enrichedDataKey, enriched).
 				To("analysis")
 		},
@@ -127,7 +128,7 @@ func main() {
 				"score_grade": enrichedData["grade"],
 				"total_items": len(enrichedData),
 			}
-			return graph.NewCommand().
+			return command.New().
 				Set(analysisKey, analysis).
 				To(graph.EndNode)
 		},

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -58,7 +59,7 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 			return nil, nil, fmt.Errorf("retrieval failed: %w", err)
 		}
 
-		return graph.NewCommand().Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
+		return command.New().Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
 	}
 }
 
@@ -86,7 +87,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 			return nil, nil, err
 		}
 
-		return graph.NewCommand().Set(MessagesKey, []message.Message{newMsg}).To(graph.EndNode)
+		return command.New().Set(MessagesKey, []message.Message{newMsg}).To(graph.EndNode)
 	}
 }
 

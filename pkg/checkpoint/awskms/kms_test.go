@@ -99,7 +99,7 @@ func TestNewKMSCheckpointer(t *testing.T) {
 			kmsClient: mockKMS,
 			keyID:     "",
 			wantErr:   true,
-			errMsg:    "KMS key ID is required",
+			errMsg:    "kms key ID is required",
 		},
 		{
 			name:      "nil KMS client",
@@ -107,7 +107,7 @@ func TestNewKMSCheckpointer(t *testing.T) {
 			kmsClient: nil,
 			keyID:     "test-key-id",
 			wantErr:   true,
-			errMsg:    "KMS client is required",
+			errMsg:    "kms client is required",
 		},
 	}
 
@@ -197,7 +197,7 @@ func TestKMSCheckpointer_Save(t *testing.T) {
 
 		err = kmsCP.Save(ctx, originalCP)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "KMS encryption failed")
+		assert.Contains(t, err.Error(), "kms encryption failed")
 
 		mockKMS.AssertExpectations(t)
 	})
@@ -342,7 +342,7 @@ func TestKMSCheckpointer_Load(t *testing.T) {
 		cp, err := kmsCP.Load(ctx, runID)
 		assert.Error(t, err)
 		assert.Nil(t, cp)
-		assert.Contains(t, err.Error(), "KMS decryption failed")
+		assert.Contains(t, err.Error(), "kms decryption failed")
 
 		mockBase.AssertExpectations(t)
 		mockKMS.AssertExpectations(t)

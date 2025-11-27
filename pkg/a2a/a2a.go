@@ -8,6 +8,7 @@ import (
 	a2atypes "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
+	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -41,8 +42,8 @@ func NewClient(ctx context.Context, agentCardURL string, skillID string, opts ..
 // NewClientFromCard creates a new A2A client from an existing agent card.
 // The skillID identifies which skill/capability of the agent to invoke.
 func NewClientFromCard(ctx context.Context, card *a2atypes.AgentCard, skillID string, opts ...a2aclient.FactoryOption) (*Client, error) {
-	if card == nil {
-		return nil, fmt.Errorf("agent card cannot be nil")
+	if err := validate.NotNil(card, "agent card"); err != nil {
+		return nil, err
 	}
 	if skillID == "" {
 		return nil, fmt.Errorf("skillID cannot be empty")
@@ -81,7 +82,7 @@ func (c *Client) SendMessage(ctx context.Context, msg message.Message) ([]messag
 		Message: a2aMsg,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("A2A agent call failed: %w", err)
+		return nil, fmt.Errorf("a2a agent call failed: %w", err)
 	}
 
 	// Extract and convert response (can be either Task or Message)
@@ -97,7 +98,7 @@ func (c *Client) SendMessage(ctx context.Context, msg message.Message) ([]messag
 		// Direct message response
 		return ConvertFromA2AMessage(r)
 	default:
-		return nil, fmt.Errorf("unexpected response type from A2A agent: %T", resp)
+		return nil, fmt.Errorf("unexpected response type from a2a agent: %T", resp)
 	}
 }
 
@@ -280,7 +281,7 @@ func extractTextFromParts(parts []message.Part) string {
 // Note: A2A only supports 'user' and 'agent' roles.
 func ConvertFromA2AMessage(a2aMsg *a2atypes.Message) ([]message.Message, error) {
 	if a2aMsg == nil {
-		return nil, fmt.Errorf("A2A message cannot be nil")
+		return nil, fmt.Errorf("a2a message cannot be nil")
 	}
 
 	switch a2aMsg.Role {

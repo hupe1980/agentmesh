@@ -179,7 +179,7 @@ func (t *Tool) Call(ctx context.Context, argsJSON string) (any, error) {
 		Message: msg,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("A2A agent call failed: %w", err)
+		return nil, fmt.Errorf("a2a agent call failed: %w", err)
 	}
 
 	// Extract response message and convert to string
@@ -188,7 +188,7 @@ func (t *Tool) Call(ctx context.Context, argsJSON string) (any, error) {
 		return extractTextContent(responseMsg), nil
 	}
 
-	return nil, fmt.Errorf("unexpected response type from A2A agent")
+	return nil, fmt.Errorf("unexpected response type from a2a agent")
 }
 
 // extractTextContent extracts all text content from an A2A message.

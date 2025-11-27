@@ -30,7 +30,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	// Convert A2A message to AgentMesh messages
 	messages, err := ConvertFromA2AMessage(reqCtx.Message)
 	if err != nil {
-		return fmt.Errorf("failed to convert A2A message: %w", err)
+		return fmt.Errorf("failed to convert a2a message: %w", err)
 	}
 
 	// Execute the agent/graph
@@ -78,7 +78,7 @@ func (e *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	// Convert A2A message to AgentMesh messages
 	messages, err := ConvertFromA2AMessage(reqCtx.Message)
 	if err != nil {
-		return fmt.Errorf("failed to convert A2A message: %w", err)
+		return fmt.Errorf("failed to convert a2a message: %w", err)
 	}
 
 	// Stream execution results

@@ -124,7 +124,7 @@ func TestNewToolNode_Validation(t *testing.T) {
 		node, err := NewToolNode(nil)
 		assert.Error(t, err)
 		assert.Nil(t, node)
-		assert.Contains(t, err.Error(), "executor cannot be nil")
+		assert.Contains(t, err.Error(), "executor must not be nil")
 	})
 
 	t.Run("accepts sequential executor", func(t *testing.T) {

@@ -197,7 +197,7 @@ func processDataFunc(ctx context.Context, view state.ReadView) ([]string, state.
     processed := transform(data)
     
     // Use Command pattern for fluent, type-safe updates
-    return graph.NewCommand().
+    return command.New().
         Set(ProcessedDataKey, processed).
         Set(StatusKey, "complete").
         Set(message.MessagesKey, []message.Message{
@@ -232,7 +232,7 @@ g.AddNode(&graph.BaseNode{
             nextNode = "default_handler"
         }
         // Use Command pattern for routing
-        return graph.NewCommand().To(nextNode)
+        return command.New().To(nextNode)
     },
 })
 ```
@@ -262,7 +262,7 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     messages := state.GetFromView(view, MessagesKey)
     
     // Use Command pattern for routing
-    return graph.NewCommand().To("next_node")
+    return command.New().To("next_node")
 }
 ```
 
@@ -283,7 +283,7 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     counter := state.GetFromView(view, CounterKey)
     
     // Use Command pattern for fluent, type-safe updates
-    return graph.NewCommand().
+    return command.New().
         Set(CounterKey, counter + 1).
         Set(StatusKey, "processing").
         Set(message.MessagesKey, []message.Message{
@@ -359,7 +359,7 @@ g.AddNode(&graph.BaseNode{
     DeclaredTargets: []string{"fetch_a", "fetch_b", "fetch_c"},
     Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Fan-out using Command pattern
-        return graph.NewCommand().To("fetch_a", "fetch_b", "fetch_c")
+        return command.New().To("fetch_a", "fetch_b", "fetch_c")
     },
 })
 
@@ -394,12 +394,12 @@ builder.AddNodeFunc("evaluator", func(ctx context.Context, view state.ReadView) 
     
     if isGoodEnough(draft) {
         // Route to END with Command pattern
-        return graph.NewCommand().
+        return command.New().
             Set(DoneKey, true).
             To(graph.EndNode)
     } else {
         // Loop back to writer for refinement
-        return graph.NewCommand().
+        return command.New().
             Set(FeedbackKey, "improve clarity").
             Set(DoneKey, false).
             To("writer")
@@ -414,11 +414,11 @@ g.AddNode(&graph.BaseNode{
         draft := state.GetFromView(view, DraftKey)
         
         if isGoodEnough(draft) {
-            return graph.NewCommand().
+            return command.New().
                 Set(DoneKey, true).
                 To(graph.EndNode)
         } else {
-            return graph.NewCommand().
+            return command.New().
                 Set(FeedbackKey, "improve clarity").
                 Set(DoneKey, false).
                 To("writer")

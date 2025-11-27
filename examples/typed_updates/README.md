@@ -1,59 +1,69 @@
 # Type-Safe State Updates
 
-This example demonstrates type-safe state management using typed keys with Go generics, which provides compile-time guarantees for state updates.
+This example demonstrates **type-safe state builders** using `UpdateBuilder` and generic helper functions with Go generics for compile-time guarantees.
 
 ## Features
 
-### Compile-Time Type Safety
+### Two Builder APIs
+
+AgentMesh provides **two complementary builder APIs**:
+
+1. **`state.UpdateBuilder`** - For standalone state construction
+2. **`command.Command`** - For node functions with routing
+
+Both eliminate manual map construction and provide compile-time type safety.
+
+### 1. state.UpdateBuilder - Basic Updates
 
 ```go
 counterKey := state.NewKey[int]("counter", 0)
 
-// ✓ Type-safe: int matches Key[int]
-updates := state.Updates{}
-updates[counterKey.Name()] = 42
+// Build updates with fluent API
+updates := state.NewUpdateBuilder().
+    Set(counterKey, 42).
+    Build()  // Returns state.Updates
 
 // ✗ Compile error: string doesn't match Key[int]
-// updates[counterKey.Name()] = "wrong"  // IDE will show type error
+// .Set(counterKey, "wrong")  // IDE shows type error immediately
 ```
 
-### Typo Prevention
+### 2. Type-Safe List Operations
 
-Instead of string keys that can be mistyped:
-
-```go
-// Old way - runtime errors from typos
-return state.Updates{
-    "mesages": value, // Typo! Won't be caught until runtime
-}, nil
-```
-
-Use typed keys:
+For `ListKey[T]`, use generic helper functions that automatically wrap values in `SliceOf[T]`:
 
 ```go
-// New way - compile-time checking
 messagesKey := state.NewListKey[string]("messages", 100)
-updates := state.Updates{}
-updates[messagesKey.Name()] = []string{"value"} // ✓ No typos possible
+
+// Append single value
+updates := state.AppendUpdate(messagesKey, "New message").Build()
+
+// Append multiple values  
+updates := state.AppendManyUpdates(messagesKey, []string{"msg1", "msg2"}).Build()
+
+// ✗ Compile error: int doesn't match ListKey[string]
+// state.AppendUpdate(messagesKey, 123)  // Type mismatch caught at compile time
 ```
 
-### Type-Safe Operations
+### 3. command.Command - Node Functions with Routing
+
+Use `command.Command` for returning `([]string, state.Updates, error)` from node functions:
 
 ```go
-counterKey := state.NewKey[int]("counter", 0)
-messagesKey := state.NewListKey[string]("messages", 100)
+import "github.com/hupe1980/agentmesh/pkg/command"
 
 func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Read with type safety
     counter := state.GetFromView(view, counterKey)  // Returns int
-    messages := state.GetFromView(view, messagesKey) // Returns []string
     
-    // Update with type safety
-    updates := state.Updates{}
-    updates[counterKey.Name()] = counter + 1      // Must be int
-    updates[messagesKey.Name()] = []string{"new"} // Must be []string
-    
-    return []string{"next"}, updates, nil
+    // Update with Command builder
+    return command.New().
+        Set(counterKey, counter + 1).
+        To("next_node")  // Returns full tuple
+}
+
+// For list operations in nodes
+func appendNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    return command.Append(messagesKey, "New message").To("next")
 }
 ```
 
@@ -81,7 +91,7 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
 - ❌ Hard to refactor (find all usages)
 - ❌ Runtime casts required
 
-### With Typed Keys (Current API)
+### With Type-Safe Builders (New API)
 
 ```go
 var (
@@ -94,10 +104,20 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     // Type-safe reads - no casts needed
     counter := state.GetFromView(view, counterKey) // Returns int
     
-    // Type-safe updates
-    updates := state.Updates{}
-    updates[counterKey.Name()] = 42                  // ✓ Type-checked
-    updates[messagesKey.Name()] = []string{"hello"}  // ✓ Type-checked
+    // Type-safe updates with UpdateBuilder
+    return []string{"next"}, state.NewUpdateBuilder().
+        Set(counterKey, 42).                  // ✓ Type-checked at compile time
+        Build(), nil
+    
+    // Or use Command for cleaner syntax
+    return command.New().
+        Set(counterKey, 42).
+        To("next")  // Returns ([]string, state.Updates, error)
+}
+
+func appendNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    // Type-safe list operations with helpers
+    return graph.Append(messagesKey, "hello").To("next")  // ✓ Type-checked
     updates[itemsKey.Name()] = []int{1, 2, 3}        // ✓ Type-checked
     
     return []string{"next"}, updates, nil

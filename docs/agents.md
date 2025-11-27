@@ -333,7 +333,7 @@ g.AddNode(&graph.BaseNode{
         // Classify the query...
         category := "support"  // or "sales"
         
-        cmd := graph.NewCommand().Set(categoryKey, category)
+        cmd := command.New().Set(categoryKey, category)
         
         if category == "support" {
             return cmd.To("handle_support")
@@ -404,7 +404,7 @@ g.AddNode(&graph.BaseNode{
         default:
             nextNode = "default_handler"
         }
-        return graph.NewCommand().To(nextNode)
+        return command.New().To(nextNode)
     },
 })
 ```
@@ -417,7 +417,7 @@ g.AddNode(&graph.BaseNode{
     DeclaredTargets: []string{"analyst_a", "analyst_b", "analyst_c"},
     Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Use Command pattern for parallel execution
-        return graph.NewCommand().To("analyst_a", "analyst_b", "analyst_c")
+        return command.New().To("analyst_a", "analyst_b", "analyst_c")
     },
 })
 ```
@@ -435,7 +435,7 @@ g.AddNode(&graph.BaseNode{
     DeclaredTargets: []string{"fetch_data_a", "fetch_data_b", "fetch_data_c"},
     Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
         // Use Command pattern for parallel execution
-        return graph.NewCommand().To("fetch_data_a", "fetch_data_b", "fetch_data_c")
+        return command.New().To("fetch_data_a", "fetch_data_b", "fetch_data_c")
     },
 })
 

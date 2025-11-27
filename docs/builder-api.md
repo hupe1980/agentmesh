@@ -29,7 +29,7 @@ if err != nil {
 
 // Build a workflow using tuple return API
 builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(doneKey, true).
         To(graph.EndNode)
 })
@@ -66,23 +66,23 @@ routeKey := state.NewKey("route", "")
 builder.AddNodeFunc("router", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     route := state.GetFromView(view, routeKey)
     if route == "left" {
-        return graph.NewCommand().
+        return command.New().
             Set(routeKey, "left").
             To("left")
     }
-    return graph.NewCommand().
+    return command.New().
         Set(routeKey, "right").
         To("right")
 })
 
 builder.AddNodeFunc("left", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(resultKey, "left").
         To(graph.EndNode)
 })
 
 builder.AddNodeFunc("right", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(resultKey, "right").
         To(graph.EndNode)
 })
@@ -132,7 +132,7 @@ Adds a function-based node to the graph using tuple return API.
 
 ```go
 builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return graph.NewCommand().
+    return command.New().
         Set(doneKey, true).
         To(graph.EndNode)
 })
@@ -148,7 +148,7 @@ builder.AddNodeFuncWithRetry("api_call",
         if err != nil {
             return nil, nil, err // Will be retried
         }
-        return graph.NewCommand().
+        return command.New().
             Set(resultKey, result).
             To(graph.EndNode)
     },
@@ -165,7 +165,7 @@ Sets the entry point of the graph (the first node to execute).
 g.SetEntryPoint("start_node")
 ```
 
-**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `graph.NewCommand().Set(key, value).To(target)` for clean, type-safe state updates and routing.
+**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `command.New().Set(key, value).To(target)` for clean, type-safe state updates and routing.
 
 #### `Compile(opts ...CompileOption) (*Compiled[I, O], error)`
 Compiles the graph into an executable workflow.

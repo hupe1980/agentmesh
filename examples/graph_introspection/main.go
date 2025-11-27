@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -38,7 +39,7 @@ func main() {
 	// Add nodes
 	builder.AddNodeFunc("input_validator", []string{"router"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(validKey, true).
 			Set(priorityKey, "high").
 			Build()
@@ -56,7 +57,7 @@ func main() {
 
 	builder.AddNodeFunc("high_priority_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(processedKey, true).
 			Build()
 		return []string{"aggregator"}, updates, err
@@ -64,7 +65,7 @@ func main() {
 
 	builder.AddNodeFunc("normal_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(processedKey, true).
 			Build()
 		return []string{"aggregator"}, updates, err
@@ -72,7 +73,7 @@ func main() {
 
 	builder.AddNodeFunc("aggregator", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		updates, err := graph.NewCommand().
+		updates, err := command.New().
 			Set(completeKey, true).
 			Build()
 		return []string{graph.EndNode}, updates, err

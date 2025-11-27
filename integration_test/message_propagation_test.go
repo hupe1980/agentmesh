@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 		DeclaredTargets: []string{"node_b"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			// Send data to node_b
-			return graph.NewCommand().
+			return command.New().
 				Set(fromAKey, "hello from A").
 				Set(counterKey, 1).
 				To("node_b")
@@ -55,7 +56,7 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			require.Equal(t, "hello from A", fromA)
 			require.Equal(t, 1, counter)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(fromBKey, "hello from B").
 				Set(statusKey, "received").
 				To(graph.EndNode)
@@ -107,7 +108,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 		NodeName:        "parallel_entry",
 		DeclaredTargets: []string{"aggregator"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
-			return graph.NewCommand().
+			return command.New().
 				Set(fromParallelAKey, "data_a").
 				Set(fromParallelBKey, "data_b").
 				To("aggregator")
@@ -129,7 +130,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 			require.Equal(t, "data_a", dataA)
 			require.Equal(t, "data_b", dataB)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(aggregatedKey, true).
 				To(graph.EndNode)
 		},
@@ -179,7 +180,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 		NodeName:        "node_1",
 		DeclaredTargets: []string{"node_2"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
-			return graph.NewCommand().
+			return command.New().
 				Set(stepKey, 1).
 				Set(dataKey, "from_node_1").
 				To("node_2")
@@ -197,7 +198,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, 1, step, "Should receive step from node_1")
 			require.Equal(t, "from_node_1", data)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(stepKey, 2).
 				Set(dataKey, "from_node_2").
 				To("node_3")
@@ -215,7 +216,7 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, 2, step, "Should receive step from node_2")
 			require.Equal(t, "from_node_2", data)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(stepKey, 3).
 				Set(finalKey, true).
 				To(graph.EndNode)

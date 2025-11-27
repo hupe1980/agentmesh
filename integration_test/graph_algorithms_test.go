@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +53,7 @@ func TestPageRank(t *testing.T) {
 
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromC
 
-			return graph.NewCommand().
+			return command.New().
 				Set(rankA, newRank).
 				To("B")
 		},
@@ -70,7 +71,7 @@ func TestPageRank(t *testing.T) {
 
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromA
 
-			return graph.NewCommand().
+			return command.New().
 				Set(rankB, newRank).
 				To("C")
 		},
@@ -88,7 +89,7 @@ func TestPageRank(t *testing.T) {
 
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromB
 
-			return graph.NewCommand().
+			return command.New().
 				Set(rankC, newRank).
 				To(graph.EndNode)
 		},
@@ -167,7 +168,7 @@ func TestShortestPath(t *testing.T) {
 				return []string{graph.EndNode}, nil, nil
 			}
 
-			cmd := graph.NewCommand()
+			cmd := command.New()
 			// Relax B: edge weight 1
 			newDistB := myDist + 1
 			if newDistB < state.GetFromView(view, distB) {
@@ -195,7 +196,7 @@ func TestShortestPath(t *testing.T) {
 				return []string{graph.EndNode}, nil, nil
 			}
 
-			cmd := graph.NewCommand()
+			cmd := command.New()
 			// Relax C: edge weight 1
 			newDistC := myDist + 1
 			if newDistC < state.GetFromView(view, distC) {
@@ -268,7 +269,7 @@ func TestGraphConvergence(t *testing.T) {
 				return []string{graph.EndNode}, nil, nil
 			}
 
-			return graph.NewCommand().
+			return command.New().
 				Set(counterKey, count+1).
 				To(graph.EndNode)
 		},
@@ -318,7 +319,7 @@ func TestIterativeComputation(t *testing.T) {
 			value := state.GetFromView(view, valueKey)
 			iteration := state.GetFromView(view, iterationKey)
 
-			return graph.NewCommand().
+			return command.New().
 				Set(valueKey, value/2.0).
 				Set(iterationKey, iteration+1).
 				To(graph.EndNode)

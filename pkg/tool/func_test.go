@@ -79,43 +79,63 @@ func TestFuncTool_Definition(t *testing.T) {
 	assert.Contains(t, properties, "unit")
 }
 
-func TestFuncTool_Call_Success(t *testing.T) {
+func TestFuncTool_Call(t *testing.T) {
+	// Setup common tool
 	tool, err := NewFuncTool("weather", "Get weather", weatherFunc)
 	require.NoError(t, err)
 
-	result, err := tool.Call(context.Background(), `{"location":"Berlin","unit":"C"}`)
+	tests := []struct {
+		name        string
+		args        string
+		wantErr     bool
+		errContains string
+		checkResult func(t *testing.T, result any)
+	}{
+		{
+			name:    "success",
+			args:    `{"location":"Berlin","unit":"C"}`,
+			wantErr: false,
+			checkResult: func(t *testing.T, result any) {
+				require.NotNil(t, result)
+				resultMap, ok := result.(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "Berlin", resultMap["location"])
+				assert.Equal(t, 21, resultMap["temperature"])
+				assert.Equal(t, "C", resultMap["unit"])
+			},
+		},
+		{
+			name:        "invalid_json",
+			args:        `{invalid json}`,
+			wantErr:     true,
+			errContains: "invalid",
+		},
+		{
+			name:        "function_error_missing_required",
+			args:        `{"unit":"C"}`,
+			wantErr:     true,
+			errContains: "location",
+		},
+	}
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tool.Call(context.Background(), tt.args)
 
-	resultMap, ok := result.(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "Berlin", resultMap["location"])
-	assert.Equal(t, 21, resultMap["temperature"])
-	assert.Equal(t, "C", resultMap["unit"])
-}
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
 
-func TestFuncTool_Call_InvalidJSON(t *testing.T) {
-	tool, err := NewFuncTool("weather", "Get weather", weatherFunc)
-	require.NoError(t, err)
-
-	_, err = tool.Call(context.Background(), `{invalid json}`)
-
-	require.Error(t, err)
-	// Tool validates JSON structure, error contains validation message
-	assert.Contains(t, err.Error(), "invalid")
-}
-
-func TestFuncTool_Call_FunctionError(t *testing.T) {
-	tool, err := NewFuncTool("weather", "Get weather", weatherFunc)
-	require.NoError(t, err)
-
-	// Missing required location field - tool validates schema before calling function
-	_, err = tool.Call(context.Background(), `{"unit":"C"}`)
-
-	require.Error(t, err)
-	// Error should mention missing required field
-	assert.Contains(t, err.Error(), "location")
+			require.NoError(t, err)
+			if tt.checkResult != nil {
+				tt.checkResult(t, result)
+			}
+		})
+	}
 }
 
 func TestFuncTool_Call_EmptyArgs(t *testing.T) {

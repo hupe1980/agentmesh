@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
@@ -321,7 +322,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 			}
 
 			// Store large data
-			return graph.NewCommand().
+			return command.New().
 				Set(largeDataKey, data).
 				To("consumer")
 		},
@@ -387,7 +388,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 					return nil, nil, fmt.Errorf("network partition: partition 1 unreachable")
 				}
 
-				return graph.NewCommand().
+				return command.New().
 					Set(p1DataKey, "partition1").
 					To("partition_2_node")
 			},
@@ -408,7 +409,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 					return nil, nil, fmt.Errorf("partition isolation: cannot access partition 1 data")
 				}
 
-				return graph.NewCommand().
+				return command.New().
 					Set(resultKey, "partitions_connected").
 					To(graph.EndNode)
 			},

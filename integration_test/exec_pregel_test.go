@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -35,7 +36,7 @@ func TestPregelExecutor(t *testing.T) {
 		DeclaredTargets: []string{"task1", "task2"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates, _ := graph.NewCommand().Set(state.NewKey("started", false), true).Build()
+			updates, _ := command.New().Set(state.NewKey("started", false), true).Build()
 			return []string{"task1", "task2"}, updates, nil
 		},
 	})
@@ -46,7 +47,7 @@ func TestPregelExecutor(t *testing.T) {
 		DeclaredTargets: []string{"end"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			counter.Add(1)
-			updates, _ := graph.NewCommand().Set(state.NewKey("task1", ""), "done").Build()
+			updates, _ := command.New().Set(state.NewKey("task1", ""), "done").Build()
 			return []string{"end"}, updates, nil
 		},
 	})

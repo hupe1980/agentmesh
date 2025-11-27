@@ -21,7 +21,7 @@ func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string)
 	// Get the allocate function
 	allocateFunc := mod.ExportedFunction("allocate")
 	if allocateFunc == nil {
-		return 0, 0, fmt.Errorf("WASM module does not export 'allocate' function")
+		return 0, 0, fmt.Errorf("wasm module does not export 'allocate' function")
 	}
 
 	// Call allocate(size) -> ptr

@@ -1,14 +1,15 @@
-// Package main demonstrates type-safe state updates using UpdateBuilder.
+// Package main demonstrates type-safe state updates using UpdateBuilder and Append helpers.
 // This example shows:
-//   - Using UpdateBuilder for compile-time type safety
+//   - Using UpdateBuilder.Set() for compile-time type safety
+//   - Using AppendUpdate[T] and AppendManyUpdates[T] for type-safe list operations
 //   - Preventing typos in key names at build time
 //   - Type-checked values that match registered key types
-//   - Chaining multiple updates with validation
+//   - Chaining multiple updates with fluent API
 //
 // Key improvements over raw Updates maps:
-//   - SetUpdate[T] ensures value type matches Key[T]
+//   - Set() provides key name safety through Key[T].Name()
 //   - AppendUpdate[T] ensures append values match ListKey[T]
-//   - Build() validates no duplicate keys
+//   - AppendManyUpdates[T] wraps values in SliceOf[T] automatically
 //   - Compile errors for type mismatches (not runtime errors)
 //
 // Run: go run main.go
@@ -19,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
@@ -44,22 +46,28 @@ func main() {
 		panic(err)
 	}
 
-	// Node 1: Type-safe updates using direct map
+	// Node 1: Type-safe updates using UpdateBuilder
 	gph.AddNode(&graph.BaseNode{
 		NodeName:        "init",
 		DeclaredTargets: []string{"process"},
 		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("→ Node: init")
 
-			// Build type-safe updates
-			updates := graphstate.Updates{}
-			updates[counterKey.Name()] = 1                           // ✓ Type-safe: int matches Key[int]
-			updates[statusKey.Name()] = "initialized"                // ✓ Type-safe: string matches Key[string]
-			updates[messagesKey.Name()] = []string{"System started"} // ✓ Type-safe: []string matches ListKey[string]
+			// Build type-safe updates with fluent API
+			// Use SetAll to merge regular keys with list operations
+			updates := graphstate.NewUpdateBuilder().
+				Set(counterKey, 1).
+				Set(statusKey, "initialized").
+				Build()
+
+			// Append list values using helper, then merge
+			for k, v := range graphstate.AppendUpdate(messagesKey, "System started").Build() {
+				updates[k] = v
+			}
 
 			// Compile-time type safety examples:
-			// updates[counterKey.Name()] = "wrong" // ✗ Type mismatch: string doesn't match int
-			// updates[messagesKey.Name()] = 123    // ✗ Type mismatch: int doesn't match []string
+			// .Set(counterKey, "wrong") // ✗ Compiler error: string doesn't match Key[int]
+			// AppendUpdate(messagesKey, 123) // ✗ Compiler error: int doesn't match ListKey[string]
 
 			fmt.Printf("  ✓ Type-safe updates: counter=%d, status=%s, messages appended\n",
 				1, "initialized")
@@ -78,33 +86,47 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			fmt.Printf("  Current counter: %d\n", currentCounter)
 
-			// Build updates directly
-			updates := graphstate.Updates{}
-			updates[counterKey.Name()] = currentCounter + 10
-			updates[statusKey.Name()] = "processing"
-			updates[messagesKey.Name()] = []string{"Data processed", "Validation complete"}
+			// Build updates and merge with list operations
+			updates := graphstate.NewUpdateBuilder().
+				Set(counterKey, currentCounter+10).
+				Set(statusKey, "processing").
+				Build()
+
+			// Use AppendManyUpdates for batch list operations
+			for k, v := range graphstate.AppendManyUpdates(messagesKey, []string{"Data processed", "Validation complete"}).Build() {
+				updates[k] = v
+			}
 
 			fmt.Printf("  ✓ Updated counter to %d\n", currentCounter+10)
 			return []string{"finalize"}, updates, nil
 		},
 	})
 
-	// Node 3: Final updates
+	// Node 3: Final updates using command.Command
 	gph.AddNode(&graph.BaseNode{
 		NodeName:        "finalize",
 		DeclaredTargets: []string{graph.EndNode},
 		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("→ Node: finalize")
 
-			updates := graphstate.Updates{}
-			updates[statusKey.Name()] = "finalizing"
-			updates[messagesKey.Name()] = []string{"Process complete"}
+			// Three equivalent approaches - all type-safe and fluent:
 
-			// Note: Direct map updates don't have duplicate key detection
-			// Last write wins: updates[statusKey.Name()] = "duplicate" would just overwrite
+			// Approach 1: With() for method-like syntax
+			return command.New().
+				Set(statusKey, "finalizing").
+				With(func(c *command.Command) *command.Command {
+					return command.Append(messagesKey, "Process complete", c)
+				}).
+				To(graph.EndNode)
 
-			fmt.Println("  ✓ Finalized successfully")
-			return []string{graph.EndNode}, updates, nil
+			// Approach 2: SetAll() for explicit merge (commented out)
+			// return command.New().
+			//     Set(statusKey, "finalizing").
+			//     SetAll(command.Append(messagesKey, "Process complete")).
+			//     To(graph.EndNode)
+
+			// Approach 3: Simple case without mixing (commented out)
+			// return command.Append(messagesKey, "Process complete").To(graph.EndNode)
 		},
 	})
 
@@ -147,9 +169,10 @@ func main() {
 	fmt.Printf("Messages: %v\n", finalMessages)
 
 	fmt.Println("\n=== Key Benefits ===")
-	fmt.Println("✓ Compile-time type safety (no runtime type assertions)")
-	fmt.Println("✓ IDE autocomplete for keys and values")
-	fmt.Println("✓ Typo prevention (key names from Key[T] structs)")
-	fmt.Println("✓ Duplicate key detection at build time")
-	fmt.Println("✓ Clear error messages when types mismatch")
+	fmt.Println("✓ Type-safe builders prevent wrong value types at compile time")
+	fmt.Println("✓ AppendUpdate[T] and AppendManyUpdates[T] enforce ListKey[T] type matching")
+	fmt.Println("✓ Fluent API with method chaining for readability")
+	fmt.Println("✓ No manual .Name() calls - handled by builder")
+	fmt.Println("✓ Automatic SliceOf[T] wrapping for list operations")
+	fmt.Println("✓ command.Command and state.UpdateBuilder for different use cases")
 }
