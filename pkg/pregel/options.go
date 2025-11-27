@@ -60,8 +60,8 @@ type RuntimeOptions[S any, M any] struct {
 	MessageBus MessageBus[M]
 
 	// OnSuperstepStart is called before each superstep begins.
-	// The callback receives the execution context and superstep number. Useful for BSP snapshots.
-	OnSuperstepStart func(ctx context.Context, superstep int64) error
+	// The callback receives the execution context, superstep number, and frontier info. Useful for BSP snapshots.
+	OnSuperstepStart func(ctx context.Context, superstep int64, frontier FrontierInfo) error
 
 	// OnSuperstepComplete is called after each superstep completes successfully.
 	// The callback receives the execution context and superstep number. Useful for checkpointing.
@@ -152,7 +152,7 @@ func WithMaxMailboxSize[S any, M any](size int) RuntimeOption[S, M] {
 
 // WithOnSuperstepStart sets a callback that is invoked before each superstep
 // begins. Useful for creating BSP-compliant state snapshots.
-func WithOnSuperstepStart[S any, M any](callback func(ctx context.Context, superstep int64) error) RuntimeOption[S, M] {
+func WithOnSuperstepStart[S any, M any](callback func(ctx context.Context, superstep int64, frontier FrontierInfo) error) RuntimeOption[S, M] {
 	return func(o *RuntimeOptions[S, M]) {
 		o.OnSuperstepStart = callback
 	}

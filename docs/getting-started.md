@@ -134,7 +134,7 @@ The repository includes **18 comprehensive examples** demonstrating key features
 - **`examples/human_pause`** – Human-in-the-loop workflows
 - **`examples/time_travel`** – Debug workflows by replaying from checkpoints
 - **`examples/checkpointing`** – Automatic state persistence and recovery
-- **`examples/callback_integration`** – Callback system demonstration
+- **`examples/middleware`** – Middleware system demonstration
 - **`examples/circuit_breaker`** – Fault tolerance patterns
 - **`examples/guardrails`** – Content filtering and PII protection
 - **`examples/observability`** – OpenTelemetry metrics and distributed tracing

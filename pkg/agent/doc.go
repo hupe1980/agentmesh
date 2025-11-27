@@ -14,39 +14,34 @@ The agent package simplifies the creation of autonomous agents that can:
 
 Create an agent with a model and tools:
 
-		import (
-			"context"
-			"github.com/hupe1980/agentmesh/pkg/agent"
-			"github.com/hupe1980/agentmesh/pkg/model/openai"
-			"github.com/hupe1980/agentmesh/pkg/tool"
-		)
+	import (
+		"context"
+		"github.com/hupe1980/agentmesh/pkg/agent"
+		"github.com/hupe1980/agentmesh/pkg/model/openai"
+		"github.com/hupe1980/agentmesh/pkg/tool"
+	)
 
-		// Define a tool
-		weatherTool, _ := tool.NewFuncTool(
-			"get_weather",
-			"Get current weather for a location",
-			func(ctx context.Context, location string) (string, error) {
-				// Implementation...
-		return "Sunny, 72°F", nil
-	},
+	// Define a tool
+	weatherTool, _ := tool.NewFuncTool(
+		"get_weather",
+		"Get current weather for a location",
+		func(ctx context.Context, location string) (string, error) {
+			// Implementation...
+			return "Sunny, 72°F", nil
+		},
+	)
 
-)
+	// Create agent
+	compiled, err := agent.NewReActAgent(
+		openai.NewModel(),
+		agent.WithTools(weatherTool),
+	)
 
-// Create agent
-compiled, err := agent.NewReActAgent(
-
-	openai.NewModel(),
-	weatherTool,
-
-)
-
-// Run agent
-
+	// Run agent
 	messages := []message.Message{
-			message.NewSystemMessageFromText("You are a helpful assistant"),
-			message.NewHumanMessageFromText("What's the weather in Boston?"),
-		}
-		results, err := lastEvent, err := graph.Last(compiled.Run(context.Background(), messages)
+		message.NewHumanMessageFromText("What's the weather in Boston?"),
+	}
+	lastEvent, err := graph.Last(compiled.Run(context.Background(), messages))
 
 # Architecture
 
@@ -90,40 +85,40 @@ Tools can be functions, structs, or interfaces:
 		},
 	)
 
-	// Struct tool (implements tool.Interface)
+	// Struct tool (implements tool.Tool)
 	type SearchTool struct{}
 	func (s *SearchTool) Name() string { return "search" }
 	func (s *SearchTool) Description() string { return "Search the web" }
+	func (s *SearchTool) InputSchema() tool.InputSchema { return tool.InputSchema{} }
 	func (s *SearchTool) Run(ctx context.Context, input string) (any, error) {
 		// Implementation...
-		return results, nil
+		return "results", nil
 	}
 
 # Configuration
 
 Agents can be configured with options:
 
-compiled, err := agent.NewReActAgent(
-
-	model,
-	weatherTool,
-	agent.WithMaxIterations(10),
-
-)
+	compiled, err := agent.NewReActAgent(
+		model,
+		agent.WithTools(weatherTool),
+		agent.WithMaxIterations(10),
+	)
 
 # State Management
 
 Agents maintain conversation state automatically:
 
 	// First interaction
-	results1, _ := lastEvent, err := graph.Last(compiled.Run(ctx, []message.Message{
+	msgs1 := []message.Message{
 		message.NewHumanMessageFromText("What's 2+2?"),
-	})
+	}
+	result1, _ := graph.Last(compiled.Run(ctx, msgs1))
 
 	// Second interaction (includes history)
-	results2, _ := lastEvent, err := graph.Last(compiled.Run(ctx, []message.Message{
-		message.NewHumanMessageFromText("Add 3 to that"),
-	})
+	msgs2 := append(msgs1, result1.State[graph.MessagesKeyName].([]message.Message)...)
+	msgs2 = append(msgs2, message.NewHumanMessageFromText("Add 3 to that"))
+	result2, _ := graph.Last(compiled.Run(ctx, msgs2))
 
 # Error Handling
 
@@ -138,8 +133,8 @@ Combine multiple agents into larger workflows using graph:
 
 	builder := graph.NewBuilder()
 	builder.AddCommandNode("classifier", graph.NewTargetSet("researcher", "writer"), classifierAgent)
-	builder.AddStaticNode("researcher", graph.NewTargetSet("writer"), researchAgent)
-	builder.AddStaticNode("writer", graph.NewTargetSet(graph.EndNode), writerAgent)
+	builder.AddNode(graph.NewNode("researcher", []string{"writer"}, researchAgent))
+	builder.AddNode(graph.NewNode("writer", []string{graph.EndNode}, writerAgent))
 	// ...
 
 # Supervisor Pattern

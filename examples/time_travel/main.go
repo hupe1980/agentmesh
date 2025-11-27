@@ -49,27 +49,27 @@ func main() {
 		builder.SetEntryPoint("double")
 
 		// Step 1: Double the value
-		builder.AddStaticNode("double", []string{"add_ten"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+		builder.AddNodeFunc("double", []string{"add_ten"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
-			return graphstate.Updates{valueKey.Name(): newValue}, nil
+			return []string{"add_ten"}, graphstate.Updates{valueKey.Name(): newValue}, nil
 		})
 
 		// Step 2: Add 10
-		builder.AddStaticNode("add_ten", []string{"multiply_three"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+		builder.AddNodeFunc("add_ten", []string{"multiply_three"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
-			return graphstate.Updates{valueKey.Name(): newValue}, nil
+			return []string{"multiply_three"}, graphstate.Updates{valueKey.Name(): newValue}, nil
 		})
 
 		// Step 3: Multiply by 3
-		builder.AddStaticNode("multiply_three", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+		builder.AddNodeFunc("multiply_three", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)
-			return graphstate.Updates{valueKey.Name(): newValue}, nil
+			return []string{graph.EndNode}, graphstate.Updates{valueKey.Name(): newValue}, nil
 		})
 
 		compiled, err := builder.Compile()

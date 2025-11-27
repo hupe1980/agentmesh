@@ -2,6 +2,7 @@ package graph_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -37,8 +38,8 @@ func TestBuilder_BasicUsage(t *testing.T) {
 
 	// Add nodes using fluent API
 	builder.SetEntryPoint("process").
-		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"processed": true}, nil
+		AddNodeFunc("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, map[string]any{"processed": true}, nil
 		})
 
 	// Compile the graph
@@ -82,11 +83,11 @@ func TestBuilder_WithOptions(t *testing.T) {
 	}
 
 	builder.SetEntryPoint("node1").
-		AddStaticNode("node1", []string{"node2"}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"step": 1}, nil
+		AddNodeFunc("node1", []string{"node2"}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"node2"}, map[string]any{"step": 1}, nil
 		}).
-		AddStaticNode("node2", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"step": 2}, nil
+		AddNodeFunc("node2", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, map[string]any{"step": 2}, nil
 		})
 
 	compiled, err := builder.Compile()
@@ -138,11 +139,11 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 			route := "left"
 			return []string{route}, updates, nil
 		}).
-		AddStaticNode("left", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"result": "left"}, nil
+		AddNodeFunc("left", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, map[string]any{"result": "left"}, nil
 		}).
-		AddStaticNode("right", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"result": "right"}, nil
+		AddNodeFunc("right", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, map[string]any{"result": "right"}, nil
 		})
 
 	compiled, err := builder.Compile()
@@ -185,8 +186,8 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	}
 
 	builder.SetEntryPoint("process").
-		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"done": true}, nil
+		AddNodeFunc("process", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, map[string]any{"done": true}, nil
 		})
 
 	// Compile using the builder
@@ -238,13 +239,7 @@ func TestInterruptConfiguration(t *testing.T) {
 	if len(g.InterruptBefore) == 0 {
 		t.Error("Expected InterruptBefore to contain 'test'")
 	}
-	found := false
-	for _, name := range g.InterruptBefore {
-		if name == "test" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(g.InterruptBefore, "test")
 	if !found {
 		t.Error("Expected InterruptBefore to contain 'test'")
 	}
@@ -290,16 +285,16 @@ func TestBuilder_MultipleEntryPoints(t *testing.T) {
 	// Add parallel task nodes using variadic SetEntryPoint
 	builder.
 		SetEntryPoint("task_a", "task_b").
-		AddStaticNode("task_a", []string{"merge"}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"task_a": "result_a"}, nil
+		AddNodeFunc("task_a", []string{"merge"}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"merge"}, map[string]any{"task_a": "result_a"}, nil
 		}).
-		AddStaticNode("task_b", []string{"merge"}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
-			return map[string]any{"task_b": "result_b"}, nil
+		AddNodeFunc("task_b", []string{"merge"}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"merge"}, map[string]any{"task_b": "result_b"}, nil
 		}).
-		AddStaticNode("merge", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) (state.Updates, error) {
+		AddNodeFunc("merge", []string{graph.EndNode}, func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			resultA := state.GetFromView(s, taskAKey)
 			resultB := state.GetFromView(s, taskBKey)
-			return map[string]any{"merged": resultA + "_" + resultB}, nil
+			return []string{graph.EndNode}, map[string]any{"merged": resultA + "_" + resultB}, nil
 		})
 
 	// Verify EntryPoints are set correctly
@@ -392,5 +387,194 @@ func TestGraph_SetEntryPointMultipleCalls(t *testing.T) {
 	err = g.SetEntryPoint("task_a")
 	if err == nil {
 		t.Error("Expected error when adding duplicate entry point")
+	}
+}
+
+func TestBuilder_WithManager(t *testing.T) {
+	// Create custom state manager
+	customManager := state.NewManager()
+
+	// Create builder with custom manager
+	builder, err := graph.NewBuilder(
+		graph.NewMessagePregelExecutor(),
+		graph.WithManager[[]message.Message, message.Message](customManager),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create builder with manager: %v", err)
+	}
+
+	// Verify the manager is the one we provided
+	if builder.Manager() != customManager {
+		t.Error("Expected builder to use custom manager")
+	}
+}
+
+func TestBuilder_WithInterruptBefore(t *testing.T) {
+	builder, err := graph.NewBuilder(
+		graph.NewMessagePregelExecutor(),
+		graph.WithInterruptBefore[[]message.Message, message.Message]("node1", "node2"),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create builder with interrupt before: %v", err)
+	}
+
+	g := builder.Graph()
+	if len(g.InterruptBefore) != 2 {
+		t.Errorf("Expected 2 interrupt before nodes, got %d", len(g.InterruptBefore))
+	}
+	if !slices.Contains(g.InterruptBefore, "node1") {
+		t.Error("Expected node1 in InterruptBefore")
+	}
+	if !slices.Contains(g.InterruptBefore, "node2") {
+		t.Error("Expected node2 in InterruptBefore")
+	}
+}
+
+func TestBuilder_WithInterruptAfter(t *testing.T) {
+	builder, err := graph.NewBuilder(
+		graph.NewMessagePregelExecutor(),
+		graph.WithInterruptAfter[[]message.Message, message.Message]("node1", "node2"),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create builder with interrupt after: %v", err)
+	}
+
+	g := builder.Graph()
+	if len(g.InterruptAfter) != 2 {
+		t.Errorf("Expected 2 interrupt after nodes, got %d", len(g.InterruptAfter))
+	}
+	if !slices.Contains(g.InterruptAfter, "node1") {
+		t.Error("Expected node1 in InterruptAfter")
+	}
+	if !slices.Contains(g.InterruptAfter, "node2") {
+		t.Error("Expected node2 in InterruptAfter")
+	}
+}
+
+func TestBuilder_AddNode_CustomNode(t *testing.T) {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register messages key
+	registerMessagesKey(t, builder.Manager())
+
+	// Create custom node
+	customNode := &graph.BaseNode{
+		NodeName:        "custom",
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, state.Updates{"custom": true}, nil
+		},
+	}
+
+	// Add custom node
+	builder.SetEntryPoint("custom").AddNode(customNode)
+
+	// Compile and verify
+	compiled, err := builder.Compile()
+	if err != nil {
+		t.Fatalf("Failed to compile: %v", err)
+	}
+
+	// Verify node was added
+	nodes := compiled.GetNodes()
+	if len(nodes) != 1 {
+		t.Errorf("Expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0] != "custom" {
+		t.Errorf("Expected node name 'custom', got %s", nodes[0])
+	}
+}
+
+func TestBuilder_ErrorAccumulation(t *testing.T) {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register messages key
+	registerMessagesKey(t, builder.Manager())
+
+	// Try to set a non-existent node as entry point
+	builder.SetEntryPoint("nonexistent")
+
+	// Compile should fail with accumulated error
+	_, err = builder.Compile()
+	if err == nil {
+		t.Error("Expected error from compilation due to invalid entry point")
+	}
+}
+
+func TestBuilder_Graph(t *testing.T) {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	g := builder.Graph()
+	if g == nil {
+		t.Error("Expected non-nil graph")
+	}
+}
+
+func TestBuilder_Manager(t *testing.T) {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	mgr := builder.Manager()
+	if mgr == nil {
+		t.Error("Expected non-nil manager")
+	}
+}
+
+func TestBuilder_ChainedMethods(t *testing.T) {
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register messages key
+	registerMessagesKey(t, builder.Manager())
+
+	// Chain multiple methods
+	result := builder.
+		SetEntryPoint("start").
+		AddNodeFunc("start", []string{"middle"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{"middle"}, state.Updates{"step": 1}, nil
+		}).
+		AddNodeFunc("middle", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+			return []string{graph.EndNode}, state.Updates{"step": 2}, nil
+		})
+
+	// Verify chaining returns the same builder
+	if result != builder {
+		t.Error("Expected chained methods to return the same builder")
+	}
+
+	// Verify compilation works
+	_, err = builder.Compile()
+	if err != nil {
+		t.Errorf("Compilation failed: %v", err)
+	}
+}
+
+func TestBuilder_CompileWithoutNodes(t *testing.T) {
+	// Create empty builder
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+
+	// Register messages key
+	registerMessagesKey(t, builder.Manager())
+
+	// Try to compile without setting entry point or adding nodes
+	_, err = builder.Compile()
+	if err == nil {
+		t.Error("Expected error when compiling without entry points")
 	}
 }

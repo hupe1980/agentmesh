@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"runtime"
@@ -329,6 +330,7 @@ func (p *PregelExecutor[I, O]) initializeRun(
 	var inputValue any = input
 	if inputValue != nil {
 		initialState := p.inputToState(input)
+
 		if len(initialState) > 0 {
 			if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
 				return "", fmt.Errorf("failed to apply initial state: %w", err)
@@ -404,17 +406,36 @@ func (p *PregelExecutor[I, O]) buildRuntimeOptions(
 	// BSP barrier callbacks
 	runtimeOpts = append(runtimeOpts,
 		pregel.WithOnSuperstepStart[*Compiled[I, O], state.Updates](
-			func(ctx context.Context, superstep int64) error {
+			func(ctx context.Context, superstep int64, frontier pregel.FrontierInfo) error {
+				// Publish superstep start event with frontier diagnostics
+				Publish(ctx, Event{
+					Type:      EventSuperstepStart,
+					Superstep: int(superstep),
+					Timestamp: time.Now(),
+					Data: map[string]any{
+						"frontier_size":  frontier.Size,
+						"frontier_nodes": frontier.Nodes,
+					},
+				})
 				return adapter.prepareSuperstep(ctx)
 			},
 		),
 		pregel.WithOnSuperstepComplete[*Compiled[I, O], state.Updates](
 			func(ctx context.Context, superstep int64) error {
+				// Handle checkpoint/updates first
 				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
 					p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter)
 				} else {
 					p.applyPendingUpdates(ctx, compiled, adapter)
 				}
+
+				// Publish superstep complete event
+				Publish(ctx, Event{
+					Type:      EventSuperstepComplete,
+					Superstep: int(superstep),
+					Timestamp: time.Now(),
+					Data:      map[string]any{},
+				})
 				return nil
 			},
 		),
@@ -438,39 +459,101 @@ func (p *PregelExecutor[I, O]) executeRuntimeLoop(
 	yieldDone chan struct{},
 ) {
 	var runtimeErr error
-	for _, err := range rt.Run(ctx) {
+
+	// Use defer to always publish completion event, regardless of how we exit
+	defer func() {
+		// Publish completion event based on final error state
+		if runtimeErr == nil {
+			finalSuperstep := rt.CurrentSuperstep()
+			Publish(ctx, Event{
+				Type:      EventGraphComplete,
+				Timestamp: time.Now(),
+				Data: map[string]any{
+					"run_id":    runOpts.RunID,
+					"superstep": finalSuperstep,
+				},
+			})
+		} else {
+			Publish(ctx, Event{
+				Type:      EventGraphError,
+				Timestamp: time.Now(),
+				Data: map[string]any{
+					"run_id": runOpts.RunID,
+					"error":  runtimeErr.Error(),
+				},
+			})
+		}
+
+		// Events are delivered synchronously, no sleep needed
+		close(resultChan)
+		<-yieldDone
+	}()
+
+	eventCount := 0
+	for pregelEvent, err := range rt.Run(ctx) {
+		eventCount++
 		if p.metrics != nil {
 			p.metrics.SetSuperstep(rt.CurrentSuperstep())
 		}
 
-		select {
-		case <-ctx.Done():
-			p.applyPendingUpdates(ctx, compiled, adapter)
-			close(resultChan)
-			<-yieldDone
-			return
-		default:
+		// Publish graph events for visualization
+		if pregelEvent.Vertex != "" {
+			// Check if this is a start event (marked by special output value)
+			if pregelEvent.Output == "__vertex_start__" {
+				// Publish node start event
+				Publish(ctx, Event{
+					Type:      EventNodeStart,
+					Node:      pregelEvent.Vertex,
+					Superstep: int(pregelEvent.Superstep),
+					Timestamp: time.Now(),
+					Data:      map[string]any{},
+				})
+			} else {
+				// Publish node complete event
+				Publish(ctx, Event{
+					Type:      EventNodeComplete,
+					Node:      pregelEvent.Vertex,
+					Superstep: int(pregelEvent.Superstep),
+					Timestamp: time.Now(),
+					Data: map[string]any{
+						"output": pregelEvent.Output,
+					},
+				})
+			}
 		}
+		// Events without vertex (errors, cancellations) are not published as node events
 
 		if err != nil {
-			runtimeErr = err
-			var zero O
-			safeYield(zero, err)
-			break
+			// Only treat as fatal error if it's not just context cancellation
+			// Context cancellation is expected during shutdown
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				runtimeErr = err
+				var zero O
+				safeYield(zero, err)
+				break
+			}
+			// Ignore context cancellation - let the loop exit naturally
+		}
+
+		// Check for cancellation between events
+		// Don't treat normal shutdown cancellation as an error
+		select {
+		case <-ctx.Done():
+			// Context cancelled - this is normal during shutdown
+			// Let the loop exit naturally and defer will handle cleanup
+			return
+		default:
 		}
 	}
 
 	// Handle final state
-	if runtimeErr == nil {
-		finalSuperstep := rt.CurrentSuperstep()
-		p.applyPendingUpdates(ctx, compiled, adapter)
-		if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-			p.saveFinalCheckpoint(ctx, compiled, runOpts, finalSuperstep)
-		}
+	finalSuperstep := rt.CurrentSuperstep()
+	p.applyPendingUpdates(ctx, compiled, adapter)
+	if runtimeErr == nil && runOpts.Checkpointer != nil && runOpts.RunID != "" {
+		p.saveFinalCheckpoint(ctx, compiled, runOpts, finalSuperstep)
 	}
 
-	close(resultChan)
-	<-yieldDone
+	// Completion event is published by defer at function exit
 }
 
 // Run executes the compiled graph using the pregel BSP runtime.
@@ -484,18 +567,22 @@ func (p *PregelExecutor[I, O]) Run(
 		runOpts := ApplyOptions(opts...)
 
 		// Create a cancellable context so we can stop the runtime when consumer exits
+		// Note: We don't defer cancel() here because executeRuntimeLoop needs the context
+		// to remain valid for publishing completion events. The cancel() is only called
+		// by setupYieldChannel when the consumer stops consuming (yield returns false).
 		runCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
 
 		// Initialize run context and state
 		runID, err := p.initializeRun(runCtx, compiled, input, runOpts)
 		if err != nil {
+			cancel() // Cancel on init error
 			var zero O
 			yield(zero, err)
 			return
 		}
 
 		// Setup result channel and safe yielding
+		// The cancel function will be called by the yield goroutine if consumer stops
 		resultChan, yieldDone, safeYield := p.setupYieldChannel(runCtx, yield, cancel)
 
 		// Create adapter to make compiled graph work with pregel runtime
@@ -521,8 +608,21 @@ func (p *PregelExecutor[I, O]) Run(
 			return
 		}
 
+		// Publish graph start event
+		Publish(runCtx, Event{
+			Type:      EventGraphStart,
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"run_id": runID,
+			},
+		})
+
 		// Execute runtime and handle completion
 		p.executeRuntimeLoop(runCtx, rt, compiled, runOpts, adapter, safeYield, resultChan, yieldDone)
+
+		// Cancel context after execution completes
+		// This is safe even if cancel() was already called by the yield goroutine
+		cancel()
 	}
 }
 
@@ -581,7 +681,8 @@ func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
 
 	// PRIORITY 3: First superstep - return nodes directly connected from START
 	if len(executedNodes) == 0 {
-		if outgoing := a.compiled.topology.outgoing[StartNode]; len(outgoing) > 0 {
+		outgoing := a.compiled.topology.outgoing[StartNode]
+		if len(outgoing) > 0 {
 			return outgoing
 		}
 		return []string{}
@@ -711,45 +812,12 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetry(
 	view state.ReadView,
 	policy *RetryPolicy,
 ) ([]string, state.Updates, error) {
-	pm, hasPluginManager := getNodeCallbacks(ctx)
-
-	// Try BeforeNode callback - may short-circuit execution with tuple
-	scTargets, scUpdates, err := n.executeBeforeNodeCallback(ctx, pm, hasPluginManager, view)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(scTargets) > 0 {
-		// Callback provided a result to short-circuit - use it directly
-		return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, scTargets, scUpdates, nil)
-	}
-
 	// Execute node with retry logic (now returns tuple)
-	targets, updates, lastErr := n.executeNodeWithPolicy(ctx, node, view, policy)
-
-	// Execute AfterNode or OnNodeError callback
-	return n.executeAfterNodeCallback(ctx, pm, hasPluginManager, targets, updates, lastErr)
+	return n.executeNodeWithPolicy(ctx, node, view, policy)
 }
 
 // executeBeforeNodeCallback executes BeforeNode plugin callback.
 // Returns short-circuit tuple (targets, updates, error) if callback provides one.
-func (n *pregelNodeAdapter[I, O]) executeBeforeNodeCallback(
-	ctx context.Context,
-	pm NodeCallbacks,
-	hasPluginManager bool,
-	view state.ReadView,
-) ([]string, state.Updates, error) {
-	if !hasPluginManager {
-		return nil, nil, nil
-	}
-
-	targets, updates, err := pm.ExecuteBeforeNode(ctx, n.nodeName, view)
-	if err != nil {
-		return nil, nil, fmt.Errorf("before node callback failed: %w", err)
-	}
-
-	return targets, updates, nil
-}
-
 // executeNodeWithPolicy executes the node with retry policy.
 // For NamespacedNodes, enforcement happens through namespaced keys -
 // the CommandFunc should only use keys from its declared namespace.
@@ -813,39 +881,6 @@ func (n *pregelNodeAdapter[I, O]) applyBackoff(ctx context.Context, policy *Retr
 }
 
 // executeAfterNodeCallback executes AfterNode or OnNodeError plugin callback.
-func (n *pregelNodeAdapter[I, O]) executeAfterNodeCallback(
-	ctx context.Context,
-	pm NodeCallbacks,
-	hasPluginManager bool,
-	targets []string,
-	updates state.Updates,
-	lastErr error,
-) ([]string, state.Updates, error) {
-	if !hasPluginManager {
-		return targets, updates, lastErr
-	}
-
-	if lastErr != nil {
-		if err := pm.ExecuteOnNodeError(ctx, n.nodeName, lastErr); err != nil {
-			return nil, nil, fmt.Errorf("on node error callback failed: %w", err)
-		}
-		return nil, nil, lastErr
-	}
-
-	// Success - execute AfterNode callback
-	afterView, err := n.compiled.manager.CreateReadView(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create after-node view: %w", err)
-	}
-
-	if updates != nil {
-		if err := pm.ExecuteAfterNode(ctx, n.nodeName, afterView, updates); err != nil {
-			return nil, nil, fmt.Errorf("after node callback failed: %w", err)
-		}
-	}
-
-	return targets, updates, nil
-}
 
 // shouldInterruptBefore checks if this node is in the interrupt-before list.
 func (n *pregelNodeAdapter[I, O]) shouldInterruptBefore() bool {
@@ -970,15 +1005,7 @@ func (n *pregelNodeAdapter[I, O]) notifyStateChangeCallbacks(
 	updates state.Updates,
 	logger logging.Logger,
 ) {
-	stateCallbacks, ok := getStateCallbacks(ctx)
-	if !ok {
-		return
-	}
-
-	if err := stateCallbacks.ExecuteOnStateChange(ctx, n.nodeName, updates); err != nil {
-		logger.Warn("state change callback failed", "node", n.nodeName, "error", err)
-		// Don't fail execution if callbacks fail
-	}
+	// No-op: state change notifications now handled by middleware pattern
 }
 
 // yieldOutputFromUpdates extracts output from updates and yields it.

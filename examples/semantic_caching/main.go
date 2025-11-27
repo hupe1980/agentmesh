@@ -10,7 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/embedding/openai"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
-	"github.com/hupe1980/agentmesh/pkg/plugin"
+	modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
 )
 
 // This example demonstrates semantic caching in action using OpenAI embeddings.
@@ -30,18 +30,19 @@ func main() {
 	}
 }
 
-// demoExactMatchCache shows the existing exact-match cache plugin
+// demoExactMatchCache shows the model middleware cache
 func demoExactMatchCache() {
-	fmt.Println("1. Exact-Match Cache (SHA256 hashing)")
-	fmt.Println("   - Fast instant lookups")
-	fmt.Println("   - Perfect for identical repeated queries")
+	fmt.Println("1. Model Middleware Cache (Request-based)")
+	fmt.Println("   - Fast instant lookups for identical requests")
+	fmt.Println("   - Perfect for repeated queries")
 	fmt.Println("   - No external dependencies")
 	fmt.Println()
 
-	// Create exact-match cache
-	exactCache := plugin.NewCachePlugin(1000)
-	fmt.Printf("   ✓ Created: CachePlugin(maxSize=1000)\n")
-	fmt.Printf("   ✓ Stats: %+v\n", exactCache.GetStats())
+	// Create model cache middleware
+	_ = modelmw.NewCacheMiddleware()
+	fmt.Printf("   ✓ Created: CacheMiddleware()\n")
+	fmt.Printf("   ✓ Use with: agent.WithModelMiddleware(modelmw.NewCacheMiddleware())\n")
+	fmt.Printf("   ✓ Caches model responses for identical requests\n")
 }
 
 // demoSemanticCache demonstrates semantic caching with real embeddings

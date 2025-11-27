@@ -36,12 +36,13 @@ func main() {
 	completeKey := graphstate.NewKey("complete", false)
 
 	// Add nodes
-	builder.AddStaticNode("input_validator", []string{"router"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("input_validator", []string{"router"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Validating input...")
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(validKey, true).
 			Set(priorityKey, "high").
 			Build()
+		return []string{"router"}, updates, err
 	})
 
 	builder.AddNodeFunc("router", []string{"high_priority_handler", "normal_handler"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
@@ -53,25 +54,28 @@ func main() {
 		return []string{"normal_handler"}, nil, nil
 	})
 
-	builder.AddStaticNode("high_priority_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("high_priority_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Handling high priority request...")
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(processedKey, true).
 			Build()
+		return []string{"aggregator"}, updates, err
 	})
 
-	builder.AddStaticNode("normal_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("normal_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Handling normal request...")
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(processedKey, true).
 			Build()
+		return []string{"aggregator"}, updates, err
 	})
 
-	builder.AddStaticNode("aggregator", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("aggregator", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		fmt.Println("✓ Aggregating results...")
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(completeKey, true).
 			Build()
+		return []string{graph.EndNode}, updates, err
 	})
 
 	builder.SetEntryPoint("input_validator")

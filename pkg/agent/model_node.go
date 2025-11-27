@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -149,12 +148,7 @@ func (n *ModelNode) Execute(ctx context.Context, view state.ReadView) ([]string,
 		OutputSchema: n.outputSchema,
 	}
 
-	// Inject plugin manager from context into executor context
-	if pm := callbacks.FromContext(ctx); pm != nil {
-		ctx = model.WithPlugin(ctx, pm)
-	}
-
-	// Execute via the executor - it handles plugins, observability, streaming, etc.
+	// Execute via the executor
 	resp, err := model.Last(n.executor.Generate(ctx, req))
 	if err != nil {
 		return nil, nil, err

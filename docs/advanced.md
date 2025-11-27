@@ -5,7 +5,7 @@ description: Advanced AgentMesh patterns including plugins, circuit breakers, ag
 permalink: /advanced/
 hero:
   title: Advanced Patterns
-  description: Leverage resilience plugins, state-based aggregators, and subgraph composition.
+  description: Leverage resilience middleware, state-based aggregators, and subgraph composition.
   primary_cta:
     label: Explore examples
     href: "https://github.com/hupe1980/agentmesh/tree/main/examples"
@@ -15,8 +15,8 @@ hero:
     href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
     external: true
 sidebar:
-  - title: Resilience Plugins
-    url: "#resilience-plugins"
+  - title: Resilience Middleware
+    url: "#resilience-middleware"
   - title: Circuit Breaker
     url: "#circuit-breaker"
   - title: Aggregators
@@ -30,129 +30,103 @@ sidebar:
 This guide covers advanced patterns for building robust, scalable AgentMesh applications.
 
 {: .note }
-> For state management patterns (checkpointing, time travel, message retention, human-in-loop), see **[State Management](/state-management/)**. For the plugin system, see **[Plugin System](/callbacks/)**.
+> For state management patterns (checkpointing, time travel, message retention, human-in-loop), see **[State Management](/state-management/)**. For extensibility and observability, see **[Middleware System](/middleware/)**.
 
 ---
 
-## Resilience Plugins {#resilience-plugins}
+## Resilience Middleware {#resilience-middleware}
 
-Use built-in plugins for automatic retries, circuit breakers, and rate limiting:
+Use built-in middleware for automatic retries, circuit breakers, and rate limiting:
 
-### Retry Plugin
+### Retry Middleware
+
+Automatically retry failed model calls with exponential backoff:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
     "time"
 )
 
-// Option 1: Using Builder API (recommended)
-builder.AddNodeFuncWithRetry("api_call",
-    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        result, err := callExternalAPI()
-        if err != nil {
-            return nil, nil, err // Will be retried automatically
-        }
-        return graph.NewCommand().
-            Set(apiResultKey, result).
-            To(graph.EndNode)
-    },
-    graph.NewRetryPolicy().
-        WithMaxAttempts(3).
-        WithCustomBackoff(func(attempt int) time.Duration {
-            return time.Duration(math.Pow(2, float64(attempt))) * time.Second
-        }).
-        WithRetryableFunc(func(err error) bool {
-            return isTransientError(err) // Only retry specific error types
-        }).
-        Build())
+// Create retry middleware with custom configuration
+retry := modelmw.NewRetryMiddleware(
+    modelmw.WithMaxRetries(3),
+    modelmw.WithInitialBackoff(100*time.Millisecond),
+    modelmw.WithMaxBackoff(10*time.Second),
+    modelmw.WithBackoffMultiplier(2.0),
+)
 
-// Option 2: Using Graph.AddNode with WithRetryPolicy option
-node := &graph.BaseNode{
-    NodeName: "api_call",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        result, err := callExternalAPI()
-        if err != nil {
-            return nil, nil, err
-        }
-        return graph.NewCommand().
-            Set(apiResultKey, result).
-            To(graph.EndNode)
-    },
-}
-g.AddNode(node, graph.WithRetryPolicy(&graph.RetryPolicy{
-    MaxAttempts: 3,
-    Backoff: func(attempt int) time.Duration {
-        return time.Duration(math.Pow(2, float64(attempt))) * time.Second
-    },
-    Retryable: func(err error) bool {
-        return isTransientError(err)
-    },
-}))
+// Apply to agent
+agent.NewReActAgent(model,
+    agent.WithModelMiddleware(retry),
+)
 ```
 
 **Key Features**:
-- **Exponential backoff**: Default 2^n seconds delay between attempts
-- **Custom backoff**: Provide your own `Backoff` function
-- **Selective retry**: Use `Retryable` to decide which errors warrant retry
-- **Max attempts**: Limit total attempts (including initial execution)
+- **Exponential backoff**: Configurable multiplier (default 2.0)
+- **Backoff limits**: Set initial and maximum backoff durations
+- **Context-aware**: Respects context cancellation
+- **Automatic**: Retries all iterator errors transparently
 
-**Default Backoff**:
+**Default Configuration**:
 ```go
-// Built-in: 2^attempt seconds (1s, 2s, 4s, 8s, ...)
-RetryPolicy: &graph.RetryPolicy{
-    MaxAttempts: 5,
-    Backoff: graph.DefaultBackoff,  // Uses 2^attempt
+RetryMiddleware{
+    MaxRetries:     3,
+    InitialBackoff: 100ms,
+    MaxBackoff:     10s,
+    Multiplier:     2.0,
 }
 ```
 
-**See Also**: Check graph retry tests in `pkg/graph/retry_test.go` for comprehensive examples.
+**For Node-Level Retries**: Use `graph.WithRetryPolicy()` when adding nodes to retry specific operations.
 
 ---
 
 ## Circuit Breaker {#circuit-breaker}
 
-The circuit breaker pattern prevents cascading failures when calling external services. Use the built-in `CircuitBreakerPlugin`:
+The circuit breaker pattern prevents cascading failures when calling external services. Use the built-in `CircuitBreakerMiddleware` for tools:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
+    "time"
 )
 
-pm := callbacks.NewPluginManager()
-
-// Configure circuit breaker
-cb := plugin.NewCircuitBreakerPlugin(
-    3,              // maxFailures before opening
-    5*time.Second,  // resetTimeout
-    1,              // halfOpenLimit
+// Create circuit breaker
+cb := toolmw.NewCircuitBreakerMiddleware(
+    3,             // maxFailures before opening
+    30*time.Second, // resetTimeout
 )
-pm.Register(cb)
 
-// Attach to agent - callbacks automatically injected
-reactAgent, _ := agent.NewReActAgent(
-    model,
+// Apply to agent
+agent.NewReActAgent(model,
     agent.WithTools(tools...),
-    agent.WithPluginManager(pm),
+    agent.WithToolMiddleware(cb),
 )
 
 // Monitor circuit state
-state := cb.GetState()  // "closed", "open", "half-open"
-cb.Reset()              // Manual reset
+state := cb.State()  // StateClosed, StateOpen, StateHalfOpen
+cb.Reset()           // Manual reset
 ```
 
 ### Circuit States
 
-- **CLOSED** - Normal operation, all requests pass through
-- **OPEN** - Fast fail after threshold exceeded, no requests to failing service
-- **HALF-OPEN** - Limited requests allowed to test recovery
+- **StateClosed** - Normal operation, all requests pass through
+- **StateOpen** - Fast fail after threshold exceeded, returns error immediately
+- **StateHalfOpen** - Testing recovery, limited requests allowed
+
+### How It Works
+
+1. **Closed**: All tool calls execute normally
+2. **Failure Tracking**: Each error increments failure count
+3. **Opening**: After `maxFailures`, circuit opens
+4. **Reset Timer**: After `resetTimeout`, transitions to half-open
+5. **Testing**: In half-open, first success closes circuit
+6. **Recovery**: Successful calls reset failure count
 
 ### Example
 
-See [examples/circuit_breaker](https://github.com/hupe1980/agentmesh/tree/main/examples/circuit_breaker) for complete implementation.
+See [examples/middleware](https://github.com/hupe1980/agentmesh/tree/main/examples/middleware) for complete implementation.
 
 
 ## Aggregators & Global State {#aggregators}

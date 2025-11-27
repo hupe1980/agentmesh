@@ -151,23 +151,72 @@ conn, _ := grpc.Dial("localhost:9000", grpc.WithInsecure())
 client := a2aclient.NewClient(conn, card)
 ```
 
-#### 3. Invoke Skills
+#### 3. Send Messages
 ```go
-resp, _ := client.InvokeSkill(ctx, &a2atypes.InvokeSkillRequest{
-    SkillName: "get_weather",
-    Input: map[string]any{
-        "location": "Paris",
-    },
+msg := a2atypes.NewMessage(a2atypes.MessageRoleUser, 
+    a2atypes.TextPart{Text: "Get weather for Paris"})
+
+resp, _ := client.SendMessage(ctx, &a2atypes.MessageSendParams{
+    Message: msg,
 })
+
+// Handle response (can be Task or Message)
+switch r := resp.(type) {
+case *a2atypes.Task:
+    // Extract from artifacts, status, or history
+    var msg *a2atypes.Message
+    if len(r.Artifacts) > 0 {
+        // Use artifact parts
+    } else if r.Status.Message != nil {
+        msg = r.Status.Message
+    } else if len(r.History) > 0 {
+        msg = r.History[len(r.History)-1]
+    }
+case *a2atypes.Message:
+    // Direct message response
+}
+```
+
+#### 4. Stream Messages
+```go
+stream := client.SendStreamingMessage(ctx, &a2atypes.MessageSendParams{
+    Message: msg,
+})
+
+for event, err := range stream {
+    if err != nil {
+        // Handle error
+        break
+    }
+    
+    // Handle different event types
+    switch e := event.(type) {
+    case *a2atypes.Task:
+        // Task snapshot with artifacts/status/history
+    case *a2atypes.Message:
+        // Direct message event
+    case *a2atypes.TaskStatusUpdateEvent:
+        // Status update (may have embedded message)
+    case *a2atypes.TaskArtifactUpdateEvent:
+        // Artifact chunk (streaming content)
+    }
+}
 ```
 
 ### Tool Usage: A2A Agent as Tool
 
 #### 1. Create A2A Tool
 ```go
-import a2atool "github.com/hupe1980/agentmesh/pkg/tool/a2a"
+import (
+    "github.com/hupe1980/agentmesh/pkg/a2a"
+    a2atool "github.com/hupe1980/agentmesh/pkg/tool/a2a"
+)
 
-a2aTool, _ := a2atool.NewTool(client, card)
+// Create A2A client using AgentMesh wrapper
+a2aClient, _ := a2a.NewClient(ctx, "http://localhost:9001", "react")
+
+// Wrap as tool
+a2aTool, _ := a2atool.NewTool(ctx, "http://localhost:9001", "react")
 ```
 
 #### 2. Add to Toolset
@@ -187,6 +236,9 @@ reactAgent := agent.NewReAct(model, toolset)
 - ✅ Consuming external agents
 - ✅ Multi-agent composition
 - ✅ Agent interoperability
+- ✅ Proper A2A response handling (Task vs Message)
+- ✅ Streaming with event type handling
+- ✅ Artifact, Status, and History extraction
 
 ## AgentCard Structure
 

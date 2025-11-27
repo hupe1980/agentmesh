@@ -8,6 +8,7 @@ import (
 	"maps"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,14 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/quota"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
+
+// FrontierInfo contains diagnostics about the active frontier in a superstep.
+type FrontierInfo struct {
+	// Size is the number of vertices in the frontier
+	Size int
+	// Nodes is the sorted list of vertex names in the frontier
+	Nodes []string
+}
 
 // shardedFrontier is a lock-free concurrent map using 256 shards with
 // hash-based distribution. Eliminates the single-mutex bottleneck that
@@ -561,7 +570,8 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 	frontier := make(map[string]struct{})
 
 	// Add root vertices
-	for _, name := range r.graph.RootVertices() {
+	rootVerts := r.graph.RootVertices()
+	for _, name := range rootVerts {
 		frontier[name] = struct{}{}
 	}
 
@@ -601,9 +611,18 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	// Observability: Create superstep-level span
 	tp := trace.FromContext(ctx)
 	tracer := tp.Tracer("agentmesh.pregel")
+
+	// Build frontier composition for diagnostics
+	frontierNodes := make([]string, 0, len(frontier))
+	for name := range frontier {
+		frontierNodes = append(frontierNodes, name)
+	}
+	sort.Strings(frontierNodes)
+
 	ctx, superstepSpan := tracer.Start(ctx, "superstep.execute",
 		trace.Attr{Key: "superstep", Value: superstep},
-		trace.Attr{Key: "frontier.size", Value: len(frontier)})
+		trace.Attr{Key: "frontier.size", Value: len(frontier)},
+		trace.Attr{Key: "frontier.nodes", Value: strings.Join(frontierNodes, ",")})
 	defer superstepSpan.End(nil)
 
 	// Observability: Record superstep metrics
@@ -617,9 +636,20 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 		superstepDuration.Record(ctx, float64(duration.Milliseconds()))
 	}()
 
+	// Diagnostic logging for frontier state
+	logger := logging.FromContext(ctx)
+	logger.Debug("Superstep starting",
+		"superstep", superstep,
+		"frontier_size", len(frontier),
+		"frontier_nodes", frontierNodes)
+
 	// Call superstep start callback (for BSP snapshot creation)
 	if r.opts.OnSuperstepStart != nil {
-		if err := r.opts.OnSuperstepStart(ctx, superstep); err != nil {
+		frontierInfo := FrontierInfo{
+			Size:  len(frontier),
+			Nodes: frontierNodes,
+		}
+		if err := r.opts.OnSuperstepStart(ctx, superstep, frontierInfo); err != nil {
 			return fmt.Errorf("superstep start callback failed: %w", err)
 		}
 	}
@@ -797,6 +827,9 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 			err = recovered
 		}
 	}()
+
+	// Emit start event before vertex execution
+	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Output: "__vertex_start__"}, nil)
 
 	runErr := vertex.Run(vertexCtx, vertexContext, incoming)
 	if runErr != nil {

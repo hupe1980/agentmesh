@@ -81,7 +81,7 @@ func main() {
 	builder.SetEntryPoint("data_processor")
 
 	// Node 1: Data processor with intermediate streaming
-	builder.AddStaticNode("data_processor", []string{"llm_call"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("data_processor", []string{"llm_call"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		// Get the stream writer to emit intermediate results
 		streamWriter := graph.GetStreamWriter(ctx)
 
@@ -102,14 +102,15 @@ func main() {
 			}
 		}
 
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(statusKey, "data_processed").
 			Set(chunksTotalKey, len(chunks)).
 			Build()
+		return []string{"llm_call"}, updates, err
 	})
 
 	// Node 2: LLM call with streaming
-	builder.AddStaticNode("llm_call", []string{"analyzer"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("llm_call", []string{"analyzer"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Calling LLM...")
@@ -129,7 +130,7 @@ func main() {
 		} // Call the model
 		resp, err := pkgmodel.Last(model.Generate(ctx, req))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Emit post-call status
@@ -138,14 +139,15 @@ func main() {
 			streamWriter(streamUpdates)
 		}
 
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(statusKey, "llm_completed").
 			Set(agent.MessagesKey, []message.Message{resp.Message}).
 			Build()
+		return []string{"analyzer"}, updates, err
 	})
 
 	// Node 3: Multi-step analyzer with detailed streaming
-	builder.AddStaticNode("analyzer", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	builder.AddNodeFunc("analyzer", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
 		fmt.Println("   ⏳ Analyzing results...")
@@ -180,10 +182,11 @@ func main() {
 			streamWriter(updates)
 		}
 
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(statusKey, "analysis_complete").
 			Set(verifiedKey, true).
 			Build()
+		return []string{graph.EndNode}, updates, err
 	})
 
 	compiled, err := builder.Compile()

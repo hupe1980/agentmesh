@@ -50,9 +50,9 @@ The repository includes **17 comprehensive examples** demonstrating core feature
 - **`observability`** – OpenTelemetry metrics, distributed tracing, and monitoring
 - **`human_pause`** – Human-in-the-loop workflows with interrupt/resume
 - **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
-- **`callback_integration`** – Callback system with BeforeModel, AfterModel handlers
-- **`circuit_breaker`** – Circuit breaker callback policy for fault tolerance
-- **`guardrails`** – Content filtering, PII protection, and safety constraints
+- **`middleware`** – Middleware system for graph/model/tool execution layers
+- **`circuit_breaker`** – Circuit breaker middleware for fault tolerance
+- **`guardrails`** – Content filtering, PII protection with custom middleware
 
 ### Embeddings & RAG
 - **`openai_embedder`** – Text embeddings for semantic search and RAG workflows

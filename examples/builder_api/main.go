@@ -35,14 +35,14 @@ func main() {
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.
-		AddStaticNode("analyze", []string{"validate"}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddNodeFunc("analyze", []string{"validate"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			fmt.Println("Analyzing input...")
 			updates := state.Updates{}
 			updates[AnalysisKey.Name()] = "Input looks good"
 			updates[ScoreKey.Name()] = 0.95
-			return updates, nil
+			return []string{"validate"}, updates, nil
 		}).
-		AddStaticNode("validate", []string{"process"}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddNodeFunc("validate", []string{"process"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			// Type-safe read - no casting needed, compile-time checked
 			score := state.GetFromView(view, ScoreKey)
 			fmt.Printf("Validating with score: %.2f\n", score)
@@ -50,9 +50,9 @@ func main() {
 			valid := score > 0.8
 			updates := state.Updates{}
 			updates[ValidKey.Name()] = valid
-			return updates, nil
+			return []string{"process"}, updates, nil
 		}).
-		AddStaticNode("process", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) (state.Updates, error) {
+		AddNodeFunc("process", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			// Type-safe read with default value - never panics
 			valid := state.GetFromView(view, ValidKey)
 			if valid {
@@ -61,13 +61,13 @@ func main() {
 				fmt.Printf("✓ Final result: %s\n", result)
 				updates := state.Updates{}
 				updates[ResultKey.Name()] = result
-				return updates, nil
+				return []string{graph.EndNode}, updates, nil
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
 			updates := state.Updates{}
 			updates[ResultKey.Name()] = result
-			return updates, nil
+			return []string{graph.EndNode}, updates, nil
 		}).
 		SetEntryPoint("analyze")
 

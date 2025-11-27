@@ -1,9 +1,13 @@
-// Package a2a provides integration between AgentMesh and the Agent-to-Agent (A2A) Protocol.
+// Package a2a provides A2A (Agent-to-Agent) Protocol integration for AgentMesh.
 //
-// This package enables AgentMesh agents to:
-//   - Expose their functionality as A2A-compliant services (gRPC or JSON-RPC)
-//   - Connect to and utilize external A2A agents as tools
-//   - Participate in multi-agent collaboration across different systems
+// This package focuses on:
+//   - Protocol message conversion between AgentMesh and A2A formats
+//   - Server-side integration (exposing AgentMesh agents as A2A services)
+//   - A2A client wrapper for calling remote agents
+//
+// For using A2A agents within AgentMesh workflows, see:
+//   - pkg/tool/a2a: Tool adapter for calling A2A agents from ReAct/RAG agents
+//   - pkg/agent: Future home of RemoteAgent/A2AAgent implementations
 //
 // # Server Integration
 //
@@ -31,30 +35,35 @@
 //	grpcHandler.RegisterWith(server)
 //	server.Serve(listener)
 //
-// # Client Integration
+// # Client Usage
 //
-// Use external A2A agents as tools in your AgentMesh workflows:
+// Create a client to call remote A2A agents:
 //
-//	// Create a tool that calls an A2A agent
-//	a2aTool, _ := a2a.NewAgentTool(ctx, "https://agent.example.com", "skill-id")
+//	import "github.com/hupe1980/agentmesh/pkg/a2a"
 //
-//	// Use in your agent
-//	compiled, _ := agent.NewReActAgent(model, []tool.Tool{a2aTool})
+//	// Create A2A client
+//	client, _ := a2a.NewClient(ctx, "https://agent.example.com", "skill-id")
 //
-// # Graph Node Integration
+//	// Send a message and get response
+//	msg := message.NewHumanMessageFromText("Translate 'hello' to Spanish")
+//	responses, _ := client.SendMessage(ctx, msg)
 //
-// Add A2A agent nodes directly in your graphs:
+//	// Or stream responses
+//	for response, err := range client.StreamMessages(ctx, msg) {
+//	    // Process each response as it arrives
+//	}
 //
-//	builder := graph.NewBuilder()
+// # Tool Integration
 //
-//	// Add regular nodes
-//	builder.AddStaticNode("prepare", graph.NewTargetSet("external_agent"), prepareFunc)
+// Use A2A agents as tools in ReAct workflows:
 //
-//	// Add A2A agent node
-//	a2aNode := a2a.NewAgentNode("https://agent.example.com", "skill-id")
-//	builder.AddCommandNode("external_agent", graph.NewTargetSet(graph.EndNode), a2aNode)
+//	import a2atool "github.com/hupe1980/agentmesh/pkg/tool/a2a"
 //
-//	builder.SetEntryPoint("prepare", "external_agent")
+//	// Create a tool that wraps an A2A agent
+//	translatorTool, _ := a2atool.NewTool(ctx, "https://translator.example.com", "translate")
+//
+//	// Use in a ReAct agent
+//	reactAgent, _ := agent.NewReActAgent(model, agent.WithTools(translatorTool))
 //
 // # Message Conversion
 //
@@ -69,11 +78,27 @@
 // For more information about the A2A protocol, visit:
 // https://a2a-protocol.org
 //
+// # Protocol Conversion
+//
+// Convert between AgentMesh and A2A message formats:
+//
+//	// AgentMesh -> A2A
+//	agentMeshMsg := message.NewHumanMessageFromText("Hello")
+//	a2aMsg, _ := a2a.ConvertToA2AMessage(agentMeshMsg)
+//
+//	// A2A -> AgentMesh
+//	messages, _ := a2a.ConvertFromA2AMessage(a2aMsg)
+//
 // # Related Packages
 //
-// For using A2A agents as tools within AgentMesh workflows, see:
 //   - pkg/tool/a2a: Tool adapter for calling A2A agents from ReAct/RAG agents
+//   - github.com/a2aproject/a2a-go: Official A2A protocol implementation
 //
-// This package (pkg/a2a) focuses on server infrastructure and protocol bridges,
-// while pkg/tool/a2a provides the tool interface for agent consumption.
+// # Components
+//
+// This package provides:
+//   - Client: Wrapper for calling remote A2A agents with message conversion
+//   - Executor/StreamingExecutor: Server-side integration for exposing agents
+//   - Message conversion utilities: ConvertToA2AMessage, ConvertFromA2AMessage
+//   - Helper functions: ExtractTextContent, CreateAgentCard, CreateAgentSkill
 package a2a

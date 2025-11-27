@@ -30,6 +30,8 @@ sidebar:
 
 # Plugin System
 
+> **⚠️ DEPRECATED**: The plugin/callback system is deprecated in favor of the new [Middleware System](/middleware/). The middleware system provides better composability, type safety, and covers all three execution layers (graph, model, tool). See the [migration guide](/middleware/#migration-from-callbacks) for upgrading existing code.
+
 The plugin system enables powerful extensions to AgentMesh workflows through a unified, type-safe interface for cross-cutting concerns like observability, security, and resilience.
 
 ---

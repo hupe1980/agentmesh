@@ -34,7 +34,8 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 - **🔍 Graph Introspection** - Debug and visualize graphs with topology analysis and Mermaid flowcharts
 - **🎨 Flowchart Generation** - Auto-generate Mermaid diagrams from graph topology
 - **⏸️ Human-in-the-Loop** - Pause workflows for human approval/input
-- **🔌 Plugin System** - Type-safe lifecycle hooks for model/tool interception, metrics, tracing, and custom logic
+- **🔌 Middleware System** - Composable middleware for graph/model/tool execution with caching, retry, rate limiting, observability
+- **📡 Event Bus** - Publish-subscribe event system for loose coupling and real-time monitoring
 - **🧪 Testing First** - Comprehensive test coverage across core features
 
 ### 🧠 AI/ML Features
@@ -156,9 +157,10 @@ AgentMesh follows a **component-based architecture** with clean separation of co
 - Pluggable MessageBus (Redis, Kafka, etc.)
 - Custom Scheduler support
 
-**Observability** (`pkg/metrics`, `pkg/trace`, `pkg/callbacks`)
+**Observability** (`pkg/metrics`, `pkg/trace`, `pkg/graph/events`)
 - OpenTelemetry metrics and tracing
-- Callback system for interception
+- Middleware system for graph/model/tool execution layers
+- Event bus for pub/sub observability
 - Semantic caching with embeddings (`pkg/cache`)
 - Exact-match and similarity-based caching strategies
 
@@ -594,7 +596,7 @@ Explore **19 comprehensive examples** demonstrating different use cases and patt
 | 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
 | 🔐 [checkpoint_signing](examples/checkpoint_signing) | HMAC-SHA256 checkpoint integrity | Tamper detection, cryptographic signing, security |
 | ✅ [graph_validation](examples/graph_validation) | Pre-execution graph validation | Compile-time error detection, validation modes, topology checks |
-| 📞 [callback_integration](examples/callback_integration) | Callback system demonstration | BeforeModel, AfterModel, OnToolError handlers |
+| 🔌 [middleware](examples/middleware) | Middleware system demonstration | Graph/model/tool middleware, event bus, composition |
 | 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
 | 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |
 | 📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
@@ -663,7 +665,7 @@ for resp, err := range executor.Generate(ctx, req) {
 **Benefits:**
 - ✅ Reusable across graphs, chains, and direct calls
 - ✅ Centralized observability (tracing, metrics, logging)
-- ✅ Consistent plugin handling (BeforeModel, AfterModel, OnModelError)
+- ✅ Middleware support for interception and augmentation
 - ✅ Custom implementations (retry, caching, rate limiting)
 
 **Custom Executor Example:**
@@ -824,7 +826,7 @@ g.AddNode(toolNode)
 └──────┬──────┘
        │ delegates to
 ┌──────▼──────┐
-│  Executor   │  Execution layer: lifecycle, plugins, observability
+│  Executor   │  Execution layer: lifecycle, middleware, observability
 └──────┬──────┘
        │ calls
 ┌──────▼──────┐
@@ -1192,71 +1194,95 @@ policy := &wasm.SandboxPolicy{
 
 See the [wasm_tool example](examples/wasm_tool) for building WASM modules with Rust.
 
-### 📞 Plugin System
+### 🔌 Middleware System
 
-Extend AgentMesh with a type-safe plugin system for cross-cutting concerns:
+Extend AgentMesh with a composable middleware system for cross-cutting concerns:
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/agent/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/model"
-    "github.com/hupe1980/agentmesh/pkg/plugin"
+    graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
+    modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
+    toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
 )
 
-// Create plugin manager
-pm := callbacks.NewPluginManager()
-
-// Register built-in plugins
-pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[AgentMesh]"))
-
-// Create custom plugin with typed config
-type CachePlugin struct {
-    plugin.NoopPlugin  // Embed for default no-op implementations
-    cache *Cache
-}
-
-func (p *CachePlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
-    // Check cache before model invocation
-    if cached := p.cache.Get(req); cached != nil {
-        return cached, nil  // Short-circuit with cached response
-    }
-    return nil, nil  // Continue to model
-}
-
-func (p *CachePlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
-    // Cache the response
-    p.cache.Set(req, resp)
-    return nil, nil  // No transformation
-}
-
-// Register custom plugin
-pm.Register(ctx, &CachePlugin{cache: myCache})
-
-// Create agent with automatic plugin injection
-compiled, _ := agent.NewReActAgent(model,
+// Create agent with built-in middleware
+reactAgent, _ := agent.NewReActAgent(
+    model,
     agent.WithTools(tools...),
-    agent.WithPluginManager(pm),  // Plugins automatically injected into model and tool nodes
+    // Graph middleware - wraps entire graph execution
+    agent.WithGraphMiddleware(
+        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
+        graphmw.NewEventMiddleware[[]message.Message, message.Message](),
+    ),
+    // Model middleware - wraps LLM calls
+    agent.WithModelMiddleware(
+        modelmw.NewCacheMiddleware(),
+        modelmw.NewRetryMiddleware(modelmw.WithMaxRetries(3)),
+        modelmw.NewRateLimitMiddleware(10, 100*time.Millisecond),
+    ),
+    // Tool middleware - wraps tool executions
+    agent.WithToolMiddleware(
+        toolmw.NewTimeoutMiddleware(5*time.Second),
+        toolmw.NewCircuitBreakerMiddleware(3, 30*time.Second),
+        toolmw.NewAuditMiddleware(logger),
+    ),
 )
 
-// Run agent - no context injection needed!
-for result, err := range compiled.Run(ctx, messages) {
-    // Plugins intercept model calls, tool calls, node execution, and state changes automatically
+// Create custom middleware
+type CustomMiddleware struct{}
+
+func (m *CustomMiddleware) Wrap(next model.Executor) model.Executor {
+    return model.WrapFunc(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+        // Pre-execution logic
+        log.Println("Before model call")
+        
+        // Call next middleware/executor
+        return func(yield func(*model.Response, error) bool) {
+            for resp, err := range next.Generate(ctx, req) {
+                // Post-execution logic per response
+                if err == nil {
+                    log.Println("Got response")
+                }
+                if !yield(resp, err) {
+                    return
+                }
+            }
+        }
+    })
 }
+
+// Use custom middleware
+reactAgent, _ := agent.NewReActAgent(
+    model,
+    agent.WithModelMiddleware(&CustomMiddleware{}),
+)
 ```
 
-**Plugin Lifecycle Hooks:**
-- `Init/Shutdown` - Resource management (connections, cleanup)
-- `BeforeNode/AfterNode/OnNodeError` - Node execution interception (BeforeNode can short-circuit, AfterNode can enrich state)
-- `BeforeModel/AfterModel/OnModelError` - Model request/response transformation (uses `model.Request/Response`)
-- `BeforeTool/AfterTool/OnToolError` - Tool execution monitoring
-- `OnStateChange` - State change tracking (receives nodeName + updates)
+**Middleware Layers:**
+- **Graph Middleware** - Wraps entire graph execution (logging, events, tracing)
+- **Model Middleware** - Wraps LLM calls (cache, retry, rate limit, token counting)
+- **Tool Middleware** - Wraps tool executions (timeout, circuit breaker, audit, cache)
 
-**Why Plugins?**
-- **Type-safe configuration** - Pass dependencies via constructor, not `map[string]any`
-- **Simple registration** - Order-based execution, no priority management
-- **Composable** - Embed `NoopPlugin` and override only what you need
-- **Request/Response based** - Model hooks use `model.Request/Response` for short-circuiting
+**Built-in Middleware:**
+- `LoggingMiddleware` - Structured logging of execution
+- `EventMiddleware` - Publishes events to event bus for observability
+- `CacheMiddleware` - Response caching for models/tools
+- `RetryMiddleware` - Exponential backoff retry with configurable options
+- `RateLimitMiddleware` - Token bucket rate limiting
+- `TimeoutMiddleware` - Execution timeout with context cancellation
+- `CircuitBreakerMiddleware` - Circuit breaker pattern for fault tolerance
+- `TokenCounterMiddleware` - Track token usage
+- `AuditMiddleware` - Audit logging for compliance
+
+**Why Middleware?**
+- **Composable** - Chain multiple middleware with `Chain()`
+- **Type-safe** - Generic interfaces for compile-time guarantees
+- **Three layers** - Graph, model, and tool execution interception
+- **Iterator-based** - Unified streaming/blocking execution model
+- **Event bus** - Loose coupling for observability with pub/sub pattern
+
+See [docs/middleware.md](docs/middleware.md) for complete guide and [examples/middleware](examples/middleware) for demonstrations.
 
 ### � Semantic Caching
 
@@ -1289,7 +1315,6 @@ agent, _ := agent.NewReActAgent(model,
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/cache"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
     "github.com/hupe1980/agentmesh/pkg/embedding/openai"
 )
 
@@ -1297,17 +1322,13 @@ import (
 embedder := openai.NewEmbedder(client)
 
 // Create semantic cache with memory backend
-memCache := cache.NewMemory(embedder,
+semanticCache := cache.NewMemory(embedder,
     cache.WithSimilarityThreshold(0.85), // 85% similar = cache hit
     cache.WithTTL(time.Hour),            // expire after 1 hour
     cache.WithMaxSize(1000))             // LRU eviction
 
-// Create semantic cache plugin
-semanticCache := plugin.NewSemanticCachePlugin(memCache)
-
-// Register with plugin manager
-pm := callbacks.NewPluginManager()
-pm.Register(ctx, semanticCache)
+// Use in your custom middleware or application logic
+// See examples/semantic_caching/ for complete implementation
 
 // Cache hits for semantically similar queries
 // "What is Python?" ~87% similar to "Tell me about Python" ✓
@@ -1332,7 +1353,7 @@ cache := redisCache.NewCache(redisClient, embedder,
     cache.WithSimilarityThreshold(0.85),
     redisCache.WithKeyPrefix("myapp:llm:"))
 
-plugin := plugin.NewSemanticCachePlugin(cache)
+// Use in your custom middleware or application
 ```
 
 **When to Use Which?**

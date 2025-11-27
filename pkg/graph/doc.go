@@ -29,8 +29,8 @@
 //	var ResultKey = state.NewKey[string]("result", "")
 //
 //	// Add node with dynamic routing using map literal
-//	builder.AddNode("router",
-//	    []string{"option_a", "option_b", graph.END},
+//	builder.AddNodeFunc("router",
+//	    []string{"option_a", "option_b", graph.EndNode},
 //	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        decision := analyze(view)
 //	        updates := state.Updates{DecisionKey.Name(): decision}
@@ -43,8 +43,8 @@
 //	)
 //
 //	// Or use Command builder for cleaner syntax
-//	builder.AddNode("router",
-//	    []string{"option_a", "option_b", graph.END},
+//	builder.AddNodeFunc("router",
+//	    []string{"option_a", "option_b", graph.EndNode},
 //	    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 //	        decision := analyze(view)
 //	        if decision == "simple" {
@@ -78,8 +78,8 @@
 //
 // Primary methods for building graphs:
 //
-//	AddNode(name, targets, fn)              - Main method for adding nodes
-//	AddNodeWithRetry(name, ...)             - Node with retry policy
+//	AddNodeFunc(name, targets, fn)          - Main method for adding nodes
+//	AddNodeFuncWithRetry(name, ...)         - Node with retry policy
 //	AddNode(node)                           - Add pre-constructed node instance
 //
 // Helper for creating state updates:

@@ -80,18 +80,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
-
-type pluginKey struct{}
-
-// WithPlugin adds a Plugin to the context for executor lifecycle hooks.
-// This is typically used by the callbacks package to inject the PluginManager.
-func WithPlugin(ctx context.Context, plugin Plugin) context.Context {
-	return context.WithValue(ctx, pluginKey{}, plugin)
-}
 
 // Call represents a single tool invocation request.
 //
@@ -354,23 +347,14 @@ func executeSingleTool(ctx context.Context, call Call, registry map[string]Tool,
 		ToolName:   call.Name,
 	}
 
-	// 1. Execute BeforeTool plugin
-	pm, _ := ctx.Value(pluginKey{}).(Plugin)
-	if pm != nil {
-		if err := pm.ExecuteBeforeTool(ctx, call.Name, call.Arguments); err != nil {
-			result.Error = err
-			return result
-		}
-	}
-
-	// 2. Get tool from registry
+	// 1. Get tool from registry
 	t := registry[call.Name]
 	if t == nil {
 		result.Error = fmt.Errorf("%s: tool %q not registered", errorPrefix, call.Name)
 		return result
 	}
 
-	// 3. Start observability
+	// 2. Start observability
 	tp := trace.FromContext(ctx)
 	tracer := tp.Tracer("agentmesh.tool")
 	ctx, span := tracer.Start(ctx, "tool.execute",
@@ -389,43 +373,62 @@ func executeSingleTool(ctx context.Context, call Call, registry map[string]Tool,
 	counter := mp.Counter("tool.executions")
 	counter.Add(ctx, 1, metrics.Attr{Key: "tool", Value: call.Name})
 
-	// 4. Execute tool
+	// 2b. Publish tool start event
+	event.Publish(ctx, event.Event{
+		Type:      event.EventToolStart,
+		Timestamp: startTime,
+		Data: map[string]any{
+			"tool":      call.Name,
+			"tool_id":   call.ID,
+			"arguments": call.Arguments,
+		},
+	})
+
+	// 3. Execute tool
 	toolResult, err := t.Call(ctx, call.Arguments)
 	result.Duration = time.Since(startTime)
 
-	// 5. Record metrics
+	// 4. Record metrics
 	histogram := mp.Histogram("tool.duration_ms")
 	histogram.Record(ctx, float64(result.Duration.Milliseconds()),
 		metrics.Attr{Key: "tool", Value: call.Name})
 
 	if err != nil {
 		toolErr = err
-		// 6a. Handle error
+		// 5a. Handle error
 		errorCounter := mp.Counter("tool.errors")
 		errorCounter.Add(ctx, 1, metrics.Attr{Key: "tool", Value: call.Name})
 		logger.Error("tool execution failed", "tool", call.Name, "error", err, "duration_ms", result.Duration.Milliseconds())
 
-		if pm != nil {
-			transformedErr := pm.ExecuteOnToolError(ctx, call.Name, err)
-			if transformedErr != nil {
-				err = transformedErr
-			}
-		}
+		// Publish tool error event
+		event.Publish(ctx, event.Event{
+			Type:      event.EventToolError,
+			Timestamp: time.Now(),
+			Data: map[string]any{
+				"tool":        call.Name,
+				"tool_id":     call.ID,
+				"duration_ms": result.Duration.Milliseconds(),
+			},
+			Error: err.Error(),
+		})
+
 		result.Error = err
 		return result
 	}
 
-	// 6b. Success
+	// 5b. Success
 	logger.Debug("tool execution completed", "tool", call.Name, "duration_ms", result.Duration.Milliseconds())
 
-	// 7. Execute AfterTool plugin
-	if pm != nil {
-		if err := pm.ExecuteAfterTool(ctx, call.Name, toolResult); err != nil {
-			toolErr = err
-			result.Error = err
-			return result
-		}
-	}
+	// Publish tool complete event
+	event.Publish(ctx, event.Event{
+		Type:      event.EventToolComplete,
+		Timestamp: time.Now(),
+		Data: map[string]any{
+			"tool":        call.Name,
+			"tool_id":     call.ID,
+			"duration_ms": result.Duration.Milliseconds(),
+		},
+	})
 
 	result.Result = toolResult
 	return result

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
-	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -41,6 +40,8 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
+//
+//nolint:gocyclo // acceptable complexity for agent initialization with many configuration options
 func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
@@ -80,7 +81,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 
 	// Create model executor - encapsulates model lifecycle management
+	// Apply model middleware if provided
 	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
+	if len(config.modelMiddleware) > 0 {
+		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
+	}
 
 	// Model node: orchestration layer that builds requests and delegates to executor
 	// System prompt, tools, and schema are stored in the node and used per-request
@@ -99,9 +104,13 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 
 	// Create tool executor - use sequential by default for deterministic behavior
+	// Apply tool middleware if provided
 	toolExecutor := tool.NewSequentialExecutor(toolRegistry,
 		tool.WithErrorPrefix("react agent"),
 		tool.WithContinueOnError(false))
+	if len(config.toolMiddleware) > 0 {
+		toolExecutor = tool.Chain(toolExecutor, config.toolMiddleware...)
+	}
 
 	// Tool node: orchestration layer that extracts calls and delegates to executor
 	toolNode, err := NewToolNode(toolExecutor,
@@ -112,7 +121,13 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 
 	// Build graph using fluent builder API
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+	// Apply graph middleware if provided
+	var graphExecutor graph.Executor[[]message.Message, message.Message] = graph.NewMessagePregelExecutor()
+	if len(config.graphMiddleware) > 0 {
+		graphExecutor = graph.Chain(graphExecutor, config.graphMiddleware...)
+	}
+
+	builder, err := graph.NewBuilder(graphExecutor, graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create builder: %w", err)
 	}
@@ -126,26 +141,29 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		return nil, fmt.Errorf("react agent: failed to build graph: %w", err)
 	}
 
-	// Wrap with automatic callback injection if plugin manager is provided
-	return WrapWithCallbacks(compiled, config.pluginManager), nil
+	return compiled, nil
 }
 
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
-	maxIterations int
-	tools         []tool.Tool          // Optional static tools via WithTools option
-	systemPrompt  string               // Optional system prompt prepended to all invocations
-	outputSchema  *schema.OutputSchema // Optional structured output schema
-	pluginManager *callbacks.PluginManager
+	maxIterations   int
+	tools           []tool.Tool                                            // Optional static tools via WithTools option
+	systemPrompt    string                                                 // Optional system prompt prepended to all invocations
+	outputSchema    *schema.OutputSchema                                   // Optional structured output schema
+	graphMiddleware []graph.Middleware[[]message.Message, message.Message] // Optional graph middleware
+	modelMiddleware []model.Middleware                                     // Optional model middleware
+	toolMiddleware  []tool.Middleware                                      // Optional tool middleware
 }
 
 func defaultReActOptions() reActOptions {
 	return reActOptions{
-		maxIterations: 10,
-		tools:         nil,
-		systemPrompt:  "",
-		outputSchema:  nil,
-		pluginManager: nil,
+		maxIterations:   10,
+		tools:           nil,
+		systemPrompt:    "",
+		outputSchema:    nil,
+		graphMiddleware: nil,
+		modelMiddleware: nil,
+		toolMiddleware:  nil,
 	}
 }
 
@@ -226,26 +244,62 @@ func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
 	}
 }
 
-// WithPluginManager sets the plugin manager for automatic callback injection.
-// The plugin manager is automatically injected into model and tool nodes, eliminating
-// the need for manual context injection before running the agent.
+// WithGraphMiddleware adds middleware to the graph executor.
+// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
 //
 // Example:
 //
-//	pm := callbacks.NewPluginManager()
-//	pm.Register(ctx, plugin.NewLoggingPlugin(log.Default(), "[Agent]"))
+//	import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 //
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithTools(tools...),
-//	    agent.WithPluginManager(pm),
+//	    agent.WithGraphMiddleware(
+//	        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
+//	        graphmw.NewEventMiddleware[[]message.Message, message.Message](),
+//	    ),
 //	)
-//
-//	// No context injection needed - callbacks are automatically available
-//	for result, err := range agent.Run(ctx, messages) {
-//	    // Plugins intercept model and tool calls automatically
-//	}
-func WithPluginManager(pm *callbacks.PluginManager) ReActOption {
+func WithGraphMiddleware(middleware ...graph.Middleware[[]message.Message, message.Message]) ReActOption {
 	return func(c *reActOptions) {
-		c.pluginManager = pm
+		c.graphMiddleware = append(c.graphMiddleware, middleware...)
+	}
+}
+
+// WithModelMiddleware adds middleware to the model executor.
+// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
+//
+// Example:
+//
+//	import modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
+//
+//	agent, err := agent.NewReActAgent(model,
+//	    agent.WithTools(tools...),
+//	    agent.WithModelMiddleware(
+//	        modelmw.NewCacheMiddleware(),
+//	        modelmw.NewRetryMiddleware(3, time.Second),
+//	    ),
+//	)
+func WithModelMiddleware(middleware ...model.Middleware) ReActOption {
+	return func(c *reActOptions) {
+		c.modelMiddleware = append(c.modelMiddleware, middleware...)
+	}
+}
+
+// WithToolMiddleware adds middleware to the tool executor.
+// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
+//
+// Example:
+//
+//	import toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
+//
+//	agent, err := agent.NewReActAgent(model,
+//	    agent.WithTools(tools...),
+//	    agent.WithToolMiddleware(
+//	        toolmw.NewTimeoutMiddleware(30*time.Second),
+//	        toolmw.NewAuditMiddleware(logger),
+//	    ),
+//	)
+func WithToolMiddleware(middleware ...tool.Middleware) ReActOption {
+	return func(c *reActOptions) {
+		c.toolMiddleware = append(c.toolMiddleware, middleware...)
 	}
 }

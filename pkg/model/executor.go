@@ -54,18 +54,11 @@ import (
 	"iter"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
-
-type pluginKey struct{}
-
-// WithPlugin adds a Plugin to the context for executor lifecycle hooks.
-// This is typically used by the callbacks package to inject the PluginManager.
-func WithPlugin(ctx context.Context, plugin Plugin) context.Context {
-	return context.WithValue(ctx, pluginKey{}, plugin)
-}
 
 // Executor handles the complete lifecycle of model generation requests.
 // It wraps a Model with observability, plugin support, and error handling.
@@ -127,9 +120,9 @@ func WithExecutorName(name string) ExecutorOption {
 // Returns an Executor interface for maximum flexibility.
 //
 // The executor wraps the model with:
-//   - Plugin lifecycle (BeforeModel, AfterModel, OnModelError)
 //   - Observability (tracing, metrics, logging)
 //   - Error handling and recovery
+//   - Middleware support via Chain()
 //
 // Example:
 //
@@ -153,7 +146,7 @@ func NewExecutor(mdl Model, opts ...ExecutorOption) Executor {
 // It records metrics, logs errors, and invokes plugin error handlers.
 func (e *DefaultExecutor) handleGenerationError(
 	ctx context.Context,
-	req *Request,
+	_ *Request,
 	err error,
 	startTime time.Time,
 	yield func(*Response, error) bool,
@@ -174,19 +167,16 @@ func (e *DefaultExecutor) handleGenerationError(
 	errorCounter.Add(ctx, 1, metrics.Attr{Key: "model", Value: e.name})
 	logger.Error("model generation failed", "model", e.name, "error", err, "duration_ms", duration.Milliseconds())
 
-	// Handle error through plugins
-	if pm, ok := ctx.Value(pluginKey{}).(Plugin); ok && pm != nil {
-		fallback, transformedErr := pm.ExecuteOnModelError(ctx, req, err)
-		if fallback != nil {
-			yield(fallback, nil)
-			return
-		}
-		if transformedErr != nil {
-			*spanErr = transformedErr
-			yield(nil, transformedErr)
-			return
-		}
-	}
+	// Publish model error event
+	event.Publish(ctx, event.Event{
+		Type:      event.EventModelError,
+		Timestamp: time.Now(),
+		Data: map[string]any{
+			"model":       e.name,
+			"duration_ms": duration.Milliseconds(),
+		},
+		Error: err.Error(),
+	})
 
 	yield(nil, err)
 }
@@ -195,22 +185,7 @@ func (e *DefaultExecutor) handleGenerationError(
 // See Executor.Generate interface documentation for details.
 func (e *DefaultExecutor) Generate(ctx context.Context, req *Request) iter.Seq2[*Response, error] {
 	return func(yield func(*Response, error) bool) {
-		// 1. Execute BeforeModel plugins
-		pm, _ := ctx.Value(pluginKey{}).(Plugin)
-		if pm != nil {
-			resp, err := pm.ExecuteBeforeModel(ctx, req)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-			if resp != nil {
-				// Short-circuit with plugin response
-				yield(resp, nil)
-				return
-			}
-		}
-
-		// 2. Start observability span
+		// 1. Start observability span
 		tp := trace.FromContext(ctx)
 		tracer := tp.Tracer("agentmesh.model")
 		ctx, span := tracer.Start(ctx, "model.generate",
@@ -231,8 +206,20 @@ func (e *DefaultExecutor) Generate(ctx context.Context, req *Request) iter.Seq2[
 		counter := mp.Counter("model.requests")
 		counter.Add(ctx, 1, metrics.Attr{Key: "model", Value: e.name})
 
+		// 4b. Publish model start event
+		event.Publish(ctx, event.Event{
+			Type:      event.EventModelStart,
+			Timestamp: startTime,
+			Data: map[string]any{
+				"model":    e.name,
+				"messages": len(req.Messages),
+				"tools":    len(req.Tools),
+			},
+		})
+
 		// 5. Call underlying model and process responses
 		hasResponse := false
+		var lastResp *Response
 		for resp, err := range e.model.Generate(ctx, req) {
 			if err != nil {
 				e.handleGenerationError(ctx, req, err, startTime, yield, &spanErr)
@@ -240,6 +227,7 @@ func (e *DefaultExecutor) Generate(ctx context.Context, req *Request) iter.Seq2[
 			}
 
 			hasResponse = true
+			lastResp = resp
 
 			// 6b. Record success metrics (per response chunk)
 			if resp.Usage != nil {
@@ -249,20 +237,7 @@ func (e *DefaultExecutor) Generate(ctx context.Context, req *Request) iter.Seq2[
 					metrics.Attr{Key: "type", Value: "total"})
 			}
 
-			// 7. Execute AfterModel plugins
-			if pm != nil {
-				transformed, err := pm.ExecuteAfterModel(ctx, req, resp)
-				if err != nil {
-					spanErr = err
-					yield(nil, err)
-					return
-				}
-				if transformed != nil {
-					resp = transformed
-				}
-			}
-
-			// 8. Yield response to consumer
+			// 7. Yield response to consumer
 			if !yield(resp, nil) {
 				return // Consumer stopped iteration
 			}
@@ -275,11 +250,34 @@ func (e *DefaultExecutor) Generate(ctx context.Context, req *Request) iter.Seq2[
 			return
 		}
 
-		// 9. Record final metrics after all responses
+		// 8. Record final metrics after all responses
 		duration := time.Since(startTime)
 		histogram := mp.Histogram("model.duration_ms")
 		histogram.Record(ctx, float64(duration.Milliseconds()),
 			metrics.Attr{Key: "model", Value: e.name})
 		logger.Debug("model generation completed", "model", e.name, "duration_ms", duration.Milliseconds())
+
+		// 8b. Publish model complete event
+		eventData := map[string]any{
+			"model":       e.name,
+			"duration_ms": duration.Milliseconds(),
+		}
+		if lastResp != nil {
+			if lastResp.Usage != nil {
+				eventData["usage"] = map[string]any{
+					"prompt_tokens":     lastResp.Usage.PromptTokens,
+					"completion_tokens": lastResp.Usage.CompletionTokens,
+					"total_tokens":      lastResp.Usage.TotalTokens,
+				}
+			}
+			if lastResp.FinishReason != "" {
+				eventData["finish_reason"] = lastResp.FinishReason
+			}
+		}
+		event.Publish(ctx, event.Event{
+			Type:      event.EventModelComplete,
+			Timestamp: time.Now(),
+			Data:      eventData,
+		})
 	}
 }

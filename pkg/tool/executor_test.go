@@ -47,37 +47,6 @@ func (m *mockTool) Definition() *Definition {
 	}
 }
 
-// mockPlugin is a test double for Plugin
-type mockPlugin struct {
-	beforeToolFunc  func(ctx context.Context, name string, input any) error
-	afterToolFunc   func(ctx context.Context, name string, result any) error
-	onToolErrorFunc func(ctx context.Context, name string, err error) error
-}
-
-func (p *mockPlugin) ExecuteBeforeTool(ctx context.Context, name string, input any) error {
-	if p.beforeToolFunc != nil {
-		return p.beforeToolFunc(ctx, name, input)
-	}
-	return nil
-}
-
-func (p *mockPlugin) ExecuteAfterTool(ctx context.Context, name string, result any) error {
-	if p.afterToolFunc != nil {
-		return p.afterToolFunc(ctx, name, result)
-	}
-	return nil
-}
-
-func (p *mockPlugin) ExecuteOnToolError(ctx context.Context, name string, err error) error {
-	if p.onToolErrorFunc != nil {
-		return p.onToolErrorFunc(ctx, name, err)
-	}
-	return nil
-}
-
-// Ensure mockPlugin implements Plugin interface
-var _ Plugin = (*mockPlugin)(nil)
-
 // TestSequentialExecutor_BasicExecution tests basic sequential execution
 func TestSequentialExecutor_BasicExecution(t *testing.T) {
 	registry := map[string]Tool{
@@ -213,83 +182,6 @@ func TestSequentialExecutor_ToolNotFound(t *testing.T) {
 	assert.Contains(t, results[0].Error.Error(), "test-agent")
 	assert.Contains(t, results[0].Error.Error(), "nonexistent")
 	assert.Contains(t, results[0].Error.Error(), "not registered")
-}
-
-// TestSequentialExecutor_WithPlugins tests plugin lifecycle
-func TestSequentialExecutor_WithPlugins(t *testing.T) {
-	registry := map[string]Tool{
-		"tool1": &mockTool{
-			callFunc: func(ctx context.Context, input string) (any, error) {
-				return "original result", nil
-			},
-		},
-	}
-
-	var beforeCalled, afterCalled bool
-	var capturedResult any
-	pm := &mockPlugin{
-		beforeToolFunc: func(ctx context.Context, name string, input any) error {
-			beforeCalled = true
-			assert.Equal(t, "tool1", name)
-			return nil
-		},
-		afterToolFunc: func(ctx context.Context, name string, result any) error {
-			afterCalled = true
-			capturedResult = result
-			return nil
-		},
-	}
-
-	ctx := WithPlugin(context.Background(), pm)
-	executor := NewSequentialExecutor(registry)
-
-	calls := []Call{
-		{ID: "1", Name: "tool1", Arguments: `{"input":"test"}`},
-	}
-
-	results, err := executor.Execute(ctx, calls)
-	require.NoError(t, err)
-	require.Len(t, results, 1)
-
-	assert.True(t, beforeCalled, "BeforeTool should be called")
-	assert.True(t, afterCalled, "AfterTool should be called")
-	assert.Equal(t, "original result", capturedResult)
-}
-
-// TestSequentialExecutor_PluginErrorHandling tests plugin error handling
-func TestSequentialExecutor_PluginErrorHandling(t *testing.T) {
-	toolErr := errors.New("tool error")
-	transformedErr := errors.New("transformed error")
-
-	registry := map[string]Tool{
-		"tool1": &mockTool{
-			callFunc: func(ctx context.Context, input string) (any, error) {
-				return "", toolErr
-			},
-		},
-	}
-
-	var onErrorCalled bool
-	pm := &mockPlugin{
-		onToolErrorFunc: func(ctx context.Context, name string, err error) error {
-			onErrorCalled = true
-			assert.Equal(t, toolErr, err)
-			return transformedErr
-		},
-	}
-
-	ctx := WithPlugin(context.Background(), pm)
-	executor := NewSequentialExecutor(registry)
-
-	calls := []Call{
-		{ID: "1", Name: "tool1", Arguments: `{}`},
-	}
-
-	results, err := executor.Execute(ctx, calls)
-	assert.Error(t, err)
-	assert.Len(t, results, 1)
-	assert.True(t, onErrorCalled)
-	assert.Equal(t, transformedErr, results[0].Error)
 }
 
 // TestParallelExecutor_BasicExecution tests basic parallel execution
@@ -610,66 +502,4 @@ func TestExecutor_InvalidJSON(t *testing.T) {
 	// Tool receives invalid JSON string directly - no marshal error anymore
 	assert.NoError(t, err)
 	assert.Len(t, results, 1)
-}
-
-// TestExecutor_BeforeToolError tests error from BeforeTool plugin
-func TestExecutor_BeforeToolError(t *testing.T) {
-	pluginErr := errors.New("before tool error")
-	registry := map[string]Tool{
-		"tool1": &mockTool{
-			callFunc: func(ctx context.Context, input string) (any, error) {
-				t.Fatal("Tool should not be called when BeforeTool fails")
-				return "", nil
-			},
-		},
-	}
-
-	pm := &mockPlugin{
-		beforeToolFunc: func(ctx context.Context, name string, input any) error {
-			return pluginErr
-		},
-	}
-
-	ctx := WithPlugin(context.Background(), pm)
-	executor := NewSequentialExecutor(registry)
-
-	calls := []Call{
-		{ID: "1", Name: "tool1", Arguments: `{}`},
-	}
-
-	results, err := executor.Execute(ctx, calls)
-	assert.Error(t, err)
-	assert.Len(t, results, 1)
-	assert.Equal(t, pluginErr, results[0].Error)
-}
-
-// TestExecutor_AfterToolError tests error from AfterTool plugin
-func TestExecutor_AfterToolError(t *testing.T) {
-	pluginErr := errors.New("after tool error")
-	registry := map[string]Tool{
-		"tool1": &mockTool{
-			callFunc: func(ctx context.Context, input string) (any, error) {
-				return "result", nil
-			},
-		},
-	}
-
-	pm := &mockPlugin{
-		afterToolFunc: func(ctx context.Context, name string, result any) error {
-			assert.Equal(t, "result", result)
-			return pluginErr
-		},
-	}
-
-	ctx := WithPlugin(context.Background(), pm)
-	executor := NewSequentialExecutor(registry)
-
-	calls := []Call{
-		{ID: "1", Name: "tool1", Arguments: `{}`},
-	}
-
-	results, err := executor.Execute(ctx, calls)
-	assert.Error(t, err)
-	assert.Len(t, results, 1)
-	assert.Equal(t, pluginErr, results[0].Error)
 }

@@ -3,152 +3,122 @@ package main
 import (
 	"context"
 	"fmt"
-	"iter"
 	"log"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/agent"
-	"github.com/hupe1980/agentmesh/pkg/agent/callbacks"
-	"github.com/hupe1980/agentmesh/pkg/plugin"
-
-	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/model"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/tool"
+	toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
 )
 
-// FlakyModel simulates an unreliable external service
-type FlakyModel struct {
+// FlakyTool simulates an unreliable external service
+type FlakyTool struct {
 	callCount int
 }
 
-func (m *FlakyModel) Capabilities() model.Capabilities {
-	return model.Capabilities{
-		Streaming:           false,
-		Tools:               false,
-		MaxContextTokens:    4096,
-		MaxOutputTokens:     1024,
-		SupportedModalities: []string{"text"},
+func (t *FlakyTool) Name() string {
+	return "flaky_api"
+}
+
+func (t *FlakyTool) Description() string {
+	return "Simulates an unreliable external API for circuit breaker demonstration"
+}
+
+func (t *FlakyTool) Definition() *tool.Definition {
+	return &tool.Definition{
+		Type: "function",
+		Function: tool.FunctionDefinition{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Parameters:  map[string]any{},
+		},
 	}
 }
 
-func (m *FlakyModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-	return func(yield func(*model.Response, error) bool) {
-		m.callCount++
+func (t *FlakyTool) Call(ctx context.Context, args string) (any, error) {
+	t.callCount++
 
-		// Simulate service behavior:
-		// Calls 1-5: Fail (circuit opens after 3)
-		// Calls 6+: Success (circuit recovers)
-		if m.callCount <= 5 {
-			log.Printf("[Call %d] ❌ Service failing", m.callCount)
-			yield(nil, fmt.Errorf("service unavailable (call %d)", m.callCount))
-			return
-		}
-
-		log.Printf("[Call %d] ✓ Service success", m.callCount)
-		yield(&model.Response{
-			Message: message.NewAIMessageFromText(fmt.Sprintf("Success on call %d", m.callCount)),
-			Partial: false, // Single complete response
-		}, nil)
+	// Simulate service behavior:
+	// Calls 1-3: Fail (circuit opens after 3)
+	// Calls 4+: Success (circuit recovers)
+	if t.callCount <= 3 {
+		log.Printf("[Call %d] ❌ Service failing", t.callCount)
+		return nil, fmt.Errorf("service unavailable (call %d)", t.callCount)
 	}
+
+	log.Printf("[Call %d] ✓ Service success", t.callCount)
+	return fmt.Sprintf("Success on call %d with args: %s", t.callCount, args), nil
 }
 
 func main() {
-	fmt.Println("=== Circuit Breaker Pattern Example ===")
+	fmt.Println("=== Circuit Breaker Middleware Example ===")
 	fmt.Println()
-	fmt.Println("Demonstrating plugin-based circuit breaker:")
+	fmt.Println("Demonstrating tool circuit breaker:")
 	fmt.Println("- First 3 failures → Circuit opens")
-	fmt.Println("- While open, plugin rejects requests")
-	fmt.Println("- After 5s timeout → Circuit transitions to half-open")
+	fmt.Println("- While open, middleware rejects requests immediately")
+	fmt.Println("- After 30s timeout → Circuit transitions to half-open")
 	fmt.Println("- Successful call → Circuit closes")
 	fmt.Println()
 
-	// Create a flaky model
-	flakyModel := &FlakyModel{}
+	// Create flaky tool
+	flakyTool := &FlakyTool{}
 
-	// Create plugin manager with circuit breaker
-	pluginMgr := callbacks.NewPluginManager()
-
-	// Configure circuit breaker plugin:
+	// Create circuit breaker middleware:
 	// - Opens after 3 failures
-	// - Waits 5 seconds before transitioning to half-open
-	// - Allows 1 test request in half-open state
-	cbPlugin := plugin.NewCircuitBreakerPlugin(3, 5*time.Second, 1)
+	// - Waits 30 seconds before transitioning to half-open
+	cb := toolmw.NewCircuitBreakerMiddleware(3, 30*time.Second)
 
-	if err := pluginMgr.Register(context.Background(), cbPlugin); err != nil {
-		log.Fatal(err)
+	// Create tool executor with circuit breaker
+	registry := map[string]tool.Tool{
+		"flaky_api": flakyTool,
 	}
+	baseExecutor := tool.NewSequentialExecutor(registry)
+	executor := tool.Chain(baseExecutor, cb)
 
-	// Build the graph using agent
-	mgr := graphstate.NewManager()
-	if err := agent.RegisterMessagesKey(mgr); err != nil {
-		log.Fatal(err)
-	}
-
-	g, err := graph.NewGraph(mgr)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create model executor with circuit breaker
-	modelExecutor := model.NewExecutor(flakyModel, model.WithExecutorName("flaky-service"))
-
-	modelNode, err := agent.NewModelNode(
-		modelExecutor,
-		agent.WithModelNodeName("flaky-service"),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = g.AddNode(modelNode)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := g.SetEntryPoint("flaky-service"); err != nil {
-		panic(err)
-	}
-
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	if err != nil {
-		log.Fatal(err)
-	}
+	ctx := context.Background()
 
 	// Make multiple attempts to demonstrate circuit breaker behavior
-	ctx := context.Background()
-	// Inject plugin manager into context so nodes can retrieve it
-	ctx = callbacks.WithPluginManager(ctx, pluginMgr)
-	var lastErr error
-
 	for i := 1; i <= 10; i++ {
-		fmt.Printf("\n--- Attempt %d ---\n", i)
+		fmt.Printf("\n--- Attempt %d (Circuit: %s) ---\n", i, cb.State())
 
-		result, err := graph.Last(compiled.Run(ctx, []message.Message{
-			message.NewHumanMessageFromText(fmt.Sprintf("Test attempt %d", i)),
-		}))
+		calls := []tool.Call{
+			{
+				ID:        fmt.Sprintf("call-%d", i),
+				Name:      "flaky_api",
+				Arguments: fmt.Sprintf(`{"test":"attempt %d"}`, i),
+			},
+		}
 
-		lastErr = err
+		results, err := executor.Execute(ctx, calls)
 
 		if err != nil {
-			fmt.Printf("❌ Attempt failed: %v\n", err)
-		} else if result != nil {
-			text := message.Stringify(result)
-			fmt.Printf("✓ Success: %s\n", text)
+			fmt.Printf("❌ Execution failed: %v\n", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		result := results[0]
+		if result.Error != nil {
+			fmt.Printf("❌ Tool failed: %v\n", result.Error)
+		} else {
+			fmt.Printf("✓ Success: %s\n", result.Result)
 			break
 		}
 
 		// Wait before next attempt
+		// (In real scenario, wait for resetTimeout to test half-open state)
 		time.Sleep(time.Second)
 	}
 
 	fmt.Println("\n=== Results ===")
-	fmt.Printf("Circuit breaker state: %v\n", cbPlugin.GetState())
-	fmt.Printf("Total model calls made: %d\n", flakyModel.callCount)
+	fmt.Printf("Circuit breaker state: %s\n", cb.State())
+	fmt.Printf("Total API calls made: %d (note: calls blocked by open circuit don't increment)\n", flakyTool.callCount)
 
-	if lastErr != nil {
-		fmt.Printf("❌ Final error: %v\n", lastErr)
-	} else {
-		fmt.Println("✓ Service recovered successfully!")
-	}
+	// Demonstrate state transitions
+	fmt.Println("\n=== Circuit States ===")
+	fmt.Println("1. CLOSED   - Normal operation, all requests pass through")
+	fmt.Println("2. OPEN     - Fast fail, requests rejected immediately")
+	fmt.Println("3. HALF_OPEN- Testing recovery, limited requests allowed")
+	fmt.Println()
+	fmt.Println("The circuit protects downstream services from being overwhelmed")
+	fmt.Println("and provides fast failure when services are unavailable.")
 }

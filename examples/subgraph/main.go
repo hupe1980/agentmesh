@@ -47,15 +47,16 @@ func main() {
 
 	pipeline.SetEntryPoint("init")
 
-	pipeline.AddStaticNode("init", []string{"validation"}, func(ctx context.Context, view graphstate.ReadView) (graphstate.Updates, error) {
+	pipeline.AddNodeFunc("init", []string{"validation"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 		data := map[string]any{
 			"user_id": "12345",
 			"email":   "user@example.com",
 			"score":   75,
 		}
-		return graph.NewCommand().
+		updates, err := graph.NewCommand().
 			Set(inputDataKey, data).
 			Build()
+		return []string{"validation"}, updates, err
 	})
 
 	// Use NamespacedNode for validation stage

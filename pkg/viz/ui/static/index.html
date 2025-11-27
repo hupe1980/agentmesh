@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentMesh Visualization</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1>🕸️ AgentMesh Viz</h1>
+                <div class="header-actions">
+                    <button id="refresh-runs" class="btn btn-secondary">
+                        <span class="icon">🔄</span> Refresh
+                    </button>
+                    <div class="connection-status" id="ws-status">
+                        <span class="status-indicator disconnected"></span>
+                        <span class="status-text">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3>Start New Run</h3>
+                    <div class="new-run-form">
+                        <select id="graph-select" class="select">
+                            <option value="">Select a graph...</option>
+                        </select>
+                        <textarea id="run-input" class="input textarea" placeholder="Enter input (JSON or text)" rows="3"></textarea>
+                        <button id="start-run-btn" class="btn btn-primary btn-block">
+                            <span class="icon">▶️</span> Start Run
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <h3>Runs</h3>
+                    <div class="runs-filter">
+                        <input type="text" id="filter-runs" placeholder="Filter runs..." class="input">
+                        <select id="status-filter" class="select">
+                            <option value="">All Status</option>
+                            <option value="running">Running</option>
+                            <option value="paused">Paused</option>
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                    </div>
+                    <div id="runs-list" class="runs-list">
+                        <div class="empty-state">
+                            <p>No runs found</p>
+                            <p class="text-muted">Start a graph execution to see runs</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Panel -->
+            <main class="main-panel">
+                <div id="no-run-selected" class="empty-state-large">
+                    <div class="empty-state-icon">📊</div>
+                    <h2>No Run Selected</h2>
+                    <p>Select a run from the sidebar to view details</p>
+                </div>
+
+                <div id="run-viewer" class="run-viewer hidden">
+                    <!-- Tab Navigation -->
+                    <div class="tabs">
+                        <button class="tab-button active" data-tab="overview">
+                            <span class="icon">📋</span> Overview
+                        </button>
+                        <button class="tab-button" data-tab="events">
+                            <span class="icon">📡</span> Events
+                        </button>
+                        <button class="tab-button" data-tab="graph">
+                            <span class="icon">🕸️</span> Graph
+                        </button>
+                        <button class="tab-button" data-tab="state">
+                            <span class="icon">💾</span> State
+                        </button>
+                        <button class="tab-button" data-tab="analytics">
+                            <span class="icon">📊</span> Analytics
+                        </button>
+                        <button class="tab-button" data-tab="tests">
+                            <span class="icon">🧪</span> Tests
+                        </button>
+                    </div>
+
+                    <!-- Tab Content -->
+                    <div class="tab-content">
+                        <!-- Overview Tab -->
+                        <div id="tab-overview" class="tab-pane active">
+                            <div class="overview-grid">
+                                <div class="card">
+                                    <h3>Run Details</h3>
+                                    <div id="run-details" class="details-grid">
+                                        <div class="detail-item">
+                                            <span class="label">Run ID:</span>
+                                            <span class="value" id="detail-run-id">-</span>
+                                        </div>
+                                        <div class="detail-item">
+                                            <span class="label">Graph ID:</span>
+                                            <span class="value" id="detail-graph-id">-</span>
+                                        </div>
+                                        <div class="detail-item">
+                                            <span class="label">Status:</span>
+                                            <span class="value" id="detail-status">
+                                                <span class="badge">-</span>
+                                            </span>
+                                        </div>
+                                        <div class="detail-item">
+                                            <span class="label">Started:</span>
+                                            <span class="value" id="detail-start-time">-</span>
+                                        </div>
+                                        <div class="detail-item">
+                                            <span class="label">Duration:</span>
+                                            <span class="value" id="detail-duration">-</span>
+                                        </div>
+                                        <div class="detail-item">
+                                            <span class="label">Events:</span>
+                                            <span class="value" id="detail-event-count">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <h3>Execution Controls</h3>
+                                    <div class="controls-panel">
+                                        <button id="btn-pause" class="btn btn-primary" disabled>
+                                            <span class="icon">⏸️</span> Pause
+                                        </button>
+                                        <button id="btn-resume" class="btn btn-primary" disabled>
+                                            <span class="icon">▶️</span> Resume
+                                        </button>
+                                        <button id="btn-stop" class="btn btn-danger" disabled>
+                                            <span class="icon">⏹️</span> Stop
+                                        </button>
+                                        <button id="btn-restart" class="btn btn-secondary">
+                                            <span class="icon">🔄</span> Restart
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <h3>Quick Stats</h3>
+                                    <div class="stats-grid">
+                                        <div class="stat-item">
+                                            <div class="stat-label">Total Cost</div>
+                                            <div class="stat-value" id="stat-cost">$0.00</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Total Tokens</div>
+                                            <div class="stat-value" id="stat-tokens">0</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Nodes Executed</div>
+                                            <div class="stat-value" id="stat-nodes">0</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Errors</div>
+                                            <div class="stat-value error" id="stat-errors">0</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Events Tab -->
+                        <div id="tab-events" class="tab-pane">
+                            <div class="events-header">
+                                <div class="events-controls">
+                                    <input type="text" id="filter-events" placeholder="Filter events..." class="input">
+                                    <select id="event-type-filter" class="select">
+                                        <option value="">All Types</option>
+                                        <option value="node_start">Node Start</option>
+                                        <option value="node_complete">Node Complete</option>
+                                        <option value="node_error">Node Error</option>
+                                        <option value="step_start">Step Start</option>
+                                        <option value="step_end">Step End</option>
+                                        <option value="state_update">State Update</option>
+                                        <option value="checkpoint">Checkpoint</option>
+                                    </select>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="auto-scroll-events" checked>
+                                        Auto-scroll
+                                    </label>
+                                    <button id="clear-events" class="btn btn-secondary btn-sm">
+                                        <span class="icon">🗑️</span> Clear
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="events-timeline" class="events-timeline">
+                                <div class="empty-state">No events yet</div>
+                            </div>
+                        </div>
+
+                        <!-- Graph Tab -->
+                        <div id="tab-graph" class="tab-pane">
+                            <div class="graph-header">
+                                <div class="graph-controls">
+                                    <button id="graph-zoom-in" class="btn btn-secondary btn-sm">
+                                        <span class="icon">🔍+</span>
+                                    </button>
+                                    <button id="graph-zoom-out" class="btn btn-secondary btn-sm">
+                                        <span class="icon">🔍-</span>
+                                    </button>
+                                    <button id="graph-reset" class="btn btn-secondary btn-sm">
+                                        <span class="icon">⟲</span> Reset
+                                    </button>
+                                    <button id="graph-export" class="btn btn-secondary btn-sm">
+                                        <span class="icon">💾</span> Export
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="graph-container" class="graph-container">
+                                <div class="graph-placeholder">
+                                    <p>Graph visualization will appear here</p>
+                                    <p class="text-muted">Mermaid diagram rendering</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- State Tab -->
+                        <div id="tab-state" class="tab-pane">
+                            <div class="state-header">
+                                <div class="state-controls">
+                                    <select id="checkpoint-selector" class="select">
+                                        <option value="current">Current State</option>
+                                    </select>
+                                    <button id="state-refresh" class="btn btn-secondary btn-sm">
+                                        <span class="icon">🔄</span> Refresh
+                                    </button>
+                                    <button id="state-export" class="btn btn-secondary btn-sm">
+                                        <span class="icon">💾</span> Export
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="state-viewer" class="state-viewer">
+                                <pre id="state-content" class="code-block">No state data</pre>
+                            </div>
+                        </div>
+
+                        <!-- Analytics Tab -->
+                        <div id="tab-analytics" class="tab-pane">
+                            <div class="analytics-grid">
+                                <div class="card">
+                                    <h3>Cost Breakdown</h3>
+                                    <div id="cost-breakdown" class="analytics-section">
+                                        <div class="empty-state-sm">Loading...</div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <h3>Node Performance</h3>
+                                    <div id="node-performance" class="analytics-section">
+                                        <div class="empty-state-sm">Loading...</div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <h3>Bottlenecks</h3>
+                                    <div id="bottlenecks" class="analytics-section">
+                                        <div class="empty-state-sm">Loading...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tests Tab -->
+                        <div id="tab-tests" class="tab-pane">
+                            <div class="tests-header">
+                                <button id="run-tests" class="btn btn-primary">
+                                    <span class="icon">▶️</span> Run All Tests
+                                </button>
+                                <button id="create-test" class="btn btn-secondary">
+                                    <span class="icon">➕</span> Create Test
+                                </button>
+                            </div>
+                            <div id="tests-list" class="tests-list">
+                                <div class="empty-state">
+                                    <p>No tests configured</p>
+                                    <p class="text-muted">Create test scenarios to validate graph execution</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        window.mermaid = mermaid;
+        mermaid.initialize({ 
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+            suppressErrors: false
+        });
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/pkg/state"
@@ -20,12 +19,6 @@ import (
 //	        }
 //	        return []string{graph.END}, updates, nil
 //	    })
-//	compiled, _ := builder.Compile()
-//
-// Or with static routing sugar for simple cases:
-//
-//	builder, _ := graph.NewBuilder(graph.NewMessagePregelExecutor())
-//	builder.AddStaticNode("process", []string{"next"}, processFunc)
 //	compiled, _ := builder.Compile()
 //
 // Or with custom node types:
@@ -253,73 +246,6 @@ func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
 		}
 	}
 	return b
-}
-
-// AddStaticNode is syntactic sugar for simple nodes with static routing to the first target.
-// For nodes that always route to the same place: compute → go to first target → done.
-//
-// Example:
-//
-//	builder.AddStaticNode("process", []string{"next"},
-//	    func(ctx, view) (state.Updates, error) {
-//	        result := process(view.Get("input"))
-//	        return state.Updates{"output": result}, nil
-//	    })
-//
-// Equivalent to:
-//
-//	builder.AddNodeFunc("process", []string{"next"},
-//	    func(ctx, view) ([]string, state.Updates, error) {
-//	        result := process(view.Get("input"))
-//	        return []string{"next"}, state.Updates{"output": result}, nil
-//	    })
-func (b *Builder[I, O]) AddStaticNode(name string, targets []string, compute func(context.Context, state.ReadView) (state.Updates, error)) *Builder[I, O] {
-	if len(targets) == 0 {
-		b.err = fmt.Errorf("AddStaticNode(%s): targets cannot be empty", name)
-		return b
-	}
-	// Wrap simple compute function as NodeFunc
-	fn := func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-		updates, err := compute(ctx, view)
-		if err != nil {
-			return nil, nil, err
-		}
-		return []string{targets[0]}, updates, nil // Always route to first target
-	}
-
-	return b.AddNodeFunc(name, targets, fn)
-}
-
-// AddStaticNodeWithRetry adds a static node with automatic retry on failures.
-// For simple nodes with static routing to the first target that need retry logic.
-//
-// Example:
-//
-//	builder.AddStaticNodeWithRetry("api_call", []string{"next"},
-//	    func(ctx, view) (state.Updates, error) {
-//	        result, err := unreliableAPI.Call()
-//	        if err != nil {
-//	            return nil, err // Will be retried
-//	        }
-//	        return state.Updates{"result": result}, nil
-//	    },
-//	    graph.NewRetryPolicy().WithMaxAttempts(3).Build(),
-//	)
-func (b *Builder[I, O]) AddStaticNodeWithRetry(name string, targets []string, compute func(context.Context, state.ReadView) (state.Updates, error), policy *RetryPolicy) *Builder[I, O] {
-	if len(targets) == 0 {
-		b.err = fmt.Errorf("AddStaticNodeWithRetry(%s): targets cannot be empty", name)
-		return b
-	}
-	// Wrap simple compute function as NodeFunc
-	fn := func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-		updates, err := compute(ctx, view)
-		if err != nil {
-			return nil, nil, err
-		}
-		return []string{targets[0]}, updates, nil // Always route to first target
-	}
-
-	return b.AddNodeFuncWithRetry(name, targets, fn, policy)
 }
 
 // Graph returns the underlying graph.
