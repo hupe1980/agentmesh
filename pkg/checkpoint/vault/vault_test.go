@@ -76,6 +76,22 @@ func (m *MockCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 	return args.Get(0).(*checkpoint.Checkpoint), args.Error(1)
 }
 
+func (m *MockCheckpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*checkpoint.Checkpoint), args.Error(1)
+}
+
+func (m *MockCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	args := m.Called(ctx, runID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]checkpoint.ApprovalRecord), args.Error(1)
+}
+
 func TestNewVaultCheckpointer(t *testing.T) {
 	mockBase := &MockCheckpointer{}
 	mockLogical := &MockLogicalClient{}

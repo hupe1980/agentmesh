@@ -581,6 +581,13 @@ func (p *PregelExecutor[I, O]) Run(
 		// by setupYieldChannel when the consumer stops consuming (yield returns false).
 		runCtx, cancel := context.WithCancel(ctx)
 
+		// Inject approval responses into context if provided
+		if len(runOpts.Approvals) > 0 {
+			for nodeName, approval := range runOpts.Approvals {
+				runCtx = WithApprovalResponse(runCtx, nodeName, approval)
+			}
+		}
+
 		// Initialize run context and state
 		runID, err := p.initializeRun(runCtx, compiled, input, runOpts)
 		if err != nil {
@@ -891,14 +898,107 @@ func (n *pregelNodeAdapter[I, O]) applyBackoff(ctx context.Context, policy *Retr
 
 // executeAfterNodeCallback executes AfterNode or OnNodeError plugin callback.
 
-// shouldInterruptBefore checks if this node is in the interrupt-before list.
-func (n *pregelNodeAdapter[I, O]) shouldInterruptBefore() bool {
-	return slices.Contains(n.compiled.graph.InterruptBefore, n.nodeName)
+// evaluateApprovalGuard evaluates the approval guard for a node.
+// Returns (needsApproval, reason) if successful, or (true, error message) if guard fails.
+func (n *pregelNodeAdapter[I, O]) evaluateApprovalGuard(ctx context.Context, view state.ReadView) (bool, string) {
+	config, ok := n.compiled.graph.ApprovalConfigs[n.nodeName]
+	if !ok || config.Guard == nil {
+		// No guard configured - always interrupt (legacy behavior)
+		return true, ""
+	}
+
+	needsApproval, reason, err := config.Guard(ctx, view)
+	if err != nil {
+		logger := logging.FromContext(ctx)
+		logger.Error("approval guard evaluation failed", "node", n.nodeName, "error", err)
+		// On guard error, default to requiring approval for safety
+		return true, fmt.Sprintf("guard evaluation failed: %v", err)
+	}
+	return needsApproval, reason
 }
 
-// shouldInterruptAfter checks if this node is in the interrupt-after list.
-func (n *pregelNodeAdapter[I, O]) shouldInterruptAfter() bool {
-	return slices.Contains(n.compiled.graph.InterruptAfter, n.nodeName)
+// shouldInterruptBefore checks if this node needs approval before execution.
+// Returns true if the node requires interrupt, along with optional approval reason.
+func (n *pregelNodeAdapter[I, O]) shouldInterruptBefore(ctx context.Context, view state.ReadView) (bool, string) {
+	if !slices.Contains(n.compiled.graph.InterruptBefore, n.nodeName) {
+		return false, ""
+	}
+	return n.evaluateApprovalGuard(ctx, view)
+}
+
+// shouldInterruptAfter checks if this node needs approval after execution.
+// Returns true if the node requires interrupt, along with optional approval reason.
+func (n *pregelNodeAdapter[I, O]) shouldInterruptAfter(ctx context.Context, view state.ReadView) (bool, string) {
+	if !slices.Contains(n.compiled.graph.InterruptAfter, n.nodeName) {
+		return false, ""
+	}
+	return n.evaluateApprovalGuard(ctx, view)
+}
+
+// getInterruptStage returns the stage name for the interrupt.
+func (n *pregelNodeAdapter[I, O]) getInterruptStage(isBefore bool) string {
+	if isBefore {
+		return "before"
+	}
+	return "after"
+}
+
+// getRequiredState extracts required state fields based on approval configuration.
+func (n *pregelNodeAdapter[I, O]) getRequiredState(vsnap *state.VersionedSnapshot) state.Updates {
+	config, ok := n.compiled.graph.ApprovalConfigs[n.nodeName]
+	if !ok {
+		return nil
+	}
+
+	if len(config.StateSnapshot) > 0 {
+		// Filter state to only include requested keys
+		requiredState := make(state.Updates)
+		for _, key := range config.StateSnapshot {
+			if value, exists := vsnap.Data[key]; exists {
+				requiredState[key] = value
+			}
+		}
+		return requiredState
+	}
+
+	// Empty list means include all state
+	return vsnap.Data
+}
+
+// createApprovalMetadata creates approval metadata for an interrupt checkpoint.
+func (n *pregelNodeAdapter[I, O]) createApprovalMetadata(vsnap *state.VersionedSnapshot, approvalReason string) *checkpoint.ApprovalMetadata {
+	// Get timeout from approval configuration (if configured)
+	var timeoutAt *time.Time
+	if config, ok := n.compiled.graph.ApprovalConfigs[n.nodeName]; ok && config.Timeout > 0 {
+		timeout := time.Now().Add(config.Timeout)
+		timeoutAt = &timeout
+	}
+
+	// Get required state snapshot (if configured)
+	requiredState := n.getRequiredState(vsnap)
+
+	return &checkpoint.ApprovalMetadata{
+		PendingApprovals: map[string]*checkpoint.PendingApproval{
+			n.nodeName: {
+				NodeName:      n.nodeName,
+				Reason:        approvalReason,
+				RequestedAt:   vsnap.Timestamp,
+				TimeoutAt:     timeoutAt,
+				RequiredState: requiredState,
+			},
+		},
+		ApprovalHistory: []checkpoint.ApprovalRecord{},
+		GuardReasons:    map[string]string{n.nodeName: approvalReason},
+	}
+}
+
+// createStateSnapshot creates a state snapshot for the interrupt.
+func (n *pregelNodeAdapter[I, O]) createStateSnapshot(ctx context.Context, stage string) (*state.VersionedSnapshot, error) {
+	return n.compiled.manager.Snapshot(ctx, map[string]string{
+		"run_id":    n.runID,
+		"node":      n.nodeName,
+		"interrupt": stage,
+	})
 }
 
 // createInterruptCheckpoint creates a checkpoint with pending writes and pauses execution.
@@ -906,27 +1006,22 @@ func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
 	ctx context.Context,
 	updates state.Updates,
 	isBefore bool,
+	approvalReason string,
 ) {
 	if n.executor == nil {
 		return // No executor, can't create checkpoint
 	}
 
 	logger := logging.FromContext(ctx)
-	stage := "before"
-	if !isBefore {
-		stage = "after"
-	}
+	stage := n.getInterruptStage(isBefore)
 
 	logger.Info("interrupt detected, creating checkpoint",
 		"node", n.nodeName,
-		"stage", stage)
+		"stage", stage,
+		"approval_reason", approvalReason)
 
 	// Get current state snapshot
-	vsnap, err := n.compiled.manager.Snapshot(ctx, map[string]string{
-		"run_id":    n.runID,
-		"node":      n.nodeName,
-		"interrupt": stage,
-	})
+	vsnap, err := n.createStateSnapshot(ctx, stage)
 	if err != nil {
 		logger.Error("failed to create state snapshot for interrupt",
 			"node", n.nodeName,
@@ -965,16 +1060,20 @@ func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
 		currentSuperstep = n.executor.metrics.Snapshot().CurrentSuperstep
 	}
 
+	// Create approval metadata
+	approvalMetadata := n.createApprovalMetadata(vsnap, approvalReason)
+
 	// Create checkpoint
 	chkpt := &checkpoint.Checkpoint{
-		RunID:          n.runID,
-		Superstep:      currentSuperstep,
-		Timestamp:      vsnap.Timestamp,
-		Version:        0,
-		State:          vsnap.Data,
-		PendingWrites:  pendingWrites,
-		CompletedNodes: completedNodes,
-		PausedNodes:    pausedNodes,
+		RunID:            n.runID,
+		Superstep:        currentSuperstep,
+		Timestamp:        vsnap.Timestamp,
+		Version:          0,
+		State:            vsnap.Data,
+		PendingWrites:    pendingWrites,
+		CompletedNodes:   completedNodes,
+		PausedNodes:      pausedNodes,
+		ApprovalMetadata: approvalMetadata,
 		Metadata: map[string]any{
 			"interrupt_node":  n.nodeName,
 			"interrupt_stage": stage,
@@ -984,7 +1083,8 @@ func (n *pregelNodeAdapter[I, O]) createInterruptCheckpoint(
 	logger.Info("interrupt checkpoint created",
 		"node", n.nodeName,
 		"stage", stage,
-		"pending_writes", len(pendingWrites))
+		"pending_writes", len(pendingWrites),
+		"approval_required", approvalReason != "")
 
 	// Save checkpoint if checkpointer is available
 	if n.checkpointer != nil {
@@ -1115,14 +1215,28 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 	}
 
-	if !isResuming && n.shouldInterruptBefore() {
-		// Create checkpoint with pending writes (node not executed yet)
-		n.createInterruptCheckpoint(ctx, nil, true)
-		// Mark node as paused so it doesn't execute again until resumed
-		if n.executor != nil && n.executor.metrics != nil {
-			n.executor.metrics.AddPaused(n.nodeName)
+	// Get state view early for approval guard evaluation
+	view := n.graphAdapter.getSuperstepView()
+	if view == nil {
+		// Fallback for initialization
+		var err error
+		view, err = n.compiled.manager.CreateReadView(ctx)
+		if err != nil {
+			nodeErr = fmt.Errorf("failed to create read view: %w", err)
+			return nodeErr
 		}
-		return nil // Pause execution
+	}
+
+	if !isResuming {
+		if needsInterrupt, reason := n.shouldInterruptBefore(ctx, view); needsInterrupt {
+			// Create checkpoint with approval metadata
+			n.createInterruptCheckpoint(ctx, nil, true, reason)
+			// Mark node as paused so it doesn't execute again until resumed
+			if n.executor != nil && n.executor.metrics != nil {
+				n.executor.metrics.AddPaused(n.nodeName)
+			}
+			return nil // Pause execution
+		}
 	}
 
 	// Clear resuming flag after checking (node is now executing)
@@ -1165,20 +1279,8 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	// Attach stream writer to context
 	ctxWithStream := WithStreamWriter(ctx, streamWriter)
 
-	// Execute the node with BSP-correct state access
-	// Use the superstep-wide ReadView (shared by all nodes in this superstep)
-	view := n.graphAdapter.getSuperstepView()
-	if view == nil {
-		// Fallback for initialization (should not happen in normal operation)
-		var err error
-		view, err = n.compiled.manager.CreateReadView(ctx)
-		if err != nil {
-			nodeErr = fmt.Errorf("failed to create read view: %w", err)
-			return nodeErr
-		}
-	}
-
 	// Execute node with retry and cache policies (now returns tuple)
+	// Note: view was already created earlier for approval guard evaluation
 	targets, updates, err := n.executeWithPolicies(ctxWithStream, node, view)
 	if err != nil {
 		// Wrap node execution errors with structured error type
@@ -1200,9 +1302,9 @@ func (n *pregelNodeAdapter[I, O]) Run(
 	}
 
 	// Check for interrupt-after (before applying updates)
-	if n.shouldInterruptAfter() {
-		// Create checkpoint with pending writes (updates not yet applied)
-		n.createInterruptCheckpoint(ctx, updates, false)
+	if needsInterrupt, reason := n.shouldInterruptAfter(ctx, view); needsInterrupt {
+		// Create checkpoint with pending writes (updates not yet applied) and approval metadata
+		n.createInterruptCheckpoint(ctx, updates, false, reason)
 		// Mark node as paused so execution doesn't continue
 		if n.executor != nil && n.executor.metrics != nil {
 			n.executor.metrics.AddPaused(n.nodeName)

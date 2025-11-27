@@ -26,7 +26,7 @@ sidebar:
 
 ## Examples {#examples}
 
-The repository includes **17 comprehensive examples** demonstrating core features and production patterns:
+The repository includes **18 comprehensive examples** demonstrating core features and production patterns:
 
 ### Getting started
 - **`basic_agent`** – Simple ReAct agent with tool calling and message handling
@@ -49,6 +49,7 @@ The repository includes **17 comprehensive examples** demonstrating core feature
 ### Production features
 - **`observability`** – OpenTelemetry metrics, distributed tracing, and monitoring
 - **`human_pause`** – Human-in-the-loop workflows with interrupt/resume
+- **`human_approval`** – Approval workflows with conditional guards, state edits, and audit trails
 - **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
 - **`middleware`** – Middleware system for graph/model/tool execution layers
 - **`circuit_breaker`** – Circuit breaker middleware for fault tolerance

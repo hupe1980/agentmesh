@@ -33,6 +33,9 @@ type RunOptions struct {
 	// Resume support for human-in-the-loop workflows
 	Checkpoint  *checkpoint.Checkpoint // Restore from this checkpoint
 	ResumeValue map[string]any         // Inject into context for nodes
+
+	// Approval support for conditional human-in-the-loop workflows
+	Approvals map[string]*ApprovalResponse // Approval responses by node name
 }
 
 func defaultRunOptions() RunOptions {

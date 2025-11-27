@@ -5,65 +5,43 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/hupe1980/agentmesh)](https://goreportcard.com/report/github.com/hupe1980/agentmesh)
 [![GoDoc](https://pkg.go.dev/badge/github.com/hupe1980/agentmesh.svg)](https://pkg.go.dev/github.com/hupe1980/agentmesh)
 
-> 🚀 **Production-grade multi-agent orchestration framework** powered by Pregel-style bulk-synchronous parallel (BSP) graph processing.
-
-AgentMesh enables you to build sophisticated AI agent workflows with parallel execution, state management, and enterprise-grade observability. Built natively in Go for performance and type safety.
+> Production-grade multi-agent orchestration framework powered by Pregel-style bulk-synchronous parallel (BSP) graph processing. Build sophisticated AI agent workflows with parallel execution, state management, and enterprise-grade observability.
 
 **Requires Go 1.24+**
+
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-### 🎯 Core Capabilities
-- **🔄 Parallel Graph Execution** - Pregel-based BSP engine with optimized concurrency (4-10x faster state access, 50-250x better frontier scaling)
-- **🧠 LLM Integration** - First-class support for OpenAI, Anthropic, and extensible model interfaces
-- **🛠️ Tool Orchestration** - Type-safe function calling with automatic JSON schema generation
-- **🔒 WASM Tool Sandboxing** - Memory-safe sandbox for executing untrusted code with strict isolation
-- **💾 State Management** - Lock-free channel-based state with versioning and time-travel debugging
-- **🔁 Retry Policies** - Configurable exponential backoff with custom retry logic
-- **🎭 Subgraph Support** - Compose complex workflows from reusable graph components
+### Core Engine
+- **🔄 Pregel BSP Execution** - Parallel graph processing with optimized concurrency (4-10x faster state access)
+- **🧠 LLM Integration** - Native support for OpenAI, Anthropic, Gemini with streaming and reasoning models
+- **💾 State Management** - Lock-free channel-based state with versioning and checkpointing
+- **🛠️ Tool Orchestration** - Type-safe function calling with automatic schema generation
 
-### 📊 Production Features
-- **✅ Graph Validation** - Comprehensive pre-execution validation catches errors at compile time (missing nodes, cycles, unreachable nodes)
-- **📈 Observability** - Built-in OpenTelemetry metrics and distributed tracing
-- **💾 Automatic Checkpointing** - In-memory/persistent state with auto-resume capabilities and two-phase commit for transactional consistency
-- **🔐 Checkpoint Signing** - HMAC-SHA256 signatures prevent state tampering and ensure integrity
-- **🛡️ Input Validation** - Configurable size/count limits protect against DoS and resource exhaustion
-- **⏱️ Execution Control** - Max iterations, timeouts, and graceful termination
-- **🔀 Conditional Routing** - Dynamic flow control based on node outputs
-- **🔍 Graph Introspection** - Debug and visualize graphs with topology analysis and Mermaid flowcharts
-- **🎨 Flowchart Generation** - Auto-generate Mermaid diagrams from graph topology
-- **⏸️ Human-in-the-Loop** - Pause workflows for human approval/input
-- **🔌 Middleware System** - Composable middleware for graph/model/tool execution with caching, retry, rate limiting, observability
-- **📡 Event Bus** - Publish-subscribe event system for loose coupling and real-time monitoring
-- **🧪 Testing First** - Comprehensive test coverage across core features
+### Production Ready
+- **✅ Graph Validation** - Comprehensive compile-time error checking (cycles, missing nodes, unreachable paths)
+- **💾 Checkpointing** - Persistent state with auto-resume, encryption, and signing
+- **⏸️ Human-in-the-Loop** - Approval workflows with conditional guards and audit trails
+- **📊 Observability** - Built-in OpenTelemetry metrics and distributed tracing
+- **🔁 Resilience** - Configurable retry policies, circuit breakers, and timeouts
+- **🔒 Security** - WASM sandboxing for untrusted code, input validation, and integrity checks
 
-### 🧠 AI/ML Features
-- **🔢 Embeddings** - Text-to-vector conversion for semantic search and RAG workflows (OpenAI, SimpleEmbedder)
-- **🧠 Memory** - Long-term conversation storage with semantic vector search and session management
-- **📝 Prompt Templates** - Variable substitution with {{.Variable}} syntax for reusable prompt patterns
-- **🔍 Retrieval** - RAG integration with AWS Bedrock Knowledge Bases and Kendra
-- **🔄 Unified Model API** - Iterator-based `iter.Seq2[*model.Response, error]` with streaming/blocking support
-- **🧠 Native Reasoning** - First-class support for reasoning-capable models (OpenAI o1/o3, Gemini 2.0, Claude)
-- **📊 Rich Metadata** - Access reasoning traces, finish reasons, token probabilities, and usage statistics
-- **🎯 Token Tracking** - Comprehensive usage info (prompt, completion, reasoning tokens) for cost monitoring
+### AI/ML Features
+- **🔢 Embeddings & Memory** - Semantic search and long-term conversation storage
+- **🔍 RAG Integration** - AWS Bedrock Knowledge Bases and Kendra support
+- **🧠 Native Reasoning** - First-class support for o1, o3, Gemini 2.0, Claude reasoning models
+- **📝 Prompt Templates** - Variable substitution with reusable patterns
 
-### 🌐 Integration & Extensibility
-- **🤝 Agent-to-Agent (A2A) Protocol** - Expose agents as A2A services or connect to external A2A agents
-- **🔌 Model Context Protocol (MCP)** - Dynamic tool discovery from MCP servers
-- **🛠️ LangChainGo Tools** - Import and use LangChainGo tool ecosystem
-- **🔒 WebAssembly Sandboxing** - Memory-safe execution of untrusted tools with runtime-enforced isolation
-- **🤖 Multi-Provider LLMs** - OpenAI, Anthropic, Gemini with functional options pattern
-- **⚙️ Custom Execution Backends** - Public `pkg/pregel` API for distributed MessageBus (Redis, Kafka) and custom schedulers
-- **🔒 Checkpoint Integrity** - State versioning detects corruption and concurrent modifications
+### Extensibility
+- **🤝 A2A Protocol** - Multi-agent collaboration with standardized communication
+- **🔌 MCP Support** - Dynamic tool discovery from Model Context Protocol servers
+- **🌐 LangChainGo Tools** - Import existing tool ecosystem
+- **⚙️ Custom Backends** - Pluggable MessageBus for distributed execution (Redis, Kafka)
 
 ---
 
 ## 🚀 Quick Start
-
-### Requirements
-
-- **Go 1.24+**
 
 ### Installation
 
@@ -71,111 +49,7 @@ AgentMesh enables you to build sophisticated AI agent workflows with parallel ex
 go get github.com/hupe1980/agentmesh@latest
 ```
 
----
-
-## 📐 Architecture
-
-AgentMesh follows a **component-based architecture** with clean separation of concerns:
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│              Application Layer (pkg/agent)                   │
-│  • ReActAgent: Reasoning + Acting pattern                    │
-│  • SupervisorAgent: Multi-agent coordination                 │
-│  • RAGAgent: Retrieval-Augmented Generation                  │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ builds on
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│               Compiled[I,O] (Coordinator)                    │
-│  • Immutable graph topology (nodes, edges, conditionals)     │
-│  • Public API: Run() with iterator pattern                   │
-│  • Coordinates StateManager ↔ Executor                       │
-│  • Rate limiting & retry policies                            │
-└────────────────┬─────────────────────────┬───────────────────┘
-                 │                         │
-                 │ delegates to            │ delegates to
-                 ▼                         ▼
-    ┌────────────────────────┐  ┌────────────────────────────┐
-    │    StateManager        │  │       Executor[I,O]        │
-    │    (Interface)         │  │       (Interface)          │
-    │                        │  │                            │
-    │  • Channels            │  │  • Execution Strategy      │
-    │  • Checkpoints         │  │  • Superstep Coordination  │
-    │  • Aggregates          │  │  • Event Streaming         │
-    │  • Thread-safe access  │  │  • Pause/Resume Control    │
-    │  • State versioning    │  │  • Execution Statistics    │
-    └────────────────────────┘  └──────────┬─────────────────┘
-                                           │
-                                           │ implements
-                                           ▼
-                              ┌─────────────────────────┐
-                              │ PregelExecutor[I,O]     │
-                              │ (BSP + graphRuntime)    │
-                              │                         │
-                              │ • BSP Supersteps        │
-                              │ • Parallel execution    │
-                              │ • Worker Pool           │
-                              │ • Mailbox System        │
-                              │ • pkg/pregel runtime    │
-                              └─────────────────────────┘
-```
-
-### Component Layers
-
-**Application Layer** (`pkg/agent`)
-- High-level agent patterns: ReAct, RAG, Supervisor
-- Built on top of Compiled[I,O]
-
-**Integration Layer** (`pkg/model`, `pkg/tool`, `pkg/retrieval`)
-- LLM providers: OpenAI, Anthropic, Gemini
-- Tool integrations: Functions, A2A, MCP
-- Retrieval: Bedrock Knowledge Bases, Kendra
-
-**Core Framework** (`pkg/graph`) - **Unified Package**
-- **Compiled[I,O]**: Generic compiled graph that orchestrates execution via StateManager + Executor
-- **Builder[I,O]**: Fluent API for graph construction with generics
-- **Executor[I,O]**: Generic interface for pluggable execution strategies
-  - `PregelExecutor[I,O]`: Default BSP parallel execution via `graphRuntime` + `pkg/pregel`
-  - Custom executors can be implemented by users as needed
-- **Validation**: Comprehensive pre-execution validation (topology, cycles, reachability)
-- **StateManager**: Composed interface with focused sub-interfaces
-  - `Reader`: Read-only state access for nodes
-  - `Writer`: Write capabilities (extends Reader)
-  - `ChannelManager`: Channel lifecycle management
-  - `AggregateManager`: Cross-node aggregate operations
-  - `CheckpointManager`: State persistence and restoration
-
-**Supporting Packages**
-- `pkg/state`: State management with Topic, LastValue, BinaryOp channels
-  - **Type-Safe Updates**: All state updates use typed keys with generics for compile-time type checking ([examples/typed_updates](examples/typed_updates))
-- `pkg/checkpoint`: Memory, SQL, DynamoDB persistence
-- `pkg/message`: Human, AI, Tool message types
-
-**Execution Engine** (`pkg/pregel` - PUBLIC API)
-- Generic BSP runtime for custom extensions
-- Pluggable MessageBus (Redis, Kafka, etc.)
-- Custom Scheduler support
-
-**Observability** (`pkg/metrics`, `pkg/trace`, `pkg/graph/events`)
-- OpenTelemetry metrics and tracing
-- Middleware system for graph/model/tool execution layers
-- Event bus for pub/sub observability
-- Semantic caching with embeddings (`pkg/cache`)
-- Exact-match and similarity-based caching strategies
-
-**Key Design Principles:**
-- **Simplified Architecture**: Merged compile/exec into unified graph package (2 layers instead of 3)
-- **Type Safety**: Generic Compiled[I,O] and Executor[I,O] for compile-time guarantees
-- **Separation of Concerns**: State, execution, and topology are independent
-- **Interface Segregation**: Focused, composable interfaces (Reader, ChannelManager, etc.)
-- **Pluggable Execution**: Default Pregel BSP or custom Executor implementations
-- **Extensibility**: Public `pkg/pregel` API for custom backends
-- **Testability**: Mock small, focused interfaces instead of monolithic StateManager
-
----
-
-### Hello World Agent
+### Hello World ReAct Agent
 
 ```go
 package main
@@ -184,1677 +58,201 @@ import (
     "context"
     "fmt"
     "log"
+    "os"
 
     "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
     "github.com/hupe1980/agentmesh/pkg/message"
     "github.com/hupe1980/agentmesh/pkg/model/openai"
     "github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-type WeatherArgs struct {
-    Location string `json:"location"`
-}
-
 func main() {
-    // Create a tool
-    weatherTool, _ := tool.NewFuncTool(
+    ctx := context.Background()
+
+    // Create OpenAI model
+    model, err := openai.NewChatModel(os.Getenv("OPENAI_API_KEY"),
+        openai.WithModel("gpt-4o"),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Define a simple tool
+    weatherTool := tool.NewFunction(
         "get_weather",
         "Get current weather for a location",
-        func(ctx context.Context, args WeatherArgs) (map[string]any, error) {
-            return map[string]any{
-                "location":    args.Location,
-                "temperature": 22,
-                "conditions":  "Sunny",
-            }, nil
+        func(ctx context.Context, location string) (string, error) {
+            return fmt.Sprintf("Weather in %s: Sunny, 72°F", location), nil
         },
     )
 
-    // Build a ReAct agent (returns graph.MessageRunnable interface)
-    agent, err := agent.NewReActAgent(
-        openai.NewModel(),
+    // Create ReAct agent
+    reactAgent, err := agent.NewReActAgent(model,
         agent.WithTools(weatherTool),
+        agent.WithMaxIterations(5),
     )
     if err != nil {
         log.Fatal(err)
     }
 
-    // Execute
-    ctx := context.Background()
+    // Execute agent and get the final result
     messages := []message.Message{
-        message.NewSystemMessageFromText("You are a helpful weather assistant."),
-        message.NewHumanMessageFromText("What's the weather in Paris?"),
+        message.NewHumanMessage("What's the weather in San Francisco?"),
     }
 
-    // Execute and collect all messages
-    messages, err = graph.Collect(agent.Run(ctx, messages))
+    lastMsg, err := graph.Last(reactAgent.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }
-    
-    // Print the final AI response
-    for _, msg := range messages {
-        if aiMsg, ok := msg.(*message.AIMessage); ok {
-            for _, part := range aiMsg.Parts() {
-                if text, ok := part.(message.TextPart); ok {
-                    fmt.Println(text.Text)
-                }
-            }
-        }
-    }
+
+    fmt.Println(message.Stringify(lastMsg))
 }
 ```
 
 **Output:**
 ```
-The weather in Paris is currently sunny with a temperature of 22°C.
+Thought: I need to check the weather in San Francisco
+Action: get_weather("San Francisco")
+Observation: Weather in San Francisco: Sunny, 72°F
+The weather in San Francisco is currently sunny with a temperature of 72°F.
 ```
 
 ---
 
-### Error Handling Convention
-
-AgentMesh follows the **Go iterator convention** with **error wrapping** for consistent error handling:
-
-```go
-import "errors"
-
-// All iterators use this pattern:
-for result, err := range agent.Run(ctx, messages) {
-    if err != nil {
-        // Check if it's a node execution error
-        if errors.Is(err, state.ErrNodeExecution) {
-            // Node failed - may be recoverable
-            log.Printf("Node execution failed: %v", err)
-            continue // or implement retry logic
-        }
-        // Fatal error - execution stopped
-        // Examples: context canceled, max iterations, quota exceeded
-        return fmt.Errorf("execution failed: %w", err)
-    }
-    // Process successful result
-}
-```
-
-**Key Points:**
-- **All errors** → Second return value (err)
-- **Node failures** → Wrapped with `state.ErrNodeExecution`
-- **Use `errors.Is()`** to distinguish error types
-
-This pattern applies to:
-- `agent.Run()` - Agent execution
-- `model.Generate()` - LLM responses
-- `compiled.Run()` - Graph execution
-- `runtime.Run()` - Pregel BSP execution
-
-See [pkg/graph documentation](pkg/graph/doc.go) for detailed error semantics.
-
----
-
-### Using Model Responses with Metadata
-
-Access reasoning traces, usage statistics, and metadata from model responses:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/model"
-    "github.com/hupe1980/agentmesh/pkg/model/openai"
-)
-
-// Create model
-mdl := openai.NewModel(
-    openai.WithModel("gpt-4o"),
-    openai.WithLogprobs(true, 5), // Request token probabilities
-)
-
-// For blocking mode - get final response with metadata
-resp, err := model.Last(mdl.Generate(ctx, messages))
-if err != nil {
-    log.Fatal(err)
-}
-
-// Access the message content
-fmt.Println("Response:", message.Stringify(resp.Message))
-
-// Access native reasoning (for o1/o3, Gemini 2.0, Claude)
-if resp.Reasoning != "" {
-    fmt.Println("Model's reasoning:", resp.Reasoning)
-}
-
-// Check why generation stopped
-fmt.Println("Finish reason:", resp.FinishReason) // "stop", "length", "tool_calls", etc.
-
-// Track token usage for cost monitoring
-if resp.Usage != nil {
-    fmt.Printf("Tokens - Prompt: %d, Completion: %d, Reasoning: %d, Total: %d\n",
-        resp.Usage.PromptTokens,
-        resp.Usage.CompletionTokens,
-        resp.Usage.ReasoningTokens,
-        resp.Usage.TotalTokens)
-}
-
-// Analyze token probabilities (OpenAI only)
-if resp.Logprobs != nil {
-    for _, token := range resp.Logprobs.Content {
-        fmt.Printf("Token: %s, Probability: %.2f%%\n",
-            token.Token,
-            math.Exp(token.Logprob)*100)
-        
-        // See alternative tokens the model considered
-        for _, alt := range token.TopLogprobs {
-            fmt.Printf("  Alternative: %s (%.2f%%)\n",
-                alt.Token,
-                math.Exp(alt.Logprob)*100)
-        }
-    }
-}
-
-// For streaming mode - get incremental responses
-for resp, err := range mdl.Generate(ctx, messages) {
-    if err != nil {
-        log.Printf("Error: %v", err)
-        break
-    }
-    
-    // Print content as it arrives
-    fmt.Print(message.Stringify(resp.Message))
-    
-    // Access partial reasoning (if available)
-    if resp.Reasoning != "" {
-        fmt.Printf("\n[Reasoning: %s]\n", resp.Reasoning)
-    }
-}
-```
-
-**Response Fields:**
-- `Message` - The actual message content (text, tool calls, images)
-- `Reasoning` - Native reasoning/thinking from o1/o3, Gemini 2.0, Claude (empty for other models)
-- `FinishReason` - Why generation stopped: "stop", "length", "tool_calls", "content_filter"
-- `Logprobs` - Token-level probabilities and alternatives (OpenAI only, requires opt-in)
-- `Usage` - Token consumption with separate prompt/completion/reasoning tracking
-- `Metadata` - Additional provider-specific information
-- `Partial` - true for streaming chunks, false for final complete response
-
----
-
-### Discovering Model Capabilities
-
-Every model exposes its features and limitations via `Capabilities()`:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/model/openai"
-
-// Create a model
-mdl := openai.NewModel(openai.WithModel("gpt-4o"))
-
-// Discover what it can do
-caps := mdl.Capabilities()
-
-fmt.Printf("Model: %s\n", mdl.Name())
-fmt.Printf("Streaming: %v\n", caps.Streaming)
-fmt.Printf("Tools: %v\n", caps.Tools)
-fmt.Printf("Native Reasoning: %v\n", caps.NativeReasoning)
-fmt.Printf("Vision: %v\n", caps.Vision)
-fmt.Printf("Max Context: %d tokens\n", caps.MaxContextTokens)
-fmt.Printf("Supported inputs: %v\n", caps.SupportedModalities)
-
-// Conditionally use features based on capabilities
-if caps.Tools {
-    // Safe to use tools in requests
-    req := &model.Request{
-        Messages: messages,
-        Tools:    myTools,
-    }
-    resp, _ := model.Last(mdl.Generate(ctx, req))
-}
-
-if caps.NativeReasoning {
-    fmt.Println("This model will populate Response.Reasoning automatically")
-}
-
-if caps.Vision {
-    // Can send images
-    messages = append(messages, message.NewHumanMessage(
-        message.NewImagePart(imageData, "image/jpeg"),
-    ))
-}
-```
-
-**Capability Fields:**
-- `Streaming` - Supports incremental response chunks
-- `Tools` - Supports function calling via `Request.Tools`
-- `StructuredOutput` - Supports JSON schema validation
-- `NativeReasoning` - Exposes internal reasoning in `Response.Reasoning`
-- `Logprobs` - Can provide token-level probabilities
-- `Vision` - Can process image inputs
-- `Audio` - Can process audio inputs
-- `MaxContextTokens` - Total context window size
-- `MaxOutputTokens` - Maximum generation length
-- `SupportedModalities` - List of accepted input types
-
----
-
-### Supervisor Multi-Agent Pattern
-
-Create a supervisor agent that routes tasks to specialized worker agents:
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-
-    "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/message"
-    "github.com/hupe1980/agentmesh/pkg/model/openai"
-)
-
-func main() {
-    model := openai.NewModel()
-
-    // Create specialized worker agents
-    mathAgent, _ := agent.NewReActAgent(model,
-        agent.WithSystemPrompt("You are a math expert."))
-    
-    codeAgent, _ := agent.NewReActAgent(model,
-        agent.WithSystemPrompt("You are a programming expert."))
-
-    // Create supervisor that routes to specialists
-    supervisor, err := agent.NewSupervisorAgent(
-        model,
-        agent.WithWorker("math", "Expert in mathematics", mathAgent),
-        agent.WithWorker("code", "Expert in programming", codeAgent),
-        agent.WithSupervisorMaxIterations(10),
-    )
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Execute - supervisor automatically routes to the right specialist
-    ctx := context.Background()
-    messages := []message.Message{
-        message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
-    }
-
-    // Supervisor routes to math agent and returns answer
-    events, _ := graph.Collect(supervisor.Run(ctx, messages))
-    messages = graph.ExtractMessages(events)
-}
-```
-
-**Key Benefits:**
-- 🎯 **Automatic routing** to appropriate specialists
-- 🔧 **Tool-based handoffs** using `HandoffToAgent` pattern
-- 🔄 **Fresh context** per task (configurable)
-- ♻️ **Retry logic** for robust execution
-- ✨ **Clean API** with functional options
-
----
-
-## 📚 Core Concepts
-
-### 🕸️ Graph Architecture
-
-AgentMesh uses a **directed graph** model where:
-- **Nodes** = Computational units (agents, tools, functions)
-- **Edges** = Data flow and execution dependencies
-- **State** = Shared context accessible across all nodes
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/graph"
-)
-
-// Create a graph builder with Pregel executor
-builder := graph.NewBuilder(graph.NewPregelExecutor())
-
-// Add nodes with functions using type-safe builders
-builder.AddNodeFunc("step1", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Recommended: Use Command pattern for routing + state updates
-    return command.New().
-        Set(resultKey, "processed").
-        To("step2")  // Returns ([]string, state.Updates, error)
-})
-
-builder.AddNodeFunc("step2", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Use typed keys for compile-time safety
-    result := state.GetFromView(view, resultKey)
-    fmt.Println("Received:", result)
-    
-    // For list operations, use type-safe Append helpers
-    return command.Append(messagesKey, "Completed").To(graph.EndNode)
-})
-
-// Define flow with tuple return pattern
-builder.SetEntryPoint("step1")
-builder.AddEdge("step1", "step2")
-builder.AddEdge("step2", graph.END)
-
-// Compile with type-safe API (Go 1.24+ generics)
-compiled, err := builder.Compile()
-if err != nil {
-    log.Fatal(err)
-}
-
-// Run with type-safe results (no casting needed)
-for result, err := range compiled.Run(context.Background(), initialMessages) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    // result is state.ExecutionResult - fully typed!
-    fmt.Println(result.Messages)
-}
-```
-
-### 🔄 Pregel-Style Execution
-
-AgentMesh executes graphs in synchronized **supersteps**:
-
-1. **Compute Phase** - All ready nodes execute in parallel
-2. **Synchronization** - Wait for all nodes to complete
-3. **State Update** - Nodes update shared state atomically
-4. **Repeat** - Until reaching END node or max iterations
-
-This enables:
-- ⚡ **Parallel execution** of independent nodes (~6μs overhead per node)
-- 🔒 **Deterministic** ordering within supersteps
-- 📊 **Easy reasoning** about distributed state
-- 💾 **Automatic checkpointing** at superstep boundaries with two-phase commit for crash recovery
-
-#### Multiple Entry Points
-
-Set multiple entry points for true parallel execution at graph start:
-
-```go
-// Graph API - call multiple times
-g.SetEntryPoint("task_a")
-g.SetEntryPoint("task_b")
-
-// Builder API - variadic for convenience
-builder.SetEntryPoint("task_a", "task_b", "task_c")
-```
-
-All entry points execute in **superstep 1** in parallel, enabling fan-out patterns from the start.
-
----
-
-### 🛡️ Type-Safe State Updates
-
-AgentMesh provides **two type-safe builder APIs** for constructing state updates:
-
-#### 1. **command.Command** - For node functions with routing
-
-Use `command.New()` when returning `([]string, state.Updates, error)` from node functions:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/command"
-
-// Basic usage with Set
-return command.New().
-    Set(statusKey, "completed").
-    Set(counterKey, 42).
-    To("next_node")  // Returns ([]string, state.Updates, error)
-
-// For list operations, use type-safe Append helpers
-return command.Append(messagesKey, "New message").To("next")
-
-// Or AppendMany for multiple values
-return command.AppendMany(messagesKey, []string{"msg1", "msg2"}).To("next")
-```
-
-**Key benefits:**
-- Clean API: `command.New()` instead of `command.New()`
-- `.To(targets...)` returns the full `([]string, state.Updates, error)` tuple
-- `.Build()` returns just `(state.Updates, error)` if you need manual routing
-- No manual `.Name()` calls needed - handled automatically
-- Fluent API with method chaining
-
-#### 2. **state.UpdateBuilder** - For standalone state construction
-
-Use `state.NewUpdateBuilder()` for building Updates outside node functions:
-
-```go
-// Build updates for ApplyUpdates or initial state
-updates := state.NewUpdateBuilder().
-    Set(statusKey, "initialized").
-    Set(counterKey, 0).
-    Build()  // Returns state.Updates
-
-mgr.ApplyUpdates(ctx, updates)
-
-// For list operations, use type-safe helper functions
-listUpdates := state.AppendUpdate(messagesKey, "First message").Build()
-batchUpdates := state.AppendManyUpdates(messagesKey, []string{"msg1", "msg2"}).Build()
-```
-
-**Key benefits:**
-- Type-safe: `Set(Key[T], T)` ensures value matches key type at compile time
-- `AppendUpdate[T](ListKey[T], T)` automatically wraps in `SliceOf[T]`
-- `AppendManyUpdates[T](ListKey[T], []T)` handles batch list operations
-- No runtime type assertions or casting needed
-
-#### Why Two Builders?
-
-- **command.Command**: High-level API for node functions (routing + updates)
-- **state.UpdateBuilder**: Low-level API for state construction (updates only)
-
-Both eliminate manual map construction and provide compile-time type safety through Go generics.
-
-See [examples/typed_updates](examples/typed_updates) for comprehensive demonstration.
+## 📚 Documentation
+
+### Getting Started
+- 📘 **[Getting Started Guide](docs/getting-started.md)** - Complete tutorial with examples
+- 🏗️ **[Architecture Overview](docs/architecture.md)** - Understanding the Pregel BSP design
+- 📖 **[API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh)** - Complete godoc
+
+### Core Concepts
+- 🕸️ **[Graph Building](docs/core-concepts.md)** - Nodes, edges, and execution flow
+- 🗂️ **[State Management](docs/state-management.md)** - Channels, reducers, checkpointing, and approval workflows
+- 🔧 **[Tools Guide](docs/tools.md)** - Building and integrating tools
+- 🤖 **[Model Integration](docs/models.md)** - LLM provider setup and configuration
+
+### Advanced Features
+- 🤖 **[Agent Patterns](docs/agents.md)** - ReAct, RAG, and Supervisor agents
+- 📊 **[Observability](docs/observability.md)** - Metrics, tracing, and monitoring
+- 🔌 **[Middleware](docs/middleware.md)** - Caching, rate limiting, circuit breakers
+- 🧠 **[Memory & Embeddings](docs/memory.md)** - Semantic search and conversation storage
+- 🤝 **[A2A Protocol](docs/a2a.md)** - Multi-agent collaboration
+- 🔒 **[WASM Sandboxing](docs/wasm-sandboxing.md)** - Secure untrusted code execution
 
 ---
 
 ## 🎨 Examples
 
-Explore **19 comprehensive examples** demonstrating different use cases and patterns:
+Explore **18 comprehensive examples** in the [`examples/`](examples/) directory:
 
-| Example | Description | Key Features |
-|---------|-------------|--------------|
-| 🎯 [basic_agent](examples/basic_agent) | Simple ReAct agent with tools | Agent creation, tool calling, message handling |
-| 👥 [supervisor_agent](examples/supervisor_agent) | Multi-agent coordination pattern | Supervisor routing, worker specialists, handoff tools |
-| 🏗️ [state_builder](examples/state_builder) | Simplified state initialization | Fluent API, channel patterns, reduced boilerplate |
-| 🔌 [mcp_tools](examples/mcp_tools) | Model Context Protocol integration | Dynamic tool discovery, MCP toolsets, runtime tools |
-| 🔒 [wasm_tool](examples/wasm_tool) | WebAssembly sandboxed tools | Memory-safe isolation, Rust WASM modules, security policies |
-| 🌊 [streaming](examples/streaming) | Real-time execution result streaming | Live updates, partial results, progress tracking |
-| 🔀 [conditional_flow](examples/conditional_flow) | Dynamic routing based on state | Conditional edges, branching logic, flow control |
-| ⚡ [parallel_tasks](examples/parallel_tasks) | Concurrent execution patterns | Parallel nodes, fan-out/fan-in, result aggregation |
-| ⏸️ [human_pause](examples/human_pause) | Human-in-the-loop workflows | Interrupt, resume, user approval |
-| ⏰ [time_travel](examples/time_travel) | Debug with state versioning | Checkpointing, state replay, time-travel debugging |
-| 💾 [checkpointing](examples/checkpointing) | Fault-tolerant workflows | Auto-save, auto-resume, persistence |
-| 🔐 [checkpoint_signing](examples/checkpoint_signing) | HMAC-SHA256 checkpoint integrity | Tamper detection, cryptographic signing, security |
-| ✅ [graph_validation](examples/graph_validation) | Pre-execution graph validation | Compile-time error detection, validation modes, topology checks |
-| 🔌 [middleware](examples/middleware) | Middleware system demonstration | Graph/model/tool middleware, event bus, composition |
-| 🛡️ [circuit_breaker](examples/circuit_breaker) | Fault tolerance patterns | Circuit breaker states, failure handling, policy composition |
-| 🛡️ [guardrails](examples/guardrails) | Content filtering & PII protection | Input validation, output filtering, safety constraints |
-| 📊 [observability](examples/observability) | Metrics and distributed tracing | OpenTelemetry integration, monitoring |
-| 🔗 [subgraph](examples/subgraph) | Composable graph components | Reusable workflows, modular design |
-| 📝 [message_retention](examples/message_retention) | Conversation history management | Message limits, pruning strategies |
-| 🔢 [openai_embedder](examples/openai_embedder) | Text embeddings | Semantic search, RAG workflows, vector operations |
-| 🌐 [a2a_integration](examples/a2a_integration) | Agent-to-Agent protocol | A2A server/client, multi-agent coordination |
+| Example | Description |
+|---------|-------------|
+| **[basic_agent](examples/basic_agent/)** | Simple ReAct agent with tools |
+| **[supervisor_agent](examples/supervisor_agent/)** | Multi-agent coordination with supervisor |
+| **[checkpointing](examples/checkpointing/)** | State persistence and resume |
+| **[human_approval](examples/human_approval/)** | Approval workflows with conditional guards |
+| **[parallel_tasks](examples/parallel_tasks/)** | Concurrent node execution |
+| **[streaming](examples/streaming/)** | Real-time response streaming |
+| **[middleware](examples/middleware/)** | Rate limiting and circuit breakers |
+| **[observability](examples/observability/)** | OpenTelemetry integration |
+| **[a2a_integration](examples/a2a_integration/)** | Agent-to-agent communication |
+| **[wasm_tool](examples/wasm_tool/)** | Sandboxed tool execution |
+
+[See all examples →](examples/)
 
 ### Running Examples
 
 ```bash
-# Set your OpenAI API key
-export OPENAI_API_KEY="sk-..."
-
-# Run an example
+# Run any example
 cd examples/basic_agent
 go run main.go
 
-# Try streaming
-cd examples/streaming
-go run main.go
-
-# Run A2A server
-cd examples/a2a_integration/server
-go run main.go
+# Set required environment variables
+export OPENAI_API_KEY=your-key-here
+export ANTHROPIC_API_KEY=your-key-here  # For Anthropic examples
 ```
 
 ---
 
-## 🔧 Advanced Features
+## 🏗️ Architecture
 
-### 🔌 Executor Pattern
-
-AgentMesh uses an **executor pattern** to separate execution concerns from graph orchestration. This provides clean boundaries, reusability, and extensibility.
-
-#### Model Executor
-
-The `model.Executor` interface handles model generation lifecycle:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/model"
-    "github.com/hupe1980/agentmesh/pkg/model/openai"
-)
-
-// Create executor wrapping a model
-mdl := openai.NewModel(openai.WithModel("gpt-4o"))
-executor := model.NewExecutor(mdl, model.WithExecutorName("gpt-4o"))
-
-// Use directly (without graph)
-req := &model.Request{
-    Messages: messages,
-    SystemPrompt: "You are a helpful assistant",
-}
-
-// Non-streaming: get final response
-resp, err := model.Last(executor.Generate(ctx, req))
-
-// Streaming: process incremental responses
-for resp, err := range executor.Generate(ctx, req) {
-    if err != nil { return err }
-    fmt.Print(message.Stringify(resp.Message))
-}
-```
-
-**Benefits:**
-- ✅ Reusable across graphs, chains, and direct calls
-- ✅ Centralized observability (tracing, metrics, logging)
-- ✅ Middleware support for interception and augmentation
-- ✅ Custom implementations (retry, caching, rate limiting)
-
-**Custom Executor Example:**
-```go
-// RetryExecutor wraps another executor with retry logic
-type RetryExecutor struct {
-    wrapped    model.Executor
-    maxRetries int
-}
-
-func (e *RetryExecutor) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-    return func(yield func(*model.Response, error) bool) {
-        for attempt := 0; attempt <= e.maxRetries; attempt++ {
-            for resp, err := range e.wrapped.Generate(ctx, req) {
-                if err == nil || attempt == e.maxRetries {
-                    if !yield(resp, err) { return }
-                }
-            }
-        }
-    }
-}
-
-// Use custom executor
-retryExecutor := &RetryExecutor{
-    wrapped:    model.NewExecutor(mdl),
-    maxRetries: 3,
-}
-```
-
-#### Tool Executor
-
-The `tool.Executor` interface handles tool execution lifecycle:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/tool"
-)
-
-// Default executor (sequential, one tool at a time)
-executor := tool.NewExecutor(toolRegistry,
-    tool.WithContinueOnError(false),
-    tool.WithErrorPrefix("tool error"))
-
-// Parallel execution (concurrent tools)
-executor := tool.NewParallelExecutor(toolRegistry,
-    tool.WithMaxConcurrency(5),
-    tool.WithContinueOnError(true))
-
-// Execute tools directly (without graph)
-calls := []tool.Call{{
-    ID:        "call_1",
-    Name:      "get_weather",
-    Arguments: `{"location":"Berlin","unit":"celsius"}`,
-}}
-
-results, err := executor.Execute(ctx, calls)
-for _, result := range results {
-    if result.Error != nil {
-        log.Printf("Tool %s failed: %v", result.ToolName, result.Error)
-    } else {
-        fmt.Printf("Tool %s result: %v (took %v)\n", 
-            result.ToolName, result.Result, result.Duration)
-    }
-}
-```
-
-**Arguments as JSON Strings:**
-
-Tool arguments are passed as JSON strings (not maps) to eliminate wasteful marshal/unmarshal cycles:
+AgentMesh uses a **layered architecture** with clean separation of concerns:
 
 ```
-LLM generates: {"location": "Berlin", "unit": "celsius"}
-    ↓
-ToolCall.Arguments: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
-    ↓
-tool.Call.Arguments: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
-    ↓
-Tool receives: "{\"location\": \"Berlin\", \"unit\": \"celsius\"}"  (string)
+┌─────────────────────────────────────────────────────────────┐
+│           Application Layer (pkg/agent)                     │
+│  • ReActAgent, SupervisorAgent, RAGAgent                    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│           Compiled Graph (Coordinator)                      │
+│  • Immutable topology • Run() iterator API                  │
+└──────────┬──────────────────────────────┬──────────────────┘
+           │                              │
+           ▼                              ▼
+  ┌─────────────────┐           ┌─────────────────┐
+  │  StateManager   │           │ PregelExecutor  │
+  │  (pkg/state)    │           │  (pkg/pregel)   │
+  │                 │           │                 │
+  │ • Channels      │◀─────────▶│ • BSP Runtime   │
+  │ • Versioning    │           │ • Scheduling    │
+  │ • Checkpoints   │           │ • MessageBus    │
+  └─────────────────┘           └─────────────────┘
 ```
 
-This avoids: JSON string → map → JSON string → tool unmarshal
-
-**Custom Executor Example:**
-```go
-// CachedExecutor caches deterministic tool results
-type CachedExecutor struct {
-    wrapped tool.Executor
-    cache   map[string]tool.ExecutionResult
-    mu      sync.RWMutex
-}
-
-func (e *CachedExecutor) Execute(ctx context.Context, calls []tool.Call) ([]tool.ExecutionResult, error) {
-    results := make([]tool.ExecutionResult, len(calls))
-    uncached := []int{}
-    
-    e.mu.RLock()
-    for i, call := range calls {
-        key := call.Name + call.Arguments
-        if cached, ok := e.cache[key]; ok {
-            results[i] = cached
-        } else {
-            uncached = append(uncached, i)
-        }
-    }
-    e.mu.RUnlock()
-    
-    if len(uncached) > 0 {
-        // Execute uncached calls
-        uncachedCalls := make([]tool.Call, len(uncached))
-        for i, idx := range uncached {
-            uncachedCalls[i] = calls[idx]
-        }
-        
-        uncachedResults, err := e.wrapped.Execute(ctx, uncachedCalls)
-        if err != nil { return nil, err }
-        
-        // Store results in cache
-        e.mu.Lock()
-        for i, result := range uncachedResults {
-            idx := uncached[i]
-            key := calls[idx].Name + calls[idx].Arguments
-            e.cache[key] = result
-            results[idx] = result
-        }
-        e.mu.Unlock()
-    }
-    
-    return results, nil
-}
-```
-
-**Using Executors in Graphs:**
-
-Nodes accept executor interfaces, making them thin orchestration layers:
-
-```go
-// Create executors
-modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("gpt-4o"))
-toolExecutor := tool.NewParallelExecutor(registry)
-
-// Create nodes with executors
-modelNode, _ := agent.NewModelNode(modelExecutor,
-    agent.WithModelSystemPrompt("You are helpful"),
-    agent.WithModelTools(searchTool, calcTool))
-
-toolNode, _ := agent.NewToolNode(toolExecutor)
-
-// Add to graph
-g.AddNode(modelNode)
-g.AddNode(toolNode)
-```
-
-**Architecture Benefits:**
-
-```
-┌─────────────┐
-│  ModelNode  │  Graph layer: state extraction, routing
-└──────┬──────┘
-       │ delegates to
-┌──────▼──────┐
-│  Executor   │  Execution layer: lifecycle, middleware, observability
-└──────┬──────┘
-       │ calls
-┌──────▼──────┐
-│    Model    │  Core layer: API calls, streaming
-└─────────────┘
-```
-
-- **Separation of Concerns**: Nodes handle orchestration, executors handle execution
-- **Reusability**: Use executors outside of graphs (chains, direct calls)
-- **Testability**: Test execution logic independently
-- **Extensibility**: Custom executors without modifying core code
-
-### ⏱️ Max Iterations
-
-Prevent infinite loops in cyclic graphs:
-
-```go
-// Per-run iteration limit
-compiled.Run(ctx, msgs, 
-    graph.WithMaxIterations(10),
-)
-
-// Or configure at compile-time via PregelExecutor
-executor := graph.NewPregelExecutor(
-    graph.WithPregelMaxIterations(1000),
-)
-g.WithExecutor(executor)
-compiled, _ := builder.Compile()
-```
-
-### ⚙️ Pregel Executor Configuration
-
-Configure Pregel BSP execution engine with combiners and message buses:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/exec"
-)
-
-// Create Pregel executor with configuration
-executor := graph.NewPregelExecutor(
-    // Combiner: Reduce messages before delivery
-    graph.WithPregelCombiner(func(messages []graph.ChannelMessage) []graph.ChannelMessage {
-        // Merge or deduplicate messages
-        return messages
-    }),
-    
-    // Message Bus: Pluggable backend (Redis, Kafka, etc.)
-    graph.WithMessageBus(redisMessageBus),
-    
-    // Workers: Parallel execution
-    graph.WithMaxWorkers(8),
-    
-    // Max iterations
-    graph.WithPregelMaxIterations(1000),
-)
-
-// Apply executor to graph using builder
-builder, _ := exec.NewBuilder(executor)
-// ... build graph ...
-compiled, _ := builder.Compile()
-```
-
-**Note:** For global aggregation patterns (sum, average, max, etc.), use **state-based aggregators** via `state.RegisterAggregateKey()` instead (see [Aggregators](#-aggregators) section above).
-
-### 🔁 Retry Policies
-
-Resilient execution with fluent builder API:
-
-```go
-// Simple retry with defaults (3 attempts, exponential backoff)
-builder.AddNodeFuncWithRetry("flaky_api", apiCallFunc,
-    graph.NewRetryPolicy().Build())
-
-// Customized retry strategy
-builder.AddNodeFuncWithRetry("external_service", serviceCallFunc,
-    graph.NewRetryPolicy().
-        WithMaxAttempts(5).
-        WithExponentialBackoff(time.Second, 2.0).
-        WithRetryableErrors(ErrTransient, ErrTimeout).
-        Build())
-
-// Advanced: Capped exponential with jitter
-policy := graph.NewRetryPolicy().
-    WithMaxAttempts(10).
-    WithCustomBackoff(graph.JitteredExponentialBackoff(time.Second, 2.0, 0.1)).
-    Build()
-builder.AddNodeFuncWithRetry("critical_service", criticalFunc, policy)
-```
-
-**Available backoff strategies:**
-- `WithExponentialBackoff(base, multiplier)` - 1s, 2s, 4s, 8s, ...
-- `WithLinearBackoff(base)` - 1s, 2s, 3s, 4s, ...
-- `WithConstantBackoff(duration)` - 1s, 1s, 1s, ...
-- `CappedExponentialBackoff()` - Exponential with max cap
-- `JitteredExponentialBackoff()` - Prevents thundering herd
-
-### � Aggregators
-
-Aggregators provide global coordination patterns by combining values across node executions:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/state"
-    "github.com/hupe1980/agentmesh/pkg/state/aggregators"
-)
-
-// Create manager
-mgr := state.NewManager()
-
-// Register keys with aggregation semantics
-totalCostKey := state.NewKey[any]("total_cost", 0)
-maxPriorityKey := state.NewKey[any]("max_priority", float64(-1e308))
-activeNodesKey := state.NewKey[any]("active_nodes", 0)
-
-state.RegisterAggregateKey(mgr, totalCostKey, &aggregators.SumAggregator{})
-state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
-state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
-
-// In nodes - contribute via Command pattern
-builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Read current accumulated value
-    total, _ := state.GetFromView(view, totalCostKey)
-    fmt.Printf("Total cost so far: %v\n", total)
-    
-    // Contribute new values (will be aggregated)
-    return command.New().
-        Set(totalCostKey, 42.0).       // Added to sum
-        Set(maxPriorityKey, priority).  // Compared for max
-        Set(activeNodesKey, 1).         // Counted
-        To(graph.EndNode)
-})
-
-// After execution, read final aggregated values
-total, _ := state.Get(ctx, mgr, totalCostKey)
-maxPriority, _ := state.Get(ctx, mgr, maxPriorityKey)
-nodeCount, _ := state.Get(ctx, mgr, activeNodesKey)
-```
-
-**Built-in Aggregators** (`pkg/state/aggregators`):
-- **`SumAggregator`** - Sum numeric values (counters, totals)
-- **`MaxAggregator`** - Track maximum value
-- **`MinAggregator`** - Track minimum value
-- **`AvgAggregator`** - Compute running average using Welford's algorithm
-- **`VarianceAggregator`** - Compute variance for statistical analysis
-- **`CountAggregator`** - Count contributions (any non-nil value)
-- **`AllTrueAggregator`** - Boolean AND across all values
-- **`AnyTrueAggregator`** - Boolean OR across all values
-- **`StringConcatAggregator`** - Concatenate strings with separator
-
-**Use Cases:**
-- 📊 **Global Metrics**: Total cost, request counts, error rates
-- 🎯 **Resource Tracking**: Max memory usage, peak latency, min availability
-- 📈 **Statistical Analysis**: Average response times, variance in load distribution
-- 🔍 **Convergence Detection**: Monitor when all nodes reach stable state
-
-**Note:** Aggregate keys must use `Key[any]` type since aggregators return internal state types (e.g., `AvgState` for averages). Access aggregated values using type assertions when needed.
-
-### �💾 Checkpointing
-
-Automatic state persistence and recovery:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/checkpoint"
-
-// Create checkpointer
-checkpointer := checkpoint.NewInMemoryCheckpointer()
-
-// Compile graph (type-safe)
-compiled, _ := builder.Compile()
-
-// Execute - state is automatically saved
-runID := "conversation-123"
-for result, err := range compiled.Run(ctx, initialMessages,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID(runID),
-    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1)),
-) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(result.Messages)
-}
-
-// Resume from checkpoint after failure
-for result, err := range compiled.Run(ctx, initialMessages,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID(runID),
-    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
-) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(result.Messages)
-}
-```
-
-### ⏸️ Human-in-the-Loop
-
-Pause workflows for human review and approval:
-
-```go
-// 1. Add interrupt point before critical action
-g.AddInterruptBefore("send_email")
-
-// 2. Run until interrupt
-for _, err := range executor.Run(ctx, compiled, input,
-    graph.WithRunID(runID),
-    graph.WithCheckpointer(checkpointer)) {
-    // Pauses at "send_email", creates checkpoint
-}
-
-// 3. User reviews checkpoint
-checkpoint, _ := checkpointer.Load(ctx, runID)
-fmt.Printf("Paused at: %v\n", checkpoint.PausedNodes)
-fmt.Printf("Draft email: %v\n", checkpoint.State["draft"])
-
-// 4. User makes decision
-userDecision := map[string]any{
-    "approved": true,
-    "edited_draft": "edited content",
-}
-
-// 5. Resume with user input
-for _, err := range executor.Run(ctx, compiled, input,
-    graph.WithCheckpoint(checkpoint),
-    graph.WithResumeValue(userDecision)) {
-    // Continues from interrupt with user's decision
-}
-
-// Access user decision in node
-func (n *Node) Invoke(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    resumeVals := graph.ResumeValueFromContext(ctx)
-    if resumeVals != nil {
-        if approved := resumeVals["approved"].(bool); !approved {
-            return handleRejection()
-        }
-    }
-    // ... proceed with action using Command pattern
-    return command.New().
-        Set(resultKey, "approved").
-        To(graph.EndNode)
-}
-```
-
-**Features:**
-- **Interrupts**: Pause before/after specific nodes
-- **Pending Writes**: Review uncommitted changes before applying
-- **Resume Values**: Inject user decisions into resumed execution
-- **Two-Phase Commit**: Transactional state updates with rollback
-
-See [`examples/human_approval`](examples/human_approval) for complete walkthrough.
-
-### 🕰️ Time Travel Debugging
-
-Debug workflows by replaying from any superstep:
-
-```go
-// List available checkpoints
-checkpoints, _ := store.ListCheckpoints(ctx, threadID)
-
-// Resume from a specific superstep
-messages, _ := compiled.InvokeFromSuperstep(ctx, threadID, superstep, initialMessages)
-```
-
-### 🎭 Subgraphs
-
-Compose complex workflows from reusable components:
-
-```go
-// Create a reusable research graph
-researchGraph := createResearchSubgraph()
-
-// Embed in parent workflow
-builder.AddNodeFunc("research", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    parentMessages := graph.ExtractMessages(view.MessagesSnapshot())
-    events, err := graph.Collect(researchGraph.Run(ctx, parentMessages))
-    if err != nil {
-        return nil, nil, err
-    }
-    
-    return command.New().
-        Set(message.MessagesKey, graph.ExtractMessages(events)).
-        To(graph.EndNode)
-})
-```
-
-### 🔍 Graph Introspection
-
-Debug and visualize your graphs:
-
-```go
-// Inspect topology
-topo := compiled.GetTopology()
-fmt.Printf("Entry points: %v\n", topo.EntryPoints)
-fmt.Printf("Max depth: %d\n", topo.MaxDepth)
-
-// Get execution paths
-paths := compiled.GetExecutionPath(10)
-
-// Generate Mermaid flowchart
-flowchart := compiled.GenerateMermaidFlowchart("TD")
-os.WriteFile("graph.mmd", []byte(flowchart), 0644)
-
-// Track runtime metrics
-metrics := compiled.GetMetrics()
-fmt.Printf("Complexity: %d\n", metrics.CyclomaticComplexity)
-```
-
-### 🔒 WASM Tool Sandboxing
-
-Execute untrusted or third-party code securely using WebAssembly:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/tool/wasm"
-
-// Load WASM module
-wasmBytes, _ := os.ReadFile("calculator.wasm")
-
-// Create sandboxed tool with compute-only policy
-tool, err := wasm.NewWASMTool(
-    "calculator",
-    "Evaluate mathematical expressions with guaranteed isolation",
-    wasmBytes,
-    wasm.WithPolicy(wasm.ComputeOnlyPolicy()),  // No network, filesystem, or syscalls
-)
-
-// Use in agent - tool runs in isolated WASM environment
-agent, _ := agent.NewReActAgent(model, []tool.Tool{tool})
-```
-
-**Security Policies:**
-
-```go
-// Compute-only: Pure computation, no external access
-wasm.ComputeOnlyPolicy()
-
-// Network-only: HTTP/API access, no filesystem
-wasm.NetworkOnlyPolicy()
-
-// File processing: Access specific directories
-wasm.FileProcessingPolicy([]string{"/data"}, false)
-
-// Deterministic: Fresh instance per call, reproducible results
-wasm.DeterministicPolicy()
-
-// Custom: Fine-grained control
-policy := &wasm.SandboxPolicy{
-    MaxMemoryBytes:    50 * 1024 * 1024,  // 50 MB
-    TimeoutDuration:   5 * time.Second,
-    AllowNetworkAccess: false,
-    AllowFilesystemAccess: false,
-    SecurityLevel: wasm.SecurityLevelUntrusted,
-}
-```
-
-**Why WASM sandboxing?**
-- ✅ **Runtime-enforced isolation** - Cannot be bypassed by malicious code
-- ✅ **Memory-safe** - Isolated linear memory, no access to host or other processes
-- ✅ **Controlled capabilities** - All host access via explicitly granted WASI interfaces
-- ✅ **Resource limits** - Strict memory, timeout, and CPU constraints
-- ✅ **Cross-platform** - Same security on Linux, macOS, Windows
-- ✅ **Minimal overhead** - 1-5ms per invocation
-
-See the [wasm_tool example](examples/wasm_tool) for building WASM modules with Rust.
-
-### 🔌 Middleware System
-
-Extend AgentMesh with a composable middleware system for cross-cutting concerns:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/agent"
-    graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
-    modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
-    toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
-)
-
-// Create agent with built-in middleware
-reactAgent, _ := agent.NewReActAgent(
-    model,
-    agent.WithTools(tools...),
-    // Graph middleware - wraps entire graph execution
-    agent.WithGraphMiddleware(
-        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
-        graphmw.NewEventMiddleware[[]message.Message, message.Message](),
-    ),
-    // Model middleware - wraps LLM calls
-    agent.WithModelMiddleware(
-        modelmw.NewCacheMiddleware(),
-        modelmw.NewRetryMiddleware(modelmw.WithMaxRetries(3)),
-        modelmw.NewRateLimitMiddleware(10, 100*time.Millisecond),
-    ),
-    // Tool middleware - wraps tool executions
-    agent.WithToolMiddleware(
-        toolmw.NewTimeoutMiddleware(5*time.Second),
-        toolmw.NewCircuitBreakerMiddleware(3, 30*time.Second),
-        toolmw.NewAuditMiddleware(logger),
-    ),
-)
-
-// Create custom middleware
-type CustomMiddleware struct{}
-
-func (m *CustomMiddleware) Wrap(next model.Executor) model.Executor {
-    return model.WrapFunc(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-        // Pre-execution logic
-        log.Println("Before model call")
-        
-        // Call next middleware/executor
-        return func(yield func(*model.Response, error) bool) {
-            for resp, err := range next.Generate(ctx, req) {
-                // Post-execution logic per response
-                if err == nil {
-                    log.Println("Got response")
-                }
-                if !yield(resp, err) {
-                    return
-                }
-            }
-        }
-    })
-}
-
-// Use custom middleware
-reactAgent, _ := agent.NewReActAgent(
-    model,
-    agent.WithModelMiddleware(&CustomMiddleware{}),
-)
-```
-
-**Middleware Layers:**
-- **Graph Middleware** - Wraps entire graph execution (logging, events, tracing)
-- **Model Middleware** - Wraps LLM calls (cache, retry, rate limit, token counting)
-- **Tool Middleware** - Wraps tool executions (timeout, circuit breaker, audit, cache)
-
-**Built-in Middleware:**
-- `LoggingMiddleware` - Structured logging of execution
-- `EventMiddleware` - Publishes events to event bus for observability
-- `CacheMiddleware` - Response caching for models/tools
-- `RetryMiddleware` - Exponential backoff retry with configurable options
-- `RateLimitMiddleware` - Token bucket rate limiting
-- `TimeoutMiddleware` - Execution timeout with context cancellation
-- `CircuitBreakerMiddleware` - Circuit breaker pattern for fault tolerance
-- `TokenCounterMiddleware` - Track token usage
-- `AuditMiddleware` - Audit logging for compliance
-
-**Why Middleware?**
-- **Composable** - Chain multiple middleware with `Chain()`
-- **Type-safe** - Generic interfaces for compile-time guarantees
-- **Three layers** - Graph, model, and tool execution interception
-- **Iterator-based** - Unified streaming/blocking execution model
-- **Event bus** - Loose coupling for observability with pub/sub pattern
-
-See [docs/middleware.md](docs/middleware.md) for complete guide and [examples/middleware](examples/middleware) for demonstrations.
-
-### � Semantic Caching
-
-AgentMesh provides two caching strategies to reduce API costs and improve response times:
-
-**1. Exact-Match Cache** (Simple & Fast)
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
-
-// Create exact-match cache (SHA256 hashing)
-cache := plugin.NewCachePlugin(1000) // maxSize: 1000 entries
-
-// Register with plugin manager
-pm := callbacks.NewPluginManager()
-pm.Register(ctx, cache)
-
-// Use with agents - callbacks automatically injected
-agent, _ := agent.NewReActAgent(model,
-    agent.WithTools(tools...),
-    agent.WithPluginManager(pm))
-
-// Cache hits for identical queries
-// "What is Python?" == "What is Python?" ✓
-// "What is Python?" != "Tell me about Python" ✗
-```
-
-**2. Semantic Cache** (Smart & Flexible)
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/cache"
-    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
-)
-
-// Create embedder for semantic similarity
-embedder := openai.NewEmbedder(client)
-
-// Create semantic cache with memory backend
-semanticCache := cache.NewMemory(embedder,
-    cache.WithSimilarityThreshold(0.85), // 85% similar = cache hit
-    cache.WithTTL(time.Hour),            // expire after 1 hour
-    cache.WithMaxSize(1000))             // LRU eviction
-
-// Use in your custom middleware or application logic
-// See examples/semantic_caching/ for complete implementation
-
-// Cache hits for semantically similar queries
-// "What is Python?" ~87% similar to "Tell me about Python" ✓
-// "What is Python?" ~84% similar to "Explain Python" ✓
-```
-
-**Redis Backend** (Distributed Caching)
-
-```go
-import (
-    redisCache "github.com/hupe1980/agentmesh/pkg/cache/redis"
-    "github.com/redis/go-redis/v9"
-)
-
-// Create Redis client
-redisClient := redis.NewClient(&redis.Options{
-    Addr: "localhost:6379",
-})
-
-// Create distributed semantic cache
-cache := redisCache.NewCache(redisClient, embedder,
-    cache.WithSimilarityThreshold(0.85),
-    redisCache.WithKeyPrefix("myapp:llm:"))
-
-// Use in your custom middleware or application
-```
-
-**When to Use Which?**
-
-| Feature | Exact-Match | Semantic |
-|---------|------------|----------|
-| **Speed** | Instant (hash) | Fast (embedding) |
-| **Memory** | Low | Medium |
-| **Dependencies** | None | Embedder |
-| **Cache Hit Rate** | Lower | Higher |
-| **Best For** | FAQs, tests | Chatbots, support |
-
-See [examples/semantic_caching](examples/semantic_caching) for a complete demonstration.
-
-### �📊 Observability
-
-Built-in OpenTelemetry integration:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/logging"
-    "github.com/hupe1980/agentmesh/pkg/metrics"
-    "github.com/hupe1980/agentmesh/pkg/trace"
-    "github.com/hupe1980/agentmesh/pkg/graph"
-)
-
-// Configure observability providers
-logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
-metricsProvider := metrics.NewOpenTelemetry(meterProvider)
-traceProvider := trace.NewOpenTelemetry(tracerProvider)
-
-// Attach providers to context
-ctx = logging.WithLogger(ctx, logger)
-ctx = trace.WithProvider(ctx, traceProvider)
-ctx = metrics.WithProvider(ctx, metricsProvider)
-
-// Automatic instrumentation - structured logs throughout execution!
-for result, err := range compiled.Run(ctx, initialMessages) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    // Process result
-}
-```
-
-
-### 📊 Observability
-
-Built-in OpenTelemetry integration:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/logging"
-    "github.com/hupe1980/agentmesh/pkg/metrics"
-    "github.com/hupe1980/agentmesh/pkg/trace"
-    "github.com/hupe1980/agentmesh/pkg/graph"
-)
-
-// Configure observability providers
-logger := logging.NewSlogLogger(logging.LogLevelInfo, logging.LogFormatJSON)
-metricsProvider := metrics.NewOpenTelemetry(meterProvider)
-traceProvider := trace.NewOpenTelemetry(tracerProvider)
-
-// Attach providers to context
-ctx = logging.WithLogger(ctx, logger)
-ctx = trace.WithProvider(ctx, traceProvider)
-ctx = metrics.WithProvider(ctx, metricsProvider)
-
-// Automatic instrumentation - structured logs throughout execution!
-for result, err := range compiled.Run(ctx, initialMessages) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    // Process result
-}
-```
-
-**Automatically Tracked:**
-- ✅ Node execution count and duration
-- ✅ Superstep execution time
-- ✅ Error rates per node with labels
-- ✅ Graph-level execution metrics
-
-**Automatic Distributed Tracing:**
-- ✅ Span per graph execution
-- ✅ Nested spans for each node
-- ✅ Checkpoint operation spans
-- ✅ Providers available in nodes via `FromContext()`
-
-### 🔢 Embeddings & Memory
-
-Convert text to vectors for semantic search and maintain conversation history:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
-    "github.com/hupe1980/agentmesh/pkg/memory"
-)
-
-// Create embedder for semantic search
-embedder := openai.NewEmbedder(client, openai.WithModel("text-embedding-3-small"))
-
-// Create vector memory for long-term storage
-mem := memory.NewVectorMemory(embedder)
-
-// Store conversation messages
-err := mem.Store(ctx, "session-123", messages)
-
-// Recall relevant messages by semantic similarity
-recalled, err := mem.Recall(ctx, "session-123", memory.RecallFilter{
-    Query: "What did we discuss about pricing?",
-    K:     5,  // Top 5 most relevant messages
-})
-```
-
-**Memory Features:**
-- Semantic vector search with embeddings
-- Session-based conversation storage
-- Relevance ranking and filtering
-- Time-based and metadata queries
-
-### 📝 Prompt Templates
-
-Reusable prompt templates with variable substitution:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/prompt"
-
-// Create template with {{.Variable}} syntax
-template := prompt.New(`You are a {{.Role}}.
-Answer the following question: {{.Question}}
-Use this context: {{.Context}}`)
-
-// Render with variables
-result, err := template.Render(map[string]any{
-    "Role":     "helpful assistant",
-    "Question": "What is AgentMesh?",
-    "Context":  "A Go framework for AI agents",
-})
-```
-
-**Template Features:**
-- Simple {{.Variable}} syntax
-- Missing variable detection
-- Type-safe variable replacement
-- No code execution (safe for untrusted templates)
-
-### 🤝 Agent-to-Agent (A2A) Protocol
-
-Enable multi-agent collaboration across different systems:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/a2a"
-    "github.com/a2aproject/a2a-go/a2agrpc"
-    "github.com/a2aproject/a2a-go/a2asrv"
-)
-
-// Server: Expose AgentMesh agent as A2A service
-compiled, _ := agent.NewReActAgent(model, tools)
-executor := a2a.NewExecutor(compiled)
-requestHandler := a2asrv.NewHandler(executor)
-grpcHandler := a2agrpc.NewHandler(requestHandler)
-
-// Serve with gRPC
-server := grpc.NewServer()
-a2agrpc.RegisterAgentServer(server, grpcHandler)
-server.Serve(listener)
-
-// Client: Use external A2A agent as tool
-client := a2a.NewClient("localhost:50051")
-bridge := a2a.NewBridge(client)
-tools, _ := bridge.GetTools(ctx)
-
-// Use A2A tools in your agent
-compiled, _ := agent.NewReActAgent(model, tools)
-```
-
-**A2A Features:**
-- Multi-agent coordination across systems
-- gRPC and JSON-RPC transport support
-- Dynamic tool discovery from remote agents
-- Bidirectional agent communication
-
----
-
-## 🔌 Advanced Extensibility
-
-### Custom MessageBus for Distributed Execution
-
-The `pkg/pregel` package is now **public API**, enabling custom MessageBus implementations for distributed execution across Redis, Kafka, or custom backends.
-
-**Built-in backpressure:** The default `InMemoryMessageBus` blocks sends when mailboxes are full (never drops messages). Custom implementations should follow this pattern or explicitly document different behavior.
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/pregel"
-
-// Implement custom MessageBus interface
-type RedisMessageBus struct {
-    client *redis.Client
-}
-
-// Send should block or return error when capacity is exceeded
-// Never drop messages silently
-func (r *RedisMessageBus) Send(ctx context.Context, from, to string, data MyMessageType) error {
-    // Serialize and send via Redis pub/sub
-    payload, _ := json.Marshal(data)
-    
-    // Respect context cancellation during blocking operations
-    select {
-    case <-ctx.Done():
-        return fmt.Errorf("send cancelled: %w", ctx.Err())
-    default:
-        return r.client.Publish(ctx, to, payload).Err()
-    }
-}
-
-// Use with custom runtime
-runtime := pregel.NewRuntime(
-    graphAdapter,
-    state,
-    pregel.WithMessageBus[StateType, MessageType](redisMessageBus),
-    pregel.WithMaxWorkers[StateType, MessageType](100),
-)
-```
-
-### Custom Scheduler Strategies
-
-Implement domain-specific scheduling for priority-based or GPU-optimized execution:
-
-```go
-// Implement Scheduler interface
-type PriorityScheduler struct {
-    priorities map[string]int
-}
-
-func (s *PriorityScheduler) Ready() []string {
-    // Return vertices sorted by priority
-    return s.sortByPriority(s.readyQueue)
-}
-
-// Use with Pregel runtime
-runtime := pregel.NewRuntime(
-    graphAdapter,
-    state,
-    pregel.WithScheduler[StateType, MessageType](priorityScheduler),
-)
-```
-
-### Checkpoint Integrity with State Versioning
-
-State versioning ensures checkpoint integrity and detects corruption:
-
-```go
-// Checkpoint now includes Version field
-checkpoint := &checkpoint.Checkpoint{
-    RunID:     "run-123",
-    Superstep: 5,
-    Version:   42,  // Monotonic counter incremented on every state mutation
-    State:     stateSnapshot,
-}
-
-// On restore, version is validated
-err := compiled.RestoreFromCheckpoint(ctx, checkpoint)
-// Returns error if current version > checkpoint version (concurrent modification)
-```
-
-**State Versioning Benefits:**
-- Detects checkpoint file corruption
-- Prevents out-of-sequence checkpoint restores
-- Identifies concurrent state modifications
-- Enables debugging of non-deterministic execution
-
-### Public API: pkg/pregel
-
-Advanced users can now access the core Pregel BSP engine directly:
-
-```go
-import "github.com/hupe1980/agentmesh/pkg/pregel"
-
-// Available public interfaces:
-// - Runtime: Core BSP execution engine
-// - MessageBus: Pluggable message backend
-// - Scheduler: Custom vertex scheduling
-// - Aggregator: Global reductions across vertices
-// - Graph/Node: Vertex computation model
-```
-
-**Use Cases for pkg/pregel:**
-- Custom distributed execution backends (Redis, Kafka, gRPC)
-- Research and experimentation with BSP algorithms
-- Domain-specific scheduling strategies (GPU, priority-based)
-- Fine-grained control over execution lifecycle
+**Key Components:**
+- **Graph** - Define nodes, edges, and execution flow
+- **StateManager** - Lock-free channel-based state with versioning
+- **PregelExecutor** - Bulk-synchronous parallel execution engine
+- **Compiled** - Immutable, validated, executable graph
+- **Agents** - High-level abstractions (ReAct, Supervisor, RAG)
+
+[Learn more about the architecture →](docs/architecture.md)
 
 ---
 
 ## 🧪 Testing
 
-Run the full test suite:
-
 ```bash
-# All tests
+# Run all tests
 go test ./...
 
 # With coverage
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out
 
-# Specific package
-go test ./graph -v
-
 # Run benchmarks
-go test ./graph -bench=. -benchmem
+go test ./... -bench=. -benchmem
 ```
-
----
-
-## � Type Aliases
-
-### MessageRunnable
-
-AgentMesh provides a convenient type alias for the common pattern of Runnables that process message sequences:
-
-```go
-// Instead of this verbose type:
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (graph.Runnable[[]message.Message, message.Message], error)
-
-// Use the MessageRunnable alias:
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (agent.MessageRunnable, error)
-```
-
-**Definition** (`pkg/agent/doc.go`):
-```go
-type MessageRunnable = graph.Runnable[[]message.Message, message.Message]
-```
-
-**Benefits**:
-- ✅ Simplified function signatures
-- ✅ Improved code readability  
-- ✅ Consistent agent API surface
-- ✅ Easier composition and type checking
-
-**Usage across the framework**:
-- All agent constructors (`NewReActAgent`, `NewSupervisorAgent`, `NewRAGAgent`)
-- Worker agents in supervisor pattern (`WorkerAgent.Agent`)
-- A2A protocol executors (`Executor`, `StreamingExecutor`)
-
----
-
-## �📝 API Naming Conventions
-
-AgentMesh follows a **consistent naming convention** across all components to improve code clarity and maintainability:
-
-| Method | Component | Purpose | When to Use |
-|--------|-----------|---------|-------------|
-| **`Call()`** | `Tool` | Execute a tool function | Invoking tool/function logic |
-| **`Run()`** | `Node`, `Compiled` | Execute logic, return iterator | Node execution, graph execution with streaming |
-| **`Execute()`** | `Executor`, Adapters | Strategy implementation | Internal execution strategy pattern |
-
-### Rationale
-
-- **`Run`** - Used for execution that returns results directly (nodes) or via iterators (graphs)
-- **`Call`** - Used for function invocation semantics (tools, callbacks)
-- **`Execute`** - Used for strategy pattern implementations (executor interfaces, adapters)
-- **`Call`** - Used for function invocation semantics (tools, callbacks)
-
-### Examples
-
-```go
-// Tools use Call() - function invocation
-result, err := weatherTool.Call(ctx, `{"location": "Boston"}`)
-
-// Nodes use Run() - low-level execution
-result, err := node.Run(ctx, state)
-
-// Graphs use Run() - high-level streaming API (returns iterator)
-for result, err := range compiled.Run(ctx, initialMessages) {
-    if err != nil {
-        log.Fatal(err)
-    }
-    // result is state.ExecutionResult - fully typed!
-    fmt.Println(result.Messages)
-}
-
-// Executors use Execute() - strategy implementation
-result, err := executor.Execute(ctx, messages, options)
-```
-
-This convention aligns with Go idioms and provides clear semantic meaning at different abstraction levels.
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Here's how to get started:
+Contributions are welcome! Please see our [contribution guidelines](CONTRIBUTING.md).
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Write tests** for your changes
-4. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-5. **Push** to the branch (`git push origin feature/amazing-feature`)
-6. **Open** a Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Write tests for your changes
+4. Commit your changes (`git commit -m 'Add amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ### Development Guidelines
 
-- ✅ All new code must have tests (target 85%+ coverage)
-- ✅ Run `go fmt` and `go vet` before committing
-- ✅ Update documentation for public API changes
-- ✅ Add examples for new features
-- ✅ Follow [Effective Go](https://go.dev/doc/effective_go) conventions
-
----
-
-## 📖 Documentation
-
-- 📘 **[API Reference](https://pkg.go.dev/github.com/hupe1980/agentmesh)** - Complete godoc documentation
-- 📗 **[Examples](examples/)** - 18 comprehensive runnable examples
-- 📙 **[Getting Started Guide](docs/getting-started.md)** - Quick start tutorial
-- � **[Architecture Guide](docs/architecture.md)** - Pregel BSP design deep-dive
-- � **[Callbacks Guide](docs/callbacks.md)** - Intercepting model/tool invocations
-- 🧠 **[Memory Guide](docs/memory.md)** - Conversation storage with semantic search
-- 🔢 **[Embeddings Guide](docs/embeddings.md)** - Text-to-vector conversion for RAG
-- 🌐 **[A2A Protocol Guide](docs/a2a.md)** - Multi-agent collaboration
-- �📊 **[Observability Guide](docs/observability.md)** - Metrics and tracing setup
-- 🎯 **[Advanced Features](docs/advanced.md)** - Checkpointing, time travel, human-in-loop
-- 🤖 **[Agent Patterns](docs/agents.md)** - ReAct and RAG agent guides
-- 🔧 **[Tools Guide](docs/tools.md)** - Building and using tools
-- 🤖 **[Model Integration](docs/models.md)** - LLM provider setup
+- All new code must have tests (target 85%+ coverage)
+- Run `go fmt` and `golangci-lint` before committing
+- Update documentation for public API changes
+- Add examples for new features
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+Licensed under the **Apache License 2.0** - see [LICENSE](LICENSE) for details.
 
 ---
 

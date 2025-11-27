@@ -294,3 +294,30 @@ func WithResumeValue(value map[string]any) RunOption {
 		opts.ResumeValue = value
 	}
 }
+
+// WithApproval provides an approval response for a specific node.
+// This is used when resuming execution after an approval interrupt.
+//
+// Example:
+//
+//	approval := &graph.ApprovalResponse{
+//	    Decision:  graph.ApprovalApproved,
+//	    Reason:    "Reviewed and approved",
+//	    User:      "alice@example.com",
+//	    Timestamp: time.Now(),
+//	}
+//	compiled.Run(ctx, input,
+//	    graph.WithCheckpoint(checkpoint),
+//	    graph.WithApproval("send_email", approval),
+//	)
+func WithApproval(nodeName string, response *ApprovalResponse) RunOption {
+	return func(opts *RunOptions) {
+		if opts == nil {
+			return
+		}
+		if opts.Approvals == nil {
+			opts.Approvals = make(map[string]*ApprovalResponse)
+		}
+		opts.Approvals[nodeName] = response
+	}
+}

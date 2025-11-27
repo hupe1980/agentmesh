@@ -214,11 +214,13 @@ func NewMockGraph[S any, M any](rootNodes []string, nodes map[string]pregel.Vert
 // MockCheckpointer is a mock implementation of checkpoint.Checkpointer for testing.
 // It stores checkpoints in memory with configurable behavior.
 type MockCheckpointer struct {
-	SaveFunc            func(ctx context.Context, cp *checkpoint.Checkpoint) error
-	LoadFunc            func(ctx context.Context, runID string) (*checkpoint.Checkpoint, error)
-	ListFunc            func(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error)
-	DeleteFunc          func(ctx context.Context, runID string) error
-	LoadAtSuperstepFunc func(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error)
+	SaveFunc                 func(ctx context.Context, cp *checkpoint.Checkpoint) error
+	LoadFunc                 func(ctx context.Context, runID string) (*checkpoint.Checkpoint, error)
+	ListFunc                 func(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error)
+	DeleteFunc               func(ctx context.Context, runID string) error
+	LoadAtSuperstepFunc      func(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error)
+	ListPendingApprovalsFunc func(ctx context.Context) ([]*checkpoint.Checkpoint, error)
+	GetApprovalHistoryFunc   func(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error)
 
 	// Storage holds checkpoints by runID
 	Storage map[string][]*checkpoint.Checkpoint
@@ -325,6 +327,56 @@ func (m *MockCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 	}
 
 	return nil, nil // No checkpoint at this superstep
+}
+
+// ListPendingApprovals returns all checkpoints with pending approvals.
+// If ListPendingApprovalsFunc is set, delegates to it. Otherwise scans all checkpoints.
+func (m *MockCheckpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	if m.ListPendingApprovalsFunc != nil {
+		return m.ListPendingApprovalsFunc(ctx)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*checkpoint.Checkpoint
+	for _, checkpoints := range m.Storage {
+		if len(checkpoints) > 0 {
+			// Check the most recent checkpoint for each run
+			latest := checkpoints[len(checkpoints)-1]
+			if latest.ApprovalMetadata != nil && len(latest.ApprovalMetadata.PendingApprovals) > 0 {
+				result = append(result, latest)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// GetApprovalHistory retrieves the approval history for a run ID.
+// If GetApprovalHistoryFunc is set, delegates to it. Otherwise aggregates from all checkpoints.
+func (m *MockCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	if m.GetApprovalHistoryFunc != nil {
+		return m.GetApprovalHistoryFunc(ctx, runID)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	checkpoints := m.Storage[runID]
+	if len(checkpoints) == 0 {
+		return []checkpoint.ApprovalRecord{}, nil
+	}
+
+	// Get the most recent checkpoint with approval metadata
+	for i := len(checkpoints) - 1; i >= 0; i-- {
+		cp := checkpoints[i]
+		if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.ApprovalHistory) > 0 {
+			return cp.ApprovalMetadata.ApprovalHistory, nil
+		}
+	}
+
+	return []checkpoint.ApprovalRecord{}, nil
 }
 
 // MockMetricsProvider is a mock implementation of metrics.Provider for testing.

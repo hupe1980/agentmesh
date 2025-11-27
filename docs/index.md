@@ -64,7 +64,7 @@ Key ideas:
 - **[Embeddings →](/embeddings/)** – Text-to-vector conversion for semantic search and RAG workflows.
 - **[A2A Protocol →](/a2a/)** – Enable multi-agent collaboration with the Agent-to-Agent protocol.
 - **[Observability →](/observability/)** – Configure OpenTelemetry metrics, tracing, and structured logging.
-- **[Advanced Features →](/advanced/)** – Checkpointing, time travel, human-in-the-loop, and more.
+- **[Advanced Features →](/advanced/)** – Checkpointing, time travel, human-in-the-loop, approval workflows, and more.
 - **[Resources →](/resources/)** – Explore examples, best practices, and contribution guidelines.
 
 ---

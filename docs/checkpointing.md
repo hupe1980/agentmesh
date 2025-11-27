@@ -87,6 +87,7 @@ type Checkpoint struct {
     Committed      bool                   // Whether PendingWrites already applied to state
     CompletedNodes []string               // Nodes that finished execution (for monitoring)
     PausedNodes    []string               // Nodes paused for human input (for human-in-the-loop)
+    ApprovalMetadata *ApprovalMetadata     // Pending approvals and approval history (for approval workflows)
     Metadata       map[string]any         // Custom execution metadata
 }
 

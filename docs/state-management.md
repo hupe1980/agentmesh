@@ -752,6 +752,7 @@ type Checkpoint struct {
     State          map[string]any         // Graph state (includes message history via "__messages__" key)
     CompletedNodes []string               // Nodes that completed execution (for monitoring)
     PausedNodes    []string               // Nodes paused for human-in-the-loop
+    ApprovalMetadata *ApprovalMetadata     // Pending approvals and approval history
     Metadata       map[string]any         // Custom metadata
 }
 ```
@@ -1012,6 +1013,433 @@ seq = compiled.Run(ctx, messages,
 - **Interactive debugging** - Pause and inspect state during development
 
 See `examples/human_pause` for a complete workflow.
+
+---
+
+## Approval Workflows {#approval-workflows}
+
+Advanced human-in-the-loop pattern with conditional guards, structured responses, state edits, and audit trails. Ideal for production workflows requiring human oversight.
+
+### Key Features
+
+- **🛡️ Conditional Guards** - Approval only when needed (e.g., sensitive keywords detected)
+- **✍️ State Edits** - Modify state during approval (e.g., redact sensitive data)
+- **❌ Rejection Handling** - Gracefully handle rejected operations
+- **📊 Audit Trail** - Complete approval history with timestamps and users
+- **⏱️ Timeouts** - Configurable approval timeouts
+- **📝 Feedback Annotations** - Optionally add approval decision to message history
+
+### Basic Approval Workflow
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/checkpoint"
+)
+
+// Define approval guard function
+approvalGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+    // Check if approval is needed
+    content := state.GetFromView(view, contentKey)
+    if containsSensitiveData(content) {
+        return true, "Contains sensitive information", nil
+    }
+    return false, "", nil  // No approval needed
+}
+
+// Add interrupt with approval guard
+g.AddInterruptBefore("send_email",
+    graph.WithApprovalGuard(approvalGuard),
+    graph.WithFeedbackAnnotation(true),  // Record approval in message history
+    graph.WithApprovalTimeout(10 * time.Minute),
+)
+
+// Step 1: Run until approval guard triggers
+runID := "email-workflow-001"
+for _, err := range compiled.Run(ctx, messages,
+    graph.WithRunID(runID),
+    graph.WithCheckpointOptions(
+        checkpoint.WithCheckpointer(checkpointer),
+        checkpoint.WithSaveInterval(1),
+    ),
+) {
+    // Execution pauses when guard returns true
+}
+
+// Step 2: Load checkpoint and review pending approval
+cp, _ := checkpointer.Load(ctx, runID)
+if cp.ApprovalMetadata != nil {
+    for nodeName, pending := range cp.ApprovalMetadata.PendingApprovals {
+        fmt.Printf("Approval needed for: %s\n", nodeName)
+        fmt.Printf("Reason: %s\n", pending.Reason)
+        fmt.Printf("Requested at: %v\n", pending.RequestedAt)
+    }
+}
+
+// Step 3: Provide approval response
+approval := &graph.ApprovalResponse{
+    Decision:  graph.ApprovalApproved,  // or ApprovalRejected, ApprovalEdit, ApprovalSkip
+    Reason:    "Reviewed and approved",
+    User:      "alice@example.com",
+    Timestamp: time.Now(),
+    Edits: state.Updates{
+        contentKey.Name(): "Redacted sensitive content",  // Optional state edits
+    },
+    Annotations: map[string]any{
+        "department": "security",
+        "risk_level": "medium",
+    },
+}
+
+// Step 4: Resume with approval
+for _, err := range compiled.Run(ctx, messages,
+    graph.WithCheckpoint(cp),
+    graph.WithApproval("send_email", approval),
+    graph.WithCheckpointOptions(
+        checkpoint.WithCheckpointer(checkpointer),  // Required for history
+    ),
+) {
+    // Execution continues with approval applied
+}
+
+// Step 5: Query approval history
+history, _ := checkpointer.GetApprovalHistory(ctx, runID)
+for _, record := range history {
+    fmt.Printf("%s: %s by %s at %v\n", 
+        record.NodeName, record.Decision, record.User, record.Timestamp)
+}
+```
+
+### Approval Decisions
+
+Four types of approval decisions:
+
+```go
+// Approve and continue
+approval := &graph.ApprovalResponse{
+    Decision: graph.ApprovalApproved,
+    Reason:   "Looks good",
+    User:     "alice@example.com",
+}
+
+// Reject and stop
+rejection := &graph.ApprovalResponse{
+    Decision: graph.ApprovalRejected,
+    Reason:   "Policy violation",
+    User:     "security@example.com",
+}
+
+// Approve with state edits
+editApproval := &graph.ApprovalResponse{
+    Decision: graph.ApprovalEdit,
+    Reason:   "Approved with modifications",
+    User:     "editor@example.com",
+    Edits: state.Updates{
+        contentKey.Name(): "Modified content",
+    },
+}
+
+// Skip approval (auto-approve)
+skip := &graph.ApprovalResponse{
+    Decision: graph.ApprovalSkip,
+    Reason:   "Automated approval",
+}
+```
+
+### Conditional Guards
+
+Guards control when approval is needed:
+
+```go
+// Example: Sensitive keyword detection
+sensitiveGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+    content := state.GetFromView(view, contentKey)
+    keywords := []string{"confidential", "secret", "classified"}
+    
+    for _, kw := range keywords {
+        if strings.Contains(strings.ToLower(content), kw) {
+            return true, fmt.Sprintf("Contains sensitive keyword: %s", kw), nil
+        }
+    }
+    return false, "", nil  // Auto-continue
+}
+
+// Example: Amount threshold
+amountGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+    amount := state.GetFromView(view, amountKey)
+    if amount > 10000 {
+        return true, fmt.Sprintf("Amount exceeds $10k: $%.2f", amount), nil
+    }
+    return false, "", nil
+}
+
+// Example: Always require approval
+alwaysGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+    return true, "Manual approval required", nil
+}
+```
+
+### State Edits During Approval
+
+Modify state as part of the approval process:
+
+```go
+approval := &graph.ApprovalResponse{
+    Decision: graph.ApprovalApproved,
+    User:     "reviewer@example.com",
+    Edits: state.Updates{
+        // Redact sensitive data
+        "content": redactSensitiveInfo(originalContent),
+        
+        // Add approval metadata
+        "approved_by": "reviewer@example.com",
+        "approved_at": time.Now(),
+        
+        // Modify execution parameters
+        "priority": "high",
+    },
+}
+```
+
+State edits are applied BEFORE the node executes, allowing the node to see the modified state.
+
+### Accessing Approvals in Nodes
+
+Nodes can check for approval responses:
+
+```go
+sendNode := &graph.BaseNode{
+    NodeName: "send_email",
+    DeclaredTargets: []string{graph.EndNode},
+    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+        // Check if approval was provided
+        approval := graph.ApprovalFromContext(ctx, "send_email")
+        if approval == nil {
+            // No approval in context - first execution
+            return []string{graph.EndNode}, state.Updates{
+                sentKey.Name(): false,
+            }, nil
+        }
+        
+        // Handle approval decision
+        switch approval.Decision {
+        case graph.ApprovalRejected:
+            log.Printf("Email rejected: %s", approval.Reason)
+            return []string{graph.EndNode}, state.Updates{
+                sentKey.Name(): false,
+                errorKey.Name(): approval.Reason,
+            }, nil
+            
+        case graph.ApprovalApproved:
+            // State edits already applied - just send
+            content := state.GetFromView(view, contentKey)
+            sendEmail(content)
+            return []string{graph.EndNode}, state.Updates{
+                sentKey.Name(): true,
+            }, nil
+        }
+        
+        return []string{graph.EndNode}, nil, nil
+    },
+}
+```
+
+### Approval History & Audit Trail
+
+Query complete approval history for compliance and debugging:
+
+```go
+// Get all approvals for a run
+history, err := checkpointer.GetApprovalHistory(ctx, runID)
+
+for _, record := range history {
+    fmt.Printf("Node: %s\n", record.NodeName)
+    fmt.Printf("Decision: %s\n", record.Decision)  // APPROVED, REJECTED, EDIT, SKIP
+    fmt.Printf("User: %s\n", record.User)
+    fmt.Printf("Reason: %s\n", record.Reason)
+    fmt.Printf("Timestamp: %v\n", record.Timestamp)
+    
+    if len(record.StateEdits) > 0 {
+        fmt.Printf("State edits: %v\n", record.StateEdits)
+    }
+    
+    if len(record.Annotations) > 0 {
+        fmt.Printf("Annotations: %v\n", record.Annotations)
+    }
+}
+```
+
+### Approval Configuration Options
+
+```go
+g.AddInterruptBefore("critical_action",
+    // Required: Guard function
+    graph.WithApprovalGuard(guard),
+    
+    // Optional: Add approval decision to message history
+    graph.WithFeedbackAnnotation(true),
+    
+    // Optional: Timeout after which approval auto-rejects
+    graph.WithApprovalTimeout(30 * time.Minute),
+    
+    // Optional: Snapshot specific state keys for approval review
+    graph.WithStateSnapshot("content", "metadata", "config"),
+)
+```
+
+### Multiple Approvals
+
+Handle multiple approval points in a single workflow:
+
+```go
+// Add approvals at different stages
+g.AddInterruptBefore("draft", graph.WithApprovalGuard(draftGuard))
+g.AddInterruptBefore("publish", graph.WithApprovalGuard(publishGuard))
+
+// Provide approvals for each stage
+for _, err := range compiled.Run(ctx, messages,
+    graph.WithCheckpoint(cp),
+    graph.WithApproval("draft", draftApproval),
+    graph.WithApproval("publish", publishApproval),
+    graph.WithCheckpointOptions(checkpoint.WithCheckpointer(checkpointer)),
+) {
+    // Process
+}
+```
+
+### Error Handling
+
+```go
+// Check if approval is required but not provided
+if err := graph.CheckApproval(ctx, "send_email", true); err != nil {
+    // Handle missing approval
+    log.Printf("Approval required: %v", err)
+}
+
+// Create approval required error
+if needsApproval {
+    info := &graph.ApprovalInfo{
+        NodeName:    "send_email",
+        Reason:      "Sensitive content detected",
+        RequestedAt: time.Now(),
+    }
+    return graph.NewApprovalRequiredError(info)
+}
+
+// Check error type
+if graph.IsApprovalRequired(err) {
+    info := graph.ApprovalInfoFromError(err)
+    fmt.Printf("Approval needed: %s\n", info.Reason)
+}
+```
+
+### Production Best Practices
+
+**1. Always pass checkpointer when resuming:**
+```go
+// ❌ Wrong - approval history won't persist
+compiled.Run(ctx, messages,
+    graph.WithCheckpoint(cp),
+    graph.WithApproval("node", approval),
+)
+
+// ✅ Correct - history persisted
+compiled.Run(ctx, messages,
+    graph.WithCheckpoint(cp),
+    graph.WithApproval("node", approval),
+    graph.WithCheckpointOptions(checkpoint.WithCheckpointer(checkpointer)),
+)
+```
+
+**2. Use conditional guards to avoid unnecessary approvals:**
+```go
+// Only trigger approval when actually needed
+guard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+    if !needsReview(view) {
+        return false, "", nil  // Auto-continue
+    }
+    return true, "Manual review required", nil
+}
+```
+
+**3. Validate approvals before critical operations:**
+```go
+func criticalOperation(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+    approval := graph.ApprovalFromContext(ctx, "critical_op")
+    if approval == nil {
+        return nil, nil, fmt.Errorf("missing required approval")
+    }
+    
+    if approval.Decision != graph.ApprovalApproved {
+        return nil, nil, fmt.Errorf("operation not approved")
+    }
+    
+    // Proceed with operation
+    // ...
+}
+```
+
+**4. Set appropriate timeouts:**
+```go
+// Short timeout for routine approvals
+graph.WithApprovalTimeout(5 * time.Minute)
+
+// Long timeout for complex reviews
+graph.WithApprovalTimeout(24 * time.Hour)
+
+// No timeout (wait indefinitely)
+graph.WithApprovalTimeout(0)
+```
+
+**5. Use annotations for rich audit data:**
+```go
+approval := &graph.ApprovalResponse{
+    Decision: graph.ApprovalApproved,
+    User:     "alice@example.com",
+    Annotations: map[string]any{
+        "department":     "security",
+        "risk_level":     "medium",
+        "reviewed_by":    "Alice Smith",
+        "policy_version": "2.1",
+        "ip_address":     "192.168.1.100",
+        "session_id":     "abc123",
+    },
+}
+```
+
+### Approval Metadata Structure
+
+Stored in checkpoint for persistence:
+
+```go
+type ApprovalMetadata struct {
+    // Pending approvals awaiting human decision
+    PendingApprovals map[string]*PendingApproval
+    
+    // Complete history of all approvals
+    ApprovalHistory []ApprovalRecord
+}
+
+type PendingApproval struct {
+    NodeName      string
+    Reason        string
+    RequestedAt   time.Time
+    TimeoutAt     *time.Time
+    RequiredState map[string]any  // State snapshot for review
+}
+
+type ApprovalRecord struct {
+    NodeName    string
+    Decision    string  // "APPROVED", "REJECTED", "EDIT", "SKIP"
+    Reason      string
+    User        string
+    Timestamp   time.Time
+    StateEdits  state.Updates
+    Annotations map[string]any
+}
+```
+
+See `examples/human_approval` for complete working examples with all three approval scenarios.
 
 ---
 

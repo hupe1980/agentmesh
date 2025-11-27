@@ -280,6 +280,27 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 		}
 	}
 
+	// Deep copy ApprovalMetadata
+	if src.ApprovalMetadata != nil {
+		dst.ApprovalMetadata = &ApprovalMetadata{}
+
+		// Copy PendingApprovals
+		if src.ApprovalMetadata.PendingApprovals != nil {
+			dst.ApprovalMetadata.PendingApprovals = make(map[string]*PendingApproval, len(src.ApprovalMetadata.PendingApprovals))
+			for k, v := range src.ApprovalMetadata.PendingApprovals {
+				// Create a copy of the PendingApproval struct
+				pendingCopy := *v
+				dst.ApprovalMetadata.PendingApprovals[k] = &pendingCopy
+			}
+		}
+
+		// Copy ApprovalHistory
+		if src.ApprovalMetadata.ApprovalHistory != nil {
+			dst.ApprovalMetadata.ApprovalHistory = make([]ApprovalRecord, len(src.ApprovalMetadata.ApprovalHistory))
+			copy(dst.ApprovalMetadata.ApprovalHistory, src.ApprovalMetadata.ApprovalHistory)
+		}
+	}
+
 	return dst
 }
 
@@ -300,4 +321,42 @@ func (m *InMemoryCheckpointer) Stats() map[string]int {
 		stats[runID] = len(checkpoints)
 	}
 	return stats
+}
+
+// ListPendingApprovals returns all checkpoints with pending approvals.
+func (m *InMemoryCheckpointer) ListPendingApprovals(ctx context.Context) ([]*Checkpoint, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var pending []*Checkpoint
+	for _, checkpoints := range m.checkpoints {
+		for _, cp := range checkpoints {
+			if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.PendingApprovals) > 0 {
+				pending = append(pending, m.deepCopy(cp))
+			}
+		}
+	}
+
+	return pending, nil
+}
+
+// GetApprovalHistory returns the approval history for a specific run.
+func (m *InMemoryCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]ApprovalRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	checkpoints, exists := m.checkpoints[runID]
+	if !exists {
+		return []ApprovalRecord{}, nil
+	}
+
+	// Collect all approval history from all checkpoints in this run
+	var history []ApprovalRecord
+	for _, cp := range checkpoints {
+		if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.ApprovalHistory) > 0 {
+			history = append(history, cp.ApprovalMetadata.ApprovalHistory...)
+		}
+	}
+
+	return history, nil
 }

@@ -169,11 +169,15 @@ type Message interface {
 type Option func(*messageBase)
 
 type messageBase struct {
-	content Parts
+	content  Parts
+	metadata map[string]any
 }
 
 func newMessageBase(content Parts, opts ...Option) messageBase {
-	base := messageBase{content: cloneParts(content)}
+	base := messageBase{
+		content:  cloneParts(content),
+		metadata: make(map[string]any),
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&base)
@@ -183,11 +187,30 @@ func newMessageBase(content Parts, opts ...Option) messageBase {
 }
 
 func (b messageBase) clone() messageBase {
-	return messageBase{content: cloneParts(b.content)}
+	cloned := messageBase{
+		content:  cloneParts(b.content),
+		metadata: make(map[string]any, len(b.metadata)),
+	}
+	for k, v := range b.metadata {
+		cloned.metadata[k] = v
+	}
+	return cloned
 }
 
 func (b messageBase) contentClone() Parts {
 	return cloneParts(b.content)
+}
+
+// WithMetadata sets metadata key-value pairs on a message.
+func WithMetadata(metadata map[string]any) Option {
+	return func(base *messageBase) {
+		if base.metadata == nil {
+			base.metadata = make(map[string]any)
+		}
+		for k, v := range metadata {
+			base.metadata[k] = v
+		}
+	}
 }
 
 // SystemMessage models a system-role message.

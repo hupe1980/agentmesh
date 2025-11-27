@@ -337,3 +337,33 @@ func (c *Checkpointer) unmarshalCheckpoint(item map[string]types.AttributeValue)
 func (c *Checkpointer) Close() error {
 	return nil
 }
+
+// ListPendingApprovals returns all checkpoints with pending approvals.
+// Note: This requires a scan operation which can be expensive for large tables.
+// Consider adding a GSI on approval_metadata if you need better performance.
+func (c *Checkpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	// DynamoDB doesn't support filtering on nested JSON attributes efficiently
+	// We need to scan and filter in memory
+	// TODO: Consider adding a GSI with approval status as a top-level attribute for better performance
+
+	return nil, fmt.Errorf("ListPendingApprovals not yet implemented for DynamoDB checkpointer - consider using SQL or InMemory checkpointer")
+}
+
+// GetApprovalHistory returns the approval history for a specific run.
+func (c *Checkpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	// Query all checkpoints for this run
+	checkpoints, err := c.List(ctx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list checkpoints: %w", err)
+	}
+
+	// Collect approval history from all checkpoints
+	var history []checkpoint.ApprovalRecord
+	for _, cp := range checkpoints {
+		if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.ApprovalHistory) > 0 {
+			history = append(history, cp.ApprovalMetadata.ApprovalHistory...)
+		}
+	}
+
+	return history, nil
+}

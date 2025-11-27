@@ -10,10 +10,11 @@ import (
 // Graph represents a mutable computational graph with nodes and edges.
 type Graph struct {
 	Nodes           map[string]Node
-	NodeConfigs     map[string]*NodeConfig // Execution policies per node
-	InterruptBefore []string               // Nodes to interrupt before execution
-	InterruptAfter  []string               // Nodes to interrupt after execution
-	EntryPoints     []string               // Names of entry point nodes (parallel start)
+	NodeConfigs     map[string]*NodeConfig     // Execution policies per node
+	ApprovalConfigs map[string]*ApprovalConfig // Approval workflow configuration per node
+	InterruptBefore []string                   // Nodes to interrupt before execution
+	InterruptAfter  []string                   // Nodes to interrupt after execution
+	EntryPoints     []string                   // Names of entry point nodes (parallel start)
 	manager         *state.Manager
 }
 
@@ -25,6 +26,7 @@ func NewGraph(manager *state.Manager) (*Graph, error) {
 	return &Graph{
 		Nodes:           make(map[string]Node),
 		NodeConfigs:     make(map[string]*NodeConfig),
+		ApprovalConfigs: make(map[string]*ApprovalConfig),
 		InterruptBefore: make([]string, 0), // Initialize interrupt lists
 		InterruptAfter:  make([]string, 0),
 		EntryPoints:     make([]string, 0), // Initialize entry points
@@ -93,25 +95,38 @@ func (g *Graph) Manager() *state.Manager {
 	return g.manager
 }
 
-// AddInterruptBefore adds a node name to the interrupt-before list.
-// When execution reaches this node, the graph will pause before executing it,
+// AddInterruptBefore adds a node name to the interrupt-before list with optional approval configuration.
+// Before this node executes, the graph will pause (without executing the node),
 // create a checkpoint with pending writes, and return control to the user.
 //
 // This enables human-in-the-loop workflows where users can review
 // and modify state before a critical node executes.
 //
-// Example:
+// Example with approval guard:
 //
-//	g.AddInterruptBefore("send_email")
-//	// Later, when resumed with WithCheckpoint() and WithResumeValue():
-//	result, err := g.Run(ctx, input,
-//	    WithCheckpoint(checkpoint),
-//	    WithResumeValue(map[string]any{"approved": true}))
-func (g *Graph) AddInterruptBefore(nodeName string) {
+//	g.AddInterruptBefore("send_email",
+//	    WithApprovalGuard(func(ctx context.Context, view state.ReadView) (bool, string, error) {
+//	        if containsSensitiveData(view) {
+//	            return true, "Contains sensitive data", nil
+//	        }
+//	        return false, "", nil  // Auto-continue
+//	    }),
+//	    WithFeedbackAnnotation(true),
+//	)
+func (g *Graph) AddInterruptBefore(nodeName string, opts ...ApprovalOption) {
 	g.InterruptBefore = append(g.InterruptBefore, nodeName)
+
+	// Apply approval options if provided
+	if len(opts) > 0 {
+		config := &ApprovalConfig{}
+		for _, opt := range opts {
+			opt(config)
+		}
+		g.ApprovalConfigs[nodeName] = config
+	}
 }
 
-// AddInterruptAfter adds a node name to the interrupt-after list.
+// AddInterruptAfter adds a node name to the interrupt-after list with optional approval configuration.
 // After this node executes, the graph will pause, create a checkpoint with
 // pending writes (output not yet committed), and return control to the user.
 //
@@ -119,12 +134,24 @@ func (g *Graph) AddInterruptBefore(nodeName string) {
 //
 // Example:
 //
-//	g.AddInterruptAfter("generate_report")
-//	// User can review the generated report in checkpoint.PendingWrites
-//	// Then resume with edits:
-//	result, err := g.Run(ctx, input,
-//	    WithCheckpoint(checkpoint),
-//	    WithResumeValue(map[string]any{"edited_report": editedContent}))
-func (g *Graph) AddInterruptAfter(nodeName string) {
+//	g.AddInterruptAfter("generate_report",
+//	    WithApprovalGuard(func(ctx context.Context, view state.ReadView) (bool, string, error) {
+//	        report := state.GetFromView(view, reportKey)
+//	        if len(report) > 10000 {
+//	            return true, "Report exceeds length policy", nil
+//	        }
+//	        return false, "", nil
+//	    }),
+//	)
+func (g *Graph) AddInterruptAfter(nodeName string, opts ...ApprovalOption) {
 	g.InterruptAfter = append(g.InterruptAfter, nodeName)
+
+	// Apply approval options if provided
+	if len(opts) > 0 {
+		config := &ApprovalConfig{}
+		for _, opt := range opts {
+			opt(config)
+		}
+		g.ApprovalConfigs[nodeName] = config
+	}
 }

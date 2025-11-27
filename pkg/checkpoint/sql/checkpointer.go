@@ -482,3 +482,139 @@ func (c *Checkpointer) Close() error {
 	}
 	return nil
 }
+
+// ListPendingApprovals returns all checkpoints with pending approvals.
+func (c *Checkpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	//nolint:gosec // Table name is sanitized
+	query := fmt.Sprintf(`
+		SELECT run_id, superstep, timestamp, version, state, pending_writes, 
+		       completed_nodes, paused_nodes, metadata, committed, approval_metadata, signature
+		FROM %s
+		WHERE approval_metadata IS NOT NULL
+		ORDER BY timestamp DESC
+	`, c.tableName)
+
+	rows, err := c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pending approvals: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close rows: %w", closeErr)
+		}
+	}()
+
+	var checkpoints []*checkpoint.Checkpoint
+	for rows.Next() {
+		cp, scanErr := c.scanCheckpointRow(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+
+		// Only include checkpoints with pending approvals
+		if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.PendingApprovals) > 0 {
+			checkpoints = append(checkpoints, cp)
+		}
+	}
+
+	return checkpoints, rows.Err()
+}
+
+// scanCheckpointRow scans a checkpoint row from SQL result set.
+func (c *Checkpointer) scanCheckpointRow(rows *sql.Rows) (*checkpoint.Checkpoint, error) {
+	var (
+		stateJSON            []byte
+		pendingWritesJSON    []byte
+		completedNodesJSON   []byte
+		pausedNodesJSON      []byte
+		metadataJSON         []byte
+		approvalMetadataJSON []byte
+		signatureBytes       []byte
+	)
+
+	cp := &checkpoint.Checkpoint{}
+
+	if err := rows.Scan(
+		&cp.RunID,
+		&cp.Superstep,
+		&cp.Timestamp,
+		&cp.Version,
+		&stateJSON,
+		&pendingWritesJSON,
+		&completedNodesJSON,
+		&pausedNodesJSON,
+		&metadataJSON,
+		&cp.Committed,
+		&approvalMetadataJSON,
+		&signatureBytes,
+	); err != nil {
+		return nil, fmt.Errorf("failed to scan checkpoint: %w", err)
+	}
+
+	// Deserialize JSON fields
+	if err := json.Unmarshal(stateJSON, &cp.State); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+	}
+	if len(pendingWritesJSON) > 0 {
+		if err := json.Unmarshal(pendingWritesJSON, &cp.PendingWrites); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal pending writes: %w", err)
+		}
+	}
+	if err := json.Unmarshal(completedNodesJSON, &cp.CompletedNodes); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal completed nodes: %w", err)
+	}
+	if err := json.Unmarshal(pausedNodesJSON, &cp.PausedNodes); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal paused nodes: %w", err)
+	}
+	if err := json.Unmarshal(metadataJSON, &cp.Metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+	if len(approvalMetadataJSON) > 0 {
+		cp.ApprovalMetadata = &checkpoint.ApprovalMetadata{}
+		if err := json.Unmarshal(approvalMetadataJSON, cp.ApprovalMetadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal approval metadata: %w", err)
+		}
+	}
+	if len(signatureBytes) > 0 {
+		cp.Signature = signatureBytes
+	}
+
+	return cp, nil
+}
+
+// GetApprovalHistory returns the approval history for a specific run.
+func (c *Checkpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	//nolint:gosec // Table name is sanitized at construction time
+	query := "SELECT approval_metadata FROM " + c.tableName + " WHERE run_id = ? AND approval_metadata IS NOT NULL ORDER BY superstep ASC"
+
+	rows, err := c.db.QueryContext(ctx, query, runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query approval history: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close rows: %w", closeErr)
+		}
+	}()
+
+	var history []checkpoint.ApprovalRecord
+	for rows.Next() {
+		var approvalMetadataJSON []byte
+		if err := rows.Scan(&approvalMetadataJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan approval metadata: %w", err)
+		}
+
+		if len(approvalMetadataJSON) == 0 {
+			continue
+		}
+
+		var metadata checkpoint.ApprovalMetadata
+		if err := json.Unmarshal(approvalMetadataJSON, &metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal approval metadata: %w", err)
+		}
+
+		history = append(history, metadata.ApprovalHistory...)
+	}
+
+	return history, rows.Err()
+}

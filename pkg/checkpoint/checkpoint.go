@@ -82,6 +82,75 @@ type Checkpoint struct {
 
 	// Metadata for custom checkpoint annotations
 	Metadata map[string]any `json:"metadata,omitempty"`
+
+	// ApprovalMetadata tracks approval workflow state for human-in-the-loop workflows.
+	// This field enables:
+	//   - Tracking which nodes are awaiting approval
+	//   - Recording approval decision history for audit/compliance
+	//   - Querying checkpoints by approval status
+	//   - Implementing approval timeouts and SLAs
+	ApprovalMetadata *ApprovalMetadata `json:"approvalMetadata,omitempty"`
+}
+
+// ApprovalMetadata captures approval workflow information in a checkpoint.
+// This enables approval queues, audit trails, and timeout enforcement.
+type ApprovalMetadata struct {
+	// PendingApprovals maps node name to approval request details.
+	// Nodes in this map are waiting for human approval before continuing.
+	PendingApprovals map[string]*PendingApproval `json:"pendingApprovals,omitempty"`
+
+	// ApprovalHistory is a chronological list of all approval decisions for this run.
+	// Used for audit trails and compliance reporting.
+	ApprovalHistory []ApprovalRecord `json:"approvalHistory,omitempty"`
+
+	// GuardReasons maps node name to the reason approval was required.
+	// Stored separately for quick access without parsing approval details.
+	GuardReasons map[string]string `json:"guardReasons,omitempty"`
+}
+
+// PendingApproval represents an active approval request for a node.
+// This information is used by approval dashboards and timeout enforcement.
+type PendingApproval struct {
+	// NodeName is the node requiring approval
+	NodeName string `json:"nodeName"`
+
+	// Reason explains why approval is needed (from ApprovalGuard)
+	Reason string `json:"reason"`
+
+	// RequestedAt is when the approval was first requested
+	RequestedAt time.Time `json:"requestedAt"`
+
+	// TimeoutAt is when the approval request expires (nil if no timeout)
+	TimeoutAt *time.Time `json:"timeoutAt,omitempty"`
+
+	// RequiredState is a snapshot of relevant state for review.
+	// This allows approval UIs to show context without loading the full checkpoint.
+	RequiredState map[string]any `json:"requiredState,omitempty"`
+}
+
+// ApprovalRecord is an immutable record of an approval decision.
+// These records form the audit trail for compliance and debugging.
+type ApprovalRecord struct {
+	// NodeName is the node that was approved/rejected
+	NodeName string `json:"nodeName"`
+
+	// Decision is the approval outcome (APPROVED, REJECTED, EDIT, SKIP)
+	Decision string `json:"decision"`
+
+	// Reason is the human's explanation for their decision
+	Reason string `json:"reason"`
+
+	// User identifies who made the approval decision
+	User string `json:"user"`
+
+	// Timestamp when the decision was made
+	Timestamp time.Time `json:"timestamp"`
+
+	// StateEdits contains state modifications if decision was EDIT
+	StateEdits map[string]any `json:"stateEdits,omitempty"`
+
+	// Annotations contains custom metadata about the approval
+	Annotations map[string]any `json:"annotations,omitempty"`
 }
 
 // Checkpointer defines the interface for checkpoint persistence.
@@ -110,6 +179,18 @@ type Checkpointer interface {
 	// Returns nil if no checkpoint exists at that superstep.
 	// Returns error if load fails.
 	LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*Checkpoint, error)
+
+	// ListPendingApprovals returns all checkpoints with pending approvals.
+	// Ordered by oldest approval request first (FIFO queue).
+	// Used by approval dashboards to show pending work.
+	// Returns empty slice if no checkpoints have pending approvals.
+	ListPendingApprovals(ctx context.Context) ([]*Checkpoint, error)
+
+	// GetApprovalHistory returns the full approval audit trail for a run.
+	// Ordered chronologically (oldest first).
+	// Used for compliance reporting and debugging.
+	// Returns empty slice if no approvals have been recorded.
+	GetApprovalHistory(ctx context.Context, runID string) ([]ApprovalRecord, error)
 }
 
 // Option is a functional option for configuring checkpoint behavior

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // restoreCheckpoint loads and applies a checkpoint if configured.
@@ -25,7 +26,7 @@ func (p *PregelExecutor[I, O]) restoreCheckpoint(ctx context.Context, compiled *
 		"run_id", chkpt.RunID,
 		"superstep", chkpt.Superstep)
 
-	if err := p.applyCheckpointData(ctx, compiled, chkpt); err != nil {
+	if err := p.applyCheckpointData(ctx, compiled, chkpt, opts); err != nil {
 		return err
 	}
 
@@ -80,7 +81,7 @@ func (p *PregelExecutor[I, O]) loadCheckpoint(ctx context.Context, opts RunOptio
 }
 
 // applyCheckpointData applies state and pending writes from a checkpoint.
-func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled *Compiled[I, O], chkpt *checkpoint.Checkpoint) error {
+func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled *Compiled[I, O], chkpt *checkpoint.Checkpoint, opts RunOptions) error {
 	logger := logging.FromContext(ctx)
 
 	// Restore state
@@ -127,6 +128,14 @@ func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled
 		logger.Debug("skipping already-committed pending writes",
 			"run_id", chkpt.RunID,
 			"pending_writes", len(chkpt.PendingWrites))
+	}
+
+	// Process approval responses if provided (when resuming with approvals)
+	if err := p.processApprovalResponses(ctx, compiled, chkpt, opts); err != nil {
+		logger.Error("failed to process approval responses",
+			"run_id", chkpt.RunID,
+			"error", err)
+		return fmt.Errorf("failed to process approval responses: %w", err)
 	}
 
 	return nil
@@ -285,6 +294,15 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 		Metadata:       map[string]any{},
 	}
 
+	// Preserve approval metadata from latest checkpoint (in case approvals were just processed)
+	if latestCP, err := opts.Checkpointer.Load(ctx, opts.RunID); err == nil && latestCP != nil && latestCP.ApprovalMetadata != nil {
+		chkpt.ApprovalMetadata = latestCP.ApprovalMetadata
+		logger.Debug("preserving approval metadata from latest checkpoint",
+			"run_id", opts.RunID,
+			"history_count", len(latestCP.ApprovalMetadata.ApprovalHistory),
+			"pending_count", len(latestCP.ApprovalMetadata.PendingApprovals))
+	}
+
 	logger.Debug("checkpoint prepared with pending writes",
 		"run_id", opts.RunID,
 		"superstep", superstep,
@@ -378,6 +396,15 @@ func (p *PregelExecutor[I, O]) saveFinalCheckpoint(ctx context.Context, compiled
 		},
 	}
 
+	// Preserve approval metadata from latest checkpoint (in case approvals were just processed)
+	if latestCP, err := opts.Checkpointer.Load(ctx, opts.RunID); err == nil && latestCP != nil && latestCP.ApprovalMetadata != nil {
+		chkpt.ApprovalMetadata = latestCP.ApprovalMetadata
+		logger.Debug("preserving approval metadata in final checkpoint",
+			"run_id", opts.RunID,
+			"history_count", len(latestCP.ApprovalMetadata.ApprovalHistory),
+			"pending_count", len(latestCP.ApprovalMetadata.PendingApprovals))
+	}
+
 	if err := p.saveCheckpointSync(ctx, opts, chkpt); err != nil {
 		logger.Error("failed to save final checkpoint",
 			"run_id", opts.RunID,
@@ -421,6 +448,124 @@ func (p *PregelExecutor[I, O]) applyPendingUpdates(ctx context.Context, compiled
 
 	logger.Debug("pending writes applied successfully",
 		"writes_applied", len(pendingWrites))
+}
+
+// processApprovalResponses handles approval responses provided during resume.
+// This applies state edits from approved nodes and records approval history in the checkpoint.
+func (p *PregelExecutor[I, O]) processApprovalResponses(ctx context.Context, compiled *Compiled[I, O], chkpt *checkpoint.Checkpoint, opts RunOptions) error {
+	// Check if checkpoint has pending approvals
+	if chkpt.ApprovalMetadata == nil || len(chkpt.ApprovalMetadata.PendingApprovals) == 0 {
+		return nil // No approvals needed
+	}
+
+	logger := logging.FromContext(ctx)
+	processedAny := false
+
+	// Process each pending approval by checking context for response
+	for nodeName := range chkpt.ApprovalMetadata.PendingApprovals {
+		approval := ApprovalFromContext(ctx, nodeName)
+		if approval == nil {
+			logger.Debug("no approval found for node", "node", nodeName)
+			continue // Node not approved yet - will remain pending
+		}
+
+		logger.Info("processing approval response",
+			"node", nodeName,
+			"decision", approval.Decision,
+			"user", approval.User)
+
+		// Apply state edits if approved and edits are provided
+		if approval.Decision == ApprovalApproved && len(approval.Edits) > 0 {
+			logger.Info("applying approval edits to state", "node", nodeName, "edits", len(approval.Edits))
+			if err := compiled.manager.ApplyUpdates(ctx, approval.Edits); err != nil {
+				return fmt.Errorf("failed to apply approval edits for node %s: %w", nodeName, err)
+			}
+		}
+
+		// Record approval in history
+		record := checkpoint.ApprovalRecord{
+			NodeName:    nodeName,
+			Decision:    string(approval.Decision),
+			Reason:      approval.Reason,
+			User:        approval.User,
+			Timestamp:   approval.Timestamp,
+			StateEdits:  approval.Edits,
+			Annotations: approval.Annotations,
+		}
+
+		// Update checkpoint metadata
+		if chkpt.ApprovalMetadata.ApprovalHistory == nil {
+			chkpt.ApprovalMetadata.ApprovalHistory = []checkpoint.ApprovalRecord{}
+		}
+		chkpt.ApprovalMetadata.ApprovalHistory = append(chkpt.ApprovalMetadata.ApprovalHistory, record)
+
+		// Remove from pending approvals
+		delete(chkpt.ApprovalMetadata.PendingApprovals, nodeName)
+
+		// Add feedback annotation if configured
+		if config, ok := compiled.graph.ApprovalConfigs[nodeName]; ok && config.FeedbackAnnotation {
+			p.addApprovalFeedback(ctx, compiled, nodeName, approval)
+		}
+
+		logger.Info("approval processed successfully",
+			"node", nodeName,
+			"decision", approval.Decision,
+			"had_edits", len(approval.Edits) > 0)
+		processedAny = true
+	}
+
+	// Save updated checkpoint with approval history if we processed any approvals
+	if !processedAny {
+		return nil
+	}
+
+	if opts.Checkpointer == nil {
+		logger.Warn("checkpointer is nil - cannot save approval history!",
+			"run_id", chkpt.RunID)
+		return nil
+	}
+
+	logger.Info("saving checkpoint with updated approval history",
+		"run_id", chkpt.RunID,
+		"history_count", len(chkpt.ApprovalMetadata.ApprovalHistory))
+
+	if err := opts.Checkpointer.Save(ctx, chkpt); err != nil {
+		logger.Error("failed to save checkpoint after approval processing",
+			"run_id", chkpt.RunID,
+			"error", err)
+		return fmt.Errorf("failed to save checkpoint after approval: %w", err)
+	}
+
+	logger.Info("checkpoint saved successfully with approval history",
+		"run_id", chkpt.RunID)
+
+	return nil
+}
+
+// addApprovalFeedback appends approval decision to message history as a system message.
+func (p *PregelExecutor[I, O]) addApprovalFeedback(ctx context.Context, compiled *Compiled[I, O], nodeName string, approval *ApprovalResponse) {
+	logger := logging.FromContext(ctx)
+
+	// Create feedback message with metadata
+	content := fmt.Sprintf("Human approval for %s: %s - %s (by %s)",
+		nodeName, approval.Decision, approval.Reason, approval.User)
+
+	feedbackMsg := message.NewSystemMessageFromText(content,
+		message.WithMetadata(map[string]any{
+			"approval_node": nodeName,
+			"decision":      string(approval.Decision),
+			"user":          approval.User,
+			"timestamp":     approval.Timestamp,
+		}))
+
+	// Append to messages
+	if err := compiled.manager.ApplyUpdates(ctx, map[string]any{
+		MessagesKeyName: []message.Message{feedbackMsg},
+	}); err != nil {
+		logger.Warn("failed to append feedback annotation", "error", err)
+	} else {
+		logger.Info("added approval feedback to message history", "node", nodeName)
+	}
 }
 
 // saveCheckpointSync saves a checkpoint synchronously.

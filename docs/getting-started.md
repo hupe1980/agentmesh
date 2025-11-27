@@ -132,6 +132,7 @@ The repository includes **18 comprehensive examples** demonstrating key features
 - **`examples/conditional_flow`** – Dynamic routing based on agent outputs
 - **`examples/parallel_tasks`** – Parallel execution of independent graph nodes
 - **`examples/human_pause`** – Human-in-the-loop workflows
+- **`examples/human_approval`** – Approval workflows with conditional guards and audit trails
 - **`examples/time_travel`** – Debug workflows by replaying from checkpoints
 - **`examples/checkpointing`** – Automatic state persistence and recovery
 - **`examples/middleware`** – Middleware system demonstration

@@ -240,6 +240,16 @@ func (ec *EncryptedCheckpointer) LoadAtSuperstep(ctx context.Context, runID stri
 	return checkpoint, nil
 }
 
+// ListPendingApprovals returns all checkpoints with pending approvals by delegating to the base checkpointer.
+func (ec *EncryptedCheckpointer) ListPendingApprovals(ctx context.Context) ([]*Checkpoint, error) {
+	return ec.base.ListPendingApprovals(ctx)
+}
+
+// GetApprovalHistory returns the approval history for a specific run by delegating to the base checkpointer.
+func (ec *EncryptedCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]ApprovalRecord, error) {
+	return ec.base.GetApprovalHistory(ctx, runID)
+}
+
 // encrypt encrypts data using the configured encryptor
 func (ec *EncryptedCheckpointer) encrypt(plaintext []byte) ([]byte, error) {
 	return ec.encryptor.Encrypt(plaintext)
@@ -377,4 +387,14 @@ func (mkc *MultiKeyCheckpointer) tryDecryptAtSuperstep(ctx context.Context, runI
 		return nil, err
 	}
 	return ec.LoadAtSuperstep(ctx, runID, superstep)
+}
+
+// ListPendingApprovals returns all checkpoints with pending approvals by delegating to the base checkpointer.
+func (mkc *MultiKeyCheckpointer) ListPendingApprovals(ctx context.Context) ([]*Checkpoint, error) {
+	return mkc.base.ListPendingApprovals(ctx)
+}
+
+// GetApprovalHistory returns the approval history for a specific run by delegating to the base checkpointer.
+func (mkc *MultiKeyCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]ApprovalRecord, error) {
+	return mkc.base.GetApprovalHistory(ctx, runID)
 }
