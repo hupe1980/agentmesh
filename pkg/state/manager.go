@@ -23,14 +23,16 @@ import (
 //
 // Concurrency Model (Optimized for BSP Execution):
 // - REMOVED global RWMutex to eliminate serialization bottleneck (4-10x improvement)
-// - sync.Map used throughout for lock-free reads during BSP supersteps
+// - Frozen maps for write-once, read-many patterns (registeredKeys, managedValues)
 // - Per-channel locking handled by individual Channel implementations
 // - Result: Linear scalability with worker count for read-heavy BSP workloads
 type Manager struct {
 	store           Store
 	channels        *ChannelRegistry
-	registeredKeys  sync.Map // map[string]keyInfo
-	managedValues   sync.Map // map[string]*ManagedValueAny
+	registeredKeys  map[string]keyInfo          // Frozen after setup - lock-free reads
+	managedValues   map[string]*ManagedValueAny // Frozen after setup - lock-free reads
+	setupMu         sync.RWMutex                // Only used during registration phase
+	frozen          bool                        // Set to true after Compile() to prevent modifications
 	snapshots       *SnapshotManager
 	checkpointer    checkpoint.Checkpointer
 	checkpointRunID string
@@ -78,8 +80,8 @@ func NewManager(opts ...ManagerOption) *Manager {
 	m := &Manager{
 		store:          NewMemoryStore(),
 		channels:       NewChannelRegistry(),
-		registeredKeys: sync.Map{}, // Initialized as empty sync.Map
-		managedValues:  sync.Map{}, // Initialized as empty sync.Map
+		registeredKeys: make(map[string]keyInfo),
+		managedValues:  make(map[string]*ManagedValueAny),
 		snapshots:      NewSnapshotManager(),
 	}
 
@@ -104,10 +106,17 @@ func NewManager(opts ...ManagerOption) *Manager {
 //	counterKey := NewKey[int]("counter", 0)
 //	state.RegisterKey(mgr, counterKey)
 func RegisterKey[T any](m *Manager, key Key[T]) error {
-	// Check if already registered (lock-free, idempotent)
-	if _, exists := m.registeredKeys.Load(key.name); exists {
+	// Check if already registered (fast path with read lock)
+	m.setupMu.RLock()
+	if m.frozen {
+		m.setupMu.RUnlock()
+		return fmt.Errorf("cannot register key %q: manager is frozen after compilation", key.name)
+	}
+	if _, exists := m.registeredKeys[key.name]; exists {
+		m.setupMu.RUnlock()
 		return nil
 	}
+	m.setupMu.RUnlock()
 
 	// Create and initialize channel
 	ch := channel.NewLastValueChannel(key.name)
@@ -121,12 +130,20 @@ func RegisterKey[T any](m *Manager, key Key[T]) error {
 		return fmt.Errorf("channel registration failed: %w", err)
 	}
 
-	// Track registration (atomic store)
+	// Track registration with write lock
+	m.setupMu.Lock()
+	defer m.setupMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
+	}
+
 	info := keyInfo{
 		name:   key.name,
 		isList: false,
 	}
-	m.registeredKeys.Store(key.name, info)
+	m.registeredKeys[key.name] = info
 
 	return nil
 }
@@ -141,10 +158,17 @@ func RegisterKey[T any](m *Manager, key Key[T]) error {
 //	messagesKey := NewListKey[string]("messages", 100)
 //	state.RegisterListKey(mgr, messagesKey)
 func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
-	// Check if already registered (lock-free, idempotent)
-	if _, exists := m.registeredKeys.Load(key.name); exists {
+	// Check if already registered (fast path with read lock)
+	m.setupMu.RLock()
+	if m.frozen {
+		m.setupMu.RUnlock()
+		return fmt.Errorf("cannot register list key %q: manager is frozen after compilation", key.name)
+	}
+	if _, exists := m.registeredKeys[key.name]; exists {
+		m.setupMu.RUnlock()
 		return nil
 	}
+	m.setupMu.RUnlock()
 
 	// Create TopicChannel for list keys (append semantics)
 	ch := channel.NewTopicChannel(key.name, key.maxSize)
@@ -152,13 +176,21 @@ func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
 		return fmt.Errorf("channel registration failed: %w", err)
 	}
 
-	// Track registration (atomic store)
+	// Track registration with write lock
+	m.setupMu.Lock()
+	defer m.setupMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
+	}
+
 	info := keyInfo{
 		name:    key.name,
 		isList:  true,
 		maxSize: key.maxSize,
 	}
-	m.registeredKeys.Store(key.name, info)
+	m.registeredKeys[key.name] = info
 
 	return nil
 }
@@ -182,10 +214,17 @@ func RegisterListKey[T any](m *Manager, key ListKey[T]) error {
 //	// Nodes contribute via normal Updates:
 //	return state.Updates{totalCostKey.Name(): 42.0}, nil
 func RegisterAggregateKey[T any](m *Manager, key Key[T], aggregator channel.Aggregator) error {
-	// Check if already registered (lock-free, idempotent)
-	if _, exists := m.registeredKeys.Load(key.name); exists {
+	// Check if already registered (fast path with read lock)
+	m.setupMu.RLock()
+	if m.frozen {
+		m.setupMu.RUnlock()
+		return fmt.Errorf("cannot register aggregate key %q: manager is frozen after compilation", key.name)
+	}
+	if _, exists := m.registeredKeys[key.name]; exists {
+		m.setupMu.RUnlock()
 		return nil
 	}
+	m.setupMu.RUnlock()
 
 	// Create AggregateChannel with the provided aggregator
 	ch := channel.NewAggregateChannel(key.name, aggregator)
@@ -193,13 +232,21 @@ func RegisterAggregateKey[T any](m *Manager, key Key[T], aggregator channel.Aggr
 		return fmt.Errorf("channel registration failed: %w", err)
 	}
 
-	// Track registration (atomic store, mark as aggregate type)
+	// Track registration with write lock
+	m.setupMu.Lock()
+	defer m.setupMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if _, exists := m.registeredKeys[key.name]; exists {
+		return nil
+	}
+
 	info := keyInfo{
 		name:        key.name,
 		isList:      false,
 		isAggregate: true,
 	}
-	m.registeredKeys.Store(key.name, info)
+	m.registeredKeys[key.name] = info
 
 	return nil
 }
@@ -353,18 +400,21 @@ func (m *Manager) ApplyUpdates(ctx context.Context, updates Updates) error {
 			if err := m.store.Delete(ctx, key); err != nil {
 				return fmt.Errorf("failed to delete key %q from store: %w", key, err)
 			}
-			// Remove from registered keys (lock-free delete)
-			m.registeredKeys.Delete(key)
+			// Remove from registered keys
+			m.setupMu.Lock()
+			delete(m.registeredKeys, key)
+			m.setupMu.Unlock()
 			continue
 		}
 
-		// Check if this is a registered list key (lock-free load)
-		val, exists := m.registeredKeys.Load(key)
+		// Check if this is a registered list key (lock-free read)
+		m.setupMu.RLock()
+		info, exists := m.registeredKeys[key]
+		m.setupMu.RUnlock()
+
 		var isListKey bool
 		if exists {
-			if info, ok := val.(keyInfo); ok {
-				isListKey = info.isList
-			}
+			isListKey = info.isList
 		}
 
 		if isListKey {
@@ -480,15 +530,31 @@ func (m *Manager) DeleteSnapshot(snapshotID string) error {
 
 // RegisteredKeys returns all registered key names.
 func (m *Manager) RegisteredKeys() []string {
-	var keys []string
-	// Lock-free iteration using sync.Map.Range
-	m.registeredKeys.Range(func(key, value any) bool {
-		if name, ok := key.(string); ok {
-			keys = append(keys, name)
-		}
-		return true
-	})
+	m.setupMu.RLock()
+	defer m.setupMu.RUnlock()
+
+	keys := make([]string, 0, len(m.registeredKeys))
+	for name := range m.registeredKeys {
+		keys = append(keys, name)
+	}
 	return keys
+}
+
+// Freeze marks the manager as frozen, preventing further key/channel registrations.
+// This is called automatically by graph.Compile() to enforce the write-once pattern.
+// After freezing, only runtime operations (Get/Set/Append) are allowed, not schema changes.
+func (m *Manager) Freeze() {
+	m.setupMu.Lock()
+	defer m.setupMu.Unlock()
+	m.frozen = true
+	m.channels.Freeze()
+}
+
+// IsFrozen returns whether the manager is frozen.
+func (m *Manager) IsFrozen() bool {
+	m.setupMu.RLock()
+	defer m.setupMu.RUnlock()
+	return m.frozen
 }
 
 // Close closes the manager and releases resources.
@@ -553,13 +619,20 @@ func convertMetadata(m map[string]string) map[string]any {
 func RegisterManagedValue[T any](m *Manager, mv ManagedValue[T]) error {
 	name := mv.Name()
 
-	// Check if already registered (lock-free)
-	if _, exists := m.managedValues.Load(name); exists {
+	m.setupMu.Lock()
+	defer m.setupMu.Unlock()
+
+	if m.frozen {
+		return fmt.Errorf("cannot register managed value %q: manager is frozen after compilation", name)
+	}
+
+	// Check if already registered
+	if _, exists := m.managedValues[name]; exists {
 		return fmt.Errorf("managed value %q already registered", name)
 	}
 
-	// Wrap for type-erased storage (atomic store)
-	m.managedValues.Store(name, WrapManagedValue(mv))
+	// Wrap for type-erased storage
+	m.managedValues[name] = WrapManagedValue(mv)
 
 	return nil
 }
@@ -580,14 +653,16 @@ func RegisterManagedValue[T any](m *Manager, mv ManagedValue[T]) error {
 func GetManagedValue[T any](ctx context.Context, m *Manager, name string) (T, error) {
 	var zero T
 
-	// Lock-free load
-	val, exists := m.managedValues.Load(name)
+	// Lock-free read
+	m.setupMu.RLock()
+	mv, exists := m.managedValues[name]
+	m.setupMu.RUnlock()
+
 	if !exists {
 		return zero, fmt.Errorf("managed value %q not found", name)
 	}
 
-	mv, ok := val.(*ManagedValueAny)
-	if !ok {
+	if mv == nil {
 		return zero, fmt.Errorf("managed value %q has invalid type in storage", name)
 	}
 
@@ -614,14 +689,16 @@ func GetManagedValue[T any](ctx context.Context, m *Manager, name string) (T, er
 //	newConfig := &RuntimeConfig{APIKey: "new-secret", Timeout: 60}
 //	err := state.SetManagedValue(ctx, mgr, "runtime_config", newConfig)
 func SetManagedValue[T any](ctx context.Context, m *Manager, name string, value T) error {
-	// Lock-free load
-	val, exists := m.managedValues.Load(name)
+	// Lock-free read
+	m.setupMu.RLock()
+	mv, exists := m.managedValues[name]
+	m.setupMu.RUnlock()
+
 	if !exists {
 		return fmt.Errorf("managed value %q not found", name)
 	}
 
-	mv, ok := val.(*ManagedValueAny)
-	if !ok {
+	if mv == nil {
 		return fmt.Errorf("managed value %q has invalid type in storage", name)
 	}
 
@@ -631,14 +708,13 @@ func SetManagedValue[T any](ctx context.Context, m *Manager, name string, value 
 // GetManagedValueNames returns all registered managed value names.
 // Useful for debugging and introspection.
 func (m *Manager) GetManagedValueNames() []string {
-	var names []string
-	// Lock-free iteration using sync.Map.Range
-	m.managedValues.Range(func(key, value any) bool {
-		if name, ok := key.(string); ok {
-			names = append(names, name)
-		}
-		return true
-	})
+	m.setupMu.RLock()
+	defer m.setupMu.RUnlock()
+
+	names := make([]string, 0, len(m.managedValues))
+	for name := range m.managedValues {
+		names = append(names, name)
+	}
 
 	return names
 }

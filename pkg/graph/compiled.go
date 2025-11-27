@@ -215,6 +215,10 @@ func Compile[I, O any](g *Graph, executor Executor[I, O], opts ...CompileOption)
 	// Compute topology
 	topo := computeTopology(g.Nodes, g.EntryPoints)
 
+	// Freeze the state manager to prevent further schema modifications
+	// This enforces the write-once, read-many pattern for optimal performance
+	g.manager.Freeze()
+
 	return &Compiled[I, O]{
 		graph:    g,
 		topology: topo,
