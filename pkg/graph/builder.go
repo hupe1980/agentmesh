@@ -223,6 +223,55 @@ func (b *Builder[I, O]) AddNodeFuncWithRetry(name string, targets []string, fn N
 	return b
 }
 
+// AddSubgraphNode adds a pre-created subgraph node to the graph.
+// Use NewSubgraphNode() to create the node first, then add it with this method.
+//
+// Subgraphs enable composing complex graphs from reusable components with
+// type-safe input/output mapping between parent and subgraph state.
+//
+// Example:
+//
+//	// Build validation subgraph
+//	validationGraph, _ := buildValidationGraph()
+//	validationCompiled, _ := graph.Compile(validationGraph, executor)
+//
+//	// Create subgraph node with type-safe I/O mappers
+//	subgraphNode := graph.NewSubgraphNode(
+//	    "validation",
+//	    validationCompiled,
+//	    func(ctx context.Context, view state.ReadView) (ValidationInput, error) {
+//	        return ValidationInput{Data: state.GetFromView(view, dataKey)}, nil
+//	    },
+//	    func(ctx context.Context, output ValidationOutput) (state.Updates, error) {
+//	        return state.Updates{
+//	            validKey.Name():  output.Valid,
+//	            errorsKey.Name(): output.Errors,
+//	        }, nil
+//	    },
+//	    []string{"process", graph.END},
+//	    graph.WithSubgraphVersion("1.0.0"),
+//	)
+//
+//	// Add to parent graph
+//	builder.AddSubgraphNode(subgraphNode)
+//
+// Organize reusable subgraphs as Go packages/functions:
+//
+//	// pkg/subgraphs/validation.go
+//	func NewValidationSubgraph() (*graph.SubgraphNode[Input, Output], error) {
+//	    // Build and return configured subgraph node
+//	}
+func (b *Builder[I, O]) AddSubgraphNode(node Node) *Builder[I, O] {
+	if b.err != nil {
+		return b // Short-circuit if previous error
+	}
+
+	if err := b.graph.AddNode(node); err != nil {
+		b.err = fmt.Errorf("AddSubgraphNode(%s): %w", node.Name(), err)
+	}
+	return b
+}
+
 // SetEntryPoint declares which node(s) should execute first.
 // Multiple entry points will execute in parallel in the same superstep.
 //

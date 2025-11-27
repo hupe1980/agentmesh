@@ -1,14 +1,15 @@
-# Example: Subgraph with Namespace-Scoped Nodes
+# Subgraph Composition
 
 ## Overview
-Demonstrates multi-stage data processing pipeline using **namespace-scoped nodes** for state isolation. Shows how to use `NamespacedCommandNode` to ensure each pipeline stage can only access its own namespace, preventing accidental cross-contamination of state.
+Demonstrates composing complex graphs from reusable subgraph components using `SubgraphNode`.
+Shows how to build isolated subgraphs with type-safe input/output mapping.
 
 ## Key Concepts
-- **Namespace-Scoped Nodes**: Nodes that declare their namespace scope using `NamespacedNode` interface
-- **State Isolation**: Each pipeline stage (validation, enrichment, analysis) operates in its own namespace
-- **Compile-Time Safety**: Type-safe keys with namespace prefixes (e.g., `validation.data`)
-- **Clear Boundaries**: Explicit declaration of which state each node can access
-- **Modular Workflows**: Reusable pipeline stages with guaranteed isolation
+- **SubgraphNode**: Wraps a compiled graph as a reusable node with type-safe I/O
+- **InputMapper**: Type-safe function that extracts data from parent state → subgraph input
+- **OutputMapper**: Type-safe function that converts subgraph output → parent state updates
+- **State Isolation**: Each subgraph has its own state manager and cannot directly access parent state
+- **Reusability**: Build once, use in multiple graphs - organize as Go packages/functions
 
 ## Running
 ```bash
