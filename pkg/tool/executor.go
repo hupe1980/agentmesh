@@ -291,42 +291,83 @@ func (e *ParallelExecutor) Execute(ctx context.Context, calls []Call) ([]Executi
 	results := make([]ExecutionResult, len(calls))
 	errors := make([]error, len(calls))
 
-	// Limit concurrency if configured
+	// Execute tools with or without concurrency limit
 	if e.maxConcurrency > 0 {
-		sem := make(chan struct{}, e.maxConcurrency)
-		var wg sync.WaitGroup
-
-		for i, call := range calls {
-			wg.Add(1)
-			go func(idx int, c Call) {
-				defer wg.Done()
-				sem <- struct{}{}        // Acquire
-				defer func() { <-sem }() // Release
-
-				results[idx] = executeSingleTool(ctx, c, e.registry, e.errorPrefix)
-				if results[idx].Error != nil && !e.continueOnError {
-					errors[idx] = results[idx].Error
-				}
-			}(i, call)
-		}
-		wg.Wait()
+		e.executeLimited(ctx, calls, results, errors)
 	} else {
-		// Unlimited concurrency
-		var wg sync.WaitGroup
-		for i, call := range calls {
-			wg.Add(1)
-			go func(idx int, c Call) {
-				defer wg.Done()
-				results[idx] = executeSingleTool(ctx, c, e.registry, e.errorPrefix)
-				if results[idx].Error != nil && !e.continueOnError {
-					errors[idx] = results[idx].Error
-				}
-			}(i, call)
-		}
-		wg.Wait()
+		e.executeUnlimited(ctx, calls, results, errors)
 	}
 
 	// Check for errors if not continuing
+	return e.checkErrors(results, errors)
+}
+
+// executeLimited runs tools with a concurrency limit.
+func (e *ParallelExecutor) executeLimited(ctx context.Context, calls []Call, results []ExecutionResult, errors []error) {
+	sem := make(chan struct{}, e.maxConcurrency)
+	var wg sync.WaitGroup
+
+	for i, call := range calls {
+		wg.Add(1)
+		go func(idx int, c Call) {
+			defer wg.Done()
+
+			// Check context before acquiring semaphore
+			if ctx.Err() != nil {
+				results[idx] = ExecutionResult{Error: ctx.Err()}
+				return
+			}
+
+			select {
+			case sem <- struct{}{}: // Acquire
+				defer func() { <-sem }() // Release
+			case <-ctx.Done():
+				results[idx] = ExecutionResult{Error: ctx.Err()}
+				return
+			}
+
+			e.executeOne(ctx, idx, c, results, errors)
+		}(i, call)
+	}
+	wg.Wait()
+}
+
+// executeUnlimited runs tools without concurrency limits.
+func (e *ParallelExecutor) executeUnlimited(ctx context.Context, calls []Call, results []ExecutionResult, errors []error) {
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		// Check context before starting goroutine
+		if ctx.Err() != nil {
+			results[i] = ExecutionResult{Error: ctx.Err()}
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, c Call) {
+			defer wg.Done()
+
+			// Double-check context inside goroutine
+			if ctx.Err() != nil {
+				results[idx] = ExecutionResult{Error: ctx.Err()}
+				return
+			}
+
+			e.executeOne(ctx, idx, c, results, errors)
+		}(i, call)
+	}
+	wg.Wait()
+}
+
+// executeOne executes a single tool call.
+func (e *ParallelExecutor) executeOne(ctx context.Context, idx int, call Call, results []ExecutionResult, errors []error) {
+	results[idx] = executeSingleTool(ctx, call, e.registry, e.errorPrefix)
+	if results[idx].Error != nil && !e.continueOnError {
+		errors[idx] = results[idx].Error
+	}
+}
+
+// checkErrors returns an error if any tool failed and continueOnError is false.
+func (e *ParallelExecutor) checkErrors(results []ExecutionResult, errors []error) ([]ExecutionResult, error) {
 	if !e.continueOnError {
 		for _, err := range errors {
 			if err != nil {
@@ -334,7 +375,6 @@ func (e *ParallelExecutor) Execute(ctx context.Context, calls []Call) ([]Executi
 			}
 		}
 	}
-
 	return results, nil
 }
 

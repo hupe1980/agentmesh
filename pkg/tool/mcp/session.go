@@ -316,8 +316,26 @@ func (m *SessionManager) CreateSession(
 
 	// Observe session termination so future calls can recreate as needed.
 	go func(e *sessionEntry) {
-		// ClientSession.Wait() returns when the session terminates.
-		_ = sess.Wait()
+		// Wait for session termination or context cancellation
+		waitDone := make(chan struct{})
+		go func() {
+			// ClientSession.Wait() returns when the session terminates.
+			_ = sess.Wait()
+			close(waitDone)
+		}()
+
+		select {
+		case <-waitDone:
+			// Session terminated naturally
+		case <-ctx.Done():
+			// Context cancelled - session should be cleaned up
+			// Wait a bit for graceful shutdown, then force close
+			select {
+			case <-waitDone:
+			case <-time.After(time.Second):
+				// Force cleanup after timeout
+			}
+		}
 		close(e.closed)
 	}(entry)
 

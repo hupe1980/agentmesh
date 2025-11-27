@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/chanutil"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -358,13 +359,21 @@ func (p *PregelExecutor[I, O]) setupYieldChannel(
 	yieldDone := make(chan struct{})
 	go func() {
 		defer close(yieldDone)
-		for item := range resultChan {
-			if !yield(item.output, item.err) {
-				cancel()
-				//nolint:revive // Need to drain channel
-				for range resultChan {
-				}
+		for {
+			select {
+			case <-ctx.Done():
+				// Context cancelled - drain channel and exit
+				chanutil.DrainUntilClosed(resultChan)
 				return
+			case item, ok := <-resultChan:
+				if !ok {
+					return // Channel closed
+				}
+				if !yield(item.output, item.err) {
+					cancel()
+					chanutil.DrainUntilClosed(resultChan)
+					return
+				}
 			}
 		}
 	}()

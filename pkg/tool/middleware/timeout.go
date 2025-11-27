@@ -34,11 +34,29 @@ func (m *TimeoutMiddleware) Wrap(next tool.Executor) tool.Executor {
 		}, 1)
 
 		go func() {
+			// Check context before executing
+			if timeoutCtx.Err() != nil {
+				select {
+				case resultsChan <- struct {
+					results []tool.ExecutionResult
+					err     error
+				}{nil, timeoutCtx.Err()}:
+				case <-timeoutCtx.Done():
+				}
+				return
+			}
+
 			results, err := next.Execute(timeoutCtx, calls)
-			resultsChan <- struct {
+
+			// Send results respecting context cancellation
+			select {
+			case resultsChan <- struct {
 				results []tool.ExecutionResult
 				err     error
-			}{results, err}
+			}{results, err}:
+			case <-timeoutCtx.Done():
+				// Context cancelled while sending, discard results
+			}
 		}()
 
 		select {
