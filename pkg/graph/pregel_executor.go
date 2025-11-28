@@ -442,7 +442,9 @@ func (p *PregelExecutor[I, O]) buildRuntimeOptions(
 			func(ctx context.Context, superstep int64) error {
 				// Handle checkpoint/updates first
 				if runOpts.Checkpointer != nil && runOpts.RunID != "" {
-					p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter)
+					if err := p.saveCheckpoint(ctx, compiled, runOpts, superstep, adapter); err != nil {
+						return err
+					}
 				} else {
 					p.applyPendingUpdates(ctx, compiled, adapter)
 				}

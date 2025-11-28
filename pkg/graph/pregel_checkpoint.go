@@ -234,9 +234,12 @@ func calculateResumePoints[I, O any](compiled *Compiled[I, O], completedNodes []
 // It captures PendingWrites BEFORE they are applied to state, ensuring transactional
 // integrity: if a crash occurs, the checkpoint contains all necessary information to
 // resume without data loss.
-func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Compiled[I, O], opts RunOptions, superstep int64, adapter *pregelGraphAdapter[I, O]) {
+//
+// Returns an error if FailOnCheckpointErr is true and checkpoint operations fail.
+// If FailOnCheckpointErr is false, errors are logged but not propagated.
+func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Compiled[I, O], opts RunOptions, superstep int64, adapter *pregelGraphAdapter[I, O]) error {
 	if opts.Checkpointer == nil || opts.RunID == "" {
-		return
+		return nil
 	}
 
 	logger := logging.FromContext(ctx)
@@ -251,7 +254,7 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 			"superstep", superstep,
 			"interval", opts.CheckpointInterval)
 		p.applyPendingUpdates(ctx, compiled, adapter)
-		return
+		return nil
 	}
 	logger.Debug("saving checkpoint with two-phase commit",
 		"run_id", opts.RunID,
@@ -263,8 +266,16 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 		"superstep": fmt.Sprintf("%d", superstep),
 	})
 	if err != nil {
-		// Log error but don't fail the superstep
-		_ = err
+		logger.Error("failed to create state snapshot for checkpoint",
+			"run_id", opts.RunID,
+			"superstep", superstep,
+			"error", err)
+		if opts.FailOnCheckpointErr {
+			return fmt.Errorf("checkpoint snapshot failed at superstep %d: %w", superstep, err)
+		}
+		// Skip checkpoint save for this superstep, but still apply pending updates
+		p.applyPendingUpdates(ctx, compiled, adapter)
+		return nil
 	}
 
 	// Capture execution metadata from runtime metrics
@@ -316,7 +327,7 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 			"superstep", superstep,
 			"error", err)
 		// Don't apply updates if checkpoint save failed
-		return
+		return err
 	}
 
 	// PHASE 2: Apply PendingWrites to state (now safe - checkpoint is durable)
@@ -354,6 +365,7 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 	logger.Debug("two-phase commit completed",
 		"run_id", opts.RunID,
 		"superstep", superstep)
+	return nil
 }
 
 // saveFinalCheckpoint saves a final committed checkpoint after successful execution.

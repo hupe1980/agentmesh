@@ -1073,7 +1073,7 @@ func executeWithCheckpointing(
 
 #### Configuring Checkpoint Save Error Behavior
 
-By default, checkpoint save errors are logged but don't stop execution. This allows workflows to continue even if storage is temporarily unavailable:
+By default, checkpoint errors (both snapshot creation and save operations) are logged but don't stop execution. This allows workflows to continue even if storage is temporarily unavailable:
 
 ```go
 // Default: Log checkpoint errors but continue execution
@@ -1089,6 +1089,14 @@ _, err := graph.Collect(compiled.Run(ctx, messages,
     graph.WithFailOnCheckpointError(true),  // Stop execution on checkpoint errors
 ))
 ```
+
+**Error handling behavior:**
+
+| Error Type | `FailOnCheckpointError=false` | `FailOnCheckpointError=true` |
+|------------|-------------------------------|------------------------------|
+| Snapshot creation fails | Log warning, skip checkpoint, continue execution | Propagate error, stop execution |
+| Checkpoint save fails | Log warning, skip checkpoint, continue execution | Propagate error, stop execution |
+| Context cancellation | Log warning, skip checkpoint | Propagate error |
 
 **When to use `WithFailOnCheckpointError(true)`:**
 - Financial transactions requiring audit trail

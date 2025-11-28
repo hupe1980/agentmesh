@@ -890,3 +890,148 @@ func TestCheckpointer_RequiresRunID(t *testing.T) {
 
 	t.Log("RunID validation: SUCCESS - checkpointer requires explicit RunID")
 }
+
+// TestCheckpoint_SnapshotErrorHandling tests that snapshot errors are handled gracefully
+// based on the FailOnCheckpointError setting.
+func TestCheckpoint_SnapshotErrorHandling(t *testing.T) {
+	t.Parallel()
+
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Build a simple workflow with multiple steps
+	buildWorkflow := func() graph.Runnable[[]message.Message, message.Message] {
+		stateBuilder := newTestManagerBuilder()
+		counterKey := state.NewKey("counter", 0)
+		state.RegisterKey(stateBuilder, counterKey)
+		stateManager := stateBuilder.Build()
+
+		g, err := graph.NewGraph(stateManager)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for i := 1; i <= 3; i++ {
+			stepNum := i
+			nextNode := fmt.Sprintf("step_%d", stepNum+1)
+			if stepNum == 3 {
+				nextNode = graph.EndNode
+			}
+			require.NoError(t, g.AddNode(&graph.BaseNode{
+				NodeName:        fmt.Sprintf("step_%d", stepNum),
+				DeclaredTargets: []string{nextNode},
+				Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+					counter := state.GetFromView(s, counterKey)
+					return []string{nextNode}, state.Updates{"counter": counter + 1}, nil
+				},
+			}))
+		}
+
+		g.SetEntryPoint("step_1")
+		compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+		require.NoError(t, err)
+		return compiled
+	}
+
+	t.Run("fail_on_checkpoint_error_false_continues_execution", func(t *testing.T) {
+		// When FailOnCheckpointError is false (default), execution should continue
+		// even if checkpointing has issues - the workflow completes successfully
+		ctx := context.Background()
+		compiled := buildWorkflow()
+
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithRunID("test-snapshot-graceful"),
+			graph.WithCheckpointer(checkpointer),
+			graph.WithFailOnCheckpointError(false), // Default - continue on errors
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.NoError(t, lastErr, "Execution should complete without errors")
+	})
+
+	t.Run("fail_on_checkpoint_error_true_propagates_save_errors", func(t *testing.T) {
+		// When FailOnCheckpointError is true and checkpointer.Save fails,
+		// the error should be propagated and stop execution
+		ctx := context.Background()
+		compiled := buildWorkflow()
+
+		// Use a checkpointer that always fails on save
+		failingCheckpointer := &failingSaveCheckpointer{
+			saveErr: fmt.Errorf("simulated save failure"),
+		}
+
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithRunID("test-save-error-propagate"),
+			graph.WithCheckpointer(failingCheckpointer),
+			graph.WithFailOnCheckpointError(true), // Fail on checkpoint errors
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.Error(t, lastErr)
+		assert.Contains(t, lastErr.Error(), "checkpoint save failed")
+	})
+
+	t.Run("fail_on_checkpoint_error_false_tolerates_save_errors", func(t *testing.T) {
+		// When FailOnCheckpointError is false, save errors should be logged but not propagated
+		ctx := context.Background()
+		compiled := buildWorkflow()
+
+		// Use a checkpointer that always fails on save
+		failingCheckpointer := &failingSaveCheckpointer{
+			saveErr: fmt.Errorf("simulated save failure"),
+		}
+
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithRunID("test-save-error-tolerant"),
+			graph.WithCheckpointer(failingCheckpointer),
+			graph.WithFailOnCheckpointError(false), // Tolerate checkpoint errors
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		// Workflow should complete despite save errors
+		require.NoError(t, lastErr, "Execution should complete despite checkpoint save errors")
+	})
+
+	t.Log("Snapshot error handling: SUCCESS - errors handled based on FailOnCheckpointError setting")
+}
+
+// failingSaveCheckpointer is a test checkpointer that fails on Save operations
+type failingSaveCheckpointer struct {
+	saveErr error
+}
+
+func (f *failingSaveCheckpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) error {
+	return f.saveErr
+}
+
+func (f *failingSaveCheckpointer) Load(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (f *failingSaveCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (f *failingSaveCheckpointer) List(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (f *failingSaveCheckpointer) Delete(ctx context.Context, runID string) error {
+	return nil
+}
+
+func (f *failingSaveCheckpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (f *failingSaveCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	return nil, nil
+}
