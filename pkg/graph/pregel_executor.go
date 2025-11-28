@@ -317,7 +317,7 @@ func (p *PregelExecutor[I, O]) initializeRun(
 	// would create new checkpoint streams instead of resuming existing ones.
 	// Exception: When resuming with WithCheckpoint, the RunID comes from the checkpoint.
 	if opts.Checkpointer != nil && opts.RunID == "" && opts.Checkpoint == nil {
-		return "", fmt.Errorf("WithRunID is required when using WithCheckpointer: provide a stable identifier for checkpoint resume")
+		return "", ErrRunIDRequired
 	}
 
 	// Inject resume values into context if provided
@@ -344,7 +344,7 @@ func (p *PregelExecutor[I, O]) initializeRun(
 
 	if len(initialState) > 0 {
 		if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
-			return "", fmt.Errorf("failed to apply initial state: %w", err)
+			return "", fmt.Errorf("%w: initial state: %w", ErrStateApply, err)
 		}
 	}
 
@@ -770,7 +770,7 @@ func (a *pregelGraphAdapter[I, O]) prepareSuperstep(ctx context.Context) error {
 	// Create read view for this superstep (all nodes will share this snapshot)
 	view, err := a.compiled.manager.CreateReadView(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create superstep snapshot: %w", err)
+		return fmt.Errorf("%w: %w", ErrSnapshotCreate, err)
 	}
 
 	a.currentSuperstepView = view
@@ -892,7 +892,11 @@ func (n *pregelNodeAdapter[I, O]) executeWithRetryLoop(
 	}
 
 	if policy.MaxAttempts > 1 {
-		return nil, nil, fmt.Errorf("max retry attempts (%d) exceeded: %w", policy.MaxAttempts, lastErr)
+		return nil, nil, &retryExceededError{
+			sentinel:    ErrRetryExceeded,
+			maxAttempts: policy.MaxAttempts,
+			lastErr:     lastErr,
+		}
 	}
 	return nil, nil, lastErr
 }
@@ -1233,7 +1237,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		var err error
 		view, err = n.compiled.manager.CreateReadView(ctx)
 		if err != nil {
-			nodeErr = fmt.Errorf("failed to create read view: %w", err)
+			nodeErr = fmt.Errorf("%w: %w", ErrSnapshotCreate, err)
 			return nodeErr
 		}
 	}
@@ -1264,7 +1268,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 
 			// msg.Data is already state.Updates - apply directly
 			if err := n.compiled.manager.ApplyUpdates(ctx, msg.Data); err != nil {
-				return fmt.Errorf("failed to apply distributed state updates: %w", err)
+				return fmt.Errorf("%w: %w", ErrDistributedState, err)
 			}
 		}
 	}
@@ -1308,7 +1312,7 @@ func (n *pregelNodeAdapter[I, O]) Run(
 
 	// Validate routing decision
 	if len(targets) == 0 {
-		nodeErr = fmt.Errorf("node %q must specify routing targets (use graph.EndNode to terminate)", n.nodeName)
+		nodeErr = fmt.Errorf("%w: node %s must specify targets (use graph.EndNode to terminate)", ErrRoutingTargets, n.nodeName)
 		return nodeErr
 	}
 

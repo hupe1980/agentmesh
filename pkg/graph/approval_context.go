@@ -3,12 +3,11 @@ package graph
 import (
 	"context"
 	"errors"
-	"fmt"
 )
 
 // ErrApprovalRequired indicates that a node requires human approval before continuing.
 // This error wraps ApprovalInfo which contains details about why approval is needed.
-var ErrApprovalRequired = errors.New("approval required")
+var ErrApprovalRequired = errors.New("graph: approval required")
 
 // approvalRequiredError is the concrete error type that wraps ApprovalInfo.
 type approvalRequiredError struct {
@@ -17,7 +16,7 @@ type approvalRequiredError struct {
 
 // Error implements the error interface.
 func (e *approvalRequiredError) Error() string {
-	return fmt.Sprintf("approval required for node %q: %s", e.info.NodeName, e.info.Reason)
+	return "graph: approval required for node " + e.info.NodeName + ": " + e.info.Reason
 }
 
 // Unwrap allows errors.Is and errors.As to work with ErrApprovalRequired.
@@ -128,7 +127,7 @@ func getApprovalMap(ctx context.Context) map[string]*ApprovalResponse {
 func CheckApproval(ctx context.Context, nodeName string, required bool) (*ApprovalResponse, error) {
 	approval := ApprovalFromContext(ctx, nodeName)
 	if approval == nil && required {
-		return nil, fmt.Errorf("approval required for node %q but not provided", nodeName)
+		return nil, errors.New("graph: approval required for node " + nodeName + " but not provided")
 	}
 	return approval, nil
 }

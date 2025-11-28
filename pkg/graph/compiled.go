@@ -163,7 +163,7 @@ func (c *Compiled[I, O]) MermaidFlowchart(direction string) string {
 // ApplyState applies state updates to the graph's state manager.
 func (c *Compiled[I, O]) ApplyState(ctx context.Context, updates state.Updates) error {
 	if err := c.manager.ApplyUpdates(ctx, updates); err != nil {
-		return fmt.Errorf("failed to apply state updates: %w", err)
+		return fmt.Errorf("%w: %w", ErrStateApply, err)
 	}
 	return nil
 }
@@ -192,7 +192,7 @@ func (c *Compiled[I, O]) CurrentSuperstep() int64 {
 //	}
 func Compile[I, O any](g *Graph, executor Executor[I, O], opts ...CompileOption) (*Compiled[I, O], error) {
 	if executor == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, ErrExecutorNil
 	}
 
 	// Setup configuration
@@ -277,5 +277,5 @@ func formatValidationErrors(errors []ValidationError) error {
 		builder.WriteString("\n")
 	}
 
-	return fmt.Errorf("%s", builder.String())
+	return fmt.Errorf("%w: %s", ErrValidation, builder.String())
 }

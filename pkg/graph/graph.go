@@ -60,7 +60,7 @@ func (g *Graph) AddNode(n Node, opts ...NodeOption) error {
 
 	// Validate config
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid node config for %q: %w", n.Name(), err)
+		return fmt.Errorf("%w: node %s: %w", ErrNodeConfigInvalid, n.Name(), err)
 	}
 
 	g.Nodes[n.Name()] = n
@@ -82,7 +82,7 @@ func (g *Graph) SetEntryPoint(target string) error {
 	// Check for duplicates
 	for _, ep := range g.EntryPoints {
 		if ep == target {
-			return fmt.Errorf("entry point %q already exists", target)
+			return fmt.Errorf("%w: %s", ErrEntryPointDuplicate, target)
 		}
 	}
 

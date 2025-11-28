@@ -89,7 +89,7 @@ func TestRetryPolicyExecution(t *testing.T) {
 		_, err = Last(compiled.Run(ctx, messages))
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max retry attempts (3) exceeded")
+		assert.True(t, errors.Is(err, ErrRetryExceeded))
 		assert.Equal(t, 3, attemptCount, "should have attempted exactly 3 times")
 	})
 

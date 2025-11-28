@@ -144,7 +144,7 @@ func (b *Builder[I, O]) AddNode(node Node) *Builder[I, O] {
 		return b // Short-circuit if previous error
 	}
 	if err := b.graph.AddNode(node); err != nil {
-		b.err = fmt.Errorf("AddNode(%s): %w", node.Name(), err)
+		b.err = fmt.Errorf("%w: AddNode(%s): %w", ErrBuilderError, node.Name(), err)
 	}
 	return b
 }
@@ -191,7 +191,7 @@ func (b *Builder[I, O]) AddNodeFunc(name string, targets []string, fn NodeFunc) 
 		DeclaredTargets: targets,
 	}
 	if err := b.graph.AddNode(node); err != nil {
-		b.err = fmt.Errorf("AddNodeFunc(%s): %w", name, err)
+		b.err = fmt.Errorf("%w: AddNodeFunc(%s): %w", ErrBuilderError, name, err)
 	}
 	return b
 }
@@ -221,7 +221,7 @@ func (b *Builder[I, O]) AddNodeFuncWithRetry(name string, targets []string, fn N
 		Retry:           policy,
 	}
 	if err := b.graph.AddNode(node); err != nil {
-		b.err = fmt.Errorf("AddNodeFuncWithRetry(%s): %w", name, err)
+		b.err = fmt.Errorf("%w: AddNodeFuncWithRetry(%s): %w", ErrBuilderError, name, err)
 	}
 	return b
 }
@@ -270,7 +270,7 @@ func (b *Builder[I, O]) AddSubgraphNode(node Node) *Builder[I, O] {
 	}
 
 	if err := b.graph.AddNode(node); err != nil {
-		b.err = fmt.Errorf("AddSubgraphNode(%s): %w", node.Name(), err)
+		b.err = fmt.Errorf("%w: AddSubgraphNode(%s): %w", ErrBuilderError, node.Name(), err)
 	}
 	return b
 }
@@ -293,7 +293,7 @@ func (b *Builder[I, O]) SetEntryPoint(targets ...string) *Builder[I, O] {
 	// Add each target as an entry point
 	for _, target := range targets {
 		if err := b.graph.SetEntryPoint(target); err != nil {
-			b.err = fmt.Errorf("SetEntryPoint(%s): %w", target, err)
+			b.err = fmt.Errorf("%w: SetEntryPoint(%s): %w", ErrBuilderError, target, err)
 			return b
 		}
 	}
@@ -325,10 +325,10 @@ func (b *Builder[I, O]) Manager() *state.Manager {
 func (b *Builder[I, O]) Compile(opts ...CompileOption) (*Compiled[I, O], error) {
 	// Return accumulated builder errors first
 	if b.err != nil {
-		return nil, fmt.Errorf("builder error: %w", b.err)
+		return nil, b.err
 	}
 	if b.executor == nil {
-		return nil, fmt.Errorf("executor not set - use NewBuilder with an executor")
+		return nil, ErrExecutorNil
 	}
 	return Compile(b.graph, b.executor, opts...)
 }

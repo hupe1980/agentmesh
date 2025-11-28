@@ -74,7 +74,7 @@ func (g *Graph) GetNodes() []string {
 func (g *Graph) GetNodeInfo(nodeName string) (*NodeInfo, error) {
 	node, exists := g.Nodes[nodeName]
 	if !exists {
-		return nil, fmt.Errorf("node not found: %s", nodeName)
+		return nil, fmt.Errorf("%w: %s", ErrNodeNotFound, nodeName)
 	}
 
 	// Count incoming edges from entry points and DeclaredTargets
@@ -343,7 +343,7 @@ func (g *Graph) GetMetrics() *Metrics {
 // GetNodeDependencies returns dependency information for a specific node.
 func (g *Graph) GetNodeDependencies(name string) (*NodeDependencies, error) {
 	if _, exists := g.Nodes[name]; !exists {
-		return nil, fmt.Errorf("node not found: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrNodeNotFound, name)
 	}
 
 	deps := &NodeDependencies{

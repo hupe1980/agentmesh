@@ -72,7 +72,7 @@ func TestNodeConfig_Validate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errMsg:  "retry policy: MaxAttempts must be >= 1",
+			errMsg:  "graph: retry policy MaxAttempts must be >= 1",
 		},
 		{
 			name: "invalid_negative_attempts",
@@ -82,7 +82,7 @@ func TestNodeConfig_Validate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errMsg:  "retry policy: MaxAttempts must be >= 1",
+			errMsg:  "graph: retry policy MaxAttempts must be >= 1",
 		},
 		{
 			name: "valid_large_attempts",

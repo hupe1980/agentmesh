@@ -282,11 +282,11 @@ func (n *NamespacedNode) validateUpdates(updates state.Updates) error {
 	for key := range updates {
 		if !n.isAllowedKey(key) {
 			if n.includeGlobal {
-				return fmt.Errorf("node %q in namespace %q attempted to update key %q which belongs to a different namespace (only %q and global keys are allowed)",
-					n.NodeName, n.namespace.Name(), key, n.namespace.Name())
+				return fmt.Errorf("%w: node %s in namespace %s attempted to update key %s (only %s and global keys are allowed)",
+					ErrNamespaceViolation, n.NodeName, n.namespace.Name(), key, n.namespace.Name())
 			}
-			return fmt.Errorf("node %q in namespace %q attempted to update key %q which belongs to a different namespace (only %q keys are allowed)",
-				n.NodeName, n.namespace.Name(), key, n.namespace.Name())
+			return fmt.Errorf("%w: node %s in namespace %s attempted to update key %s (only %s keys are allowed)",
+				ErrNamespaceViolation, n.NodeName, n.namespace.Name(), key, n.namespace.Name())
 		}
 	}
 	return nil

@@ -74,7 +74,7 @@ func (p *PregelExecutor[I, O]) loadCheckpoint(ctx context.Context, opts RunOptio
 		logger.Error("failed to load checkpoint",
 			"run_id", opts.RunID,
 			"error", err)
-		return nil, fmt.Errorf("failed to load checkpoint: %w", err)
+		return nil, fmt.Errorf("%w: run_id=%s: %w", ErrCheckpointLoad, opts.RunID, err)
 	}
 
 	return chkpt, nil
@@ -90,7 +90,7 @@ func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled
 			logger.Error("failed to apply checkpoint state",
 				"run_id", chkpt.RunID,
 				"error", err)
-			return fmt.Errorf("failed to apply checkpoint state: %w", err)
+			return fmt.Errorf("%w: checkpoint state: %w", ErrStateApply, err)
 		}
 		logger.Info("restored state from checkpoint",
 			"run_id", chkpt.RunID,
@@ -118,7 +118,7 @@ func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled
 			logger.Error("failed to apply pending writes",
 				"run_id", chkpt.RunID,
 				"error", err)
-			return fmt.Errorf("failed to apply pending writes: %w", err)
+			return fmt.Errorf("%w: pending writes: %w", ErrStateApply, err)
 		}
 
 		logger.Info("pending writes applied successfully",
@@ -135,7 +135,7 @@ func (p *PregelExecutor[I, O]) applyCheckpointData(ctx context.Context, compiled
 		logger.Error("failed to process approval responses",
 			"run_id", chkpt.RunID,
 			"error", err)
-		return fmt.Errorf("failed to process approval responses: %w", err)
+		return fmt.Errorf("%w: approval processing: %w", ErrCheckpointLoad, err)
 	}
 
 	return nil
@@ -271,7 +271,7 @@ func (p *PregelExecutor[I, O]) saveCheckpoint(ctx context.Context, compiled *Com
 			"superstep", superstep,
 			"error", err)
 		if opts.FailOnCheckpointErr {
-			return fmt.Errorf("checkpoint snapshot failed at superstep %d: %w", superstep, err)
+			return fmt.Errorf("%w: superstep %d: %w", ErrSnapshotCreate, superstep, err)
 		}
 		// Skip checkpoint save for this superstep, but still apply pending updates
 		p.applyPendingUpdates(ctx, compiled, adapter)
@@ -495,7 +495,7 @@ func (p *PregelExecutor[I, O]) processApprovalResponses(ctx context.Context, com
 		if approval.Decision == ApprovalApproved && len(approval.Edits) > 0 {
 			logger.Info("applying approval edits to state", "node", nodeName, "edits", len(approval.Edits))
 			if err := compiled.manager.ApplyUpdates(ctx, approval.Edits); err != nil {
-				return fmt.Errorf("failed to apply approval edits for node %s: %w", nodeName, err)
+				return fmt.Errorf("%w: approval edits for node %s: %w", ErrStateApply, nodeName, err)
 			}
 		}
 
@@ -550,7 +550,7 @@ func (p *PregelExecutor[I, O]) processApprovalResponses(ctx context.Context, com
 		logger.Error("failed to save checkpoint after approval processing",
 			"run_id", chkpt.RunID,
 			"error", err)
-		return fmt.Errorf("failed to save checkpoint after approval: %w", err)
+		return fmt.Errorf("%w: approval history: %w", ErrCheckpointSave, err)
 	}
 
 	logger.Info("checkpoint saved successfully with approval history",
@@ -598,7 +598,7 @@ func (p *PregelExecutor[I, O]) saveCheckpointSync(ctx context.Context, opts RunO
 			"superstep", chkpt.Superstep,
 			"error", err)
 		if opts.FailOnCheckpointErr {
-			return fmt.Errorf("checkpoint save failed at superstep %d: %w", chkpt.Superstep, err)
+			return fmt.Errorf("%w: superstep %d: %w", ErrCheckpointSave, chkpt.Superstep, err)
 		}
 		return nil // Error logged but not propagated
 	}

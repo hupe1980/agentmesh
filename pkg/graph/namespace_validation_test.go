@@ -2,6 +2,7 @@ package graph_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
@@ -70,7 +71,7 @@ func TestNamespacedNodeValidatesUpdates(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "attempted to update key")
 		assert.Contains(t, err.Error(), "agent2.data")
-		assert.Contains(t, err.Error(), "different namespace")
+		assert.True(t, errors.Is(err, graph.ErrNamespaceViolation))
 	})
 
 	t.Run("rejects global updates when includeGlobal=false", func(t *testing.T) {

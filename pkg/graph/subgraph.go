@@ -168,7 +168,7 @@ func (n *SubgraphNode[I, O]) Execute(ctx context.Context, view state.ReadView) (
 	// Map parent state to subgraph input
 	input, err := n.inputMapper(ctx, view)
 	if err != nil {
-		return nil, nil, fmt.Errorf("subgraph %q input mapping failed: %w", n.name, err)
+		return nil, nil, fmt.Errorf("%w: subgraph %s: %w", ErrInputMapping, n.name, err)
 	}
 
 	// Execute subgraph and collect final output
@@ -184,13 +184,13 @@ func (n *SubgraphNode[I, O]) Execute(ctx context.Context, view state.ReadView) (
 	}
 
 	if lastErr != nil {
-		return nil, nil, fmt.Errorf("subgraph %q execution failed: %w", n.name, lastErr)
+		return nil, nil, fmt.Errorf("%w: subgraph %s: %w", ErrSubgraphExecution, n.name, lastErr)
 	}
 
 	// Map subgraph output to parent state updates
 	updates, err := n.outputMapper(ctx, finalOutput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("subgraph %q output mapping failed: %w", n.name, err)
+		return nil, nil, fmt.Errorf("%w: subgraph %s: %w", ErrOutputMapping, n.name, err)
 	}
 
 	return n.targets, updates, nil

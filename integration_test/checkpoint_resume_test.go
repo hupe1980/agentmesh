@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -807,7 +808,7 @@ func TestCheckpointer_RequiresRunID(t *testing.T) {
 			}
 		}
 		require.Error(t, lastErr)
-		assert.Contains(t, lastErr.Error(), "WithRunID is required when using WithCheckpointer")
+		assert.True(t, errors.Is(lastErr, graph.ErrRunIDRequired))
 	})
 
 	t.Run("checkpoint_options_without_runid_errors", func(t *testing.T) {
@@ -825,7 +826,7 @@ func TestCheckpointer_RequiresRunID(t *testing.T) {
 			}
 		}
 		require.Error(t, lastErr)
-		assert.Contains(t, lastErr.Error(), "WithRunID is required when using WithCheckpointer")
+		assert.True(t, errors.Is(lastErr, graph.ErrRunIDRequired))
 	})
 
 	t.Run("checkpointer_with_runid_succeeds", func(t *testing.T) {

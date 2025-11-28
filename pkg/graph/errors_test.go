@@ -16,7 +16,7 @@ func TestNodeExecutionError(t *testing.T) {
 			Err:      baseErr,
 		}
 
-		expected := `node "test_node": test error`
+		expected := "graph: node test_node execution failed: test error"
 		assert.Equal(t, expected, nodeErr.Error())
 	})
 
@@ -114,7 +114,7 @@ func TestNodeExecutionError(t *testing.T) {
 			Err:      nil,
 		}
 
-		assert.Equal(t, `node "test_node": <nil>`, nodeErr.Error())
+		assert.Equal(t, "graph: node test_node execution failed", nodeErr.Error())
 		assert.Nil(t, nodeErr.Unwrap())
 	})
 }

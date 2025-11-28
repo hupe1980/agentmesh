@@ -25,6 +25,8 @@ sidebar:
     url: "#messages"
   - title: Channels
     url: "#channels"
+  - title: Error handling
+    url: "#error-handling"
 ---
 
 > **Type Safety with Generics (Go 1.24+):** AgentMesh now provides full compile-time type safety through generic compilation. Use `builder.Compile()` for the common case, or `graph.Compile[I, O](builder)` for custom input/output types. See [GENERICS.md](https://github.com/hupe1980/agentmesh/blob/main/GENERICS.md) for details.
@@ -582,6 +584,82 @@ return map[string]any{
 ```
 
 **Use cases**: Aggregations, statistics, accumulations
+
+---
+
+## Error handling {#error-handling}
+
+AgentMesh uses **sentinel errors** with `errors.Is()` support for programmatic error checking. All graph package errors follow the pattern `"graph: <category>"`.
+
+### Sentinel errors
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Check for specific error types
+for output, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        switch {
+        case errors.Is(err, graph.ErrRetryExceeded):
+            // Handle retry exhaustion
+            log.Warn("Retries exhausted, falling back...")
+            
+        case errors.Is(err, graph.ErrNodeExecution):
+            // Handle node execution failure
+            var nodeErr *graph.NodeExecutionError
+            if errors.As(err, &nodeErr) {
+                log.Error("Node failed", "node", nodeErr.NodeName)
+            }
+            
+        case errors.Is(err, graph.ErrHumanInterrupt):
+            // Handle human-in-the-loop pause
+            return handleHumanInterrupt(ctx, err)
+            
+        case errors.Is(err, graph.ErrValidation):
+            // Handle graph validation errors
+            log.Error("Graph validation failed", "error", err)
+            
+        default:
+            return err
+        }
+    }
+}
+```
+
+### Available sentinel errors
+
+| Error | Description |
+|-------|-------------|
+| `ErrHumanInterrupt` | Node requires human input before continuing |
+| `ErrNodeExecution` | Node execution failed (wraps underlying error) |
+| `ErrApprovalRequired` | Node requires human approval |
+| `ErrRetryExceeded` | Max retry attempts exceeded |
+| `ErrStateApply` | State updates could not be applied |
+| `ErrCheckpointLoad` | Checkpoint loading failed |
+| `ErrCheckpointSave` | Checkpoint saving failed |
+| `ErrNodeNotFound` | Node not found in graph |
+| `ErrExecutorNil` | Nil executor provided |
+| `ErrBuilderError` | Builder construction error |
+| `ErrRunIDRequired` | RunID required for checkpointing |
+| `ErrValidation` | Graph validation failed |
+| `ErrNamespaceViolation` | Namespace access violation |
+| `ErrSubgraphExecution` | Subgraph execution failed |
+
+### NodeExecutionError
+
+The `NodeExecutionError` type provides structured information about node failures:
+
+```go
+var nodeErr *graph.NodeExecutionError
+if errors.As(err, &nodeErr) {
+    fmt.Printf("Node %s failed: %v\n", nodeErr.NodeName, nodeErr.Err)
+    
+    // Access the underlying error
+    if errors.Is(nodeErr.Err, myCustomError) {
+        // Handle specific underlying error
+    }
+}
+```
 
 ---
 

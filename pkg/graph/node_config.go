@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"fmt"
+	"errors"
 )
 
 // NodeConfig holds execution policies for a node.
@@ -43,7 +43,7 @@ func defaultNodeConfig() *NodeConfig {
 func (c *NodeConfig) Validate() error {
 	if c.RetryPolicy != nil {
 		if c.RetryPolicy.MaxAttempts < 1 {
-			return fmt.Errorf("retry policy: MaxAttempts must be >= 1, got %d", c.RetryPolicy.MaxAttempts)
+			return errors.New("graph: retry policy MaxAttempts must be >= 1")
 		}
 	}
 
