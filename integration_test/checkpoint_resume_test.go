@@ -1035,3 +1035,98 @@ func (f *failingSaveCheckpointer) ListPendingApprovals(ctx context.Context) ([]*
 func (f *failingSaveCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
 	return nil, nil
 }
+
+// TestParallelWritesToSameChannel tests that multiple parallel nodes writing to the same
+// channel (e.g., both appending to messages) have all their writes preserved.
+// This verifies the fix for the pending writes overwrite bug where earlier writes
+// were lost when collapsed into a map.
+func TestParallelWritesToSameChannel(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Create a list key for testing parallel appends
+	itemsKey := state.NewListKey[string]("items", 0)
+
+	// Build a workflow with parallel nodes that all append to the same list
+	stateBuilder := newTestManagerBuilder()
+	state.RegisterListKey(stateBuilder, itemsKey)
+	stateManager := stateBuilder.Build()
+
+	g, err := graph.NewGraph(stateManager)
+	require.NoError(t, err)
+
+	// Create a fan-out node that triggers 3 parallel workers
+	require.NoError(t, g.AddNode(&graph.BaseNode{
+		NodeName:        "fanout",
+		DeclaredTargets: []string{"worker_a", "worker_b", "worker_c"},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			return []string{"worker_a", "worker_b", "worker_c"}, nil, nil
+		},
+	}))
+
+	// Create 3 parallel worker nodes that each append to the same list
+	for _, name := range []string{"worker_a", "worker_b", "worker_c"} {
+		workerName := name
+		require.NoError(t, g.AddNode(&graph.BaseNode{
+			NodeName:        workerName,
+			DeclaredTargets: []string{"collector"},
+			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+				// Each worker appends its own item to the list
+				return []string{"collector"}, state.Updates{
+					"items": "item_from_" + workerName,
+				}, nil
+			},
+		}))
+	}
+
+	// Create a collector node that verifies all items are present
+	require.NoError(t, g.AddNode(&graph.BaseNode{
+		NodeName:        "collector",
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			items := state.GetFromView(s, itemsKey.Key)
+			return []string{graph.EndNode}, state.Updates{
+				"final_count": len(items),
+			}, nil
+		},
+	}))
+
+	g.SetEntryPoint("fanout")
+
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	require.NoError(t, err)
+
+	// Run the workflow
+	var lastErr error
+	for _, err := range compiled.Run(ctx, nil,
+		graph.WithRunID("parallel-writes-test"),
+		graph.WithCheckpointer(checkpointer),
+	) {
+		if err != nil {
+			lastErr = err
+		}
+	}
+	require.NoError(t, lastErr)
+
+	// Verify all 3 items were preserved
+	cp, err := checkpointer.Load(ctx, "parallel-writes-test")
+	require.NoError(t, err)
+	require.NotNil(t, cp)
+
+	items, ok := cp.State["items"].([]any)
+	require.True(t, ok, "items should be a slice")
+	assert.Len(t, items, 3, "All 3 parallel writes should be preserved")
+
+	// Verify the items contain the expected values
+	itemStrings := make([]string, len(items))
+	for i, item := range items {
+		itemStrings[i] = item.(string)
+	}
+	assert.Contains(t, itemStrings, "item_from_worker_a")
+	assert.Contains(t, itemStrings, "item_from_worker_b")
+	assert.Contains(t, itemStrings, "item_from_worker_c")
+
+	t.Log("Parallel writes: SUCCESS - all parallel writes to same channel preserved")
+}

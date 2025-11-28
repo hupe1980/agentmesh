@@ -431,6 +431,11 @@ func (p *PregelExecutor[I, O]) saveFinalCheckpoint(ctx context.Context, compiled
 
 // applyPendingUpdates applies collected updates to state and clears the pending list.
 // This is called after checkpoint save (if enabled) or at superstep end (if no checkpointing).
+//
+// IMPORTANT: Each pending write is applied individually to preserve ordering and ensure
+// that multiple writes to the same channel (e.g., parallel nodes appending to messages)
+// are all processed correctly. The state manager handles list-key appending, so we must
+// not collapse writes into a map which would cause later writes to overwrite earlier ones.
 func (p *PregelExecutor[I, O]) applyPendingUpdates(ctx context.Context, compiled *Compiled[I, O], adapter *pregelGraphAdapter[I, O]) {
 	logger := logging.FromContext(ctx)
 
@@ -444,18 +449,18 @@ func (p *PregelExecutor[I, O]) applyPendingUpdates(ctx context.Context, compiled
 		return
 	}
 
-	// Convert PendingWrites to updates map
-	updates := make(map[string]any)
+	// Apply each pending write individually to preserve ordering.
+	// This ensures that multiple writes to the same channel (e.g., parallel tool calls
+	// appending to messages) are all applied correctly rather than overwriting each other.
 	for _, pw := range pendingWrites {
-		updates[pw.Channel] = pw.Value
-	}
-
-	// Apply updates to state manager
-	if err := compiled.manager.ApplyUpdates(ctx, updates); err != nil {
-		logger.Error("failed to apply pending writes",
-			"error", err,
-			"pending_writes", len(pendingWrites))
-		return
+		if err := compiled.manager.ApplyUpdates(ctx, map[string]any{pw.Channel: pw.Value}); err != nil {
+			logger.Error("failed to apply pending write",
+				"error", err,
+				"channel", pw.Channel,
+				"node", pw.NodeName)
+			// Continue applying remaining writes to preserve as much state as possible
+			continue
+		}
 	}
 
 	logger.Debug("pending writes applied successfully",

@@ -539,6 +539,8 @@ result := &graph.NodeResult{
 
 **Use cases**: Conversation history, event logs, audit trails
 
+> **Parallel Writes**: When multiple nodes write to the same TopicChannel in parallel (within the same superstep), all writes are preserved and appended in order. This ensures no data loss in concurrent workflows.
+
 ### LastValueChannel
 
 Stores only the most recent value (overwrite):
