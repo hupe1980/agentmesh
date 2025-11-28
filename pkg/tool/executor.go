@@ -1,7 +1,7 @@
 // Package tool provides tool execution with lifecycle management.
 //
 // The Executor pattern separates tool execution from graph orchestration:
-//   - Executor: Handles execution lifecycle (plugins, observability, error handling)
+//   - Executor: Handles execution lifecycle (observability, error handling)
 //   - Tool: Core tool logic (actual work)
 //   - ToolNode: Graph orchestration (message extraction, routing)
 //
@@ -10,7 +10,7 @@
 //   - Multiple execution strategies (sequential, parallel)
 //   - Custom executor implementations (rate limiting, caching, batching)
 //   - Clean testing boundaries
-//   - Centralized observability and plugin handling
+//   - Centralized observability handling
 //
 // Architecture:
 //
@@ -127,7 +127,7 @@ type ExecutionResult struct {
 type Executor interface {
 	// Execute runs one or more tool calls with full lifecycle.
 	// Returns execution results for each tool call in the same order.
-	// The executor handles plugins, observability, and error recovery.
+	// The executor handles observability and error recovery.
 	Execute(ctx context.Context, calls []Call) ([]ExecutionResult, error)
 }
 
@@ -380,7 +380,7 @@ func (e *ParallelExecutor) checkErrors(results []ExecutionResult, errors []error
 
 // executeSingleTool is a shared helper used by all executor implementations.
 // It executes a single tool call with full lifecycle management including
-// plugins, observability, and error handling.
+// observability and error handling.
 func executeSingleTool(ctx context.Context, call Call, registry map[string]Tool, errorPrefix string) ExecutionResult {
 	result := ExecutionResult{
 		ToolCallID: call.ID,

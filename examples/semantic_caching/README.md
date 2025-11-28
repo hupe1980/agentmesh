@@ -81,45 +81,57 @@ Cache stats: Hits=2, Misses=1, Similarity=0.84
 
 ## Configuration
 
-### Exact-Match Cache
+### Exact-Match Cache (via Middleware)
 ```go
-cache := plugin.NewCachePlugin(1000) // max 1000 entries
+import modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
+
+// Model middleware cache - fast hash-based lookups
+cacheMiddleware := modelmw.NewCacheMiddleware()
+
+// Use with agent
+agent, _ := agent.NewReActAgent(model, tools,
+    agent.WithModelMiddleware(cacheMiddleware))
 ```
 
 ### Semantic Cache
 ```go
-embedder := openai.NewEmbedder(client, 
-    openai.WithModel("text-embedding-3-small"))
+import (
+    "github.com/hupe1980/agentmesh/pkg/cache"
+    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
+)
 
-cache := cache.NewMemory(embedder,
+embedder := openai.NewEmbedder(func(o *openai.Options) {
+    o.Model = "text-embedding-3-small"
+})
+
+semanticCache := cache.NewMemory(embedder,
     cache.WithSimilarityThreshold(0.85), // 85% similar = cache hit
     cache.WithTTL(time.Hour),            // entries expire after 1h
     cache.WithMaxSize(1000))             // LRU eviction at 1000 entries
-
-plugin := plugin.NewSemanticCachePlugin(cache)
 ```
 
 ### Redis Backend (Distributed)
 ```go
-import redisCache "github.com/hupe1980/agentmesh/pkg/cache/redis"
+import (
+    "github.com/hupe1980/agentmesh/pkg/cache"
+    redisCache "github.com/hupe1980/agentmesh/pkg/cache/redis"
+)
 
 redisClient := redis.NewClient(&redis.Options{
     Addr: "localhost:6379",
 })
 
-cache := redisCache.NewCache(redisClient, embedder,
+semanticCache := redisCache.NewCache(redisClient, embedder,
     cache.WithSimilarityThreshold(0.85),
     redisCache.WithKeyPrefix("myapp:llm:"))
-
-plugin := plugin.NewSemanticCachePlugin(cache)
 ```
 
 ## Architecture
 
 ```
-Request → Callback Chain → Model
+Request → Middleware Chain → Model
               ↓
-         CachePlugin
+       CacheMiddleware
               ↓
       [Check Cache] ← Exact hash match
               ↓
@@ -128,9 +140,7 @@ Request → Callback Chain → Model
 ```
 
 ```
-Request → Callback Chain → Model
-              ↓
-    SemanticCachePlugin
+Request → SemanticCache
               ↓
       [Embed Request] ← Convert to vector
               ↓

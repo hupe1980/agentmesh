@@ -99,7 +99,7 @@ flowchart LR
 **Architecture:**
 
 1. **Model node**: Uses `model.Executor` to generate response or tool calls
-   - Delegates execution to executor (handles plugins, observability, streaming)
+   - Delegates execution to executor (handles observability, streaming)
    - Routes to "tool" if tool calls present, otherwise routes to END
 
 2. **Tool node**: Uses `tool.Executor` to execute requested tools

@@ -611,7 +611,7 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 })
 ```
 
-Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFactory` or `mcptool.NewSSESessionFactory` with custom headers. The adapter forwards `ToolContext` metadata so nested tool calls can still access artifacts and plugins.
+Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFactory` or `mcptool.NewSSESessionFactory` with custom headers. The adapter forwards `ToolContext` metadata so nested tool calls can still access artifacts.
 
 ---
 
@@ -1123,7 +1123,7 @@ Each package uses the same `Options` pattern (`func(*Options)`) for advanced tun
 Under the hood, agents rely on `tool.NewParallelToolExecutor(maxParallel)` to execute function calls. It enforces concurrency limits, records metrics, emits trace spans, and protects against panics.
 
 - Max concurrency defaults to the batch size; configure it to bound resource usage.
-- Tool runs gain a `core.ToolContext` exposing session state, artifact helpers, and plugin hooks.
+- Tool runs gain a `core.ToolContext` exposing session state and artifact helpers.
 - Errors are aggregated so the agent can decide whether to retry, escalate, or continue.
 
 ```go

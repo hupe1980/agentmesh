@@ -1,7 +1,7 @@
 ---
 layout: doc
 title: Advanced Patterns
-description: Advanced AgentMesh patterns including plugins, circuit breakers, aggregators, and subgraphs.
+description: Advanced AgentMesh patterns including circuit breakers, aggregators, and subgraphs.
 permalink: /advanced/
 example: subgraph
 hero:

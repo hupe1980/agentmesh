@@ -1,7 +1,7 @@
 // Package model provides model execution with lifecycle management.
 //
 // The Executor pattern separates model execution from graph orchestration:
-//   - Executor: Handles execution lifecycle (plugins, observability, error handling)
+//   - Executor: Handles execution lifecycle (observability, error handling)
 //   - Model: Core generation logic (API calls, streaming)
 //   - ModelNode: Graph orchestration (state extraction, routing)
 //
@@ -9,7 +9,7 @@
 //   - Reusable execution logic across different contexts (graphs, chains, direct calls)
 //   - Custom executor implementations (retry, caching, rate limiting)
 //   - Clean testing boundaries (test execution independent of graph/state)
-//   - Centralized observability and plugin handling
+//   - Centralized observability handling
 //
 // Architecture:
 //
@@ -18,7 +18,7 @@
 //	└──────┬──────┘
 //	       │ delegates to
 //	┌──────▼──────┐
-//	│  Executor   │  Execution layer: lifecycle, plugins, observability
+//	│  Executor   │  Execution layer: lifecycle, observability
 //	└──────┬──────┘
 //	       │ calls
 //	┌──────▼──────┐
@@ -61,7 +61,7 @@ import (
 )
 
 // Executor handles the complete lifecycle of model generation requests.
-// It wraps a Model with observability, plugin support, and error handling.
+// It wraps a Model with observability and error handling.
 //
 // This interface allows users to provide custom executor implementations
 // for specialized behavior while maintaining consistent lifecycle management.
@@ -73,7 +73,7 @@ import (
 //   - CircuitBreakerExecutor: Implements circuit breaker pattern
 type Executor interface {
 	// Generate executes a model generation with full lifecycle management.
-	// It handles plugins, observability, and error recovery automatically.
+	// It handles observability and error recovery automatically.
 	// Returns an iterator that yields responses. For non-streaming requests,
 	// a single response is yielded. For streaming requests, incremental
 	// responses are yielded as they become available.
@@ -94,7 +94,7 @@ type Executor interface {
 }
 
 // DefaultExecutor is the standard implementation of Executor.
-// It provides full lifecycle management with observability and plugins.
+// It provides full lifecycle management with observability.
 type DefaultExecutor struct {
 	model Model
 	name  string // For observability labels
@@ -143,7 +143,7 @@ func NewExecutor(mdl Model, opts ...ExecutorOption) Executor {
 }
 
 // handleGenerationError handles errors during model generation.
-// It records metrics, logs errors, and invokes plugin error handlers.
+// It records metrics and logs errors.
 func (e *DefaultExecutor) handleGenerationError(
 	ctx context.Context,
 	_ *Request,
