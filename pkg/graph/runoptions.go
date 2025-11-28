@@ -29,12 +29,16 @@ func WithRunID(runID string) RunOption {
 // WithCheckpointer enables automatic checkpointing with the given storage backend.
 // Checkpoints are saved after each superstep by default.
 //
+// IMPORTANT: WithRunID is required when using this option. Providing a stable
+// identifier ensures checkpoints can be properly resumed. Without an explicit
+// RunID, execution will fail with an error.
+//
 // Example:
 //
 //	checkpointer := checkpoint.NewInMemoryCheckpointer()
 //	runnable.Run(ctx, messages,
+//	    graph.WithRunID("user-123-session-456"),  // Required!
 //	    graph.WithCheckpointer(checkpointer),
-//	    graph.WithRunID("user-123-session-456"),
 //	)
 func WithCheckpointer(checkpointer checkpoint.Checkpointer) RunOption {
 	return func(opts *RunOptions) {
@@ -47,15 +51,18 @@ func WithCheckpointer(checkpointer checkpoint.Checkpointer) RunOption {
 
 // WithCheckpointOptions provides fine-grained control over checkpointing behavior.
 //
+// IMPORTANT: WithRunID is required when using this option with a checkpointer.
+// Providing a stable identifier ensures checkpoints can be properly resumed.
+//
 // Example:
 //
 //	runnable.Run(ctx, messages,
+//	    graph.WithRunID("long-running-workflow"),  // Required!
 //	    graph.WithCheckpointOptions(
 //	        checkpoint.WithCheckpointer(checkpointer),
 //	        checkpoint.WithSaveInterval(5),     // Save every 5 supersteps
 //	        checkpoint.WithAutoRestore(true),   // Resume from last checkpoint
 //	    ),
-//	    graph.WithRunID("long-running-workflow"),
 //	)
 func WithCheckpointOptions(opts ...checkpoint.Option) RunOption {
 	return func(runOpts *RunOptions) {

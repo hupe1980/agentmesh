@@ -764,3 +764,129 @@ func TestCheckpointResume_EmptyStateResume(t *testing.T) {
 
 	t.Log("Empty state resume: SUCCESS - first run behaves correctly")
 }
+
+// TestCheckpointer_RequiresRunID tests that WithCheckpointer requires WithRunID
+func TestCheckpointer_RequiresRunID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Build a simple workflow
+	stateBuilder := newTestManagerBuilder()
+	executedKey := state.NewKey("executed", false)
+	state.RegisterKey(stateBuilder, executedKey)
+	stateManager := stateBuilder.Build()
+
+	g, err := graph.NewGraph(stateManager)
+	require.NoError(t, err)
+
+	require.NoError(t, g.AddNode(&graph.BaseNode{
+		NodeName:        "node_1",
+		DeclaredTargets: []string{graph.EndNode},
+		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
+			updates := state.Updates{"executed": true}
+			return []string{graph.EndNode}, updates, nil
+		},
+	}))
+
+	g.SetEntryPoint("node_1")
+
+	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	require.NoError(t, err)
+
+	t.Run("checkpointer_without_runid_errors", func(t *testing.T) {
+		// Using WithCheckpointer WITHOUT WithRunID should error
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithCheckpointer(checkpointer),
+			// NOTE: intentionally NOT providing WithRunID
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.Error(t, lastErr)
+		assert.Contains(t, lastErr.Error(), "WithRunID is required when using WithCheckpointer")
+	})
+
+	t.Run("checkpoint_options_without_runid_errors", func(t *testing.T) {
+		// Using WithCheckpointOptions (which sets checkpointer) WITHOUT WithRunID should error
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithCheckpointOptions(
+				checkpoint.WithCheckpointer(checkpointer),
+				checkpoint.WithSaveInterval(1),
+			),
+			// NOTE: intentionally NOT providing WithRunID
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.Error(t, lastErr)
+		assert.Contains(t, lastErr.Error(), "WithRunID is required when using WithCheckpointer")
+	})
+
+	t.Run("checkpointer_with_runid_succeeds", func(t *testing.T) {
+		// Using WithCheckpointer WITH WithRunID should work
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithRunID("test-with-runid"),
+			graph.WithCheckpointer(checkpointer),
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.NoError(t, lastErr)
+	})
+
+	t.Run("no_checkpointer_without_runid_succeeds", func(t *testing.T) {
+		// NOT using checkpointer should work without RunID (auto-generated UUID is fine)
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil) { // No checkpointer, no RunID - this is fine for simple runs
+
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.NoError(t, lastErr)
+	})
+
+	t.Run("checkpointer_with_checkpoint_resume_succeeds", func(t *testing.T) {
+		// When resuming with WithCheckpoint, RunID comes from checkpoint - should work
+		// First, create a checkpoint
+		runID := "resume-test-runid"
+		var lastErr error
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithRunID(runID),
+			graph.WithCheckpointer(checkpointer),
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.NoError(t, lastErr)
+
+		// Load the checkpoint
+		cp, err := checkpointer.Load(ctx, runID)
+		require.NoError(t, err)
+		require.NotNil(t, cp)
+
+		// Resume using WithCheckpoint WITHOUT WithRunID - should work because RunID is in checkpoint
+		lastErr = nil
+		for _, err := range compiled.Run(ctx, nil,
+			graph.WithCheckpoint(cp),
+			graph.WithCheckpointer(checkpointer),
+			// NOTE: intentionally NOT providing WithRunID - checkpoint has it
+		) {
+			if err != nil {
+				lastErr = err
+			}
+		}
+		require.NoError(t, lastErr)
+	})
+
+	t.Log("RunID validation: SUCCESS - checkpointer requires explicit RunID")
+}

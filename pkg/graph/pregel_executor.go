@@ -312,12 +312,24 @@ func (p *PregelExecutor[I, O]) initializeRun(
 	input I,
 	opts RunOptions,
 ) (string, error) {
+	// Validate: RunID is required when checkpointing is enabled
+	// This prevents silent bypass of checkpoint/resume logic when auto-generated UUIDs
+	// would create new checkpoint streams instead of resuming existing ones.
+	// Exception: When resuming with WithCheckpoint, the RunID comes from the checkpoint.
+	if opts.Checkpointer != nil && opts.RunID == "" && opts.Checkpoint == nil {
+		return "", fmt.Errorf("WithRunID is required when using WithCheckpointer: provide a stable identifier for checkpoint resume")
+	}
+
 	// Inject resume values into context if provided
 	if opts.ResumeValue != nil {
 		ctx = withResumeValueContext(ctx, opts.ResumeValue)
 	}
 
+	// Determine runID: explicit > checkpoint > auto-generated
 	runID := opts.RunID
+	if runID == "" && opts.Checkpoint != nil {
+		runID = opts.Checkpoint.RunID
+	}
 	if runID == "" {
 		runID = uuid.New().String()
 	}

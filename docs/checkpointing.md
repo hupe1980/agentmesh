@@ -26,6 +26,9 @@ Checkpointing in AgentMesh enables **automatic state persistence** during graph 
 - 📊 **Audit** agent decisions with complete execution history
 - 🔀 **Branch** from checkpoints to test alternative paths
 
+{: .important }
+> **RunID is required for checkpointing.** When using `WithCheckpointer()` or `WithCheckpointOptions()`, you must also provide `WithRunID()` with a stable identifier. This ensures checkpoints can be properly saved and resumed. Auto-generated UUIDs would create new checkpoint streams instead of resuming existing ones.
+
 ---
 
 ## Checkpoint Lifecycle
