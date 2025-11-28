@@ -29,6 +29,17 @@ sidebar:
     url: "#tool-binding"
   - title: Streaming
     url: "#streaming"
+  - title: Model routing
+    url: "#model-routing"
+    children:
+      - title: Cost-based
+        url: "#cost-based-routing"
+      - title: Capability-based
+        url: "#capability-routing"
+      - title: Fallback
+        url: "#fallback-routing"
+      - title: Composite
+        url: "#composite-routing"
   - title: Custom models
     url: "#custom-models"
 ---
@@ -449,3 +460,175 @@ The iterator pattern automatically supports both streaming and blocking modes th
 - Set `Reasoning` field if your provider exposes internal reasoning
 - Use `Metadata` map for provider-specific information
 - Yield `nil` error for successful chunks, non-nil error to stop iteration
+
+---
+
+## Model Routing {#model-routing}
+
+AgentMesh provides a flexible model routing system to intelligently select models based on query characteristics, capabilities, and availability.
+
+### Router Interface
+
+Routers implement a simple interface that selects the best model for a request:
+
+```go
+type Router interface {
+    Route(ctx context.Context, req *Request) (Model, error)
+}
+```
+
+### RoutedModel Wrapper
+
+Wrap any router to make it transparent as a `Model`:
+
+```go
+router := model.NewCostBasedRouter(cheapModel, expensiveModel)
+routedModel := model.NewRoutedModel(router)
+
+// Use like any other model
+agent, _ := agent.NewReActAgent(routedModel, tools)
+```
+
+### Cost-Based Routing {#cost-based-routing}
+
+Route simple queries to cheaper models and complex queries to premium models:
+
+```go
+cheapModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
+premiumModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+
+router := model.NewCostBasedRouter(cheapModel, premiumModel,
+    model.WithComplexityThreshold(0.5), // 0.0-1.0 scale
+)
+
+// Simple queries → gpt-4o-mini
+// Complex queries → gpt-4o
+```
+
+The built-in `HeuristicEstimator` considers:
+- Query length and word count
+- Complexity keywords ("analyze", "compare", "explain why")
+- Multi-turn conversation context
+- Tool binding presence
+
+### Capability-Based Routing {#capability-routing}
+
+Automatically route requests to models with required capabilities:
+
+```go
+textModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
+visionModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+
+router := model.NewCapabilityRouter(
+    model.WithCapabilityModel(textModel),
+    model.WithCapabilityModel(visionModel),
+)
+
+// Text-only requests → gpt-4o-mini (cheaper)
+// Requests with images → gpt-4o (has Vision capability)
+```
+
+### Fallback Routing {#fallback-routing}
+
+Build resilient pipelines with circuit breaker pattern:
+
+```go
+primary, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+backup, _ := anthropic.NewChatModel(claudeKey, anthropic.WithModel("claude-3-5-sonnet"))
+
+router := model.NewFallbackRouter(primary, backup,
+    model.WithFailureThreshold(5),          // Open circuit after 5 failures
+    model.WithResetTimeout(30*time.Second), // Try primary again after 30s
+)
+
+// Automatic failover with health tracking
+```
+
+Circuit breaker states:
+- **Closed**: All requests go to primary
+- **Open**: All requests go to fallback (after threshold failures)
+- **Half-Open**: Probe primary with single request to test recovery
+
+### Composite Routing {#composite-routing}
+
+Chain multiple routing strategies:
+
+```go
+// First check capabilities, then apply cost optimization
+capabilityRouter := model.NewCapabilityRouter(textModel, visionModel)
+costRouter := model.NewCostBasedRouter(cheapModel, expensiveModel)
+
+composite := model.NewCompositeRouter(capabilityRouter, costRouter)
+```
+
+### Conditional Routing {#conditional-routing}
+
+Route based on custom logic:
+
+```go
+router := model.NewConditionalRouter(func(ctx context.Context, req *model.Request) Model {
+    // Check metadata for routing hints
+    if priority, ok := req.Metadata["priority"].(string); ok && priority == "high" {
+        return premiumModel
+    }
+    return standardModel
+})
+```
+
+### Weighted Routing {#weighted-routing}
+
+Distribute load across models:
+
+```go
+router := model.NewWeightedRouter(
+    model.WeightedModel{Model: modelA, Weight: 70}, // 70% traffic
+    model.WeightedModel{Model: modelB, Weight: 30}, // 30% traffic
+)
+```
+
+### Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Create models
+    mini, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
+    full, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+
+    // Build routing chain: cost → fallback → model
+    costRouter := model.NewCostBasedRouter(mini, full,
+        model.WithComplexityThreshold(0.5),
+    )
+    
+    resilientRouter := model.NewFallbackRouter(
+        model.NewRoutedModel(costRouter),
+        full, // Always fallback to full model
+        model.WithFailureThreshold(3),
+        model.WithResetTimeout(time.Minute),
+    )
+
+    // Use routed model transparently
+    routedModel := model.NewRoutedModel(resilientRouter)
+    agent, _ := agent.NewReActAgent(routedModel, tools)
+
+    // Execute - routing happens automatically
+    for result, err := range agent.Run(ctx, messages) {
+        // ...
+    }
+}
+```
+
+See the [`examples/model_router`](../examples/model_router/) directory for a complete working example.

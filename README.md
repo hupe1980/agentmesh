@@ -18,6 +18,7 @@
 - **🧠 LLM Integration** - Native support for OpenAI, Anthropic, Gemini with streaming and reasoning models
 - **💾 State Management** - Lock-free channel-based state with versioning and checkpointing
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic schema generation
+- **🔀 Model Routing** - Intelligent model selection based on cost, capabilities, and availability
 
 ### Production Ready
 - **✅ Graph Validation** - Comprehensive compile-time error checking (cycles, missing nodes, unreachable paths)
