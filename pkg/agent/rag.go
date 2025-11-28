@@ -119,13 +119,14 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	mgr := state.NewManager()
-	if err := RegisterMessagesKey(mgr); err != nil {
+	stateBuilder := state.NewManagerBuilder()
+	if err := RegisterMessagesKey(stateBuilder); err != nil {
 		return nil, fmt.Errorf("failed to register messages key: %w", err)
 	}
-	if err := state.RegisterKey(mgr, DocumentsKey); err != nil {
+	if err := state.RegisterKey(stateBuilder, DocumentsKey); err != nil {
 		return nil, fmt.Errorf("failed to register documents key: %w", err)
 	}
+	mgr := stateBuilder.Build()
 
 	// Build graph using fluent builder API
 	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))

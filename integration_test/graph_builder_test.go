@@ -95,8 +95,9 @@ func TestSimpleGraphExecution(t *testing.T) {
 	t.Run("executes single node", func(t *testing.T) {
 		resultKey := state.NewKey("result", "")
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, resultKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, resultKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -127,10 +128,11 @@ func TestSimpleGraphExecution(t *testing.T) {
 	})
 
 	t.Run("executes sequential nodes", func(t *testing.T) {
-		countKey := state.NewKey("count", 0)
+		counterKey := state.NewKey("counter", 0)
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, countKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, counterKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -152,7 +154,7 @@ func TestSimpleGraphExecution(t *testing.T) {
 			DeclaredTargets: []string{graph.EndNode},
 			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 				executionOrder = append(executionOrder, "node2")
-				count := state.GetFromView(s, countKey)
+				count := state.GetFromView(s, counterKey)
 				updates := state.Updates{"count": count + 1}
 				return []string{graph.EndNode}, updates, nil
 			},
@@ -180,9 +182,10 @@ func TestConditionalRouting(t *testing.T) {
 		choiceKey := state.NewKey("choice", "")
 		resultKey := state.NewKey("result", "")
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, choiceKey)
-		state.RegisterKey(stateManager, resultKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, choiceKey)
+		state.RegisterKey(stateBuilder, resultKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -239,10 +242,11 @@ func TestConditionalRouting(t *testing.T) {
 	})
 
 	t.Run("routes to multiple targets in parallel", func(t *testing.T) {
-		broadcastKey := state.NewKey("broadcast", false)
+		broadcastKey := state.NewKey("broadcast", "")
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, broadcastKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, broadcastKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -303,9 +307,10 @@ func TestStateManagement(t *testing.T) {
 		key1Key := state.NewKey("key1", "")
 		key2Key := state.NewKey("key2", 0)
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, key1Key)
-		state.RegisterKey(stateManager, key2Key)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, key1Key)
+		state.RegisterKey(stateBuilder, key2Key)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -354,8 +359,9 @@ func TestStateManagement(t *testing.T) {
 	t.Run("state persists across execution", func(t *testing.T) {
 		counterKey := state.NewKey("counter", 0)
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, counterKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, counterKey)
+		stateManager := stateBuilder.Build()
 
 		// Set initial state using state.Set
 		ctx := context.Background()

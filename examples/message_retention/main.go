@@ -55,8 +55,9 @@ func runExample(maxSize int) {
 	// Create message key with specific retention limit
 	messagesKey := graphstate.NewListKey[message.Message]("__messages__", maxSize)
 
-	mgr := graphstate.NewManager()
-	graphstate.RegisterListKey(mgr, messagesKey)
+	builder := graphstate.NewManagerBuilder()
+	graphstate.RegisterListKey(builder, messagesKey)
+	mgr := builder.Build()
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {

@@ -14,17 +14,18 @@ import (
 // Benchmark state operations with state v3 API
 
 func BenchmarkState_GetFromView(b *testing.B) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 
 	// Define and register typed keys with default values
 	key1 := state.NewKey("key1", "")
 	key2 := state.NewKey("key2", 0)
 	key3 := state.NewKey("key3", []string{})
 
-	state.RegisterKey(mgr, key1)
-	state.RegisterKey(mgr, key2)
-	state.RegisterKey(mgr, key3)
-	state.RegisterListKey(mgr, agent.MessagesKey)
+	state.RegisterKey(builder, key1)
+	state.RegisterKey(builder, key2)
+	state.RegisterKey(builder, key3)
+	state.RegisterListKey(builder, agent.MessagesKey)
+	mgr := builder.Build()
 
 	// Set values
 	ctx := context.Background()
@@ -40,16 +41,17 @@ func BenchmarkState_GetFromView(b *testing.B) {
 }
 
 func BenchmarkState_ApplyUpdates(b *testing.B) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 
 	key1 := state.NewKey("key1", "")
 	key2 := state.NewKey("key2", 0)
 	key3 := state.NewKey("key3", []string{})
 
-	state.RegisterKey(mgr, key1)
-	state.RegisterKey(mgr, key2)
-	state.RegisterKey(mgr, key3)
-	state.RegisterListKey(mgr, agent.MessagesKey)
+	state.RegisterKey(builder, key1)
+	state.RegisterKey(builder, key2)
+	state.RegisterKey(builder, key3)
+	state.RegisterListKey(builder, agent.MessagesKey)
+	mgr := builder.Build()
 
 	ctx := context.Background()
 	b.ResetTimer()
@@ -63,8 +65,9 @@ func BenchmarkState_ApplyUpdates(b *testing.B) {
 // Benchmark message operations
 
 func BenchmarkState_AddMessages(b *testing.B) {
-	mgr := state.NewManager()
-	state.RegisterListKey(mgr, agent.MessagesKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterListKey(builder, agent.MessagesKey)
+	mgr := builder.Build()
 
 	msgs := []message.Message{
 		message.NewHumanMessageFromText("Hello"),
@@ -81,8 +84,9 @@ func BenchmarkState_AddMessages(b *testing.B) {
 }
 
 func BenchmarkState_GetMessages(b *testing.B) {
-	mgr := state.NewManager()
-	state.RegisterListKey(mgr, agent.MessagesKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterListKey(builder, agent.MessagesKey)
+	mgr := builder.Build()
 
 	ctx := context.Background()
 	// Add 100 messages
@@ -104,9 +108,10 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 	countKey := state.NewKey("count", 0)
 
 	createSimpleGraph := func() graph.Runnable[[]message.Message, message.Message] {
-		mgr := state.NewManager()
-		state.RegisterKey(mgr, countKey)
-		state.RegisterListKey(mgr, agent.MessagesKey)
+		builder := state.NewManagerBuilder()
+		state.RegisterKey(builder, countKey)
+		state.RegisterListKey(builder, agent.MessagesKey)
+		mgr := builder.Build()
 
 		ctx := context.Background()
 		_ = state.Set(ctx, mgr, countKey, 0)
@@ -141,9 +146,10 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 	valueKey := state.NewKey("value", 0)
 
 	createChainGraph := func(length int) graph.Runnable[[]message.Message, message.Message] {
-		mgr := state.NewManager()
-		state.RegisterKey(mgr, valueKey)
-		state.RegisterListKey(mgr, agent.MessagesKey)
+		builder := state.NewManagerBuilder()
+		state.RegisterKey(builder, valueKey)
+		state.RegisterListKey(builder, agent.MessagesKey)
+		mgr := builder.Build()
 
 		ctx := context.Background()
 		_ = state.Set(ctx, mgr, valueKey, 0)
@@ -196,8 +202,9 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 
 func BenchmarkGraph_Compile(b *testing.B) {
 	createGraph := func() *graph.Graph {
-		mgr := state.NewManager()
-		state.RegisterListKey(mgr, agent.MessagesKey)
+		builder := state.NewManagerBuilder()
+		state.RegisterListKey(builder, agent.MessagesKey)
+		mgr := builder.Build()
 
 		g, _ := graph.NewGraph(mgr)
 

@@ -53,11 +53,12 @@ func main() {
 	counterKey := graphstate.NewKey("counter", 0)
 
 	// Create a simple graph
-	mgr := graphstate.NewManager()
-	if err := agent.RegisterMessagesKey(mgr); err != nil {
+	builder := graphstate.NewManagerBuilder()
+	if err := agent.RegisterMessagesKey(builder); err != nil {
 		log.Fatal(err)
 	}
-	graphstate.RegisterKey(mgr, counterKey)
+	graphstate.RegisterKey(builder, counterKey)
+	mgr := builder.Build()
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {

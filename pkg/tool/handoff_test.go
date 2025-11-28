@@ -17,9 +17,9 @@ var testMessagesKey = stateif.NewListKey[message.Message]("__messages__", 0)
 
 // Helper function for tests
 func newTestManager() *stateif.Manager {
-	mgr := stateif.NewManager()
-	stateif.RegisterListKey(mgr, testMessagesKey)
-	return mgr
+	builder := stateif.NewManagerBuilder()
+	stateif.RegisterListKey(builder, testMessagesKey)
+	return builder.Build()
 }
 
 func TestHandoffToAgent(t *testing.T) {

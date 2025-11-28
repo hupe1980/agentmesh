@@ -18,11 +18,12 @@ func TestPregelExecutor(t *testing.T) {
 	completedKey := state.NewKey("completed", false)
 
 	// Build a graph with parallel nodes
-	stateManager := newTestManager()
-	state.RegisterKey(stateManager, startedKey)
-	state.RegisterKey(stateManager, task1Key)
-	state.RegisterKey(stateManager, task2Key)
-	state.RegisterKey(stateManager, completedKey)
+	stateBuilder := newTestManagerBuilder()
+	state.RegisterKey(stateBuilder, startedKey)
+	state.RegisterKey(stateBuilder, task1Key)
+	state.RegisterKey(stateBuilder, task2Key)
+	state.RegisterKey(stateBuilder, completedKey)
+	stateManager := stateBuilder.Build()
 
 	g, err := graph.NewGraph(stateManager)
 	if err != nil {

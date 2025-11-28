@@ -57,15 +57,16 @@ func main() {
 	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
 	statusKey := graphstate.NewKey("status", "")
 
-	mgr := graphstate.NewManager()
-	if err := agent.RegisterMessagesKey(mgr); err != nil {
+	builder := graphstate.NewManagerBuilder()
+	if err := agent.RegisterMessagesKey(builder); err != nil {
 		log.Fatal(err)
 	}
-	graphstate.RegisterKey(mgr, recordsKey)
-	graphstate.RegisterKey(mgr, timestampKey)
-	graphstate.RegisterKey(mgr, processedKey)
-	graphstate.RegisterKey(mgr, qualityScoreKey)
-	graphstate.RegisterKey(mgr, statusKey)
+	graphstate.RegisterKey(builder, recordsKey)
+	graphstate.RegisterKey(builder, timestampKey)
+	graphstate.RegisterKey(builder, processedKey)
+	graphstate.RegisterKey(builder, qualityScoreKey)
+	graphstate.RegisterKey(builder, statusKey)
+	mgr := builder.Build()
 
 	g, err := graph.NewGraph(mgr)
 	if err != nil {

@@ -1060,7 +1060,8 @@ The `graph.Builder` provides a fluent API for constructing agent workflows:
 ### Basic structure
 
 ```go
-stateManager := state.NewManager()
+stateBuilder := state.NewManagerBuilder()
+stateManager := stateBuilder.Build()
 g, _ := graph.NewGraph(stateManager)
 
 // Add nodes with Command-based routing
@@ -1244,12 +1245,14 @@ AgentMesh uses a **channel-based state system** for deterministic data flow. Sta
 AgentMesh uses a **concrete `*state.Manager` type** for state management, leveraging Go's generics for compile-time type safety:
 
 ```go
-// Create state manager
-mgr := state.NewManager()
+// Create state manager builder
+builder := state.NewManagerBuilder()
 
 // Register typed keys (compile-time type safety)
 statusKey := state.NewKey[string]("status", "")
-state.RegisterKey(mgr, statusKey)
+state.RegisterKey(builder, statusKey)
+
+mgr := builder.Build()
 
 // Builder accepts *state.Manager
 builder := graph.NewBuilder()
@@ -1392,11 +1395,13 @@ var (
     itemsKey   = state.NewListKey[string]("items", 10)
 )
 
-// Register keys with manager
-mgr := state.NewManager()
-state.RegisterKey(mgr, statusKey)
-state.RegisterKey(mgr, counterKey)
-state.RegisterListKey(mgr, itemsKey)
+// Register keys with manager builder
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, statusKey)
+state.RegisterKey(builder, counterKey)
+state.RegisterListKey(builder, itemsKey)
+
+mgr := builder.Build()
 
 // Type-safe reads (no type assertions)
 status, err := state.Get(ctx, mgr, statusKey)  // status is string

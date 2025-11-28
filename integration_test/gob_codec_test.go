@@ -47,9 +47,10 @@ func TestGOBCodec_TypePreservation(t *testing.T) {
 	dataKey := state.NewKey("data", "")
 
 	// Create state manager and register keys
-	manager := state.NewManager()
-	state.RegisterKey(manager, counterKey)
-	state.RegisterKey(manager, dataKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, counterKey)
+	state.RegisterKey(builder, dataKey)
+	manager := builder.Build()
 
 	// Create graph with 3 nodes
 	g, err := graph.NewGraph(manager)

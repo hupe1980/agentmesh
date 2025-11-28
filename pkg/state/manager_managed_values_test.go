@@ -12,16 +12,19 @@ func TestManagerManagedValues(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("register and access managed values", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		// Register managed values
 		configMV := NewManagedValue[string]("config")
-		err := RegisterManagedValue(mgr, configMV)
+		err := RegisterManagedValue(builder, configMV)
 		require.NoError(t, err)
 
 		portMV := NewManagedValue[int]("port")
-		err = RegisterManagedValue(mgr, portMV)
+		err = RegisterManagedValue(builder, portMV)
 		require.NoError(t, err)
+
+		// Build the manager (freezes registrations)
+		mgr := builder.Build()
 
 		// Set values
 		err = SetManagedValue(ctx, mgr, "config", "production")
@@ -41,24 +44,26 @@ func TestManagerManagedValues(t *testing.T) {
 	})
 
 	t.Run("duplicate registration", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		mv := NewManagedValue[string]("test")
-		err := RegisterManagedValue(mgr, mv)
+		err := RegisterManagedValue(builder, mv)
 		require.NoError(t, err)
 
 		// Second registration should fail
-		err = RegisterManagedValue(mgr, mv)
+		err = RegisterManagedValue(builder, mv)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "already registered")
 	})
 
 	t.Run("type mismatch", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		mv := NewManagedValue[string]("value")
-		err := RegisterManagedValue(mgr, mv)
+		err := RegisterManagedValue(builder, mv)
 		require.NoError(t, err)
+
+		mgr := builder.Build()
 
 		err = SetManagedValue(ctx, mgr, "value", "string")
 		require.NoError(t, err)
@@ -70,21 +75,23 @@ func TestManagerManagedValues(t *testing.T) {
 	})
 
 	t.Run("nonexistent managed value", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
+		mgr := builder.Build()
 		_, err := GetManagedValue[string](ctx, mgr, "nonexistent")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
 
 	t.Run("list managed value names", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		// Register multiple
-		RegisterManagedValue(mgr, NewManagedValue[string]("a"))
-		RegisterManagedValue(mgr, NewManagedValue[int]("b"))
-		RegisterManagedValue(mgr, NewManagedValue[bool]("c"))
+		RegisterManagedValue(builder, NewManagedValue[string]("a"))
+		RegisterManagedValue(builder, NewManagedValue[int]("b"))
+		RegisterManagedValue(builder, NewManagedValue[bool]("c"))
 
+		mgr := builder.Build()
 		names := mgr.GetManagedValueNames()
 		assert.Len(t, names, 3)
 		assert.Contains(t, names, "a")
@@ -93,17 +100,20 @@ func TestManagerManagedValues(t *testing.T) {
 	})
 
 	t.Run("managed values separate from persistent state", func(t *testing.T) {
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		// Register persistent key
 		counterKey := NewKey("counter", 0)
-		err := RegisterKey(mgr, counterKey)
+		err := RegisterKey(builder, counterKey)
 		require.NoError(t, err)
 
 		// Register managed value
 		configMV := NewManagedValue[string]("config")
-		err = RegisterManagedValue(mgr, configMV)
+		err = RegisterManagedValue(builder, configMV)
 		require.NoError(t, err)
+
+		// Build the manager
+		mgr := builder.Build()
 
 		// Set both
 		err = Set(ctx, mgr, counterKey, 42)
@@ -134,11 +144,13 @@ func TestManagerManagedValues(t *testing.T) {
 			Timeout int
 		}
 
-		mgr := NewManager()
+		builder := NewManagerBuilder()
 
 		configMV := NewManagedValue[*RuntimeConfig]("runtime_config")
-		err := RegisterManagedValue(mgr, configMV)
+		err := RegisterManagedValue(builder, configMV)
 		require.NoError(t, err)
+
+		mgr := builder.Build()
 
 		cfg := &RuntimeConfig{
 			APIKey:  "secret",

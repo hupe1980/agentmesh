@@ -183,7 +183,7 @@ func TestExtractNamespace(t *testing.T) {
 }
 
 func TestGetNamespaceView(t *testing.T) {
-	mgr := NewManager()
+	builder := NewManagerBuilder()
 	ctx := context.Background()
 
 	// Create namespaced keys
@@ -196,10 +196,13 @@ func TestGetNamespaceView(t *testing.T) {
 	globalConfig := TypedKey[string](Global, "config", "")
 
 	// Register keys
-	require.NoError(t, RegisterKey(mgr, modelCounter))
-	require.NoError(t, RegisterKey(mgr, modelStatus))
-	require.NoError(t, RegisterListKey(mgr, toolResults))
-	require.NoError(t, RegisterKey(mgr, globalConfig))
+	require.NoError(t, RegisterKey(builder, modelCounter))
+	require.NoError(t, RegisterKey(builder, modelStatus))
+	require.NoError(t, RegisterListKey(builder, toolResults))
+	require.NoError(t, RegisterKey(builder, globalConfig))
+
+	// Build the manager
+	mgr := builder.Build()
 
 	// Set values
 	require.NoError(t, Set(ctx, mgr, modelCounter, 42))
@@ -235,7 +238,7 @@ func TestGetNamespaceView(t *testing.T) {
 }
 
 func TestListNamespaces(t *testing.T) {
-	mgr := NewManager()
+	builder := NewManagerBuilder()
 	ctx := context.Background()
 
 	// Create namespaced keys
@@ -248,10 +251,12 @@ func TestListNamespaces(t *testing.T) {
 	key3 := TypedKey[bool](ns3, "active", false)
 	globalKey := TypedKey[string](Global, "config", "")
 
-	require.NoError(t, RegisterKey(mgr, key1))
-	require.NoError(t, RegisterKey(mgr, key2))
-	require.NoError(t, RegisterKey(mgr, key3))
-	require.NoError(t, RegisterKey(mgr, globalKey))
+	require.NoError(t, RegisterKey(builder, key1))
+	require.NoError(t, RegisterKey(builder, key2))
+	require.NoError(t, RegisterKey(builder, key3))
+	require.NoError(t, RegisterKey(builder, globalKey))
+
+	mgr := builder.Build()
 
 	require.NoError(t, Set(ctx, mgr, key1, 1))
 	require.NoError(t, Set(ctx, mgr, key2, "ok"))
@@ -273,7 +278,7 @@ func TestListNamespaces(t *testing.T) {
 }
 
 func TestCopyNamespace(t *testing.T) {
-	mgr := NewManager()
+	builder := NewManagerBuilder()
 	ctx := context.Background()
 
 	// Create source namespace
@@ -286,10 +291,12 @@ func TestCopyNamespace(t *testing.T) {
 	toStatusKey := TypedKey[string](toNS, "status", "")
 
 	// Register both source and target keys
-	require.NoError(t, RegisterKey(mgr, fromCounterKey))
-	require.NoError(t, RegisterKey(mgr, fromStatusKey))
-	require.NoError(t, RegisterKey(mgr, toCounterKey))
-	require.NoError(t, RegisterKey(mgr, toStatusKey))
+	require.NoError(t, RegisterKey(builder, fromCounterKey))
+	require.NoError(t, RegisterKey(builder, fromStatusKey))
+	require.NoError(t, RegisterKey(builder, toCounterKey))
+	require.NoError(t, RegisterKey(builder, toStatusKey))
+
+	mgr := builder.Build()
 
 	require.NoError(t, Set(ctx, mgr, fromCounterKey, 42))
 	require.NoError(t, Set(ctx, mgr, fromStatusKey, "active"))
@@ -322,7 +329,7 @@ func TestDeleteNamespace(t *testing.T) {
 }
 
 func TestNamespaceIsolation(t *testing.T) {
-	mgr := NewManager()
+	builder := NewManagerBuilder()
 	ctx := context.Background()
 
 	// Create two namespaces with same key names
@@ -332,8 +339,10 @@ func TestNamespaceIsolation(t *testing.T) {
 	counter1 := TypedKey[int](ns1, "counter", 0)
 	counter2 := TypedKey[int](ns2, "counter", 0)
 
-	require.NoError(t, RegisterKey(mgr, counter1))
-	require.NoError(t, RegisterKey(mgr, counter2))
+	require.NoError(t, RegisterKey(builder, counter1))
+	require.NoError(t, RegisterKey(builder, counter2))
+
+	mgr := builder.Build()
 
 	// Set different values
 	require.NoError(t, Set(ctx, mgr, counter1, 10))

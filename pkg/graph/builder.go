@@ -55,11 +55,13 @@ type BuilderOption[I, O any] func(*Builder[I, O]) error
 //	builder, err := graph.NewBuilder(customExecutor)
 //
 //	// With custom state manager
-//	customManager := state.NewManager(state.WithCheckpointer(cp, "run-123"))
+//	mgrBuilder := state.NewManagerBuilder(state.WithCheckpointer(cp, "run-123"))
+//	customManager := mgrBuilder.Build()
 //	builder, err := graph.NewBuilder(executor, graph.WithManager[In, Out](customManager))
 func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) (*Builder[I, O], error) {
-	// Create a default state manager
-	manager := state.NewManager()
+	// Create a default state manager builder (frozen when Build() is called)
+	mgrBuilder := state.NewManagerBuilder()
+	manager := mgrBuilder.Build()
 
 	graph, err := NewGraph(manager)
 	if err != nil {
@@ -85,10 +87,11 @@ func NewBuilder[I, O any](executor Executor[I, O], opts ...BuilderOption[I, O]) 
 //
 // Example:
 //
-//	manager := state.NewManager(
+//	mgrBuilder := state.NewManagerBuilder(
 //	    state.WithCheckpointer(checkpointer, "run-123"),
 //	    state.WithMaxSnapshotsLimit(100),
 //	)
+//	manager := mgrBuilder.Build()
 //	builder, err := graph.NewBuilder(executor, graph.WithManager[In, Out](manager))
 func WithManager[I, O any](manager *state.Manager) BuilderOption[I, O] {
 	return func(b *Builder[I, O]) error {

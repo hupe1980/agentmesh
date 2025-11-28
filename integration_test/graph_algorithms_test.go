@@ -18,7 +18,7 @@ func TestPageRank(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	stateManager := newTestManager()
+	stateBuilder := newTestManagerBuilder()
 
 	const (
 		dampingFactor = 0.85
@@ -34,9 +34,10 @@ func TestPageRank(t *testing.T) {
 	rankB := state.NewKey("rank_B", initialRank)
 	rankC := state.NewKey("rank_C", initialRank)
 
-	state.RegisterKey(stateManager, rankA)
-	state.RegisterKey(stateManager, rankB)
-	state.RegisterKey(stateManager, rankC)
+	state.RegisterKey(stateBuilder, rankA)
+	state.RegisterKey(stateBuilder, rankB)
+	state.RegisterKey(stateBuilder, rankC)
+	stateManager := stateBuilder.Build()
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -144,16 +145,17 @@ func TestShortestPath(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	stateManager := newTestManager()
+	stateBuilder := newTestManagerBuilder()
 
 	// Distance keys for each vertex
 	distA := state.NewKey("dist_A", 0)
 	distB := state.NewKey("dist_B", math.MaxInt32)
 	distC := state.NewKey("dist_C", math.MaxInt32)
 
-	state.RegisterKey(stateManager, distA)
-	state.RegisterKey(stateManager, distB)
-	state.RegisterKey(stateManager, distC)
+	state.RegisterKey(stateBuilder, distA)
+	state.RegisterKey(stateBuilder, distB)
+	state.RegisterKey(stateBuilder, distC)
+	stateManager := stateBuilder.Build()
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -250,9 +252,10 @@ func TestGraphConvergence(t *testing.T) {
 	counterKey := state.NewKey("counter", 0)
 	targetKey := state.NewKey("target", 10)
 
-	stateManager := newTestManager()
-	state.RegisterKey(stateManager, counterKey)
-	state.RegisterKey(stateManager, targetKey)
+	stateBuilder := newTestManagerBuilder()
+	state.RegisterKey(stateBuilder, counterKey)
+	state.RegisterKey(stateBuilder, targetKey)
+	stateManager := stateBuilder.Build()
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)
@@ -304,9 +307,10 @@ func TestIterativeComputation(t *testing.T) {
 	valueKey := state.NewKey("value", 1.0)
 	iterationKey := state.NewKey("iteration", 0)
 
-	stateManager := newTestManager()
-	state.RegisterKey(stateManager, valueKey)
-	state.RegisterKey(stateManager, iterationKey)
+	stateBuilder := newTestManagerBuilder()
+	state.RegisterKey(stateBuilder, valueKey)
+	state.RegisterKey(stateBuilder, iterationKey)
+	stateManager := stateBuilder.Build()
 
 	g, err := graph.NewGraph(stateManager)
 	require.NoError(t, err)

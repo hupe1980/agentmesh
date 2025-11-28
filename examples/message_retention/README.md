@@ -46,9 +46,10 @@ var LimitedKey = state.NewListKey[message.Message]("__messages__", 100)
 
 ### 2. Register Key with State Manager
 ```go
-mgr := state.NewManager()
-state.RegisterListKey(mgr, messagesKey)
+builder := state.NewManagerBuilder()
+state.RegisterListKey(builder, messagesKey)
 
+mgr := builder.Build()
 g, err := graph.NewGraph(mgr)
 ```
 

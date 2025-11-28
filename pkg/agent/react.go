@@ -75,10 +75,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 	}
 
 	// Create state manager
-	mgr := state.NewManager()
-	if err := RegisterMessagesKey(mgr); err != nil {
+	stateBuilder := state.NewManagerBuilder()
+	if err := RegisterMessagesKey(stateBuilder); err != nil {
 		return nil, fmt.Errorf("react agent: failed to register messages key: %w", err)
 	}
+	mgr := stateBuilder.Build()
 
 	// Create model executor - encapsulates model lifecycle management
 	// Apply model middleware if provided

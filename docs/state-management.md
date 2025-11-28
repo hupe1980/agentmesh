@@ -225,9 +225,11 @@ agent1Status := state.TypedKey[string](agent1NS, "status", "idle")
 agent2Status := state.TypedKey[string](agent2NS, "status", "idle")
 
 // No collisions - each agent has its own "status" key
-mgr := state.NewManager()
-state.RegisterKey(mgr, agent1Status)
-state.RegisterKey(mgr, agent2Status)
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, agent1Status)
+state.RegisterKey(builder, agent2Status)
+
+mgr := builder.Build()
 
 state.Set(ctx, mgr, agent1Status, "processing")  // agent1.status = "processing"
 state.Set(ctx, mgr, agent2Status, "waiting")     // agent2.status = "waiting"
@@ -326,8 +328,10 @@ agent2NS := state.MustNamespace("agent2")
 agent1Status := state.TypedKey[string](agent1NS, "status", "")
 agent2Status := state.TypedKey[string](agent2NS, "status", "")
 
-state.RegisterKey(mgr, agent1Status)
-state.RegisterKey(mgr, agent2Status)
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, agent1Status)
+state.RegisterKey(builder, agent2Status)
+mgr := builder.Build()
 
 // Set source state
 state.Set(ctx, mgr, agent1Status, "processing")
@@ -370,10 +374,12 @@ writerStatus := state.TypedKey[string](writerNS, "status", "")
 editorStatus := state.TypedKey[string](editorNS, "status", "")
 
 // Register all keys
-mgr := state.NewManager()
-state.RegisterKey(mgr, researcherStatus)
-state.RegisterKey(mgr, writerStatus)
-state.RegisterKey(mgr, editorStatus)
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, researcherStatus)
+state.RegisterKey(builder, writerStatus)
+state.RegisterKey(builder, editorStatus)
+
+mgr := builder.Build()
 
 // Each agent updates its own state independently
 state.Set(ctx, mgr, researcherStatus, "researching")
@@ -718,9 +724,10 @@ import (
 )
 
 // Create manager with checkpointer
-mgr := state.NewManager(
+builder := state.NewManagerBuilder(
     state.WithCheckpointer(checkpoint.NewInMemoryCheckpointer()),
 )
+mgr := builder.Build()
 
 // Build graph with manager
 builder, err := exec.NewBuilder(exec.WithManager(mgr))
@@ -920,8 +927,10 @@ var MessagesKey = agent.MessagesKey  // Default: unlimited (0)
 var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 50)
 
 // Register with manager
-mgr := state.NewManager()
-state.RegisterListKey(mgr, LimitedMessagesKey)
+builder := state.NewManagerBuilder()
+state.RegisterListKey(builder, LimitedMessagesKey)
+
+mgr := builder.Build()
 ```
 
 ### Pruning strategies

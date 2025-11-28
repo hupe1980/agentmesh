@@ -19,15 +19,16 @@ func main() {
 	draftKey := graphstate.NewKey("draft", "")
 	finalReportKey := graphstate.NewKey("final_report", "")
 
-	mgr := graphstate.NewManager()
-	if err := agent.RegisterMessagesKey(mgr); err != nil {
+	builder := graphstate.NewManagerBuilder()
+	if err := agent.RegisterMessagesKey(builder); err != nil {
 		log.Fatal(err)
 	}
-	graphstate.RegisterKey(mgr, currentTaskKey)
-	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
-	graphstate.RegisterKey(mgr, humanInputKey)
-	graphstate.RegisterKey(mgr, draftKey)
-	graphstate.RegisterKey(mgr, finalReportKey)
+	graphstate.RegisterKey(builder, currentTaskKey)
+	graphstate.RegisterKey(builder, actionHistoryKey.Key)
+	graphstate.RegisterKey(builder, humanInputKey)
+	graphstate.RegisterKey(builder, draftKey)
+	graphstate.RegisterKey(builder, finalReportKey)
+	mgr := builder.Build()
 
 	// Initialize action history
 	if err := mgr.ApplyUpdates(context.Background(), graphstate.Updates{

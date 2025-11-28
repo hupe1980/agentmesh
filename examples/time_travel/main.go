@@ -31,26 +31,27 @@ func main() {
 
 	// Build a simple mathematical workflow
 	buildWorkflow := func(initialValue int) *graph.Compiled[[]message.Message, message.Message] {
-		mgr := graphstate.NewManager()
-		if err := agent.RegisterMessagesKey(mgr); err != nil {
+		stateBuilder := graphstate.NewManagerBuilder()
+		if err := agent.RegisterMessagesKey(stateBuilder); err != nil {
 			log.Fatal(err)
 		}
-		graphstate.RegisterKey(mgr, valueKey)
+		graphstate.RegisterKey(stateBuilder, valueKey)
+		mgr := stateBuilder.Build()
 		if err := mgr.ApplyUpdates(context.Background(), graphstate.NewUpdateBuilder().
 			With(graphstate.SetValue(valueKey, initialValue)).
 			Build()); err != nil {
 			panic(err)
 		}
 
-		builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+		graphBuilder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 		if err != nil {
 			panic(err)
 		}
 
-		builder.SetEntryPoint("double")
+		graphBuilder.SetEntryPoint("double")
 
 		// Step 1: Double the value
-		builder.AddNodeFunc("double", []string{"add_ten"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+		graphBuilder.AddNodeFunc("double", []string{"add_ten"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 2
 			fmt.Printf("  [double] %d → %d\n", value, newValue)
@@ -58,7 +59,7 @@ func main() {
 		})
 
 		// Step 2: Add 10
-		builder.AddNodeFunc("add_ten", []string{"multiply_three"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+		graphBuilder.AddNodeFunc("add_ten", []string{"multiply_three"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value + 10
 			fmt.Printf("  [add_ten] %d → %d\n", value, newValue)
@@ -66,14 +67,14 @@ func main() {
 		})
 
 		// Step 3: Multiply by 3
-		builder.AddNodeFunc("multiply_three", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+		graphBuilder.AddNodeFunc("multiply_three", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			value := graphstate.GetFromView(view, valueKey)
 			newValue := value * 3
 			fmt.Printf("  [multiply_three] %d → %d\n", value, newValue)
 			return command.New().With(command.SetValue(valueKey, newValue)).To(graph.EndNode)
 		})
 
-		compiled, err := builder.Compile()
+		compiled, err := graphBuilder.Compile()
 		if err != nil {
 			log.Fatal(err)
 		}

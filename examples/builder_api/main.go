@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -19,19 +20,20 @@ var (
 )
 
 func main() {
-	// Create a builder using graph.NewBuilder with Pregel executor
+	// Register state keys first
+	stateBuilder := state.NewManagerBuilder()
+	state.RegisterKey(stateBuilder, AnalysisKey)
+	state.RegisterKey(stateBuilder, ScoreKey)
+	state.RegisterKey(stateBuilder, ValidKey)
+	state.RegisterKey(stateBuilder, ResultKey)
+	mgr := stateBuilder.Build()
+
+	// Create a builder using graph.NewBuilder with Pregel executor and pre-configured manager
 	// This uses the Pregel executor - perfect for parallel state transformations
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
-
-	// Register state keys with the builder's manager
-	mgr := builder.Manager()
-	state.RegisterKey(mgr, AnalysisKey)
-	state.RegisterKey(mgr, ScoreKey)
-	state.RegisterKey(mgr, ValidKey)
-	state.RegisterKey(mgr, ResultKey)
 
 	// Build a simple workflow using fluent API with type-safe keys
 	builder.

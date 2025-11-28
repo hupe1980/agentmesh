@@ -14,9 +14,9 @@ var testDummyKey = state.NewListKey[string]("__test_data__", 0)
 
 // Helper function for tests
 func newTestManager() *state.Manager {
-	mgr := state.NewManager()
-	state.RegisterListKey(mgr, testDummyKey)
-	return mgr
+	builder := state.NewManagerBuilder()
+	state.RegisterListKey(builder, testDummyKey)
+	return builder.Build()
 }
 
 func createTestGraph() (*Graph, error) {

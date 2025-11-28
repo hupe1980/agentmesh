@@ -71,7 +71,7 @@ func TestNamespacedCommandNode(t *testing.T) {
 
 func TestNamespacedNodeIsolation(t *testing.T) {
 	ctx := context.Background()
-	manager := state.NewManager()
+	builder := state.NewManagerBuilder()
 
 	// Create two namespaces
 	agent1NS := state.MustNamespace("agent1")
@@ -82,8 +82,9 @@ func TestNamespacedNodeIsolation(t *testing.T) {
 	agent2StatusKey := state.TypedKey[string](agent2NS, "status", "idle")
 
 	// Register keys
-	require.NoError(t, state.RegisterKey(manager, agent1StatusKey))
-	require.NoError(t, state.RegisterKey(manager, agent2StatusKey))
+	require.NoError(t, state.RegisterKey(builder, agent1StatusKey))
+	require.NoError(t, state.RegisterKey(builder, agent2StatusKey))
+	manager := builder.Build()
 
 	// Set values
 	require.NoError(t, state.Set(ctx, manager, agent1StatusKey, "agent1_active"))

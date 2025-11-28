@@ -26,7 +26,8 @@ type MemoryStore struct {
 // Example:
 //
 //	store := state.NewMemoryStore()
-//	mgr := state.NewManager(state.WithStore(store))
+//	builder := state.NewManagerBuilder(state.WithStore(store))
+//	mgr := builder.Build()
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		data: make(map[string]any),

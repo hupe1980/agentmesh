@@ -82,8 +82,9 @@ func TestGraphValidation(t *testing.T) {
 	t.Run("accepts graph with conditional branches", func(t *testing.T) {
 		routeKey := state.NewKey("route", "")
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, routeKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, routeKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -206,10 +207,11 @@ func TestComplexGraphPatterns(t *testing.T) {
 		leftDoneKey := state.NewKey("left_done", false)
 		rightDoneKey := state.NewKey("right_done", false)
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, splitDoneKey)
-		state.RegisterKey(stateManager, leftDoneKey)
-		state.RegisterKey(stateManager, rightDoneKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, splitDoneKey)
+		state.RegisterKey(stateBuilder, leftDoneKey)
+		state.RegisterKey(stateBuilder, rightDoneKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)
@@ -312,8 +314,9 @@ func TestComplexGraphPatterns(t *testing.T) {
 	t.Run("cyclic pattern with loop", func(t *testing.T) {
 		counterKey := state.NewKey("counter", 0)
 
-		stateManager := newTestManager()
-		state.RegisterKey(stateManager, counterKey)
+		stateBuilder := newTestManagerBuilder()
+		state.RegisterKey(stateBuilder, counterKey)
+		stateManager := stateBuilder.Build()
 
 		g, err := graph.NewGraph(stateManager)
 		require.NoError(t, err)

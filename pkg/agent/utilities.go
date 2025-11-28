@@ -43,16 +43,17 @@ func LastMessage(view state.ReadView) message.Message {
 	return msgs[len(msgs)-1]
 }
 
-// RegisterMessagesKey registers the MessagesKey with a state manager.
+// RegisterMessagesKey registers the MessagesKey with a state manager builder.
 // This should be called during agent initialization to ensure the messages
 // channel is properly set up in the state system.
 //
 // Example:
 //
-//	mgr := state.NewManager()
-//	if err := agent.RegisterMessagesKey(mgr); err != nil {
+//	builder := state.NewManagerBuilder()
+//	if err := agent.RegisterMessagesKey(builder); err != nil {
 //	    return err
 //	}
-func RegisterMessagesKey(mgr *state.Manager) error {
-	return state.RegisterListKey(mgr, MessagesKey)
+//	mgr := builder.Build()
+func RegisterMessagesKey(builder *state.ManagerBuilder) error {
+	return state.RegisterListKey(builder, MessagesKey)
 }

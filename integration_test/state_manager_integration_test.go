@@ -68,11 +68,12 @@ func TestManagerWithRedisBackend(t *testing.T) {
 		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:basic:"))
 		// Don't close store - it closes the shared client
 
-		manager := state.NewManager(state.WithStore(store))
+		builder := state.NewManagerBuilder(state.WithStore(store))
 		// Don't close manager - it will close the store
 
 		key := state.NewKey[string]("name", "")
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
+		manager := builder.Build()
 
 		// Set value
 		err := state.Set(ctx, manager, key, "Alice")
@@ -112,11 +113,12 @@ func TestManagerWithRedisBackend(t *testing.T) {
 			store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix(prefix))
 			// Don't close store - it closes the shared client
 
-			manager := state.NewManager(state.WithStore(store))
+			builder := state.NewManagerBuilder(state.WithStore(store))
 			// Don't close manager.Close() - it will close the store
 
 			key := state.NewKey[int]("counter", 0)
-			state.RegisterKey(manager, key)
+			state.RegisterKey(builder, key)
+			manager := builder.Build()
 			state.Set(ctx, manager, key, 42)
 		}()
 
@@ -125,11 +127,11 @@ func TestManagerWithRedisBackend(t *testing.T) {
 			store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix(prefix))
 			// Don't close store - it closes the shared client
 
-			manager := state.NewManager(state.WithStore(store))
+			builder := state.NewManagerBuilder(state.WithStore(store))
 			// Don't close manager - it will close the store
 
 			key := state.NewKey[int]("counter", 0)
-			state.RegisterKey(manager, key)
+			state.RegisterKey(builder, key)
 
 			// Value should persist in Redis
 			storeValue, err := store.Get(ctx, "counter")
@@ -155,13 +157,14 @@ func TestManagerWithRedisBackend(t *testing.T) {
 		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:snapshot:"))
 		// Don't close store - it closes the shared client
 
-		manager := state.NewManager(state.WithStore(store))
+		builder := state.NewManagerBuilder(state.WithStore(store))
 		// Don't close manager - it will close the store
 
 		key1 := state.NewKey[int]("x", 0)
 		key2 := state.NewKey[string]("y", "")
-		state.RegisterKey(manager, key1)
-		state.RegisterKey(manager, key2)
+		state.RegisterKey(builder, key1)
+		state.RegisterKey(builder, key2)
+		manager := builder.Build()
 
 		// Set initial values
 		state.Set(ctx, manager, key1, 100)
@@ -202,11 +205,12 @@ func TestManagerWithRedisBackend(t *testing.T) {
 		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:concurrent:"))
 		// Don't close store - it closes the shared client
 
-		manager := state.NewManager(state.WithStore(store))
+		builder := state.NewManagerBuilder(state.WithStore(store))
 		// Don't close manager - it will close the store
 
 		key := state.NewKey[int]("counter", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
+		manager := builder.Build()
 		state.Set(ctx, manager, key, 0)
 
 		var wg sync.WaitGroup
@@ -255,14 +259,18 @@ func TestManagerWithRedisBackend(t *testing.T) {
 		store := stateRedis.NewStore(client, stateRedis.WithKeyPrefix("test:large:"))
 		// Don't close store - it closes the shared client
 
-		manager := state.NewManager(state.WithStore(store))
+		builder := state.NewManagerBuilder(state.WithStore(store))
 		// Don't close manager - it will close the store
 
 		// Create 100 keys
 		numKeys := 100
 		for i := 0; i < numKeys; i++ {
-			key := state.NewKey[int](fmt.Sprintf("key%d", i), 0)
-			state.RegisterKey(manager, key)
+			key := state.NewKey[int](fmt.Sprintf("key_%d", i), 0)
+			state.RegisterKey(builder, key)
+		}
+		manager := builder.Build()
+		for i := 0; i < numKeys; i++ {
+			key := state.NewKey[int](fmt.Sprintf("key_%d", i), 0)
 			state.Set(ctx, manager, key, i*10)
 		}
 
@@ -299,13 +307,14 @@ func TestManagerWithCheckpointer(t *testing.T) {
 
 	t.Run("Checkpoint integration", func(t *testing.T) {
 		runID := "test-run-1"
-		manager := state.NewManager(
+		builder := state.NewManagerBuilder(
 			state.WithCheckpointer(checkpointer, runID),
 		)
-		defer manager.Close()
 
-		key := state.NewKey[string]("message", "")
-		state.RegisterKey(manager, key)
+		key := state.NewKey[string]("data", "")
+		state.RegisterKey(builder, key)
+		manager := builder.Build()
+		defer manager.Close()
 		state.Set(ctx, manager, key, "checkpoint-test")
 
 		// Create snapshot (should also save checkpoint)
@@ -325,8 +334,8 @@ func TestManagerWithCheckpointer(t *testing.T) {
 		}
 
 		// Verify state in checkpoint
-		if val, ok := cp.State["message"]; !ok {
-			t.Error("Expected 'message' key in checkpoint state")
+		if val, ok := cp.State["data"]; !ok {
+			t.Error("Expected 'data' key in checkpoint state")
 		} else if val != "checkpoint-test" {
 			t.Errorf("Expected 'checkpoint-test', got %v", val)
 		}
@@ -342,12 +351,13 @@ func TestManagerWithCheckpointer(t *testing.T) {
 
 		// First session - save state
 		{
-			manager := state.NewManager(
+			builder := state.NewManagerBuilder(
 				state.WithCheckpointer(checkpointer, runID),
 			)
 
 			key := state.NewKey[int]("progress", 0)
-			state.RegisterKey(manager, key)
+			state.RegisterKey(builder, key)
+			manager := builder.Build()
 			state.Set(ctx, manager, key, 75)
 
 			// Save checkpoint
@@ -357,13 +367,14 @@ func TestManagerWithCheckpointer(t *testing.T) {
 
 		// Second session - recover state
 		{
-			manager := state.NewManager(
+			builder := state.NewManagerBuilder(
 				state.WithCheckpointer(checkpointer, runID),
 			)
-			defer manager.Close()
 
 			key := state.NewKey[int]("progress", 0)
-			state.RegisterKey(manager, key)
+			state.RegisterKey(builder, key)
+			manager := builder.Build()
+			defer manager.Close()
 
 			// Load from checkpoint
 			err := manager.LoadCheckpoint(ctx)
@@ -395,12 +406,13 @@ func TestManagerTypeValidation(t *testing.T) {
 	// compile-time type safety, which is stronger and has zero runtime cost.
 
 	t.Run("List vs Key semantics", func(t *testing.T) {
-		manager := state.NewManager()
-		defer manager.Close()
+		builder := state.NewManagerBuilder()
 
 		// Register list key
 		listKey := state.NewListKey[string]("items", 0)
-		state.RegisterListKey(manager, listKey)
+		state.RegisterListKey(builder, listKey)
+		manager := builder.Build()
+		defer manager.Close()
 
 		// Append items
 		state.Append(ctx, manager, listKey, "first")
@@ -429,11 +441,12 @@ func TestManagerStressTest(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("High-frequency snapshots", func(t *testing.T) {
-		manager := state.NewManager(state.WithMaxSnapshotsLimit(10))
-		defer manager.Close()
+		builder := state.NewManagerBuilder(state.WithMaxSnapshotsLimit(10))
 
 		key := state.NewKey[int]("counter", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
+		manager := builder.Build()
+		defer manager.Close()
 
 		// Create many snapshots rapidly
 		numSnapshots := 100
@@ -452,16 +465,22 @@ func TestManagerStressTest(t *testing.T) {
 	})
 
 	t.Run("Many keys performance", func(t *testing.T) {
-		manager := state.NewManager()
-		defer manager.Close()
+		builder := state.NewManagerBuilder()
 
 		numKeys := 1000
 		start := time.Now()
 
-		// Register and set many keys
+		// Register all keys
 		for i := 0; i < numKeys; i++ {
 			key := state.NewKey[int](fmt.Sprintf("perf%d", i), 0)
-			state.RegisterKey(manager, key)
+			state.RegisterKey(builder, key)
+		}
+		manager := builder.Build()
+		defer manager.Close()
+
+		// Set many keys
+		for i := 0; i < numKeys; i++ {
+			key := state.NewKey[int](fmt.Sprintf("perf%d", i), 0)
 			state.Set(ctx, manager, key, i)
 		}
 

@@ -42,10 +42,11 @@ func runScenario(choice string) {
 	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
 
 	// Create state and register keys
-	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, choiceKey)
-	graphstate.RegisterKey(mgr, nextPathKey)
-	graphstate.RegisterKey(mgr, actionHistoryKey.Key)
+	builder := graphstate.NewManagerBuilder()
+	graphstate.RegisterKey(builder, choiceKey)
+	graphstate.RegisterKey(builder, nextPathKey)
+	graphstate.RegisterKey(builder, actionHistoryKey.Key)
+	mgr := builder.Build()
 
 	// Set initial values using Command pattern
 	initCtx := context.Background()

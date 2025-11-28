@@ -56,12 +56,14 @@ actionLogKey := state.NewListKey[string]("action_log", 0)
 taskResultsKey := state.NewKey("task_results", map[string]any{})
 
 // Create state manager and register keys
-mgr := state.NewManager()
-state.RegisterKey(mgr, phaseKey)
-state.RegisterKey(mgr, attemptsKey)
-state.RegisterKey(mgr, validatedKey)
-state.RegisterKey(mgr, actionLogKey.Key)
-state.RegisterKey(mgr, taskResultsKey)
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, phaseKey)
+state.RegisterKey(builder, attemptsKey)
+state.RegisterKey(builder, validatedKey)
+state.RegisterKey(builder, actionLogKey.Key)
+state.RegisterKey(builder, taskResultsKey)
+
+mgr := builder.Build()
 
 // Create graph with the manager
 gph, err := graph.NewGraph(mgr)

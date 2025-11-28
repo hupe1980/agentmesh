@@ -155,12 +155,14 @@ import (
     "github.com/hupe1980/agentmesh/pkg/state/aggregators"
 )
 
-// Create state manager
-mgr := state.NewManager()
+// Create state manager builder
+builder := state.NewManagerBuilder()
 
 // Register aggregate key
 totalProcessedKey := state.NewKey[any]("total_processed", 0)
-state.RegisterAggregateKey(mgr, totalProcessedKey, &aggregators.SumAggregator{})
+state.RegisterAggregateKey(builder, totalProcessedKey, &aggregators.SumAggregator{})
+
+mgr := builder.Build()
 
 // In nodes - contribute via Command pattern
 func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
@@ -358,9 +360,11 @@ func (a *MedianAggregator) Aggregate(current, value any) any {
 }
 
 // Usage
-mgr := state.NewManager()
+builder := state.NewManagerBuilder()
 medianKey := state.NewKey[any]("latency_median", nil)
-state.RegisterAggregateKey(mgr, medianKey, &MedianAggregator{})
+state.RegisterAggregateKey(builder, medianKey, &MedianAggregator{})
+
+mgr := builder.Build()
 
 // In node
 return command.New().

@@ -57,14 +57,15 @@ func runSensitiveContentWorkflow(ctx context.Context) {
 	fmt.Println("\n=== Scenario 1: Sensitive Content Requires Approval ===")
 
 	// Create state manager
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 	topicKey := state.NewKey("topic", "")
 	draftKey := state.NewKey("draft", "")
 	sentKey := state.NewKey("sent", false)
 
-	state.RegisterKey(mgr, topicKey)
-	state.RegisterKey(mgr, draftKey)
-	state.RegisterKey(mgr, sentKey)
+	state.RegisterKey(builder, topicKey)
+	state.RegisterKey(builder, draftKey)
+	state.RegisterKey(builder, sentKey)
+	mgr := builder.Build()
 
 	// Initialize with sensitive topic
 	mgr.ApplyUpdates(ctx, state.Updates{
@@ -238,14 +239,15 @@ func runSensitiveContentWorkflow(ctx context.Context) {
 func runNormalContentWorkflow(ctx context.Context) {
 	fmt.Println("\n=== Scenario 2: Normal Content Auto-Continues ===")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 	topicKey := state.NewKey("topic", "")
 	draftKey := state.NewKey("draft", "")
 	sentKey := state.NewKey("sent", false)
 
-	state.RegisterKey(mgr, topicKey)
-	state.RegisterKey(mgr, draftKey)
-	state.RegisterKey(mgr, sentKey)
+	state.RegisterKey(builder, topicKey)
+	state.RegisterKey(builder, draftKey)
+	state.RegisterKey(builder, sentKey)
+	mgr := builder.Build()
 
 	// Non-sensitive topic
 	mgr.ApplyUpdates(ctx, state.Updates{
@@ -311,14 +313,15 @@ func runNormalContentWorkflow(ctx context.Context) {
 func runRejectionWorkflow(ctx context.Context) {
 	fmt.Println("\n=== Scenario 3: User Rejects ===")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 	topicKey := state.NewKey("topic", "")
 	draftKey := state.NewKey("draft", "")
 	sentKey := state.NewKey("sent", false)
 
-	state.RegisterKey(mgr, topicKey)
-	state.RegisterKey(mgr, draftKey)
-	state.RegisterKey(mgr, sentKey)
+	state.RegisterKey(builder, topicKey)
+	state.RegisterKey(builder, draftKey)
+	state.RegisterKey(builder, sentKey)
+	mgr := builder.Build()
 
 	mgr.ApplyUpdates(ctx, state.Updates{
 		topicKey.Name(): "Secret Project Alpha Launch",

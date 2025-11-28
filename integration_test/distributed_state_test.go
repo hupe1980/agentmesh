@@ -55,9 +55,10 @@ func TestDistributedStateSync(t *testing.T) {
 	dataKey := state.NewKey("data", "")
 
 	// Create state manager and register keys
-	manager := state.NewManager()
-	state.RegisterKey(manager, counterKey)
-	state.RegisterKey(manager, dataKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, counterKey)
+	state.RegisterKey(builder, dataKey)
+	manager := builder.Build()
 
 	// Build a graph with nodes that modify state
 	// node1 -> node2 -> node3
@@ -194,8 +195,9 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	counterKey := state.NewKey("counter", 0.0) // Use float64 for JSON compatibility
 
 	// Create state manager and register key
-	manager := state.NewManager()
-	state.RegisterKey(manager, counterKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, counterKey)
+	manager := builder.Build()
 
 	g, err := graph.NewGraph(manager)
 	if err != nil {

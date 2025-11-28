@@ -11,29 +11,49 @@ import (
 )
 
 // registerMessagesKey is a helper to register the required __messages__ key
-func registerMessagesKey(t *testing.T, mgr *state.Manager) {
+func registerMessagesKey(t *testing.T, builder *state.ManagerBuilder) {
 	t.Helper()
 	messagesKey := state.NewListKey[message.Message]("__messages__", 0)
-	if err := state.RegisterListKey(mgr, messagesKey); err != nil {
+	if err := state.RegisterListKey(builder, messagesKey); err != nil {
 		t.Fatalf("Failed to register messages key: %v", err)
 	}
+}
+
+// createManagerWithKeys creates a manager with registered keys for testing
+func createManagerWithKeys(t *testing.T, keys ...any) *state.Manager {
+	t.Helper()
+	builder := state.NewManagerBuilder()
+	registerMessagesKey(t, builder)
+	for _, key := range keys {
+		switch k := key.(type) {
+		case state.Key[bool]:
+			if err := state.RegisterKey(builder, k); err != nil {
+				t.Fatalf("Failed to register key: %v", err)
+			}
+		case state.Key[string]:
+			if err := state.RegisterKey(builder, k); err != nil {
+				t.Fatalf("Failed to register key: %v", err)
+			}
+		case state.Key[int]:
+			if err := state.RegisterKey(builder, k); err != nil {
+				t.Fatalf("Failed to register key: %v", err)
+			}
+		}
+	}
+	return builder.Build()
 }
 
 func TestBuilder_BasicUsage(t *testing.T) {
 	// Define key first
 	processedKey := state.NewKey("processed", false)
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t, processedKey)
+
+	// Create builder with pre-configured manager
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
-	}
-
-	// Register messages key (required by executor)
-	registerMessagesKey(t, builder.Manager())
-
-	// Register key
-	if err := state.RegisterKey(builder.Manager(), processedKey); err != nil {
-		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	// Add nodes using fluent API
@@ -69,17 +89,13 @@ func TestBuilder_WithOptions(t *testing.T) {
 	// Create builder
 	stepKey := state.NewKey("step", 0)
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t, stepKey)
+
+	// Create builder with pre-configured manager
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
-	}
-
-	// Register messages key (required by executor)
-	registerMessagesKey(t, builder.Manager())
-
-	// Register key
-	if err := state.RegisterKey(builder.Manager(), stepKey); err != nil {
-		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	builder.SetEntryPoint("node1").
@@ -116,21 +132,13 @@ func TestBuilder_ConditionalEdges(t *testing.T) {
 	routeKey := state.NewKey("route", "")
 	resultKey := state.NewKey("result", "")
 
-	// Create builder
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t, routeKey, resultKey)
+
+	// Create builder with pre-configured manager
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
-	}
-
-	// Register messages key (required by executor)
-	registerMessagesKey(t, builder.Manager())
-
-	// Register keys
-	if err := state.RegisterKey(builder.Manager(), routeKey); err != nil {
-		t.Fatalf("Failed to register route key: %v", err)
-	}
-	if err := state.RegisterKey(builder.Manager(), resultKey); err != nil {
-		t.Fatalf("Failed to register result key: %v", err)
 	}
 
 	builder.SetEntryPoint("router").
@@ -171,18 +179,13 @@ func TestBuilder_ManualCompile(t *testing.T) {
 	// Define key first
 	doneKey := state.NewKey("done", false)
 
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t, doneKey)
+
 	// Test using graph.NewBuilder (recommended API)
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
-	}
-
-	// Register messages key (required by executor)
-	registerMessagesKey(t, builder.Manager())
-
-	// Register key
-	if err := state.RegisterKey(builder.Manager(), doneKey); err != nil {
-		t.Fatalf("Failed to register key: %v", err)
 	}
 
 	builder.SetEntryPoint("process").
@@ -215,7 +218,7 @@ func TestBuilder_ManualCompile(t *testing.T) {
 
 // TestInterruptConfiguration verifies interrupt configuration
 func TestInterruptConfiguration(t *testing.T) {
-	manager := state.NewManager()
+	manager := state.NewManagerBuilder().Build()
 	g, err := graph.NewGraph(manager)
 	if err != nil {
 		t.Fatalf("Failed to create graph: %v", err)
@@ -263,23 +266,12 @@ func TestBuilder_MultipleEntryPoints(t *testing.T) {
 	taskBKey := state.NewKey("task_b", "")
 	mergeKey := state.NewKey("merged", "")
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t, taskAKey, taskBKey, mergeKey)
+
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
-	}
-
-	// Register messages key (required by executor)
-	registerMessagesKey(t, builder.Manager())
-
-	// Register keys
-	if err := state.RegisterKey(builder.Manager(), taskAKey); err != nil {
-		t.Fatalf("Failed to register task_a key: %v", err)
-	}
-	if err := state.RegisterKey(builder.Manager(), taskBKey); err != nil {
-		t.Fatalf("Failed to register task_b key: %v", err)
-	}
-	if err := state.RegisterKey(builder.Manager(), mergeKey); err != nil {
-		t.Fatalf("Failed to register merged key: %v", err)
 	}
 
 	// Add parallel task nodes using variadic SetEntryPoint
@@ -342,7 +334,7 @@ func TestBuilder_MultipleEntryPoints(t *testing.T) {
 
 // TestGraph_SetEntryPointMultipleCalls verifies calling SetEntryPoint multiple times appends
 func TestGraph_SetEntryPointMultipleCalls(t *testing.T) {
-	mgr := state.NewManager()
+	mgr := state.NewManagerBuilder().Build()
 	g, err := graph.NewGraph(mgr)
 	if err != nil {
 		t.Fatalf("Failed to create graph: %v", err)
@@ -392,7 +384,7 @@ func TestGraph_SetEntryPointMultipleCalls(t *testing.T) {
 
 func TestBuilder_WithManager(t *testing.T) {
 	// Create custom state manager
-	customManager := state.NewManager()
+	customManager := state.NewManagerBuilder().Build()
 
 	// Create builder with custom manager
 	builder, err := graph.NewBuilder(
@@ -452,13 +444,13 @@ func TestBuilder_WithInterruptAfter(t *testing.T) {
 }
 
 func TestBuilder_AddNode_CustomNode(t *testing.T) {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t)
+
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-
-	// Register messages key
-	registerMessagesKey(t, builder.Manager())
 
 	// Create custom node
 	customNode := &graph.BaseNode{
@@ -489,13 +481,13 @@ func TestBuilder_AddNode_CustomNode(t *testing.T) {
 }
 
 func TestBuilder_ErrorAccumulation(t *testing.T) {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t)
+
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-
-	// Register messages key
-	registerMessagesKey(t, builder.Manager())
 
 	// Try to set a non-existent node as entry point
 	builder.SetEntryPoint("nonexistent")
@@ -532,13 +524,13 @@ func TestBuilder_Manager(t *testing.T) {
 }
 
 func TestBuilder_ChainedMethods(t *testing.T) {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t)
+
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-
-	// Register messages key
-	registerMessagesKey(t, builder.Manager())
 
 	// Chain multiple methods
 	result := builder.
@@ -563,14 +555,14 @@ func TestBuilder_ChainedMethods(t *testing.T) {
 }
 
 func TestBuilder_CompileWithoutNodes(t *testing.T) {
+	// Create and configure state manager
+	mgr := createManagerWithKeys(t)
+
 	// Create empty builder
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-
-	// Register messages key
-	registerMessagesKey(t, builder.Manager())
 
 	// Try to compile without setting entry point or adding nodes
 	_, err = builder.Compile()

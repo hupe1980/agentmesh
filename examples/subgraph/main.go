@@ -38,16 +38,17 @@ type EnrichmentOutput struct {
 // buildValidationSubgraph creates a reusable validation subgraph
 func buildValidationSubgraph() (*graph.Compiled[ValidationInput, ValidationOutput], error) {
 	// Create isolated state manager for subgraph
-	manager := state.NewManager()
+	stateBuilder := state.NewManagerBuilder()
 
 	// Subgraph-internal keys
 	inputKey := state.NewKey[map[string]interface{}]("input_data", nil)
 	validKey := state.NewKey[bool]("valid", false)
 	errorsKey := state.NewListKey[string]("errors", 0)
 
-	state.RegisterKey(manager, inputKey)
-	state.RegisterKey(manager, validKey)
-	state.RegisterListKey(manager, errorsKey)
+	state.RegisterKey(stateBuilder, inputKey)
+	state.RegisterKey(stateBuilder, validKey)
+	state.RegisterListKey(stateBuilder, errorsKey)
+	manager := stateBuilder.Build()
 
 	// Create graph
 	subgraph, err := graph.NewGraph(manager)
@@ -129,15 +130,16 @@ func buildValidationSubgraph() (*graph.Compiled[ValidationInput, ValidationOutpu
 
 // buildEnrichmentSubgraph creates a reusable enrichment subgraph
 func buildEnrichmentSubgraph() (*graph.Compiled[EnrichmentInput, EnrichmentOutput], error) {
-	manager := state.NewManager()
+	stateBuilder := state.NewManagerBuilder()
 
 	inputKey := state.NewKey[map[string]interface{}]("input", nil)
 	metadataKey := state.NewKey[map[string]interface{}]("metadata", nil)
 	resultKey := state.NewKey[map[string]interface{}]("result", nil)
 
-	state.RegisterKey(manager, inputKey)
-	state.RegisterKey(manager, metadataKey)
-	state.RegisterKey(manager, resultKey)
+	state.RegisterKey(stateBuilder, inputKey)
+	state.RegisterKey(stateBuilder, metadataKey)
+	state.RegisterKey(stateBuilder, resultKey)
+	manager := stateBuilder.Build()
 
 	subgraph, err := graph.NewGraph(manager)
 	if err != nil {
@@ -242,18 +244,20 @@ func main() {
 	fmt.Println()
 
 	// Create parent graph state keys
-	parentManager := state.NewManager()
+	parentBuilder := state.NewManagerBuilder()
 	dataKey := state.NewKey[map[string]interface{}]("data", nil)
 	validKey := state.NewKey[bool]("valid", false)
 	errorsKey := state.NewListKey[string]("errors", 0)
 	enrichedKey := state.NewKey[map[string]interface{}]("enriched", nil)
 	statusKey := state.NewKey[string]("status", "")
 
-	state.RegisterKey(parentManager, dataKey)
-	state.RegisterKey(parentManager, validKey)
-	state.RegisterListKey(parentManager, errorsKey)
-	state.RegisterKey(parentManager, enrichedKey)
-	state.RegisterKey(parentManager, statusKey)
+	state.RegisterKey(parentBuilder, dataKey)
+	state.RegisterKey(parentBuilder, validKey)
+	state.RegisterListKey(parentBuilder, errorsKey)
+	state.RegisterKey(parentBuilder, enrichedKey)
+	state.RegisterKey(parentBuilder, statusKey)
+
+	parentManager := parentBuilder.Build()
 
 	// Create SubgraphNodes with type-safe mappers
 	validationNode := graph.NewSubgraphNode(

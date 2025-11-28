@@ -25,12 +25,13 @@ func main() {
 	taskResultsKey := graphstate.NewKey("task_results", defaultTaskResults)
 
 	// Create state and register keys
-	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, phaseKey)
-	graphstate.RegisterKey(mgr, attemptsKey)
-	graphstate.RegisterKey(mgr, validatedKey)
-	graphstate.RegisterKey(mgr, actionLogKey.Key)
-	graphstate.RegisterKey(mgr, taskResultsKey)
+	builder := graphstate.NewManagerBuilder()
+	graphstate.RegisterKey(builder, phaseKey)
+	graphstate.RegisterKey(builder, attemptsKey)
+	graphstate.RegisterKey(builder, validatedKey)
+	graphstate.RegisterKey(builder, actionLogKey.Key)
+	graphstate.RegisterKey(builder, taskResultsKey)
+	mgr := builder.Build()
 
 	// Create a simple workflow
 	gph, err := graph.NewGraph(mgr)

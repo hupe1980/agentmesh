@@ -46,12 +46,6 @@ func main() {
 
 	model := openai.NewModel()
 
-	// Build a multi-node graph to demonstrate streaming
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
-	if err != nil {
-		log.Fatalf("Failed to create builder: %v", err)
-	}
-
 	// Define state keys
 	progressKey := graphstate.NewKey("progress", "")
 	currentChunkKey := graphstate.NewKey("current_chunk", "")
@@ -64,20 +58,27 @@ func main() {
 	readyKey := graphstate.NewKey("ready", false)
 	verifiedKey := graphstate.NewKey("verified", false)
 
-	// Register state keys before use
-	mgr := builder.Manager()
+	// Create state manager with all keys registered before building the graph
+	stateBuilder := graphstate.NewManagerBuilder()
 	// Register messages key for MessagePregelExecutor (required for streaming)
-	_ = graphstate.RegisterListKey(mgr, agent.MessagesKey)
-	_ = graphstate.RegisterKey(mgr, progressKey)
-	_ = graphstate.RegisterKey(mgr, currentChunkKey)
-	_ = graphstate.RegisterKey(mgr, statusKey)
-	_ = graphstate.RegisterKey(mgr, chunksTotalKey)
-	_ = graphstate.RegisterKey(mgr, llmStatusKey)
-	_ = graphstate.RegisterKey(mgr, analysisStepKey)
-	_ = graphstate.RegisterKey(mgr, validationKey)
-	_ = graphstate.RegisterKey(mgr, qualityScoreKey)
-	_ = graphstate.RegisterKey(mgr, readyKey)
-	_ = graphstate.RegisterKey(mgr, verifiedKey)
+	_ = graphstate.RegisterListKey(stateBuilder, agent.MessagesKey)
+	_ = graphstate.RegisterKey(stateBuilder, progressKey)
+	_ = graphstate.RegisterKey(stateBuilder, currentChunkKey)
+	_ = graphstate.RegisterKey(stateBuilder, statusKey)
+	_ = graphstate.RegisterKey(stateBuilder, chunksTotalKey)
+	_ = graphstate.RegisterKey(stateBuilder, llmStatusKey)
+	_ = graphstate.RegisterKey(stateBuilder, analysisStepKey)
+	_ = graphstate.RegisterKey(stateBuilder, validationKey)
+	_ = graphstate.RegisterKey(stateBuilder, qualityScoreKey)
+	_ = graphstate.RegisterKey(stateBuilder, readyKey)
+	_ = graphstate.RegisterKey(stateBuilder, verifiedKey)
+	mgr := stateBuilder.Build()
+
+	// Build a multi-node graph to demonstrate streaming
+	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
+	if err != nil {
+		log.Fatalf("Failed to create builder with manager: %v", err)
+	}
 
 	builder.SetEntryPoint("data_processor")
 

@@ -148,10 +148,12 @@ var (
 ### Step 2: Register Keys with State Manager
 
 ```go
-mgr := state.NewManager()
-state.RegisterKey(mgr, counterKey)
-state.RegisterKey(mgr, statusKey)
-state.RegisterListKey(mgr, messagesKey)
+builder := state.NewManagerBuilder()
+state.RegisterKey(builder, counterKey)
+state.RegisterKey(builder, statusKey)
+state.RegisterListKey(builder, messagesKey)
+
+mgr := builder.Build()
 ```
 
 ### Step 3: Use in Node Functions

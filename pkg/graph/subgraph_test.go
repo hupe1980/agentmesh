@@ -14,9 +14,10 @@ func TestSubgraphNode_BasicFunctionality(t *testing.T) {
 	ctx := context.Background()
 
 	// Build a simple subgraph
-	subManager := state.NewManager()
+	subBuilder := state.NewManagerBuilder()
 	dataKey := state.NewKey[string]("data", "")
-	state.RegisterKey(subManager, dataKey)
+	state.RegisterKey(subBuilder, dataKey)
+	subManager := subBuilder.Build()
 
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{
@@ -77,7 +78,7 @@ func TestSubgraphNode_BasicFunctionality(t *testing.T) {
 	}
 
 	// Execute the node
-	emptyManager := state.NewManager()
+	emptyManager := state.NewManagerBuilder().Build()
 	view, _ := emptyManager.CreateReadView(ctx)
 
 	returnedTargets, updates, err := subgraphNode.Execute(ctx, view)
@@ -100,7 +101,7 @@ func TestSubgraphNode_InputMapperError(t *testing.T) {
 	ctx := context.Background()
 
 	// Build minimal subgraph
-	subManager := state.NewManager()
+	subManager := state.NewManagerBuilder().Build()
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{
 		NodeName:        "dummy",
@@ -131,7 +132,7 @@ func TestSubgraphNode_InputMapperError(t *testing.T) {
 		[]string{graph.EndNode},
 	)
 
-	emptyManager := state.NewManager()
+	emptyManager := state.NewManagerBuilder().Build()
 	view, _ := emptyManager.CreateReadView(ctx)
 
 	_, _, err := subgraphNode.Execute(ctx, view)
@@ -147,7 +148,7 @@ func TestSubgraphNode_OutputMapperError(t *testing.T) {
 	ctx := context.Background()
 
 	// Build minimal subgraph
-	subManager := state.NewManager()
+	subManager := state.NewManagerBuilder().Build()
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{
 		NodeName:        "dummy",
@@ -178,7 +179,7 @@ func TestSubgraphNode_OutputMapperError(t *testing.T) {
 		[]string{graph.EndNode},
 	)
 
-	emptyManager := state.NewManager()
+	emptyManager := state.NewManagerBuilder().Build()
 	view, _ := emptyManager.CreateReadView(ctx)
 
 	_, _, err := subgraphNode.Execute(ctx, view)
@@ -192,7 +193,7 @@ func TestSubgraphNode_OutputMapperError(t *testing.T) {
 
 func TestSubgraphNode_Metadata(t *testing.T) {
 	// Build minimal subgraph for testing metadata
-	subManager := state.NewManager()
+	subManager := state.NewManagerBuilder().Build()
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{
 		NodeName:        "dummy",
@@ -236,7 +237,7 @@ func TestSubgraphNode_Metadata(t *testing.T) {
 
 func TestSubgraphNode_RetryPolicy(t *testing.T) {
 	// Build minimal subgraph
-	subManager := state.NewManager()
+	subManager := state.NewManagerBuilder().Build()
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{
 		NodeName:        "dummy",
@@ -279,8 +280,9 @@ func TestSubgraphNode_SimpleMappers(t *testing.T) {
 	dataKey := state.NewKey[string]("data", "default")
 	inputMapper := graph.SimpleInputMapper(dataKey)
 
-	manager := state.NewManager()
-	state.RegisterKey(manager, dataKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, dataKey)
+	manager := builder.Build()
 	manager.ApplyUpdates(ctx, state.Updates{dataKey.Name(): "test value"})
 
 	view, _ := manager.CreateReadView(ctx)
@@ -335,9 +337,10 @@ func TestSubgraphNode_Integration(t *testing.T) {
 	// Simplified integration test: verify SubgraphNode can be added to builder
 
 	// Build a simple subgraph
-	subManager := state.NewManager()
+	subBuilder := state.NewManagerBuilder()
 	dataKey := state.NewKey[string]("data", "")
-	state.RegisterKey(subManager, dataKey)
+	state.RegisterKey(subBuilder, dataKey)
+	subManager := subBuilder.Build()
 
 	subGraph, _ := graph.NewGraph(subManager)
 	subGraph.AddNode(&graph.BaseNode{

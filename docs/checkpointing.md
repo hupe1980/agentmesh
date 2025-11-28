@@ -976,8 +976,10 @@ For 1000 runs with 10 supersteps each:
 ```go
 // 1. Limit message history using ListKey maxSize
 var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
-mgr := state.NewManager()
-state.RegisterListKey(mgr, LimitedMessagesKey)
+builder := state.NewManagerBuilder()
+state.RegisterListKey(builder, LimitedMessagesKey)
+
+mgr := builder.Build()
 
 seq := compiled.Run(ctx, messages,
     graph.WithRunID(runID),

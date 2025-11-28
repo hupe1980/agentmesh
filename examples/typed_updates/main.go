@@ -35,10 +35,11 @@ func main() {
 	messagesKey := graphstate.NewListKey[string]("messages", 100)
 
 	// Create state manager and register keys
-	mgr := graphstate.NewManager()
-	graphstate.RegisterKey(mgr, counterKey)
-	graphstate.RegisterKey(mgr, statusKey)
-	graphstate.RegisterListKey(mgr, messagesKey)
+	builder := graphstate.NewManagerBuilder()
+	graphstate.RegisterKey(builder, counterKey)
+	graphstate.RegisterKey(builder, statusKey)
+	graphstate.RegisterListKey(builder, messagesKey)
+	mgr := builder.Build()
 
 	// Create graph
 	gph, err := graph.NewGraph(mgr)

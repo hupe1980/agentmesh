@@ -180,16 +180,16 @@ func main() {
 	ctx := context.Background()
 
 	// Create state manager
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 
 	// Register persistent state keys (these ARE checkpointed)
-	if err := state.RegisterKey(mgr, CounterKey); err != nil {
+	if err := state.RegisterKey(builder, CounterKey); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterKey(mgr, LastNodeKey); err != nil {
+	if err := state.RegisterKey(builder, LastNodeKey); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterListKey(mgr, HistoryKey); err != nil {
+	if err := state.RegisterListKey(builder, HistoryKey); err != nil {
 		log.Fatal(err)
 	}
 
@@ -202,7 +202,7 @@ func main() {
 		MaxRetries: 3,
 		Debug:      true,
 	})
-	if err := state.RegisterManagedValue(mgr, configMV); err != nil {
+	if err := state.RegisterManagedValue(builder, configMV); err != nil {
 		log.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func main() {
 		SessionToken: "tok_session_abcd1234",
 		LoginTime:    time.Now(),
 	})
-	if err := state.RegisterManagedValue(mgr, sessionMV); err != nil {
+	if err := state.RegisterManagedValue(builder, sessionMV); err != nil {
 		log.Fatal(err)
 	}
 
@@ -220,7 +220,7 @@ func main() {
 	metricsMV := state.NewManagedValueWithDefault("metrics", &MetricsCollector{
 		NodeExecutions: make(map[string]int),
 	})
-	if err := state.RegisterManagedValue(mgr, metricsMV); err != nil {
+	if err := state.RegisterManagedValue(builder, metricsMV); err != nil {
 		log.Fatal(err)
 	}
 
@@ -228,9 +228,12 @@ func main() {
 	currentTimeMV := state.NewComputedManagedValue("current_time", func(ctx context.Context) (string, error) {
 		return time.Now().Format(time.RFC3339), nil
 	})
-	if err := state.RegisterManagedValue(mgr, currentTimeMV); err != nil {
+	if err := state.RegisterManagedValue(builder, currentTimeMV); err != nil {
 		log.Fatal(err)
 	}
+
+	// Build the manager after all registrations
+	mgr := builder.Build()
 
 	fmt.Println("✓ Registered managed values:")
 	for _, name := range mgr.GetManagedValueNames() {

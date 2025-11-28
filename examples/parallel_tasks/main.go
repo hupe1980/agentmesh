@@ -34,20 +34,21 @@ func main() {
 	resultBKey := graphstate.NewKey("result_b", "")
 	summaryKey := graphstate.NewKey("summary", map[string]any{})
 
-	mgr := graphstate.NewManager()
+	builder := graphstate.NewManagerBuilder()
 	// Register actionHistoryKey as a ListKey (TopicChannel)
-	if err := graphstate.RegisterListKey(mgr, actionHistoryKey); err != nil {
+	if err := graphstate.RegisterListKey(builder, actionHistoryKey); err != nil {
 		panic(fmt.Sprintf("Failed to register actionHistory key: %v", err))
 	}
-	if err := graphstate.RegisterKey(mgr, resultAKey); err != nil {
+	if err := graphstate.RegisterKey(builder, resultAKey); err != nil {
 		panic(fmt.Sprintf("Failed to register resultA key: %v", err))
 	}
-	if err := graphstate.RegisterKey(mgr, resultBKey); err != nil {
+	if err := graphstate.RegisterKey(builder, resultBKey); err != nil {
 		panic(fmt.Sprintf("Failed to register resultB key: %v", err))
 	}
-	if err := graphstate.RegisterKey(mgr, summaryKey); err != nil {
+	if err := graphstate.RegisterKey(builder, summaryKey); err != nil {
 		panic(fmt.Sprintf("Failed to register summary key: %v", err))
 	}
+	mgr := builder.Build()
 
 	gph, err := graph.NewGraph(mgr)
 	if err != nil {

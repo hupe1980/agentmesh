@@ -14,34 +14,19 @@ import (
 
 func main() {
 	ctx := context.Background()
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
 
 	// 1. Global Keys (Default) - Simple, no prefix
 	// Use global keys when you don't need isolation
 	var GlobalConfig = state.NewKey[string]("config", "")
 	var GlobalCounter = state.NewKey[int]("counter", 0)
 
-	if err := state.RegisterKey(mgr, GlobalConfig); err != nil {
+	if err := state.RegisterKey(builder, GlobalConfig); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterKey(mgr, GlobalCounter); err != nil {
+	if err := state.RegisterKey(builder, GlobalCounter); err != nil {
 		log.Fatal(err)
 	}
-
-	// Set global values
-	if err := state.Set(ctx, mgr, GlobalConfig, "production"); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.Set(ctx, mgr, GlobalCounter, 100); err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("=== Global Keys (Default) ===")
-	config, _ := state.Get(ctx, mgr, GlobalConfig)
-	counter, _ := state.Get(ctx, mgr, GlobalCounter)
-	fmt.Printf("Config: %s\n", config)
-	fmt.Printf("Counter: %d\n", counter)
-	fmt.Println()
 
 	// 2. Namespaced Keys - Use when you need isolation
 	// Create namespaces for different agents
@@ -55,18 +40,52 @@ func main() {
 	agent2Progress := state.TypedKey[int](agent2NS, "progress", 0)
 
 	// Register namespaced keys
-	if err := state.RegisterKey(mgr, agent1Status); err != nil {
+	if err := state.RegisterKey(builder, agent1Status); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterKey(mgr, agent1Progress); err != nil {
+	if err := state.RegisterKey(builder, agent1Progress); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterKey(mgr, agent2Status); err != nil {
+	if err := state.RegisterKey(builder, agent2Status); err != nil {
 		log.Fatal(err)
 	}
-	if err := state.RegisterKey(mgr, agent2Progress); err != nil {
+	if err := state.RegisterKey(builder, agent2Progress); err != nil {
 		log.Fatal(err)
 	}
+
+	// Also register agent3 keys for later use (for namespace copy example)
+	agent3NS := state.MustNamespace("agent3")
+	agent3Status := state.TypedKey[string](agent3NS, "status", "")
+	agent3Progress := state.TypedKey[int](agent3NS, "progress", 0)
+	if err := state.RegisterKey(builder, agent3Status); err != nil {
+		log.Fatal(err)
+	}
+	if err := state.RegisterKey(builder, agent3Progress); err != nil {
+		log.Fatal(err)
+	}
+
+	// Build the manager after all registrations
+	mgr := builder.Build()
+
+	// Demonstrate global keys
+	fmt.Println("=== Global Keys (Default) ===")
+	// Set global values
+	if err := state.Set(ctx, mgr, GlobalConfig, "production"); err != nil {
+		log.Fatal(err)
+	}
+	if err := state.Set(ctx, mgr, GlobalCounter, 100); err != nil {
+		log.Fatal(err)
+	}
+	// Read global values
+	config, _ := state.Get(ctx, mgr, GlobalConfig)
+	counter, _ := state.Get(ctx, mgr, GlobalCounter)
+	fmt.Printf("Config: %s\n", config)
+	fmt.Printf("Counter: %d\n", counter)
+	fmt.Println()
+
+	// Demonstrate namespaced keys
+	fmt.Println("=== Namespaced Keys ===")
+	fmt.Println("Keys are isolated by namespace prefix")
 
 	// Set values - no collisions even with same key names
 	if err := state.Set(ctx, mgr, agent1Status, "processing"); err != nil {
@@ -119,17 +138,7 @@ func main() {
 	fmt.Println()
 
 	// 5. Copy namespace (useful for subgraph handoffs)
-	agent3NS := state.MustNamespace("agent3")
-	agent3Status := state.TypedKey[string](agent3NS, "status", "")
-	agent3Progress := state.TypedKey[int](agent3NS, "progress", 0)
-
-	// Must register target keys before copying
-	if err := state.RegisterKey(mgr, agent3Status); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(mgr, agent3Progress); err != nil {
-		log.Fatal(err)
-	}
+	// agent3 keys were already registered at the beginning
 
 	// Copy agent1 state to agent3
 	if err := state.CopyNamespace(ctx, mgr, agent1NS, agent3NS); err != nil {

@@ -34,7 +34,8 @@ func main() {
 func example1_ValidGraph() {
 	fmt.Println("--- Example 1: Valid Graph ---")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+	mgr := builder.Build()
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a simple linear graph
@@ -73,7 +74,8 @@ func example1_ValidGraph() {
 func example2_InvalidGraph() {
 	fmt.Println("--- Example 2: Invalid Graph (Caught at Compile Time) ---")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+	mgr := builder.Build()
 	g, _ := graph.NewGraph(mgr)
 
 	// Create an invalid graph - edge to non-existent node
@@ -101,7 +103,8 @@ func example2_InvalidGraph() {
 func example3_StrictValidation() {
 	fmt.Println("--- Example 3: Strict Validation ---")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+	mgr := builder.Build()
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with an unreachable node
@@ -146,7 +149,8 @@ func example3_StrictValidation() {
 func example4_CustomValidation() {
 	fmt.Println("--- Example 4: Custom Validation Options ---")
 
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+	mgr := builder.Build()
 	g, _ := graph.NewGraph(mgr)
 
 	// Create a graph with a cycle (for iterative algorithms)

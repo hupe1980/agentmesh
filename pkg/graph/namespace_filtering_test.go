@@ -25,10 +25,11 @@ func TestNamespacedNodeReceivesFilteredView(t *testing.T) {
 	globalKey := state.NewKey[string]("global", "")
 
 	// Setup manager with data in multiple namespaces
-	mgr := state.NewManager()
-	state.RegisterKey(mgr, agent1Status)
-	state.RegisterKey(mgr, agent2Status)
-	state.RegisterKey(mgr, globalKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, agent1Status)
+	state.RegisterKey(builder, agent2Status)
+	state.RegisterKey(builder, globalKey)
+	mgr := builder.Build()
 
 	// Set state in different namespaces
 	state.Set(ctx, mgr, agent1Status, "agent1_value")
@@ -107,9 +108,10 @@ func TestNamespacedNodeCannotAccessOtherNamespace(t *testing.T) {
 	agent1Key := state.TypedKey[string](agent1NS, "data", "")
 	agent2Key := state.TypedKey[string](agent2NS, "data", "")
 
-	mgr := state.NewManager()
-	state.RegisterKey(mgr, agent1Key)
-	state.RegisterKey(mgr, agent2Key)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, agent1Key)
+	state.RegisterKey(builder, agent2Key)
+	mgr := builder.Build()
 
 	state.Set(ctx, mgr, agent1Key, "agent1_data")
 	state.Set(ctx, mgr, agent2Key, "agent2_data")
@@ -151,9 +153,10 @@ func TestRegularNodeSeesAllNamespaces(t *testing.T) {
 	agent1Key := state.TypedKey[string](agent1NS, "data", "")
 	agent2Key := state.TypedKey[string](agent2NS, "data", "")
 
-	mgr := state.NewManager()
-	state.RegisterKey(mgr, agent1Key)
-	state.RegisterKey(mgr, agent2Key)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, agent1Key)
+	state.RegisterKey(builder, agent2Key)
+	mgr := builder.Build()
 
 	state.Set(ctx, mgr, agent1Key, "agent1_data")
 	state.Set(ctx, mgr, agent2Key, "agent2_data")

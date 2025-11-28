@@ -51,7 +51,8 @@ for range compiled.Run(context.Background(), messages) {
 
 ```go
 // Create with custom state manager
-customManager := state.NewManager()
+stateBuilder := state.NewManagerBuilder()
+customManager := stateBuilder.Build()
 builder, err := graph.NewBuilder(
     graph.NewMessagePregelExecutor(),
     graph.WithManager[[]message.Message, message.Message](customManager),

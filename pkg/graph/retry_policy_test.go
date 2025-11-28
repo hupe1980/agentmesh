@@ -16,12 +16,14 @@ func TestRetryPolicyExecution(t *testing.T) {
 	t.Run("succeeds after retries with Builder API", func(t *testing.T) {
 		attemptCount := 0
 
-		builder, err := NewBuilder(NewMessagePregelExecutor())
-		require.NoError(t, err)
-
-		// Register messages key
+		// Register messages key on state builder first
 		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
-		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
+		stateBuilder := state.NewManagerBuilder()
+		require.NoError(t, state.RegisterListKey(stateBuilder, messagesKey))
+		mgr := stateBuilder.Build()
+
+		builder, err := NewBuilder(NewMessagePregelExecutor(), WithManager[[]message.Message, message.Message](mgr))
+		require.NoError(t, err)
 
 		targets := []string{EndNode}
 
@@ -57,16 +59,16 @@ func TestRetryPolicyExecution(t *testing.T) {
 	t.Run("fails after max attempts", func(t *testing.T) {
 		attemptCount := 0
 
-		builder, err := NewBuilder(NewMessagePregelExecutor())
+		// Register messages key on state builder first
+		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
+		stateBuilder := state.NewManagerBuilder()
+		require.NoError(t, state.RegisterListKey(stateBuilder, messagesKey))
+		mgr := stateBuilder.Build()
+
+		builder, err := NewBuilder(NewMessagePregelExecutor(), WithManager[[]message.Message, message.Message](mgr))
 		require.NoError(t, err)
 
-		// Register messages key
-		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
-		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
-
-		targets := []string{EndNode}
-
-		// Node that always fails
+		targets := []string{EndNode} // Node that always fails
 		builder.AddNodeFuncWithRetry("always_fails", targets,
 			func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 				attemptCount++
@@ -98,11 +100,13 @@ func TestRetryPolicyExecution(t *testing.T) {
 		t.Run("does not retry permanent errors", func(t *testing.T) {
 			attemptCount := 0
 
-			builder, err := NewBuilder(NewMessagePregelExecutor())
-			require.NoError(t, err)
-
+			stateBuilder := state.NewManagerBuilder()
 			messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
-			require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
+			require.NoError(t, state.RegisterListKey(stateBuilder, messagesKey))
+			mgr := stateBuilder.Build()
+
+			builder, err := NewBuilder(NewMessagePregelExecutor(), WithManager[[]message.Message, message.Message](mgr))
+			require.NoError(t, err)
 
 			targets := []string{EndNode}
 
@@ -133,11 +137,13 @@ func TestRetryPolicyExecution(t *testing.T) {
 		t.Run("retries transient errors", func(t *testing.T) {
 			attemptCount := 0
 
-			builder, err := NewBuilder(NewMessagePregelExecutor())
-			require.NoError(t, err)
-
+			stateBuilder := state.NewManagerBuilder()
 			messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
-			require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
+			require.NoError(t, state.RegisterListKey(stateBuilder, messagesKey))
+			mgr := stateBuilder.Build()
+
+			builder, err := NewBuilder(NewMessagePregelExecutor(), WithManager[[]message.Message, message.Message](mgr))
+			require.NoError(t, err)
 
 			targets := []string{EndNode}
 
@@ -174,11 +180,13 @@ func TestRetryPolicyExecution(t *testing.T) {
 // TestRetryPolicyPriority verifies NodeWithRetry interface takes priority over NodeOption.
 func TestRetryPolicyPriority(t *testing.T) {
 	t.Run("NodeWithRetry interface verified", func(t *testing.T) {
-		builder, err := NewBuilder(NewMessagePregelExecutor())
-		require.NoError(t, err)
-
+		stateBuilder := state.NewManagerBuilder()
 		messagesKey := state.NewListKey[message.Message](MessagesKeyName, 0)
-		require.NoError(t, state.RegisterListKey(builder.Manager(), messagesKey))
+		require.NoError(t, state.RegisterListKey(stateBuilder, messagesKey))
+		mgr := stateBuilder.Build()
+
+		builder, err := NewBuilder(NewMessagePregelExecutor(), WithManager[[]message.Message, message.Message](mgr))
+		require.NoError(t, err)
 
 		targets := []string{EndNode}
 

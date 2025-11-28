@@ -13,9 +13,10 @@ import (
 // TestApprovalGuard tests approval guard evaluation
 func TestApprovalGuard(t *testing.T) {
 	t.Run("guard returns true for sensitive content", func(t *testing.T) {
-		mgr := state.NewManager()
+		builder := state.NewManagerBuilder()
 		contentKey := state.NewKey("content", "")
-		state.RegisterKey(mgr, contentKey)
+		state.RegisterKey(builder, contentKey)
+		mgr := builder.Build()
 
 		ctx := context.Background()
 		mgr.ApplyUpdates(ctx, state.Updates{
@@ -45,9 +46,10 @@ func TestApprovalGuard(t *testing.T) {
 	})
 
 	t.Run("guard returns false for normal content", func(t *testing.T) {
-		mgr := state.NewManager()
+		builder := state.NewManagerBuilder()
 		contentKey := state.NewKey("content", "")
-		state.RegisterKey(mgr, contentKey)
+		state.RegisterKey(builder, contentKey)
+		mgr := builder.Build()
 
 		ctx := context.Background()
 		mgr.ApplyUpdates(ctx, state.Updates{
@@ -235,11 +237,12 @@ func TestApprovalWorkflowIntegration(t *testing.T) {
 		ctx := context.Background()
 
 		// Setup state
-		mgr := state.NewManager()
+		builder := state.NewManagerBuilder()
 		contentKey := state.NewKey("content", "")
 		approvedKey := state.NewKey("approved", false)
-		state.RegisterKey(mgr, contentKey)
-		state.RegisterKey(mgr, approvedKey)
+		state.RegisterKey(builder, contentKey)
+		state.RegisterKey(builder, approvedKey)
+		mgr := builder.Build()
 
 		mgr.ApplyUpdates(ctx, state.Updates{
 			contentKey.Name(): "confidential data",
@@ -369,9 +372,10 @@ func TestApprovalWorkflowIntegration(t *testing.T) {
 	t.Run("rejection workflow", func(t *testing.T) {
 		ctx := context.Background()
 
-		mgr := state.NewManager()
+		builder := state.NewManagerBuilder()
 		processedKey := state.NewKey("processed", false)
-		state.RegisterKey(mgr, processedKey)
+		state.RegisterKey(builder, processedKey)
+		mgr := builder.Build()
 
 		g, _ := NewGraph(mgr)
 
@@ -458,11 +462,12 @@ func TestApprovalWorkflowIntegration(t *testing.T) {
 	t.Run("approval with state edits", func(t *testing.T) {
 		ctx := context.Background()
 
-		mgr := state.NewManager()
+		builder := state.NewManagerBuilder()
 		draftKey := state.NewKey("draft", "")
 		finalKey := state.NewKey("final", "")
-		state.RegisterKey(mgr, draftKey)
-		state.RegisterKey(mgr, finalKey)
+		state.RegisterKey(builder, draftKey)
+		state.RegisterKey(builder, finalKey)
+		mgr := builder.Build()
 
 		mgr.ApplyUpdates(ctx, state.Updates{
 			draftKey.Name(): "Original draft",

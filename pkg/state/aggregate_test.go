@@ -11,11 +11,13 @@ import (
 )
 
 func TestAggregateKey_Sum(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register key with sum aggregator
 	totalKey := state.NewKey[any]("total_cost", 0)
-	err := state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
+	err := state.RegisterAggregateKey(builder, totalKey, &aggregators.SumAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -51,11 +53,13 @@ func TestAggregateKey_Sum(t *testing.T) {
 }
 
 func TestAggregateKey_Max(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register key with max aggregator
 	maxKey := state.NewKey[any]("max_value", float64(-1e308))
-	err := state.RegisterAggregateKey(mgr, maxKey, &aggregators.MaxAggregator{})
+	err := state.RegisterAggregateKey(builder, maxKey, &aggregators.MaxAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -86,11 +90,13 @@ func TestAggregateKey_Max(t *testing.T) {
 }
 
 func TestAggregateKey_Min(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register key with min aggregator
 	minKey := state.NewKey[any]("min_value", float64(1e308))
-	err := state.RegisterAggregateKey(mgr, minKey, &aggregators.MinAggregator{})
+	err := state.RegisterAggregateKey(builder, minKey, &aggregators.MinAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -121,11 +127,13 @@ func TestAggregateKey_Min(t *testing.T) {
 }
 
 func TestAggregateKey_Count(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register key with count aggregator
 	countKey := state.NewKey[any]("event_count", 0)
-	err := state.RegisterAggregateKey(mgr, countKey, &aggregators.CountAggregator{})
+	err := state.RegisterAggregateKey(builder, countKey, &aggregators.CountAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -155,18 +163,20 @@ func TestAggregateKey_Count(t *testing.T) {
 }
 
 func TestAggregateKey_Snapshot(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register keys
 	totalKey := state.NewKey[any]("total", 0)
 	countKey := state.NewKey[any]("count", 0)
 	maxKey := state.NewKey[any]("max", float64(-1e308))
 
-	err := state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
+	err := state.RegisterAggregateKey(builder, totalKey, &aggregators.SumAggregator{})
 	require.NoError(t, err)
-	err = state.RegisterAggregateKey(mgr, countKey, &aggregators.CountAggregator{})
+	err = state.RegisterAggregateKey(builder, countKey, &aggregators.CountAggregator{})
 	require.NoError(t, err)
-	err = state.RegisterAggregateKey(mgr, maxKey, &aggregators.MaxAggregator{})
+	err = state.RegisterAggregateKey(builder, maxKey, &aggregators.MaxAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -195,14 +205,16 @@ func TestAggregateKey_Snapshot(t *testing.T) {
 }
 
 func TestAggregateKey_Updates(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	// Register aggregate keys
 	totalKey := state.NewKey[any]("total", 0)
 	countKey := state.NewKey[any]("count", 0)
 
-	state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
-	state.RegisterAggregateKey(mgr, countKey, &aggregators.CountAggregator{})
+	state.RegisterAggregateKey(builder, totalKey, &aggregators.SumAggregator{})
+	state.RegisterAggregateKey(builder, countKey, &aggregators.CountAggregator{})
 
 	ctx := context.Background()
 
@@ -240,15 +252,17 @@ func TestAggregateKey_Updates(t *testing.T) {
 }
 
 func TestAggregateKey_Idempotent(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	totalKey := state.NewKey[any]("total", 0)
 
 	// Register twice - should be idempotent
-	err := state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
+	err := state.RegisterAggregateKey(builder, totalKey, &aggregators.SumAggregator{})
 	require.NoError(t, err)
 
-	err = state.RegisterAggregateKey(mgr, totalKey, &aggregators.SumAggregator{})
+	err = state.RegisterAggregateKey(builder, totalKey, &aggregators.SumAggregator{})
 	require.NoError(t, err) // No error on duplicate
 
 	ctx := context.Background()
@@ -260,10 +274,12 @@ func TestAggregateKey_Idempotent(t *testing.T) {
 }
 
 func TestAggregateKey_Avg(t *testing.T) {
-	mgr := state.NewManager()
+	builder := state.NewManagerBuilder()
+
+	mgr := builder.Build()
 
 	avgKey := state.NewKey[any]("avg_value", aggregators.AvgState{Mean: 0, Count: 0})
-	err := state.RegisterAggregateKey(mgr, avgKey, &aggregators.AvgAggregator{})
+	err := state.RegisterAggregateKey(builder, avgKey, &aggregators.AvgAggregator{})
 	require.NoError(t, err)
 
 	ctx := context.Background()

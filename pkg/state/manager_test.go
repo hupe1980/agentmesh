@@ -159,7 +159,9 @@ func TestManager(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("NewManager with defaults", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		if manager == nil {
@@ -173,13 +175,15 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("Register and Get/Set with Key", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		counterKey := state.NewKey[int]("counter", 0)
 
 		// Register key
-		err := state.RegisterKey(manager, counterKey)
+		err := state.RegisterKey(builder, counterKey)
 		if err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
@@ -202,13 +206,15 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("Register and Append with ListKey", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		messagesKey := state.NewListKey[string]("messages", 100)
 
 		// Register list key
-		err := state.RegisterListKey(manager, messagesKey)
+		err := state.RegisterListKey(builder, messagesKey)
 		if err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
@@ -249,11 +255,13 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("GetChannel", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[string]("name", "")
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 
 		ch := manager.GetChannel("name")
 		if ch == nil {
@@ -271,14 +279,16 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("Snapshot and Restore", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		// Setup state
 		key1 := state.NewKey[int]("x", 0)
 		key2 := state.NewKey[string]("y", "")
-		state.RegisterKey(manager, key1)
-		state.RegisterKey(manager, key2)
+		state.RegisterKey(builder, key1)
+		state.RegisterKey(builder, key2)
 
 		state.Set(ctx, manager, key1, 100)
 		state.Set(ctx, manager, key2, "hello")
@@ -306,11 +316,13 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("ListSnapshots", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[int]("counter", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 
 		// Create multiple snapshots
 		state.Set(ctx, manager, key, 1)
@@ -326,11 +338,13 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("DeleteSnapshot", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[int]("test", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 		state.Set(ctx, manager, key, 42)
 
 		snapshot, _ := manager.Snapshot(ctx, nil)
@@ -347,16 +361,18 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("RegisteredKeys", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key1 := state.NewKey[int]("a", 0)
 		key2 := state.NewKey[string]("b", "")
 		key3 := state.NewListKey[float64]("c", 0)
 
-		state.RegisterKey(manager, key1)
-		state.RegisterKey(manager, key2)
-		state.RegisterListKey(manager, key3)
+		state.RegisterKey(builder, key1)
+		state.RegisterKey(builder, key2)
+		state.RegisterListKey(builder, key3)
 
 		keys := manager.RegisteredKeys()
 		if len(keys) != 3 {
@@ -366,11 +382,14 @@ func TestManager(t *testing.T) {
 
 	t.Run("WithStore option", func(t *testing.T) {
 		customStore := state.NewMemoryStore()
-		manager := state.NewManager(state.WithStore(customStore))
-		defer manager.Close()
+		builder := state.NewManagerBuilder(state.WithStore(customStore))
 
 		key := state.NewKey[int]("stored", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
+
+		manager := builder.Build()
+		defer manager.Close()
+
 		state.Set(ctx, manager, key, 123)
 
 		// Verify value is in custom store
@@ -385,22 +404,26 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("Type safety validation", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[int]("number", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 
 		// Type safety is now enforced at compile time via generics.
 		// No runtime validation needed - the Go compiler prevents type mismatches.
 	})
 
 	t.Run("Concurrent access", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[int]("counter", 0)
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 		state.Set(ctx, manager, key, 0)
 
 		done := make(chan bool)
@@ -431,11 +454,13 @@ func TestManager(t *testing.T) {
 	})
 
 	t.Run("Get with default value", func(t *testing.T) {
-		manager := state.NewManager()
+		builder := state.NewManagerBuilder()
+
+		manager := builder.Build()
 		defer manager.Close()
 
 		key := state.NewKey[string]("missing", "default")
-		state.RegisterKey(manager, key)
+		state.RegisterKey(builder, key)
 
 		// Get without setting should return default
 		value, err := state.Get(ctx, manager, key)
@@ -452,11 +477,13 @@ func TestManager(t *testing.T) {
 func TestManagerWithMaxSnapshots(t *testing.T) {
 	ctx := context.Background()
 
-	manager := state.NewManager(state.WithMaxSnapshotsLimit(2))
-	defer manager.Close()
+	builder := state.NewManagerBuilder(state.WithMaxSnapshotsLimit(2))
 
 	key := state.NewKey[int]("counter", 0)
-	state.RegisterKey(manager, key)
+	state.RegisterKey(builder, key)
+
+	manager := builder.Build()
+	defer manager.Close()
 
 	// Create 3 snapshots
 	state.Set(ctx, manager, key, 1)

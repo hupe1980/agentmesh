@@ -22,10 +22,11 @@ func TestNamespacedNodeValidatesUpdates(t *testing.T) {
 	agent2Key := state.TypedKey[string](agent2NS, "data", "")
 	globalKey := state.NewKey[string]("global", "")
 
-	mgr := state.NewManager()
-	state.RegisterKey(mgr, agent1Key)
-	state.RegisterKey(mgr, agent2Key)
-	state.RegisterKey(mgr, globalKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, agent1Key)
+	state.RegisterKey(builder, agent2Key)
+	state.RegisterKey(builder, globalKey)
+	mgr := builder.Build()
 
 	view, err := mgr.CreateReadView(ctx)
 	require.NoError(t, err)
@@ -168,9 +169,10 @@ func TestNamespacedNodeIncludeGlobalView(t *testing.T) {
 	agentKey := state.TypedKey[string](agentNS, "data", "")
 	globalKey := state.NewKey[string]("global", "")
 
-	mgr := state.NewManager()
-	state.RegisterKey(mgr, agentKey)
-	state.RegisterKey(mgr, globalKey)
+	builder := state.NewManagerBuilder()
+	state.RegisterKey(builder, agentKey)
+	state.RegisterKey(builder, globalKey)
+	mgr := builder.Build()
 
 	state.Set(ctx, mgr, agentKey, "agent_value")
 	state.Set(ctx, mgr, globalKey, "global_value")

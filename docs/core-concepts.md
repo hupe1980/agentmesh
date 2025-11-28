@@ -140,7 +140,8 @@ import (
     "github.com/hupe1980/agentmesh/pkg/state"
 )
 
-stateManager := state.NewManager()
+builder := state.NewManagerBuilder()
+stateManager := builder.Build()
 g, err := graph.NewGraph(stateManager)
 if err != nil {
     return err
@@ -301,11 +302,15 @@ Create a state manager and register typed keys:
 
 ```go
 // Create state manager
-mgr := state.NewManager()
+builder := state.NewManagerBuilder()
 
 // Register typed keys
 statusKey := state.NewKey("status", "")
 counterKey := state.NewKey("counter", 0)
+state.RegisterKey(builder, statusKey)
+state.RegisterKey(builder, counterKey)
+
+mgr := builder.Build()
 
 state.Register(mgr, statusKey)
 state.Register(mgr, counterKey)
