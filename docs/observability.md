@@ -3,6 +3,7 @@ layout: doc
 title: Observability
 description: Instrument graphs with OpenTelemetry metrics and distributed tracing.
 permalink: /observability/
+example: observability
 hero:
   title: Monitor graph execution
   description: Track agent workflows with built-in OpenTelemetry metrics and distributed tracing support.

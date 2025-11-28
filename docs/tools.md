@@ -2,6 +2,7 @@
 layout: doc
 title: Tools
 permalink: /tools/
+example: wasm_tool
 hero:
   title: Give agents powerful capabilities
   description: Create function tools with automatic JSON schema generation, integrate external APIs, and build retrieval systems.

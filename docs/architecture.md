@@ -39,69 +39,43 @@ AgentMesh is built on a Pregel-inspired bulk-synchronous parallel (BSP) graph ex
 
 AgentMesh follows a **clean, interface-based architecture** with strict separation of concerns:
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│              Application Layer (pkg/agent)                    │
-│  • ReActAgent: Reasoning + Acting pattern                    │
-│  • SupervisorAgent: Multi-agent coordination                 │
-│  • RAGAgent: Retrieval-Augmented Generation                  │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ builds on
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                         Graph                                 │
-│  • Builder API for graph construction                         │
-│  • Validates topology (nodes, edges, conditionals)            │
-│  • Attaches Executor during construction                      │
-│  • Compile() → Compiled                                       │
-└────────────────────────┬─────────────────────────────────────┘
-                         │ compile()
-                         ▼
-┌──────────────────────────────────────────────────────────────┐
-│                    Compiled (Pure Coordinator)                │
-│  • Immutable topology (implements Structure interface)        │
-│  • Public API: Run(ctx, messages) → event iterator           │
-│  • StateManager: Manages state, messages, checkpoints        │
-│  • Executor: Injected execution strategy                      │
-│  • NO execution logic - pure delegation                       │
-└────────────────┬─────────────────────────┬───────────────────┘
-                 │                         │
-                 │ provides to executor    │ delegates to
-                 ▼                         ▼
-    ┌────────────────────────┐  ┌────────────────────────────┐
-    │    Structure           │  │       Executor             │
-    │    (Interface)         │  │       (Interface)          │
-    │                        │  │                            │
-    │  • Nodes/edges         │  │  Run(ctx, topology,        │
-    │  • Topology queries    │  │      stateManager,         │
-    │  • StateManager access │  │      messages, options)    │
-    │  • Mark completed      │  │  CurrentSuperstep()        │
-    │  • Pause/resume        │  │  Pause/Resume/IsPaused()   │
-    │  • Superstep tracking  │  │                            │
-    └────────────────────────┘  └──────────┬─────────────────┘
-                                           │
-                         ┌─────────────────┴─────────────────┐
-                         │                                   │
-                         ▼                                   ▼
-            ┌─────────────────────────┐      ┌─────────────────────────┐
-            │   PregelExecutor        │      │ SimpleGraphExecutor     │
-            │   (Default)             │      │ (Future)                │
-            │                         │      │                         │
-            │ • BSP Supersteps        │      │ • Topological order     │
-            │ • Parallel workers      │      │ • Single-threaded       │
-            │ • Message bus           │      │ • No synchronization    │
-            │ • Aggregators           │      │ • For debugging         │
-            │ • Combiners             │      │                         │
-            │ • Checkpoint callbacks  │      │                         │
-            │                         │      │                         │
-            │ Uses:                   │      │                         │
-            │ • graphRuntime          │      │                         │
-            │ • pkg/pregel runtime    │      │                         │
-            │ • vertexScheduler       │      │                         │
-            │ • stateCoordinator      │      │                         │
-            │ • eventEmitter          │      │                         │
-            └─────────────────────────┘      └─────────────────────────┘
-```
+<div class="mermaid">
+graph TB
+    subgraph Application["Application Layer (pkg/agent)"]
+        ReAct["ReActAgent<br/>Reasoning + Acting"]
+        Supervisor["SupervisorAgent<br/>Multi-agent coordination"]
+        RAG["RAGAgent<br/>Retrieval-Augmented"]
+    end
+    
+    subgraph GraphLayer["Graph Layer"]
+        Builder["Graph Builder<br/>• Validates topology<br/>• Attaches Executor"]
+        Compiled["Compiled<br/>• Immutable topology<br/>• Run() → events<br/>• Pure delegation"]
+    end
+    
+    subgraph Interfaces["Core Interfaces"]
+        Structure["Structure<br/>• Nodes/edges<br/>• Topology queries"]
+        Executor["Executor<br/>• Run()<br/>• CurrentSuperstep()"]
+        StateManager["StateManager<br/>• State persistence<br/>• Message handling"]
+    end
+    
+    subgraph Executors["Executor Implementations"]
+        Pregel["PregelExecutor<br/>• BSP Supersteps<br/>• Parallel workers<br/>• Message bus"]
+        Simple["SequentialExecutor<br/>• Topological order<br/>• Single-threaded"]
+    end
+    
+    Application --> GraphLayer
+    Builder -->|"compile()"| Compiled
+    Compiled --> Structure
+    Compiled --> Executor
+    Compiled --> StateManager
+    Executor --> Pregel
+    Executor --> Simple
+    
+    style Application fill:#1e40af,stroke:#3b82f6,color:#fff
+    style GraphLayer fill:#0f766e,stroke:#14b8a6,color:#fff
+    style Interfaces fill:#7c3aed,stroke:#a78bfa,color:#fff
+    style Executors fill:#b45309,stroke:#f59e0b,color:#fff
+</div>
 
 **Key Design Principles:**
 
@@ -151,19 +125,20 @@ AgentMesh uses an **executor pattern** to separate execution concerns from orche
   - Arguments flow as JSON from LLM → ToolCall → Executor → Tool
 
 **Node Architecture**:
-```
-┌─────────────┐
-│  ModelNode  │  Graph layer: state extraction, routing
-└──────┬──────┘
-       │ delegates to
-┌──────▼──────┐
-│model.Executor│ Execution layer: lifecycle, plugins, observability
-└──────┬──────┘
-       │ calls
-┌──────▼──────┐
-│    Model    │  Core layer: API calls, streaming
-└─────────────┘
-```
+
+<div class="mermaid">
+graph TB
+    ModelNode["ModelNode<br/><i>Graph layer: state extraction, routing</i>"]
+    ModelExecutor["model.Executor<br/><i>Execution layer: lifecycle, plugins</i>"]
+    Model["Model<br/><i>Core layer: API calls, streaming</i>"]
+    
+    ModelNode -->|"delegates to"| ModelExecutor
+    ModelExecutor -->|"calls"| Model
+    
+    style ModelNode fill:#3b82f6,stroke:#60a5fa,color:#fff
+    style ModelExecutor fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style Model fill:#06b6d4,stroke:#22d3ee,color:#fff
+</div>
 
 **Benefits**:
 - ✅ **Reusability**: Use executors in graphs, chains, or direct calls
@@ -197,49 +172,38 @@ This model provides:
 
 ### Superstep Execution Flow
 
-```
-Superstep 0:
-  ┌─────────────────────────────────────┐
-  │ 1. Scheduler identifies ready nodes │
-  │    (nodes with all dependencies met)│
-  └──────────────┬──────────────────────┘
-                 │
-  ┌──────────────▼──────────────────────┐
-  │ 2. Execute nodes in parallel        │
-  │    - Worker pool processes vertices │
-  │    - Each vertex reads its mailbox  │
-  │    - Vertices compute and generate  │
-  │      NodeResult with updates        │
-  └──────────────┬──────────────────────┘
-                 │
-  ┌──────────────▼──────────────────────┐
-  │ 3. Apply state updates              │
-  │    - Immediate: Updates applied to  │
-  │      shared StateManager (in-memory)│
-  │    - Via messages: Updates sent to  │
-  │      downstream nodes (distributed) │
-  │    - Hybrid approach supports both  │
-  │      single-process and distributed │
-  └──────────────┬──────────────────────┘
-                 │
-  ┌──────────────▼──────────────────────┐
-  │ 4. Message delivery phase           │
-  │    - Evaluate conditional routes    │
-  │    - Send messages to downstream    │
-  │      node mailboxes via MessageBus  │
-  │    - Messages available in NEXT     │
-  │      superstep                      │
-  └──────────────┬──────────────────────┘
-                 │
-  ┌──────────────▼──────────────────────┐
-  │ 5. Synchronization barrier          │
-  │    - Wait for all vertices complete │
-  │    - Save checkpoint                │
-  └──────────────┬──────────────────────┘
-                 │
-                 ▼
-Superstep 1: Repeat until END or max iterations
-```
+<div class="mermaid">
+flowchart TB
+    subgraph S0["Superstep N"]
+        A["1. Scheduler identifies<br/>ready nodes"]
+        B["2. Execute nodes<br/>in parallel"]
+        C["3. Apply state<br/>updates"]
+        D["4. Message delivery<br/>phase"]
+        E["5. Synchronization<br/>barrier"]
+    end
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E -->|"Next superstep"| A
+    E -->|"END reached"| F["Complete"]
+    
+    style A fill:#1e40af,stroke:#3b82f6,color:#fff
+    style B fill:#059669,stroke:#10b981,color:#fff
+    style C fill:#7c3aed,stroke:#a78bfa,color:#fff
+    style D fill:#b45309,stroke:#f59e0b,color:#fff
+    style E fill:#dc2626,stroke:#f87171,color:#fff
+    style F fill:#16a34a,stroke:#22c55e,color:#fff
+</div>
+
+**Phase Details:**
+
+1. **Scheduler** identifies ready nodes (nodes with all dependencies met)
+2. **Execute** nodes in parallel using worker pool; each vertex reads its mailbox
+3. **Apply state updates** immediately to shared StateManager (in-memory)
+4. **Message delivery** evaluates conditional routes and sends to downstream mailboxes
+5. **Synchronization barrier** waits for all vertices, saves checkpoint
 
 ### Mailbox System
 

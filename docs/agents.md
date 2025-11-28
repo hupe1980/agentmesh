@@ -3,6 +3,7 @@ layout: doc
 title: Agents
 description: Build ReAct agents, RAG agents, and custom graph-based workflows.
 permalink: /agents/
+example: basic_agent
 hero:
   title: Build intelligent agent workflows
   description: Create agents using pre-built patterns or compose custom graphs with nodes, edges, and conditional routing.
@@ -80,13 +81,20 @@ agent.NewReActAgent(model, tools,
 
 ### How it works
 
-The ReAct agent compiles into a graph with three nodes:
+The ReAct agent compiles into a graph with a reasoning-action loop:
 
-```
-START → model → tools → model → END
-         ↓              ↑
-         └──────────────┘
-```
+<div class="mermaid">
+flowchart LR
+    START((START)) --> Model
+    Model -->|"tool calls"| Tools
+    Tools --> Model
+    Model -->|"final answer"| END((END))
+    
+    style START fill:#22c55e,stroke:#16a34a,color:#fff
+    style END fill:#ef4444,stroke:#dc2626,color:#fff
+    style Model fill:#3b82f6,stroke:#2563eb,color:#fff
+    style Tools fill:#8b5cf6,stroke:#7c3aed,color:#fff
+</div>
 
 **Architecture:**
 
@@ -190,20 +198,38 @@ agent.NewSupervisorAgent(model,
 
 The supervisor agent uses **tool-based handoffs** to delegate work:
 
+<div class="mermaid">
+flowchart TB
+    User["User Query"] --> Supervisor
+    
+    subgraph SupervisorFlow["Supervisor Agent"]
+        Supervisor["Supervisor<br/><i>Routing Logic</i>"]
+    end
+    
+    Supervisor -->|"handoff_to_math"| Math["Math Agent"]
+    Supervisor -->|"handoff_to_code"| Code["Code Agent"]
+    Supervisor -->|"handoff_to_history"| History["History Agent"]
+    
+    Math --> Result
+    Code --> Result
+    History --> Result
+    Result["Result"] --> User2["User Response"]
+    
+    style User fill:#22c55e,stroke:#16a34a,color:#fff
+    style Supervisor fill:#3b82f6,stroke:#2563eb,color:#fff
+    style Math fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style Code fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style History fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style Result fill:#f59e0b,stroke:#d97706,color:#fff
+    style User2 fill:#22c55e,stroke:#16a34a,color:#fff
+</div>
+
+**Execution flow:**
+
 1. **Supervisor receives query**: Analyzes the user's request
 2. **Routes to specialist**: Uses `HandoffToAgent` tool to delegate
 3. **Worker processes task**: Specialist agent handles the specific domain
 4. **Returns result**: Supervisor receives worker output and returns to user
-
-```
-User Query → Supervisor (routing logic)
-                ↓
-            HandoffToAgent tool
-                ↓
-        Specialist Worker Agent
-                ↓
-            Result → User
-```
 
 **Key benefits**:
 

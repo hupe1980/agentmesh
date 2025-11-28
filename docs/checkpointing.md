@@ -1,22 +1,33 @@
 ---
 layout: doc
 title: Checkpointing
+description: Save and restore graph execution state for resilience and debugging.
 permalink: /checkpointing/
-nav_order: 7
+example: checkpointing
+hero:
+  title: Checkpointing & State Persistence
+  description: Save execution state for resumption, time-travel debugging, and audit trails.
+  primary_cta:
+    label: Enable checkpointing
+    href: "#automatic-checkpointing"
+  secondary_cta:
+    label: View example →
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/checkpointing"
+    external: true
+sidebar:
+  - title: Overview
+    url: "#overview"
+  - title: Checkpoint Lifecycle
+    url: "#checkpoint-lifecycle"
+  - title: Backends
+    url: "#backends"
+  - title: Time Travel
+    url: "#time-travel"
+  - title: Security
+    url: "#security"
 ---
 
-# Checkpointing & State Persistence
-{: .no_toc }
-
-## Table of contents
-{: .no_toc .text-delta }
-
-1. TOC
-{:toc}
-
----
-
-## Overview
+## Overview {#overview}
 
 Checkpointing in AgentMesh enables **automatic state persistence** during graph execution. Every superstep (iteration) can be saved, allowing you to:
 

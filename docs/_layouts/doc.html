@@ -1,39 +1,83 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ page.title }} | {{ site.title }}</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  <meta property="og:title" content="{{ page.title }} | {{ site.title }}">
+  <meta property="og:description" content="{{ page.description | default: site.description }}">
+  <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    // Prevent flash: apply saved theme before render
+    (function() {
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = saved || (prefersDark ? 'dark' : 'dark'); // default to dark
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <style>
-    :root {
+    /* Dark theme (default) */
+    :root, [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0a0a0f;
+      --bg-elevated: #12121a;
+      --surface: #0f0f14;
+      --primary: #60a5fa;
+      --primary-dark: #3b82f6;
+      --primary-glow: rgba(96, 165, 250, 0.15);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border: #1e293b;
+      --border-strong: #334155;
+      --code-bg: #0c0c12;
+      --code-fg: #e2e8f0;
+      --card-radius: 18px;
+      --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.4);
+      --header-gradient: linear-gradient(135deg, rgba(30,64,175,0.95), rgba(15,23,42,0.98));
+    }
+
+    /* Light theme */
+    [data-theme="light"] {
       color-scheme: light;
       --bg: #ffffff;
+      --bg-elevated: #ffffff;
       --surface: #f8fafc;
       --primary: #2563eb;
       --primary-dark: #1d4ed8;
+      --primary-glow: rgba(37, 99, 235, 0.1);
       --text: #111827;
       --text-muted: #4b5563;
       --border: #e5e7eb;
       --border-strong: #d1d5db;
-  --code-bg: #0f172a;
-  --code-fg: #e2e8f0;
+      --code-bg: #0f172a;
+      --code-fg: #e2e8f0;
       --card-radius: 18px;
       --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.08);
+      --header-gradient: linear-gradient(135deg, rgba(37,99,235,0.95), rgba(12,74,110,0.95));
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
     body {
       font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
-    a { color: var(--primary); text-decoration: none; }
+    ::selection {
+      background: var(--primary);
+      color: white;
+    }
+    a { color: var(--primary); text-decoration: none; transition: color 0.15s ease; }
     a:hover { text-decoration: underline; }
     header {
-      background: linear-gradient(135deg, rgba(37,99,235,0.95), rgba(12,74,110,0.95));
+      background: var(--header-gradient);
       color: white;
       padding: 44px 32px 54px;
       position: relative;
@@ -50,8 +94,85 @@
     .topbar {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       max-width: 1200px;
       margin: 0 auto 6px;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .theme-toggle {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .theme-toggle:hover {
+      background: rgba(255,255,255,0.2);
+      transform: scale(1.05);
+    }
+    .theme-toggle svg {
+      width: 18px;
+      height: 18px;
+      color: white;
+    }
+    .theme-toggle .sun-icon { display: none; }
+    .theme-toggle .moon-icon { display: block; }
+    [data-theme="light"] .theme-toggle .sun-icon { display: block; }
+    [data-theme="light"] .theme-toggle .moon-icon { display: none; }
+    .github-link {
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      opacity: 0.9;
+      transition: opacity 0.2s ease;
+    }
+    .github-link:hover {
+      opacity: 1;
+      text-decoration: none;
+    }
+    .github-link svg {
+      width: 20px;
+      height: 20px;
+    }
+    .version-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(34, 197, 94, 0.15);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #4ade80;
+    }
+    .version-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: #22c55e;
+      border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.9); }
     }
     .brand {
       font-size: 1.1rem;
@@ -165,6 +286,24 @@
       color: var(--primary);
       font-weight: 600;
     }
+    .nav-group {
+      margin-bottom: 20px;
+    }
+    .nav-group:last-child {
+      margin-bottom: 0;
+    }
+    .nav-group-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      padding: 0 10px;
+      margin-bottom: 8px;
+    }
+    .nav-group ul {
+      margin: 0;
+    }
     .page-nav ul li {
       display: flex;
       align-items: center;
@@ -202,7 +341,7 @@
       gap: 8px;
     }
     .content-area {
-      background: #ffffff;
+      background: var(--bg-elevated);
       border-radius: var(--card-radius);
       padding: 64px 72px;
       border: 1px solid var(--border);
@@ -215,10 +354,31 @@
       font-size: 1.75rem;
       font-weight: 600;
       letter-spacing: -0.02em;
+      scroll-margin-top: 80px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .content-area h3 {
       font-size: 1.25rem;
       font-weight: 600;
+      scroll-margin-top: 80px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .content-area h2:hover .anchor-link,
+    .content-area h3:hover .anchor-link {
+      opacity: 1;
+    }
+    .anchor-link {
+      opacity: 0;
+      color: var(--text-muted);
+      transition: opacity 0.2s ease;
+      text-decoration: none !important;
+    }
+    .anchor-link:hover {
+      color: var(--primary);
     }
     .content-area p, .content-area li {
       color: var(--text-muted);
@@ -299,12 +459,204 @@
     .highlight .bp { color: #fcd34d; }
     .highlight .err { color: #fca5a5; background: rgba(248, 113, 113, 0.12); }
     code {
-      font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    }
+    /* Copy button for code blocks */
+    .highlight {
+      position: relative;
+    }
+    .copy-button {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-family: inherit;
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .highlight:hover .copy-button {
+      opacity: 1;
+    }
+    .copy-button:hover {
+      background: rgba(255,255,255,0.15);
+      color: var(--text);
+    }
+    .copy-button.copied {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: #4ade80;
+    }
+    /* Inline code styling */
+    :not(pre) > code {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 0.9em;
+      border: 1px solid var(--border);
+    }
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+    }
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    th {
+      background: var(--surface);
+      font-weight: 600;
+      color: var(--text);
+    }
+    tr:nth-child(even) {
+      background: var(--surface);
+    }
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 12px 20px;
+      margin: 1rem 0;
+      background: var(--primary-glow);
+      border-radius: 0 8px 8px 0;
+      color: var(--text-muted);
+    }
+    blockquote p {
+      margin: 0;
+    }
+    /* Lists inside content */
+    .content-area ul, .content-area ol {
+      padding-left: 24px;
+    }
+    .content-area li {
+      margin: 8px 0;
+    }
+    /* Callout boxes */
+    .callout {
+      display: flex;
+      gap: 12px;
+      padding: 16px 20px;
+      border-radius: 12px;
+      margin: 1.5rem 0;
+    }
+    .callout-tip {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+    .callout-warning {
+      background: rgba(234, 179, 8, 0.1);
+      border: 1px solid rgba(234, 179, 8, 0.25);
+    }
+    .callout-danger {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+    .callout-info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+    .callout-icon {
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+    .callout-content {
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+    /* Keyboard shortcut hints */
+    kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      font-family: var(--font-mono, monospace);
+      font-size: 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    /* Search modal placeholder */
+    .search-trigger {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .search-trigger:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.25);
+    }
+    .search-trigger svg {
+      width: 14px;
+      height: 14px;
+      opacity: 0.7;
+    }
+    .search-trigger kbd {
+      margin-left: 12px;
+      padding: 1px 5px;
+      font-size: 0.7rem;
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+    /* Back to top button */
+    .back-to-top {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      background: var(--primary);
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 100;
+    }
+    .back-to-top.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    .back-to-top:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    }
+    .back-to-top svg {
+      width: 20px;
+      height: 20px;
+    }
+    /* Progress bar */
+    .reading-progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary), #8b5cf6);
+      z-index: 1000;
+      transition: width 0.1s ease-out;
     }
     footer {
       margin-top: 72px;
       padding: 48px 32px;
-      background: #ffffff;
+      background: var(--bg-elevated);
       border-top: 1px solid var(--border);
     }
     footer .footer-shell {
@@ -315,8 +667,150 @@
       gap: 24px;
       justify-content: space-between;
       align-items: center;
-  color: var(--text-muted);
-      font-size: 0.95rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    footer .footer-left,
+    footer .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    footer .footer-sep {
+      opacity: 0.4;
+    }
+    footer a {
+      color: var(--text-muted);
+      transition: color 0.15s ease;
+    }
+    footer a:hover {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    /* Page actions (Edit, View Example) */
+    .page-actions {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .page-action-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      background: transparent;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+    .page-action-link:hover {
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .page-action-link svg {
+      opacity: 0.7;
+    }
+    .page-action-link.example-link {
+      color: var(--primary);
+    }
+    .page-action-link.example-link:hover {
+      background: var(--primary-glow);
+    }
+    /* Feature cards grid for homepage */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin: 2rem 0;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.2s ease;
+    }
+    .feature-card:hover {
+      border-color: rgba(59, 130, 246, 0.4);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    .feature-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-card p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .feature-icon {
+      font-size: 1.25rem;
+    }
+    /* Example cards */
+    .example-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin: 1.5rem 0;
+    }
+    .example-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      transition: all 0.2s ease;
+    }
+    .example-card:hover {
+      border-color: var(--primary);
+      background: var(--primary-glow);
+      text-decoration: none;
+    }
+    .example-card svg {
+      flex-shrink: 0;
+      color: var(--primary);
+    }
+    .example-card span {
+      font-size: 0.9rem;
+    }
+    /* Related links */
+    .related-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 1.5rem 0;
+    }
+    .related-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text);
+      font-size: 0.85rem;
+      transition: all 0.15s ease;
+    }
+    .related-link:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      text-decoration: none;
     }
     @media (max-width: 1100px) {
       .layout-shell,
@@ -347,17 +841,53 @@
   </style>
 </head>
 <body>
+  <div class="reading-progress" id="reading-progress"></div>
   <header>
     <div class="topbar">
-  {% assign brand_href = '/' | relative_url %}
-  <a class="brand" href="{{ brand_href }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 3l8.196 4.5v9L12 21l-8.196-4.5v-9L12 3z" stroke-linejoin="round" />
-          <path d="M12 3v18" stroke-linecap="round" />
-          <path d="M3.804 7.5L12 12l8.196-4.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        {{ site.title }}
-      </a>
+      <div class="topbar-left">
+        {% assign brand_href = '/' | relative_url %}
+        <a class="brand" href="{{ brand_href }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 3l8.196 4.5v9L12 21l-8.196-4.5v-9L12 3z" stroke-linejoin="round" />
+            <path d="M12 3v18" stroke-linecap="round" />
+            <path d="M3.804 7.5L12 12l8.196-4.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          {{ site.title }}
+        </a>
+      </div>
+      <div class="topbar-right">
+        <span class="version-badge">Go 1.24+</span>
+        <button class="search-trigger" onclick="alert('Search coming soon! Use Ctrl/⌘+K')" aria-label="Search docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="m21 21-4.3-4.3"/>
+          </svg>
+          <span>Search...</span>
+          <kbd>⌘K</kbd>
+        </button>
+        <a class="github-link" href="https://github.com/hupe1980/agentmesh" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <div class="hero">
       <div>
@@ -415,27 +945,54 @@
       {% if site.data.navigation %}
       <aside class="nav-card page-nav">
         <h2>Documentation</h2>
-        <ul>
-          {% for item in site.data.navigation %}
-            {% assign is_active = false %}
-            {% if item.href == current_url or item.href == page.url %}
-              {% assign is_active = true %}
-            {% endif %}
-            {% assign nav_href = item.href | default: '' %}
-            {% assign nav_first = nav_href | slice: 0, 1 %}
-            {% if nav_href contains '://' %}
-              {% assign nav_url = nav_href %}
-            {% elsif nav_first == '#' %}
-              {% assign nav_url = nav_href %}
-            {% else %}
-              {% assign nav_url = nav_href | relative_url %}
-            {% endif %}
-            <li class="{% if is_active %}active{% endif %}">
-              <span class="active-indicator"></span>
-              <a class="{% if is_active %}active{% endif %}" href="{{ nav_url }}">{{ item.label }}</a>
-            </li>
-          {% endfor %}
-        </ul>
+        {% for section in site.data.navigation %}
+          {% if section.group %}
+            <div class="nav-group">
+              <div class="nav-group-label">{{ section.group }}</div>
+              <ul>
+                {% for item in section.items %}
+                  {% assign is_active = false %}
+                  {% if item.href == current_url or item.href == page.url %}
+                    {% assign is_active = true %}
+                  {% endif %}
+                  {% assign nav_href = item.href | default: '' %}
+                  {% assign nav_first = nav_href | slice: 0, 1 %}
+                  {% if nav_href contains '://' %}
+                    {% assign nav_url = nav_href %}
+                  {% elsif nav_first == '#' %}
+                    {% assign nav_url = nav_href %}
+                  {% else %}
+                    {% assign nav_url = nav_href | relative_url %}
+                  {% endif %}
+                  <li class="{% if is_active %}active{% endif %}">
+                    <span class="active-indicator"></span>
+                    <a class="{% if is_active %}active{% endif %}" href="{{ nav_url }}">{{ item.label }}</a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% else %}
+            <ul>
+              {% assign is_active = false %}
+              {% if section.href == current_url or section.href == page.url %}
+                {% assign is_active = true %}
+              {% endif %}
+              {% assign nav_href = section.href | default: '' %}
+              {% assign nav_first = nav_href | slice: 0, 1 %}
+              {% if nav_href contains '://' %}
+                {% assign nav_url = nav_href %}
+              {% elsif nav_first == '#' %}
+                {% assign nav_url = nav_href %}
+              {% else %}
+                {% assign nav_url = nav_href | relative_url %}
+              {% endif %}
+              <li class="{% if is_active %}active{% endif %}">
+                <span class="active-indicator"></span>
+                <a class="{% if is_active %}active{% endif %}" href="{{ nav_url }}">{{ section.label }}</a>
+              </li>
+            </ul>
+          {% endif %}
+        {% endfor %}
       </aside>
       {% endif %}
       <div class="content-area">
@@ -458,6 +1015,26 @@
             </li>
           {% endfor %}
         </ul>
+        
+        <!-- Page Actions -->
+        <div class="page-actions">
+          <a href="https://github.com/hupe1980/agentmesh/edit/main/docs/{{ page.path }}" target="_blank" rel="noopener" class="page-action-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit this page
+          </a>
+          {% if page.example %}
+          <a href="https://github.com/hupe1980/agentmesh/tree/main/examples/{{ page.example }}" target="_blank" rel="noopener" class="page-action-link example-link">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+            View Example
+          </a>
+          {% endif %}
+        </div>
       </aside>
       {% endif %}
     </div>
@@ -465,9 +1042,126 @@
 
   <footer>
     <div class="footer-shell">
-      <span>© {{ site.time | date: "%Y" }} AgentMesh</span>
-      <span>Released under the MIT License • Crafted for production AI workloads</span>
+      <div class="footer-left">
+        <span>© {{ site.time | date: "%Y" }} AgentMesh</span>
+        <span class="footer-sep">•</span>
+        <span>MIT License</span>
+      </div>
+      <div class="footer-right">
+        <a href="https://pkg.go.dev/github.com/hupe1980/agentmesh" target="_blank" rel="noopener">API Docs</a>
+        <span class="footer-sep">•</span>
+        <a href="https://github.com/hupe1980/agentmesh" target="_blank" rel="noopener">GitHub</a>
+        <span class="footer-sep">•</span>
+        <a href="https://github.com/hupe1980/agentmesh/issues" target="_blank" rel="noopener">Report Issue</a>
+      </div>
     </div>
   </footer>
+
+  <button class="back-to-top" id="back-to-top" aria-label="Back to top">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M18 15l-6-6-6 6"/>
+    </svg>
+  </button>
+
+  <script>
+    // Theme toggle
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    }
+
+    // Copy buttons for code blocks
+    document.querySelectorAll('.highlight').forEach(block => {
+      const button = document.createElement('button');
+      button.className = 'copy-button';
+      button.textContent = 'Copy';
+      button.onclick = async () => {
+        const code = block.querySelector('code')?.textContent || block.querySelector('pre')?.textContent || '';
+        await navigator.clipboard.writeText(code);
+        button.textContent = 'Copied!';
+        button.classList.add('copied');
+        setTimeout(() => {
+          button.textContent = 'Copy';
+          button.classList.remove('copied');
+        }, 2000);
+      };
+      block.appendChild(button);
+    });
+
+    // Reading progress bar
+    const progressBar = document.getElementById('reading-progress');
+    window.addEventListener('scroll', () => {
+      const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+      const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      progressBar.style.width = scrolled + '%';
+    });
+
+    // Back to top button
+    const backToTop = document.getElementById('back-to-top');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 400) {
+        backToTop.classList.add('visible');
+      } else {
+        backToTop.classList.remove('visible');
+      }
+    });
+    backToTop.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Cmd/Ctrl + K for search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        alert('Search coming soon!');
+      }
+      // Toggle theme with Cmd/Ctrl + Shift + D
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        toggleTheme();
+      }
+    });
+
+    // Add anchor links to headings
+    document.querySelectorAll('.content-area h2[id], .content-area h3[id]').forEach(heading => {
+      const anchor = document.createElement('a');
+      anchor.className = 'anchor-link';
+      anchor.href = '#' + heading.id;
+      anchor.innerHTML = '#';
+      anchor.setAttribute('aria-label', 'Link to this section');
+      heading.appendChild(anchor);
+    });
+  </script>
+  
+  <!-- Mermaid for diagrams -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default',
+      themeVariables: {
+        primaryColor: '#3b82f6',
+        primaryTextColor: '#fff',
+        primaryBorderColor: '#60a5fa',
+        lineColor: '#94a3b8',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a',
+        background: '#0a0a0f',
+        mainBkg: '#12121a',
+        nodeBorder: '#334155',
+        clusterBkg: '#1e293b',
+        clusterBorder: '#475569',
+        titleColor: '#f1f5f9',
+        edgeLabelBackground: '#1e293b'
+      },
+      flowchart: {
+        curve: 'basis',
+        padding: 20
+      }
+    });
+  </script>
 </body>
 </html>

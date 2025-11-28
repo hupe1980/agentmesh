@@ -1,15 +1,40 @@
-# Graph Builder API
+---
+layout: doc
+title: Builder API
+description: Fluent interface for constructing computation graphs.
+permalink: /builder-api/
+example: builder_api
+hero:
+  title: Graph Builder API
+  description: Construct graphs with a fluent, type-safe API using PregelExecutor or SequentialExecutor.
+  primary_cta:
+    label: Quick start
+    href: "#quick-start"
+  secondary_cta:
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
+    external: true
+sidebar:
+  - title: Features
+    url: "#features"
+  - title: Quick Start
+    url: "#quick-start"
+  - title: Adding Nodes
+    url: "#adding-nodes"
+  - title: Edges
+    url: "#edges"
+  - title: Compilation
+    url: "#compilation"
+---
 
-The Builder API provides a fluent interface for constructing computation graphs in AgentMesh.
-
-## Features
+## Features {#features}
 
 - **Fluent API**: Chain method calls for readable graph construction
 - **Executor-Based**: Configure with PregelExecutor or SequentialExecutor
 - **Flexible Options**: Configure state management through builder options
 - **Type-Safe**: Full Go type safety with compile-time checks
 
-## Quick Start
+## Quick Start {#quick-start}
 
 ### Basic Usage
 

@@ -1,22 +1,30 @@
 ---
 layout: doc
 title: Embeddings
+description: Convert text to vectors for semantic search and similarity detection.
 permalink: /embeddings/
-nav_order: 6
+hero:
+  title: Text Embeddings
+  description: Convert text into dense vectors for semantic search, similarity detection, and RAG pipelines.
+  primary_cta:
+    label: Create an embedder
+    href: "#embedders"
+  secondary_cta:
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/embedding"
+    external: true
+sidebar:
+  - title: What are Embeddings?
+    url: "#what-are-embeddings"
+  - title: Embedders
+    url: "#embedders"
+  - title: Use Cases
+    url: "#use-cases"
+  - title: Best Practices
+    url: "#best-practices"
 ---
 
-# Embeddings
-{: .no_toc }
-
-## Table of contents
-{: .no_toc .text-delta }
-
-1. TOC
-{:toc}
-
----
-
-## What are Embeddings?
+## What are Embeddings? {#what-are-embeddings}
 
 Embeddings are dense vector representations of text that capture semantic meaning. Unlike simple keyword matching, embeddings allow you to find conceptually similar content even when different words are used.
 

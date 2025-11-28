@@ -1,8 +1,38 @@
-# Middleware Architecture
+---
+layout: doc
+title: Middleware
+description: Extend and customize graph, model, and tool execution with composable middleware.
+permalink: /middleware/
+example: middleware
+hero:
+  title: Middleware Architecture
+  description: Build resilient, observable workflows with composable middleware for caching, retries, circuit breakers, and more.
+  primary_cta:
+    label: View examples
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/middleware"
+    external: true
+  secondary_cta:
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model"
+    external: true
+sidebar:
+  - title: Overview
+    url: "#overview"
+  - title: Architecture
+    url: "#architecture"
+  - title: Model Middleware
+    url: "#model-middleware"
+  - title: Tool Middleware
+    url: "#tool-middleware"
+  - title: Built-in Middleware
+    url: "#built-in-middleware"
+  - title: Custom Middleware
+    url: "#custom-middleware"
+---
+
+## Overview {#overview}
 
 AgentMesh provides a comprehensive middleware system for extending and customizing execution behavior across all layers: graph, model, and tool execution.
-
-## Overview
 
 The middleware system enables you to:
 - **Observe** execution with logging and events
@@ -11,7 +41,7 @@ The middleware system enables you to:
 - **Monitor** usage with token counting and audit logs
 - **Visualize** execution in real-time
 
-## Architecture
+## Architecture {#architecture}
 
 ```
 ┌─────────────────────────────────────────────────────┐

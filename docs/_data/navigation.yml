@@ -1,32 +1,59 @@
-- label: Overview
-  href: /
-- label: Getting Started
-  href: /getting-started/
-- label: Core Concepts
-  href: /core-concepts/
-- label: Agents
-  href: /agents/
-- label: Models
-  href: /models/
-- label: Tools
-  href: /tools/
-- label: WASM Sandboxing
-  href: /wasm-sandboxing/
-- label: State Management
-  href: /state-management/
-- label: Memory & Embeddings
-  href: /memory/
-- label: Agent-to-Agent (A2A)
-  href: /a2a/
-- label: Streaming
-  href: /streaming/
-- label: Callbacks
-  href: /callbacks/
-- label: Observability
-  href: /observability/
-- label: Advanced Patterns
-  href: /advanced/
-- label: Architecture
-  href: /architecture/
-- label: Resources
-  href: /resources/
+- group: Getting Started
+  items:
+    - label: Overview
+      href: /
+    - label: Getting Started
+      href: /getting-started/
+    - label: Core Concepts
+      href: /core-concepts/
+
+- group: Core Features
+  items:
+    - label: Agents
+      href: /agents/
+    - label: Models
+      href: /models/
+    - label: Tools
+      href: /tools/
+
+- group: Data & State
+  items:
+    - label: State Management
+      href: /state-management/
+    - label: Memory
+      href: /memory/
+    - label: Embeddings
+      href: /embeddings/
+    - label: Checkpointing
+      href: /checkpointing/
+
+- group: Communication
+  items:
+    - label: Streaming
+      href: /streaming/
+    - label: Agent-to-Agent (A2A)
+      href: /a2a/
+    - label: Message Bus
+      href: /messagebus/
+
+- group: Observability
+  items:
+    - label: Callbacks
+      href: /callbacks/
+    - label: Middleware
+      href: /middleware/
+    - label: Observability
+      href: /observability/
+
+- group: Advanced
+  items:
+    - label: WASM Sandboxing
+      href: /wasm-sandboxing/
+    - label: Builder API
+      href: /builder-api/
+    - label: Advanced Patterns
+      href: /advanced/
+    - label: Architecture
+      href: /architecture/
+    - label: Resources
+      href: /resources/

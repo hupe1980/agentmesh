@@ -1,10 +1,36 @@
-# Message Bus Abstraction
+---
+layout: doc
+title: Message Bus
+description: Decouple message delivery from the Pregel runtime for distributed execution.
+permalink: /messagebus/
+hero:
+  title: Message Bus Abstraction
+  description: Pluggable message delivery for distributed graph execution with Redis, gRPC, or custom backends.
+  primary_cta:
+    label: View Redis example
+    href: "#redis-messagebus"
+  secondary_cta:
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/pregel"
+    external: true
+sidebar:
+  - title: Overview
+    url: "#overview"
+  - title: Architecture
+    url: "#architecture"
+  - title: In-Memory
+    url: "#in-memory-messagebus"
+  - title: Redis
+    url: "#redis-messagebus"
+  - title: Custom Backends
+    url: "#custom-backends"
+---
 
-## Overview
+## Overview {#overview}
 
 The Message Bus abstraction decouples message delivery from the Pregel runtime, enabling distributed execution and pluggable storage backends.
 
-## Architecture
+## Architecture {#architecture}
 
 ```
 ┌─────────────────────────────────────────┐

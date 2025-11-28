@@ -1,13 +1,33 @@
 ---
 layout: doc
-title: Streaming & Real-Time Updates
+title: Streaming
+description: Real-time visibility into graph execution with Go 1.24+ iterators.
+permalink: /streaming/
+example: streaming
+hero:
+  title: Streaming & Real-Time Updates
+  description: Observe intermediate progress, node-by-node execution, and incremental updates as they happen.
+  primary_cta:
+    label: Enable streaming
+    href: "#graph-level-streaming"
+  secondary_cta:
+    label: View example →
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/streaming"
+    external: true
+sidebar:
+  - title: Overview
+    url: "#overview"
+  - title: Graph-Level Streaming
+    url: "#graph-level-streaming"
+  - title: Node-Level Streaming
+    url: "#node-level-streaming"
+  - title: Model Streaming
+    url: "#model-streaming"
 ---
 
-# Streaming & Real-Time Updates
+AgentMesh provides comprehensive streaming capabilities that enable real-time visibility into graph execution through Go 1.24+ iterators (`iter.Seq2`). This allows you to observe intermediate progress, node-by-node execution, and incremental updates as they happen.
 
-AgentMesh provides comprehensive streaming capabilities that enable real-time visibility into graph execution through Go 1.23+ iterators (`iter.Seq2`). This allows you to observe intermediate progress, node-by-node execution, and incremental updates as they happen.
-
-## Overview
+## Overview {#overview}
 
 AgentMesh supports two complementary streaming patterns:
 

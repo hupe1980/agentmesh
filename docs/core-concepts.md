@@ -135,6 +135,32 @@ A graph consists of:
 - **Edges** - Connections that define execution order
 - **State** - Shared context accessible across all nodes
 
+<div class="mermaid">
+flowchart TD
+    subgraph Graph["Computation Graph"]
+        START((START))
+        fetch[fetch node]
+        process[process node]
+        save[save node]
+        END((END))
+        
+        START --> fetch
+        fetch --> process
+        process --> save
+        save --> END
+    end
+    
+    subgraph State["Shared State"]
+        S1["📦 raw_data"]
+        S2["📦 processed_data"]
+        S3["📦 status"]
+    end
+    
+    fetch -.-> S1
+    process -.-> S2
+    save -.-> S3
+</div>
+
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/agent"
@@ -246,6 +272,33 @@ g.AddNode(&graph.BaseNode{
 
 State is shared across all nodes and flows through the graph using **channels**.
 
+<div class="mermaid">
+flowchart LR
+    subgraph Nodes["Graph Nodes"]
+        N1[Node A]
+        N2[Node B]
+        N3[Node C]
+    end
+    
+    subgraph State["State Manager"]
+        direction TB
+        C1["📬 messages\n(append)"]
+        C2["💾 counter\n(replace)"]
+        C3["🏷️ status\n(replace)"]
+    end
+    
+    N1 -->|"read"| State
+    N1 -->|"updates"| State
+    N2 -->|"read"| State
+    N2 -->|"updates"| State
+    N3 -->|"read"| State
+    N3 -->|"updates"| State
+    
+    style C1 fill:#3b82f6,stroke:#60a5fa,color:#fff
+    style C2 fill:#8b5cf6,stroke:#a78bfa,color:#fff
+    style C3 fill:#10b981,stroke:#34d399,color:#fff
+</div>
+
 ### Reading state
 
 Nodes receive immutable state views with typed key access:
@@ -348,12 +401,40 @@ Execution proceeds in discrete **supersteps**:
 3. **Apply updates** - State changes applied atomically
 4. **Repeat** - Until END node or max iterations
 
-```
-Superstep 0: [START]
-Superstep 1: [node_a, node_b]  ← Parallel execution
-Superstep 2: [node_c]
-Superstep 3: [END]
-```
+<div class="mermaid">
+sequenceDiagram
+    participant E as Executor
+    participant S as State Manager
+    participant N1 as Node A
+    participant N2 as Node B
+    participant N3 as Node C
+
+    rect rgb(30, 41, 59)
+    Note over E,N3: Superstep 0
+    E->>S: Initialize state
+    S-->>E: Ready nodes: [START]
+    end
+
+    rect rgb(30, 41, 59)
+    Note over E,N3: Superstep 1 (Parallel)
+    E->>N1: Execute node_a
+    E->>N2: Execute node_b
+    N1-->>S: Updates {counter: 1}
+    N2-->>S: Updates {status: "done"}
+    S->>S: Apply atomically
+    end
+
+    rect rgb(30, 41, 59)
+    Note over E,N3: Superstep 2
+    E->>N3: Execute node_c
+    N3-->>S: Updates {result: "..."}
+    end
+
+    rect rgb(30, 41, 59)
+    Note over E,N3: Superstep 3
+    E->>E: Reach END node
+    end
+</div>
 
 ### Parallel execution
 

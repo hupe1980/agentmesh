@@ -5,7 +5,7 @@ description: Connect LLM providers through a unified interface with streaming an
 permalink: /models/
 hero:
   title: Connect language models
-  description: Integrate OpenAI, Anthropic, LangChainGo, or custom providers with consistent streaming and tool calling.
+  description: Integrate OpenAI, Anthropic, Gemini, LangChainGo, or custom providers with consistent streaming and tool calling.
   primary_cta:
     label: Choose an adapter
     href: "#available-models"
@@ -23,6 +23,8 @@ sidebar:
         url: "#openai"
       - title: Anthropic
         url: "#anthropic"
+      - title: Gemini
+        url: "#gemini"
       - title: LangChainGo
         url: "#langchaingo"
   - title: Tool binding
@@ -46,11 +48,25 @@ sidebar:
 
 ## Overview {#overview}
 
-AgentMesh abstracts language models behind a common `model.Model` interface that uses Go 1.23+ iterators for unified streaming:
+AgentMesh abstracts language models behind a common `model.Model` interface that uses Go 1.24+ iterators for unified streaming:
 
 ```go
 type Model interface {
-    Generate(ctx context.Context, messages []message.Message) iter.Seq2[*model.Response, error]
+    Generate(ctx context.Context, req *Request) iter.Seq2[*Response, error]
+    Capabilities() Capabilities
+}
+```
+
+The `Request` struct bundles messages, tools, system prompt, and other options:
+
+```go
+type Request struct {
+    Messages     []message.Message  // Conversation history
+    Tools        []tool.Tool        // Available tools for function calling
+    SystemPrompt string             // Per-request system instruction
+    OutputSchema *schema.OutputSchema // Structured output schema
+    Stream       bool               // Enable streaming mode
+    Metadata     map[string]any     // Provider-specific options
 }
 ```
 
@@ -203,6 +219,44 @@ The adapter supports:
 - ✅ Function calling via `BindTools()`
 - ✅ Vision models
 - ✅ System prompts
+
+### Gemini {#gemini}
+
+The Gemini adapter integrates Google's Gemini models via the official SDK:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/model/gemini"
+
+model, err := gemini.NewModel(ctx,
+    gemini.WithModel("gemini-2.0-flash-exp"),
+    gemini.WithMaxOutputTokens(4096),
+    gemini.WithTemperature(0.7),
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+compiled, err := agent.NewReActAgent(model, tools)
+```
+
+Configuration options:
+
+```go
+gemini.NewModel(ctx,
+    gemini.WithModel("gemini-2.0-flash-exp"), // Model name
+    gemini.WithMaxOutputTokens(4096),         // Max output tokens
+    gemini.WithTemperature(0.7),              // Randomness (0-1)
+    gemini.WithTopP(0.95),                    // Nucleus sampling
+    gemini.WithTopK(40),                      // Top-k sampling
+    gemini.WithAPIKey("your-api-key"),        // Optional if set in env
+)
+```
+
+The adapter supports:
+- ✅ Streaming responses
+- ✅ Function calling via `BindTools()`
+- ✅ Vision models (multimodal)
+- ✅ Native reasoning (Gemini 2.0)
 
 ### LangChainGo {#langchaingo}
 
