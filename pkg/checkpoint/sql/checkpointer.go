@@ -585,7 +585,9 @@ func (c *Checkpointer) scanCheckpointRow(rows *sql.Rows) (*checkpoint.Checkpoint
 // GetApprovalHistory returns the approval history for a specific run.
 func (c *Checkpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
 	//nolint:gosec // Table name is sanitized at construction time
-	query := "SELECT approval_metadata FROM " + c.tableName + " WHERE run_id = ? AND approval_metadata IS NOT NULL ORDER BY superstep ASC"
+	query := fmt.Sprintf("SELECT approval_metadata FROM %s WHERE run_id = %s AND approval_metadata IS NOT NULL ORDER BY superstep ASC",
+		c.tableName,
+		c.dialect.PlaceholderForPosition(1))
 
 	rows, err := c.db.QueryContext(ctx, query, runID)
 	if err != nil {
