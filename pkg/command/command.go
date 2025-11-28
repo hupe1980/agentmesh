@@ -149,17 +149,8 @@ func (c *Command) To(targets ...string) ([]string, state.Updates, error) {
 //	    SetAll(command.Append(msgKey, "hello")).
 //	    To("next")
 func Append[T any](key state.ListKey[T], value T, extend ...*Command) *Command {
-	var cmd *Command
-	if len(extend) > 0 && extend[0] != nil {
-		cmd = extend[0]
-		if cmd.err != nil {
-			return cmd
-		}
-	} else {
-		cmd = New()
-	}
-	cmd.m[key.Name()] = state.SliceOf[T]([]T{value})
-	return cmd
+	c := firstOrNew(extend)
+	return appendToList(c, key, []T{value})
 }
 
 // AppendMany adds multiple values to a list key and returns a Command for chaining.
@@ -176,15 +167,30 @@ func Append[T any](key state.ListKey[T], value T, extend ...*Command) *Command {
 //	    SetAll(command.AppendMany(msgKey, []string{"a", "b"})).
 //	    To("next")
 func AppendMany[T any](key state.ListKey[T], values []T, extend ...*Command) *Command {
-	var cmd *Command
-	if len(extend) > 0 && extend[0] != nil {
-		cmd = extend[0]
-		if cmd.err != nil {
-			return cmd
-		}
-	} else {
-		cmd = New()
+	c := firstOrNew(extend)
+	return appendToList(c, key, values)
+}
+
+// firstOrNew returns the first Command in the slice or a new Command if none exist.
+func firstOrNew(cmd []*Command) *Command {
+	if len(cmd) > 0 && cmd[0] != nil {
+		return cmd[0]
 	}
+	return New()
+}
+
+// appendToList handles all list modification in one place.
+// Prevents code duplication between Append and AppendMany.
+func appendToList[T any](cmd *Command, key state.ListKey[T], values []T) *Command {
+	if cmd.err != nil {
+		return cmd
+	}
+
+	// Apply max-size if configured
+	if n := key.MaxSize(); n > 0 && len(values) > n {
+		values = values[len(values)-n:]
+	}
+
 	cmd.m[key.Name()] = state.SliceOf[T](values)
 	return cmd
 }
