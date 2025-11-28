@@ -54,22 +54,24 @@ type Message[M any] struct {
 //
 // ERROR HANDLING CONTRACT:
 //
+// All errors returned by the iterator are fatal and stop execution.
 // When iterating over runtime events:
 //
 //	for evt, err := range runtime.Run(ctx) {
 //	    if err != nil {
 //	        // Fatal error - BSP execution terminated
-//	        // Examples: context canceled, max iterations exceeded, quota exceeded
+//	        // Examples: context canceled, vertex failure, max iterations exceeded, quota exceeded
 //	        return err
 //	    }
 //	    // Process event (superstep progress, vertex output, diagnostics)
 //	}
 //
-// For non-fatal vertex-level errors (where execution should continue),
-// use evt.Output to pass error information rather than the iterator's error return.
+// BSP semantics require that all vertices complete successfully for a superstep to be valid.
+// If any vertex fails, the entire superstep (and thus execution) is aborted.
+// This ensures consistent state and prevents partial updates from being applied.
 type Event[M any] struct {
 	Vertex      string
 	Superstep   int64
-	Output      any // Vertex output (can include error information for non-fatal failures)
+	Output      any // Vertex output (e.g., results, intermediate computations)
 	Diagnostics any // Debug/diagnostic information
 }
