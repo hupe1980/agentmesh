@@ -328,14 +328,11 @@ func (p *PregelExecutor[I, O]) initializeRun(
 	}
 
 	// Convert input to initial state using adapter
-	var inputValue any = input
-	if inputValue != nil {
-		initialState := p.inputToState(input)
+	initialState := p.inputToState(input)
 
-		if len(initialState) > 0 {
-			if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
-				return "", fmt.Errorf("failed to apply initial state: %w", err)
-			}
+	if len(initialState) > 0 {
+		if err := compiled.manager.ApplyUpdates(ctx, initialState); err != nil {
+			return "", fmt.Errorf("failed to apply initial state: %w", err)
 		}
 	}
 
