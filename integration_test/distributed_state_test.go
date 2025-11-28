@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
@@ -73,8 +73,8 @@ func TestDistributedStateSync(t *testing.T) {
 		DeclaredTargets: []string{"node2"},
 		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			return command.New().
-				Set(counterKey, 1.0). // Use float64 for JSON compatibility
-				Set(dataKey, "A").
+				With(command.SetValue(counterKey, 1.0)). // Use float64 for JSON compatibility
+				With(command.SetValue(dataKey, "A")).
 				To("node2")
 		},
 	})
@@ -91,8 +91,8 @@ func TestDistributedStateSync(t *testing.T) {
 			data := state.GetFromView(view, dataKey)
 
 			return command.New().
-				Set(counterKey, counter+1.0). // Should be 2.0
-				Set(dataKey, data+"B").       // Should be "AB"
+				With(command.SetValue(counterKey, counter+1.0)). // Should be 2.0
+				With(command.SetValue(dataKey, data+"B")).       // Should be "AB"
 				To("node3")
 		},
 	})
@@ -109,8 +109,8 @@ func TestDistributedStateSync(t *testing.T) {
 			data := state.GetFromView(view, dataKey)
 
 			return command.New().
-				Set(counterKey, counter+1.0). // Should be 3.0
-				Set(dataKey, data+"C").       // Should be "ABC"
+				With(command.SetValue(counterKey, counter+1.0)). // Should be 3.0
+				With(command.SetValue(dataKey, data+"C")).       // Should be "ABC"
 				To(graph.EndNode)
 		},
 	})
@@ -208,7 +208,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 		DeclaredTargets: []string{"node2"},
 		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
 			return command.New().
-				Set(counterKey, 1.0).
+				With(command.SetValue(counterKey, 1.0)).
 				To("node2")
 		},
 	})
@@ -224,7 +224,7 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
 
 			return command.New().
-				Set(counterKey, counter+10.0). // Should be 11.0 (1.0 + 10.0)
+				With(command.SetValue(counterKey, counter+10.0)). // Should be 11.0 (1.0 + 10.0)
 				To(graph.EndNode)
 		},
 	})

@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
@@ -77,8 +77,8 @@ func runScenario(choice string) {
 
 			// Update state to indicate which path should be taken
 			cmd := command.New().
-				Set(nextPathKey, choiceVal).
-				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), fmt.Sprintf("Decision: route to %s", choiceVal)))
+				With(command.SetValue(nextPathKey, choiceVal)).
+				With(command.Append(actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal)))
 
 			// Route to the chosen path
 			if choiceVal == "path_a" {
@@ -95,7 +95,7 @@ func runScenario(choice string) {
 		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [path_a] Executing Path A logic...")
 			return command.New().
-				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), "Completed: Path A")).
+				With(command.Append(actionHistoryKey, "Completed: Path A")).
 				To(graph.EndNode)
 		},
 	})
@@ -107,7 +107,7 @@ func runScenario(choice string) {
 		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
 			fmt.Println("  [path_b] Executing Path B logic...")
 			return command.New().
-				Set(actionHistoryKey, append(graphstate.GetFromView(view, actionHistoryKey.Key), "Completed: Path B")).
+				With(command.Append(actionHistoryKey, "Completed: Path B")).
 				To(graph.EndNode)
 		},
 	})

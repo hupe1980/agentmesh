@@ -169,12 +169,12 @@ func (nv *NamespacedReadView) isNamespacedKey(keyName string) bool {
 // Updates represents state modifications to be applied.
 // This is a type alias for map[string]any for compatibility.
 //
-// For type-safe updates, use UpdateBuilder instead:
+// For type-safe updates, use UpdateBuilder with helpers:
 //
-//	builder := NewUpdateBuilder()
-//	SetUpdate(builder, counterKey, 42)
-//	AppendUpdate(builder, messagesKey, msg1, msg2)
-//	updates, err := builder.Build()
+//	updates := NewUpdateBuilder().
+//	    With(SetValue(counterKey, 42)).
+//	    With(AppendValue(messagesKey, msg1, msg2)).
+//	    Build()
 type Updates map[string]any
 
 // NoUpdate returns an empty updates map, indicating no state changes.

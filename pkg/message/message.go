@@ -636,3 +636,16 @@ func mergeBase(a, b messageBase) messageBase {
 	merged.content = append(cloneParts(a.content), cloneParts(b.content)...)
 	return merged
 }
+
+// HasToolCalls checks if a message contains tool calls.
+// Returns true if the message is an AIMessage with at least one tool call.
+//
+// Example:
+//
+//	if message.HasToolCalls(msg) {
+//	    // Route to tool execution
+//	}
+func HasToolCalls(msg Message) bool {
+	aiMsg, ok := msg.(*AIMessage)
+	return ok && len(aiMsg.ToolCalls) > 0
+}

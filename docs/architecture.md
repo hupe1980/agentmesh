@@ -572,7 +572,7 @@ builder.AddNodeFunc("classifier", func(ctx context.Context, view state.ReadView)
     messages := state.GetFromView(view, agent.MessagesKey)
     category := analyzeInput(messages)
     
-    cmd := command.New().Set(categoryKey, category)
+    cmd := command.New().With(command.SetValue(categoryKey, category))
     
     // Return different paths based on runtime data
     if category == "urgent" {

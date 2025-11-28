@@ -1,7 +1,10 @@
 package state
 
 // UpdateBuilder provides a fluent, type-safe API for constructing Updates maps.
-// It enforces compile-time type checking through Key[T] and ListKey[T] types.
+// Unlike command.Command (which is for nodes with routing), UpdateBuilder is for
+// direct state mutations without routing logic (middleware, initialization, etc.).
+//
+// Uses compile-time type checking through Key[T] and ListKey[T] types.
 //
 // Example:
 //
@@ -9,8 +12,8 @@ package state
 //	var countKey = NewKey[int]("count", 0)
 //
 //	updates := NewUpdateBuilder().
-//	    Set(countKey, 42).
-//	    AppendMany(msgKey, []string{"hello", "world"}).
+//	    With(SetValue(countKey, 42)).
+//	    With(AppendValue(msgKey, "hello", "world")).
 //	    Build()
 type UpdateBuilder struct {
 	m   map[string]any
@@ -22,88 +25,81 @@ func NewUpdateBuilder() *UpdateBuilder {
 	return &UpdateBuilder{m: make(map[string]any)}
 }
 
-// Set adds a key-value pair to the updates map with type safety from Key[T].
-// The Key[T] parameter ensures the value type matches the key's declared type.
+// With applies a modifier function to the UpdateBuilder, enabling method-like chaining.
+// This is used with the type-safe helper functions like SetValue and AppendValue.
 //
 // Example:
 //
-//	var key = NewKey[string]("name", "")
-//	builder.Set(key, "Alice")  // Type-safe: only string allowed
-func (b *UpdateBuilder) Set(key interface{ Name() string }, value any) *UpdateBuilder {
+//	updates := NewUpdateBuilder().
+//	    With(SetValue(key, "value")).
+//	    With(AppendValue(listKey, "item1", "item2")).
+//	    Build()
+func (b *UpdateBuilder) With(fn func(*UpdateBuilder) *UpdateBuilder) *UpdateBuilder {
 	if b.err != nil {
 		return b
 	}
-	b.m[key.Name()] = value
-	return b
+	return fn(b)
 }
 
-// WithAppend adds a single value to a list-typed state key with compile-time type safety.
-// This allows chaining with Set() for mixed updates.
+// SetValue sets a typed value for a key with compile-time type checking.
+// Returns a function for use with UpdateBuilder.With().
 //
 // Example:
 //
-//	var msgKey = NewListKey[string]("messages", 100)
-//	updates := WithAppend(
-//	    NewUpdateBuilder().Set(counterKey, 42),
-//	    msgKey, "hello",
-//	).Build()
-func WithAppend[T any](b *UpdateBuilder, key ListKey[T], value T) *UpdateBuilder {
-	if b.err != nil {
+//	var statusKey = NewKey[string]("status", "")
+//	updates := NewUpdateBuilder().
+//	    With(SetValue(statusKey, "completed")).
+//	    Build()
+func SetValue[T any](key Key[T], value T) func(*UpdateBuilder) *UpdateBuilder {
+	return func(b *UpdateBuilder) *UpdateBuilder {
+		if b.err != nil {
+			return b
+		}
+		b.m[key.Name()] = value
 		return b
 	}
-	b.m[key.Name()] = SliceOf[T]([]T{value})
-	return b
 }
 
-// WithAppendMany adds multiple values to a list-typed state key with compile-time type safety.
-// This allows chaining with Set() for mixed updates.
+// AppendValue adds one or more values to a list key with compile-time type checking.
+// Returns a function for use with UpdateBuilder.With().
 //
-// Example:
+// Note: This creates a new list with the given values. When applied via ApplyUpdates(),
+// the StateManager will merge this with existing list values.
 //
-//	var msgKey = NewListKey[string]("messages", 100)
-//	updates := WithAppendMany(
-//	    NewUpdateBuilder().Set(counterKey, 42),
-//	    msgKey, []string{"hello", "world"},
-//	).Build()
-func WithAppendMany[T any](b *UpdateBuilder, key ListKey[T], values []T) *UpdateBuilder {
-	if b.err != nil {
+// Examples:
+//
+//	// Single value
+//	updates := NewUpdateBuilder().
+//	    With(AppendValue(msgKey, "hello")).
+//	    Build()
+//
+//	// Multiple values
+//	updates := NewUpdateBuilder().
+//	    With(AppendValue(msgKey, "a", "b", "c")).
+//	    Build()
+//
+//	// Spread a slice
+//	msgs := []string{"x", "y"}
+//	updates := NewUpdateBuilder().
+//	    With(AppendValue(msgKey, msgs...)).
+//	    Build()
+func AppendValue[T any](key ListKey[T], values ...T) func(*UpdateBuilder) *UpdateBuilder {
+	return func(b *UpdateBuilder) *UpdateBuilder {
+		if b.err != nil {
+			return b
+		}
+		b.m[key.Name()] = SliceOf[T](values)
 		return b
 	}
-	b.m[key.Name()] = SliceOf[T](values)
-	return b
 }
 
-// Build returns the accumulated Updates map and any error encountered.
+// Build returns the accumulated Updates map.
 //
 // Example:
 //
-//	updates := NewUpdateBuilder().Set(key, val).Build()
+//	updates := NewUpdateBuilder().
+//	    With(SetValue(key, val)).
+//	    Build()
 func (b *UpdateBuilder) Build() Updates {
 	return Updates(b.m)
-}
-
-// AppendUpdate creates an UpdateBuilder that appends a single value to a list key.
-// This provides compile-time type safety for list operations.
-//
-// Example:
-//
-//	var msgKey = NewListKey[string]("messages", 100)
-//	updates := AppendUpdate(msgKey, "hello").Build()
-func AppendUpdate[T any](key ListKey[T], value T) *UpdateBuilder {
-	builder := NewUpdateBuilder()
-	builder.m[key.Name()] = SliceOf[T]([]T{value})
-	return builder
-}
-
-// AppendManyUpdates creates an UpdateBuilder that appends multiple values to a list key.
-// This provides compile-time type safety for batch list operations.
-//
-// Example:
-//
-//	var msgKey = NewListKey[string]("messages", 100)
-//	updates := AppendManyUpdates(msgKey, []string{"hello", "world"}).Build()
-func AppendManyUpdates[T any](key ListKey[T], values []T) *UpdateBuilder {
-	builder := NewUpdateBuilder()
-	builder.m[key.Name()] = SliceOf[T](values)
-	return builder
 }

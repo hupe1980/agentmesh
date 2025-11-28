@@ -333,7 +333,7 @@ g.AddNode(&graph.BaseNode{
         // Classify the query...
         category := "support"  // or "sales"
         
-        cmd := command.New().Set(categoryKey, category)
+        cmd := command.New().With(command.SetValue(categoryKey, category))
         
         if category == "support" {
             return cmd.To("handle_support")

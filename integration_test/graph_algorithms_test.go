@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +54,7 @@ func TestPageRank(t *testing.T) {
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromC
 
 			return command.New().
-				Set(rankA, newRank).
+				With(command.SetValue(rankA, newRank)).
 				To("B")
 		},
 	})
@@ -72,7 +72,7 @@ func TestPageRank(t *testing.T) {
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromA
 
 			return command.New().
-				Set(rankB, newRank).
+				With(command.SetValue(rankB, newRank)).
 				To("C")
 		},
 	})
@@ -90,7 +90,7 @@ func TestPageRank(t *testing.T) {
 			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromB
 
 			return command.New().
-				Set(rankC, newRank).
+				With(command.SetValue(rankC, newRank)).
 				To(graph.EndNode)
 		},
 	})
@@ -172,13 +172,13 @@ func TestShortestPath(t *testing.T) {
 			// Relax B: edge weight 1
 			newDistB := myDist + 1
 			if newDistB < state.GetFromView(view, distB) {
-				cmd.Set(distB, newDistB)
+				cmd = cmd.With(command.SetValue(distB, newDistB))
 			}
 
 			// Relax C: edge weight 5
 			newDistC := myDist + 5
 			if newDistC < state.GetFromView(view, distC) {
-				cmd.Set(distC, newDistC)
+				cmd = cmd.With(command.SetValue(distC, newDistC))
 			}
 
 			return cmd.To("B", "C")
@@ -200,7 +200,7 @@ func TestShortestPath(t *testing.T) {
 			// Relax C: edge weight 1
 			newDistC := myDist + 1
 			if newDistC < state.GetFromView(view, distC) {
-				cmd.Set(distC, newDistC)
+				cmd = cmd.With(command.SetValue(distC, newDistC))
 			}
 
 			return cmd.To("C")
@@ -270,7 +270,7 @@ func TestGraphConvergence(t *testing.T) {
 			}
 
 			return command.New().
-				Set(counterKey, count+1).
+				With(command.SetValue(counterKey, count+1)).
 				To(graph.EndNode)
 		},
 	})
@@ -320,8 +320,8 @@ func TestIterativeComputation(t *testing.T) {
 			iteration := state.GetFromView(view, iterationKey)
 
 			return command.New().
-				Set(valueKey, value/2.0).
-				Set(iterationKey, iteration+1).
+				With(command.SetValue(valueKey, value/2.0)).
+				With(command.SetValue(iterationKey, iteration+1)).
 				To(graph.EndNode)
 		},
 	})

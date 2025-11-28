@@ -155,7 +155,7 @@ func (n *ToolNode) Execute(ctx context.Context, view state.ReadView) ([]string, 
 
 	// Return only the NEW tool messages generated
 	// The state manager will append them to the existing messages list
-	return command.New().Set(MessagesKey, toolMessages).To("model")
+	return command.New().With(command.Append(MessagesKey, toolMessages...)).To("model")
 }
 
 // formatToolResult converts a tool result to a string representation.

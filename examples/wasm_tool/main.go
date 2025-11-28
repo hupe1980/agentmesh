@@ -131,7 +131,7 @@ func main() {
 				}
 			}
 			// Show tool calls made by the AI
-			if len(m.ToolCalls) > 0 {
+			if message.HasToolCalls(evt) {
 				fmt.Printf("    🔧 Tool calls: %v\n", m.ToolCalls)
 			}
 

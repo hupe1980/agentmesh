@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/require"
 )
@@ -36,8 +36,8 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			// Send data to node_b
 			return command.New().
-				Set(fromAKey, "hello from A").
-				Set(counterKey, 1).
+				With(command.SetValue(fromAKey, "hello from A")).
+				With(command.SetValue(counterKey, 1)).
 				To("node_b")
 		},
 	})
@@ -57,8 +57,8 @@ func TestMessagePropagationAcrossSupersteps(t *testing.T) {
 			require.Equal(t, 1, counter)
 
 			return command.New().
-				Set(fromBKey, "hello from B").
-				Set(statusKey, "received").
+				With(command.SetValue(fromBKey, "hello from B")).
+				With(command.SetValue(statusKey, "received")).
 				To(graph.EndNode)
 		},
 	})
@@ -109,8 +109,8 @@ func TestParallelMessagePropagation(t *testing.T) {
 		DeclaredTargets: []string{"aggregator"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			return command.New().
-				Set(fromParallelAKey, "data_a").
-				Set(fromParallelBKey, "data_b").
+				With(command.SetValue(fromParallelAKey, "data_a")).
+				With(command.SetValue(fromParallelBKey, "data_b")).
 				To("aggregator")
 		},
 	})
@@ -131,7 +131,7 @@ func TestParallelMessagePropagation(t *testing.T) {
 			require.Equal(t, "data_b", dataB)
 
 			return command.New().
-				Set(aggregatedKey, true).
+				With(command.SetValue(aggregatedKey, true)).
 				To(graph.EndNode)
 		},
 	})
@@ -181,8 +181,8 @@ func TestMessagePropagationSequential(t *testing.T) {
 		DeclaredTargets: []string{"node_2"},
 		Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
 			return command.New().
-				Set(stepKey, 1).
-				Set(dataKey, "from_node_1").
+				With(command.SetValue(stepKey, 1)).
+				With(command.SetValue(dataKey, "from_node_1")).
 				To("node_2")
 		},
 	})
@@ -199,8 +199,8 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, "from_node_1", data)
 
 			return command.New().
-				Set(stepKey, 2).
-				Set(dataKey, "from_node_2").
+				With(command.SetValue(stepKey, 2)).
+				With(command.SetValue(dataKey, "from_node_2")).
 				To("node_3")
 		},
 	})
@@ -217,8 +217,8 @@ func TestMessagePropagationSequential(t *testing.T) {
 			require.Equal(t, "from_node_2", data)
 
 			return command.New().
-				Set(stepKey, 3).
-				Set(finalKey, true).
+				With(command.SetValue(stepKey, 3)).
+				With(command.SetValue(finalKey, true)).
 				To(graph.EndNode)
 		},
 	})

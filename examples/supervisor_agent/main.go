@@ -170,7 +170,7 @@ func displayTranscript(query string, messages []message.Message) {
 		switch m := msg.(type) {
 		case *message.AIMessage:
 			// Check if this is supervisor routing or final response
-			if len(m.ToolCalls) > 0 {
+			if message.HasToolCalls(msg) {
 				fmt.Printf("\n🎯 Supervisor Routing:\n")
 				for _, call := range m.ToolCalls {
 					fmt.Printf("   → Delegating to: %s\n", call.Name)

@@ -165,7 +165,7 @@ Sets the entry point of the graph (the first node to execute).
 g.SetEntryPoint("start_node")
 ```
 
-**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `command.New().Set(key, value).To(target)` for clean, type-safe state updates and routing.
+**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `command.New().With(command.SetValue(key, value)).To(target)` for clean, type-safe state updates and routing with compile-time type checking.
 
 #### `Compile(opts ...CompileOption) (*Compiled[I, O], error)`
 Compiles the graph into an executable workflow.

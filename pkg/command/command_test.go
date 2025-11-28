@@ -7,8 +7,8 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-func TestCommand_Set(t *testing.T) {
-	msgKey := state.NewKey[string]("messages", "")
+func TestSetValue_TypeSafety(t *testing.T) {
+	statusKey := state.NewKey[string]("status", "")
 	countKey := state.NewKey[int]("count", 0)
 
 	tests := []struct {
@@ -17,32 +17,32 @@ func TestCommand_Set(t *testing.T) {
 		validate func(*testing.T, *Command)
 	}{
 		{
-			name: "single key",
+			name: "single value",
 			setup: func() *Command {
-				return New().Set(msgKey, "hello")
+				return New().With(SetValue(statusKey, "completed"))
 			},
 			validate: func(t *testing.T, cmd *Command) {
 				if len(cmd.m) != 1 {
 					t.Errorf("expected 1 key, got %d", len(cmd.m))
 				}
-				if cmd.m[msgKey.Name()] != "hello" {
-					t.Errorf("expected 'hello', got %v", cmd.m[msgKey.Name()])
+				if cmd.m[statusKey.Name()] != "completed" {
+					t.Errorf("expected 'completed', got %v", cmd.m[statusKey.Name()])
 				}
 			},
 		},
 		{
-			name: "multiple keys",
+			name: "multiple values",
 			setup: func() *Command {
 				return New().
-					Set(msgKey, "hello").
-					Set(countKey, 42)
+					With(SetValue(statusKey, "processing")).
+					With(SetValue(countKey, 42))
 			},
 			validate: func(t *testing.T, cmd *Command) {
 				if len(cmd.m) != 2 {
 					t.Errorf("expected 2 keys, got %d", len(cmd.m))
 				}
-				if cmd.m[msgKey.Name()] != "hello" {
-					t.Errorf("expected 'hello', got %v", cmd.m[msgKey.Name()])
+				if cmd.m[statusKey.Name()] != "processing" {
+					t.Errorf("expected 'processing', got %v", cmd.m[statusKey.Name()])
 				}
 				if cmd.m[countKey.Name()] != 42 {
 					t.Errorf("expected 42, got %v", cmd.m[countKey.Name()])
@@ -50,15 +50,15 @@ func TestCommand_Set(t *testing.T) {
 			},
 		},
 		{
-			name: "overwrite key",
+			name: "overwrite value",
 			setup: func() *Command {
 				return New().
-					Set(msgKey, "first").
-					Set(msgKey, "second")
+					With(SetValue(statusKey, "first")).
+					With(SetValue(statusKey, "second"))
 			},
 			validate: func(t *testing.T, cmd *Command) {
-				if cmd.m[msgKey.Name()] != "second" {
-					t.Errorf("expected 'second', got %v", cmd.m[msgKey.Name()])
+				if cmd.m[statusKey.Name()] != "second" {
+					t.Errorf("expected 'second', got %v", cmd.m[statusKey.Name()])
 				}
 			},
 		},
@@ -72,8 +72,152 @@ func TestCommand_Set(t *testing.T) {
 	}
 }
 
+func TestAppend_Variadic(t *testing.T) {
+	msgKey := state.NewListKey[string]("messages", 0)
+
+	t.Run("single value", func(t *testing.T) {
+		cmd := New().With(Append(msgKey, "hello"))
+
+		updates, err := cmd.Build()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		sv, ok := updates[msgKey.Name()].(state.SliceValue)
+		if !ok {
+			t.Fatalf("expected SliceValue, got %T", updates[msgKey.Name()])
+		}
+
+		slice := sv.ToSlice()
+		if len(slice) != 1 {
+			t.Errorf("expected 1 value, got %d", len(slice))
+		}
+		if slice[0] != "hello" {
+			t.Errorf("expected 'hello', got %v", slice[0])
+		}
+	})
+
+	t.Run("multiple values", func(t *testing.T) {
+		cmd := New().With(Append(msgKey, "a", "b", "c"))
+
+		updates, err := cmd.Build()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		sv := updates[msgKey.Name()].(state.SliceValue)
+		slice := sv.ToSlice()
+		if len(slice) != 3 {
+			t.Errorf("expected 3 values, got %d", len(slice))
+		}
+		if slice[0] != "a" || slice[1] != "b" || slice[2] != "c" {
+			t.Errorf("unexpected values: %v", slice)
+		}
+	})
+
+	t.Run("spread slice", func(t *testing.T) {
+		values := []string{"x", "y", "z"}
+		cmd := New().With(Append(msgKey, values...))
+
+		updates, err := cmd.Build()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		sv := updates[msgKey.Name()].(state.SliceValue)
+		slice := sv.ToSlice()
+		if len(slice) != 3 {
+			t.Errorf("expected 3 values, got %d", len(slice))
+		}
+	})
+
+	t.Run("multiple appends", func(t *testing.T) {
+		cmd := New().
+			With(Append(msgKey, "msg1")).
+			With(Append(msgKey, "msg2")).
+			With(Append(msgKey, "msg3"))
+
+		updates, err := cmd.Build()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		sv := updates[msgKey.Name()].(state.SliceValue)
+		slice := sv.ToSlice()
+		if len(slice) != 3 {
+			t.Errorf("expected 3 values, got %d", len(slice))
+		}
+	})
+}
+
+func TestMerge_Composition(t *testing.T) {
+	statusKey := state.NewKey[string]("status", "")
+	countKey := state.NewKey[int]("count", 0)
+
+	t.Run("merge two commands", func(t *testing.T) {
+		cmd1 := New().With(SetValue(statusKey, "a"))
+		cmd2 := New().With(SetValue(countKey, 42))
+
+		merged := New().
+			With(Merge(cmd1)).
+			With(Merge(cmd2))
+
+		updates, err := merged.Build()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updates[statusKey.Name()] != "a" {
+			t.Errorf("expected 'a', got %v", updates[statusKey.Name()])
+		}
+		if updates[countKey.Name()] != 42 {
+			t.Errorf("expected 42, got %v", updates[countKey.Name()])
+		}
+	})
+
+	t.Run("merge with error propagation", func(t *testing.T) {
+		cmd1 := New()
+		cmd1.err = fmt.Errorf("test error")
+
+		merged := New().
+			With(SetValue(statusKey, "ok")).
+			With(Merge(cmd1))
+
+		_, err := merged.Build()
+		if err == nil {
+			t.Error("expected error to be propagated")
+		}
+	})
+}
+
+func TestSetAll_MultipleCommands(t *testing.T) {
+	statusKey := state.NewKey[string]("status", "")
+	countKey := state.NewKey[int]("count", 0)
+	msgKey := state.NewListKey[string]("messages", 0)
+
+	cmd1 := New().With(SetValue(statusKey, "a"))
+	cmd2 := New().With(SetValue(countKey, 1))
+	cmd3 := New().With(Append(msgKey, "test"))
+
+	merged := New().With(SetAll(cmd1, cmd2, cmd3))
+
+	updates, err := merged.Build()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(updates) != 3 {
+		t.Errorf("expected 3 keys, got %d", len(updates))
+	}
+	if updates[statusKey.Name()] != "a" {
+		t.Errorf("expected 'a', got %v", updates[statusKey.Name()])
+	}
+	if updates[countKey.Name()] != 1 {
+		t.Errorf("expected 1, got %v", updates[countKey.Name()])
+	}
+}
+
 func TestCommand_Build(t *testing.T) {
-	msgKey := state.NewKey[string]("messages", "")
+	statusKey := state.NewKey[string]("status", "")
 	countKey := state.NewKey[int]("count", 0)
 
 	t.Run("empty command", func(t *testing.T) {
@@ -88,8 +232,8 @@ func TestCommand_Build(t *testing.T) {
 
 	t.Run("with updates", func(t *testing.T) {
 		updates, err := New().
-			Set(msgKey, "hello").
-			Set(countKey, 42).
+			With(SetValue(statusKey, "done")).
+			With(SetValue(countKey, 42)).
 			Build()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -97,8 +241,8 @@ func TestCommand_Build(t *testing.T) {
 		if len(updates) != 2 {
 			t.Errorf("expected 2 keys, got %d", len(updates))
 		}
-		if updates[msgKey.Name()] != "hello" {
-			t.Errorf("expected 'hello', got %v", updates[msgKey.Name()])
+		if updates[statusKey.Name()] != "done" {
+			t.Errorf("expected 'done', got %v", updates[statusKey.Name()])
 		}
 		if updates[countKey.Name()] != 42 {
 			t.Errorf("expected 42, got %v", updates[countKey.Name()])
@@ -106,7 +250,7 @@ func TestCommand_Build(t *testing.T) {
 	})
 
 	t.Run("returns state.Updates type", func(t *testing.T) {
-		updates, err := New().Set(msgKey, "test").Build()
+		updates, err := New().With(SetValue(statusKey, "test")).Build()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -116,12 +260,12 @@ func TestCommand_Build(t *testing.T) {
 }
 
 func TestCommand_To(t *testing.T) {
-	msgKey := state.NewKey[string]("messages", "")
+	statusKey := state.NewKey[string]("status", "")
 	countKey := state.NewKey[int]("count", 0)
 
 	t.Run("single target", func(t *testing.T) {
 		targets, updates, err := New().
-			Set(msgKey, "hello").
+			With(SetValue(statusKey, "completed")).
 			To("next")
 
 		if err != nil {
@@ -130,14 +274,14 @@ func TestCommand_To(t *testing.T) {
 		if len(targets) != 1 || targets[0] != "next" {
 			t.Errorf("expected targets [next], got %v", targets)
 		}
-		if updates[msgKey.Name()] != "hello" {
-			t.Errorf("expected 'hello', got %v", updates[msgKey.Name()])
+		if updates[statusKey.Name()] != "completed" {
+			t.Errorf("expected 'completed', got %v", updates[statusKey.Name()])
 		}
 	})
 
 	t.Run("multiple targets", func(t *testing.T) {
 		targets, updates, err := New().
-			Set(countKey, 42).
+			With(SetValue(countKey, 42)).
 			To("task1", "task2", "task3")
 
 		if err != nil {
@@ -156,7 +300,7 @@ func TestCommand_To(t *testing.T) {
 
 	t.Run("end target", func(t *testing.T) {
 		targets, _, err := New().
-			Set(msgKey, "done").
+			With(SetValue(statusKey, "done")).
 			To("__end__")
 
 		if err != nil {
@@ -183,20 +327,20 @@ func TestCommand_To(t *testing.T) {
 }
 
 func TestCommand_ErrorHandling(t *testing.T) {
-	msgKey := state.NewKey[string]("messages", "")
+	statusKey := state.NewKey[string]("status", "")
 
-	t.Run("error skips subsequent Set calls", func(t *testing.T) {
+	t.Run("error skips subsequent operations", func(t *testing.T) {
 		cmd := New()
 		errTest := fmt.Errorf("test error")
 		cmd.err = errTest
 
-		result := cmd.Set(msgKey, "should not be set")
+		result := cmd.With(SetValue(statusKey, "should not be set"))
 
 		if result != cmd {
-			t.Error("Set should return the same Command instance")
+			t.Error("With should return the same Command instance")
 		}
 		if len(cmd.m) != 0 {
-			t.Error("Set should not modify map when error present")
+			t.Error("With should not modify map when error present")
 		}
 	})
 
@@ -235,15 +379,15 @@ func TestCommand_ErrorHandling(t *testing.T) {
 }
 
 func TestCommand_Chaining(t *testing.T) {
-	msgKey := state.NewKey[string]("messages", "")
+	statusKey := state.NewKey[string]("status", "")
 	countKey := state.NewKey[int]("count", 0)
 	tempKey := state.NewKey[float64]("temperature", 0.7)
 
 	t.Run("long chain", func(t *testing.T) {
 		targets, updates, err := New().
-			Set(msgKey, "hello").
-			Set(countKey, 1).
-			Set(tempKey, 0.9).
+			With(SetValue(statusKey, "processing")).
+			With(SetValue(countKey, 1)).
+			With(SetValue(tempKey, 0.9)).
 			To("processor", "validator")
 
 		if err != nil {
@@ -260,23 +404,20 @@ func TestCommand_Chaining(t *testing.T) {
 
 // Example showing typical usage in a node function
 func ExampleCommand() {
-	var messagesKey = state.NewKey[[]string]("messages", nil)
+	var messagesKey = state.NewListKey[string]("messages", 0)
 	var countKey = state.NewKey[int]("count", 0)
 
 	// Typical node function pattern
-	nodeFunc := func(msgs []string, count int) ([]string, state.Updates, error) {
-		// Process data...
-		newMsg := "processed"
-
-		// Use Command builder for clean syntax
+	nodeFunc := func(count int) ([]string, state.Updates, error) {
+		// Use Command builder with type safety
 		return New().
-			Set(messagesKey, append(msgs, newMsg)).
-			Set(countKey, count+1).
+			With(Append(messagesKey, "processed")).
+			With(SetValue(countKey, count+1)).
 			To("next")
 	}
 
 	// Call the function
-	targets, updates, err := nodeFunc([]string{"msg1"}, 5)
+	targets, updates, err := nodeFunc(5)
 	if err != nil {
 		panic(err)
 	}

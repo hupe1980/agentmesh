@@ -143,7 +143,7 @@ func main() {
 			fmt.Print("\n\n")
 
 		case *message.AIMessage:
-			if len(m.ToolCalls) > 0 {
+			if message.HasToolCalls(m) {
 				fmt.Println("[AI] Calling tools:")
 				for _, tc := range m.ToolCalls {
 					fmt.Printf("  - %s(%s)\n", tc.Name, tc.Arguments)

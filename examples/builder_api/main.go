@@ -39,8 +39,8 @@ func main() {
 			fmt.Println("Analyzing input...")
 			// Use type-safe UpdateBuilder for state changes
 			return []string{"validate"}, state.NewUpdateBuilder().
-				Set(AnalysisKey, "Input looks good").
-				Set(ScoreKey, 0.95).
+				With(state.SetValue(AnalysisKey, "Input looks good")).
+				With(state.SetValue(ScoreKey, 0.95)).
 				Build(), nil
 		}).
 		AddNodeFunc("validate", []string{"process"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
@@ -50,7 +50,7 @@ func main() {
 
 			valid := score > 0.8
 			return []string{"process"}, state.NewUpdateBuilder().
-				Set(ValidKey, valid).
+				With(state.SetValue(ValidKey, valid)).
 				Build(), nil
 		}).
 		AddNodeFunc("process", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
@@ -61,13 +61,13 @@ func main() {
 				result := "Success!"
 				fmt.Printf("✓ Final result: %s\n", result)
 				return []string{graph.EndNode}, state.NewUpdateBuilder().
-					Set(ResultKey, result).
+					With(state.SetValue(ResultKey, result)).
 					Build(), nil
 			}
 			result := "Failed validation"
 			fmt.Printf("✗ Final result: %s\n", result)
 			return []string{graph.EndNode}, state.NewUpdateBuilder().
-				Set(ResultKey, result).
+				With(state.SetValue(ResultKey, result)).
 				Build(), nil
 		}).
 		SetEntryPoint("analyze")

@@ -29,8 +29,8 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
@@ -96,16 +96,16 @@ func main() {
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
 				updates, _ := command.New().
-					Set(progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks))).
-					Set(currentChunkKey, chunk).
+					With(command.SetValue(progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))).
+					With(command.SetValue(currentChunkKey, chunk)).
 					Build()
 				streamWriter(updates)
 			}
 		}
 
 		updates, err := command.New().
-			Set(statusKey, "data_processed").
-			Set(chunksTotalKey, len(chunks)).
+			With(command.SetValue(statusKey, "data_processed")).
+			With(command.SetValue(chunksTotalKey, len(chunks))).
 			Build()
 		return []string{"llm_call"}, updates, err
 	})
@@ -118,7 +118,7 @@ func main() {
 
 		// Emit pre-call status
 		if streamWriter != nil {
-			updates, _ := command.New().Set(llmStatusKey, "starting").Build()
+			updates, _ := command.New().With(command.SetValue(llmStatusKey, "starting")).Build()
 			streamWriter(updates)
 		}
 
@@ -136,13 +136,13 @@ func main() {
 
 		// Emit post-call status
 		if streamWriter != nil {
-			streamUpdates, _ := command.New().Set(llmStatusKey, "completed").Build()
+			streamUpdates, _ := command.New().With(command.SetValue(llmStatusKey, "completed")).Build()
 			streamWriter(streamUpdates)
 		}
 
 		updates, err := command.New().
-			Set(statusKey, "llm_completed").
-			Set(agent.MessagesKey, []message.Message{resp.Message}).
+			With(command.SetValue(statusKey, "llm_completed")).
+			With(command.Append(agent.MessagesKey, resp.Message)).
 			Build()
 		return []string{"analyzer"}, updates, err
 	})
@@ -157,8 +157,8 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			updates, _ := command.New().
-				Set(analysisStepKey, "validation").
-				Set(validationKey, "passed").
+				With(command.SetValue(analysisStepKey, "validation")).
+				With(command.SetValue(validationKey, "passed")).
 				Build()
 			streamWriter(updates)
 		}
@@ -167,8 +167,8 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			updates, _ := command.New().
-				Set(analysisStepKey, "quality_check").
-				Set(qualityScoreKey, 0.95).
+				With(command.SetValue(analysisStepKey, "quality_check")).
+				With(command.SetValue(qualityScoreKey, 0.95)).
 				Build()
 			streamWriter(updates)
 		}
@@ -177,15 +177,15 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 		if streamWriter != nil {
 			updates, _ := command.New().
-				Set(analysisStepKey, "finalization").
-				Set(readyKey, true).
+				With(command.SetValue(analysisStepKey, "finalization")).
+				With(command.SetValue(readyKey, true)).
 				Build()
 			streamWriter(updates)
 		}
 
 		updates, err := command.New().
-			Set(statusKey, "analysis_complete").
-			Set(verifiedKey, true).
+			With(command.SetValue(statusKey, "analysis_complete")).
+			With(command.SetValue(verifiedKey, true)).
 			Build()
 		return []string{graph.EndNode}, updates, err
 	})

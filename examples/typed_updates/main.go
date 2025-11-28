@@ -1,15 +1,15 @@
-// Package main demonstrates type-safe state updates using UpdateBuilder and Append helpers.
+// Package main demonstrates type-safe state updates using UpdateBuilder helpers.
 // This example shows:
-//   - Using UpdateBuilder.Set() for compile-time type safety
-//   - Using AppendUpdate[T] and AppendManyUpdates[T] for type-safe list operations
+//   - Using UpdateBuilder.With(SetValue()) for compile-time type safety
+//   - Using AppendValue[T] for type-safe list operations
 //   - Preventing typos in key names at build time
 //   - Type-checked values that match registered key types
 //   - Chaining multiple updates with fluent API
 //
 // Key improvements over raw Updates maps:
-//   - Set() provides key name safety through Key[T].Name()
-//   - AppendUpdate[T] ensures append values match ListKey[T]
-//   - AppendManyUpdates[T] wraps values in SliceOf[T] automatically
+//   - SetValue() provides compile-time type checking through Key[T]
+//   - AppendValue[T] ensures append values match ListKey[T]
+//   - Automatic SliceOf[T] wrapping for list operations
 //   - Compile errors for type mismatches (not runtime errors)
 //
 // Run: go run main.go
@@ -54,20 +54,15 @@ func main() {
 			fmt.Println("→ Node: init")
 
 			// Build type-safe updates with fluent API
-			// Use SetAll to merge regular keys with list operations
 			updates := graphstate.NewUpdateBuilder().
-				Set(counterKey, 1).
-				Set(statusKey, "initialized").
+				With(graphstate.SetValue(counterKey, 1)).
+				With(graphstate.SetValue(statusKey, "initialized")).
+				With(graphstate.AppendValue(messagesKey, "System started")).
 				Build()
 
-			// Append list values using helper, then merge
-			for k, v := range graphstate.AppendUpdate(messagesKey, "System started").Build() {
-				updates[k] = v
-			}
-
 			// Compile-time type safety examples:
-			// .Set(counterKey, "wrong") // ✗ Compiler error: string doesn't match Key[int]
-			// AppendUpdate(messagesKey, 123) // ✗ Compiler error: int doesn't match ListKey[string]
+			// .With(graphstate.SetValue(counterKey, "wrong")) // ✗ Compiler error: string doesn't match Key[int]
+			// .With(graphstate.AppendValue(messagesKey, 123)) // ✗ Compiler error: int doesn't match ListKey[string]
 
 			fmt.Printf("  ✓ Type-safe updates: counter=%d, status=%s, messages appended\n",
 				1, "initialized")
@@ -86,16 +81,12 @@ func main() {
 			currentCounter := graphstate.GetFromView(view, counterKey)
 			fmt.Printf("  Current counter: %d\n", currentCounter)
 
-			// Build updates and merge with list operations
+			// Build updates with list operations
 			updates := graphstate.NewUpdateBuilder().
-				Set(counterKey, currentCounter+10).
-				Set(statusKey, "processing").
+				With(graphstate.SetValue(counterKey, currentCounter+10)).
+				With(graphstate.SetValue(statusKey, "processing")).
+				With(graphstate.AppendValue(messagesKey, "Data processed", "Validation complete")).
 				Build()
-
-			// Use AppendManyUpdates for batch list operations
-			for k, v := range graphstate.AppendManyUpdates(messagesKey, []string{"Data processed", "Validation complete"}).Build() {
-				updates[k] = v
-			}
 
 			fmt.Printf("  ✓ Updated counter to %d\n", currentCounter+10)
 			return []string{"finalize"}, updates, nil
@@ -113,20 +104,17 @@ func main() {
 
 			// Approach 1: With() for method-like syntax
 			return command.New().
-				Set(statusKey, "finalizing").
-				With(func(c *command.Command) *command.Command {
-					return command.Append(messagesKey, "Process complete", c)
-				}).
+				With(command.SetValue(statusKey, "finalizing")).
+				With(command.Append(messagesKey, "Process complete")).
 				To(graph.EndNode)
 
-			// Approach 2: SetAll() for explicit merge (commented out)
-			// return command.New().
-			//     Set(statusKey, "finalizing").
-			//     SetAll(command.Append(messagesKey, "Process complete")).
-			//     To(graph.EndNode)
+			// Approach 2: Using separate commands then merging (commented out)
+			// statusCmd := command.New().With(command.SetValue(statusKey, "finalizing"))
+			// msgCmd := command.New().With(command.Append(messagesKey, "Process complete"))
+			// return command.New().With(command.Merge(statusCmd)).With(command.Merge(msgCmd)).To(graph.EndNode)
 
-			// Approach 3: Simple case without mixing (commented out)
-			// return command.Append(messagesKey, "Process complete").To(graph.EndNode)
+			// Approach 3: Simple case with just append (commented out)
+			// return command.New().With(command.Append(messagesKey, "Process complete")).To(graph.EndNode)
 		},
 	})
 
@@ -170,9 +158,9 @@ func main() {
 
 	fmt.Println("\n=== Key Benefits ===")
 	fmt.Println("✓ Type-safe builders prevent wrong value types at compile time")
-	fmt.Println("✓ AppendUpdate[T] and AppendManyUpdates[T] enforce ListKey[T] type matching")
-	fmt.Println("✓ Fluent API with method chaining for readability")
-	fmt.Println("✓ No manual .Name() calls - handled by builder")
+	fmt.Println("✓ SetValue[T] and AppendValue[T] enforce Key[T] type matching")
+	fmt.Println("✓ Fluent API with With() method for clean chaining")
+	fmt.Println("✓ No manual .Name() calls - handled by helpers")
 	fmt.Println("✓ Automatic SliceOf[T] wrapping for list operations")
-	fmt.Println("✓ command.Command and state.UpdateBuilder for different use cases")
+	fmt.Println("✓ command.Command for routing, state.UpdateBuilder for direct updates")
 }

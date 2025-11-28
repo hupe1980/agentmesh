@@ -18,30 +18,34 @@ Both eliminate manual map construction and provide compile-time type safety.
 ```go
 counterKey := state.NewKey[int]("counter", 0)
 
-// Build updates with fluent API
+// Build updates with fluent API using With() and SetValue()
 updates := state.NewUpdateBuilder().
-    Set(counterKey, 42).
+    With(state.SetValue(counterKey, 42)).
     Build()  // Returns state.Updates
 
 // ✗ Compile error: string doesn't match Key[int]
-// .Set(counterKey, "wrong")  // IDE shows type error immediately
+// .With(state.SetValue(counterKey, "wrong"))  // IDE shows type error immediately
 ```
 
 ### 2. Type-Safe List Operations
 
-For `ListKey[T]`, use generic helper functions that automatically wrap values in `SliceOf[T]`:
+For `ListKey[T]`, use `AppendValue` helper that automatically wraps values in `SliceOf[T]`:
 
 ```go
 messagesKey := state.NewListKey[string]("messages", 100)
 
 // Append single value
-updates := state.AppendUpdate(messagesKey, "New message").Build()
+updates := state.NewUpdateBuilder().
+    With(state.AppendValue(messagesKey, "New message")).
+    Build()
 
-// Append multiple values  
-updates := state.AppendManyUpdates(messagesKey, []string{"msg1", "msg2"}).Build()
+// Append multiple values (variadic)
+updates := state.NewUpdateBuilder().
+    With(state.AppendValue(messagesKey, "msg1", "msg2")).
+    Build()
 
 // ✗ Compile error: int doesn't match ListKey[string]
-// state.AppendUpdate(messagesKey, 123)  // Type mismatch caught at compile time
+// state.AppendValue(messagesKey, 123)  // Type mismatch caught at compile time
 ```
 
 ### 3. command.Command - Node Functions with Routing
@@ -55,15 +59,15 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     // Read with type safety
     counter := state.GetFromView(view, counterKey)  // Returns int
     
-    // Update with Command builder
+    // Update with Command builder (fully type-safe)
     return command.New().
-        Set(counterKey, counter + 1).
+        With(command.SetValue(counterKey, counter + 1)).
         To("next_node")  // Returns full tuple
 }
 
 // For list operations in nodes
 func appendNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.Append(messagesKey, "New message").To("next")
+    return command.New().With(command.Append(messagesKey, "New message")).To("next")
 }
 ```
 
@@ -106,21 +110,18 @@ func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, 
     
     // Type-safe updates with UpdateBuilder
     return []string{"next"}, state.NewUpdateBuilder().
-        Set(counterKey, 42).                  // ✓ Type-checked at compile time
+        With(state.SetValue(counterKey, 42)).  // ✓ Type-checked at compile time
         Build(), nil
     
-    // Or use Command for cleaner syntax
+    // Or use Command for cleaner syntax with compile-time type checking
     return command.New().
-        Set(counterKey, 42).
+        With(command.SetValue(counterKey, 42)).
         To("next")  // Returns ([]string, state.Updates, error)
 }
 
 func appendNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     // Type-safe list operations with helpers
-    return graph.Append(messagesKey, "hello").To("next")  // ✓ Type-checked
-    updates[itemsKey.Name()] = []int{1, 2, 3}        // ✓ Type-checked
-    
-    return []string{"next"}, updates, nil
+    return command.New().With(command.Append(messagesKey, "hello")).To("next")  // ✓ Type-checked
 }
 ```
 

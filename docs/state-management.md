@@ -113,7 +113,7 @@ func splitNode(ctx context.Context, view state.ReadView) ([]string, state.Update
 func decideNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
     score := state.GetFromView(view, ScoreKey)
     
-    cmd := command.New().Set(ScoreKey, score+10)
+    cmd := command.New().With(command.SetValue(ScoreKey, score+10))
     
     if score > 50 {
         return cmd.To("high_priority")
