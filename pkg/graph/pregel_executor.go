@@ -1162,118 +1162,93 @@ func (n *pregelNodeAdapter[I, O]) yieldOutputFromUpdates(updates state.Updates) 
 	return n.yield(output, nil)
 }
 
-// Run executes the node.
-//
-//nolint:gocyclo // BSP node execution requires complex state management
-func (n *pregelNodeAdapter[I, O]) Run(
-	ctx context.Context,
-	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
-	incoming []pregel.Message[state.Updates],
-) error {
-	node := n.compiled.graph.Nodes[n.nodeName]
-	if node == nil {
-		return nil // Skip missing nodes
+// checkNodeExists verifies the node exists in the graph.
+// Returns the node if found, or nil if it should be skipped.
+func (n *pregelNodeAdapter[I, O]) checkNodeExists() Node {
+	return n.compiled.graph.Nodes[n.nodeName]
+}
+
+// checkPauseState checks if node is paused and should skip execution.
+// Returns true if node should skip (is paused), false otherwise.
+func (n *pregelNodeAdapter[I, O]) checkPauseState() bool {
+	if n.executor == nil || n.executor.metrics == nil {
+		return false
 	}
+	snapshot := n.executor.metrics.Snapshot()
+	return slices.Contains(snapshot.PausedNodes, n.nodeName)
+}
 
-	// Check if node is paused (waiting for external resume signal)
-	// Note: Completed node skipping is now handled by RootVertices() via resumeEntryPoints,
-	// so we only need to check for paused nodes here.
-	if n.executor != nil && n.executor.metrics != nil {
-		snapshot := n.executor.metrics.Snapshot()
-
-		// Skip paused nodes - they require external resume signal
-		if slices.Contains(snapshot.PausedNodes, n.nodeName) {
-			// Node is paused, wait for external ResumePaused call
-			return nil
-		}
+// checkIsResuming checks if this node is being resumed from a paused state.
+func (n *pregelNodeAdapter[I, O]) checkIsResuming() bool {
+	if n.executor == nil || n.executor.metrics == nil {
+		return false
 	}
+	return slices.Contains(n.executor.metrics.Snapshot().ResumingNodes, n.nodeName)
+}
 
-	// Observability: Create node-level span with attributes
-	tp := trace.FromContext(ctx)
-	tracer := tp.Tracer("agentmesh.graph")
-	ctx, nodeSpan := tracer.Start(ctx, "node.execute", trace.Attr{Key: "node.name", Value: n.nodeName})
-	var nodeErr error
-	defer func() {
-		nodeSpan.End(nodeErr)
-	}()
-
-	// Observability: Log node execution start
-	logger := logging.FromContext(ctx)
-	logger.Debug("node execution starting", "node", n.nodeName)
-
-	// Observability: Record node execution metrics
-	mp := metrics.FromContext(ctx)
-	nodeStartTime := time.Now()
-	nodeExecCounter := mp.Counter("node.executions")
-	nodeExecCounter.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
-	defer func() {
-		duration := time.Since(nodeStartTime)
-		nodeDuration := mp.Histogram("node.duration_ms")
-		nodeDuration.Record(ctx, float64(duration.Milliseconds()),
-			metrics.Attr{Key: "node", Value: n.nodeName})
-
-		if nodeErr != nil {
-			// Record error metric
-			nodeErrors := mp.Counter("node.errors")
-			nodeErrors.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
-			logger.Error("node execution failed", "node", n.nodeName, "error", nodeErr, "duration_ms", duration.Milliseconds())
-		} else {
-			logger.Debug("node execution completed", "node", n.nodeName, "duration_ms", duration.Milliseconds())
-		}
-	}()
-
-	// Check for interrupt-before (but skip if we're resuming this node)
-	isResuming := false
-	if n.executor != nil && n.executor.metrics != nil {
-		if slices.Contains(n.executor.metrics.Snapshot().ResumingNodes, n.nodeName) {
-			isResuming = true
-		}
-	}
-
-	// Get state view early for approval guard evaluation
+// prepareStateView gets the state view for this node's execution.
+// Returns the shared superstep view or creates a fallback view.
+func (n *pregelNodeAdapter[I, O]) prepareStateView(ctx context.Context) (state.ReadView, error) {
 	view := n.graphAdapter.getSuperstepView()
-	if view == nil {
-		// Fallback for initialization
-		var err error
-		view, err = n.compiled.manager.CreateReadView(ctx)
-		if err != nil {
-			nodeErr = fmt.Errorf("%w: %w", ErrSnapshotCreate, err)
-			return nodeErr
-		}
+	if view != nil {
+		return view, nil
+	}
+	// Fallback for initialization
+	view, err := n.compiled.manager.CreateReadView(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSnapshotCreate, err)
+	}
+	return view, nil
+}
+
+// handleInterruptBefore checks and handles interrupt-before if needed.
+// Returns true if execution should pause (interrupt triggered), false otherwise.
+func (n *pregelNodeAdapter[I, O]) handleInterruptBefore(ctx context.Context, view state.ReadView, isResuming bool) bool {
+	if isResuming {
+		return false // Don't interrupt if resuming
 	}
 
-	if !isResuming {
-		if needsInterrupt, reason := n.shouldInterruptBefore(ctx, view); needsInterrupt {
-			// Create checkpoint with approval metadata
-			n.createInterruptCheckpoint(ctx, nil, true, reason)
-			// Mark node as paused so it doesn't execute again until resumed
-			if n.executor != nil && n.executor.metrics != nil {
-				n.executor.metrics.AddPaused(n.nodeName)
-			}
-			return nil // Pause execution
-		}
+	needsInterrupt, reason := n.shouldInterruptBefore(ctx, view)
+	if !needsInterrupt {
+		return false
 	}
 
-	// Clear resuming flag after checking (node is now executing)
+	// Create checkpoint with approval metadata
+	n.createInterruptCheckpoint(ctx, nil, true, reason)
+	// Mark node as paused so it doesn't execute again until resumed
+	if n.executor != nil && n.executor.metrics != nil {
+		n.executor.metrics.AddPaused(n.nodeName)
+	}
+	return true // Pause execution
+}
+
+// clearResumingFlag clears the resuming flag after node starts executing.
+func (n *pregelNodeAdapter[I, O]) clearResumingFlag(isResuming bool) {
 	if isResuming && n.executor != nil && n.executor.metrics != nil {
 		n.executor.metrics.ClearResuming(n.nodeName)
 	}
+}
 
-	// Apply incoming state updates from distributed nodes (BSP synchronization)
-	if n.enableDistributedState && len(incoming) > 0 {
-		for _, msg := range incoming {
-			if len(msg.Data) == 0 {
-				continue // Routing signal only, no state
-			}
-
-			// msg.Data is already state.Updates - apply directly
-			if err := n.compiled.manager.ApplyUpdates(ctx, msg.Data); err != nil {
-				return fmt.Errorf("%w: %w", ErrDistributedState, err)
-			}
-		}
+// applyIncomingDistributedState applies state updates from distributed nodes (BSP synchronization).
+func (n *pregelNodeAdapter[I, O]) applyIncomingDistributedState(ctx context.Context, incoming []pregel.Message[state.Updates]) error {
+	if !n.enableDistributedState || len(incoming) == 0 {
+		return nil
 	}
 
-	// Create a stream writer that yields intermediate results
+	for _, msg := range incoming {
+		if len(msg.Data) == 0 {
+			continue // Routing signal only, no state
+		}
+		// msg.Data is already state.Updates - apply directly
+		if err := n.compiled.manager.ApplyUpdates(ctx, msg.Data); err != nil {
+			return fmt.Errorf("%w: %w", ErrDistributedState, err)
+		}
+	}
+	return nil
+}
+
+// createStreamContext creates a context with stream writer attached.
+func (n *pregelNodeAdapter[I, O]) createStreamContext(ctx context.Context) context.Context {
 	streamWriter := func(intermediateResult state.Updates) {
 		if intermediateResult == nil {
 			return
@@ -1290,94 +1265,101 @@ func (n *pregelNodeAdapter[I, O]) Run(
 			n.yield(output, nil)
 		}
 	}
+	return WithStreamWriter(ctx, streamWriter)
+}
 
-	// Attach stream writer to context
-	ctxWithStream := WithStreamWriter(ctx, streamWriter)
-
-	// Execute node with retry and cache policies (now returns tuple)
-	// Note: view was already created earlier for approval guard evaluation
-	targets, updates, err := n.executeWithPolicies(ctxWithStream, node, view)
+// executeNodeLogic executes the node and wraps any errors.
+func (n *pregelNodeAdapter[I, O]) executeNodeLogic(ctx context.Context, node Node, view state.ReadView) ([]string, state.Updates, error) {
+	targets, updates, err := n.executeWithPolicies(ctx, node, view)
 	if err != nil {
-		// Wrap node execution errors with structured error type
-		nodeErr = &NodeExecutionError{
+		return nil, nil, &NodeExecutionError{
 			NodeName: n.nodeName,
 			Err:      err,
 		}
-		return nodeErr
 	}
+	return targets, updates, nil
+}
 
+// validateRoutingTargets validates that routing targets are specified.
+func (n *pregelNodeAdapter[I, O]) validateRoutingTargets(targets []string) error {
 	if targets == nil {
-		return nil
+		return nil // Node returned nil targets, skip further processing
 	}
-
-	// Validate routing decision
 	if len(targets) == 0 {
-		nodeErr = fmt.Errorf("%w: node %s must specify targets (use graph.EndNode to terminate)", ErrRoutingTargets, n.nodeName)
-		return nodeErr
+		return fmt.Errorf("%w: node %s must specify targets (use graph.EndNode to terminate)", ErrRoutingTargets, n.nodeName)
+	}
+	return nil
+}
+
+// handleInterruptAfter checks and handles interrupt-after if needed.
+// Returns true if execution should pause (interrupt triggered), false otherwise.
+func (n *pregelNodeAdapter[I, O]) handleInterruptAfter(ctx context.Context, view state.ReadView, updates state.Updates) bool {
+	needsInterrupt, reason := n.shouldInterruptAfter(ctx, view)
+	if !needsInterrupt {
+		return false
 	}
 
-	// Check for interrupt-after (before applying updates)
-	if needsInterrupt, reason := n.shouldInterruptAfter(ctx, view); needsInterrupt {
-		// Create checkpoint with pending writes (updates not yet applied) and approval metadata
-		n.createInterruptCheckpoint(ctx, updates, false, reason)
-		// Mark node as paused so execution doesn't continue
-		if n.executor != nil && n.executor.metrics != nil {
-			n.executor.metrics.AddPaused(n.nodeName)
-		}
-		return nil // Pause execution without applying updates
+	// Create checkpoint with pending writes (updates not yet applied) and approval metadata
+	n.createInterruptCheckpoint(ctx, updates, false, reason)
+	// Mark node as paused so execution doesn't continue
+	if n.executor != nil && n.executor.metrics != nil {
+		n.executor.metrics.AddPaused(n.nodeName)
 	}
+	return true // Pause execution without applying updates
+}
 
-	// Track node completion for checkpoint metadata
+// trackNodeCompletion records node completion for checkpoint metadata.
+func (n *pregelNodeAdapter[I, O]) trackNodeCompletion() {
 	if n.executor != nil && n.executor.metrics != nil {
 		n.executor.metrics.AddCompleted(n.nodeName)
 	}
+}
 
-	// Track node execution for trigger-based optimization
-	// Records which nodes executed so only their downstream targets run in next superstep
+// trackNodeExecution records that this node executed for trigger-based optimization.
+func (n *pregelNodeAdapter[I, O]) trackNodeExecution() {
 	n.graphAdapter.mu.Lock()
 	if n.graphAdapter.executedNodes == nil {
 		n.graphAdapter.executedNodes = make(map[string]bool)
 	}
 	n.graphAdapter.executedNodes[n.nodeName] = true
 	n.graphAdapter.mu.Unlock()
+}
 
-	// Collect updates for two-phase commit (defer application until after checkpoint save)
-	// These updates will be applied at superstep completion, after checkpoint is saved
-	// This ensures transactional semantics: if crash happens, checkpoint has pending writes
-	if len(updates) > 0 {
-		n.graphAdapter.updatesMu.Lock()
-		timestamp := time.Now()
-		for channel, value := range updates {
-			n.graphAdapter.pendingUpdates = append(n.graphAdapter.pendingUpdates, checkpoint.PendingWrite{
-				NodeName:  n.nodeName,
-				Channel:   channel,
-				Value:     value,
-				Timestamp: timestamp,
-			})
-		}
-		n.graphAdapter.updatesMu.Unlock()
-
-		// Notify state change callbacks (before actual application)
-		n.notifyStateChangeCallbacks(ctx, updates, logger)
-
-		// Extract output from updates based on configured key and yield
-		if !n.yieldOutputFromUpdates(updates) {
-			return nil
-		}
+// collectPendingUpdates adds updates to pending collection for two-phase commit.
+func (n *pregelNodeAdapter[I, O]) collectPendingUpdates(updates state.Updates, logger logging.Logger) {
+	if len(updates) == 0 {
+		return
 	}
 
-	// Send routing signals (and optionally state) to next nodes via pregel runtime
-	// Use routing targets from tuple instead of edges/conditional edges
+	n.graphAdapter.updatesMu.Lock()
+	timestamp := time.Now()
+	for channel, value := range updates {
+		n.graphAdapter.pendingUpdates = append(n.graphAdapter.pendingUpdates, checkpoint.PendingWrite{
+			NodeName:  n.nodeName,
+			Channel:   channel,
+			Value:     value,
+			Timestamp: timestamp,
+		})
+	}
+	n.graphAdapter.updatesMu.Unlock()
+
+	// Notify state change callbacks (before actual application)
+	n.notifyStateChangeCallbacks(context.Background(), updates, logger)
+}
+
+// sendRoutingSignals sends messages to next nodes via pregel runtime.
+func (n *pregelNodeAdapter[I, O]) sendRoutingSignals(
+	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
+	targets []string,
+	updates state.Updates,
+) {
 	var stateData state.Updates
 	if n.enableDistributedState && updates != nil && len(updates) > 0 {
 		stateData = updates
 	}
 
-	// Use routing targets from tuple (unified routing model)
-	// The routing targets come from the tuple returned by the node
 	for _, target := range targets {
 		if target != EndNode {
-			// Send message to target node
 			vertex.Send(pregel.Message[state.Updates]{
 				From: n.nodeName,
 				To:   target,
@@ -1386,6 +1368,130 @@ func (n *pregelNodeAdapter[I, O]) Run(
 		}
 		// If target is EndNode, node execution terminates (no message sent)
 	}
+}
+
+// startObservability sets up tracing and metrics for node execution.
+// Returns the span end function and error recording callback.
+func (n *pregelNodeAdapter[I, O]) startObservability(ctx context.Context) (context.Context, func(error)) {
+	// Create node-level span with attributes
+	tp := trace.FromContext(ctx)
+	tracer := tp.Tracer("agentmesh.graph")
+	ctx, nodeSpan := tracer.Start(ctx, "node.execute", trace.Attr{Key: "node.name", Value: n.nodeName})
+
+	// Set up metrics
+	mp := metrics.FromContext(ctx)
+	nodeStartTime := time.Now()
+	nodeExecCounter := mp.Counter("node.executions")
+	nodeExecCounter.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
+
+	logger := logging.FromContext(ctx)
+	logger.Debug("node execution starting", "node", n.nodeName)
+
+	// Return cleanup function
+	return ctx, func(nodeErr error) {
+		duration := time.Since(nodeStartTime)
+		nodeDuration := mp.Histogram("node.duration_ms")
+		nodeDuration.Record(ctx, float64(duration.Milliseconds()),
+			metrics.Attr{Key: "node", Value: n.nodeName})
+
+		if nodeErr != nil {
+			nodeErrors := mp.Counter("node.errors")
+			nodeErrors.Add(ctx, 1, metrics.Attr{Key: "node", Value: n.nodeName})
+			logger.Error("node execution failed", "node", n.nodeName, "error", nodeErr, "duration_ms", duration.Milliseconds())
+		} else {
+			logger.Debug("node execution completed", "node", n.nodeName, "duration_ms", duration.Milliseconds())
+		}
+		nodeSpan.End(nodeErr)
+	}
+}
+
+// Run executes the node using BSP semantics.
+// The execution is broken into phases:
+// 1. Validation: Check node exists and pause state
+// 2. Observability: Set up tracing and metrics
+// 3. Interrupt handling: Check interrupt-before
+// 4. State synchronization: Apply incoming distributed state
+// 5. Execution: Run node with policies
+// 6. Post-execution: Handle interrupt-after, track completion, send signals
+func (n *pregelNodeAdapter[I, O]) Run(
+	ctx context.Context,
+	vertex pregel.VertexContext[*Compiled[I, O], state.Updates],
+	incoming []pregel.Message[state.Updates],
+) error {
+	// Phase 1: Validation
+	node := n.checkNodeExists()
+	if node == nil {
+		return nil // Skip missing nodes
+	}
+
+	if n.checkPauseState() {
+		return nil // Node is paused, skip
+	}
+
+	// Phase 2: Observability setup
+	ctx, endObservability := n.startObservability(ctx)
+	var nodeErr error
+	defer func() {
+		endObservability(nodeErr)
+	}()
+
+	// Phase 3: Prepare state view
+	view, err := n.prepareStateView(ctx)
+	if err != nil {
+		nodeErr = err
+		return nodeErr
+	}
+
+	// Phase 4: Check interrupt-before
+	isResuming := n.checkIsResuming()
+	if n.handleInterruptBefore(ctx, view, isResuming) {
+		return nil // Execution paused
+	}
+	n.clearResumingFlag(isResuming)
+
+	// Phase 5: Apply incoming distributed state
+	if err := n.applyIncomingDistributedState(ctx, incoming); err != nil {
+		nodeErr = err
+		return nodeErr
+	}
+
+	// Phase 6: Execute node
+	streamCtx := n.createStreamContext(ctx)
+	targets, updates, err := n.executeNodeLogic(streamCtx, node, view)
+	if err != nil {
+		nodeErr = err
+		return nodeErr
+	}
+
+	// Phase 7: Validate and process results
+	if err := n.validateRoutingTargets(targets); err != nil {
+		nodeErr = err
+		return nodeErr
+	}
+	if targets == nil {
+		return nil // Node returned nil, skip further processing
+	}
+
+	// Phase 8: Check interrupt-after
+	if n.handleInterruptAfter(ctx, view, updates) {
+		return nil // Execution paused
+	}
+
+	// Phase 9: Track completion and execution
+	n.trackNodeCompletion()
+	n.trackNodeExecution()
+
+	// Phase 10: Collect pending updates and yield output
+	logger := logging.FromContext(ctx)
+	if len(updates) > 0 {
+		n.collectPendingUpdates(updates, logger)
+		if !n.yieldOutputFromUpdates(updates) {
+			return nil
+		}
+	}
+
+	// Phase 11: Send routing signals
+	n.sendRoutingSignals(vertex, targets, updates)
 
 	return nil
 }
