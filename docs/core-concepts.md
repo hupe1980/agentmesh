@@ -13,7 +13,7 @@ hero:
     label: Architecture deep dive →
     href: "/architecture/"
 sidebar:
-  - title: Runnable interface
+  - title: Builder vs Graph
     url: "#runnable-interface"
   - title: Graphs and nodes
     url: "#graphs-and-nodes"
@@ -33,23 +33,23 @@ sidebar:
 
 The graph `Run` method is the core abstraction for executable workflows in AgentMesh. Only compiled graphs can be executed - this separation ensures graphs are validated before running.
 
-### Graph vs Graph
+### Builder vs Graph
 
 AgentMesh separates graph **building** from graph **execution**:
 
 ```go
-// Graph is the builder - define nodes and edges
-g := graph.New[string, string](keys...)
-g.Node("fetch", fetchFunc, "process")
-g.Start("fetch")
+// Builder is for construction - define nodes and edges
+b := graph.New[string, string](keys...)
+b.Node("fetch", fetchFunc, "process")
+b.Start("fetch")
 
-// Graph is the executor - run the workflow
-compiled, err := g.Build()  // Validates and compiles
+// Graph is the compiled executor - run the workflow
+compiled, err := b.Build()  // Validates and compiles
 if err != nil {
     return err
 }
 
-// Only Graph has Run()
+// Only compiled Graph has Run()
 for output, err := range compiled.Run(ctx, input) {
     // process outputs...
 }
@@ -71,24 +71,24 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 For conversational agents, AgentMesh provides:
 
 ```go
-// MessageGraph is a graph builder for message processing
-type MessageGraph = Graph[[]message.Message, message.Message]
+// GraphBuilder is a builder for message-processing workflows
+type GraphBuilder = graph.Builder[[]message.Message, message.Message]
 
-// MessageGraph is an executable message graph
-type MessageGraph = Graph[[]message.Message, message.Message]
+// Graph is an executable message-processing workflow
+type Graph = graph.Graph[[]message.Message, message.Message]
 ```
 
 ### Usage example
 
-All agent constructors return `*message.MessageGraph` (already compiled):
+All agent constructors return `*message.Graph` (already compiled):
 
 ```go
 import (
     "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Agent constructors return *message.MessageGraph (ready to run)
+// Agent constructors return *message.Graph (ready to run)
 reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
 if err != nil {
     return err
@@ -99,31 +99,28 @@ for msg, err := range reactAgent.Run(ctx, messages) {
     if err != nil {
         return err
     }
-    fmt.Println(msg.Text())
+    fmt.Println(msg.Content())
 }
-
-// Or get just the final result
-lastMsg, err := graph.Last(reactAgent.Run(ctx, messages))
 ```
 
 ### Benefits
 
 **Compile-time type safety:**
 ```go
-// ✅ Type-safe: MessageGraph accepts []message.Message
+// ✅ Type-safe: message.Graph accepts []message.Message
 reactAgent.Run(ctx, messages)
 
 // ❌ Compile error: won't accept wrong input type
 reactAgent.Run(ctx, "invalid input")
 
-// ❌ Compile error: can't run uncompiled graph
-g := message.NewGraphBuilder()
-g.Run(ctx, messages)  // Error: Graph has no Run method
+// ❌ Compile error: can't run uncompiled builder
+b := message.NewGraphBuilder()
+b.Run(ctx, messages)  // Error: Builder has no Run method
 ```
 
 **Easy composition:**
 ```go
-// All agents are *message.MessageGraph - compose freely
+// All agents are *message.Graph - compose freely
 worker1, _ := agent.NewReActAgent(model)
 worker2, _ := agent.NewReActAgent(model)
 supervisor, _ := agent.NewSupervisorAgent(model,
