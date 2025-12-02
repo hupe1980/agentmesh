@@ -756,10 +756,30 @@ for _, cp := range checkpoints {
 
 ```go
 // Resume from superstep 5
-results, err := graph.Collect(compiled.Run(ctx, newInput,
+for result, err := range compiled.Run(ctx, newInput,
     graph.WithRunID("workflow-123"),
     graph.WithResumeFromSuperstep(5),
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(graph.Get(result, StatusKey))
+}
+```
+
+### Time Travel Debugging
+
+```go
+// Resume with modified state
+for result, err := range compiled.Run(ctx, input,
+    graph.WithRunID("workflow-123"),
+    graph.WithResumeFromSuperstep(3),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Compare with original execution
+}
 ```
 
 ### Debugging workflow
@@ -775,10 +795,16 @@ results, err := graph.Collect(compiled.Run(ctx, newInput,
 // Original execution failed at superstep 10
 // Resume from superstep 8 with debug logging enabled
 ctx = context.WithValue(ctx, "debug", true)
-results, err := graph.Collect(compiled.Run(ctx, input,
+for result, err := range compiled.Run(ctx, input,
     graph.WithRunID(runID),
     graph.WithResumeFromSuperstep(8),
-))
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Debug output
+    fmt.Printf("Superstep completed: %v\n", result)
+}
 ```
 
 See `examples/time_travel` for a complete demonstration.

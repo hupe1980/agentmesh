@@ -193,10 +193,14 @@ func (c *ChatBot) Chat(ctx context.Context, userID, message string) (string, err
     messages := append(history, message.NewHumanMessageFromText(message))
     
     // Execute agent
-    results, err := graph.Collect(c.agent.Run(ctx, messages))
-    if err != nil {
-        return "", err
+    var lastResponse string
+    for msg, err := range c.agent.Run(ctx, messages) {
+        if err != nil {
+            return "", err
+        }
+        lastResponse = msg.Content()
     }
+    return lastResponse, nil
     
     // Store conversation
     err = c.memory.Store(ctx, sessionID, results)

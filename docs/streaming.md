@@ -134,14 +134,19 @@ for result, err := range compiled.Run(ctx, 0) {
 ### Collecting All Results
 
 ```go
-// Collect all results into a slice
-results, err := graph.Collect(compiled.Run(ctx, input))
-if err != nil {
-    log.Fatal(err)
+// Process all results using iterator pattern
+var results []graph.View
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    results = append(results, result)
 }
 
 for _, result := range results {
-    fmt.Printf("Node: %s\n", result.Node)
+    // Access state from result view
+    status := graph.Get(result, StatusKey)
+    fmt.Printf("Status: %s\n", status)
 }
 ```
 
@@ -480,11 +485,23 @@ for result, err := range compiled.Run(ctx, messages) {
     handleResult(result)
 }
 
-// Collect all results
-results, err := graph.Collect(compiled.Run(ctx, messages))
+// Collect all results manually
+var results []message.Message
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        return err
+    }
+    results = append(results, msg)
+}
 
 // Get only the last result
-result, err := graph.Last(compiled.Run(ctx, messages))
+var lastMsg message.Message
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        return err
+    }
+    lastMsg = msg
+}
 ```
 
 ---

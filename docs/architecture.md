@@ -677,16 +677,15 @@ The compiler validates the graph topology, checks for cycles, and prepares the e
 ### 2. Invocation
 
 ```go
-// Single invocation
-result, err := graph.Invoke(ctx, compiled, input)
-
-// Streaming execution - process events as they arrive
-for result := range compiled.Run(ctx, input) {
-    fmt.Printf("Superstep %d: Node %s completed", result.Superstep, result.Node)
+// Streaming execution - process results as they arrive
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Access state from result view
+    status := graph.Get(result, StatusKey)
+    fmt.Printf("Status: %s\n", status)
 }
-
-// Collect all results
-results, err := graph.Collect(compiled.Run(ctx, input))
 ```
 
 ### 3. Superstep Execution
@@ -704,8 +703,15 @@ For each superstep:
 Final output is returned from the graph:
 
 ```go
-result, err := graph.Invoke(ctx, compiled, input)
-// result contains the output type O
+// Get last result using iterator
+var lastResult graph.View
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    lastResult = result
+}
+// lastResult contains the final state view
 ```
 
 ---

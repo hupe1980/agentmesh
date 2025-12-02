@@ -70,13 +70,17 @@ if err != nil {
     log.Fatal(err)
 }
 
-result, err := graph.Invoke(context.Background(), compiled, "input")
-fmt.Println(result) // "done"
+for result, err := range compiled.Run(context.Background(), "input") {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(graph.Get(result, StatusKey)) // "done"
+}
 ```
 
-### MessageGraph for Agents
+### Message Graph for Agents
 
-Use `NewMessageGraph()` for agent workflows with built-in message handling:
+Use `message.NewGraphBuilder()` for agent workflows with built-in message handling:
 
 ```go
 import (
@@ -84,7 +88,7 @@ import (
     "github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Create message graph (auto-includes MessagesKey)
+// Create message graph (auto-includes message.MessagesKey)
 g := message.NewGraphBuilder()
 
 // Add agent node
@@ -103,8 +107,11 @@ compiled, _ := g.Build()
 
 // Run with messages
 input := []message.Message{message.NewHumanMessageFromText("Hi")}
-for result := range compiled.Run(context.Background(), input) {
-    fmt.Println(result.Message)
+for msg, err := range compiled.Run(context.Background(), input) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -301,21 +308,17 @@ compiled, err := g.Build(
 
 ## Execution {#execution}
 
-### Single Invocation
-
-```go
-result, err := graph.Invoke(ctx, compiled, input)
-```
-
 ### Streaming Results
 
 ```go
-for result := range compiled.Run(ctx, input) {
-    if result.Error != nil {
-        log.Printf("Error: %v", result.Error)
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        log.Printf("Error: %v", err)
         continue
     }
-    fmt.Println(result.Output)
+    // Access state values from result view
+    status := graph.Get(result, StatusKey)
+    fmt.Println(status)
 }
 ```
 
@@ -329,12 +332,6 @@ for result := range compiled.Run(ctx, input,
 ) {
     // Process results
 }
-```
-
-### Collect All Results
-
-```go
-results, err := graph.Collect(compiled.Run(ctx, input))
 ```
 
 ## API Reference
@@ -380,9 +377,7 @@ results, err := graph.Collect(compiled.Run(ctx, input))
 
 | Function | Description |
 |----------|-------------|
-| `graph.Invoke(ctx, compiled, input)` | Single synchronous invocation |
-| `graph.Collect(seq)` | Collect all results from iterator |
-| `compiled.Run(ctx, input, opts...)` | Stream results |
+| `compiled.Run(ctx, input, opts...)` | Returns `iter.Seq2[View, error]` for streaming results |
 
 ## Examples
 
@@ -404,8 +399,7 @@ graph.New[I, O](keys...)
             │
             └── *Compiled[I, O]
                     │
-                    ├── Run(ctx, input, opts...) → iter.Seq2
-                    └── graph.Invoke(ctx, compiled, input)
+                    └── Run(ctx, input, opts...) → iter.Seq2[View, error]
 ```
 
 The graph handles the full lifecycle from construction to compilation to execution.

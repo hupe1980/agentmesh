@@ -48,6 +48,7 @@ import (
     "log"
 
     "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
     "github.com/hupe1980/agentmesh/pkg/message"
     "github.com/hupe1980/agentmesh/pkg/model/openai"
     "github.com/hupe1980/agentmesh/pkg/tool"
@@ -74,8 +75,8 @@ func main() {
         log.Fatal(err)
     }
 
-    // Create a ReAct agent (returns graph.MessageRunnable interface)
-    agent, err := agent.NewReActAgent(
+    // Create a ReAct agent (returns *message.Graph)
+    reactAgent, err := agent.NewReActAgent(
         openai.NewModel(),
         agent.WithTools(weatherTool),
     )
@@ -90,20 +91,14 @@ func main() {
         message.NewHumanMessageFromText("What's the weather in Paris?"),
     }
 
-    // Execute and collect messages
-    results, err := graph.Collect(agent.Run(ctx, messages))
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Print the final AI response
-    for _, msg := range results {
+    // Execute the agent with iterator pattern
+    for msg, err := range reactAgent.Run(ctx, messages) {
+        if err != nil {
+            log.Fatal(err)
+        }
+        // Print AI response content
         if aiMsg, ok := msg.(*message.AIMessage); ok {
-            for _, part := range aiMsg.Parts() {
-                if text, ok := part.(message.TextPart); ok {
-                    fmt.Println(text.Text)
-                }
-            }
+            fmt.Println(aiMsg.Content())
         }
     }
 }

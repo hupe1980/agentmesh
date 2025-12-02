@@ -50,9 +50,12 @@ ctx = trace.WithProvider(ctx, traceProvider)
 ctx = metrics.WithProvider(ctx, metricsProvider)
 
 // Execute with automatic instrumentation
-messages, err := graph.Collect(compiled.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Process message
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -68,9 +71,11 @@ ctx = logging.WithLogger(ctx, logging.NoopLogger{})
 ctx = trace.WithProvider(ctx, trace.Noop())
 ctx = metrics.WithProvider(ctx, metrics.Noop())
 
-messages, err := graph.Collect(compiled.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -110,9 +115,11 @@ ctx = trace.WithProvider(ctx, traceProvider)
 ctx = metrics.WithProvider(ctx, metricsProvider)
 
 // Execute with full observability
-messages, err := graph.Collect(compiled.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -261,9 +268,11 @@ If you don't configure providers, AgentMesh uses **noop** implementations with *
 
 ```go
 // No providers = zero overhead
-messages, err := graph.Collect(compiled.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+for msg, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 

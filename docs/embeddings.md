@@ -130,8 +130,13 @@ ragAgent, _ := agent.NewRAGAgent(model, retriever)
 msgs := []message.Message{
     message.NewHumanMessageFromText("How does AgentMesh handle execution?"),
 }
-messages, _ := graph.Collect(ragAgent.Run(ctx, msgs))
-// Response includes information about Pregel BSP from knowledge base
+for msg, err := range ragAgent.Run(ctx, msgs) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
+    // Response includes information about Pregel BSP from knowledge base
+}
 ```
 
 ### 4. Clustering and Classification
@@ -359,9 +364,11 @@ history, _ := vectorMem.Recall(ctx, "user", &memory.RecallFilter{
 
 // Prepend history to conversation
 messages := append(history, currentMessages...)
-results, err := graph.Collect(agent.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+for msg, err := range agent.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 

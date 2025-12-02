@@ -171,9 +171,11 @@ func main() {
     )
     
     // 5. Execute workflow that uses remote tools
-    messages, err := graph.Collect(compiled.Run(ctx, messages))
-    if err != nil {
-        log.Fatal(err)
+    for msg, err := range compiled.Run(ctx, messages) {
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Println(msg.Content())
     }
 }
 ```
@@ -251,11 +253,13 @@ func createCoordinator() (*graph.Compiled, error) {
 
 // Usage
 coordinator, _ := createCoordinator()
-messages, err := graph.Collect(coordinator.Run(ctx, []message.Message{
+for msg, err := range coordinator.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("Research AI trends, analyze the data, and write a report"),
-}))
-if err != nil {
-    log.Fatal(err)
+}) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -384,8 +388,10 @@ func createAgent(useMock bool) (*graph.Compiled, error) {
 // Test
 func TestAgentWorkflow(t *testing.T) {
     agent, _ := createAgent(true) // Use mock
-    messages, err := graph.Collect(agent.Run(ctx, messages))
-    assert.NoError(t, err)
+    for msg, err := range agent.Run(ctx, messages) {
+        assert.NoError(t, err)
+        // Test assertions on msg
+    }
 }
 ```
 

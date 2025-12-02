@@ -56,26 +56,34 @@ import (
 searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
 calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
 
-// Create ReAct agent (returns *Compiled)
+// Create ReAct agent (returns *message.Graph)
 reactAgent, err := agent.NewReActAgent(
     openai.NewModel(),
     agent.WithTools(searchTool, calcTool),
     agent.WithMaxIterations(5),
 )
 
-// Execute and collect messages
-messages, err := graph.Collect(reactAgent.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+// Execute with iterator pattern
+for msg, err := range reactAgent.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    // Process each message
+    fmt.Println(msg.Content())
 }
 ```
 
 ### Configuration options
 
 ```go
-agent.NewReActAgent(model, tools,
-    agent.WithMaxIterations(10),          // Max reasoning-action cycles
-    agent.WithRetryPolicy(retryPolicy),   // Configure retry behavior
+agent.NewReActAgent(model,
+    agent.WithTools(searchTool, calcTool),    // Add tools
+    agent.WithMaxIterations(10),              // Max reasoning-action cycles
+    agent.WithSystemPrompt("You are helpful"), // System prompt
+    agent.WithReActOutputSchema(schema),      // Structured output
+    agent.WithGraphMiddleware(middleware...),  // Graph middleware (retry, etc.)
+    agent.WithModelMiddleware(middleware...),  // Model middleware
+    agent.WithToolMiddleware(middleware...),   // Tool middleware
 )
 ```
 
@@ -158,12 +166,14 @@ supervisor, err := agent.NewSupervisorAgent(
     agent.WithWorkerRetries(2),
 )
 
-// Execute and collect messages
-messages, err := graph.Collect(supervisor.Run(ctx, []message.Message{
+// Execute with iterator pattern
+for msg, err := range supervisor.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
-}))
-if err != nil {
-    log.Fatal(err)
+}) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -248,10 +258,12 @@ ragAgent, err := agent.NewRAGAgent(
     agent.WithRAGPromptTemplate(customTemplate),
 )
 
-// Execute and collect results
-messages, err := graph.Collect(ragAgent.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+// Execute with iterator pattern
+for msg, err := range ragAgent.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
 }
 ```
 
@@ -318,8 +330,12 @@ g.Start("classify")
 // Compile and execute
 compiled, _ := g.Build()
 
-for result := range compiled.Run(ctx, messages) {
+for result, err := range compiled.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
     // Process results
+    fmt.Println(result.Content())
 }
 ```
 

@@ -347,7 +347,7 @@ func addMessageNode(ctx context.Context, view graph.View) (*graph.Command, error
 
 ### MessageGraph convenience
 
-For conversational agents, use `NewMessageGraph()` which automatically includes the messages key:
+For conversational agents, use `message.NewGraphBuilder()` which automatically includes the messages key:
 
 ```go
 // Creates a graph with MessagesKey pre-registered
