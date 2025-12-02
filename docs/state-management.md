@@ -796,7 +796,7 @@ Control conversation history to prevent context overflow and manage costs.
 var LimitedMessagesKey = graph.NewListKey[message.Message]("messages")
 
 // When using MessageGraph, limit is configured at build time
-g := message.NewGraph()
+g := message.NewGraphBuilder()
 
 // Add message retention configuration
 compiled, _ := g.Build(graph.WithMessageRetention(50))

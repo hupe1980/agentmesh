@@ -35,10 +35,10 @@ type interruptPoint struct {
 	config   *interruptConfig
 }
 
-// Graph is a workflow builder.
-// Create with New(), add nodes, then Build() to get a CompiledGraph.
+// Builder is a fluent workflow builder.
+// Create with New(), add nodes, then Build() to get an executable Graph.
 // I = input type, O = output type.
-type Graph[I, O any] struct {
+type Builder[I, O any] struct {
 	keys         []StateKey
 	outputKey    string // Name of the key that produces outputs
 	outputIsList bool   // True if output key is a ListKey
@@ -54,9 +54,9 @@ type Graph[I, O any] struct {
 	executor     Executor[I, O]
 }
 
-// CompiledGraph is an executable workflow.
-// Created by calling Build() on a Graph.
-type CompiledGraph[I, O any] struct {
+// Graph is an executable workflow with immutable structure.
+// Created by calling Build() on a Builder.
+type Graph[I, O any] struct {
 	keys         []StateKey
 	outputKey    string
 	outputIsList bool
@@ -71,13 +71,13 @@ type CompiledGraph[I, O any] struct {
 	executor     Executor[I, O]
 }
 
-// New creates a graph with the given state keys.
+// New creates a graph builder with the given state keys.
 // Keys are automatically registered.
 // The first key (if provided) is used as the output key.
 // For ListKey[O], new items are yielded as outputs.
 // For Key[O], the value is yielded when set.
 // Duplicate keys will cause Build() to fail.
-func New[I, O any](keys ...StateKey) *Graph[I, O] {
+func New[I, O any](keys ...StateKey) *Builder[I, O] {
 	var outputKey string
 	var outputIsList bool
 	if len(keys) > 0 {
@@ -85,7 +85,7 @@ func New[I, O any](keys ...StateKey) *Graph[I, O] {
 		outputIsList = keys[0].IsList()
 	}
 
-	return &Graph[I, O]{
+	return &Builder[I, O]{
 		keys:         keys,
 		outputKey:    outputKey,
 		outputIsList: outputIsList,
@@ -95,9 +95,9 @@ func New[I, O any](keys ...StateKey) *Graph[I, O] {
 
 // Node adds a node to the graph.
 // Targets are the possible next nodes (use END for terminal).
-func (g *Graph[I, O]) Node(name string, fn NodeFunc, targets ...string) *Graph[I, O] {
-	g.nodes[name] = &node{name: name, fn: fn, targets: targets}
-	return g
+func (b *Builder[I, O]) Node(name string, fn NodeFunc, targets ...string) *Builder[I, O] {
+	b.nodes[name] = &node{name: name, fn: fn, targets: targets}
+	return b
 }
 
 // Subgraph creates a NodeFunc that executes a compiled subgraph.
@@ -117,7 +117,7 @@ func (g *Graph[I, O]) Node(name string, fn NodeFunc, targets ...string) *Graph[I
 // The InputMapper transforms parent state into subgraph input.
 // The OutputMapper transforms subgraph output into parent state updates.
 func Subgraph[SI, SO any](
-	sub *CompiledGraph[SI, SO],
+	sub *Graph[SI, SO],
 	inputMapper InputMapper[SI],
 	outputMapper OutputMapper[SO],
 ) NodeFunc {
@@ -149,64 +149,64 @@ func Subgraph[SI, SO any](
 
 // Start sets the entry point node(s).
 // Multiple entry points run in parallel.
-func (g *Graph[I, O]) Start(names ...string) *Graph[I, O] {
-	g.entryPoints = names
-	return g
+func (b *Builder[I, O]) Start(names ...string) *Builder[I, O] {
+	b.entryPoints = names
+	return b
 }
 
 // InterruptBefore adds an interrupt before the specified node.
 // When execution reaches this node, it will pause and yield an interrupt event.
-func (g *Graph[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption) *Graph[I, O] {
+func (b *Builder[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption) *Builder[I, O] {
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	g.interrupts = append(g.interrupts, interruptPoint{
+	b.interrupts = append(b.interrupts, interruptPoint{
 		nodeName: nodeName,
 		before:   true,
 		config:   cfg,
 	})
-	return g
+	return b
 }
 
 // InterruptAfter adds an interrupt after the specified node.
 // When execution completes this node, it will pause and yield an interrupt event.
-func (g *Graph[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption) *Graph[I, O] {
+func (b *Builder[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption) *Builder[I, O] {
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	g.interrupts = append(g.interrupts, interruptPoint{
+	b.interrupts = append(b.interrupts, interruptPoint{
 		nodeName: nodeName,
 		before:   false,
 		config:   cfg,
 	})
-	return g
+	return b
 }
 
 // WithStore sets a custom state store.
-func (g *Graph[I, O]) WithStore(store Store) *Graph[I, O] {
-	g.store = store
-	return g
+func (b *Builder[I, O]) WithStore(store Store) *Builder[I, O] {
+	b.store = store
+	return b
 }
 
 // WithCheckpointer sets the checkpointer and run ID.
-func (g *Graph[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID string) *Graph[I, O] {
-	g.checkpointer = cp
-	g.runID = runID
-	return g
+func (b *Builder[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID string) *Builder[I, O] {
+	b.checkpointer = cp
+	b.runID = runID
+	return b
 }
 
-// WithMiddleware adds middleware to the graph.
-func (g *Graph[I, O]) WithMiddleware(mw ...Middleware) *Graph[I, O] {
-	g.middleware = append(g.middleware, mw...)
-	return g
+// WithMiddleware adds middleware to the builder.
+func (b *Builder[I, O]) WithMiddleware(mw ...Middleware) *Builder[I, O] {
+	b.middleware = append(b.middleware, mw...)
+	return b
 }
 
 // WithExecutor sets a custom executor.
-func (g *Graph[I, O]) WithExecutor(exec Executor[I, O]) *Graph[I, O] {
-	g.executor = exec
-	return g
+func (b *Builder[I, O]) WithExecutor(exec Executor[I, O]) *Builder[I, O] {
+	b.executor = exec
+	return b
 }
 
 // buildConfig holds build-time configuration.
@@ -242,9 +242,9 @@ func WithoutValidation() BuildOption {
 	}
 }
 
-// Build compiles and validates the graph.
-// Returns an executable CompiledGraph or an error.
-func (g *Graph[I, O]) Build(opts ...BuildOption) (*CompiledGraph[I, O], error) {
+// Build compiles and validates the builder.
+// Returns an executable Graph or an error.
+func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 	// Apply build options
 	cfg := &buildConfig{
 		validationOpts: DefaultValidationOptions(),
@@ -254,34 +254,34 @@ func (g *Graph[I, O]) Build(opts ...BuildOption) (*CompiledGraph[I, O], error) {
 	}
 
 	// Use the comprehensive validator
-	if errs := g.Validate(cfg.validationOpts); len(errs) > 0 {
+	if errs := b.Validate(cfg.validationOpts); len(errs) > 0 {
 		// Return the first validation error
 		return nil, errs[0]
 	}
 
 	// Set defaults
-	store := g.store
+	store := b.store
 	if store == nil {
 		store = newMemoryStore()
 	}
 
-	return &CompiledGraph[I, O]{
-		keys:         g.keys,
-		outputKey:    g.outputKey,
-		outputIsList: g.outputIsList,
-		nodes:        g.nodes,
-		entryPoints:  g.entryPoints,
-		interrupts:   g.interrupts,
+	return &Graph[I, O]{
+		keys:         b.keys,
+		outputKey:    b.outputKey,
+		outputIsList: b.outputIsList,
+		nodes:        b.nodes,
+		entryPoints:  b.entryPoints,
+		interrupts:   b.interrupts,
 		store:        store,
-		checkpointer: g.checkpointer,
-		runID:        g.runID,
-		middleware:   g.middleware,
-		executor:     g.executor,
+		checkpointer: b.checkpointer,
+		runID:        b.runID,
+		middleware:   b.middleware,
+		executor:     b.executor,
 	}, nil
 }
 
 // Run executes the compiled graph with input.
-func (g *CompiledGraph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
+func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		// Build executor config
 		cfg := g.buildExecutorConfig()
@@ -302,7 +302,7 @@ func (g *CompiledGraph[I, O]) Run(ctx context.Context, input I, opts ...RunOptio
 }
 
 // buildExecutorConfig creates the executor configuration from the compiled graph.
-func (g *CompiledGraph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
+func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 	// Build nodes map
 	nodes := make(map[string]ExecutorNode, len(g.nodes))
 	for name, n := range g.nodes {

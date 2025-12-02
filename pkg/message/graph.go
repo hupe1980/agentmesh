@@ -2,47 +2,45 @@ package message
 
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// MessageGraph is a graph builder that processes message sequences.
-// This is the standard type for conversational agents.
+// GraphBuilder is a fluent builder for message-processing workflows.
+// This is the standard builder type for conversational agents.
 //
-// MessageGraph provides type-safe message handling with compile-time guarantees:
+// GraphBuilder provides type-safe message handling with compile-time guarantees:
 //   - Input: []Message (message history)
 //   - Output: Message (final response)
 //   - State: Automatically includes MessagesKey
 //
 // Example:
 //
-//	g := message.NewGraph()
-//	g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+//	b := message.NewGraphBuilder()
+//	b.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 //	    msgs := message.GetMessages(view)
 //	    response := processMessages(msgs)
 //	    return graph.Append(message.MessagesKey, response).End()
 //	})
-//
-//nolint:revive // MessageGraph is the conventional name for message-based graphs
-type MessageGraph = graph.Graph[[]Message, Message]
+type GraphBuilder = graph.Builder[[]Message, Message]
 
-// CompiledMessageGraph is an executable message graph with immutable structure.
+// Graph is an executable message-processing workflow with immutable structure.
 // After compilation, the graph structure cannot be modified, ensuring deterministic execution.
 //
 // Use Run() or Stream() methods to execute the graph with message inputs.
 //
 // Example:
 //
-//	compiled, err := g.Build()
+//	g, err := b.Build()
 //	if err != nil {
 //	    return err
 //	}
 //
-//	for msg, err := range compiled.Run(ctx, []message.Message{userMsg}) {
+//	for msg, err := range g.Run(ctx, []message.Message{userMsg}) {
 //	    if err != nil {
 //	        return err
 //	    }
 //	    fmt.Println(msg.Content())
 //	}
-type CompiledMessageGraph = graph.CompiledGraph[[]Message, Message]
+type Graph = graph.Graph[[]Message, Message]
 
-// NewGraph creates a message-processing graph for conversational agents.
+// NewGraphBuilder creates a message-processing graph builder for conversational agents.
 // Automatically includes MessagesKey in state. Additional keys can be provided.
 //
 // This is a convenience wrapper that:
@@ -54,25 +52,25 @@ type CompiledMessageGraph = graph.CompiledGraph[[]Message, Message]
 //   - additionalKeys: Optional state keys for custom data (e.g., DocumentsKey, StatusKey)
 //
 // Returns:
-//   - *MessageGraph: A graph builder configured for message processing
+//   - *GraphBuilder: A graph builder configured for message processing
 //
-// Example - Basic message graph:
+// Example - Basic message builder:
 //
-//	g := message.NewGraph()
-//	g.Node("process", processNode).
+//	b := message.NewGraphBuilder()
+//	b.Node("process", processNode).
 //	  Start("process")
-//	compiled, err := g.Build()
+//	g, err := b.Build()
 //
 // Example - With custom state keys:
 //
 //	CategoryKey := graph.NewKey("category", "")
-//	g := message.NewGraph(CategoryKey)
-//	g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+//	b := message.NewGraphBuilder(CategoryKey)
+//	b.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 //	    category := graph.Get(view, CategoryKey)
 //	    messages := message.GetMessages(view)
 //	    // Classify messages by category...
 //	})
-func NewGraph(additionalKeys ...graph.StateKey) *MessageGraph {
+func NewGraphBuilder(additionalKeys ...graph.StateKey) *GraphBuilder {
 	allKeys := append([]graph.StateKey{MessagesKey}, additionalKeys...)
 	return graph.New[[]Message, Message](allKeys...)
 }

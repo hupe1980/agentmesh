@@ -88,7 +88,7 @@ func WithSystemPrompt(prompt string) HandoffOption {
 func HandoffToAgent(
 	agentName string,
 	agentDescription string,
-	agentGraph *graph.CompiledGraph[[]message.Message, message.Message],
+	agentGraph *graph.Graph[[]message.Message, message.Message],
 	options ...HandoffOption,
 ) (*FuncTool[HandoffArgs, string], error) {
 	if agentGraph == nil {
@@ -138,7 +138,7 @@ func HandoffToAgent(
 // executeHandoff performs the actual agent invocation with context control.
 func executeHandoff(
 	ctx context.Context,
-	agentGraph *graph.CompiledGraph[[]message.Message, message.Message],
+	agentGraph *graph.Graph[[]message.Message, message.Message],
 	args HandoffArgs,
 	config *HandoffConfig,
 ) (string, error) {

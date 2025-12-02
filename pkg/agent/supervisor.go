@@ -13,7 +13,7 @@ import (
 type WorkerAgent struct {
 	Name        string                        // Unique identifier for the worker
 	Description string                        // Description of the worker's expertise
-	Agent       *message.CompiledMessageGraph // The agent to delegate work to
+	Agent       *message.Graph // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -30,8 +30,8 @@ type supervisorOptions struct {
 type SupervisorOption func(*supervisorOptions)
 
 // WithWorker adds a worker agent to the supervisor.
-// The agent must be a *message.CompiledMessageGraph (e.g., created via NewReActAgent).
-func WithWorker(name, description string, agent *message.CompiledMessageGraph) SupervisorOption {
+// The agent must be a *message.Graph (e.g., created via NewReActAgent).
+func WithWorker(name, description string, agent *message.Graph) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -97,8 +97,8 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 // NewSupervisorAgent creates a supervisor agent that delegates work to specialized worker agents.
 // The supervisor uses a model to decide which worker should handle each request.
 //
-// Returns a *message.CompiledMessageGraph that enables type-safe composition with other agents.
-// Worker agents must also be *message.CompiledMessageGraph.
+// Returns a *message.Graph that enables type-safe composition with other agents.
+// Worker agents must also be *message.Graph.
 //
 // Example:
 //
@@ -110,7 +110,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*message.CompiledMessageGraph, error) {
+func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}

@@ -37,7 +37,7 @@ import (
 //	agt, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.CompiledMessageGraph, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
@@ -100,18 +100,18 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.CompiledMessa
 		return nil, fmt.Errorf("agent/react: create tool node: %w", err)
 	}
 
-	// Build graph - MessagesKey is automatically included by message.NewGraph
-	g := message.NewGraph()
-	g.Node("model", modelFn, "tool", graph.END)
-	g.Node("tool", toolFn, "model")
-	g.Start("model")
+	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
+	b := message.NewGraphBuilder()
+	b.Node("model", modelFn, "tool", graph.END)
+	b.Node("tool", toolFn, "model")
+	b.Start("model")
 
 	// Apply graph middleware if provided
 	if len(config.graphMiddleware) > 0 {
-		g.WithMiddleware(config.graphMiddleware...)
+		b.WithMiddleware(config.graphMiddleware...)
 	}
 
-	return g.Build()
+	return b.Build()
 }
 
 // reActOptions holds configuration for ReAct agents.

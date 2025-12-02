@@ -85,7 +85,7 @@ import (
 )
 
 // Create message graph (auto-includes MessagesKey)
-g := message.NewGraph()
+g := message.NewGraphBuilder()
 
 // Add agent node
 g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
@@ -344,7 +344,7 @@ results, err := graph.Collect(compiled.Run(ctx, input))
 | Function | Description |
 |----------|-------------|
 | `graph.New[I, O](keys...)` | Create typed graph with state keys |
-| `message.NewGraph(keys...)` | Create message-based graph for agents |
+| `message.NewGraphBuilder(keys...)` | Create message-based graph for agents |
 
 ### Graph Methods
 

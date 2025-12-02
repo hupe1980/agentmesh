@@ -164,7 +164,7 @@ fmt.Printf("Final output: %v\n", result.Output)
 For conversational AI workflows using `MessageGraph`:
 
 ```go
-g := message.NewGraph()
+g := message.NewGraphBuilder()
 
 g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)

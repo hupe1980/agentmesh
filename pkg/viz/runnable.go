@@ -20,9 +20,9 @@ type Runnable interface {
 	MermaidFlowchart(direction string) string
 }
 
-// Ensure graph.CompiledGraph implements the necessary introspection methods at compile time
+// Ensure graph.Graph implements the necessary introspection methods at compile time
 var _ interface {
 	GetNodes() []string
 	GetTopology() *graph.Topology
 	MermaidFlowchart(string) string
-} = (*graph.CompiledGraph[any, any])(nil)
+} = (*graph.Graph[any, any])(nil)

@@ -616,7 +616,7 @@ func TestVizServerInvalidEndpoints(t *testing.T) {
 }
 
 // Helper function to create a test graph with mock model that tracks costs
-func createVizTestGraph(t *testing.T) *message.CompiledMessageGraph {
+func createVizTestGraph(t *testing.T) *message.Graph {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 
@@ -693,7 +693,7 @@ func createVizTestGraph(t *testing.T) *message.CompiledMessageGraph {
 	)
 	require.NoError(t, err, "Failed to create ReAct agent")
 
-	// reactAgent is already the correct type (*message.CompiledMessageGraph)
+	// reactAgent is already the correct type (*message.Graph)
 	return reactAgent
 }
 

@@ -27,13 +27,13 @@ sidebar:
     url: "#error-handling"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `message.NewGraph()` for conversational agents.
+> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `message.NewGraphBuilder()` for conversational agents.
 
 ## Runnable interface {#runnable-interface}
 
 The graph `Run` method is the core abstraction for executable workflows in AgentMesh. Only compiled graphs can be executed - this separation ensures graphs are validated before running.
 
-### Graph vs CompiledGraph
+### Graph vs Graph
 
 AgentMesh separates graph **building** from graph **execution**:
 
@@ -43,13 +43,13 @@ g := graph.New[string, string](keys...)
 g.Node("fetch", fetchFunc, "process")
 g.Start("fetch")
 
-// CompiledGraph is the executor - run the workflow
+// Graph is the executor - run the workflow
 compiled, err := g.Build()  // Validates and compiles
 if err != nil {
     return err
 }
 
-// Only CompiledGraph has Run()
+// Only Graph has Run()
 for output, err := range compiled.Run(ctx, input) {
     // process outputs...
 }
@@ -58,8 +58,8 @@ for output, err := range compiled.Run(ctx, input) {
 ### Interface pattern
 
 ```go
-// CompiledGraph.Run returns an iterator of outputs
-func (g *CompiledGraph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
+// Graph.Run returns an iterator of outputs
+func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
 ```
 
 **Type parameters:**
@@ -74,13 +74,13 @@ For conversational agents, AgentMesh provides:
 // MessageGraph is a graph builder for message processing
 type MessageGraph = Graph[[]message.Message, message.Message]
 
-// CompiledMessageGraph is an executable message graph
-type CompiledMessageGraph = CompiledGraph[[]message.Message, message.Message]
+// MessageGraph is an executable message graph
+type MessageGraph = Graph[[]message.Message, message.Message]
 ```
 
 ### Usage example
 
-All agent constructors return `*message.CompiledMessageGraph` (already compiled):
+All agent constructors return `*message.MessageGraph` (already compiled):
 
 ```go
 import (
@@ -88,7 +88,7 @@ import (
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// Agent constructors return *message.CompiledMessageGraph (ready to run)
+// Agent constructors return *message.MessageGraph (ready to run)
 reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
 if err != nil {
     return err
@@ -110,20 +110,20 @@ lastMsg, err := graph.Last(reactAgent.Run(ctx, messages))
 
 **Compile-time type safety:**
 ```go
-// ✅ Type-safe: CompiledMessageGraph accepts []message.Message
+// ✅ Type-safe: MessageGraph accepts []message.Message
 reactAgent.Run(ctx, messages)
 
 // ❌ Compile error: won't accept wrong input type
 reactAgent.Run(ctx, "invalid input")
 
 // ❌ Compile error: can't run uncompiled graph
-g := graph.NewMessageGraph()
+g := message.NewGraphBuilder()
 g.Run(ctx, messages)  // Error: Graph has no Run method
 ```
 
 **Easy composition:**
 ```go
-// All agents are *message.CompiledMessageGraph - compose freely
+// All agents are *message.MessageGraph - compose freely
 worker1, _ := agent.NewReActAgent(model)
 worker2, _ := agent.NewReActAgent(model)
 supervisor, _ := agent.NewSupervisorAgent(model,
@@ -351,7 +351,7 @@ For conversational agents, use `NewMessageGraph()` which automatically includes 
 
 ```go
 // Creates a graph with MessagesKey pre-registered
-g := graph.NewMessageGraph()
+g := message.NewGraphBuilder()
 
 // MessagesKey is available
 g.Node("chat", func(ctx context.Context, view graph.View) (*graph.Command, error) {

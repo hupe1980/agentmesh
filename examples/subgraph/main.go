@@ -29,7 +29,7 @@ var (
 )
 
 // createValidationSubgraph creates a reusable validation subgraph
-func createValidationSubgraph() *graph.CompiledGraph[string, string] {
+func createValidationSubgraph() *graph.Graph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
 	g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
@@ -59,7 +59,7 @@ func createValidationSubgraph() *graph.CompiledGraph[string, string] {
 }
 
 // createTransformSubgraph creates a reusable transformation subgraph
-func createTransformSubgraph() *graph.CompiledGraph[string, string] {
+func createTransformSubgraph() *graph.Graph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
 	g.Node("normalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {

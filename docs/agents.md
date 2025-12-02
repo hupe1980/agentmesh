@@ -290,7 +290,7 @@ import (
 var CategoryKey = graph.NewKey[string]("category", "")
 
 // Create message graph for agent workflows
-g := message.NewGraph(CategoryKey)
+g := message.NewGraphBuilder(CategoryKey)
 
 // Add nodes using fluent API
 g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
@@ -410,7 +410,7 @@ researchSub := createResearchGraph()
 compiledResearch, _ := researchSub.Build()
 
 // Create parent graph
-parent := message.NewGraph()
+parent := message.NewGraphBuilder()
 
 // Embed subgraph as a node using graph.Subgraph with mappers
 parent.Node("research", graph.Subgraph(

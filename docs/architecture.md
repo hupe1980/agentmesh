@@ -556,7 +556,7 @@ compiled, err := g.Build()
 For agent workflows with message handling:
 
 ```go
-g := message.NewGraph()
+g := message.NewGraphBuilder()
 
 g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     messages := message.GetMessages(view)

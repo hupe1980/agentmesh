@@ -74,7 +74,7 @@ func StrictValidationOptions() ValidationOptions {
 
 // Validate performs validation on the graph and returns any errors found.
 // This is useful for more detailed error reporting than Build() provides.
-func (g *Graph[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
+func (b *Builder[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
 	opt := DefaultValidationOptions()
 	if len(opts) > 0 {
 		opt = opts[0]
@@ -87,20 +87,20 @@ func (g *Graph[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
 	var errors []ValidationError
 
 	// Key validation
-	errors = append(errors, g.validateKeys()...)
+	errors = append(errors, b.validateKeys()...)
 
 	// Basic validation
-	errors = append(errors, g.validateNodes()...)
-	errors = append(errors, g.validateEdges()...)
-	errors = append(errors, g.validateEntryPoints()...)
+	errors = append(errors, b.validateNodes()...)
+	errors = append(errors, b.validateEdges()...)
+	errors = append(errors, b.validateEntryPoints()...)
 
 	// Strict validation
 	if opt.Level >= ValidationLevelStrict {
 		if !opt.AllowCycles {
-			errors = append(errors, g.detectCycles()...)
+			errors = append(errors, b.detectCycles()...)
 		}
 		if !opt.AllowDisconnectedNodes {
-			errors = append(errors, g.detectDisconnected()...)
+			errors = append(errors, b.detectDisconnected()...)
 		}
 	}
 
@@ -108,11 +108,11 @@ func (g *Graph[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
 }
 
 // validateKeys checks for duplicate key names.
-func (g *Graph[I, O]) validateKeys() []ValidationError {
+func (b *Builder[I, O]) validateKeys() []ValidationError {
 	var errors []ValidationError
 
 	seen := make(map[string]bool)
-	for _, key := range g.keys {
+	for _, key := range b.keys {
 		name := key.Name()
 		if name == "" {
 			continue
@@ -132,10 +132,10 @@ func (g *Graph[I, O]) validateKeys() []ValidationError {
 }
 
 // validateNodes checks that all nodes have been defined.
-func (g *Graph[I, O]) validateNodes() []ValidationError {
+func (b *Builder[I, O]) validateNodes() []ValidationError {
 	var errors []ValidationError
 
-	if len(g.nodes) == 0 {
+	if len(b.nodes) == 0 {
 		errors = append(errors, ValidationError{
 			Type:    ErrorTypeMissingNode,
 			Message: "graph has no nodes",
@@ -146,15 +146,15 @@ func (g *Graph[I, O]) validateNodes() []ValidationError {
 }
 
 // validateEdges checks that all edge targets are valid.
-func (g *Graph[I, O]) validateEdges() []ValidationError {
+func (b *Builder[I, O]) validateEdges() []ValidationError {
 	var errors []ValidationError
 
-	for _, n := range g.nodes {
+	for _, n := range b.nodes {
 		for _, target := range n.targets {
 			if target == END {
 				continue
 			}
-			if _, ok := g.nodes[target]; !ok {
+			if _, ok := b.nodes[target]; !ok {
 				errors = append(errors, ValidationError{
 					Type:    ErrorTypeInvalidEdge,
 					Node:    n.name,
@@ -168,10 +168,10 @@ func (g *Graph[I, O]) validateEdges() []ValidationError {
 }
 
 // validateEntryPoints checks that entry points are valid.
-func (g *Graph[I, O]) validateEntryPoints() []ValidationError {
+func (b *Builder[I, O]) validateEntryPoints() []ValidationError {
 	var errors []ValidationError
 
-	if len(g.entryPoints) == 0 {
+	if len(b.entryPoints) == 0 {
 		errors = append(errors, ValidationError{
 			Type:    ErrorTypeInvalidEntryNode,
 			Message: "no entry point defined",
@@ -179,8 +179,8 @@ func (g *Graph[I, O]) validateEntryPoints() []ValidationError {
 		return errors
 	}
 
-	for _, ep := range g.entryPoints {
-		if _, ok := g.nodes[ep]; !ok {
+	for _, ep := range b.entryPoints {
+		if _, ok := b.nodes[ep]; !ok {
 			errors = append(errors, ValidationError{
 				Type:    ErrorTypeInvalidEntryNode,
 				Node:    ep,
@@ -193,7 +193,7 @@ func (g *Graph[I, O]) validateEntryPoints() []ValidationError {
 }
 
 // detectCycles detects cycles in the graph using DFS.
-func (g *Graph[I, O]) detectCycles() []ValidationError {
+func (b *Builder[I, O]) detectCycles() []ValidationError {
 	var errors []ValidationError
 
 	// Track visited and recursion stack
@@ -205,7 +205,7 @@ func (g *Graph[I, O]) detectCycles() []ValidationError {
 		visited[name] = true
 		recStack[name] = true
 
-		n, ok := g.nodes[name]
+		n, ok := b.nodes[name]
 		if !ok {
 			return false
 		}
@@ -234,7 +234,7 @@ func (g *Graph[I, O]) detectCycles() []ValidationError {
 	}
 
 	// Start DFS from each entry point
-	for _, ep := range g.entryPoints {
+	for _, ep := range b.entryPoints {
 		if !visited[ep] {
 			dfs(ep)
 		}
@@ -244,13 +244,13 @@ func (g *Graph[I, O]) detectCycles() []ValidationError {
 }
 
 // detectDisconnected finds nodes that are not reachable from entry points.
-func (g *Graph[I, O]) detectDisconnected() []ValidationError {
+func (b *Builder[I, O]) detectDisconnected() []ValidationError {
 	var errors []ValidationError
 
 	// BFS from entry points to find all reachable nodes
 	reachable := make(map[string]bool)
-	queue := make([]string, 0, len(g.entryPoints))
-	queue = append(queue, g.entryPoints...)
+	queue := make([]string, 0, len(b.entryPoints))
+	queue = append(queue, b.entryPoints...)
 
 	for len(queue) > 0 {
 		name := queue[0]
@@ -261,7 +261,7 @@ func (g *Graph[I, O]) detectDisconnected() []ValidationError {
 		}
 		reachable[name] = true
 
-		n, ok := g.nodes[name]
+		n, ok := b.nodes[name]
 		if !ok {
 			continue
 		}
@@ -277,7 +277,7 @@ func (g *Graph[I, O]) detectDisconnected() []ValidationError {
 	}
 
 	// Check for unreachable nodes
-	for name := range g.nodes {
+	for name := range b.nodes {
 		if !reachable[name] {
 			errors = append(errors, ValidationError{
 				Type:    ErrorTypeDisconnected,
