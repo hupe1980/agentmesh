@@ -1,211 +1,210 @@
 # Subgraph Composition
 
 ## Overview
-Demonstrates composing complex graphs from reusable subgraph components using `SubgraphNode`.
+Demonstrates composing complex graphs from reusable subgraph components using `graph.Subgraph()`.
 Shows how to build isolated subgraphs with type-safe input/output mapping.
 
 ## Key Concepts
-- **SubgraphNode**: Wraps a compiled graph as a reusable node with type-safe I/O
-- **InputMapper**: Type-safe function that extracts data from parent state → subgraph input
-- **OutputMapper**: Type-safe function that converts subgraph output → parent state updates
-- **State Isolation**: Each subgraph has its own state manager and cannot directly access parent state
-- **Reusability**: Build once, use in multiple graphs - organize as Go packages/functions
+- **graph.Subgraph()**: Embed a compiled subgraph as a node in a parent graph
+- **Input Mapper**: Transform parent state into subgraph input
+- **Output Mapper**: Transform subgraph output into parent state updates
+- **State Isolation**: Each subgraph has its own state, cannot access parent state
+- **Reusability**: Build once, use in multiple parent graphs
 
 ## Running
 ```bash
-cd examples/subgraph
-go run main.go
+go run examples/subgraph/main.go
 ```
 
 ## Expected Output
 ```
-=== Multi-Stage Data Processing Pipeline ===
+=== Subgraph Composition Example ===
+  Demonstrates graph.Subgraph() for composing reusable graphs
 
-Stage 1: Validation
-  [validate_format] Checking data format... ✓
-  [validate_schema] Checking schema... ✓
-  Status: validation_passed
+  [start] Beginning workflow
+  [parent] Mapping input to validation subgraph:   Raw Data  
+    [validate] Checking format of:   Raw Data  
+    [validate] Checking content of:   Raw Data  
+  [parent] Got validation result: validated:  Raw Data  
+  [parent] Mapping input to transform subgraph: validated:  Raw Data  
+    [transform] Normalized: validated:  raw data
+    [transform] Enriched: enriched(validated:  raw data)
+  [parent] Got transform result: enriched(validated:  raw data)
 
-Stage 2: Enrichment
-  [lookup_metadata] Adding metadata...
-  [calculate_derived] Computing derived fields...
-  Status: enrichment_complete
+  Workflow Summary:
+    Final result: enriched(validated:  raw data)
+    Steps executed:
+      1. Started main workflow
+      2. Validation completed
+      3. Transform completed
 
-Stage 3: Analysis
-  [analyze_patterns] Analyzing patterns...
-  [generate_insights] Generating insights...
-  Status: analysis_complete
-
-Stage 4: Report Generation
-  [compile_report] Creating final report...
-  Status: pipeline_complete
-
-Pipeline completed successfully!
-Final report: {...}
+  Subgraph features:
+    • graph.Subgraph(sub, inputMapper, outputMapper)
+    • Subgraphs have isolated state
+    • Input/output mappers bridge parent ↔ child state
+    • Subgraphs can be reused across multiple nodes
 ```
 
 ## Code Walkthrough
 
-### 1. Create Validation Subgraph
+### 1. Define Parent and Subgraph Keys
 ```go
-func createValidationSubgraph() *graph.Graph {
-    stateManager := newStateManager()
-    g, _ := graph.NewGraph(stateManager)
+// Parent graph keys
+var (
+    inputKey  = graph.NewKey("input", "")
+    resultKey = graph.NewKey("result", "")
+    stepsKey  = graph.NewListKey[string]("steps")
+)
 
-    g.AddNode(&graph.BaseNode{
-        NodeName:        "validate_format",
-        DeclaredTargets: []string{"validate_schema"},
-        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-            updates := state.Updates{"format_valid": true}
-            return []string{"validate_schema"}, updates, nil
-        },
-    })
+// Subgraph keys (isolated state)
+var (
+    subInputKey  = graph.NewKey("sub_input", "")
+    subOutputKey = graph.NewKey("sub_output", "")
+)
+```
 
-    g.AddNode(&graph.BaseNode{
-        NodeName:        "validate_schema",
-        DeclaredTargets: []string{graph.END},
-        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-            updates := state.Updates{"schema_valid": true}
-            return []string{graph.END}, updates, nil
-        },
-    })
+### 2. Create a Reusable Subgraph
+```go
+func createValidationSubgraph() *graph.Graph[string, string] {
+    g := graph.New[string, string](subInputKey, subOutputKey)
 
-    g.SetEntryPoint("validate_format")
+    g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        input := graph.Get(view, subInputKey)
+        if strings.TrimSpace(input) == "" {
+            return graph.Fail(fmt.Errorf("empty input"))
+        }
+        return graph.To("validate_content")
+    }, "validate_content")
+
+    g.Node("validate_content", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        input := graph.Get(view, subInputKey)
+        return graph.Set(subOutputKey, "validated:"+input).End()
+    }, graph.END)
+
+    g.Start("validate_format")
     return g
 }
 ```
 
-### 2. Compile Subgraphs
+### 3. Use graph.Subgraph() to Embed in Parent
 ```go
-compiledValidation, _ := validationSub.Compile()
-compiledEnrichment, _ := enrichmentSub.Compile()
-compiledAnalysis, _ := analysisSub.Compile()
+// Use graph.Subgraph() to embed the validation subgraph
+g.Node("run_validation", graph.Subgraph(
+    validationSubgraph,
+    // Input mapper: parent state -> subgraph input
+    func(ctx context.Context, view graph.View) (string, error) {
+        input := graph.Get(view, inputKey)
+        return input, nil
+    },
+    // Output mapper: subgraph output -> parent state updates
+    func(ctx context.Context, output string) (graph.Updates, error) {
+        return graph.Updates{
+            inputKey.Name():  output,
+            stepsKey.Name():  graph.SliceOf[string]([]string{"Validation completed"}),
+        }, nil
+    },
+), "next_node")
 ```
 
-### 3. Create Main Pipeline
+### 4. Chain Multiple Subgraphs
 ```go
-func createPipeline(validation, enrichment, analysis *graph.Compiled) *graph.Graph {
-    stateManager := newStateManager()
-    pipeline, _ := graph.NewGraph(stateManager)
+g.Start("start")
 
-    // Stage 1: Validation subgraph
-    pipeline.AddNode(&graph.BaseNode{
-        NodeName:        "validation_stage",
-        DeclaredTargets: []string{"enrichment_stage"},
-        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-            // Run validation subgraph
-            result, _ := graph.Last(validation.Run(ctx, nil))
-            return []string{"enrichment_stage"}, result.State, nil
-        },
-    })
-
-    // Stage 2: Enrichment subgraph
-    pipeline.AddNode(&graph.BaseNode{
-        NodeName:        "enrichment_stage",
-        DeclaredTargets: []string{"analysis_stage"},
-        Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-            data := state.GetFromView(view, dataKey)
-            result, _ := graph.Last(enrichment.Run(ctx, nil,
-                graph.WithInput(map[string]any{"data": data}),
-            ))
-            return []string{"analysis_stage"}, result.State, nil
-        },
-    })
-
-    // Stage 3: Analysis subgraph (similar pattern)
-    // ...
-
-    pipeline.SetEntryPoint("validation_stage")
-    return pipeline
-}
+g.Node("start", startFn, "run_validation")
+g.Node("run_validation", graph.Subgraph(validationSub, inMap, outMap), "run_transform")
+g.Node("run_transform", graph.Subgraph(transformSub, inMap, outMap), "finalize")
+g.Node("finalize", finalizeFn, graph.END)
 ```
 
-### 4. Execute Pipeline
+## API Reference
+
+### graph.Subgraph()
 ```go
-compiled, _ := pipeline.Compile()
-result, _ := graph.Last(compiled.Run(ctx, nil,
-    graph.WithInput(map[string]any{
-        "data": rawData,
-    }),
-))
+func Subgraph[I, O any](
+    sub *Graph[I, O],                                    // The subgraph to embed
+    inputMapper func(ctx, view) (I, error),              // Maps parent state to subgraph input
+    outputMapper func(ctx, output O) (Updates, error),   // Maps subgraph output to parent updates
+) NodeFunc
+```
+
+### graph.Updates
+```go
+// Updates is a map of key names to values for batch state updates
+type Updates map[string]any
+
+// Example usage in output mapper:
+return graph.Updates{
+    "result": output,
+    "steps":  graph.SliceOf[string]([]string{"Step completed"}),
+}, nil
 ```
 
 ## Workflow Architecture
 
 ```
-Main Pipeline:
+Parent Graph:
 ┌─────────────────────────────────────────────┐
-│ validation_stage                            │
-│   ├─ validate_format  (subgraph)           │
-│   └─ validate_schema                       │
+│ start                                       │
+│   └─ Set initial input                     │
 └───────────────┬─────────────────────────────┘
                 ↓
 ┌─────────────────────────────────────────────┐
-│ enrichment_stage                            │
-│   ├─ lookup_metadata  (subgraph)           │
-│   └─ calculate_derived                     │
+│ run_validation (graph.Subgraph)             │
+│   ┌─────────────────────────────────────┐   │
+│   │ Validation Subgraph (isolated)      │   │
+│   │   validate_format → validate_content│   │
+│   └─────────────────────────────────────┘   │
 └───────────────┬─────────────────────────────┘
                 ↓
 ┌─────────────────────────────────────────────┐
-│ analysis_stage                              │
-│   ├─ analyze_patterns  (subgraph)          │
-│   └─ generate_insights                     │
+│ run_transform (graph.Subgraph)              │
+│   ┌─────────────────────────────────────┐   │
+│   │ Transform Subgraph (isolated)       │   │
+│   │   normalize → enrich                │   │
+│   └─────────────────────────────────────┘   │
 └───────────────┬─────────────────────────────┘
                 ↓
 ┌─────────────────────────────────────────────┐
-│ report_stage                                │
-│   └─ compile_report                        │
+│ finalize                                    │
+│   └─ Display results                       │
 └─────────────────────────────────────────────┘
 ```
-
-## What This Example Teaches
-- ✅ Subgraph composition
-- ✅ Modular workflow design
-- ✅ Multi-stage pipelines
-- ✅ State isolation and mapping
-- ✅ Reusable components
 
 ## Benefits
 
 ### Modularity
-- Develop and test stages independently
-- Reuse subgraphs across pipelines
+- Develop and test subgraphs independently
+- Reuse subgraphs across different parent graphs
 - Easy to swap implementations
 
-### Clarity
-- Clear separation of concerns
-- Self-documenting architecture
-- Easier to understand complex workflows
+### State Isolation
+- Subgraphs cannot access parent state directly
+- Input/output mappers are the only interface
+- Clear data contracts between components
 
-### Maintainability
-- Changes isolated to specific subgraphs
-- Independent versioning
-- Simpler debugging
+### Type Safety
+- Input and output types are statically checked
+- Compile-time errors for type mismatches
+- No runtime type assertions needed
 
 ## Common Patterns
 
 ### ETL Pipeline
-```
-Extract → Transform → Load
-```
-
-### Data Processing
-```
-Validate → Clean → Enrich → Analyze → Report
+```go
+g.Node("extract", graph.Subgraph(extractSub, ...))
+g.Node("transform", graph.Subgraph(transformSub, ...))
+g.Node("load", graph.Subgraph(loadSub, ...))
 ```
 
 ### Multi-Agent Workflow
+```go
+g.Node("research", graph.Subgraph(researchAgent, ...))
+g.Node("analyze", graph.Subgraph(analysisAgent, ...))
+g.Node("write", graph.Subgraph(writingAgent, ...))
 ```
-Research Agent → Analysis Agent → Writing Agent → Review Agent
-```
-
-## Next Steps
-- Build modular multi-stage workflows
-- Create reusable subgraph library
-- Implement dynamic subgraph selection
-- See **examples/parallel_tasks** for parallel subgraphs
 
 ## See Also
 - [pkg/graph](../../pkg/graph) - Graph composition API
 - [examples/conditional_flow](../conditional_flow) - Dynamic routing
 - [examples/parallel_tasks](../parallel_tasks) - Parallel execution
+- [examples/namespaces](../namespaces) - Namespace-based isolation

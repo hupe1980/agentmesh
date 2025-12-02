@@ -11,7 +11,6 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -34,35 +33,27 @@ func main() {
 func example1_ValidGraph() {
 	fmt.Println("--- Example 1: Valid Graph ---")
 
-	builder := state.NewManagerBuilder()
-	mgr := builder.Build()
-	g, _ := graph.NewGraph(mgr)
+	g := graph.New[any, any]()
 
 	// Create a simple linear graph
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "process",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			fmt.Println("Processing...")
-			return []string{graph.EndNode}, nil, nil
-		},
-	})
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("Processing...")
+		return graph.Cmd().End()
+	}, graph.END)
 
-	if err := g.SetEntryPoint("process"); err != nil {
-		panic(err)
-	}
+	g.Start("process")
 
-	// Compile with default validation
-	runnable, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	// Build with default validation
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("✓ Graph compiled successfully")
+	fmt.Println("✓ Graph built successfully")
 
 	// Execute
 	ctx := context.Background()
-	for _, err := range runnable.Run(ctx, nil) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -72,26 +63,19 @@ func example1_ValidGraph() {
 
 // example2_InvalidGraph demonstrates validation catching errors at compile time
 func example2_InvalidGraph() {
-	fmt.Println("--- Example 2: Invalid Graph (Caught at Compile Time) ---")
+	fmt.Println("--- Example 2: Invalid Graph (Caught at Build Time) ---")
 
-	builder := state.NewManagerBuilder()
-	mgr := builder.Build()
-	g, _ := graph.NewGraph(mgr)
+	g := graph.New[any, any]()
 
 	// Create an invalid graph - edge to non-existent node
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "start_node",
-		DeclaredTargets: []string{"non_existent_node"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"non_existent_node"}, nil, nil
-		},
-	})
+	g.Node("start_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("non_existent_node")
+	}, "non_existent_node") // Node doesn't exist
 
-	// This edge references a node that doesn't exist
-	// Removed invalid edge to demonstrate validation
+	g.Start("start_node")
 
-	// Compilation will fail with validation error
-	_, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	// Build will fail with validation error
+	_, err := g.Build()
 	if err != nil {
 		fmt.Printf("✓ Validation caught error:\n%v\n\n", err)
 	} else {
@@ -103,41 +87,39 @@ func example2_InvalidGraph() {
 func example3_StrictValidation() {
 	fmt.Println("--- Example 3: Strict Validation ---")
 
-	builder := state.NewManagerBuilder()
-	mgr := builder.Build()
-	g, _ := graph.NewGraph(mgr)
+	g := graph.New[any, any]()
 
 	// Create a graph with an unreachable node
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "reachable",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		},
-	})
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "unreachable",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		},
-	})
+	g.Node("reachable", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
 
-	if err := g.SetEntryPoint("reachable"); err != nil {
-		panic(err)
-	}
-	// "unreachable" has no incoming edges
+	g.Node("unreachable", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END) // This node has no incoming edges
+
+	g.Start("reachable")
 
 	// Default validation allows unreachable nodes
-	_, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	_, err := g.Build()
 	if err != nil {
 		fmt.Printf("✗ Default validation should allow unreachable nodes: %v\n", err)
 	} else {
 		fmt.Println("✓ Default validation passed (unreachable node allowed)")
 	}
 
+	// Create new graph for strict validation test
+	g2 := graph.New[any, any]()
+	g2.Node("reachable", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+	g2.Node("unreachable", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+	g2.Start("reachable")
+
 	// Strict validation catches unreachable nodes
-	_, err = graph.Compile(g, graph.NewMessagePregelExecutor(), graph.WithStrictValidation())
+	_, err = g2.Build(graph.WithStrictValidation())
 	if err != nil {
 		fmt.Printf("✓ Strict validation caught unreachable node:\n%v\n\n", err)
 	} else {
@@ -149,42 +131,40 @@ func example3_StrictValidation() {
 func example4_CustomValidation() {
 	fmt.Println("--- Example 4: Custom Validation Options ---")
 
-	builder := state.NewManagerBuilder()
-	mgr := builder.Build()
-	g, _ := graph.NewGraph(mgr)
-
 	// Create a graph with a cycle (for iterative algorithms)
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "agent",
-		DeclaredTargets: []string{"evaluator"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"evaluator"}, nil, nil
-		},
-	})
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "evaluator",
-		DeclaredTargets: []string{"agent", graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			// Check quality and potentially loop back
-			return []string{graph.EndNode}, nil, nil
-		},
-	})
+	g := graph.New[any, any]()
 
-	if err := g.SetEntryPoint("agent"); err != nil {
-		panic(err)
-	}
-	// Note: Cycle is created via Command pattern routing in node logic
+	g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("evaluator")
+	}, "evaluator")
+
+	g.Node("evaluator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Check quality and potentially loop back or end
+		return graph.Cmd().End()
+	}, "agent", graph.END)
+
+	g.Start("agent")
 
 	// Default validation allows cycles
-	_, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	_, err := g.Build()
 	if err != nil {
 		fmt.Printf("✗ Default validation should allow cycles: %v\n", err)
 	} else {
 		fmt.Println("✓ Default validation passed (cycle allowed for iterative pattern)")
 	}
 
+	// Create new graph for strict validation test
+	g2 := graph.New[any, any]()
+	g2.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("evaluator")
+	}, "evaluator")
+	g2.Node("evaluator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, "agent", graph.END)
+	g2.Start("agent")
+
 	// Strict validation rejects cycles
-	_, err = graph.Compile(g, graph.NewMessagePregelExecutor(), graph.WithStrictValidation())
+	_, err = g2.Build(graph.WithStrictValidation())
 	if err != nil {
 		fmt.Printf("✓ Strict validation caught cycle:\n%v\n", err)
 	} else {
@@ -192,7 +172,16 @@ func example4_CustomValidation() {
 	}
 
 	// Custom validation: Allow cycles but reject unreachable nodes
-	_, err = graph.Compile(g, graph.NewMessagePregelExecutor(), graph.WithValidation(graph.ValidationOptions{
+	g3 := graph.New[any, any]()
+	g3.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("evaluator")
+	}, "evaluator")
+	g3.Node("evaluator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, "agent", graph.END)
+	g3.Start("agent")
+
+	_, err = g3.Build(graph.WithValidation(graph.ValidationOptions{
 		AllowCycles:            true,  // Cycles OK for iterative algorithms
 		AllowDisconnectedNodes: false, // But all nodes must be reachable
 	}))

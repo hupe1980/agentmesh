@@ -5,14 +5,15 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/prompt"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
+
+// DocumentsKey is the state key for storing retrieved documents in RAG workflows.
+var DocumentsKey = graph.NewKey[[]string]("documents", nil)
 
 // extractUserQuery finds the last human message text from messages.
 func extractUserQuery(messages []message.Message) (string, error) {
@@ -38,56 +39,56 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 	return docStrings
 }
 
-// DocumentsKey is the state key for storing retrieved documents in RAG workflows.
-var DocumentsKey = state.NewKey[[]string]("documents", nil)
-
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
 func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
-	return func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-		messages := GetMessages(view)
-		if len(messages) == 0 {
-			return nil, nil, fmt.Errorf("no query messages")
+	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		msgs := GetMessages(view)
+		if len(msgs) == 0 {
+			return graph.Fail(fmt.Errorf("no query messages"))
 		}
 
-		query, err := extractUserQuery(messages)
+		query, err := extractUserQuery(msgs)
 		if err != nil {
-			return nil, nil, err
+			return graph.Fail(err)
 		}
 
 		docs, err := retriever.Retrieve(ctx, query)
 		if err != nil {
-			return nil, nil, fmt.Errorf("retrieval failed: %w", err)
+			return graph.Fail(fmt.Errorf("retrieval failed: %w", err))
 		}
 
-		return command.New().With(command.SetValue(DocumentsKey, extractDocumentContent(docs))).To("generate")
+		return graph.Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
 	}
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
 func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
-	return func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-		messages := GetMessages(view)
+	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		msgs := GetMessages(view)
+		if len(msgs) == 0 {
+			return graph.Fail(fmt.Errorf("no messages in state"))
+		}
 
-		docs := state.GetFromView(view, DocumentsKey)
-		var err error
+		docs := graph.Get(view, DocumentsKey)
 
 		var newMsg message.Message
+		var err error
 		if len(docs) == 0 {
 			// No documents found, generate without context
-			newMsg, err = generateWithModel(ctx, mdl, messages, "")
+			newMsg, err = generateWithModel(ctx, mdl, msgs, "")
 		} else {
 			// Format context from documents
 			contextPrompt := config.promptTemplate.MustRender(map[string]any{
 				"Documents": docs,
 			})
-			newMsg, err = generateWithModel(ctx, mdl, messages, contextPrompt)
+			newMsg, err = generateWithModel(ctx, mdl, msgs, contextPrompt)
 		}
 
 		if err != nil {
-			return nil, nil, err
+			return graph.Fail(err)
 		}
 
-		return command.New().With(command.Append(MessagesKey, newMsg)).To(graph.EndNode)
+		return graph.Append(MessagesKey, newMsg).To(graph.END)
 	}
 }
 
@@ -95,7 +96,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 //  1. Retrieves relevant context from a knowledge base
 //  2. Generates a response using both the query and retrieved context
 //
-// Returns a graph.Runnable for type-safe composition.
+// Returns a *graph.MessageGraph for type-safe composition.
 //
 // This pattern is ideal for question-answering over large document collections.
 //
@@ -106,7 +107,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (MessageRunnable, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.MessageGraph, error) {
 	if err := validate.All(
 		validate.NotNil(mdl, "model"),
 		validate.NotNil(retriever, "retriever"),
@@ -119,31 +120,13 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	stateBuilder := state.NewManagerBuilder()
-	if err := RegisterMessagesKey(stateBuilder); err != nil {
-		return nil, fmt.Errorf("failed to register messages key: %w", err)
-	}
-	if err := state.RegisterKey(stateBuilder, DocumentsKey); err != nil {
-		return nil, fmt.Errorf("failed to register documents key: %w", err)
-	}
-	mgr := stateBuilder.Build()
+	// Build graph - MessagesKey is automatically included by NewMessageGraph
+	g := graph.NewMessageGraph(DocumentsKey)
+	g.Node("retrieve", createRetrieveNode(retriever), "generate")
+	g.Node("generate", createGenerateNode(mdl, config), graph.END)
+	g.Start("retrieve")
 
-	// Build graph using fluent builder API
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create builder: %w", err)
-	}
-
-	compiled, err := builder.
-		AddNodeFunc("retrieve", []string{"generate"}, createRetrieveNode(retriever)).
-		AddNodeFunc("generate", []string{graph.EndNode}, createGenerateNode(mdl, config)).
-		SetEntryPoint("retrieve").
-		Compile()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build graph: %w", err)
-	}
-
-	return compiled, nil
+	return g.Build()
 }
 
 // ragOptions holds configuration for RAG agents.
@@ -175,7 +158,7 @@ func WithPromptTemplate(tmpl *prompt.Template) RAGOption {
 	}
 }
 
-// Helper function to generate response with optional context
+// generateWithModel generates a response with optional context.
 func generateWithModel(ctx context.Context, mdl model.Model, existingMsgs []message.Message, context string) (message.Message, error) {
 	// Build request messages with optional context prepended
 	requestMsgs := existingMsgs

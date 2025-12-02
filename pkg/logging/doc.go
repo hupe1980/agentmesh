@@ -41,7 +41,7 @@ Pass logger to instrumentation:
 
 	import "github.com/hupe1980/agentmesh/pkg/graph"
 
-	compiled, _ := builder.Compile(
+	compiled, _ := g.Build(
 		graph.WithInstrumentation(&graph.Instrumentation{
 			Logger: logger,
 		}),

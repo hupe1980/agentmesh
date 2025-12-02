@@ -2,94 +2,177 @@ package graph
 
 import (
 	"context"
-	"iter"
+	"fmt"
+	"log/slog"
+	"time"
 )
 
-// Middleware intercepts and extends graph execution.
-// Middleware can add cross-cutting concerns like tracing, metrics, caching, etc.
-// without modifying the core graph execution logic.
-//
-// Example:
-//
-//	type LoggingMiddleware struct {
-//	    logger *log.Logger
-//	}
-//
-//	func (m *LoggingMiddleware) Wrap(next graph.Executor[I, O]) graph.Executor[I, O] {
-//	    return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[I, O], input I, opts ...graph.RunOption) iter.Seq2[O, error] {
-//	        m.logger.Println("Starting execution")
-//	        return next.Run(ctx, compiled, input, opts...)
-//	    })
-//	}
-type Middleware[I, O any] interface {
-	// Wrap takes the next executor in the chain and returns a wrapped version.
-	// The wrapped executor should call next.Run() to continue the chain.
-	Wrap(next Executor[I, O]) Executor[I, O]
+// nodeNameKey is the context key for node name.
+type nodeNameKey struct{}
+
+// WithNodeName attaches the current node name to the context.
+// This is called automatically by the executor before running each node.
+func WithNodeName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, nodeNameKey{}, name)
 }
 
-// MiddlewareFunc is a function adapter for Middleware.
-// It allows using functions as middleware without defining a type.
-//
-// Example:
-//
-//	loggingMiddleware := graph.MiddlewareFunc[Input, Output](func(next graph.Executor[Input, Output]) graph.Executor[Input, Output] {
-//	    return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[Input, Output], input Input, opts ...graph.RunOption) iter.Seq2[Output, error] {
-//	        log.Println("Starting execution")
-//	        return next.Run(ctx, compiled, input, opts...)
-//	    })
-//	})
-type MiddlewareFunc[I, O any] func(next Executor[I, O]) Executor[I, O]
-
-// Wrap implements the Middleware interface.
-func (f MiddlewareFunc[I, O]) Wrap(next Executor[I, O]) Executor[I, O] {
-	return f(next)
-}
-
-// Chain applies multiple middleware to an executor in order.
-// Middleware are applied in the order given, so the first middleware
-// in the list is the outermost layer.
-//
-// Example:
-//
-//	executor := graph.Chain(
-//	    graph.NewMessagePregelExecutor(),
-//	    middleware.NewTraceMiddleware(),
-//	    middleware.NewMetricsMiddleware(),
-//	    middleware.NewCacheMiddleware(),
-//	)
-//
-// This produces: trace(metrics(cache(executor)))
-// Execution flows: trace → metrics → cache → executor
-func Chain[I, O any](executor Executor[I, O], middleware ...Middleware[I, O]) Executor[I, O] {
-	// Apply middleware in reverse order so the first middleware is outermost
-	for i := len(middleware) - 1; i >= 0; i-- {
-		executor = middleware[i].Wrap(executor)
+// NodeNameFromContext retrieves the current node name from context.
+// Returns empty string if not in a node execution context.
+func NodeNameFromContext(ctx context.Context) string {
+	if name, ok := ctx.Value(nodeNameKey{}).(string); ok {
+		return name
 	}
-	return executor
+	return ""
 }
 
-// ExecutorWrapper wraps a function as an Executor.
-// This is useful for creating ad-hoc executors or for middleware implementations.
-type ExecutorWrapper[I, O any] struct {
-	runFunc func(ctx context.Context, compiled *Compiled[I, O], input I, opts ...RunOption) iter.Seq2[O, error]
-}
-
-// Run implements the Executor interface.
-func (w *ExecutorWrapper[I, O]) Run(ctx context.Context, compiled *Compiled[I, O], input I, opts ...RunOption) iter.Seq2[O, error] {
-	return w.runFunc(ctx, compiled, input, opts...)
-}
-
-// WrapFunc creates an executor from a function.
-// This is a convenience function for middleware implementations.
+// Chain combines multiple middleware into one.
+// Middleware are applied in order, so the first middleware is the outermost layer.
 //
 // Example:
 //
-//	return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[I, O], input I, opts ...graph.RunOption) iter.Seq2[O, error] {
-//	    // Pre-processing
-//	    results := next.Run(ctx, compiled, input, opts...)
-//	    // Post-processing
-//	    return results
-//	})
-func WrapFunc[I, O any](fn func(ctx context.Context, compiled *Compiled[I, O], input I, opts ...RunOption) iter.Seq2[O, error]) Executor[I, O] {
-	return &ExecutorWrapper[I, O]{runFunc: fn}
+//	combined := graph.Chain(
+//	    LoggingMiddleware(logger),
+//	    TracingMiddleware(),
+//	    MetricsMiddleware(),
+//	)
+//	graph.WithMiddleware(combined)
+//
+// This produces: logging(tracing(metrics(node)))
+// Execution flows: logging → tracing → metrics → node
+func Chain(middleware ...Middleware) Middleware {
+	return func(next NodeFunc) NodeFunc {
+		// Apply in reverse order so first middleware is outermost
+		for i := len(middleware) - 1; i >= 0; i-- {
+			next = middleware[i](next)
+		}
+		return next
+	}
+}
+
+// LoggingMiddleware creates middleware that logs node execution.
+//
+// Example:
+//
+//	graph.WithMiddleware(graph.LoggingMiddleware(slog.Default()))
+func LoggingMiddleware(logger *slog.Logger) Middleware {
+	return func(next NodeFunc) NodeFunc {
+		return func(ctx context.Context, view View) (*Command, error) {
+			nodeName := NodeNameFromContext(ctx)
+			logger.DebugContext(ctx, "node started", "node", nodeName)
+
+			start := time.Now()
+			cmd, err := next(ctx, view)
+			duration := time.Since(start)
+
+			if err != nil {
+				logger.ErrorContext(ctx, "node failed",
+					"node", nodeName,
+					"duration", duration,
+					"error", err,
+				)
+			} else {
+				logger.DebugContext(ctx, "node completed",
+					"node", nodeName,
+					"duration", duration,
+				)
+			}
+
+			return cmd, err
+		}
+	}
+}
+
+// TimingMiddleware creates middleware that tracks execution time.
+// The duration is available via the callback function.
+//
+// Example:
+//
+//	graph.WithMiddleware(graph.TimingMiddleware(func(node string, d time.Duration) {
+//	    metrics.RecordLatency(node, d)
+//	}))
+func TimingMiddleware(onComplete func(nodeName string, duration time.Duration)) Middleware {
+	return func(next NodeFunc) NodeFunc {
+		return func(ctx context.Context, view View) (*Command, error) {
+			start := time.Now()
+			cmd, err := next(ctx, view)
+			if onComplete != nil {
+				onComplete(NodeNameFromContext(ctx), time.Since(start))
+			}
+			return cmd, err
+		}
+	}
+}
+
+// RecoveryMiddleware creates middleware that recovers from panics.
+// It converts panics into errors rather than crashing the entire graph.
+//
+// Example:
+//
+//	graph.WithMiddleware(graph.RecoveryMiddleware(func(node string, recovered any) {
+//	    logger.Error("panic recovered", "node", node, "panic", recovered)
+//	}))
+func RecoveryMiddleware(onPanic func(nodeName string, recovered any)) Middleware {
+	return func(next NodeFunc) NodeFunc {
+		return func(ctx context.Context, view View) (cmd *Command, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					if onPanic != nil {
+						onPanic(NodeNameFromContext(ctx), r)
+					}
+					// Convert panic to error
+					if e, ok := r.(error); ok {
+						err = e
+					} else {
+						err = fmt.Errorf("panic in node %s: %v", NodeNameFromContext(ctx), r)
+					}
+				}
+			}()
+			return next(ctx, view)
+		}
+	}
+}
+
+// ConditionalMiddleware applies middleware only when the condition is met.
+//
+// Example:
+//
+//	// Only log expensive nodes
+//	graph.WithMiddleware(graph.ConditionalMiddleware(
+//	    func(ctx context.Context) bool {
+//	        return NodeNameFromContext(ctx) == "expensive_node"
+//	    },
+//	    graph.LoggingMiddleware(logger),
+//	))
+func ConditionalMiddleware(condition func(ctx context.Context) bool, mw Middleware) Middleware {
+	return func(next NodeFunc) NodeFunc {
+		wrapped := mw(next)
+		return func(ctx context.Context, view View) (*Command, error) {
+			if condition(ctx) {
+				return wrapped(ctx, view)
+			}
+			return next(ctx, view)
+		}
+	}
+}
+
+// NodeMiddleware applies middleware only to specific nodes.
+//
+// Example:
+//
+//	graph.WithMiddleware(graph.NodeMiddleware(
+//	    []string{"slow_node", "external_api"},
+//	    graph.TimingMiddleware(recordTiming),
+//	))
+func NodeMiddleware(nodeNames []string, mw Middleware) Middleware {
+	nodeSet := make(map[string]bool, len(nodeNames))
+	for _, name := range nodeNames {
+		nodeSet[name] = true
+	}
+
+	return ConditionalMiddleware(
+		func(ctx context.Context) bool {
+			return nodeSet[NodeNameFromContext(ctx)]
+		},
+		mw,
+	)
 }

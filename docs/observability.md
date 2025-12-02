@@ -50,7 +50,7 @@ ctx = trace.WithProvider(ctx, traceProvider)
 ctx = metrics.WithProvider(ctx, metricsProvider)
 
 // Execute with automatic instrumentation
-messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
+messages, err := graph.Collect(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -68,7 +68,7 @@ ctx = logging.WithLogger(ctx, logging.NoopLogger{})
 ctx = trace.WithProvider(ctx, trace.Noop())
 ctx = metrics.WithProvider(ctx, metrics.Noop())
 
-messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
+messages, err := graph.Collect(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -110,7 +110,7 @@ ctx = trace.WithProvider(ctx, traceProvider)
 ctx = metrics.WithProvider(ctx, metricsProvider)
 
 // Execute with full observability
-messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
+messages, err := graph.Collect(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -261,7 +261,7 @@ If you don't configure providers, AgentMesh uses **noop** implementations with *
 
 ```go
 // No providers = zero overhead
-messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
+messages, err := graph.Collect(compiled.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }

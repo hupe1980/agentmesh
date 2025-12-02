@@ -1,123 +1,112 @@
+// Package main demonstrates retry policies for resilient node execution.
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-var (
-	ErrTransient = errors.New("transient network error")
-	ErrTimeout   = errors.New("request timeout")
-)
+var counterKey = graph.NewKey("counter", 0)
 
 func main() {
-	fmt.Println("=== AgentMesh Retry Policy Builder Demo ===")
-	fmt.Println()
+	ctx := context.Background()
+	fmt.Println("=== Retry Policy Example ===")
 
-	demonstrateBasicRetry()
-	fmt.Println()
-	demonstrateBackoffStrategies()
-	fmt.Println()
-	demonstrateErrorMatching()
-}
+	// Track attempt count for demonstration
+	var attempts atomic.Int32
 
-func demonstrateBasicRetry() {
-	fmt.Println("1. Basic Retry with Defaults")
-	fmt.Println("   Default: 3 attempts, exponential backoff")
-	fmt.Println()
-
-	// Simple policy with defaults
-	policy := graph.NewRetryPolicy().Build()
-
-	fmt.Printf("   ✓ MaxAttempts: %d\n", policy.MaxAttempts)
-	fmt.Printf("   ✓ Backoff(1): %v\n", policy.Backoff(1))
-	fmt.Printf("   ✓ Backoff(2): %v\n", policy.Backoff(2))
-	fmt.Printf("   ✓ Backoff(3): %v\n", policy.Backoff(3))
-}
-
-func demonstrateBackoffStrategies() {
-	fmt.Println("2. Backoff Strategies")
-	fmt.Println()
-
-	strategies := []struct {
-		name   string
-		policy *graph.RetryPolicy
-	}{
-		{
-			name: "Exponential (1s base, 2x multiplier)",
-			policy: graph.NewRetryPolicy().
-				WithExponentialBackoff(time.Second, 2.0).
-				Build(),
-		},
-		{
-			name: "Linear (500ms increments)",
-			policy: graph.NewRetryPolicy().
-				WithLinearBackoff(500 * time.Millisecond).
-				Build(),
-		},
-		{
-			name: "Constant (1s wait)",
-			policy: graph.NewRetryPolicy().
-				WithConstantBackoff(time.Second).
-				Build(),
-		},
-	}
-
-	for _, s := range strategies {
-		fmt.Printf("   %s:\n", s.name)
-		for attempt := 1; attempt <= 3; attempt++ {
-			fmt.Printf("     Attempt %d: %v\n", attempt, s.policy.Backoff(attempt))
+	// Create a flaky node that fails twice then succeeds
+	flakyNode := func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		attempt := attempts.Add(1)
+		fmt.Printf("  [flaky] Attempt %d\n", attempt)
+		
+		if attempt <= 2 {
+			return graph.Fail(errors.New("temporary failure"))
 		}
-		fmt.Println()
+		return graph.Set(counterKey, int(attempt)).End()
 	}
 
-	// Advanced strategies
-	fmt.Println("   Advanced Strategies:")
+	// Build graph with retry policy
+	g := graph.New[any, any](counterKey)
 
-	// Capped exponential
-	cappedPolicy := &graph.RetryPolicy{
-		MaxAttempts: 10,
-		Backoff:     graph.CappedExponentialBackoff(time.Second, 2.0, 10*time.Second),
-	}
-	fmt.Println("   Capped Exponential (max 10s):")
-	for _, attempt := range []int{1, 3, 5, 10} {
-		fmt.Printf("     Attempt %d: %v\n", attempt, cappedPolicy.Backoff(attempt))
-	}
-}
-
-func demonstrateErrorMatching() {
-	fmt.Println()
-	fmt.Println("3. Selective Error Retry")
-	fmt.Println()
-
-	// Only retry specific errors
-	policy := graph.NewRetryPolicy().
+	// Create retry policy with exponential backoff
+	policy := graph.NewRetryPolicyBuilder().
 		WithMaxAttempts(5).
-		WithRetryableErrors(ErrTransient, ErrTimeout).
+		WithExponentialBackoff(50*time.Millisecond, 2.0).
+		WithMaxDelay(500*time.Millisecond).
 		Build()
 
-	testErrors := []struct {
-		err   error
-		label string
-	}{
-		{ErrTransient, "Transient error"},
-		{ErrTimeout, "Timeout error"},
-		{errors.New("auth failed"), "Auth error"},
+	// Wrap node with retry policy
+	g.Node("flaky_operation", graph.WithRetry(flakyNode, policy), graph.END)
+
+	g.Start("flaky_operation")
+
+	compiled, err := g.Build()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	fmt.Println("   Policy: Retry only transient and timeout errors")
-	for _, te := range testErrors {
-		retryable := policy.Retryable(te.err)
-		status := "❌ Won't retry"
-		if retryable {
-			status = "✅ Will retry"
+	fmt.Println("\n--- Executing with retry policy ---")
+	start := time.Now()
+	
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			log.Fatal(err)
 		}
-		fmt.Printf("   %s: %s\n", te.label, status)
 	}
+	
+	elapsed := time.Since(start)
+	fmt.Printf("\n  Total attempts: %d\n", attempts.Load())
+	fmt.Printf("  Elapsed time: %v\n", elapsed)
 
-	fmt.Println()
-	fmt.Println("   💡 See test files for complete graph integration examples")
+	// Demonstrate different retry strategies
+	fmt.Println("\n--- Retry Policy Types ---")
+	
+	// 1. Constant backoff
+	constantPolicy := graph.NewRetryPolicyBuilder().
+		WithMaxAttempts(3).
+		WithConstantBackoff(100 * time.Millisecond).
+		Build()
+	fmt.Printf("  Constant: %d attempts, delay=%v\n", 
+		constantPolicy.MaxAttempts, constantPolicy.Delay)
+
+	// 2. Linear backoff
+	linearPolicy := graph.NewRetryPolicyBuilder().
+		WithMaxAttempts(5).
+		WithLinearBackoff(50 * time.Millisecond).
+		Build()
+	fmt.Printf("  Linear: %d attempts, delay=%v\n", 
+		linearPolicy.MaxAttempts, linearPolicy.Delay)
+
+	// 3. Exponential backoff
+	exponentialPolicy := graph.NewRetryPolicyBuilder().
+		WithMaxAttempts(10).
+		WithExponentialBackoff(100*time.Millisecond, 2.0).
+		WithMaxDelay(5*time.Second).
+		Build()
+	fmt.Printf("  Exponential: %d attempts, delay=%v, max=%v\n", 
+		exponentialPolicy.MaxAttempts, exponentialPolicy.Delay, exponentialPolicy.MaxDelay)
+
+	// 4. Custom retryable function
+	customPolicy := graph.NewRetryPolicyBuilder().
+		WithMaxAttempts(3).
+		WithExponentialBackoff(100*time.Millisecond, 2.0).
+		WithRetryableFunc(func(err error) bool {
+			// Only retry specific errors
+			return errors.Is(err, context.DeadlineExceeded)
+		}).
+		Build()
+	fmt.Printf("  Custom: %d attempts with custom error filter\n", customPolicy.MaxAttempts)
+
+	fmt.Println("\n  Retry policies provide:")
+	fmt.Println("    • Automatic failure recovery")
+	fmt.Println("    • Configurable backoff strategies")
+	fmt.Println("    • Maximum attempt limits")
+	fmt.Println("    • Custom error filtering")
 }

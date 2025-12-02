@@ -101,7 +101,7 @@ Validate graph properties:
 ### Basic Introspection
 
 ```go
-compiled, _ := builder.Compile()
+compiled, _ := g.Build()
 
 // Get all node names
 nodes := compiled.GetNodes()

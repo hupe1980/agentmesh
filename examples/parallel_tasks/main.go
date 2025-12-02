@@ -1,15 +1,17 @@
-// Package main demonstrates parallel execution patterns in AgentMesh.
+// Package main demonstrates parallel execution patterns with graph.
 // This example shows how to:
 //   - Execute independent tasks concurrently for improved performance
-//   - Use BinaryOpChannel to merge results from parallel nodes
-//   - Use TopicChannel to accumulate action history
-//   - Control concurrency limits with MaxConcurrency option
-//   - Implement fan-out (one node → many nodes) and fan-in (many nodes → one node) patterns
+//   - Use ListKey to accumulate action history
+//   - Control concurrency limits with WithMaxConcurrency option
+//   - Implement fan-out (one node -> many nodes) and fan-in (many nodes -> one node) patterns
 //
 // Key concepts:
 //   - Pregel BSP execution: Independent nodes in the same superstep run in parallel
-//   - BinaryOpChannel: Custom reducer function merges concurrent updates
 //   - Synchronization: All parallel nodes complete before the merge node executes
+//
+// Comparison with old API:
+//   Old API: 65 lines of setup code
+//   New API: 45 lines (30% reduction)
 //
 // Run: go run main.go
 
@@ -21,157 +23,100 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+)
+
+// Define typed keys at package level
+var (
+	ActionHistoryKey = graph.NewListKey[string]("action_history")
+	ResultAKey       = graph.NewKey("result_a", "")
+	ResultBKey       = graph.NewKey("result_b", "")
+	SummaryKey       = graph.NewKey("summary", map[string]any{})
 )
 
 func main() {
-	fmt.Println("=== Parallel Tasks Example ===")
+	fmt.Println("=== Parallel Tasks Example (graph2) ===")
 	fmt.Println("Demonstrates concurrent execution with result aggregation")
 	fmt.Println()
 
-	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
-	resultAKey := graphstate.NewKey("result_a", "")
-	resultBKey := graphstate.NewKey("result_b", "")
-	summaryKey := graphstate.NewKey("summary", map[string]any{})
-
-	builder := graphstate.NewManagerBuilder()
-	// Register actionHistoryKey as a ListKey (TopicChannel)
-	if err := graphstate.RegisterListKey(builder, actionHistoryKey); err != nil {
-		panic(fmt.Sprintf("Failed to register actionHistory key: %v", err))
-	}
-	if err := graphstate.RegisterKey(builder, resultAKey); err != nil {
-		panic(fmt.Sprintf("Failed to register resultA key: %v", err))
-	}
-	if err := graphstate.RegisterKey(builder, resultBKey); err != nil {
-		panic(fmt.Sprintf("Failed to register resultB key: %v", err))
-	}
-	if err := graphstate.RegisterKey(builder, summaryKey); err != nil {
-		panic(fmt.Sprintf("Failed to register summary key: %v", err))
-	}
-	mgr := builder.Build()
-
-	gph, err := graph.NewGraph(mgr)
-	if err != nil {
-		panic(err)
-	}
+	// Create graph with all keys - no manual registration needed
+	g := graph.New[string, string](
+		ActionHistoryKey,
+		ResultAKey,
+		ResultBKey,
+		SummaryKey,
+	)
 
 	// Task A: Simulates data analysis (runs in parallel with Task B)
-	taskA := &graph.BaseNode{
-		NodeName:        "task_a",
-		DeclaredTargets: []string{"combine"},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  [task_a] Starting analysis...")
-			time.Sleep(300 * time.Millisecond) // Simulate work
-			fmt.Println("  [task_a] ✓ Analysis complete")
+	g.Node("task_a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [task_a] Starting analysis...")
+		time.Sleep(300 * time.Millisecond) // Simulate work
+		fmt.Println("  [task_a] Analysis complete")
 
-			updates := graphstate.Updates{}
-			updates[actionHistoryKey.Name()] = []string{"task_a: analysis completed"}
-			updates[resultAKey.Name()] = "analysis result"
-			return []string{"combine"}, updates, nil
-		},
-	}
+		return graph.Append(ActionHistoryKey, "task_a: analysis completed").
+			With(graph.SetValue(ResultAKey, "analysis result")).
+			To("combine")
+	}, "combine")
 
 	// Task B: Simulates simulation work (runs in parallel with Task A)
-	taskB := &graph.BaseNode{
-		NodeName:        "task_b",
-		DeclaredTargets: []string{"combine"},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  [task_b] Starting simulation...")
-			time.Sleep(300 * time.Millisecond) // Simulate work
-			fmt.Println("  [task_b] ✓ Simulation complete")
+	g.Node("task_b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [task_b] Starting simulation...")
+		time.Sleep(300 * time.Millisecond) // Simulate work
+		fmt.Println("  [task_b] Simulation complete")
 
-			updates := graphstate.Updates{}
-			updates[actionHistoryKey.Name()] = []string{"task_b: simulation completed"}
-			updates[resultBKey.Name()] = "simulation result"
-			return []string{"combine"}, updates, nil
-		},
-	}
+		return graph.Append(ActionHistoryKey, "task_b: simulation completed").
+			With(graph.SetValue(ResultBKey, "simulation result")).
+			To("combine")
+	}, "combine")
 
-	// Merge node: Aggregates results after all parallel tasks complete
-	// This demonstrates the fan-in pattern (many → one)
-	mergeResults := &graph.BaseNode{
-		NodeName:        "combine",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  [combine] Aggregating parallel task results...")
+	// Combine node: Aggregates results after all parallel tasks complete
+	// This demonstrates the fan-in pattern (many -> one)
+	g.Node("combine", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [combine] Aggregating parallel task results...")
 
-			// Read results from both parallel tasks
-			resultA := graphstate.GetFromView(view, resultAKey)
-			resultB := graphstate.GetFromView(view, resultBKey)
+		// Read results from both parallel tasks - type-safe access
+		resultA := graph.Get(view, ResultAKey)
+		resultB := graph.Get(view, ResultBKey)
 
-			// Combine into summary map
-			results := map[string]any{
-				"task_a": resultA,
-				"task_b": resultB,
-			}
-
-			updates := graphstate.Updates{}
-			// updates[actionHistoryKey.Name()] = []string{"combine: aggregated all results"}
-			updates[summaryKey.Name()] = results
-			return []string{graph.EndNode}, updates, nil
-		},
-	} // Helper to add nodes with error checking
-	mustAddNode := func(n graph.Node) {
-		if err := gph.AddNode(n); err != nil {
-			panic(err)
+		// Combine into summary map
+		summary := map[string]any{
+			"task_a": resultA,
+			"task_b": resultB,
 		}
-	}
 
-	mustAddNode(taskA)
-	mustAddNode(taskB)
-	mustAddNode(mergeResults)
+		return graph.Set(SummaryKey, summary).End()
+	}, graph.END)
 
 	// Build graph topology:
-	//   START → task_a ↘
-	//                   → combine → END
-	//   START → task_b ↗
+	//   START -> task_a ↘
+	//                    -> combine -> END
+	//   START -> task_b ↗
 	//
-	// This creates a fan-out/fan-in pattern where:
-	// - Fan-out: START has multiple entry points (parallel execution)
-	// - Fan-in: combine has two incoming edges (synchronization point)
-	//
-	// SetEntryPoint can be called multiple times to add parallel entry points
-	if err := gph.SetEntryPoint("task_a"); err != nil {
-		panic(err)
-	}
-	if err := gph.SetEntryPoint("task_b"); err != nil {
-		panic(err)
-	}
+	// Multiple entry points for parallel execution
+	g.Start("task_a", "task_b")
 
-	// Compile the graph
-	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())
+	// Build the graph
+	compiled, err := g.Build()
 	if err != nil {
-		fmt.Printf("❌ Compilation error: %v\n", err)
+		fmt.Printf("Build error: %v\n", err)
 		return
 	}
 
 	// Execute with controlled concurrency
-	// MaxConcurrency(2) allows both tasks to run simultaneously
+	// WithMaxConcurrency(2) allows both tasks to run simultaneously
 	fmt.Println("Executing with max concurrency = 2")
 	fmt.Println()
 
 	started := time.Now()
-	// Run the graph and consume all events (nodes don't produce messages, only state updates)
-	for _, err := range compiled.Run(context.Background(), nil, graph.WithMaxConcurrency(2)) {
+	ctx := context.Background()
+	for _, err := range compiled.Run(ctx, "", graph.WithMaxConcurrency(2)) {
 		if err != nil {
-			fmt.Printf("❌ Execution error: %v\n", err)
+			fmt.Printf("Execution error: %v\n", err)
 			return
 		}
 	}
 	elapsed := time.Since(started)
 
 	fmt.Println()
-	fmt.Printf("✓ Execution completed in %s\n", elapsed)
+	fmt.Printf("Execution completed in %s\n", elapsed)
 	fmt.Println("  (Note: Parallel execution is ~2x faster than sequential)")
-	fmt.Println()
-	fmt.Println("Final state:")
-	ctx := context.Background()
-	view, err := mgr.CreateReadView(ctx)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("  action_history: %v\n", graphstate.GetFromView(view, actionHistoryKey.Key))
-	fmt.Printf("  result_a: %v\n", graphstate.GetFromView(view, resultAKey))
-	fmt.Printf("  result_b: %v\n", graphstate.GetFromView(view, resultBKey))
-	fmt.Printf("  summary: %v\n", graphstate.GetFromView(view, summaryKey))
 }

@@ -9,18 +9,18 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// GraphAdapter wraps a typed graph.Compiled to implement the viz.Runnable interface.
+// GraphAdapter wraps a typed graph.Graph to implement the viz.Runnable interface.
 // This adapter handles type conversion from HTTP input to graph input.
 type GraphAdapter[I, O any] struct {
-	compiled *graph.Compiled[I, O]
+	g *graph.Graph[I, O]
 }
 
-// NewGraphAdapter creates an adapter for any compiled graph.
-func NewGraphAdapter[I, O any](compiled *graph.Compiled[I, O]) *GraphAdapter[I, O] {
-	return &GraphAdapter[I, O]{compiled: compiled}
+// NewGraphAdapter creates an adapter for any built graph.
+func NewGraphAdapter[I, O any](g *graph.Graph[I, O]) *GraphAdapter[I, O] {
+	return &GraphAdapter[I, O]{g: g}
 }
 
-// Execute implements viz.Runnable by converting HTTP input and delegating to the compiled graph.
+// Execute implements viz.Runnable by converting HTTP input and delegating to the graph.
 func (a *GraphAdapter[I, O]) Execute(ctx context.Context, input map[string]any, opts ...graph.RunOption) iter.Seq2[any, error] {
 	// Convert HTTP input to typed input
 	var typedInput I
@@ -31,7 +31,7 @@ func (a *GraphAdapter[I, O]) Execute(ctx context.Context, input map[string]any, 
 
 	// Execute and convert outputs to any
 	return func(yield func(any, error) bool) {
-		for output, err := range a.compiled.Run(ctx, typedInput, opts...) {
+		for output, err := range a.g.Run(ctx, typedInput, opts...) {
 			if !yield(any(output), err) {
 				return
 			}
@@ -41,29 +41,28 @@ func (a *GraphAdapter[I, O]) Execute(ctx context.Context, input map[string]any, 
 
 // GetNodes returns all node names in the graph.
 func (a *GraphAdapter[I, O]) GetNodes() []string {
-	return a.compiled.GetNodes()
+	return a.g.GetNodes()
 }
 
 // GetTopology returns the graph topology.
 func (a *GraphAdapter[I, O]) GetTopology() *graph.Topology {
-	return a.compiled.GetTopology()
+	return a.g.GetTopology()
 }
 
 // MermaidFlowchart generates a Mermaid diagram.
 func (a *GraphAdapter[I, O]) MermaidFlowchart(direction string) string {
-	return a.compiled.MermaidFlowchart(direction)
+	return a.g.MermaidFlowchart(direction)
 }
 
-// MessageAdapter wraps message-based runnables (agents) to implement viz.Runnable.
-// This adapter converts HTTP input to message slices and runs the agent WITHOUT
-// passing server execution options, as agents manage their own execution.
+// MessageAdapter wraps message-based graphs (agents) to implement viz.Runnable.
+// This adapter converts HTTP input to message slices and runs the agent.
 type MessageAdapter struct {
-	runnable graph.Runnable[[]message.Message, message.Message]
+	g *graph.Graph[[]message.Message, message.Message]
 }
 
 // NewMessageAdapter creates an adapter for message-based agents.
-func NewMessageAdapter(runnable graph.Runnable[[]message.Message, message.Message]) *MessageAdapter {
-	return &MessageAdapter{runnable: runnable}
+func NewMessageAdapter(g *graph.Graph[[]message.Message, message.Message]) *MessageAdapter {
+	return &MessageAdapter{g: g}
 }
 
 // Execute implements viz.Runnable by converting HTTP input to messages.
@@ -72,9 +71,8 @@ func (a *MessageAdapter) Execute(ctx context.Context, input map[string]any, opts
 	messages := a.convertInput(input)
 
 	// Execute agent WITH server options to enable checkpointing and visualization
-	// The opts include RunID, Checkpointer, and other execution options needed for debugging
 	return func(yield func(any, error) bool) {
-		for msg, err := range a.runnable.Run(ctx, messages, opts...) {
+		for msg, err := range a.g.Run(ctx, messages, opts...) {
 			if !yield(any(msg), err) {
 				return
 			}
@@ -128,36 +126,15 @@ func (a *MessageAdapter) convertInput(input map[string]any) []message.Message {
 
 // GetNodes returns node names from the agent's internal graph.
 func (a *MessageAdapter) GetNodes() []string {
-	// Try to extract nodes using type assertion
-	type nodeProvider interface {
-		GetNodes() []string
-	}
-	if provider, ok := a.runnable.(nodeProvider); ok {
-		return provider.GetNodes()
-	}
-	return []string{"agent"}
+	return a.g.GetNodes()
 }
 
 // GetTopology returns topology from the agent's internal graph.
 func (a *MessageAdapter) GetTopology() *graph.Topology {
-	// Try to extract topology using type assertion
-	type topologyProvider interface {
-		GetTopology() *graph.Topology
-	}
-	if provider, ok := a.runnable.(topologyProvider); ok {
-		return provider.GetTopology()
-	}
-	return nil
+	return a.g.GetTopology()
 }
 
 // MermaidFlowchart generates a diagram from the agent's internal graph.
 func (a *MessageAdapter) MermaidFlowchart(direction string) string {
-	// Try to extract mermaid using type assertion
-	type mermaidProvider interface {
-		MermaidFlowchart(string) string
-	}
-	if provider, ok := a.runnable.(mermaidProvider); ok {
-		return provider.MermaidFlowchart(direction)
-	}
-	return "graph LR\n    Start[Agent] --> End[Output]"
+	return a.g.MermaidFlowchart(direction)
 }

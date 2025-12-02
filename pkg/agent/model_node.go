@@ -4,73 +4,38 @@ import (
 	"context"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-// ModelNode is a graph node that executes a model.Executor to generate responses.
-//
-// The ModelNode is a thin orchestration layer that:
-//   - Extracts messages from state
-//   - Builds a Request with messages + configuration (system prompt, tools, schema)
-//   - Delegates execution to the provided Executor
-//   - Routes based on tool calls in the response
-//
-// Routing logic:
-//   - If the AI message contains tool calls -> routes to "tool" node
-//   - Otherwise -> routes to END
-//
-// The Executor handles execution concerns:
-//   - Plugin lifecycle (BeforeModel, AfterModel, OnModelError)
-//   - Observability (tracing, metrics, logging)
-//   - Streaming support
-//
-// Configuration (system prompt, tools, output schema) is stored in the node
-// and used to build the Request on each execution.
-//
-// Example:
-//
-//	executor := model.NewExecutor(myModel, model.WithExecutorName("gpt-4"))
-//	node, err := agent.NewModelNode(executor,
-//	    agent.WithModelSystemPrompt("You are a helpful assistant"),
-//	    agent.WithModelTools(searchTool, calculatorTool))
-type ModelNode struct {
-	name         string
-	executor     model.Executor
-	systemPrompt string
-	tools        []tool.Tool
-	outputSchema *schema.OutputSchema
-	targets      []string
+// ModelNodeConfig holds configuration for creating a model node function.
+type ModelNodeConfig struct {
+	Executor     model.Executor
+	SystemPrompt string
+	Tools        []tool.Tool
+	OutputSchema *schema.OutputSchema
+	ToolTarget   string // Target node when tool calls are present (default: "tool")
 }
 
-// ModelNodeOption configures a ModelNode.
-type ModelNodeOption func(*ModelNode)
-
-// WithModelNodeName sets the name of the model node (default: "model").
-func WithModelNodeName(name string) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.name = name
-	}
-}
+// ModelNodeOption configures a ModelNodeConfig.
+type ModelNodeOption func(*ModelNodeConfig)
 
 // WithModelSystemPrompt sets a system prompt for this model node.
 // The system prompt is sent per-request and not stored in conversation state.
 func WithModelSystemPrompt(prompt string) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.systemPrompt = prompt
+	return func(c *ModelNodeConfig) {
+		c.SystemPrompt = prompt
 	}
 }
 
 // WithModelTools sets the tools available to the model for this node.
 // The tools are passed to the model along with the request.
 func WithModelTools(tools ...tool.Tool) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.tools = tools
+	return func(c *ModelNodeConfig) {
+		c.Tools = tools
 	}
 }
 
@@ -78,90 +43,76 @@ func WithModelTools(tools ...tool.Tool) ModelNodeOption {
 // The schema constrains the model to generate valid JSON matching the schema.
 // Only works with models that support structured output (check model.Capabilities().StructuredOutput).
 func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.outputSchema = outputSchema
+	return func(c *ModelNodeConfig) {
+		c.OutputSchema = outputSchema
 	}
 }
 
-// WithModelTargets sets the possible routing targets for this node.
-// Default is []string{"tool", graph.EndNode}.
-func WithModelTargets(targets []string) ModelNodeOption {
-	return func(n *ModelNode) {
-		n.targets = targets
+// WithToolTarget sets the target node when tool calls are present.
+// Default is "tool".
+func WithToolTarget(target string) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.ToolTarget = target
 	}
 }
 
-// NewModelNode creates a new model node that executes the provided executor.
+// NewModelNodeFunc creates a graph.NodeFunc that executes a model.
 //
-// The executor encapsulates all model execution logic including configuration,
-// plugins, and observability. This allows for flexible executor implementations
-// that can be swapped without modifying the node.
+// The function:
+//   - Extracts messages from state
+//   - Builds a Request with messages + configuration (system prompt, tools, schema)
+//   - Delegates execution to the provided Executor
+//   - Routes based on tool calls in the response
+//
+// Routing logic:
+//   - If the AI message contains tool calls -> routes to tool target (default: "tool")
+//   - Otherwise -> routes to END
 //
 // Example:
 //
-//	executor := model.NewExecutor(myModel,
-//	    model.WithExecutorName("assistant"))
-//	node, err := agent.NewModelNode(executor,
-//	    agent.WithModelNodeName("model"),
-//	    agent.WithModelTargets([]string{"tool", graph.EndNode}))
-func NewModelNode(executor model.Executor, opts ...ModelNodeOption) (*ModelNode, error) {
+//	executor := model.NewExecutor(myModel, model.WithExecutorName("gpt-4"))
+//	modelFn, err := agent.NewModelNodeFunc(executor,
+//	    agent.WithModelSystemPrompt("You are a helpful assistant"),
+//	    agent.WithModelTools(searchTool, calculatorTool))
+//
+//	g.Node("model", modelFn, "tool", graph.END)
+func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.NodeFunc, error) {
 	if err := validate.NotNil(executor, "executor"); err != nil {
 		return nil, err
 	}
 
-	node := &ModelNode{
-		name:     "model",
-		executor: executor,
-		targets:  []string{"tool", graph.EndNode}, // Default targets
+	cfg := &ModelNodeConfig{
+		Executor:   executor,
+		ToolTarget: "tool",
 	}
 
 	for _, opt := range opts {
-		opt(node)
+		opt(cfg)
 	}
 
-	return node, nil
-}
+	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Get messages from state using type-safe key
+		messages := GetMessages(view)
 
-// Name returns the node's name.
-func (n *ModelNode) Name() string {
-	return n.name
-}
+		// Build request with messages + node configuration
+		req := &model.Request{
+			Messages:     messages,
+			SystemPrompt: cfg.SystemPrompt,
+			Tools:        cfg.Tools,
+			OutputSchema: cfg.OutputSchema,
+		}
 
-// Targets returns the possible routing destinations for this node.
-func (n *ModelNode) Targets() []string {
-	if len(n.targets) > 0 {
-		return n.targets
-	}
-	// Default targets for backward compatibility
-	return []string{"tool", graph.EndNode}
-}
+		// Execute via the executor
+		resp, err := model.Last(cfg.Executor.Generate(ctx, req))
+		if err != nil {
+			return graph.Fail(err)
+		}
 
-// Execute runs the model node logic by delegating to the executor.
-func (n *ModelNode) Execute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-	// Get messages from state using type-safe key
-	messages := GetMessages(view)
+		// Route based on tool calls
+		if message.HasToolCalls(resp.Message) {
+			return graph.Append(MessagesKey, resp.Message).To(cfg.ToolTarget)
+		}
 
-	// Build request with messages + node configuration
-	req := &model.Request{
-		Messages:     messages,
-		SystemPrompt: n.systemPrompt,
-		Tools:        n.tools,
-		OutputSchema: n.outputSchema,
-	}
-
-	// Execute via the executor
-	resp, err := model.Last(n.executor.Generate(ctx, req))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Return only the NEW message generated by the model
-	// The state manager will append it to the existing messages list
-	cmd := command.New().With(command.Append(MessagesKey, resp.Message))
-
-	// Route based on tool calls
-	if message.HasToolCalls(resp.Message) {
-		return cmd.To("tool")
-	}
-	return cmd.To(graph.EndNode)
+		return graph.Append(MessagesKey, resp.Message).To(graph.END)
+	}, nil
 }

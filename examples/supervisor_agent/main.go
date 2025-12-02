@@ -48,15 +48,21 @@ func main() {
 		fmt.Println()
 
 		// Create fresh supervisor for each query to avoid state accumulation
-		// In production, you might want to use checkpointing or state management instead
 		supervisor, err := createSupervisor()
 		if err != nil {
 			log.Printf("Error creating supervisor: %v", err)
 			continue
 		}
 
+		// Build the graph
+		compiled, err := supervisor.Build()
+		if err != nil {
+			log.Printf("Error building supervisor: %v", err)
+			continue
+		}
+
 		// Execute and collect execution results
-		results, err := graph.Collect(supervisor.Run(ctx, []message.Message{
+		results, err := graph.Collect(compiled.Run(ctx, []message.Message{
 			message.NewHumanMessageFromText(query),
 		}))
 		if err != nil {
@@ -78,7 +84,7 @@ func main() {
 }
 
 // createSupervisor creates a supervisor agent with specialized workers
-func createSupervisor() (graph.Runnable[[]message.Message, message.Message], error) {
+func createSupervisor() (*graph.MessageGraph, error) {
 	model := openai.NewModel()
 
 	// Create specialized worker agents
@@ -116,7 +122,7 @@ Always provide the full task context when delegating.`),
 }
 
 // createMathAgent creates a specialized agent for mathematical problem solving
-func createMathAgent() (graph.Runnable[[]message.Message, message.Message], error) {
+func createMathAgent() (*graph.MessageGraph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -131,7 +137,7 @@ func createMathAgent() (graph.Runnable[[]message.Message, message.Message], erro
 }
 
 // createHistoryAgent creates a specialized agent for historical questions
-func createHistoryAgent() (graph.Runnable[[]message.Message, message.Message], error) {
+func createHistoryAgent() (*graph.MessageGraph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(
@@ -146,7 +152,7 @@ func createHistoryAgent() (graph.Runnable[[]message.Message, message.Message], e
 }
 
 // createCodeAgent creates a specialized agent for programming tasks
-func createCodeAgent() (graph.Runnable[[]message.Message, message.Message], error) {
+func createCodeAgent() (*graph.MessageGraph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReActAgent(

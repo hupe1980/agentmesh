@@ -13,9 +13,8 @@
 //	defer checkpointer.Close()
 //
 //	// Use with a graph
-//	g := graph.NewBuilder[MyState]().
-//	    WithCheckpointer(checkpointer).
-//	    Build()
+//	g := graph.New[Input, Output](keys...)
+//	compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
 //
 // # Supported Databases
 //

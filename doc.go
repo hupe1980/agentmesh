@@ -107,28 +107,30 @@
 //
 // MaxIterations:
 //
-//	compiled, _ := builder.Compile(
+//	compiled, _ := g.Build(
 //	    graph.WithMaxIterations(100),
 //	)
 //
 // Checkpointing:
 //
 //	store := checkpoint.NewMemory()
-//	compiled, _ := builder.Compile(
-//	    graph.WithCheckpointStore(store),
+//	compiled, _ := g.Build(
+//	    graph.WithCheckpointer(store),
 //	    graph.WithCheckpointInterval(1),
 //	)
-//	messages, _ := compiled.InvokeFromCheckpoint(ctx, threadID, initialMessages)
+//	result, _ := graph.Last(compiled.Run(ctx, messages,
+//	    graph.WithRunID(threadID),
+//	))
 //
 // Retry Policies:
 //
-//	builder.AddNodeFunc("api_call", apiCallFunc)
-//	builder.SetRetryPolicy("api_call", &graph.RetryPolicy{
-//	    MaxAttempts:    3,
-//	    InitialBackoff: 100 * time.Millisecond,
-//	    MaxBackoff:     1 * time.Second,
-//	    Multiplier:     2.0,
-//	})
+//	g.Node("api_call", apiCallFunc, "next").
+//	    WithRetryPolicy(&graph.RetryPolicy{
+//	        MaxAttempts:    3,
+//	        InitialBackoff: 100 * time.Millisecond,
+//	        MaxBackoff:     1 * time.Second,
+//	        Multiplier:     2.0,
+//	    })
 //
 // Observability:
 //

@@ -15,25 +15,23 @@ This example demonstrates how to generate [Mermaid](https://mermaid.js.org/) flo
 
 ## Usage
 
-### From Graph Directly (Command-Based)
+### From Graph Directly
 
 ```go
-stateManager := newStateManager()
-g, _ := graph.NewGraph(stateManager)
+var StatusKey = graph.NewKey("status", "")
 
-g.AddNode(&graph.BaseNode{
-    NodeName:        "process",
-    DeclaredTargets: []string{graph.END},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Do some work and then end
-        return []string{graph.END}, nil, nil
-    },
-})
+g := graph.New[any, string](StatusKey)
 
-g.SetEntryPoint("process")
+g.Node("process", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
+    return graph.Set(StatusKey, "done").ToEnd(), nil
+}, graph.END)
+
+g.Start("process")
+
+compiled, _ := g.Build()
 
 // Generate Mermaid diagram
-mermaid := g.MermaidFlowchart("TD")
+mermaid := compiled.MermaidFlowchart("TD")
 fmt.Println(mermaid)
 ```
 

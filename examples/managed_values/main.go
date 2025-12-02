@@ -1,360 +1,134 @@
+// Package main demonstrates managed values in AgentMesh.
+//
+// Managed values are ephemeral runtime state that is NOT included in checkpoints.
+// They're ideal for:
+//   - API keys and authentication tokens
+//   - Session state (user context, preferences)
+//   - Runtime metrics collectors
+//   - Cached computed values
+//   - Resource handles (connections, caches)
+//
+// This example shows two types of managed values:
+//  1. StaticManagedValue - thread-safe storage for runtime config
+//  2. ManagedValueProvider - computed values with optional TTL caching
 package main
 
 import (
 	"context"
 	"fmt"
-	"log"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// RuntimeConfig is ephemeral configuration that shouldn't be checkpointed.
+// Define a key for storing results
+var resultKey = graph.NewKey("result", "")
+
+// RuntimeConfig holds runtime configuration that shouldn't be checkpointed
 type RuntimeConfig struct {
 	APIKey     string
 	Timeout    time.Duration
 	MaxRetries int
-	Debug      bool
 }
 
-// SessionInfo tracks user session state (ephemeral, not persisted).
-type SessionInfo struct {
-	UserID       string
-	SessionToken string
-	LoginTime    time.Time
-}
-
-// MetricsCollector accumulates runtime metrics (not checkpointed).
-type MetricsCollector struct {
-	NodeExecutions map[string]int
-	TotalLatency   time.Duration
-}
-
-func (m *MetricsCollector) RecordExecution(nodeName string, latency time.Duration) {
-	if m.NodeExecutions == nil {
-		m.NodeExecutions = make(map[string]int)
-	}
-	m.NodeExecutions[nodeName]++
-	m.TotalLatency += latency
-}
-
-// State keys for persistent data (checkpointed)
+// Define managed values at package level for type-safe access
 var (
-	CounterKey  = state.NewKey("counter", 0)
-	LastNodeKey = state.NewKey("last_node", "")
-	HistoryKey  = state.NewListKey[string]("history", 100)
+	runtimeConfigMV  *graph.StaticManagedValue[*RuntimeConfig]
+	executionCountMV *graph.ManagedValueProvider[int64]
+	cachedTimeMV     *graph.ManagedValueProvider[time.Time]
 )
-
-// ConfigurableNode uses managed values for runtime configuration.
-type ConfigurableNode struct {
-	name    string
-	manager *state.Manager
-	next    string
-}
-
-func (n *ConfigurableNode) Name() string {
-	return n.name
-}
-
-func (n *ConfigurableNode) Targets() []string {
-	if n.next == "" {
-		return []string{graph.EndNode}
-	}
-	return []string{n.next}
-}
-
-func (n *ConfigurableNode) Compute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-	start := time.Now()
-
-	// Access persistent state (checkpointed)
-	counter := state.GetFromView(view, CounterKey)
-	lastNode := state.GetFromView(view, LastNodeKey)
-
-	// Access managed values (ephemeral, NOT checkpointed)
-	config, err := state.GetManagedValue[*RuntimeConfig](ctx, n.manager, "runtime_config")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get config: %w", err)
-	}
-
-	session, err := state.GetManagedValue[*SessionInfo](ctx, n.manager, "session")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get session: %w", err)
-	}
-
-	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get metrics: %w", err)
-	}
-
-	// Use configuration
-	fmt.Printf("\n[%s] Node Configuration:\n", n.name)
-	fmt.Printf("  - API Key: %s (masked)\n", maskAPIKey(config.APIKey))
-	fmt.Printf("  - Timeout: %v\n", config.Timeout)
-	fmt.Printf("  - Max Retries: %d\n", config.MaxRetries)
-	fmt.Printf("  - Debug Mode: %v\n", config.Debug)
-
-	// Use session info
-	fmt.Printf("\n[%s] Session Info:\n", n.name)
-	fmt.Printf("  - User: %s\n", session.UserID)
-	fmt.Printf("  - Token: %s (masked)\n", maskAPIKey(session.SessionToken))
-	fmt.Printf("  - Session Duration: %v\n", time.Since(session.LoginTime))
-
-	// Use persistent state
-	fmt.Printf("\n[%s] Persistent State:\n", n.name)
-	fmt.Printf("  - Counter: %d\n", counter)
-	fmt.Printf("  - Last Node: %s\n", lastNode)
-
-	// Simulate work with timeout
-	workDone := make(chan bool)
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		workDone <- true
-	}()
-
-	select {
-	case <-workDone:
-		fmt.Printf("\n[%s] Work completed within timeout\n", n.name)
-	case <-time.After(config.Timeout):
-		return nil, nil, fmt.Errorf("timeout exceeded")
-	}
-
-	// Record metrics (updates managed value in-place)
-	latency := time.Since(start)
-	metrics.RecordExecution(n.name, latency)
-
-	// Return persistent state updates (these WILL be checkpointed)
-	updates := state.Updates{}
-	updates[CounterKey.Name()] = counter + 1
-	updates[LastNodeKey.Name()] = n.name
-	updates[HistoryKey.Name()] = []string{fmt.Sprintf("%s executed by user %s", n.name, session.UserID)}
-
-	if n.next == "" {
-		return []string{graph.EndNode}, updates, nil
-	}
-	return []string{n.next}, updates, nil
-}
-
-func maskAPIKey(key string) string {
-	if len(key) <= 4 {
-		return "***"
-	}
-	return key[:4] + "..." + key[len(key)-4:]
-}
-
-// MetricsNode reads and displays accumulated metrics.
-type MetricsNode struct {
-	manager *state.Manager
-}
-
-func (n *MetricsNode) Name() string {
-	return "metrics_reporter"
-}
-
-func (n *MetricsNode) Targets() []string {
-	return []string{graph.EndNode}
-}
-
-func (n *MetricsNode) Compute(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-	// Read metrics (managed value)
-	metrics, err := state.GetManagedValue[*MetricsCollector](ctx, n.manager, "metrics")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	fmt.Printf("\n=== Runtime Metrics ===\n")
-	fmt.Printf("Total Executions: %d\n", len(metrics.NodeExecutions))
-	fmt.Printf("Total Latency: %v\n", metrics.TotalLatency)
-	fmt.Printf("\nPer-Node Executions:\n")
-	for node, count := range metrics.NodeExecutions {
-		fmt.Printf("  - %s: %d times\n", node, count)
-	}
-	fmt.Printf("======================\n\n")
-
-	updates := state.Updates{}
-	updates[HistoryKey.Name()] = []string{"Metrics reported"}
-	return []string{graph.EndNode}, updates, nil
-}
 
 func main() {
 	ctx := context.Background()
 
-	// Create state manager
-	builder := state.NewManagerBuilder()
-
-	// Register persistent state keys (these ARE checkpointed)
-	if err := state.RegisterKey(builder, CounterKey); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, LastNodeKey); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterListKey(builder, HistoryKey); err != nil {
-		log.Fatal(err)
-	}
-
-	// Register managed values (ephemeral, NOT checkpointed)
-
-	// 1. Runtime configuration
-	configMV := state.NewManagedValueWithDefault("runtime_config", &RuntimeConfig{
-		APIKey:     "sk_live_1234567890abcdef",
-		Timeout:    200 * time.Millisecond,
+	// 1. Static managed value - runtime config
+	runtimeConfigMV = graph.NewManagedValue("runtime_config", &RuntimeConfig{
+		APIKey:     getEnvOrDefault("API_KEY", "sk_demo_key"),
+		Timeout:    30 * time.Second,
 		MaxRetries: 3,
-		Debug:      true,
 	})
-	if err := state.RegisterManagedValue(builder, configMV); err != nil {
-		log.Fatal(err)
-	}
 
-	// 2. Session state
-	sessionMV := state.NewManagedValueWithDefault("session", &SessionInfo{
-		UserID:       "user@example.com",
-		SessionToken: "tok_session_abcd1234",
-		LoginTime:    time.Now(),
+	// 2. Provider without caching - always recomputes (e.g., execution counter)
+	var executionCount int64
+	executionCountMV = graph.NewManagedValueProvider("execution_count", func(ctx context.Context) (int64, error) {
+		return atomic.AddInt64(&executionCount, 1), nil
 	})
-	if err := state.RegisterManagedValue(builder, sessionMV); err != nil {
-		log.Fatal(err)
-	}
 
-	// 3. Metrics collector
-	metricsMV := state.NewManagedValueWithDefault("metrics", &MetricsCollector{
-		NodeExecutions: make(map[string]int),
-	})
-	if err := state.RegisterManagedValue(builder, metricsMV); err != nil {
-		log.Fatal(err)
-	}
+	// 3. Provider with caching - recomputes when TTL expires
+	cachedTimeMV = graph.NewManagedValueProvider("cached_time", func(ctx context.Context) (time.Time, error) {
+		return time.Now(), nil
+	}, graph.WithCacheTTL(5*time.Second))
 
-	// 4. Computed managed value (always fresh)
-	currentTimeMV := state.NewComputedManagedValue("current_time", func(ctx context.Context) (string, error) {
-		return time.Now().Format(time.RFC3339), nil
-	})
-	if err := state.RegisterManagedValue(builder, currentTimeMV); err != nil {
-		log.Fatal(err)
-	}
+	// Create a simple graph
+	g := graph.New[string, string](resultKey)
 
-	// Build the manager after all registrations
-	mgr := builder.Build()
+	// Process node - uses managed values via View (same pattern as regular state)
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Access managed values via view - same pattern as graph.Get(view, key)
+		config := graph.GetManaged(ctx, view, runtimeConfigMV)
+		execCount := graph.GetManaged(ctx, view, executionCountMV)
+		cachedTs := graph.GetManaged(ctx, view, cachedTimeMV)
 
-	fmt.Println("✓ Registered managed values:")
-	for _, name := range mgr.GetManagedValueNames() {
-		fmt.Printf("  - %s\n", name)
-	}
+		result := fmt.Sprintf(
+			"Execution #%d | API Key: %s... | Timeout: %s | Cached Time: %s",
+			execCount,
+			config.APIKey[:min(10, len(config.APIKey))],
+			config.Timeout,
+			cachedTs.Format(time.RFC3339),
+		)
 
-	// Build graph with nodes that use managed values
-	gph, err := graph.NewGraph(mgr)
-	if err != nil {
-		log.Fatal(err)
-	}
+		fmt.Println("Node 'process' executed:")
+		fmt.Println("  " + result)
 
-	// Add nodes using BaseNode
-	node1 := &ConfigurableNode{name: "processor_1", manager: mgr, next: "processor_2"}
-	node2 := &ConfigurableNode{name: "processor_2", manager: mgr, next: "metrics_reporter"}
-	metricsNode := &MetricsNode{manager: mgr}
-
-	if err := gph.AddNode(&graph.BaseNode{
-		NodeName:        node1.Name(),
-		DeclaredTargets: []string{node2.Name()},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return node1.Compute(ctx, view)
-		},
-	}); err != nil {
-		log.Fatal(err)
-	}
-	if err := gph.AddNode(&graph.BaseNode{
-		NodeName:        node2.Name(),
-		DeclaredTargets: []string{metricsNode.Name()},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return node2.Compute(ctx, view)
-		},
-	}); err != nil {
-		log.Fatal(err)
-	}
-	if err := gph.AddNode(&graph.BaseNode{
-		NodeName:        metricsNode.Name(),
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return metricsNode.Compute(ctx, view)
-		},
-	}); err != nil {
-		log.Fatal(err)
-	}
+		return graph.Set(resultKey, result).End()
+	}, graph.END)
 
 	// Set entry point
-	if err := gph.SetEntryPoint(node1.Name()); err != nil {
-		log.Fatal(err)
-	}
+	g.Start("process")
 
-	// Compile graph
-	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())
+	// Build the graph
+	compiled, err := g.Build()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Error building graph:", err)
+		os.Exit(1)
 	}
 
-	// Initialize state
-	initialState := state.Updates{
-		CounterKey.Name():  0,
-		LastNodeKey.Name(): "start",
-	}
-	if err := mgr.ApplyUpdates(ctx, initialState); err != nil {
-		log.Fatal(err)
-	}
+	fmt.Println("=== Managed Values Demo ===")
+	fmt.Println()
+	fmt.Println("Managed values are ephemeral runtime state NOT included in checkpoints.")
+	fmt.Println("They're perfect for API keys, session state, metrics, and cached values.")
+	fmt.Println()
 
-	// Execute graph
-	fmt.Println("\n=== Starting Graph Execution ===")
+	// Run the graph with managed values - pass them directly, no registry needed!
+	for i := 1; i <= 3; i++ {
+		fmt.Printf("--- Run %d ---\n", i)
 
-	for result := range compiled.Run(ctx, nil) {
-		if result != nil {
-			log.Fatal(result)
+		for output, err := range compiled.Run(ctx, "test input",
+			graph.WithManagedValues(runtimeConfigMV, executionCountMV, cachedTimeMV)) {
+			if err != nil {
+				fmt.Println("Error:", err)
+				os.Exit(1)
+			}
+			fmt.Println("Output:", output)
 		}
+
+		fmt.Println()
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Show final persistent state (this IS checkpointed)
-	fmt.Println("\n=== Final Persistent State (Checkpointed) ===")
-	finalView, err := mgr.CreateReadView(ctx)
-	if err != nil {
-		log.Fatal(err)
+	fmt.Println("=== Key Points ===")
+	fmt.Println("1. Managed values are NOT persisted in checkpoints")
+	fmt.Println("2. Access via graph.GetManaged(ctx, view, managedValue) - same pattern as state")
+	fmt.Println("3. NewManagedValue(name, value) - static thread-safe storage")
+	fmt.Println("4. NewManagedValueProvider(name, fn) - recomputed on every access")
+	fmt.Println("5. NewManagedValueProvider(name, fn, WithCacheTTL(ttl)) - cached with TTL")
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	counter := state.GetFromView(finalView, CounterKey)
-	lastNode := state.GetFromView(finalView, LastNodeKey)
-	fmt.Printf("Counter: %v\n", counter)
-	fmt.Printf("Last Node: %v\n", lastNode)
-
-	// Show final managed values (NOT checkpointed)
-	fmt.Println("\n=== Final Managed Values (Ephemeral, NOT Checkpointed) ===")
-
-	config, _ := state.GetManagedValue[*RuntimeConfig](ctx, mgr, "runtime_config")
-	fmt.Printf("Runtime Config: APIKey=%s, Timeout=%v, MaxRetries=%d\n",
-		maskAPIKey(config.APIKey), config.Timeout, config.MaxRetries)
-
-	session, _ := state.GetManagedValue[*SessionInfo](ctx, mgr, "session")
-	fmt.Printf("Session: User=%s, Duration=%v\n",
-		session.UserID, time.Since(session.LoginTime))
-
-	currentTime, _ := state.GetManagedValue[string](ctx, mgr, "current_time")
-	fmt.Printf("Current Time (computed): %s\n", currentTime)
-
-	// Demonstrate runtime configuration update (not from nodes)
-	fmt.Println("\n=== Updating Runtime Configuration ===")
-	newConfig := &RuntimeConfig{
-		APIKey:     "sk_live_newkey_xyz789",
-		Timeout:    500 * time.Millisecond,
-		MaxRetries: 5,
-		Debug:      false,
-	}
-	if err := state.SetManagedValue(ctx, mgr, "runtime_config", newConfig); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("✓ Configuration updated (affects next execution)")
-
-	// Key Insight: Checkpointing demonstration
-	fmt.Println("\n=== Checkpoint Behavior ===")
-	fmt.Println("Persistent State (Counter, History):")
-	fmt.Println("  ✓ INCLUDED in checkpoints")
-	fmt.Println("  ✓ Survives process restart")
-	fmt.Println("  ✓ Used for time travel")
-	fmt.Println("\nManaged Values (Config, Session, Metrics):")
-	fmt.Println("  ✗ NOT included in checkpoints")
-	fmt.Println("  ✗ Lost on process restart")
-	fmt.Println("  ✓ Reinitialized at runtime")
-	fmt.Println("  ✓ Perfect for ephemeral state")
+	return defaultValue
 }

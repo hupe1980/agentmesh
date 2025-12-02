@@ -6,7 +6,7 @@ permalink: /builder-api/
 example: builder_api
 hero:
   title: Graph Builder API
-  description: Construct graphs with a fluent, type-safe API using PregelExecutor or SequentialExecutor.
+  description: Construct graphs with a fluent, type-safe API.
   primary_cta:
     label: Quick start
     href: "#quick-start"
@@ -21,8 +21,8 @@ sidebar:
     url: "#quick-start"
   - title: Adding Nodes
     url: "#adding-nodes"
-  - title: Edges
-    url: "#edges"
+  - title: Commands
+    url: "#commands"
   - title: Compilation
     url: "#compilation"
 ---
@@ -30,9 +30,9 @@ sidebar:
 ## Features {#features}
 
 - **Fluent API**: Chain method calls for readable graph construction
-- **Executor-Based**: Configure with PregelExecutor or SequentialExecutor
-- **Flexible Options**: Configure state management through builder options
-- **Type-Safe**: Full Go type safety with compile-time checks
+- **Type-Safe**: Full Go generics with compile-time type checking
+- **Command Pattern**: Combine state updates and routing in single expressions
+- **Typed Keys**: Compile-time type safety for state access
 
 ## Quick Start {#quick-start}
 
@@ -42,176 +42,370 @@ sidebar:
 import (
     "context"
     "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/state"
+)
+
+// Define typed state keys
+var (
+    StatusKey = graph.NewKey[string]("status", "")
+    CountKey  = graph.NewKey[int]("count", 0)
+)
+
+// Create a graph with typed input/output and keys
+g := graph.New[string, string](StatusKey, CountKey)
+
+// Add nodes with fluent API
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    count := graph.Get(view, CountKey)
+    return graph.Set(StatusKey, "done").
+        Set(CountKey, count+1).
+        To(graph.END), nil
+}, graph.END)
+
+// Set entry point
+g.Start("process")
+
+// Compile and run
+compiled, err := g.Build()
+if err != nil {
+    log.Fatal(err)
+}
+
+result, err := graph.Invoke(context.Background(), compiled, "input")
+fmt.Println(result) // "done"
+```
+
+### MessageGraph for Agents
+
+Use `NewMessageGraph()` for agent workflows with built-in message handling:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
     "github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Create a builder with MessagePregelExecutor (most common)
-builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
-if err != nil {
-    log.Fatal(err)
+// Create message graph (auto-includes MessagesKey)
+g := graph.NewMessageGraph()
+
+// Add agent node
+g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    messages := graph.GetList(view, graph.MessagesKey)
+    
+    // Process messages with model...
+    response := message.NewAIMessageFromText("Hello!")
+    
+    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+}, graph.END)
+
+g.Start("agent")
+
+compiled, _ := g.Build()
+
+// Run with messages
+input := []message.Message{message.NewHumanMessageFromText("Hi")}
+for result := range compiled.Run(context.Background(), input) {
+    fmt.Println(result.Message)
 }
-
-// Build a workflow using tuple return API
-builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(doneKey, true).
-        To(graph.EndNode)
-})
-
-g.SetEntryPoint("process")
-
-// Compile and run
-compiled, err := builder.Compile()
-if err != nil {
-    log.Fatal(err)
-}
-
-messages := []message.Message{message.NewHumanMessageFromText("Hello")}
-for range compiled.Run(context.Background(), messages) {
-}
-```
-
-### With Custom State Manager
-
-```go
-// Create with custom state manager
-stateBuilder := state.NewManagerBuilder()
-customManager := stateBuilder.Build()
-builder, err := graph.NewBuilder(
-    graph.NewMessagePregelExecutor(),
-    graph.WithManager[[]message.Message, message.Message](customManager),
-)
 ```
 
 ### Conditional Routing
 
 ```go
-routeKey := state.NewKey("route", "")
+var RouteKey = graph.NewKey[string]("route", "")
 
-builder.AddNodeFunc("router", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    route := state.GetFromView(view, routeKey)
+g := graph.New[string, string](RouteKey)
+
+g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    route := graph.Get(view, RouteKey)
     if route == "left" {
-        return command.New().
-            Set(routeKey, "left").
-            To("left")
+        return graph.To("left"), nil
     }
-    return command.New().
-        Set(routeKey, "right").
-        To("right")
-})
+    return graph.To("right"), nil
+}, "left", "right")
 
-builder.AddNodeFunc("left", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(resultKey, "left").
-        To(graph.EndNode)
-})
+g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(RouteKey, "went-left").To(graph.END), nil
+}, graph.END)
 
-builder.AddNodeFunc("right", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(resultKey, "right").
-        To(graph.EndNode)
-})
+g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(RouteKey, "went-right").To(graph.END), nil
+}, graph.END)
 
-g.SetEntryPoint("router")
+g.Start("router")
+```
+
+## Adding Nodes {#adding-nodes}
+
+### Basic Nodes
+
+Add nodes with the `Node()` method:
+
+```go
+g.Node("name", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    // Node logic here
+    return graph.To("next"), nil
+}, "next")
+```
+
+The last arguments are the declared targets - all possible nodes this node can route to.
+
+### Nodes with Retry
+
+Add automatic retry behavior with `NodeWithRetry()`:
+
+```go
+g.NodeWithRetry("api_call",
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        result, err := callExternalAPI()
+        if err != nil {
+            return graph.Fail(err) // Will be retried
+        }
+        return graph.Set(ResultKey, result).To(graph.END), nil
+    },
+    graph.RetryPolicy{
+        MaxAttempts:    5,
+        InitialBackoff: time.Second,
+        BackoffFactor:  2.0,
+    },
+    graph.END,
+)
+```
+
+### Namespaced Nodes
+
+Add namespace-scoped nodes for state isolation:
+
+```go
+var agentNS = state.MustNamespace("agent")
+var AgentStatusKey = state.TypedKey[string](agentNS, "status", "")
+
+g.NamespacedNode("agent", agentNS,
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        // Can only access keys in "agent" namespace
+        return graph.Set(AgentStatusKey, "active").To(graph.END), nil
+    },
+    graph.END,
+)
+```
+
+### Subgraphs
+
+Embed compiled graphs as nodes:
+
+```go
+// Create and compile subgraph
+sub := graph.New[string, string](ValueKey)
+sub.Node("double", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    val := graph.Get(view, ValueKey)
+    return graph.Set(ValueKey, val*2).To(graph.END), nil
+}, graph.END)
+sub.Start("double")
+compiledSub, _ := sub.Build()
+
+// Embed in parent
+parent := graph.New[string, string](ValueKey)
+parent.Subgraph("doubler", compiledSub, graph.END)
+parent.Start("doubler")
+```
+
+## Commands {#commands}
+
+Commands combine state updates with routing in a single fluent expression.
+
+### Setting Values
+
+```go
+// Set single value
+return graph.Set(StatusKey, "done").To("next"), nil
+
+// Set multiple values
+return graph.Set(StatusKey, "done").
+    Set(CountKey, 42).
+    Set(ValidKey, true).
+    To("next"), nil
+```
+
+### Appending to Lists
+
+```go
+// Append single item
+return graph.Append(TagsKey, "new-tag").To("next"), nil
+
+// Append multiple items
+return graph.Append(MessagesKey, msg1, msg2, msg3).To("next"), nil
+```
+
+### Routing
+
+```go
+// Route to single target
+return graph.To("next"), nil
+
+// Route to multiple targets (parallel execution)
+return graph.To("worker1", "worker2", "worker3"), nil
+
+// Route to END
+return graph.To(graph.END), nil
+```
+
+### Error Handling
+
+```go
+// Signal failure
+return graph.Fail(err), nil
+
+// Conditional failure
+if err != nil {
+    return graph.Fail(err), nil
+}
+return graph.To("next"), nil
+```
+
+### Interrupts
+
+```go
+// Pause for human intervention
+return graph.Set(StatusKey, "awaiting_approval").Interrupt(), nil
+```
+
+## Compilation {#compilation}
+
+### Basic Compilation
+
+```go
+compiled, err := g.Build()
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### With Checkpointing
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/checkpoint"
+
+checkpointer := checkpoint.NewInMemory()
+
+compiled, err := g.Build(
+    graph.WithCheckpointer(checkpointer),
+)
+```
+
+### With Callbacks
+
+```go
+compiled, err := g.Build(
+    graph.WithCallbacks(myCallbackHandler),
+)
+```
+
+## Execution {#execution}
+
+### Single Invocation
+
+```go
+result, err := graph.Invoke(ctx, compiled, input)
+```
+
+### Streaming Results
+
+```go
+for result := range compiled.Run(ctx, input) {
+    if result.Error != nil {
+        log.Printf("Error: %v", result.Error)
+        continue
+    }
+    fmt.Println(result.Output)
+}
+```
+
+### With Options
+
+```go
+for result := range compiled.Run(ctx, input,
+    graph.WithRunID("workflow-123"),
+    graph.WithCheckpointInterval(1),
+    graph.WithMaxSteps(100),
+) {
+    // Process results
+}
+```
+
+### Collect All Results
+
+```go
+results, err := graph.Collect(compiled.Run(ctx, input))
 ```
 
 ## API Reference
 
-### Creating a Builder
+### Graph Creation
 
-#### `graph.NewBuilder[I, O any](executor Executor[I,O], opts ...BuilderOption[I,O]) (*Builder[I, O], error)`
+| Function | Description |
+|----------|-------------|
+| `graph.New[I, O](keys...)` | Create typed graph with state keys |
+| `graph.NewMessageGraph(keys...)` | Create message-based graph for agents |
 
-Creates a builder with the specified executor. This is the primary way to create graphs.
+### Graph Methods
 
-```go
-// With MessagePregelExecutor (most common - for agent workflows)
-builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+| Method | Description |
+|--------|-------------|
+| `g.Node(name, fn, targets...)` | Add node with function and declared targets |
+| `g.NodeWithRetry(name, fn, policy, targets...)` | Add node with retry policy |
+| `g.NamespacedNode(name, ns, fn, targets...)` | Add namespace-scoped node |
+| `g.Subgraph(name, compiled, targets...)` | Embed subgraph as node |
+| `g.Start(name)` | Set entry point |
+| `g.Build(opts...)` | Compile graph |
 
-// With SequentialExecutor (for debugging)
-builder, err := graph.NewBuilder(graph.NewSequentialExecutor())
+### State Keys
 
-// With custom types
-builder, err := graph.NewBuilder(graph.NewPregelExecutor[MyInput, MyOutput]())
-```
+| Function | Description |
+|----------|-------------|
+| `graph.NewKey[T](name, default)` | Create typed single-value key |
+| `graph.NewListKey[T](name)` | Create typed list key |
+| `graph.Get(view, key)` | Read value from view |
+| `graph.GetList(view, key)` | Read list from view |
 
-### Builder Options
+### Commands
 
-Options can be passed to `NewBuilder`:
+| Function | Description |
+|----------|-------------|
+| `graph.Set(key, val)` | Set single value |
+| `graph.Append(key, items...)` | Append to list |
+| `graph.To(targets...)` | Route to targets |
+| `graph.Fail(err)` | Signal failure |
+| `cmd.Interrupt()` | Pause for human intervention |
 
-- **`graph.WithManager[I, O](manager *state.Manager)`**: Use a custom state manager
+### Execution
 
-### Builder Methods
-
-All methods return `*Builder[I, O]` for method chaining:
-
-#### `AddNode(node Node) *Builder[I, O]`
-Adds a custom node implementation to the graph.
-
-```go
-customNode := &MyCustomNode{name: "custom"}
-builder.AddNode(customNode)
-```
-
-#### `AddNodeFunc(name string, runFunc func(context.Context, state.ReadView) ([]string, state.Updates, error)) *Builder[I, O]`
-Adds a function-based node to the graph using tuple return API.
-
-```go
-builder.AddNodeFunc("process", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(doneKey, true).
-        To(graph.EndNode)
-})
-```
-
-#### `AddNodeFuncWithRetry(name string, runFunc NodeFunc, retryPolicy *RetryPolicy) *Builder[I, O]`
-Adds a node with automatic retry behavior.
-
-```go
-builder.AddNodeFuncWithRetry("api_call",
-    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        result, err := callExternalAPI()
-        if err != nil {
-            return nil, nil, err // Will be retried
-        }
-        return command.New().
-            Set(resultKey, result).
-            To(graph.EndNode)
-    },
-    graph.NewRetryPolicy().
-        WithMaxAttempts(5).
-        WithExponentialBackoff(time.Second, 2.0).
-        Build())
-```
-
-#### `SetEntryPoint(target string) error`
-Sets the entry point of the graph (the first node to execute).
-
-```go
-g.SetEntryPoint("start_node")
-```
-
-**Note**: Graph construction uses tuple return API `([]string, state.Updates, error)`. The Command pattern provides a fluent API via `command.New().With(command.SetValue(key, value)).To(target)` for clean, type-safe state updates and routing with compile-time type checking.
-
-#### `Compile(opts ...CompileOption) (*Compiled[I, O], error)`
-Compiles the graph into an executable workflow.
-
-#### `Graph() *Graph`
-Returns the underlying graph structure.
-
-#### `Manager() *state.Manager`
-Returns the graph's state manager for accessing state after execution.
+| Function | Description |
+|----------|-------------|
+| `graph.Invoke(ctx, compiled, input)` | Single synchronous invocation |
+| `graph.Collect(seq)` | Collect all results from iterator |
+| `compiled.Run(ctx, input, opts...)` | Stream results |
 
 ## Examples
 
-See the [builder_api example](../examples/builder_api) for a complete working example.
+See the [builder_api example](https://github.com/hupe1980/agentmesh/tree/main/examples/builder_api) for a complete working example.
 
 ## Architecture
 
 The Builder API provides a clean interface for graph construction:
 
-- **`Builder[I, O]`**: Generic builder parameterized by input and output types
-- **`Executor[I, O]`**: Handles graph execution strategy (Pregel BSP or Sequential)
-- **`Compiled[I, O]`**: The result of compilation, ready for execution
+```
+graph.New[I, O](keys...)
+    │
+    ├── g.Node("name", fn, targets...)
+    ├── g.NodeWithRetry(...)
+    ├── g.NamespacedNode(...)
+    ├── g.Subgraph(...)
+    │
+    └── g.Build(opts...)
+            │
+            └── *Compiled[I, O]
+                    │
+                    ├── Run(ctx, input, opts...) → iter.Seq2
+                    └── graph.Invoke(ctx, compiled, input)
+```
 
-The Builder handles the full lifecycle from construction to compilation to execution, with the Executor determining how nodes are executed (parallel BSP or sequential).
+The graph handles the full lifecycle from construction to compilation to execution.

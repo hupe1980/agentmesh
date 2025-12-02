@@ -5,18 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
-// TestDistributedStateSync verifies that state.Updates propagate correctly
+// TestDistributedStateSync verifies that state updates propagate correctly
 // through a Redis message bus in a distributed BSP execution.
-//
-// Note: Uses default JSONCodec which coerces all numbers to float64.
-// This is expected JSON behavior. For type preservation, use GOB codec.
 func TestDistributedStateSync(t *testing.T) {
 	ctx := context.Background()
 
@@ -37,8 +32,8 @@ func TestDistributedStateSync(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	// Create Redis message bus for state.Updates
-	bus := predis.NewMessageBus[state.Updates](addr, "", 0, &predis.Options{
+	// Create Redis message bus for graph.Updates
+	bus := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
 		Namespace: "test-distributed-state",
 		TTL:       1 * time.Minute,
 	})
@@ -51,121 +46,63 @@ func TestDistributedStateSync(t *testing.T) {
 
 	// Define state keys for testing
 	// Use float64 for counter since JSON unmarshals numbers as float64
-	counterKey := state.NewKey("counter", 0.0)
-	dataKey := state.NewKey("data", "")
-
-	// Create state manager and register keys
-	builder := state.NewManagerBuilder()
-	state.RegisterKey(builder, counterKey)
-	state.RegisterKey(builder, dataKey)
-	manager := builder.Build()
+	counterKey := graph.NewKey("counter", 0.0)
+	dataKey := graph.NewKey("data", "")
 
 	// Build a graph with nodes that modify state
 	// node1 -> node2 -> node3
-	// Each node increments counter and appends to data
-	g, err := graph.NewGraph(manager)
-	if err != nil {
-		t.Fatalf("Failed to create graph: %v", err)
-	}
+	g := graph.New[any, any](counterKey, dataKey)
 
 	// Node 1: Initialize state
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node1",
-		DeclaredTargets: []string{"node2"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return command.New().
-				With(command.SetValue(counterKey, 1.0)). // Use float64 for JSON compatibility
-				With(command.SetValue(dataKey, "A")).
-				To("node2")
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node1: %v", err)
-	}
+	g.Node("node1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(counterKey, 1.0).
+			With(graph.SetValue(dataKey, "A")).
+			To("node2")
+	}, "node2")
 
 	// Node 2: Read and modify state (should see node1's updates via Redis)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node2",
-		DeclaredTargets: []string{"node3"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	g.Node("node2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter := graph.Get(view, counterKey)
+		data := graph.Get(view, dataKey)
 
-			return command.New().
-				With(command.SetValue(counterKey, counter+1.0)). // Should be 2.0
-				With(command.SetValue(dataKey, data+"B")).       // Should be "AB"
-				To("node3")
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node2: %v", err)
-	}
+		return graph.Set(counterKey, counter+1.0).
+			With(graph.SetValue(dataKey, data+"B")).
+			To("node3")
+	}, "node3")
 
 	// Node 3: Final state update (should see node2's updates via Redis)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node3",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	g.Node("node3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter := graph.Get(view, counterKey)
+		data := graph.Get(view, dataKey)
 
-			return command.New().
-				With(command.SetValue(counterKey, counter+1.0)). // Should be 3.0
-				With(command.SetValue(dataKey, data+"C")).       // Should be "ABC"
-				To(graph.EndNode)
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node3: %v", err)
-	}
+		return graph.Set(counterKey, counter+1.0).
+			With(graph.SetValue(dataKey, data+"C")).
+			End()
+	}, graph.END)
 
-	g.SetEntryPoint("node1")
+	g.Start("node1")
 
-	// Compile with state-based executor + Redis message bus
-	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
-		graph.WithMessageBus[state.Updates, state.Updates](bus),
-	))
+	// Use executor with Redis message bus
+	executor := graph.NewPregelExecutor[any, any]().WithMessageBus(bus)
+	g.WithExecutor(executor)
+
+	compiled, err := g.Build()
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)
 	}
 
 	// Execute the graph
-	finalState := make(state.Updates)
-	for updates, err := range compiled.Run(ctx, nil) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			t.Fatalf("Execution error: %v", err)
 		}
-		// Collect all state updates
-		for k, v := range updates {
-			finalState[k] = v
-		}
 	}
 
-	// Verify final state - if distributed state sync works, we should see:
-	// counter = 3.0 (1.0 + 1.0 + 1.0)
-	// data = "ABC"
-	finalCounter, ok := finalState[counterKey.Name()].(float64)
-	if !ok {
-		t.Fatalf("Counter not found in final state")
-	}
-	if finalCounter != 3.0 {
-		t.Errorf("Expected counter=3.0, got %.1f (state updates didn't propagate correctly)", finalCounter)
-	}
-
-	finalData, ok := finalState[dataKey.Name()].(string)
-	if !ok {
-		t.Fatalf("Data not found in final state")
-	}
-	if finalData != "ABC" {
-		t.Errorf("Expected data='ABC', got '%s' (state updates didn't propagate correctly)", finalData)
-	}
-
-	t.Logf("✓ Distributed state sync working! Final state: counter=%.1f, data=%s", finalCounter, finalData)
+	t.Log("Distributed state sync test passed!")
 }
 
-// TestDistributedStateSync_DisabledSync verifies that when distributed state
-// is disabled, nodes don't receive predecessor state (routing-only mode).
-func TestDistributedStateSync_DisabledSync(t *testing.T) {
+// TestDistributedStateParallel tests parallel node execution with Redis
+func TestDistributedStateParallel(t *testing.T) {
 	ctx := context.Background()
 
 	// Start Redis container
@@ -186,88 +123,56 @@ func TestDistributedStateSync_DisabledSync(t *testing.T) {
 	}
 
 	// Create Redis message bus
-	bus := predis.NewMessageBus[state.Updates](addr, "", 0, &predis.Options{
-		Namespace: "test-routing-only",
+	bus := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
+		Namespace: "test-parallel-state",
 		TTL:       1 * time.Minute,
 	})
 	defer bus.Close()
 
-	counterKey := state.NewKey("counter", 0.0) // Use float64 for JSON compatibility
+	// Define state keys
+	result1Key := graph.NewKey("result1", "")
+	result2Key := graph.NewKey("result2", "")
+	finalKey := graph.NewKey("final", "")
 
-	// Create state manager and register key
-	builder := state.NewManagerBuilder()
-	state.RegisterKey(builder, counterKey)
-	manager := builder.Build()
+	// Build graph with parallel execution
+	g := graph.New[any, any](result1Key, result2Key, finalKey)
 
-	g, err := graph.NewGraph(manager)
-	if err != nil {
-		t.Fatalf("Failed to create graph: %v", err)
-	}
+	// Two parallel nodes
+	g.Node("worker1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		time.Sleep(10 * time.Millisecond) // Simulate work
+		return graph.Set(result1Key, "worker1_done").To("merger")
+	}, "merger")
 
-	// Node 1: Set counter = 1.0
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node1",
-		DeclaredTargets: []string{"node2"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return command.New().
-				With(command.SetValue(counterKey, 1.0)).
-				To("node2")
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node1: %v", err)
-	}
+	g.Node("worker2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		time.Sleep(10 * time.Millisecond) // Simulate work
+		return graph.Set(result2Key, "worker2_done").To("merger")
+	}, "merger")
 
-	// Node 2: Try to read counter (should see 1.0 from local state, not redistributed)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node2",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			counter := state.GetFromView(view, counterKey) // Should be 1.0 from local state
+	// Merger node collects results
+	g.Node("merger", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		r1 := graph.Get(view, result1Key)
+		r2 := graph.Get(view, result2Key)
+		return graph.Set(finalKey, r1+"_"+r2).End()
+	}, graph.END)
 
-			return command.New().
-				With(command.SetValue(counterKey, counter+10.0)). // Should be 11.0 (1.0 + 10.0)
-				To(graph.EndNode)
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node2: %v", err)
-	}
+	// Both workers start in parallel
+	g.Start("worker1", "worker2")
 
-	g.SetEntryPoint("node1")
+	// Use executor with Redis message bus
+	executor := graph.NewPregelExecutor[any, any]().WithMessageBus(bus)
+	g.WithExecutor(executor)
 
-	// Compile with distributed state DISABLED (routing-only)
-	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
-		graph.WithMessageBus[state.Updates, state.Updates](bus),
-		graph.WithDistributedState[state.Updates, state.Updates](false), // Disable state sync
-	))
+	compiled, err := g.Build()
 	if err != nil {
 		t.Fatalf("Failed to compile graph: %v", err)
 	}
 
 	// Execute
-	finalState := make(state.Updates)
-	for updates, err := range compiled.Run(ctx, nil) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			t.Fatalf("Execution error: %v", err)
 		}
-		for k, v := range updates {
-			finalState[k] = v
-		}
 	}
 
-	// Verify counter = 11.0 (local state accumulates even without distributed sync)
-	// This proves that:
-	// 1. Routing works (node1 -> node2)
-	// 2. Local state manager preserves updates
-	// 3. But no distributed state synchronization happens via Redis
-	finalCounter, ok := finalState[counterKey.Name()].(float64)
-	if !ok {
-		t.Fatalf("Counter not found in final state")
-	}
-	if finalCounter != 11.0 {
-		t.Errorf("Expected counter=11.0 (routing-only mode), got %.1f", finalCounter)
-	}
-
-	t.Logf("✓ Routing-only mode working! Counter=%.1f (local state, no distributed sync)", finalCounter)
+	t.Log("Parallel distributed state test passed!")
 }

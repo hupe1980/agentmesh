@@ -6,6 +6,7 @@ import (
 )
 
 // RuntimeMetrics tracks execution metrics for a running or completed graph.
+// Thread-safe for concurrent access during execution.
 type RuntimeMetrics struct {
 	mu sync.RWMutex
 
@@ -66,6 +67,13 @@ func (rm *RuntimeMetrics) SetSuperstep(step int64) {
 	rm.CurrentSuperstep = step
 }
 
+// GetSuperstep returns the current superstep number.
+func (rm *RuntimeMetrics) GetSuperstep() int64 {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return rm.CurrentSuperstep
+}
+
 // AddCompleted marks a node as completed.
 func (rm *RuntimeMetrics) AddCompleted(nodeName string) {
 	rm.mu.Lock()
@@ -101,7 +109,14 @@ func (rm *RuntimeMetrics) ClearResuming(nodeName string) {
 	rm.ResumingNodes = slices.DeleteFunc(rm.ResumingNodes, func(s string) bool { return s == nodeName })
 }
 
-// AddActive marks a node as currently executing.
+// IsResuming checks if a node is currently being resumed.
+func (rm *RuntimeMetrics) IsResuming(nodeName string) bool {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return slices.Contains(rm.ResumingNodes, nodeName)
+}
+
+// AddActive marks a node as actively executing.
 func (rm *RuntimeMetrics) AddActive(nodeName string) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
@@ -120,26 +135,28 @@ func (rm *RuntimeMetrics) AddFailed(nodeName string) {
 	rm.removeActive(nodeName)
 }
 
-// IncrementMessages increments the total message count.
-func (rm *RuntimeMetrics) IncrementMessages(count int64) {
+// AddMessage increments the message counter.
+func (rm *RuntimeMetrics) AddMessage() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.TotalMessages += count
+	rm.TotalMessages++
 }
 
-// AddExecutionTime adds to the total execution time.
-func (rm *RuntimeMetrics) AddExecutionTime(ns int64) {
+// AddMessages increments the message counter by n.
+func (rm *RuntimeMetrics) AddMessages(n int64) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	rm.ExecutionTimeNs += ns
+	rm.TotalMessages += n
 }
 
-// removeActive removes a node from the active list (caller must hold lock).
-func (rm *RuntimeMetrics) removeActive(nodeName string) {
-	rm.ActiveNodes = slices.DeleteFunc(rm.ActiveNodes, func(s string) bool { return s == nodeName })
+// SetExecutionTime sets the total execution time.
+func (rm *RuntimeMetrics) SetExecutionTime(ns int64) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	rm.ExecutionTimeNs = ns
 }
 
-// Snapshot returns a read-only copy of current metrics.
+// Snapshot creates a read-only snapshot of the current metrics.
 func (rm *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
@@ -156,7 +173,7 @@ func (rm *RuntimeMetrics) Snapshot() RuntimeMetricsSnapshot {
 	}
 }
 
-// Reset clears all metrics.
+// Reset clears all metrics to initial state.
 func (rm *RuntimeMetrics) Reset() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
@@ -164,8 +181,14 @@ func (rm *RuntimeMetrics) Reset() {
 	rm.CurrentSuperstep = 0
 	rm.CompletedNodes = make([]string, 0)
 	rm.PausedNodes = make([]string, 0)
+	rm.ResumingNodes = make([]string, 0)
 	rm.ActiveNodes = make([]string, 0)
 	rm.FailedNodes = make([]string, 0)
 	rm.TotalMessages = 0
 	rm.ExecutionTimeNs = 0
+}
+
+// removeActive removes a node from the active list (internal, must hold lock).
+func (rm *RuntimeMetrics) removeActive(nodeName string) {
+	rm.ActiveNodes = slices.DeleteFunc(rm.ActiveNodes, func(s string) bool { return s == nodeName })
 }

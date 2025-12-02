@@ -1,26 +1,4 @@
-// Package main demonstrates conversation history management with message retention policies.
-//
-// This example shows how to:
-//   - Limit message history to prevent out-of-memory issues
-//   - Configure message retention with ListKey maxSize parameter
-//   - Handle long-running agent conversations efficiently
-//   - Automatically prune old messages while keeping recent context
-//   - Prevent token limit exceeding when using LLMs
-//
-// Key concepts:
-//   - state.NewListKey[message.Message]("__messages__", maxSize): Set maximum message history size
-//   - Automatic pruning: Old messages removed when limit exceeded
-//   - Memory efficiency: Prevent OOM in long conversations
-//   - Context window management: Keep relevant conversation history
-//
-// Use cases:
-//   - Chat applications with many turns
-//   - Long-running agent workflows
-//   - Production deployments with memory constraints
-//   - LLM context window management
-//
-// Run: go run main.go
-
+// Package main demonstrates message retention and history management.
 package main
 
 import (
@@ -28,93 +6,63 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/agent"
-
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
+// Use ListKey for message history
+var messagesKey = graph.NewListKey[string]("messages")
+
 func main() {
-	// Example 1: Unlimited messages (default)
-	fmt.Println("=== With Unlimited Messages (maxSize=0) ===")
-	runExample(0)
+	ctx := context.Background()
+	fmt.Println("=== Message Retention Example ===")
 
-	// Example 2: Limit to 2 messages
-	fmt.Println("\n=== With MaxSize=2 ===")
-	runExample(2)
+	// Build graph that accumulates messages
+	g := graph.New[any, any](messagesKey)
 
-	// Example 3: Recommended for long-running agents
-	fmt.Println("\n=== Recommended Production Configuration ===")
-	fmt.Println("For long-running agents, set maxSize to 100-1000")
-	fmt.Println("This prevents OOM while retaining sufficient context")
-	runExample(100)
-}
+	g.Node("user_input", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [user_input] Adding user message")
+		return graph.Append(messagesKey, "User: Hello, how are you?").To("assistant")
+	}, "assistant")
 
-func runExample(maxSize int) {
-	// Create message key with specific retention limit
-	messagesKey := graphstate.NewListKey[message.Message]("__messages__", maxSize)
+	g.Node("assistant", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		messages := graph.GetList(view, messagesKey)
+		fmt.Printf("  [assistant] Current history: %d messages\n", len(messages))
+		return graph.Append(messagesKey, "Assistant: I'm doing well, thanks!").To("followup")
+	}, "followup")
 
-	builder := graphstate.NewManagerBuilder()
-	graphstate.RegisterListKey(builder, messagesKey)
-	mgr := builder.Build()
+	g.Node("followup", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Append(messagesKey, "User: What can you help with?").To("response")
+	}, "response")
 
-	g, err := graph.NewGraph(mgr)
-	if err != nil {
-		panic(err)
-	}
+	g.Node("response", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Append(messagesKey, "Assistant: I can help with many things!").To("show_history")
+	}, "show_history")
 
-	// Create a simple echo node
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "echo",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			messages := agent.GetMessages(view)
-			lastMsg := messages[len(messages)-1]
+	g.Node("show_history", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		messages := graph.GetList(view, messagesKey)
+		fmt.Println("\n  Full conversation history:")
+		for i, msg := range messages {
+			fmt.Printf("    [%d] %s\n", i+1, msg)
+		}
+		return graph.Cmd().End()
+	}, graph.END)
 
-			updates := graphstate.Updates{}
-			updates[agent.MessagesKey.Name()] = []message.Message{
-				message.NewAIMessageFromText(fmt.Sprintf("Echo: %v", lastMsg.Parts())),
-			}
+	g.Start("user_input")
 
-			return []string{graph.EndNode}, updates, nil
-		},
-	})
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := g.SetEntryPoint("echo"); err != nil {
-		panic(err)
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Run with 3 messages
-	_, err = graph.Last(compiled.Run(context.Background(), []message.Message{
-		message.NewHumanMessageFromText("Message 1"),
-		message.NewHumanMessageFromText("Message 2"),
-		message.NewHumanMessageFromText("Message 3"),
-	}))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Check how many messages were retained
-	view, err := compiled.Manager().CreateReadView(context.Background())
-	if err != nil {
-		log.Fatal(err)
-	}
-	// ListKey embeds Key[[]T], so we can use GetFromView
-	messages := graphstate.GetFromView(view, messagesKey.Key)
-	fmt.Printf("Messages retained: %d (maxSize=%d)\n", len(messages), maxSize)
-
-	if maxSize > 0 {
-		fmt.Println("✓ Older messages automatically pruned")
-	} else {
-		fmt.Println("✓ All messages retained (unlimited)")
-	}
+	fmt.Println("\n  Message retention enables:")
+	fmt.Println("    • Conversation history for context")
+	fmt.Println("    • Multi-turn dialogue")
+	fmt.Println("    • Audit trails")
+	fmt.Println("    • Token management (trim old messages)")
 }

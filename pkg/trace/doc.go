@@ -22,7 +22,7 @@ Enable tracing in your graph:
 	tracer := otel.Tracer("agentmesh")
 	recorder := trace.NewOpenTelemetryRecorder(tracer)
 
-	compiled, _ := builder.Compile(
+	compiled, _ := g.Build(
 		graph.WithInstrumentation(&graph.Instrumentation{
 			TraceRecorder: recorder,
 		}),

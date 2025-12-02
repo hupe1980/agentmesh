@@ -5,10 +5,8 @@ import (
 
 	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -18,9 +16,7 @@ import (
 //  3. Observes the result
 //  4. Repeats until the answer is found
 //
-// Returns a MessageRunnable that processes message sequences
-// and streams execution results. This interface enables type-safe composition,
-// easy mocking in tests, and swappable implementations.
+// Returns a Graph that processes message sequences and streams execution results.
 //
 // This pattern is effective for multi-step problem solving with tool use.
 //
@@ -40,9 +36,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-//
-//nolint:gocyclo // acceptable complexity for agent initialization with many configuration options
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.MessageGraph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
@@ -74,13 +68,6 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		}
 	}
 
-	// Create state manager
-	stateBuilder := state.NewManagerBuilder()
-	if err := RegisterMessagesKey(stateBuilder); err != nil {
-		return nil, fmt.Errorf("react agent: failed to register messages key: %w", err)
-	}
-	mgr := stateBuilder.Build()
-
 	// Create model executor - encapsulates model lifecycle management
 	// Apply model middleware if provided
 	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
@@ -88,18 +75,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
 	}
 
-	// Model node: orchestration layer that builds requests and delegates to executor
-	// System prompt, tools, and schema are stored in the node and used per-request
-	modelNodeOpts := []ModelNodeOption{
-		WithModelNodeName("model"),
+	// Model node function
+	modelFn, err := NewModelNodeFunc(modelExecutor,
 		WithModelSystemPrompt(config.systemPrompt),
 		WithModelTools(tools...),
-		WithModelTargets([]string{"tool", graph.EndNode}),
-	}
-	if config.outputSchema != nil {
-		modelNodeOpts = append(modelNodeOpts, WithOutputSchema(config.outputSchema))
-	}
-	modelNode, err := NewModelNode(modelExecutor, modelNodeOpts...)
+	)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
 	}
@@ -113,47 +93,35 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (MessageRunnable, error
 		toolExecutor = tool.Chain(toolExecutor, config.toolMiddleware...)
 	}
 
-	// Tool node: orchestration layer that extracts calls and delegates to executor
-	toolNode, err := NewToolNode(toolExecutor,
-		WithToolNodeName("tool"),
-		WithToolTargets([]string{"model"}))
+	// Tool node function
+	toolFn, err := NewToolNodeFunc(toolExecutor)
 	if err != nil {
 		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
 	}
 
-	// Build graph using fluent builder API
+	// Build graph - MessagesKey is automatically included by NewMessageGraph
+	g := graph.NewMessageGraph()
+	g.Node("model", modelFn, "tool", graph.END)
+	g.Node("tool", toolFn, "model")
+	g.Start("model")
+
 	// Apply graph middleware if provided
-	var graphExecutor graph.Executor[[]message.Message, message.Message] = graph.NewMessagePregelExecutor()
 	if len(config.graphMiddleware) > 0 {
-		graphExecutor = graph.Chain(graphExecutor, config.graphMiddleware...)
+		g.WithMiddleware(config.graphMiddleware...)
 	}
 
-	builder, err := graph.NewBuilder(graphExecutor, graph.WithManager[[]message.Message, message.Message](mgr))
-	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to create builder: %w", err)
-	}
-
-	compiled, err := builder.
-		AddNode(modelNode).
-		AddNode(toolNode).
-		SetEntryPoint("model").
-		Compile()
-	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to build graph: %w", err)
-	}
-
-	return compiled, nil
+	return g.Build()
 }
 
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
 	maxIterations   int
-	tools           []tool.Tool                                            // Optional static tools via WithTools option
-	systemPrompt    string                                                 // Optional system prompt prepended to all invocations
-	outputSchema    *schema.OutputSchema                                   // Optional structured output schema
-	graphMiddleware []graph.Middleware[[]message.Message, message.Message] // Optional graph middleware
-	modelMiddleware []model.Middleware                                     // Optional model middleware
-	toolMiddleware  []tool.Middleware                                      // Optional tool middleware
+	tools           []tool.Tool
+	systemPrompt    string
+	outputSchema    *schema.OutputSchema
+	graphMiddleware []graph.Middleware
+	modelMiddleware []model.Middleware
+	toolMiddleware  []tool.Middleware
 }
 
 func defaultReActOptions() reActOptions {
@@ -181,9 +149,6 @@ func WithMaxIterations(n int) ReActOption {
 }
 
 // WithTools provides static tools to the agent via options.
-// This is an alternative to passing tools as a parameter to NewReActAgent.
-// Tools provided via this option are combined with tools from the parameter
-// and any toolset provided via WithToolset.
 func WithTools(tools ...tool.Tool) ReActOption {
 	return func(c *reActOptions) {
 		c.tools = append(c.tools, tools...)
@@ -192,93 +157,27 @@ func WithTools(tools ...tool.Tool) ReActOption {
 
 // WithSystemPrompt sets a system prompt sent with every model invocation.
 // The system prompt provides instructions and context to guide the agent's behavior.
-//
-// IMPORTANT: The system prompt is sent per-request (not stored in conversation state).
-// This makes it more token-efficient for multi-turn conversations, as the prompt
-// is sent with each model call but doesn't accumulate in the message history.
-//
-// If you prefer the system prompt to be part of the conversation history (LangChain style),
-// add a system message when invoking the agent instead:
-//
-//	// Option 1: Per-request system prompt (Pydantic AI style - recommended)
-//	agent, err := agent.NewReActAgent(
-//	    model,
-//	    agent.WithSystemPrompt("You are a helpful math tutor."),
-//	)
-//
-//	// Option 2: System message in history (LangChain style)
-//	agent, err := agent.NewReActAgent(model)
-//	result, err := graph.Last(agent.Run(ctx, graph.NewInput(
-//	    message.NewSystemMessageFromText("You are a helpful math tutor."),
-//	    message.NewHumanMessageFromText("What is 2+2?"),
-//	)))
 func WithSystemPrompt(prompt string) ReActOption {
 	return func(c *reActOptions) {
 		c.systemPrompt = prompt
 	}
 }
 
-// WithReActOutputSchema sets a structured output schema with metadata for the ReAct agent.
-// The schema constrains the model to generate valid JSON matching the schema.
-// Only works with models that support structured output (check model.Capabilities().StructuredOutput).
-//
-// This option provides better type safety and includes metadata like name, description, and strict mode.
-// Model implementations can use the Strict flag, Description, and other metadata for provider-specific behavior.
-//
-// Example:
-//
-//	type AgentResponse struct {
-//	    Reasoning string `json:"reasoning" jsonschema:"required,description=Step-by-step reasoning"`
-//	    Action    string `json:"action" jsonschema:"required,description=The action to take"`
-//	    Answer    string `json:"answer" jsonschema:"description=Final answer if available"`
-//	}
-//	outputSchema, _ := schema.NewOutputSchema("agent_response", AgentResponse{},
-//	    schema.WithStrict(true),
-//	    schema.WithDescription("ReAct agent structured response"))
-//	agent, err := agent.NewReActAgent(model,
-//	    agent.WithTools(tools...),
-//	    agent.WithReActOutputSchema(&outputSchema),
-//	)
+// WithReActOutputSchema sets a structured output schema for the ReAct agent.
 func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
 	return func(c *reActOptions) {
 		c.outputSchema = outputSchema
 	}
 }
 
-// WithGraphMiddleware adds middleware to the graph executor.
-// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
-//
-// Example:
-//
-//	import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
-//
-//	agent, err := agent.NewReActAgent(model,
-//	    agent.WithTools(tools...),
-//	    agent.WithGraphMiddleware(
-//	        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
-//	        graphmw.NewEventMiddleware[[]message.Message, message.Message](),
-//	    ),
-//	)
-func WithGraphMiddleware(middleware ...graph.Middleware[[]message.Message, message.Message]) ReActOption {
+// WithGraphMiddleware adds middleware to the graph.
+func WithGraphMiddleware(middleware ...graph.Middleware) ReActOption {
 	return func(c *reActOptions) {
 		c.graphMiddleware = append(c.graphMiddleware, middleware...)
 	}
 }
 
 // WithModelMiddleware adds middleware to the model executor.
-// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
-//
-// Example:
-//
-//	import modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
-//
-//	agent, err := agent.NewReActAgent(model,
-//	    agent.WithTools(tools...),
-//	    agent.WithModelMiddleware(
-//	        modelmw.NewCacheMiddleware(),
-//	        modelmw.NewRetryMiddleware(3, time.Second),
-//	    ),
-//	)
 func WithModelMiddleware(middleware ...model.Middleware) ReActOption {
 	return func(c *reActOptions) {
 		c.modelMiddleware = append(c.modelMiddleware, middleware...)
@@ -286,19 +185,6 @@ func WithModelMiddleware(middleware ...model.Middleware) ReActOption {
 }
 
 // WithToolMiddleware adds middleware to the tool executor.
-// Middleware is applied in the order provided: Chain(executor, m1, m2, m3).
-//
-// Example:
-//
-//	import toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
-//
-//	agent, err := agent.NewReActAgent(model,
-//	    agent.WithTools(tools...),
-//	    agent.WithToolMiddleware(
-//	        toolmw.NewTimeoutMiddleware(30*time.Second),
-//	        toolmw.NewAuditMiddleware(logger),
-//	    ),
-//	)
 func WithToolMiddleware(middleware ...tool.Middleware) ReActOption {
 	return func(c *reActOptions) {
 		c.toolMiddleware = append(c.toolMiddleware, middleware...)

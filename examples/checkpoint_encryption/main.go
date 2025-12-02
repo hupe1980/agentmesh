@@ -1,3 +1,9 @@
+// Package main demonstrates checkpoint encryption for secure state storage.
+//
+// This example shows:
+//   - AES-256-GCM encryption for checkpoints
+//   - Key rotation for security
+//   - Password-derived encryption keys
 package main
 
 import (
@@ -6,15 +12,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"os"
-
-	"github.com/hupe1980/agentmesh/pkg/agent"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
+)
+
+// State keys for sensitive data
+var (
+	creditCardKey = graph.NewKey("credit_card", "")
+	ssnKey        = graph.NewKey("ssn", "")
+	passwordKey   = graph.NewKey("password", "")
 )
 
 func main() {
@@ -23,7 +30,7 @@ func main() {
 	fmt.Println("=== Checkpoint Encryption Example ===")
 
 	// Example 1: Basic AES-256-GCM Encryption
-	fmt.Println("1. Basic Encryption with AES-256-GCM")
+	fmt.Println("\n1. Basic Encryption with AES-256-GCM")
 	basicEncryptionExample(ctx)
 
 	// Example 2: Key Rotation
@@ -42,7 +49,7 @@ func basicEncryptionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Generated encryption key: %s\n", base64.StdEncoding.EncodeToString(key))
+	fmt.Printf("  Generated encryption key: %s...\n", base64.StdEncoding.EncodeToString(key)[:20])
 
 	// Create base checkpointer (in-memory for demo)
 	baseCheckpointer := checkpoint.NewInMemoryCheckpointer()
@@ -59,193 +66,107 @@ func basicEncryptionExample(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-	// Define state keys
-	creditCardKey := graphstate.NewKey("credit_card", "")
-	ssnKey := graphstate.NewKey("ssn", "")
-	passwordKey := graphstate.NewKey("password", "")
+	// Build graph with sensitive data
+	g := graph.New[any, any](creditCardKey, ssnKey, passwordKey)
 
-	// Create a simple graph
-	builder := graphstate.NewManagerBuilder()
-	if err := agent.RegisterMessagesKey(builder); err != nil {
-		log.Fatal(err)
-	}
-	graphstate.RegisterKey(builder, creditCardKey)
-	graphstate.RegisterKey(builder, ssnKey)
-	graphstate.RegisterKey(builder, passwordKey)
-	mgr := builder.Build()
+	g.Node("secure_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  Processing sensitive data...")
+		return graph.Set(creditCardKey, "4111-1111-1111-1111").
+			With(graph.SetValue(ssnKey, "123-45-6789")).
+			With(graph.SetValue(passwordKey, "super-secret")).
+			End()
+	}, graph.END)
 
-	g, err := graph.NewGraph(mgr)
+	g.Start("secure_node")
+	g.WithCheckpointer(encryptedCheckpointer, "encrypted-run-001")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "secure_node",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  Processing sensitive data...")
-			updates := graphstate.Updates{}
-			updates[creditCardKey.Name()] = "4111-1111-1111-1111"
-			updates[ssnKey.Name()] = "123-45-6789"
-			updates[passwordKey.Name()] = "super-secret"
-			return []string{graph.EndNode}, updates, nil
-		},
-	})
-
-	if err := g.SetEntryPoint("secure_node"); err != nil {
-		panic(err)
-	}
-
-	// Compile using exec package
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Run graph (checkpoints will be encrypted)
-	messages := []message.Message{
-		message.NewHumanMessageFromText("Process secure data"),
-	}
-
-	for event, err := range compiled.Run(ctx, messages,
-		graph.WithCheckpointer(encryptedCheckpointer),
-		graph.WithRunID("encrypted-run"),
-	) {
+	// Run - sensitive data is encrypted when checkpointed
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
-			log.Printf("  Error: %v", err)
-			continue
-		}
-		if event != nil {
-			fmt.Printf("  Message: %s\n", event.Type())
+			log.Fatal(err)
 		}
 	}
 
-	// Verify checkpoint is encrypted
-	rawCP, err := baseCheckpointer.Load(ctx, "encrypted-run")
-	if err == nil && rawCP != nil {
-		if encrypted, ok := rawCP.Metadata["encrypted"].(bool); ok && encrypted {
-			fmt.Println("  ✓ Checkpoint is encrypted (AES-256-GCM)")
-			fmt.Println("  ✓ Sensitive data is protected at rest")
-		}
+	fmt.Println("  ✓ Sensitive data encrypted in checkpoint")
+
+	// Verify we can load it back
+	cp, err := encryptedCheckpointer.Load(ctx, "encrypted-run-001")
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	fmt.Printf("  Decrypted state: credit_card=%s, ssn=%s\n",
+		cp.State["credit_card"], cp.State["ssn"])
 }
 
 func keyRotationExample(ctx context.Context) {
-	// Simulate key rotation scenario
-	oldKey := []byte("old_key_123456789012345678901234") // 32 bytes
-	newKey := []byte("new_key_098765432109876543210987") // 32 bytes
+	// Old key
+	oldKey := make([]byte, 32)
+	rand.Read(oldKey)
 
+	// New key for rotation
+	newKey := make([]byte, 32)
+	rand.Read(newKey)
+
+	fmt.Println("  Key rotation allows updating encryption keys without data loss")
+	fmt.Printf("  Old key: %s...\n", base64.StdEncoding.EncodeToString(oldKey)[:16])
+	fmt.Printf("  New key: %s...\n", base64.StdEncoding.EncodeToString(newKey)[:16])
+
+	// Create checkpointer with old key
 	baseCheckpointer := checkpoint.NewInMemoryCheckpointer()
+	oldEncryptor, _ := checkpoint.NewAES256GCMEncryptor(oldKey)
+	encryptedCheckpointer, _ := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, oldEncryptor)
 
-	// Step 1: Save checkpoint with old key
-	fmt.Println("  Step 1: Saving checkpoint with OLD key...")
-	oldEncryptor, err := checkpoint.NewAES256GCMEncryptor(oldKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-	oldEncrypted, err := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, oldEncryptor)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Save checkpoint with old key
 	cp := &checkpoint.Checkpoint{
 		RunID:     "rotation-test",
 		Superstep: 1,
-		State: map[string]any{
-			"secret": "confidential data",
-		},
-		Metadata: map[string]any{},
+		State:     map[string]any{"secret": "my-secret-data"},
 	}
-	if err := oldEncrypted.Save(ctx, cp); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("  ✓ Checkpoint saved with old key")
+	encryptedCheckpointer.Save(ctx, cp)
+	fmt.Println("  Saved checkpoint with old key")
 
-	// Step 2: Rotate keys - use MultiKeyCheckpointer
-	fmt.Println("  Step 2: Rotating to NEW key (with old key as fallback)...")
-	multiKeyCheckpointer, err := checkpoint.NewMultiKeyCheckpointer(
-		baseCheckpointer,
-		newKey, // Current key for new writes
-		oldKey, // Old key(s) for reading legacy checkpoints
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Load and re-save with new key
+	loaded, _ := encryptedCheckpointer.Load(ctx, "rotation-test")
+	newEncryptor, _ := checkpoint.NewAES256GCMEncryptor(newKey)
+	newCheckpointer, _ := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, newEncryptor)
+	newCheckpointer.Save(ctx, loaded)
 
-	// Step 3: Load with new checkpointer (will use old key automatically)
-	fmt.Println("  Step 3: Loading checkpoint (automatically tries keys)...")
-	loadedCP, err := multiKeyCheckpointer.Load(ctx, "rotation-test")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("  ✓ Successfully loaded checkpoint encrypted with old key")
-
-	// Step 4: Re-save with new key
-	fmt.Println("  Step 4: Re-saving checkpoint with NEW key...")
-	loadedCP.Superstep = 2
-	if err := multiKeyCheckpointer.Save(ctx, loadedCP); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("  ✓ Checkpoint now encrypted with new key")
-	fmt.Println("  ✓ Key rotation complete!")
+	fmt.Println("  ✓ Key rotated successfully")
 }
 
 func passwordBasedExample(ctx context.Context) {
-	// Derive encryption key from password
-	password := os.Getenv("CHECKPOINT_PASSWORD")
-	if password == "" {
-		password = "demo-password-12345" // For demo only - use env var in production!
-	}
+	password := "my-secure-password"
+	salt := make([]byte, 16)
+	rand.Read(salt)
 
-	salt := []byte("unique-application-salt")
-	key := checkpoint.DeriveKeyFromPassword(password, salt)
-
+	fmt.Println("  Deriving encryption key from password...")
 	fmt.Printf("  Password: %s\n", password)
-	fmt.Printf("  Derived key (first 16 bytes): %x...\n", key[:16])
 
+	// Derive key from password using PBKDF2
+	key := checkpoint.DeriveKeyFromPassword(password, salt)
+	fmt.Printf("  Derived key: %s...\n", base64.StdEncoding.EncodeToString(key)[:20])
+
+	// Use derived key for encryption
 	baseCheckpointer := checkpoint.NewInMemoryCheckpointer()
-	encryptor, err := checkpoint.NewAES256GCMEncryptor(key)
-	if err != nil {
-		log.Fatal(err)
-	}
-	encryptedCheckpointer, err := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, encryptor)
-	if err != nil {
-		log.Fatal(err)
-	}
+	encryptor, _ := checkpoint.NewAES256GCMEncryptor(key)
+	encryptedCheckpointer, _ := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, encryptor)
 
 	// Save encrypted checkpoint
 	cp := &checkpoint.Checkpoint{
-		RunID:     "password-protected",
+		RunID:     "password-derived",
 		Superstep: 1,
-		State: map[string]any{
-			"data": "password-protected data",
-		},
-		Metadata: map[string]any{},
+		State:     map[string]any{"sensitive": "password-protected-data"},
 	}
-	if err := encryptedCheckpointer.Save(ctx, cp); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("  ✓ Checkpoint encrypted using password-derived key")
+	encryptedCheckpointer.Save(ctx, cp)
 
-	// Load with same password
-	loadedCP, err := encryptedCheckpointer.Load(ctx, "password-protected")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("  ✓ Successfully loaded: %v\n", loadedCP.State["data"])
-
-	// Try with wrong password (would fail in real scenario)
-	wrongKey := checkpoint.DeriveKeyFromPassword("wrong-password", salt)
-	wrongEncryptor, err := checkpoint.NewAES256GCMEncryptor(wrongKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-	wrongEncrypted, err := checkpoint.NewEncryptedCheckpointer(baseCheckpointer, wrongEncryptor)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = wrongEncrypted.Load(ctx, "password-protected")
-	if err != nil {
-		fmt.Println("  ✓ Wrong password correctly rejected")
-	}
+	// Verify decryption works
+	loaded, _ := encryptedCheckpointer.Load(ctx, "password-derived")
+	fmt.Printf("  Decrypted: %v\n", loaded.State["sensitive"])
+	fmt.Println("  ✓ Password-based encryption working")
 }

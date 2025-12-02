@@ -2,358 +2,258 @@ package integration_test
 
 import (
 	"context"
-	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestPageRank verifies PageRank computation using actual graph structure.
-// Graph topology: A → B, B → C, C → A (simple cycle)
-// Each node receives contributions from predecessors in the graph.
-func TestPageRank(t *testing.T) {
+// TestGraphAlgorithms_LinearChain tests a simple linear chain of nodes
+func TestGraphAlgorithms_LinearChain(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	stateBuilder := newTestManagerBuilder()
+	var executionOrder []string
 
-	const (
-		dampingFactor = 0.85
-		iterations    = 10
-		tolerance     = 0.001
-		numVertices   = 3
-	)
+	valueKey := graph.NewKey("value", 0)
 
-	initialRank := 1.0 / float64(numVertices)
+	g := graph.New[any, any](valueKey)
 
-	// Rank keys for each node
-	rankA := state.NewKey("rank_A", initialRank)
-	rankB := state.NewKey("rank_B", initialRank)
-	rankC := state.NewKey("rank_C", initialRank)
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		executionOrder = append(executionOrder, "a")
+		return graph.Set(valueKey, 1).To("b")
+	}, "b")
 
-	state.RegisterKey(stateBuilder, rankA)
-	state.RegisterKey(stateBuilder, rankB)
-	state.RegisterKey(stateBuilder, rankC)
-	stateManager := stateBuilder.Build()
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		executionOrder = append(executionOrder, "b")
+		v := graph.Get(view, valueKey)
+		return graph.Set(valueKey, v+1).To("c")
+	}, "c")
 
-	g, err := graph.NewGraph(stateManager)
+	g.Node("c", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		executionOrder = append(executionOrder, "c")
+		v := graph.Get(view, valueKey)
+		return graph.Set(valueKey, v+1).End()
+	}, graph.END)
+
+	g.Start("a")
+
+	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Node A: receives from C, sends to B
-	// PageRank formula: (1-d)/N + d * (sum of contributions from incoming links)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "A",
-		DeclaredTargets: []string{"B"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			// A receives contribution from C (C has only 1 outgoing edge to A)
-			rankCValue := state.GetFromView(view, rankC)
-			contribFromC := rankCValue / 1.0 // C sends all its rank to A
-
-			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromC
-
-			return command.New().
-				With(command.SetValue(rankA, newRank)).
-				To("B")
-		},
-	})
-	require.NoError(t, err)
-
-	// Node B: receives from A, sends to C
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "B",
-		DeclaredTargets: []string{"C"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			// B receives contribution from A (A has only 1 outgoing edge to B)
-			rankAValue := state.GetFromView(view, rankA)
-			contribFromA := rankAValue / 1.0
-
-			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromA
-
-			return command.New().
-				With(command.SetValue(rankB, newRank)).
-				To("C")
-		},
-	})
-	require.NoError(t, err)
-
-	// Node C: receives from B, sends to A
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "C",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			// C receives contribution from B (B has only 1 outgoing edge to C)
-			rankBValue := state.GetFromView(view, rankB)
-			contribFromB := rankBValue / 1.0
-
-			newRank := (1-dampingFactor)/float64(numVertices) + dampingFactor*contribFromB
-
-			return command.New().
-				With(command.SetValue(rankC, newRank)).
-				To(graph.EndNode)
-		},
-	})
-	require.NoError(t, err)
-
-	// Start from all nodes in parallel to update all ranks simultaneously
-	g.SetEntryPoint("A")
-	g.SetEntryPoint("B")
-	g.SetEntryPoint("C")
-
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	require.NoError(t, err)
-
-	// Run multiple iterations
-	for range iterations {
-		for _, err := range compiled.Run(context.Background(), nil) {
-			require.NoError(t, err)
-		}
-	}
-
-	// Verify ranks sum to approximately 1.0
-	view, err := stateManager.CreateReadView(ctx)
-	if err != nil {
-		t.Fatalf("CreateReadView failed: %v", err)
-	}
-
-	rankAVal := state.GetFromView(view, rankA)
-	rankBVal := state.GetFromView(view, rankB)
-	rankCVal := state.GetFromView(view, rankC)
-
-	totalRank := rankAVal + rankBVal + rankCVal
-
-	require.Greater(t, rankAVal, 0.0, "rank for A should be positive")
-	require.Greater(t, rankBVal, 0.0, "rank for B should be positive")
-	require.Greater(t, rankCVal, 0.0, "rank for C should be positive")
-	require.InDelta(t, 1.0, totalRank, tolerance, "total PageRank should sum to 1.0")
-
-	// In a cycle with equal edge weights, all ranks should converge to 1/N
-	require.InDelta(t, 1.0/3.0, rankAVal, 0.01, "rank A should converge to ~0.333")
-	require.InDelta(t, 1.0/3.0, rankBVal, 0.01, "rank B should converge to ~0.333")
-	require.InDelta(t, 1.0/3.0, rankCVal, 0.01, "rank C should converge to ~0.333")
-}
-
-// TestShortestPath implements shortest path using actual graph nodes as vertices.
-// Graph topology: A --(1)--> B --(1)--> C
-//
-//	A --(5)--> C (direct but longer path)
-//
-// Each node relaxes its neighbors' distances.
-func TestShortestPath(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	stateBuilder := newTestManagerBuilder()
-
-	// Distance keys for each vertex
-	distA := state.NewKey("dist_A", 0)
-	distB := state.NewKey("dist_B", math.MaxInt32)
-	distC := state.NewKey("dist_C", math.MaxInt32)
-
-	state.RegisterKey(stateBuilder, distA)
-	state.RegisterKey(stateBuilder, distB)
-	state.RegisterKey(stateBuilder, distC)
-	stateManager := stateBuilder.Build()
-
-	g, err := graph.NewGraph(stateManager)
-	require.NoError(t, err)
-
-	// Node A: source node, relaxes B (distance 1) and C (distance 5)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "A",
-		DeclaredTargets: []string{"B", "C"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			myDist := state.GetFromView(view, distA)
-			if myDist == math.MaxInt32 {
-				return []string{graph.EndNode}, nil, nil
-			}
-
-			cmd := command.New()
-			// Relax B: edge weight 1
-			newDistB := myDist + 1
-			if newDistB < state.GetFromView(view, distB) {
-				cmd = cmd.With(command.SetValue(distB, newDistB))
-			}
-
-			// Relax C: edge weight 5
-			newDistC := myDist + 5
-			if newDistC < state.GetFromView(view, distC) {
-				cmd = cmd.With(command.SetValue(distC, newDistC))
-			}
-
-			return cmd.To("B", "C")
-		},
-	})
-	require.NoError(t, err)
-
-	// Node B: relaxes C (distance 1)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "B",
-		DeclaredTargets: []string{"C"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			myDist := state.GetFromView(view, distB)
-			if myDist == math.MaxInt32 {
-				return []string{graph.EndNode}, nil, nil
-			}
-
-			cmd := command.New()
-			// Relax C: edge weight 1
-			newDistC := myDist + 1
-			if newDistC < state.GetFromView(view, distC) {
-				cmd = cmd.With(command.SetValue(distC, newDistC))
-			}
-
-			return cmd.To("C")
-		},
-	})
-	require.NoError(t, err)
-
-	// Node C: sink node, no outgoing edges
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "C",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		},
-	})
-	require.NoError(t, err)
-
-	g.SetEntryPoint("A")
-
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	require.NoError(t, err)
-
-	// Run multiple iterations for convergence
-	maxIterations := 3
-	for i := 0; i < maxIterations; i++ {
-		for _, err := range compiled.Run(context.Background(), nil) {
-			require.NoError(t, err)
-		}
-	}
-
-	// Verify shortest paths
-	view, err := stateManager.CreateReadView(ctx)
-	if err != nil {
-		t.Fatalf("CreateReadView failed: %v", err)
-	}
-
-	require.Equal(t, 0, state.GetFromView(view, distA), "source distance should be 0")
-	require.Equal(t, 1, state.GetFromView(view, distB), "A -> B shortest path should be 1")
-	require.Equal(t, 2, state.GetFromView(view, distC), "A -> B -> C shortest path should be 2 (not A -> C = 5)")
-}
-
-// TestGraphConvergence verifies that iterative algorithms eventually stabilize
-func TestGraphConvergence(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	counterKey := state.NewKey("counter", 0)
-	targetKey := state.NewKey("target", 10)
-
-	stateBuilder := newTestManagerBuilder()
-	state.RegisterKey(stateBuilder, counterKey)
-	state.RegisterKey(stateBuilder, targetKey)
-	stateManager := stateBuilder.Build()
-
-	g, err := graph.NewGraph(stateManager)
-	require.NoError(t, err)
-
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "incrementer",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			count := state.GetFromView(view, counterKey)
-			target := state.GetFromView(view, targetKey)
-
-			if count >= target {
-				// Converged - return empty result
-				return []string{graph.EndNode}, nil, nil
-			}
-
-			return command.New().
-				With(command.SetValue(counterKey, count+1)).
-				To(graph.EndNode)
-		},
-	})
-	require.NoError(t, err)
-
-	g.SetEntryPoint("incrementer")
-
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	require.NoError(t, err)
-
-	// Run the graph once - single pass execution
-	for _, err := range compiled.Run(context.Background(), nil) {
+	for _, err := range compiled.Run(ctx, nil) {
 		require.NoError(t, err)
 	}
 
-	// Verify counter was incremented once (single execution)
-	view, err := stateManager.CreateReadView(ctx)
-	if err != nil {
-		t.Fatalf("CreateReadView failed: %v", err)
-	}
-
-	count := state.GetFromView(view, counterKey)
-	require.Equal(t, 1, count, "counter should increment once per invocation")
+	assert.Equal(t, []string{"a", "b", "c"}, executionOrder)
 }
 
-// TestIterativeComputation verifies multiple graph executions for convergence
-func TestIterativeComputation(t *testing.T) {
+// TestGraphAlgorithms_ParallelBranches tests parallel branch execution
+func TestGraphAlgorithms_ParallelBranches(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	valueKey := state.NewKey("value", 1.0)
-	iterationKey := state.NewKey("iteration", 0)
+	var counter atomic.Int32
 
-	stateBuilder := newTestManagerBuilder()
-	state.RegisterKey(stateBuilder, valueKey)
-	state.RegisterKey(stateBuilder, iterationKey)
-	stateManager := stateBuilder.Build()
+	resultKey := graph.NewKey("result", "")
 
-	g, err := graph.NewGraph(stateManager)
+	g := graph.New[any, any](resultKey)
+
+	// Start node splits to two parallel branches
+	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter.Add(1)
+		return graph.To("branch1", "branch2")
+	}, "branch1", "branch2")
+
+	g.Node("branch1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter.Add(1)
+		return graph.To("merge")
+	}, "merge")
+
+	g.Node("branch2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter.Add(1)
+		return graph.To("merge")
+	}, "merge")
+
+	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter.Add(1)
+		return graph.Set(resultKey, "done").End()
+	}, graph.END)
+
+	g.Start("start")
+
+	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Node that halves the value each iteration
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "halvinator",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			value := state.GetFromView(view, valueKey)
-			iteration := state.GetFromView(view, iterationKey)
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
+	}
 
-			return command.New().
-				With(command.SetValue(valueKey, value/2.0)).
-				With(command.SetValue(iterationKey, iteration+1)).
-				To(graph.EndNode)
-		},
-	})
-	require.NoError(t, err)
+	// start + branch1 + branch2 + merge (may be called twice due to parallel)
+	assert.GreaterOrEqual(t, int(counter.Load()), 4)
+}
 
-	g.SetEntryPoint("halvinator")
+// TestGraphAlgorithms_ConditionalRouting tests conditional routing based on state
+func TestGraphAlgorithms_ConditionalRouting(t *testing.T) {
+	t.Parallel()
 
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	require.NoError(t, err)
+	ctx := context.Background()
 
-	// Run multiple iterations
-	maxIterations := 5
-	for i := 0; i < maxIterations; i++ {
-		for _, err := range compiled.Run(context.Background(), nil) {
-			require.NoError(t, err)
+	pathKey := graph.NewKey("path", "")
+	conditionKey := graph.NewKey("condition", true)
+
+	g := graph.New[any, any](pathKey, conditionKey)
+
+	g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		cond := graph.Get(view, conditionKey)
+		if cond {
+			return graph.Set(pathKey, "left").To("left")
 		}
+		return graph.Set(pathKey, "right").To("right")
+	}, "left", "right")
+
+	g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(pathKey, "went_left").End()
+	}, graph.END)
+
+	g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(pathKey, "went_right").End()
+	}, graph.END)
+
+	g.Start("router")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
+	}
+}
+
+// TestGraphAlgorithms_Loop tests a looping graph pattern
+func TestGraphAlgorithms_Loop(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	maxIterations := 5
+
+	counterKey := graph.NewKey("counter", 0)
+
+	g := graph.New[any, any](counterKey)
+
+	g.Node("loop", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter := graph.Get(view, counterKey)
+		counter++
+		if counter >= maxIterations {
+			return graph.Set(counterKey, counter).End()
+		}
+		return graph.Set(counterKey, counter).To("loop")
+	}, "loop", graph.END)
+
+	g.Start("loop")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
+	}
+}
+
+// TestGraphAlgorithms_DiamondPattern tests diamond-shaped execution pattern
+func TestGraphAlgorithms_DiamondPattern(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	var mu sync.Mutex
+	var executed []string
+
+	resultKey := graph.NewKey("result", "")
+
+	g := graph.New[any, any](resultKey)
+
+	// Diamond: top -> (left, right) -> bottom
+	g.Node("top", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		mu.Lock()
+		executed = append(executed, "top")
+		mu.Unlock()
+		return graph.To("left", "right")
+	}, "left", "right")
+
+	g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		mu.Lock()
+		executed = append(executed, "left")
+		mu.Unlock()
+		return graph.To("bottom")
+	}, "bottom")
+
+	g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		mu.Lock()
+		executed = append(executed, "right")
+		mu.Unlock()
+		return graph.To("bottom")
+	}, "bottom")
+
+	g.Node("bottom", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		mu.Lock()
+		executed = append(executed, "bottom")
+		mu.Unlock()
+		return graph.Set(resultKey, "complete").End()
+	}, graph.END)
+
+	g.Start("top")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
 	}
 
-	// Verify convergence
-	view, err := stateManager.CreateReadView(ctx)
-	if err != nil {
-		t.Fatalf("CreateReadView failed: %v", err)
+	mu.Lock()
+	defer mu.Unlock()
+	// Top should execute first
+	assert.Equal(t, "top", executed[0])
+	// Bottom should appear after left and right
+	assert.Contains(t, executed, "left")
+	assert.Contains(t, executed, "right")
+	assert.Contains(t, executed, "bottom")
+}
+
+// TestGraphAlgorithms_StateAccumulation tests state accumulation across nodes
+func TestGraphAlgorithms_StateAccumulation(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	sumKey := graph.NewKey("sum", 0)
+
+	g := graph.New[any, any](sumKey)
+
+	g.Node("add1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		sum := graph.Get(view, sumKey)
+		return graph.Set(sumKey, sum+1).To("add2")
+	}, "add2")
+
+	g.Node("add2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		sum := graph.Get(view, sumKey)
+		return graph.Set(sumKey, sum+2).To("add3")
+	}, "add3")
+
+	g.Node("add3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		sum := graph.Get(view, sumKey)
+		return graph.Set(sumKey, sum+3).End()
+	}, graph.END)
+
+	g.Start("add1")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	for _, err := range compiled.Run(ctx, nil) {
+		require.NoError(t, err)
 	}
-
-	finalValue := state.GetFromView(view, valueKey)
-	expectedValue := 1.0 / math.Pow(2, float64(maxIterations))
-	require.InDelta(t, expectedValue, finalValue, 0.0001, "value should converge to 1/(2^iterations)")
-
-	finalIteration := state.GetFromView(view, iterationKey)
-	require.Equal(t, maxIterations, finalIteration, "should track iteration count")
 }

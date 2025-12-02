@@ -60,6 +60,7 @@ import (
     "fmt"
     "log"
     "os"
+    "strings"
 
     "github.com/hupe1980/agentmesh/pkg/agent"
     "github.com/hupe1980/agentmesh/pkg/graph"
@@ -68,25 +69,33 @@ import (
     "github.com/hupe1980/agentmesh/pkg/tool"
 )
 
+// WeatherArgs defines the JSON schema for the weather tool.
+type WeatherArgs struct {
+    Location string `json:"location" jsonschema:"description=The city to get weather for"`
+}
+
 func main() {
     ctx := context.Background()
 
-    // Create OpenAI model
-    model, err := openai.NewChatModel(os.Getenv("OPENAI_API_KEY"),
-        openai.WithModel("gpt-4o"),
+    // Validate API key
+    if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
+        log.Fatal("OPENAI_API_KEY environment variable is required")
+    }
+
+    // Create OpenAI model (uses OPENAI_API_KEY env var)
+    model := openai.NewModel()
+
+    // Define a tool with typed arguments
+    weatherTool, err := tool.NewFuncTool(
+        "get_weather",
+        "Get current weather for a location",
+        func(ctx context.Context, args WeatherArgs) (string, error) {
+            return fmt.Sprintf("Weather in %s: Sunny, 72°F", args.Location), nil
+        },
     )
     if err != nil {
         log.Fatal(err)
     }
-
-    // Define a simple tool
-    weatherTool := tool.NewFunction(
-        "get_weather",
-        "Get current weather for a location",
-        func(ctx context.Context, location string) (string, error) {
-            return fmt.Sprintf("Weather in %s: Sunny, 72°F", location), nil
-        },
-    )
 
     // Create ReAct agent
     reactAgent, err := agent.NewReActAgent(model,
@@ -146,7 +155,7 @@ The weather in San Francisco is currently sunny with a temperature of 72°F.
 
 ## 🎨 Examples
 
-Explore **18 comprehensive examples** in the [`examples/`](examples/) directory:
+Explore **31 comprehensive examples** in the [`examples/`](examples/) directory:
 
 | Example | Description |
 |---------|-------------|
@@ -189,26 +198,24 @@ AgentMesh uses a **layered architecture** with clean separation of concerns:
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│           Compiled Graph (Coordinator)                      │
-│  • Immutable topology • Run() iterator API                  │
-└──────────┬──────────────────────────────┬──────────────────┘
-           │                              │
-           ▼                              ▼
-  ┌─────────────────┐           ┌─────────────────┐
-  │  StateManager   │           │ PregelExecutor  │
-  │  (pkg/state)    │           │  (pkg/pregel)   │
-  │                 │           │                 │
-  │ • Channels      │◀─────────▶│ • BSP Runtime   │
-  │ • Versioning    │           │ • Scheduling    │
-  │ • Checkpoints   │           │ • MessageBus    │
-  └─────────────────┘           └─────────────────┘
+│           Graph Orchestration (pkg/graph)                   │
+│  • Workflow construction • State management • Validation    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│           Execution Engine (pkg/pregel)                     │
+│                                                             │
+│  • BSP Runtime      • Worker pools      • MessageBus        │
+│  • Superstep sync   • Sharded frontier  • Backpressure      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Key Components:**
-- **Graph** - Define nodes, edges, and execution flow
-- **StateManager** - Lock-free channel-based state with versioning
-- **PregelExecutor** - Bulk-synchronous parallel execution engine
-- **Compiled** - Immutable, validated, executable graph
+- **Graph** - Define nodes, edges, and execution flow with `NodeFunc`
+- **BSPState** - Copy-on-write state with typed `Key[T]` and `ListKey[T]`
+- **Pregel Runtime** - Bulk-synchronous parallel execution with sharded message passing
+- **Checkpointer** - State persistence with encryption, signing, and two-phase commit
 - **Agents** - High-level abstractions (ReAct, Supervisor, RAG)
 
 [Learn more about the architecture →](docs/architecture.md)
@@ -233,7 +240,7 @@ go test ./... -bench=. -benchmem
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see our [contribution guidelines](CONTRIBUTING.md).
+Contributions are welcome!
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)

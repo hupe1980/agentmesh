@@ -23,103 +23,85 @@ sidebar:
     url: "#execution-flow"
   - title: Messages
     url: "#messages"
-  - title: Channels
-    url: "#channels"
   - title: Error handling
     url: "#error-handling"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh now provides full compile-time type safety through generic compilation. Use `builder.Compile()` for the common case, or `graph.Compile[I, O](builder)` for custom input/output types. See [GENERICS.md](https://github.com/hupe1980/agentmesh/blob/main/GENERICS.md) for details.
+> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for custom graphs or `graph.NewMessageGraph()` for conversational agents.
 
 ## Runnable interface {#runnable-interface}
 
-The `Runnable[I, O]` interface is the core abstraction for executable components in AgentMesh. All agents, graphs, and tools implement this interface, enabling type-safe composition and testability.
+The graph `Run` method is the core abstraction for executable workflows in AgentMesh. All compiled graphs implement the iterator-based execution pattern.
 
-### Interface definition
+### Interface pattern
 
 ```go
-type Runnable[I, O any] interface {
-    Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
-}
+// Compiled graphs return an iterator of outputs
+func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
 ```
 
 **Type parameters:**
-- `I` - Input type (e.g., `[]message.Message`, `map[string]any`, `string`)
-- `O` - Output type (e.g., `state.ExecutionResult`, `message.Message`)
+- `I` - Input type (e.g., `[]message.Message`, `string`, custom struct)
+- `O` - Output type (e.g., `message.Message`, custom result type)
 
 ### Common type aliases
 
-For convenience, AgentMesh provides type aliases for common use cases:
+For conversational agents, AgentMesh provides:
 
 ```go
-// MessageRunnable processes message sequences (most common for agents)
-// Defined in pkg/agent/doc.go
-type MessageRunnable = graph.Runnable[[]message.Message, message.Message]
+// MessageGraph is a graph that processes message sequences
+// Defined in pkg/graph/graph.go
+type MessageGraph = Graph[[]message.Message, message.Message]
 ```
-
-**Why MessageRunnable?**
-- Simplifies agent constructor signatures  
-- Makes agent composition more readable
-- Consistent API across all agent types (ReAct, Supervisor, RAG)
 
 ### Usage example
 
-All agent constructors return `agent.MessageRunnable`:
+All agent constructors return `*graph.MessageGraph`:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/agent"
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+)
 
-// Agent constructors return agent.MessageRunnable
-agent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
+// Agent constructors return *graph.MessageGraph
+reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
+if err != nil {
+    return err
+}
 
-// Execute with type-safe interface
-for result, err := range agent.Run(ctx, messages) {
+// Execute with iterator pattern
+for msg, err := range reactAgent.Run(ctx, messages) {
     if err != nil {
         return err
     }
-    // Process result
+    fmt.Println(msg.Text())
 }
+
+// Or get just the final result
+lastMsg, err := graph.Last(reactAgent.Run(ctx, messages))
 ```
 
 ### Benefits
 
 **Compile-time type safety:**
 ```go
-// ✅ Type-safe: MessageRunnable accepts []message.Message
-agent.Run(ctx, messages)
+// ✅ Type-safe: MessageGraph accepts []message.Message
+reactAgent.Run(ctx, messages)
 
 // ❌ Compile error: won't accept wrong input type
-agent.Run(ctx, "invalid input")
+reactAgent.Run(ctx, "invalid input")
 ```
 
-**Easy mocking for tests:**
+**Easy composition:**
 ```go
-type mockAgent struct {
-    responses []state.ExecutionResult
-}
-
-func (m *mockAgent) Run(ctx context.Context, input []message.Message, opts ...RunOption) iter.Seq2[state.ExecutionResult, error] {
-    return func(yield func(state.ExecutionResult, error) bool) {
-        for _, resp := range m.responses {
-            if !yield(resp, nil) {
-                return
-            }
-        }
-    }
-}
-
-// Use mock in tests
-var agent graph.MessageRunnable = &mockAgent{...}
-```
-
-**Composition:**
-```go
-// All components share the same interface
-var agent1 graph.MessageRunnable = agent.NewReActAgent(model)
-var agent2 graph.MessageRunnable = agent.NewSupervisorAgent(model)
-compiled, _ := builder.Compile()
-
-// Swap implementations without changing client code
+// All agents are *graph.MessageGraph - compose freely
+worker1, _ := agent.NewReActAgent(model)
+worker2, _ := agent.NewReActAgent(model)
+supervisor, _ := agent.NewSupervisorAgent(model,
+    agent.WithWorker("researcher", "Does research", worker1),
+    agent.WithWorker("writer", "Writes content", worker2),
+)
 ```
 
 ---
@@ -132,8 +114,8 @@ AgentMesh uses a **directed graph** model where computation flows through connec
 
 A graph consists of:
 - **Nodes** - Computational units that process data
-- **Edges** - Connections that define execution order
-- **State** - Shared context accessible across all nodes
+- **Edges** - Connections that define execution order (declared as node targets)
+- **State** - Shared context accessible via typed keys
 
 <div class="mermaid">
 flowchart TD
@@ -161,116 +143,99 @@ flowchart TD
     save -.-> S3
 </div>
 
+### Building a graph
+
 ```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/state"
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Define typed state keys
+var (
+    RawDataKey       = graph.NewKey[string]("raw_data", "")
+    ProcessedDataKey = graph.NewKey[string]("processed_data", "")
+    StatusKey        = graph.NewKey[string]("status", "pending")
 )
 
-builder := state.NewManagerBuilder()
-stateManager := builder.Build()
-g, err := graph.NewGraph(stateManager)
+// Create graph with state keys
+g := graph.New[string, string](RawDataKey, ProcessedDataKey, StatusKey)
+
+// Add nodes with fluent API - targets are declared inline
+g.Node("fetch", fetchDataFunc, "process").
+  Node("process", processDataFunc, "save").
+  Node("save", saveDataFunc, graph.END).
+  Start("fetch")
+
+// Compile into executable graph
+compiled, err := g.Build()
 if err != nil {
     return err
 }
 
-// Add nodes with tuple-based routing
-g.AddNode(&graph.BaseNode{
-    NodeName:        "fetch",
-    DeclaredTargets: []string{"process"},
-    Fn:              fetchDataFunc,
-})
-
-g.AddNode(&graph.BaseNode{
-    NodeName:        "process",
-    DeclaredTargets: []string{"save"},
-    Fn:              processDataFunc,
-})
-
-g.AddNode(&graph.BaseNode{
-    NodeName:        "save",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn:              saveDataFunc,
-})
-
-// Set entry point
-g.SetEntryPoint("fetch")
-
-// Compile into executable graph
-compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-if err != nil {
-    return err
+// Run the graph
+for output, err := range compiled.Run(ctx, "input data") {
+    if err != nil {
+        return err
+    }
+    fmt.Println(output)
 }
 ```
 
 ### Node functions
 
-Nodes are functions that receive a read-only state view and return updates:
+Nodes receive a read-only view of state and return a Command with updates and next targets:
 
 ```go
-// Define typed keys
-var (
-    RawDataKey       = state.NewKey("raw_data", "")
-    ProcessedDataKey = state.NewKey("processed_data", "")
-    StatusKey        = state.NewKey("status", "")
-    MessagesKey      = agent.MessagesKey  // From agent package
-)
+// NodeFunc signature
+type NodeFunc func(ctx context.Context, view View) (*Command, error)
 
-func processDataFunc(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+// Example node function
+func processDataFunc(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Read from state using typed keys
-    data := state.GetFromView(view, RawDataKey)
-    messages := state.GetFromView(view, MessagesKey)
+    rawData := graph.Get(view, RawDataKey)
     
-    // Process...
-    processed := transform(data)
+    // Process the data
+    processed := strings.ToUpper(rawData)
     
-    // Use Command pattern for fluent, type-safe updates
-    return command.New().
-        Set(ProcessedDataKey, processed).
-        Set(StatusKey, "complete").
-        Set(message.MessagesKey, []message.Message{
-            message.NewAIMessageFromText("Processing complete"),
-        }).
-        To("save")
+    // Return updates and next target using fluent API
+    return graph.Set(ProcessedDataKey, processed).
+        Set(StatusKey, "processed").
+        To("save"), nil
 }
 ```
 
 ### Special nodes
 
-- **START** - Entry point (automatically created)
-- **END** - Terminal node (marks completion)
+- **START** - Entry point (set via `Start()`)
+- **END** - Terminal node constant (`graph.END`)
 
 ### Conditional routing
 
 Dynamically route to different nodes based on state:
 
 ```go
-g.AddNode(&graph.BaseNode{
-    NodeName:        "classifier",
-    DeclaredTargets: []string{"urgent_handler", "normal_handler", "default_handler"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        category := state.GetFromView(view, CategoryKey)
-        var nextNode string
-        switch category {
-        case "urgent":
-            nextNode = "urgent_handler"
-        case "normal":
-            nextNode = "normal_handler"
-        default:
-            nextNode = "default_handler"
-        }
-        // Use Command pattern for routing
-        return command.New().To(nextNode)
-    },
-})
+var CategoryKey = graph.NewKey[string]("category", "")
+
+func classifierFunc(ctx context.Context, view graph.View) (*graph.Command, error) {
+    category := graph.Get(view, CategoryKey)
+    
+    switch category {
+    case "urgent":
+        return graph.To("urgent_handler"), nil
+    case "normal":
+        return graph.To("normal_handler"), nil
+    default:
+        return graph.To("default_handler"), nil
+    }
+}
+
+// Node declares all possible targets
+g.Node("classifier", classifierFunc, "urgent_handler", "normal_handler", "default_handler")
 ```
 
 ---
 
 ## State management {#state-management}
 
-State is shared across all nodes and flows through the graph using **channels**.
+State is shared across all nodes using **typed keys** for compile-time safety.
 
 <div class="mermaid">
 flowchart LR
@@ -280,11 +245,11 @@ flowchart LR
         N3[Node C]
     end
     
-    subgraph State["State Manager"]
+    subgraph State["State Keys"]
         direction TB
-        C1["📬 messages\n(append)"]
-        C2["💾 counter\n(replace)"]
-        C3["🏷️ status\n(replace)"]
+        C1["📬 messages\n(ListKey)"]
+        C2["💾 counter\n(Key)"]
+        C3["🏷️ status\n(Key)"]
     end
     
     N1 -->|"read"| State
@@ -299,91 +264,73 @@ flowchart LR
     style C3 fill:#10b981,stroke:#34d399,color:#fff
 </div>
 
-### Reading state
-
-Nodes receive immutable state views with typed key access:
+### Defining state keys
 
 ```go
-// Define typed keys
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Key[T] - single value, overwrites on update
 var (
-    CounterKey  = state.NewKey("counter", 0)
-    StatusKey   = state.NewKey("status", "")
-    MessagesKey = agent.MessagesKey  // From agent package
+    CounterKey = graph.NewKey[int]("counter", 0)           // with default
+    StatusKey  = graph.NewKey[string]("status", "pending")
 )
 
-func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Read values using typed keys
-    counter := state.GetFromView(view, CounterKey)
-    status := state.GetFromView(view, StatusKey)
-    messages := state.GetFromView(view, MessagesKey)
+// ListKey[T] - append-only list
+var MessagesKey = graph.NewListKey[message.Message]("messages")
+```
+
+### Reading state
+
+Nodes receive immutable state views with typed access:
+
+```go
+func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
+    // Type-safe reads - returns the correct type
+    counter := graph.Get(view, CounterKey)      // int
+    status := graph.Get(view, StatusKey)        // string
+    messages := graph.GetList(view, MessagesKey) // []message.Message
     
-    // Use Command pattern for routing
-    return command.New().To("next_node")
+    return graph.To("next_node"), nil
 }
 ```
 
 ### Updating state
 
-**Type-safe updates with direct map creation**
+Use the fluent Command builder for type-safe updates:
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/state"
-
-// Define typed keys
-var (
-    CounterKey = state.NewKey[int]("counter", 0)
-    StatusKey  = state.NewKey[string]("status", "")
-)
-
-func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    counter := state.GetFromView(view, CounterKey)
+func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
+    counter := graph.Get(view, CounterKey)
     
-    // Use Command pattern for fluent, type-safe updates
-    return command.New().
-        Set(CounterKey, counter + 1).
+    // Fluent, type-safe updates
+    return graph.Set(CounterKey, counter + 1).
         Set(StatusKey, "processing").
-        Set(message.MessagesKey, []message.Message{
-            message.NewAIMessageFromText("Updated successfully"),
-        }).
-        To("next_node")
+        To("next_node"), nil
+}
+
+// For list keys, use Append
+func addMessageNode(ctx context.Context, view graph.View) (*graph.Command, error) {
+    newMsg := message.NewAIMessage(message.NewTextPart("Hello!"))
+    
+    return graph.Append(MessagesKey, newMsg).
+        To("next_node"), nil
 }
 ```
 
-> **Type Safety:** Typed keys with generics provide compile-time type checking. All state updates use this direct pattern. See [State Management](/state-management/#type-safe-updates) for details.
+### MessageGraph convenience
 
-### State initialization
-
-Create a state manager and register typed keys:
+For conversational agents, use `NewMessageGraph()` which automatically includes the messages key:
 
 ```go
-// Create state manager
-builder := state.NewManagerBuilder()
+// Creates a graph with MessagesKey pre-registered
+g := graph.NewMessageGraph()
 
-// Register typed keys
-statusKey := state.NewKey("status", "")
-counterKey := state.NewKey("counter", 0)
-state.RegisterKey(builder, statusKey)
-state.RegisterKey(builder, counterKey)
-
-mgr := builder.Build()
-
-state.Register(mgr, statusKey)
-state.Register(mgr, counterKey)
-
-// Register message key for agents
-agent.RegisterMessagesKey(mgr)
-
-// Create graph with the manager
-g, err := graph.NewGraph(mgr)
-if err != nil {
-    return err
-}
-
-// Build graph using builder
-builder.AddNodeFunc("process", processFunc)
-// ... add edges ...
-
-compiled, err := builder.Compile()
+// MessagesKey is available
+g.Node("chat", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    messages := graph.GetList(view, graph.MessagesKey)
+    // ... process messages
+    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+}, graph.END)
 ```
 
 ---
@@ -404,7 +351,7 @@ Execution proceeds in discrete **supersteps**:
 <div class="mermaid">
 sequenceDiagram
     participant E as Executor
-    participant S as State Manager
+    participant S as State
     participant N1 as Node A
     participant N2 as Node B
     participant N3 as Node C
@@ -438,28 +385,22 @@ sequenceDiagram
 
 ### Parallel execution
 
-Nodes declare their targets and can fan out to multiple parallel tasks:
+Nodes can fan out to multiple parallel tasks:
 
 ```go
-// Entry node that fans out to three parallel tasks
-g.AddNode(&graph.BaseNode{
-    NodeName:        "start",
-    DeclaredTargets: []string{"fetch_a", "fetch_b", "fetch_c"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Fan-out using Command pattern
-        return command.New().To("fetch_a", "fetch_b", "fetch_c")
-    },
-})
+g := graph.New[string, string](ResultKey)
+
+// Entry node fans out to three parallel tasks
+g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.To("fetch_a", "fetch_b", "fetch_c"), nil
+}, "fetch_a", "fetch_b", "fetch_c")
 
 // Each fetch task routes to aggregator
-g.AddNode(&graph.BaseNode{
-    NodeName:        "fetch_a",
-    DeclaredTargets: []string{"aggregator"},
-    Fn:              fetchAFunc,
-})
-// fetch_b and fetch_c similar...
-
-g.SetEntryPoint("start")
+g.Node("fetch_a", fetchAFunc, "aggregator").
+  Node("fetch_b", fetchBFunc, "aggregator").
+  Node("fetch_c", fetchCFunc, "aggregator").
+  Node("aggregator", aggregateFunc, graph.END).
+  Start("start")
 ```
 
 ### Cycles and loops
@@ -468,61 +409,46 @@ Unlike DAG-based systems, AgentMesh supports **cycles** for iterative workflows:
 
 ```go
 var (
-    DraftKey    = state.NewKey("draft", "")
-    FeedbackKey = state.NewKey("feedback", "")
+    DraftKey    = graph.NewKey[string]("draft", "")
+    IterationKey = graph.NewKey[int]("iteration", 0)
 )
 
-builder.AddNodeFunc("writer", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    draft := generateDraft()
-    return map[string]any{"draft": draft}, nil
-})
-
-builder.AddNodeFunc("evaluator", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    draft := state.GetFromView(view, DraftKey)
+func writerFunc(ctx context.Context, view graph.View) (*graph.Command, error) {
+    iteration := graph.Get(view, IterationKey)
+    draft := generateDraft(iteration)
     
-    if isGoodEnough(draft) {
-        // Route to END with Command pattern
-        return command.New().
-            Set(DoneKey, true).
-            To(graph.EndNode)
-    } else {
-        // Loop back to writer for refinement
-        return command.New().
-            Set(FeedbackKey, "improve clarity").
-            Set(DoneKey, false).
-            To("writer")
-    }
-})
+    return graph.Set(DraftKey, draft).
+        Set(IterationKey, iteration + 1).
+        To("evaluator"), nil
+}
 
-// Evaluator node with explicit routing using Command pattern
-g.AddNode(&graph.BaseNode{
-    NodeName:        "evaluator",
-    DeclaredTargets: []string{graph.EndNode, "writer"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        draft := state.GetFromView(view, DraftKey)
-        
-        if isGoodEnough(draft) {
-            return command.New().
-                Set(DoneKey, true).
-                To(graph.EndNode)
-        } else {
-            return command.New().
-                Set(FeedbackKey, "improve clarity").
-                Set(DoneKey, false).
-                To("writer")
-        }
-    },
-})
+func evaluatorFunc(ctx context.Context, view graph.View) (*graph.Command, error) {
+    draft := graph.Get(view, DraftKey)
+    iteration := graph.Get(view, IterationKey)
+    
+    if isGoodEnough(draft) || iteration >= 5 {
+        return graph.To(graph.END), nil
+    }
+    // Loop back for refinement
+    return graph.To("writer"), nil
+}
+
+g := graph.New[string, string](DraftKey, IterationKey)
+g.Node("writer", writerFunc, "evaluator").
+  Node("evaluator", evaluatorFunc, graph.END, "writer"). // declares both targets
+  Start("writer")
 ```
 
 ### Max iterations
 
-Prevent infinite loops:
+Prevent infinite loops with run options:
 
 ```go
-compiled, err := builder.Compile(
+for output, err := range compiled.Run(ctx, input, 
     graph.WithMaxIterations(10),
-)
+) {
+    // ...
+}
 ```
 
 ---
@@ -536,23 +462,32 @@ Messages represent conversation turns between users, AI, and tools.
 ```go
 import "github.com/hupe1980/agentmesh/pkg/message"
 
-// Human input
+// Human input (simple text)
 humanMsg := message.NewHumanMessageFromText("What's the weather?")
 
-// AI response
+// AI response (simple text)
 aiMsg := message.NewAIMessageFromText("It's sunny and 72°F")
 
-// System prompt
+// System prompt (simple text)
 systemMsg := message.NewSystemMessageFromText("You are a helpful assistant")
 
-// Tool call (Arguments is a JSON string, not a map)
+// For multi-part messages, use Parts slice
+multiPart := message.NewHumanMessage([]message.Part{
+    message.TextPart{Text: "Describe this image:"},
+    message.FilePart{MimeType: "image/png", File: message.FileURI{URI: imageURL}},
+})
+
+// Tool call
 toolCall := message.ToolCall{
     ID:        "call_123",
     Name:      "get_weather",
     Type:      "function",
-    Arguments: `{"location":"Paris"}`,  // JSON string for performance
+    Arguments: `{"location":"Paris"}`,  // JSON string
 }
-aiWithTool := message.NewAIMessage(message.NewTextPart("Let me check"), toolCall)
+aiWithTool := message.NewAIMessage(
+    []message.Part{message.TextPart{Text: "Let me check"}},
+    message.WithToolCalls(toolCall),
+)
 
 // Tool result
 toolMsg := message.NewToolMessage("call_123", "Sunny, 22°C")
@@ -563,142 +498,56 @@ toolMsg := message.NewToolMessage("call_123", "Sunny, 22°C")
 Messages can contain multiple parts:
 
 ```go
-aiMsg := message.NewAIMessage(
-    message.NewTextPart("Here's the weather"),
-    message.NewImagePart(imageURL),
-)
+aiMsg := message.NewAIMessage([]message.Part{
+    message.TextPart{Text: "Here's the weather"},
+    message.FilePart{
+        MimeType: "image/png",
+        File:     message.FileURI{URI: imageURL},
+    },
+})
 
 // Access parts
 for _, part := range aiMsg.Parts() {
     switch p := part.(type) {
     case message.TextPart:
         fmt.Println("Text:", p.Text)
-    case message.ImagePart:
-        fmt.Println("Image:", p.URL)
+    case message.FilePart:
+        fmt.Println("File:", p.Name, p.MimeType)
     }
 }
 ```
-
----
-
-## Channels {#channels}
-
-Channels control how state updates are applied.
-
-### Channel Interface Design
-
-AgentMesh uses a three-tier interface hierarchy for channels:
-
-1. **`state.Channel`** - User-facing interface with safe operations:
-   - `Name()` - Get channel identifier
-   - `Read(ctx)` - Read current value
-   - `Write(ctx, value)` - Write using channel-specific semantics
-
-2. **`state.VersionedChannel`** - Internal runtime operations (extends Channel):
-   - `Version()` - Cache invalidation tracking
-   - `Snapshot(ctx)` - Point-in-time state capture
-   - `Clone()` - Deep copy for checkpointing
-
-3. **`state.ResettableChannel`** - Admin operations (extends Channel):
-   - `Reset(ctx)` - **Dangerous**: Clear state (use only between graph runs)
-
-**For users**: Interact only with the base `Channel` interface (Read/Write). The runtime handles internal operations automatically.
-
-### TopicChannel
-
-Accumulates values in a list (append-only):
-
-```go
-state := graph.NewStateManager(100)
-state.AddChannel(state.NewTopicChannel("messages", 100))
-
-// Updates append to the list
-result := &graph.NodeResult{
-    Updates: map[string]any{
-        "messages": []message.Message{newMessage}, // Appends to topic channel
-    },
-}
-```
-
-**Use cases**: Conversation history, event logs, audit trails
-
-> **Parallel Writes**: When multiple nodes write to the same TopicChannel in parallel (within the same superstep), all writes are preserved and appended in order. This ensures no data loss in concurrent workflows.
-
-### LastValueChannel
-
-Stores only the most recent value (overwrite):
-
-```go
-state.AddChannel(state.NewLastValueChannel("status"))
-
-// Updates overwrite previous value
-return map[string]any{
-    "status": "complete", // Overwrites previous status
-}, nil
-```
-
-**Use cases**: Current state, flags, counters
-
-### BinaryOpChannel
-
-Merges values using custom operators:
-
-```go
-// Sum channel for counters
-state.AddChannel(state.NewBinaryOpChannel("total", func(a, b any) any {
-    return a.(int) + b.(int)
-}))
-
-// Max channel for tracking peaks
-state.AddChannel(state.NewBinaryOpChannel("max_value", func(a, b any) any {
-    if a.(int) > b.(int) {
-        return a
-    }
-    return b
-}))
-
-// Updates are combined
-return map[string]any{
-    "total": 10,      // Will be summed with existing value
-    "max_value": 100, // Will keep maximum value
-}, nil
-```
-
-**Use cases**: Aggregations, statistics, accumulations
 
 ---
 
 ## Error handling {#error-handling}
 
-AgentMesh uses **sentinel errors** with `errors.Is()` support for programmatic error checking. All graph package errors follow the pattern `"graph: <category>"`.
+AgentMesh uses **sentinel errors** with `errors.Is()` support for programmatic error checking.
 
 ### Sentinel errors
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Check for specific error types
 for output, err := range compiled.Run(ctx, input) {
     if err != nil {
         switch {
-        case errors.Is(err, graph.ErrRetryExceeded):
-            // Handle retry exhaustion
-            log.Warn("Retries exhausted, falling back...")
+        case errors.Is(err, graph.ErrNotBuilt):
+            log.Error("Graph not compiled - call Build() first")
             
-        case errors.Is(err, graph.ErrNodeExecution):
-            // Handle node execution failure
-            var nodeErr *graph.NodeExecutionError
-            if errors.As(err, &nodeErr) {
-                log.Error("Node failed", "node", nodeErr.NodeName)
-            }
+        case errors.Is(err, graph.ErrAlreadyBuilt):
+            log.Error("Graph already compiled")
             
-        case errors.Is(err, graph.ErrHumanInterrupt):
-            // Handle human-in-the-loop pause
-            return handleHumanInterrupt(ctx, err)
+        case errors.Is(err, graph.ErrNoEntryPoint):
+            log.Error("No entry point set - call Start()")
             
-        case errors.Is(err, graph.ErrValidation):
-            // Handle graph validation errors
-            log.Error("Graph validation failed", "error", err)
+        case errors.Is(err, graph.ErrNodeNotFound):
+            log.Error("Referenced node doesn't exist")
+            
+        case errors.Is(err, graph.ErrDuplicateNode):
+            log.Error("Node name already used")
+            
+        case errors.Is(err, graph.ErrDuplicateKey):
+            log.Error("State key name already registered")
             
         default:
             return err
@@ -711,33 +560,31 @@ for output, err := range compiled.Run(ctx, input) {
 
 | Error | Description |
 |-------|-------------|
-| `ErrHumanInterrupt` | Node requires human input before continuing |
-| `ErrNodeExecution` | Node execution failed (wraps underlying error) |
-| `ErrApprovalRequired` | Node requires human approval |
-| `ErrRetryExceeded` | Max retry attempts exceeded |
-| `ErrStateApply` | State updates could not be applied |
-| `ErrCheckpointLoad` | Checkpoint loading failed |
-| `ErrCheckpointSave` | Checkpoint saving failed |
+| `ErrNoEntryPoint` | No entry point defined (call `Start()`) |
 | `ErrNodeNotFound` | Node not found in graph |
-| `ErrExecutorNil` | Nil executor provided |
-| `ErrBuilderError` | Builder construction error |
-| `ErrRunIDRequired` | RunID required for checkpointing |
-| `ErrValidation` | Graph validation failed |
-| `ErrNamespaceViolation` | Namespace access violation |
-| `ErrSubgraphExecution` | Subgraph execution failed |
+| `ErrDuplicateNode` | Duplicate node name |
+| `ErrDuplicateKey` | Duplicate state key name |
+| `ErrInvalidTarget` | Invalid target node reference |
+| `ErrNotBuilt` | Graph not built (call `Build()` first) |
+| `ErrAlreadyBuilt` | Graph already built |
 
-### NodeExecutionError
+### InterruptError
 
-The `NodeExecutionError` type provides structured information about node failures:
+For human-in-the-loop workflows:
 
 ```go
-var nodeErr *graph.NodeExecutionError
-if errors.As(err, &nodeErr) {
-    fmt.Printf("Node %s failed: %v\n", nodeErr.NodeName, nodeErr.Err)
+var interruptErr *graph.InterruptError
+if errors.As(err, &interruptErr) {
+    fmt.Printf("Interrupted at node %s (before=%v)\n", 
+        interruptErr.NodeName, interruptErr.Before)
     
-    // Access the underlying error
-    if errors.Is(nodeErr.Err, myCustomError) {
-        // Handle specific underlying error
+    // Resume with approval
+    for output, err := range compiled.Run(ctx, input,
+        graph.WithApproval(interruptErr.NodeName, &graph.ApprovalResponse{
+            Decision: graph.ApprovalApproved,
+        }),
+    ) {
+        // ...
     }
 }
 ```
@@ -750,6 +597,5 @@ if errors.As(err, &nodeErr) {
 - **[Tools](/tools/)** - Create function tools for agent capabilities
 - **[Checkpointing](/checkpointing/)** - State persistence and time travel debugging
 - **[Streaming](/streaming/)** - Real-time execution events
-- **[Callbacks](/callbacks/)** - Intercept model and tool calls
 - **[Observability](/observability/)** - OpenTelemetry metrics and tracing
 - **[Architecture](/architecture/)** - Understand Pregel BSP internals

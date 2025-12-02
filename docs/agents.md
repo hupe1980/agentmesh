@@ -56,15 +56,15 @@ import (
 searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
 calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
 
-// Create ReAct agent (returns graph.MessageRunnable)
-agent, err := agent.NewReActAgent(
+// Create ReAct agent (returns *Compiled)
+reactAgent, err := agent.NewReActAgent(
     openai.NewModel(),
     agent.WithTools(searchTool, calcTool),
     agent.WithMaxIterations(5),
 )
 
 // Execute and collect messages
-messages, err := agent.CollectMessages(agent.Run(ctx, messages))
+messages, err := graph.Collect(reactAgent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -113,20 +113,6 @@ flowchart LR
    - Extensible: custom executors (retry, caching) without modifying nodes
    - Efficient: Arguments stay as JSON strings (no extra conversions)
 
-**Under the hood:**
-
-```go
-// ReActAgent creates executors and nodes
-modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react_model"))
-toolExecutor := tool.NewParallelExecutor(toolRegistry)
-
-modelNode := agent.NewModelNode(modelExecutor,
-    agent.WithModelSystemPrompt(systemPrompt),
-    agent.WithModelTools(tools...))
-
-toolNode := agent.NewToolNode(toolExecutor)
-```
-
 ---
 
 ## Supervisor agent {#supervisor-agent}
@@ -173,7 +159,7 @@ supervisor, err := agent.NewSupervisorAgent(
 )
 
 // Execute and collect messages
-messages, err := agent.CollectMessages(supervisor.Run(ctx, []message.Message{
+messages, err := graph.Collect(supervisor.Run(ctx, []message.Message{
     message.NewHumanMessageFromText("What is the derivative of x^2 + 3x?"),
 }))
 if err != nil {
@@ -224,27 +210,12 @@ flowchart TB
     style User2 fill:#22c55e,stroke:#16a34a,color:#fff
 </div>
 
-**Execution flow:**
-
-1. **Supervisor receives query**: Analyzes the user's request
-2. **Routes to specialist**: Uses `HandoffToAgent` tool to delegate
-3. **Worker processes task**: Specialist agent handles the specific domain
-4. **Returns result**: Supervisor receives worker output and returns to user
-
 **Key benefits**:
 
 - 🎯 **Automatic routing**: Supervisor intelligently routes to the right specialist
 - 🔧 **Automatic tool creation**: Each worker gets a `handoff_to_<name>` tool
 - 🔄 **Fresh context**: Workers can receive only the task, not full conversation (configurable)
 - ♻️ **Retry logic**: Configurable retries for robust execution
-- ✨ **Clean API**: Functional options pattern for configuration
-
-### Use cases
-
-- **Customer support**: Route to billing, technical, or sales specialists
-- **Research teams**: Delegate to data analyst, researcher, or summarizer
-- **Code review**: Route to security, performance, or style reviewers
-- **Multi-domain Q&A**: Math, history, science specialists
 
 See `examples/supervisor_agent` for a complete demonstration.
 
@@ -271,18 +242,17 @@ retriever := langchaingo.NewRetrieverFromVectorStore(vectorStore, func(o *langch
 })
 
 // Create RAG agent
-compiled, err := agent.NewRAGAgent(
+ragAgent, err := agent.NewRAGAgent(
     openai.NewModel(),
     retriever,
     agent.WithRAGPromptTemplate(customTemplate),
 )
 
 // Execute and collect results
-events, err := graph.Collect(compiled.Run(ctx, messages))
+messages, err := graph.Collect(ragAgent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
-messages := graph.ExtractMessages(events)
 ```
 
 ### Configuration options
@@ -308,172 +278,122 @@ START → retrieve → generate → END
 
 ## Custom graphs {#custom-graphs}
 
-For complete control over workflow logic, build custom graphs using the graph builder:
+For complete control over workflow logic, build custom graphs using the graph API:
 
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/agent"
     "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
 )
 
-var MessagesKey = agent.MessagesKey  // From agent package
+// Define typed keys
+var CategoryKey = graph.NewKey[string]("category", "")
 
-builder := graph.NewBuilder()
+// Create message graph for agent workflows
+g := graph.NewMessageGraph(CategoryKey)
 
-// Add nodes
-builder.AddNodeFunc("classify", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    // Classify the user's intent
-    msgs := state.GetFromView(view, MessagesKey)
-    category := classifyIntent(msgs)
+// Add nodes using fluent API
+g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    messages := graph.GetList(view, graph.MessagesKey)
+    category := classifyIntent(messages)
     
-    return &graph.NodeResult{
-        Updates: map[string]any{"category": category},
-    }, nil
-})
+    if category == "support" {
+        return graph.Set(CategoryKey, category).To("handle_support"), nil
+    }
+    return graph.Set(CategoryKey, category).To("handle_sales"), nil
+}, "handle_support", "handle_sales")
 
-builder.AddNodeFunc("handle_support", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    // Handle support queries
-    response := message.NewAIMessage(message.NewTextPart("Support response..."))
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            agent.MessagesKey.Name(): []message.Message{response},
-        },
-    }, nil
-})
+g.Node("handle_support", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    response := message.NewAIMessageFromText("Support response...")
+    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+}, graph.END)
 
-builder.AddNodeFunc("handle_sales", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    // Handle sales queries
-    response := message.NewAIMessage(message.NewTextPart("Sales response..."))
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            agent.MessagesKey.Name(): []message.Message{response},
-        },
-    }, nil
-})
+g.Node("handle_sales", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    response := message.NewAIMessageFromText("Sales response...")
+    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+}, graph.END)
 
-// Classifier node uses Command pattern for routing
-g.AddNode(&graph.BaseNode{
-    NodeName:        "classify",
-    DeclaredTargets: []string{"handle_support", "handle_sales"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Classify the query...
-        category := "support"  // or "sales"
-        
-        cmd := command.New().With(command.SetValue(categoryKey, category))
-        
-        if category == "support" {
-            return cmd.To("handle_support")
-        } else {
-            return cmd.To("handle_sales")
-        }
-    },
-})
-
-g.SetEntryPoint("classify")
+g.Start("classify")
 
 // Compile and execute
-compiled, err := builder.Compile()
-messages, err := agent.CollectMessages(compiled.Run(ctx, messages))
-if err != nil {
-    log.Fatal(err)
+compiled, _ := g.Build()
+
+for result := range compiled.Run(ctx, messages) {
+    // Process results
 }
 ```
 
 ### Node functions
 
-Nodes receive a `ReadView` and return a `NodeResult`:
+Nodes receive a `View` and return a `Command`:
 
 ```go
-var (
-    KeyName     = state.NewKey("key", "")
-    MessagesKey = agent.MessagesKey  // From agent package
-)
-
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Read state with typed keys
-    previousValue := state.GetFromView(view, KeyName)
-    messages := state.GetFromView(view, MessagesKey)
+    previousValue := graph.Get(view, MyKey)
+    messages := graph.GetList(view, graph.MessagesKey)
     
     // Process...
     
-    // Return updates
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "key": newValue,
-            "counter": 1,  // Will be summed if using BinaryOpChannel
-            agent.MessagesKey.Name(): []message.Message{newMessage},
-        },
-    }, nil
-}
+    // Return updates and routing
+    return graph.Set(MyKey, newValue).
+        Append(graph.MessagesKey, newMessage).
+        To("next_node"), nil
+}, "next_node")
 ```
 
 ---
 
 ## Conditional routing {#conditional-routing}
 
-Direct execution flow dynamically using tuple returns:
+Direct execution flow dynamically using commands:
 
 ```go
-g.AddNode(&graph.BaseNode{
-    NodeName:        "router",
-    DeclaredTargets: []string{"approver", "rejector", "human_review", "default_handler"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        action := state.GetFromView(view, ActionKey)
-        var nextNode string
-        switch action {
-        case "approve":
-            nextNode = "approver"
-        case "reject":
-            nextNode = "rejector"
-        case "escalate":
-            nextNode = "human_review"
-        default:
-            nextNode = "default_handler"
-        }
-        return command.New().To(nextNode)
-    },
-})
+g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    action := graph.Get(view, ActionKey)
+    
+    switch action {
+    case "approve":
+        return graph.To("approver"), nil
+    case "reject":
+        return graph.To("rejector"), nil
+    case "escalate":
+        return graph.To("human_review"), nil
+    default:
+        return graph.To("default_handler"), nil
+    }
+}, "approver", "rejector", "human_review", "default_handler")
 ```
 
-Nodes can declare multiple targets for potential parallel execution:
+Nodes can route to multiple targets for parallel execution:
 
 ```go
-g.AddNode(&graph.BaseNode{
-    NodeName:        "fanout",
-    DeclaredTargets: []string{"analyst_a", "analyst_b", "analyst_c"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Use Command pattern for parallel execution
-        return command.New().To("analyst_a", "analyst_b", "analyst_c")
-    },
-})
+g.Node("fanout", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    // Route to all three analysts in parallel
+    return graph.To("analyst_a", "analyst_b", "analyst_c"), nil
+}, "analyst_a", "analyst_b", "analyst_c")
 ```
 
 ---
 
 ## Parallel execution {#parallel-execution}
 
-Nodes with declared targets can fan out to parallel execution:
+Nodes can fan out to parallel execution by routing to multiple targets:
 
 ```go
 // Entry node fans out to three concurrent tasks
-g.AddNode(&graph.BaseNode{
-    NodeName:        "start",
-    DeclaredTargets: []string{"fetch_data_a", "fetch_data_b", "fetch_data_c"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Use Command pattern for parallel execution
-        return command.New().To("fetch_data_a", "fetch_data_b", "fetch_data_c")
-    },
-})
+g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.To("fetch_data_a", "fetch_data_b", "fetch_data_c"), nil
+}, "fetch_data_a", "fetch_data_b", "fetch_data_c")
 
 // Each fetch task routes to aggregator
-g.AddNode(&graph.BaseNode{
-    NodeName:        "fetch_data_a",
-    DeclaredTargets: []string{"aggregator"},
-    Fn:              fetchAFunc,
-})
-// fetch_data_b and fetch_data_c similar...
+g.Node("fetch_data_a", fetchAFunc, "aggregator")
+g.Node("fetch_data_b", fetchBFunc, "aggregator")
+g.Node("fetch_data_c", fetchCFunc, "aggregator")
 
-g.SetEntryPoint("start")
+g.Node("aggregator", aggregateFunc, graph.END)
+
+g.Start("start")
 ```
 
 The aggregator waits for all incoming nodes to complete before executing.
@@ -486,25 +406,23 @@ Compose complex workflows from reusable graph components:
 
 ```go
 // Create a research subgraph
-researchGraph := createResearchGraph()
+researchSub := createResearchGraph()
+compiledResearch, _ := researchSub.Build()
 
-var MessagesKey = agent.MessagesKey  // From agent package
+// Create parent graph
+parent := graph.NewMessageGraph()
 
-// Embed in parent graph
-builder.AddNodeFunc("research", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    // Get current messages
-    msgs := state.GetFromView(view, MessagesKey)
-    
-    // Execute subgraph
-    messages, err := agent.CollectMessages(researchGraph.Run(ctx, msgs))
-    if err != nil {
-        return nil, err
-    }
-    
-    return &graph.NodeResult{
-        Messages: messages,
-    }, nil
-})
+// Embed subgraph as a node
+parent.Subgraph("research", compiledResearch, "synthesize")
+
+parent.Node("synthesize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    messages := graph.GetList(view, graph.MessagesKey)
+    // Synthesize research results...
+    return graph.Append(graph.MessagesKey, summary).To(graph.END), nil
+}, graph.END)
+
+parent.Start("research")
+compiled, _ := parent.Build()
 ```
 
 See `examples/subgraph` for a complete demonstration.

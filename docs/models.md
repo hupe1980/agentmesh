@@ -113,7 +113,7 @@ if caps.NativeReasoning {
     // Response.Reasoning will be populated
 }
 if caps.Vision {
-    // Can send image.ImagePart
+    // Can send message.FilePart with image MIME type
 }
 
 type Capabilities struct {
@@ -185,7 +185,7 @@ The adapter supports:
 - ✅ Streaming responses
 - ✅ Function calling via `BindTools()`
 - ✅ Parallel tool calls
-- ✅ Vision models (pass `message.ImagePart`)
+- ✅ Vision models (pass `message.FilePart` with image MIME type)
 
 ### Anthropic {#anthropic}
 
@@ -548,8 +548,8 @@ agent, _ := agent.NewReActAgent(routedModel, tools)
 Route simple queries to cheaper models and complex queries to premium models:
 
 ```go
-cheapModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
-premiumModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+cheapModel := openai.NewModel(openai.WithModel("gpt-4o-mini"))
+premiumModel := openai.NewModel(openai.WithModel("gpt-4o"))
 
 router := model.NewCostBasedRouter(cheapModel, premiumModel,
     model.WithComplexityThreshold(0.5), // 0.0-1.0 scale
@@ -570,8 +570,8 @@ The built-in `HeuristicEstimator` considers:
 Automatically route requests to models with required capabilities:
 
 ```go
-textModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
-visionModel, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+textModel := openai.NewModel(openai.WithModel("gpt-4o-mini"))
+visionModel := openai.NewModel(openai.WithModel("gpt-4o"))
 
 router := model.NewCapabilityRouter(
     model.WithCapabilityModel(textModel),
@@ -587,8 +587,8 @@ router := model.NewCapabilityRouter(
 Build resilient pipelines with circuit breaker pattern:
 
 ```go
-primary, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
-backup, _ := anthropic.NewChatModel(claudeKey, anthropic.WithModel("claude-3-5-sonnet"))
+primary := openai.NewModel(openai.WithModel("gpt-4o"))
+backup := anthropic.NewModel(anthropic.WithModel("claude-3-5-sonnet"))
 
 router := model.NewFallbackRouter(primary, backup,
     model.WithFailureThreshold(5),          // Open circuit after 5 failures
@@ -659,8 +659,8 @@ func main() {
     ctx := context.Background()
 
     // Create models
-    mini, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o-mini"))
-    full, _ := openai.NewChatModel(apiKey, openai.WithModel("gpt-4o"))
+    mini := openai.NewModel(openai.WithModel("gpt-4o-mini"))
+    full := openai.NewModel(openai.WithModel("gpt-4o"))
 
     // Build routing chain: cost → fallback → model
     costRouter := model.NewCostBasedRouter(mini, full,

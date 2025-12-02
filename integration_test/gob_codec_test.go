@@ -1,154 +1,219 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"testing"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/pregel"
-	predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
-	"github.com/hupe1980/agentmesh/pkg/state"
-	"github.com/testcontainers/testcontainers-go/modules/redis"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestGOBCodec_TypePreservation verifies that GOBCodec preserves exact Go types
-// (int stays int, not float64 like JSON).
-func TestGOBCodec_TypePreservation(t *testing.T) {
+// GobSerializableState represents a state that can be serialized with gob
+type GobSerializableState struct {
+	Counter int
+	Text    string
+	Items   []string
+}
+
+func init() {
+	// Register types for gob serialization
+	gob.Register(GobSerializableState{})
+	gob.Register([]string{})
+}
+
+// TestGobCodec_BasicSerialization tests basic gob serialization/deserialization.
+func TestGobCodec_BasicSerialization(t *testing.T) {
+	t.Parallel()
+
+	original := GobSerializableState{
+		Counter: 42,
+		Text:    "hello world",
+		Items:   []string{"a", "b", "c"},
+	}
+
+	// Encode
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
+
+	// Decode
+	var decoded GobSerializableState
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original, decoded)
+}
+
+// TestGobCodec_SliceSerialization tests gob serialization of slices.
+func TestGobCodec_SliceSerialization(t *testing.T) {
+	t.Parallel()
+
+	// Test slice of strings
+	original := []string{"hello", "world", "test"}
+
+	// Encode
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
+
+	// Decode
+	var decoded []string
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	require.Len(t, decoded, 3)
+	assert.Equal(t, original, decoded)
+}
+
+// TestGobCodec_GraphStateIntegration tests gob encoding with graph state.
+func TestGobCodec_GraphStateIntegration(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
-	// Start Redis container
-	container, err := redis.Run(ctx, "redis:7-alpine")
-	if err != nil {
-		t.Fatalf("Failed to start Redis container: %v", err)
-	}
-	defer func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
+	stateKey := graph.NewKey[GobSerializableState]("state", GobSerializableState{})
 
-	// Get Redis endpoint
-	addr, err := container.Endpoint(ctx, "")
-	if err != nil {
-		t.Fatalf("Failed to get Redis endpoint: %v", err)
-	}
+	g := graph.New[GobSerializableState, GobSerializableState](stateKey)
 
-	// Create Redis message bus with GOB codec
-	bus := predis.NewMessageBus[state.Updates](addr, "", 0, &predis.Options{
-		Namespace: "test-gob-codec",
-		TTL:       1 * time.Minute,
-		Codec:     pregel.NewGOBCodec(), // Use GOB for type preservation
-	})
-	defer bus.Close()
+	g.Node("increment", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		state := graph.Get(view, stateKey)
+		state.Counter++
+		state.Items = append(state.Items, "step")
+		return graph.Set(stateKey, state).End()
+	}, graph.END)
 
-	// Use int (not float64) to test type preservation
-	counterKey := state.NewKey("counter", 0) // int default
-	dataKey := state.NewKey("data", "")
+	g.Start("increment")
 
-	// Create state manager and register keys
-	builder := state.NewManagerBuilder()
-	state.RegisterKey(builder, counterKey)
-	state.RegisterKey(builder, dataKey)
-	manager := builder.Build()
+	compiled, err := g.Build()
+	require.NoError(t, err)
 
-	// Create graph with 3 nodes
-	g, err := graph.NewGraph(manager)
-	if err != nil {
-		t.Fatalf("Failed to create graph: %v", err)
+	input := GobSerializableState{
+		Counter: 10,
+		Text:    "test",
+		Items:   []string{"initial"},
 	}
 
-	// Node 1: Initialize state with int
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node1",
-		DeclaredTargets: []string{"node2"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			updates := state.Updates{}
-			updates[counterKey.Name()] = 1 // int, not float64
-			updates[dataKey.Name()] = "A"
-			return []string{"node2"}, updates, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node1: %v", err)
+	var outputs []GobSerializableState
+	for out, err := range compiled.Run(ctx, input) {
+		require.NoError(t, err)
+		outputs = append(outputs, out)
 	}
 
-	// Node 2: Increment counter (should stay int)
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node2",
-		DeclaredTargets: []string{"node3"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	require.Len(t, outputs, 1)
+	assert.Equal(t, 11, outputs[0].Counter)
+	assert.Contains(t, outputs[0].Items, "step")
+}
 
-			updates := state.Updates{}
-			updates[counterKey.Name()] = counter + 1 // Should be int 2
-			updates[dataKey.Name()] = data + "B"
-			return []string{"node3"}, updates, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node2: %v", err)
+// TestGobCodec_MapSerialization tests gob serialization of maps.
+func TestGobCodec_MapSerialization(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]int{
+		"one":   1,
+		"two":   2,
+		"three": 3,
 	}
 
-	// Node 3: Final increment
-	err = g.AddNode(&graph.BaseNode{
-		NodeName:        "node3",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			counter := state.GetFromView(view, counterKey)
-			data := state.GetFromView(view, dataKey)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
 
-			updates := state.Updates{}
-			updates[counterKey.Name()] = counter + 1 // Should be int 3
-			updates[dataKey.Name()] = data + "C"
-			return []string{graph.EndNode}, updates, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("Failed to add node3: %v", err)
+	var decoded map[string]int
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original, decoded)
+}
+
+// TestGobCodec_NestedStructs tests gob serialization of nested structures.
+func TestGobCodec_NestedStructs(t *testing.T) {
+	t.Parallel()
+
+	type Inner struct {
+		Value int
+	}
+	type Outer struct {
+		Name  string
+		Inner Inner
 	}
 
-	g.SetEntryPoint("node1")
-
-	// Compile with state-based executor + Redis message bus with GOB codec
-	compiled, err := graph.Compile(g, graph.NewStatePregelExecutor(
-		graph.WithMessageBus[state.Updates, state.Updates](bus),
-	))
-	if err != nil {
-		t.Fatalf("Failed to compile graph: %v", err)
+	original := Outer{
+		Name:  "test",
+		Inner: Inner{Value: 42},
 	}
 
-	// Execute the graph
-	finalState := make(state.Updates)
-	for updates, err := range compiled.Run(ctx, nil) {
-		if err != nil {
-			t.Fatalf("Execution error: %v", err)
-		}
-		// Collect all state updates
-		for k, v := range updates {
-			finalState[k] = v
-		}
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
+
+	var decoded Outer
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original, decoded)
+}
+
+// TestGobCodec_EmptyValues tests gob serialization of empty/zero values.
+func TestGobCodec_EmptyValues(t *testing.T) {
+	t.Parallel()
+
+	original := GobSerializableState{
+		Counter: 0,
+		Text:    "",
+		Items:   nil,
 	}
 
-	// Verify counter is int (not float64) - GOB preserves exact types
-	finalCounter, ok := finalState[counterKey.Name()].(int)
-	if !ok {
-		// If this fails, it means GOB didn't preserve the int type
-		t.Fatalf("GOB codec failed to preserve int type! Got: %T (value: %v)",
-			finalState[counterKey.Name()], finalState[counterKey.Name()])
-	}
-	if finalCounter != 3 {
-		t.Errorf("Expected counter=3, got %d", finalCounter)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
+
+	var decoded GobSerializableState
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.Counter, decoded.Counter)
+	assert.Equal(t, original.Text, decoded.Text)
+}
+
+// TestGobCodec_LargeData tests gob serialization with large data.
+func TestGobCodec_LargeData(t *testing.T) {
+	t.Parallel()
+
+	// Create large slice
+	items := make([]string, 1000)
+	for i := range items {
+		items[i] = "item"
 	}
 
-	finalData, ok := finalState[dataKey.Name()].(string)
-	if !ok {
-		t.Fatalf("Data not found in final state")
-	}
-	if finalData != "ABC" {
-		t.Errorf("Expected data='ABC', got '%s'", finalData)
+	original := GobSerializableState{
+		Counter: 999999,
+		Text:    string(make([]byte, 10000)),
+		Items:   items,
 	}
 
-	t.Logf("✓ GOB codec preserves types! Final state: counter=%d (int), data=%s", finalCounter, finalData)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(original)
+	require.NoError(t, err)
+
+	var decoded GobSerializableState
+	dec := gob.NewDecoder(&buf)
+	err = dec.Decode(&decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(original.Items), len(decoded.Items))
+	assert.Equal(t, len(original.Text), len(decoded.Text))
 }

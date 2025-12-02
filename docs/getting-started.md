@@ -91,7 +91,7 @@ func main() {
     }
 
     // Execute and collect messages
-    results, err := agent.CollectMessages(agent.Run(ctx, messages))
+    results, err := graph.Collect(agent.Run(ctx, messages))
     if err != nil {
         log.Fatal(err)
     }

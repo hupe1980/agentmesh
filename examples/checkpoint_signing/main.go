@@ -1,3 +1,4 @@
+// Package main demonstrates checkpoint signing for tamper detection.
 package main
 
 import (
@@ -5,242 +6,78 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// This example demonstrates checkpoint signing with HMAC-SHA256 to prevent tampering.
-// Signed checkpoints ensure that stored state cannot be modified without detection.
+var counterKey = graph.NewKey("counter", 0)
+
 func main() {
 	ctx := context.Background()
-
 	fmt.Println("=== Checkpoint Signing Example ===")
-	fmt.Println()
 
-	// Example 1: Basic signing and verification
-	fmt.Println("1. Basic Checkpoint Signing and Verification")
-	basicSigningExample(ctx)
-
-	// Example 2: Tampering detection
-	fmt.Println("\n2. Tampering Detection")
-	tamperingDetectionExample(ctx)
-
-	// Example 3: Wrong key detection
-	fmt.Println("\n3. Wrong Key Detection")
-	wrongKeyExample(ctx)
-
-	// Example 4: Production use case with graph execution
-	fmt.Println("\n4. Production Graph Execution with Signed Checkpoints")
-	productionExample(ctx)
-}
-
-func basicSigningExample(ctx context.Context) {
-	// Generate a secure signing key (in production, use crypto/rand)
+	// Generate a secure signing key
 	signingKey := make([]byte, 32)
 	if _, err := rand.Read(signingKey); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("✓ Generated signing key (%d bytes)\n", len(signingKey))
+	fmt.Println("  Generated 256-bit signing key")
 
 	// Create checkpointer with signing enabled
-	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
+	cp := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
+	fmt.Println("  Created checkpointer with signing")
 
-	// Create and save a checkpoint
-	cp := &checkpoint.Checkpoint{
-		RunID:     "demo-run",
-		Superstep: 1,
-		Version:   1,
-		Timestamp: time.Now(),
-		State: map[string]any{
-			"counter": 42,
-			"status":  "running",
-		},
-	}
+	runID := "signed-run-1"
 
-	if err := checkpointer.Save(ctx, cp); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("✓ Checkpoint saved with signature")
+	// Build graph
+	g := graph.New[any, any](counterKey)
 
-	// Load and verify the checkpoint
-	loaded, err := checkpointer.Load(ctx, "demo-run")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("✓ Checkpoint loaded and verified (signature: %d bytes)\n", len(loaded.Signature))
-	fmt.Printf("  State: %v\n", loaded.State)
-}
+	g.Node("step1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [step1] Processing")
+		return graph.Set(counterKey, 1).To("step2")
+	}, "step2")
 
-func tamperingDetectionExample(ctx context.Context) {
-	signingKey := make([]byte, 32)
-	if _, err := rand.Read(signingKey); err != nil {
-		log.Fatal(err)
-	}
+	g.Node("step2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter := graph.Get(view, counterKey)
+		fmt.Printf("  [step2] Counter: %d\n", counter)
+		return graph.Set(counterKey, counter+1).To("step3")
+	}, "step3")
 
-	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
+	g.Node("step3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		counter := graph.Get(view, counterKey)
+		fmt.Printf("  [step3] Final counter: %d\n", counter)
+		return graph.To(graph.END)
+	}, graph.END)
 
-	cp := &checkpoint.Checkpoint{
-		RunID:     "tamper-test",
-		Superstep: 1,
-		Version:   1,
-		Timestamp: time.Now(),
-		State: map[string]any{
-			"balance": 1000,
-		},
-	}
+	g.Start("step1")
 
-	if err := checkpointer.Save(ctx, cp); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("✓ Saved checkpoint with balance: 1000")
+	// Set checkpointer using builder method
+	g.WithCheckpointer(cp, runID)
 
-	// Simulate tampering by directly modifying the stored checkpoint
-	// In production, this would be an attacker modifying stored data
-	stats := checkpointer.Stats()
-	if stats["tamper-test"] > 0 {
-		// We can't directly access private fields, but in a real scenario,
-		// an attacker might modify the database/file directly
-		fmt.Println("⚠ Simulating tampering attack (attacker modifies balance to 999999)")
-		fmt.Println("  In production: attacker would modify the stored checkpoint file/database")
-
-		// Try to load - in actual tampering scenario this would fail
-		loaded, err := checkpointer.Load(ctx, "tamper-test")
-		if err != nil {
-			fmt.Printf("✓ Tampering detected! Error: %v\n", err)
-		} else {
-			fmt.Printf("✓ Checkpoint verified successfully (balance: %v)\n", loaded.State["balance"])
-		}
-	}
-}
-
-func wrongKeyExample(ctx context.Context) {
-	// Create checkpoint with one key
-	key1 := make([]byte, 32)
-	if _, err := rand.Read(key1); err != nil {
-		log.Fatal(err)
-	}
-
-	checkpointer1 := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(key1))
-
-	cp := &checkpoint.Checkpoint{
-		RunID:     "key-test",
-		Superstep: 1,
-		Version:   1,
-		Timestamp: time.Now(),
-		State: map[string]any{
-			"secret": "classified",
-		},
-	}
-
-	if err := checkpointer1.Save(ctx, cp); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("✓ Saved checkpoint with Key #1")
-
-	// Try to load with different key
-	key2 := make([]byte, 32)
-	if _, err := rand.Read(key2); err != nil {
-		log.Fatal(err)
-	}
-
-	// Create new checkpointer with wrong key
-	// Note: We can't test this directly because InMemoryCheckpointer stores in memory
-	// In production with persistent storage, this would be the actual use case
-	fmt.Println("⚠ Attempting to load with Key #2 (wrong key)")
-	fmt.Println("  In production: This would fail signature verification")
-	fmt.Println("✓ Verification would fail: signature mismatch")
-}
-
-func productionExample(ctx context.Context) {
-	// Generate secure signing key (store this securely in production!)
-	signingKey := make([]byte, 32)
-	if _, err := rand.Read(signingKey); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("✓ Generated production signing key")
-
-	// Create checkpointer with signing
-	checkpointer := checkpoint.NewInMemoryCheckpointer(checkpoint.WithSigning(signingKey))
-
-	// Create a simple workflow graph using graph.NewBuilder
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	counterKey := graphstate.NewKey("counter", 0)
-	statusKey := graphstate.NewKey("status", "")
-
-	builder.AddNodeFunc("step1", []string{"step2"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		counter := graphstate.GetFromView(view, counterKey)
-		counter++
-		fmt.Printf("  → Processing step %d\n", counter)
-		updates := graphstate.Updates{}
-		updates[counterKey.Name()] = counter
-		updates[statusKey.Name()] = "processed"
-		return []string{"step2"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step2", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		counter := graphstate.GetFromView(view, counterKey)
-		counter++
-		fmt.Printf("  → Processing step %d\n", counter)
-		updates := graphstate.Updates{}
-		updates[counterKey.Name()] = counter
-		updates[statusKey.Name()] = "finalized"
-		return []string{graph.EndNode}, updates, nil
-	})
-
-	builder.SetEntryPoint("step1")
-
-	compiled, err := builder.Compile()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	runID := "production-run"
-
-	fmt.Printf("✓ Starting workflow (runID: %s)\n", runID)
-
-	// Execute with checkpointing enabled
-	seq := compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1), // Save after every superstep
-		),
-	)
-
-	for _, err := range seq {
+	// Run the graph
+	fmt.Println("\n--- Executing with signed checkpoints ---")
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	fmt.Println("✓ Workflow completed")
-
-	// Verify checkpoint was signed
-	savedCheckpoint, err := checkpointer.Load(ctx, runID)
+	// Verify checkpoint can be loaded (signature verified automatically)
+	fmt.Println("\n--- Loading and verifying checkpoint ---")
+	loadedCP, err := cp.Load(ctx, runID)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Signature verification failed:", err)
 	}
+	fmt.Printf("  Loaded checkpoint: superstep=%d, signature verified ✓\n", loadedCP.Superstep)
 
-	if savedCheckpoint != nil && len(savedCheckpoint.Signature) > 0 {
-		fmt.Printf("✓ Checkpoint signed and verified (%d bytes signature)\n", len(savedCheckpoint.Signature))
-		fmt.Printf("  RunID: %s\n", savedCheckpoint.RunID)
-		fmt.Printf("  Superstep: %d\n", savedCheckpoint.Superstep)
-		fmt.Printf("  State: %v\n", savedCheckpoint.State)
-	} else {
-		fmt.Println("⚠ Warning: Checkpoint not signed!")
-	}
-
-	// Demonstrate verification by manually checking signature
-	if err := checkpoint.VerifyCheckpoint(savedCheckpoint, signingKey); err != nil {
-		log.Fatalf("✗ Signature verification failed: %v", err)
-	}
-	fmt.Println("✓ Manual signature verification successful")
+	fmt.Println("\n  Checkpoint signing provides:")
+	fmt.Println("    • Tamper detection")
+	fmt.Println("    • Data integrity verification")
+	fmt.Println("    • Protection against unauthorized modifications")
 }

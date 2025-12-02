@@ -3,7 +3,7 @@ package viz
 import (
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/event"
 )
 
 // ExecutionEvent represents a comprehensive execution event with rich metadata.
@@ -77,8 +77,8 @@ type EventFilter struct {
 	Offset     int         `json:"offset,omitempty"`      // Pagination offset
 }
 
-// ConvertGraphEvent converts a graph.Event to an ExecutionEvent.
-func ConvertGraphEvent(graphEvent graph.Event, runID string) ExecutionEvent {
+// ConvertGraphEvent converts a event.Event to an ExecutionEvent.
+func ConvertGraphEvent(graphEvent event.Event, runID string) ExecutionEvent {
 	event := ExecutionEvent{
 		ID:        generateEventID(),
 		RunID:     runID,
@@ -101,52 +101,52 @@ func ConvertGraphEvent(graphEvent graph.Event, runID string) ExecutionEvent {
 	return event
 }
 
-// mapGraphEventType maps graph.EventType to viz.EventType.
+// mapGraphEventType maps event.Type to viz.EventType.
 //
 //nolint:gocyclo // Simple event type mapping switch
-func mapGraphEventType(graphType graph.EventType) EventType {
+func mapGraphEventType(graphType event.Type) EventType {
 	switch graphType {
-	case graph.EventGraphStart:
+	case event.EventGraphStart:
 		return EventGraphStart
-	case graph.EventGraphComplete:
+	case event.EventGraphComplete:
 		return EventGraphComplete
-	case graph.EventGraphError:
+	case event.EventGraphError:
 		return EventGraphError
-	case graph.EventSuperstepStart:
+	case event.EventSuperstepStart:
 		return EventStepStart
-	case graph.EventSuperstepComplete:
+	case event.EventSuperstepComplete:
 		return EventStepEnd
-	case graph.EventNodeQueued:
+	case event.EventNodeQueued:
 		return EventNodeQueued
-	case graph.EventNodeStart:
+	case event.EventNodeStart:
 		return EventNodeStart
-	case graph.EventNodeComplete:
+	case event.EventNodeComplete:
 		return EventNodeComplete
-	case graph.EventNodeError:
+	case event.EventNodeError:
 		return EventNodeError
-	case graph.EventStateUpdate:
+	case event.EventStateUpdate:
 		return EventStateUpdate
-	case graph.EventCheckpointSave:
+	case event.EventCheckpointSave:
 		return EventCheckpoint
-	case graph.EventCheckpointLoad:
+	case event.EventCheckpointLoad:
 		return EventCheckpointLoad
-	case graph.EventCheckpointError:
+	case event.EventCheckpointError:
 		return EventCheckpointError
-	case graph.EventInterrupt:
+	case event.EventInterrupt:
 		return EventInterrupt
-	case graph.EventResume:
+	case event.EventResume:
 		return EventResume
-	case graph.EventModelStart:
+	case event.EventModelStart:
 		return EventModelStart
-	case graph.EventModelComplete:
+	case event.EventModelComplete:
 		return EventModelComplete
-	case graph.EventModelError:
+	case event.EventModelError:
 		return EventModelError
-	case graph.EventToolStart:
+	case event.EventToolStart:
 		return EventToolStart
-	case graph.EventToolComplete:
+	case event.EventToolComplete:
 		return EventToolComplete
-	case graph.EventToolError:
+	case event.EventToolError:
 		return EventToolError
 	default:
 		return EventType(string(graphType))

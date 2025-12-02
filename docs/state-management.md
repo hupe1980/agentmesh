@@ -20,6 +20,8 @@ sidebar:
     url: "#namespaces"
   - title: Node-level namespaces
     url: "#node-level-namespaces"
+  - title: Managed values
+    url: "#managed-values"
   - title: Checkpointing
     url: "#checkpointing"
   - title: Storage backends
@@ -34,149 +36,146 @@ sidebar:
 
 ## Type-safe updates {#type-safe-updates}
 
-AgentMesh uses a simple tuple-based API for type-safe state updates. Nodes return `([]string, state.Updates, error)` directly. Two patterns are supported for creating updates:
-
-1. **Map literal** - Explicit, traditional approach
-2. **Command builder** - Fluent, ergonomic approach (recommended for complex updates)
+AgentMesh uses a fluent command-based API for type-safe state updates. Nodes return commands that combine state updates with routing in a single expression.
 
 ### Basic pattern
 
-All nodes use the same signature with Go generics for compile-time type safety:
+All nodes use the `NodeFunc` signature with typed state keys for compile-time type safety:
 
 ```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/state"
-)
+import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // Define typed keys
 var (
-    CounterKey = state.NewKey[int]("counter", 0)
-    StatusKey  = state.NewKey[string]("status", "")
+    CounterKey = graph.NewKey[int]("counter", 0)
+    StatusKey  = graph.NewKey[string]("status", "")
 )
 
-// Node function returns tuple: (targets, updates, error)
-func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+// Create graph with keys
+g := graph.New[string, string](CounterKey, StatusKey)
+
+// Node function using commands
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Read current state
-    counter := state.GetFromView(view, CounterKey)
+    counter := graph.Get(view, CounterKey)
     
-    // Recommended: Command pattern for fluent, type-safe updates
-    return command.New().
-        Set(CounterKey, counter+1).
+    // Return update + routing in one expression
+    return graph.Set(CounterKey, counter+1).
         Set(StatusKey, "processing").
-        To("next_node")
-}
+        To("next"), nil
+}, "next")
+
+g.Start("process")
+compiled, _ := g.Build()
 ```
 
-### Command builder pattern
+### Command patterns
 
-The Command builder provides a fluent API that eliminates `.Name()` calls:
+The command API provides fluent, type-safe state updates:
 
 ```go
-// Command pattern (recommended) - fluent, clean, type-safe
-return command.New().
-    Set(CounterKey, 42).
+// Set single value and route
+return graph.Set(CounterKey, 42).To("next"), nil
+
+// Set multiple values
+return graph.Set(CounterKey, 42).
     Set(StatusKey, "ready").
-    To("next")
+    To("next"), nil
 
-// Manual updates (alternative) - more verbose
-updates := state.Updates{}
-updates[CounterKey.Name()] = 42
-updates[StatusKey.Name()] = "ready"
-return []string{"next"}, updates, nil
+// Append to list
+return graph.Append(TagsKey, "new-tag").To("next"), nil
+
+// Just route (no state changes)
+return graph.To("next"), nil
+
+// Route to END
+return graph.To(graph.END), nil
+
+// Signal failure
+return graph.Fail(err)
 ```
-
-The builder automatically calls `.Name()` on keys and constructs the tuple in one expression. Both patterns work - use whichever fits your style.
 
 ### Node patterns
 
 **Pattern 1: Single target with updates**
 ```go
-func processNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(ResultKey, "processed").
-        To("next")
-}
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(ResultKey, "processed").To("next"), nil
+}, "next")
 ```
 
 **Pattern 2: Multiple targets (parallel execution)**
 ```go
-func splitNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(StatusKey, "splitting").
-        To("worker1", "worker2", "worker3")
-}
+g.Node("split", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(StatusKey, "splitting").
+        To("worker1", "worker2", "worker3"), nil
+}, "worker1", "worker2", "worker3")
 ```
 
 **Pattern 3: Conditional routing**
 ```go
-func decideNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    score := state.GetFromView(view, ScoreKey)
+g.Node("decide", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    score := graph.Get(view, ScoreKey)
     
-    cmd := command.New().With(command.SetValue(ScoreKey, score+10))
+    cmd := graph.Set(ScoreKey, score+10)
     
     if score > 50 {
         return cmd.To("high_priority")
     }
     return cmd.To("normal_priority")
-}
+}, "high_priority", "normal_priority")
 ```
 
-**Pattern 4: End node (no further targets)**
+**Pattern 4: End node**
 ```go
-func finalNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(StatusKey, "complete").
-        To(graph.END)
-}
+g.Node("final", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(StatusKey, "complete").To(graph.END), nil
+}, graph.END)
 ```
 
-**Pattern 5: No updates (read-only or pass-through)**
+**Pattern 5: Read-only node**
 ```go
-func readOnlyNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Just read and route - no state changes
-    data := state.GetFromView(view, DataKey)
+g.Node("log", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    data := graph.Get(view, DataKey)
     fmt.Printf("Data: %v\n", data)
-    return []string{"next"}, nil, nil
-}
+    return graph.To("next"), nil
+}, "next")
 ```
 
 ### Type safety features
 
 **Compile-time guarantees:**
 - Type mismatches caught during compilation
-- Typed key definitions with `state.NewKey[T]()`
-- Type-safe reads with `state.GetFromView(view, TypedKey)`
+- Typed key definitions with `graph.NewKey[T]()`
+- Type-safe reads with `graph.Get(view, TypedKey)`
 - Zero runtime overhead for type checking
 
 **Using typed keys:**
 ```go
 // Define typed keys upfront
 var (
-    CounterKey  = state.NewKey[int]("counter", 0)
-    StatusKey   = state.NewKey[string]("status", "")
-    ValidKey    = state.NewKey[bool]("valid", false)
-    TagsKey     = state.NewListKey[string]("tags", 100)
-    MessagesKey = message.MessagesKey  // Built-in message list key
+    CounterKey  = graph.NewKey[int]("counter", 0)
+    StatusKey   = graph.NewKey[string]("status", "")
+    ValidKey    = graph.NewKey[bool]("valid", false)
+    TagsKey     = graph.NewListKey[string]("tags")
+    MessagesKey = graph.MessagesKey  // Built-in message list key
 )
 
 // Use in node function
-func myNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // ✅ Type-safe reads
-    counter := state.GetFromView(view, CounterKey)   // int
-    status := state.GetFromView(view, StatusKey)     // string
-    valid := state.GetFromView(view, ValidKey)       // bool
-    tags := state.GetFromView(view, TagsKey)         // []string
+    counter := graph.Get(view, CounterKey)   // int
+    status := graph.Get(view, StatusKey)     // string
+    valid := graph.Get(view, ValidKey)       // bool
+    tags := graph.GetList(view, TagsKey)     // []string
     
     // ✅ Type-safe updates
-    updates := state.Updates{}
-    updates[CounterKey.Name()] = counter + 1         // Must be int
-    updates[StatusKey.Name()] = "active"             // Must be string
-    updates[ValidKey.Name()] = true                  // Must be bool
-    updates[TagsKey.Name()] = []string{"new"}        // Must be []string
-    
-    return []string{"next"}, updates, nil
-}
+    return graph.Set(CounterKey, counter+1).
+        Set(StatusKey, "active").
+        Set(ValidKey, true).
+        Append(TagsKey, "new").
+        To("next"), nil
+}, "next")
 ```
 
 See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.
@@ -210,49 +209,43 @@ AgentMesh follows a **global-first** approach:
 ### Basic usage
 
 ```go
-import "github.com/hupe1980/agentmesh/pkg/state"
+import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // 1. Global keys (default) - simple, no prefix
-var GlobalConfig = state.NewKey[string]("config", "")
-var GlobalCounter = state.NewKey[int]("counter", 0)
+var GlobalConfig = graph.NewKey[string]("config", "")
+var GlobalCounter = graph.NewKey[int]("counter", 0)
 
-// 2. Namespaced keys - isolated with dot notation
-agent1NS := state.MustNamespace("agent1")
-agent2NS := state.MustNamespace("agent2")
+// 2. Namespaced keys - use dot notation for logical grouping
+var Agent1Status = graph.NewKey[string]("agent1.status", "idle")
+var Agent2Status = graph.NewKey[string]("agent2.status", "idle")
 
-// Create namespaced keys: "agent1.status", "agent2.status"
-agent1Status := state.TypedKey[string](agent1NS, "status", "idle")
-agent2Status := state.TypedKey[string](agent2NS, "status", "idle")
+// Create graph with all keys
+g := graph.New[string, string](
+    GlobalConfig, GlobalCounter,
+    Agent1Status, Agent2Status,
+)
 
-// No collisions - each agent has its own "status" key
-builder := state.NewManagerBuilder()
-state.RegisterKey(builder, agent1Status)
-state.RegisterKey(builder, agent2Status)
+// Each agent updates its own namespaced key
+g.Node("agent1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(Agent1Status, "processing").To("next"), nil
+}, "next")
 
-mgr := builder.Build()
-
-state.Set(ctx, mgr, agent1Status, "processing")  // agent1.status = "processing"
-state.Set(ctx, mgr, agent2Status, "waiting")     // agent2.status = "waiting"
+g.Node("agent2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(Agent2Status, "waiting").To("next"), nil
+}, "next")
 ```
 
 ### Creating namespaces
 
 ```go
-// Create namespace (returns error if invalid)
-ns, err := state.NewNamespace("agent1")
-if err != nil {
-    return err
-}
+// Create namespace for logical grouping
+ns := graph.NewNamespace("agent1")
 
-// Create namespace (panics if invalid) - use for package-level variables
-var agentNS = state.MustNamespace("agent")
+// Use namespace to prefix keys
+prefixedKey := ns.Prefix("status") // Returns "agent1.status"
 
-// Global namespace (no prefix)
-globalNS := state.Global
-
-// Check if namespace is global
-if ns.IsGlobal() {
-    fmt.Println("No prefix")
+// Create a namespaced key directly
+var AgentStatus = graph.NewKey[string](ns.Prefix("status"), "idle")
 }
 ```
 
@@ -283,62 +276,41 @@ configKey := state.TypedKey[string](state.Global, "config", "")  // "config"
 **Get namespace view** - Filter state by namespace:
 
 ```go
-view, err := mgr.CreateReadView(ctx)
-if err != nil {
-    return err
-}
+g.Node("reader", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    // Get all keys in a namespace
+    agent1NS := state.MustNamespace("agent1")
+    agent1View := state.GetNamespaceView(view, agent1NS)
+    // Returns: map[string]any{"status": "processing", "progress": 50}
+    // Note: Keys are returned WITHOUT namespace prefix
 
-// Get all keys in a namespace
-agent1NS := state.MustNamespace("agent1")
-agent1View := state.GetNamespaceView(view, agent1NS)
-// Returns: map[string]any{"status": "processing", "progress": 50}
-// Note: Keys are returned WITHOUT namespace prefix
-
-// Get global keys
-globalView := state.GetNamespaceView(view, state.Global)
-// Returns: map[string]any{"config": "production", "counter": 100}
+    // Get global keys
+    globalView := state.GetNamespaceView(view, state.Global)
+    // Returns: map[string]any{"config": "production", "counter": 100}
+    
+    return graph.To("next"), nil
+}, "next")
 ```
 
 **List namespaces** - Discover active namespaces:
 
 ```go
-view, _ := mgr.CreateReadView(ctx)
-namespaces := state.ListNamespaces(view)
+g.Node("discover", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    namespaces := state.ListNamespaces(view)
 
-for _, ns := range namespaces {
-    if ns.IsGlobal() {
-        fmt.Println("(global)")
-    } else {
-        fmt.Printf("%s\n", ns.Name())
+    for _, ns := range namespaces {
+        if ns.IsGlobal() {
+            fmt.Println("(global)")
+        } else {
+            fmt.Printf("%s\n", ns.Name())
+        }
     }
-}
-// Output:
-// agent1
-// agent2
-// tool
-```
-
-**Copy namespace** - Transfer state between agents (useful for handoffs):
-
-```go
-agent1NS := state.MustNamespace("agent1")
-agent2NS := state.MustNamespace("agent2")
-
-// IMPORTANT: Target keys must be registered first!
-agent1Status := state.TypedKey[string](agent1NS, "status", "")
-agent2Status := state.TypedKey[string](agent2NS, "status", "")
-
-builder := state.NewManagerBuilder()
-state.RegisterKey(builder, agent1Status)
-state.RegisterKey(builder, agent2Status)
-mgr := builder.Build()
-
-// Set source state
-state.Set(ctx, mgr, agent1Status, "processing")
-
-// Copy agent1 state to agent2
-err := state.CopyNamespace(ctx, mgr, agent1NS, agent2NS)
-// Now agent2.status = "processing"
+    // Output:
+    // agent1
+    // agent2
+    // tool
+    
+    return graph.To("next"), nil
+}, "next")
 ```
 
 ### Key introspection
@@ -368,25 +340,33 @@ researcherNS := state.MustNamespace("researcher")
 writerNS := state.MustNamespace("writer")
 editorNS := state.MustNamespace("editor")
 
-// Each agent has its own "status" and "progress" keys
+// Each agent has its own "status" key
 researcherStatus := state.TypedKey[string](researcherNS, "status", "")
 writerStatus := state.TypedKey[string](writerNS, "status", "")
 editorStatus := state.TypedKey[string](editorNS, "status", "")
 
-// Register all keys
-builder := state.NewManagerBuilder()
-state.RegisterKey(builder, researcherStatus)
-state.RegisterKey(builder, writerStatus)
-state.RegisterKey(builder, editorStatus)
-
-mgr := builder.Build()
+// Create graph with all keys
+g := graph.New[string, string](
+    researcherStatus,
+    writerStatus,
+    editorStatus,
+)
 
 // Each agent updates its own state independently
-state.Set(ctx, mgr, researcherStatus, "researching")
-state.Set(ctx, mgr, writerStatus, "writing")
-state.Set(ctx, mgr, editorStatus, "editing")
+g.Node("researcher", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(researcherStatus, "researching").To("writer"), nil
+}, "writer")
 
-// No collisions - each has separate namespace
+g.Node("writer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(writerStatus, "writing").To("editor"), nil
+}, "editor")
+
+g.Node("editor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(editorStatus, "editing").To(graph.END), nil
+}, graph.END)
+
+g.Start("researcher")
+compiled, _ := g.Build()
 ```
 
 ### Best practices
@@ -441,27 +421,11 @@ See [examples/namespaces](https://github.com/hupe1980/agentmesh/tree/main/exampl
 
 ### Node-level namespace scoping {#node-level-namespaces}
 
-For guaranteed state isolation, nodes can declare which namespace they operate in. This is ideal for multi-agent systems and pipeline stages where you want to enforce strict boundaries.
-
-#### NamespacedNode interface
-
-Nodes implement the optional `NamespacedNode` interface to declare their namespace:
-
-```go
-type NamespacedNode interface {
-    Node
-    Namespace() state.Namespace
-}
-```
-
-When a node implements this interface:
-- It **declares** which namespace it uses (for documentation and introspection)
-- State isolation is **enforced** through namespaced key names
-- Keys from different namespaces cannot collide (e.g., `"agent1.status"` vs `"agent2.status"`)
+For guaranteed state isolation, nodes can be scoped to operate within a specific namespace. This is ideal for multi-agent systems and pipeline stages where you want to enforce strict boundaries.
 
 #### Creating namespaced nodes
 
-Use `NewNamespacedCommandNode()` for convenient namespaced nodes:
+Use `g.NamespacedNode()` for namespace-scoped nodes:
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
@@ -474,34 +438,29 @@ enrichmentNS := state.MustNamespace("enrichment")
 validKey := state.TypedKey[bool](validationNS, "is_valid", false)
 enrichedKey := state.TypedKey[map[string]any](enrichmentNS, "data", nil)
 
-// Create namespaced nodes
-validationNode := &graph.BaseNode{
-    NodeName: "validation",
-    Namespace: validationNS,
-    DeclaredTargets: []string{"enrichment"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // This node only works with "validation.*" keys
-        updates := state.Updates{}
-        updates[validKey.Name()] = true
-        
-        return []string{"enrichment"}, updates, nil
-    },
-}
+// Create graph with all keys
+g := graph.New[string, string](validKey, enrichedKey)
 
-enrichmentNode := &graph.BaseNode{
-    NodeName: "enrichment",
-    Namespace: enrichmentNS,
-    DeclaredTargets: []string{graph.END},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+// Create namespaced nodes using fluent API
+g.NamespacedNode("validation", validationNS, 
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        // This node only works with "validation.*" keys
+        return graph.Set(validKey, true).To("enrichment"), nil
+    }, 
+    "enrichment",
+)
+
+g.NamespacedNode("enrichment", enrichmentNS,
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
         // This node only works with "enrichment.*" keys
-        // Cannot access "validation.*" keys (different namespace)
-        updates := state.Updates{}
         enrichedData := map[string]any{"status": "enriched"}
-        updates[enrichedKey.Name()] = enrichedData
-        
-        return []string{graph.END}, updates, nil
+        return graph.Set(enrichedKey, enrichedData).To(graph.END), nil
     },
-}
+    graph.END,
+)
+
+g.Start("validation")
+compiled, _ := g.Build()
 ```
 
 #### With retry policies
@@ -516,18 +475,19 @@ retryPolicy := graph.RetryPolicy{
     BackoffFactor:  2.0,
 }
 
-node := graph.NewNamespacedCommandNodeWithRetry(
-    "processor",
-    processorNS,
-    commandFunc,
+g.NamespacedNodeWithRetry("processor", processorNS,
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        // Processing logic
+        return graph.Set(resultKey, "processed").To(graph.END), nil
+    },
     retryPolicy,
-    targets,
+    graph.END,
 )
 ```
 
 #### When to use namespaced nodes
 
-**Use `NamespacedCommandNode` when:**
+**Use `NamespacedNode` when:**
 - Building multi-agent systems with strict state isolation
 - Creating reusable pipeline stages with clear boundaries
 - You want compile-time safety that nodes can't access each other's state
@@ -542,58 +502,40 @@ node := graph.NewNamespacedCommandNodeWithRetry(
 
 State isolation is enforced through **runtime view filtering and update validation**:
 
-1. When a `NamespacedCommandNode` executes, it receives a `NamespacedReadView` (not full `ReadView`)
-2. `NamespacedReadView` is a filtered wrapper that only exposes keys from the node's namespace
+1. When a `NamespacedNode` executes, it receives a filtered view
+2. The filtered view only exposes keys from the node's namespace
 3. Calling `view.Keys()` returns only keys from that namespace
-4. Calling `view.Has("other_namespace.key")` returns `false` (filtered out)
-5. The node physically cannot access keys from other namespaces
-6. **Returned updates are validated** - attempting to update keys outside the namespace causes an error
-7. Optionally, global (non-namespaced) keys can be included via `includeGlobal` parameter
+4. **Returned updates are validated** - attempting to update keys outside the namespace causes an error
 
 ```go
 // Keys are created with namespace prefixes
 agent1Status := state.TypedKey[string](agent1NS, "status", "")  // "agent1.status"
 agent2Status := state.TypedKey[string](agent2NS, "status", "")  // "agent2.status"
 
-// Both keys exist in state
-state.Set(ctx, mgr, agent1Status, "processing")
-state.Set(ctx, mgr, agent2Status, "idle")
-
-// But when agent1 node executes:
+// When agent1 node executes:
 // - view.Keys() returns ["status"] (only agent1's keys, without prefix)
-// - view.Has("agent1.status") returns true
-// - view.Has("agent2.status") returns false (filtered out!)
 // - Cannot access agent2's state at all
 ```
 
-#### NamespacedReadView (automatic)
+#### Update validation
 
-`NamespacedCommandNode` automatically receives a `NamespacedReadView` during execution. You don't need to create it manually - it's provided automatically:
+`NamespacedNode` validates all returned updates:
 
 ```go
-// When you create a NamespacedCommandNode:
-node := graph.NewNamespacedCommandNode(
-    "validation",
-    validationNS,
-    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // 'view' is actually a NamespacedReadView filtered to validationNS
-        // It only exposes keys from "validation" namespace
-        
-        keys := view.Keys()  // Returns: ["is_valid", "score"] (WITHOUT prefix)
-        
-        // Can only see validation.* keys
-        valid := state.GetFromView(view, validKey)  // Works
-        
-        // Cannot see other namespace keys
-        exists := view.Has("enrichment.data")  // Returns false (filtered out)
-        
-        return command.New().To(graph.EndNode)
+g.NamespacedNode("validator", agent1NS,
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        // ❌ This will cause a validation error:
+        return graph.Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
+            Set(agent2StatusKey, "failed").           // ❌ ERROR: wrong namespace
+            To(graph.END), nil
     },
-    targets,
+    graph.END,
 )
-```
 
-The filtering is automatic and enforced at runtime by the framework.
+// Execution will fail with:
+// "node 'validator' in namespace 'agent1' attempted to update key 
+//  'agent2.status' which belongs to a different namespace"
+```
 
 #### Best practices
 
@@ -603,8 +545,8 @@ The filtering is automatic and enforced at runtime by the framework.
 researcherNS := state.MustNamespace("researcher")
 writerNS := state.MustNamespace("writer")
 
-researcherNode := graph.NewNamespacedCommandNode("researcher", researcherNS, ...)
-writerNode := graph.NewNamespacedCommandNode("writer", writerNS, ...)
+g.NamespacedNode("researcher", researcherNS, researcherFunc, "writer")
+g.NamespacedNode("writer", writerNS, writerFunc, graph.END)
 ```
 
 **2. Use package-level namespace and keys:**
@@ -617,10 +559,6 @@ var (
     IsValidKey = state.TypedKey[bool](NS, "is_valid", false)
     ScoreKey = state.TypedKey[int](NS, "score", 0)
 )
-
-func NewNode() graph.Node {
-    return graph.NewNamespacedCommandNode("validation", NS, commandFunc, targets)
-}
 ```
 
 **3. Document namespace usage:**
@@ -628,79 +566,8 @@ func NewNode() graph.Node {
 // ValidationNode checks input data quality
 // Namespace: "validation"
 // Keys: is_valid (bool), score (int)
-func NewValidationNode() graph.Node {
-    return graph.NewNamespacedCommandNode("validation", validationNS, ...)
-}
+g.NamespacedNode("validation", validation.NS, validateFunc, targets...)
 ```
-
-**4. Introspection:**
-```go
-// Check if node declares namespace
-if nsNode, ok := node.(graph.NamespacedNode); ok {
-    fmt.Printf("Node uses namespace: %s\n", nsNode.Namespace().Name())
-}
-```
-
-#### Global state access
-
-By default, `NamespacedCommandNode` only sees keys from its own namespace. Set `includeGlobal=true` to also expose global (non-namespaced) keys:
-
-```go
-// Node that can access both its namespace AND global keys
-configNode := graph.NewNamespacedCommandNode(
-    "config_reader",
-    agentNS,
-    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Can read agent1.* keys
-        agentData := state.GetFromView(view, agentDataKey)
-        
-        // Can also read global keys
-        globalConfig := state.GetFromView(view, globalConfigKey)
-        
-        // Can update both using Command pattern
-        return command.New().
-            Set(agent1ResultKey, computeResult(agentData, globalConfig)).
-            Set(globalCounterKey, incrementCounter()). // Allowed!
-            To(graph.EndNode)
-    },
-    targets,
-    true, // includeGlobal: expose global keys
-)
-```
-
-**Use cases for includeGlobal:**
-- Reading shared configuration
-- Updating global counters or metrics
-- Accessing system-wide state
-- Coordinating between namespaces through global keys
-
-**Important:** Even with `includeGlobal=true`, nodes still cannot access keys from *other* namespaces.
-
-#### Update validation
-
-`NamespacedCommandNode` validates all returned updates:
-
-```go
-validationNode := graph.NewNamespacedCommandNode(
-    "validator",
-    agent1NS,
-    func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // ❌ This will cause a validation error:
-        return command.New().
-            Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
-            Set(agent2StatusKey, "failed").  // ❌ ERROR: wrong namespace
-            To(graph.EndNode) // Will return error
-    },
-    targets,
-    false,
-)
-
-// Execution will fail with:
-// "node 'validator' in namespace 'agent1' attempted to update key 
-//  'agent2.status' which belongs to a different namespace"
-```
-
-This prevents accidental cross-namespace pollution and enforces state boundaries at runtime.
 
 See [examples/subgraph](https://github.com/hupe1980/agentmesh/tree/main/examples/subgraph) for a complete working example with namespaced pipeline stages.
 
@@ -719,32 +586,41 @@ Checkpointing enables automatic state persistence during graph execution. Every 
 
 ```go
 import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
     "github.com/hupe1980/agentmesh/pkg/checkpoint"
-    "github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Create manager with checkpointer
-builder := state.NewManagerBuilder(
-    state.WithCheckpointer(checkpoint.NewInMemoryCheckpointer()),
-)
-mgr := builder.Build()
+// Define keys
+var StatusKey = graph.NewKey[string]("status", "")
 
-// Build graph with manager
-builder, err := exec.NewBuilder(exec.WithManager(mgr))
+// Create graph
+g := graph.New[string, string](StatusKey)
 
-// Enable checkpointing
-compiled, err := builder.Compile()
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(StatusKey, "done").To(graph.END), nil
+}, graph.END)
+
+g.Start("process")
+
+// Build with checkpointer
+checkpointer := checkpoint.NewInMemory()
+compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
 
 // Execute with run ID for persistence
-seq := compiled.Run(ctx, messages,
+seq := compiled.Run(ctx, "input",
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointOptions(checkpoint.WithSaveInterval(1), checkpoint.WithAutoRestore(true)),
+    graph.WithCheckpointInterval(1),
+    graph.WithAutoRestore(true),
 )
 
+for result := range seq {
+    // Process results
+}
+
 // Resume from checkpoint after failure
-seq = compiled.Run(ctx, messages,
+seq = compiled.Run(ctx, "input",
     graph.WithRunID("workflow-123"),
-    graph.WithCheckpointOptions(checkpoint.WithAutoRestore(true)),
+    graph.WithAutoRestore(true),
 )
 ```
 
@@ -756,15 +632,13 @@ Each checkpoint captures:
 type Checkpoint struct {
     RunID          string                 // Unique execution ID
     Superstep      int64                  // Iteration number
-    State          map[string]any         // Graph state (includes message history via "__messages__" key)
-    CompletedNodes []string               // Nodes that completed execution (for monitoring)
+    State          map[string]any         // Graph state snapshot
+    CompletedNodes []string               // Nodes that completed execution
     PausedNodes    []string               // Nodes paused for human-in-the-loop
-    ApprovalMetadata *ApprovalMetadata     // Pending approvals and approval history
+    ApprovalMetadata *ApprovalMetadata    // Pending approvals and history
     Metadata       map[string]any         // Custom metadata
 }
 ```
-
-**Note**: Message history is stored in the state under the `__messages__` key, not as a separate field.
 
 ### Checkpoint intervals
 
@@ -792,7 +666,7 @@ AgentMesh supports multiple checkpoint storage backends.
 In-memory storage - fast but not persistent across restarts:
 
 ```go
-checkpointer := checkpoint.NewInMemoryCheckpointer()
+checkpointer := checkpoint.NewInMemory()
 ```
 
 **Use when:**
@@ -812,7 +686,7 @@ import (
 )
 
 db, err := sql.Open("postgres", connectionString)
-store, err := checkpoint.NewSQL(db, checkpoint.SQLOptions{
+checkpointer, err := checkpoint.NewSQL(db, checkpoint.SQLOptions{
     TableName: "agentmesh_checkpoints",
 })
 ```
@@ -838,7 +712,7 @@ import (
 )
 
 sess := session.Must(session.NewSession())
-store, err := checkpoint.NewDynamoDB(sess, checkpoint.DynamoDBOptions{
+checkpointer, err := checkpoint.NewDynamoDB(sess, checkpoint.DynamoDBOptions{
     TableName: "agentmesh-checkpoints",
 })
 ```
@@ -850,14 +724,14 @@ store, err := checkpoint.NewDynamoDB(sess, checkpoint.DynamoDBOptions{
 
 ### Custom storage
 
-Implement the `CheckpointStore` interface for custom backends:
+Implement the `Checkpointer` interface for custom backends:
 
 ```go
-type CheckpointStore interface {
-    SaveCheckpoint(ctx context.Context, threadID string, checkpoint *Checkpoint) error
-    LoadCheckpoint(ctx context.Context, threadID string) (*Checkpoint, error)
-    ListCheckpoints(ctx context.Context, threadID string) ([]*Checkpoint, error)
-    DeleteCheckpoint(ctx context.Context, threadID string, runID string) error
+type Checkpointer interface {
+    Save(ctx context.Context, cp *Checkpoint) error
+    Load(ctx context.Context, runID string) (*Checkpoint, error)
+    List(ctx context.Context, runID string) ([]*Checkpoint, error)
+    Delete(ctx context.Context, runID string) error
 }
 ```
 
@@ -870,7 +744,7 @@ Debug workflows by replaying from any superstep.
 ### List checkpoints
 
 ```go
-checkpoints, err := store.ListCheckpoints(ctx, "workflow-123")
+checkpoints, err := checkpointer.List(ctx, "workflow-123")
 
 for _, cp := range checkpoints {
     fmt.Printf("Superstep %d at %v\n", cp.Superstep, cp.Timestamp)
@@ -882,8 +756,7 @@ for _, cp := range checkpoints {
 
 ```go
 // Resume from superstep 5
-results, err := graph.Collect(compiled.Run(ctx, newMessages,
-    graph.WithCheckpointer(checkpointer),
+results, err := graph.Collect(compiled.Run(ctx, newInput,
     graph.WithRunID("workflow-123"),
     graph.WithResumeFromSuperstep(5),
 ))
@@ -902,9 +775,8 @@ results, err := graph.Collect(compiled.Run(ctx, newMessages,
 // Original execution failed at superstep 10
 // Resume from superstep 8 with debug logging enabled
 ctx = context.WithValue(ctx, "debug", true)
-results, err := graph.Collect(compiled.Run(ctx, messages,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID(threadID),
+results, err := graph.Collect(compiled.Run(ctx, input,
+    graph.WithRunID(runID),
     graph.WithResumeFromSuperstep(8),
 ))
 ```
@@ -921,16 +793,13 @@ Control conversation history to prevent context overflow and manage costs.
 
 ```go
 // Create message key with limit (max 50 messages)
-var MessagesKey = agent.MessagesKey  // Default: unlimited (0)
+var LimitedMessagesKey = graph.NewListKey[message.Message]("messages")
 
-// Or create custom limited key
-var LimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 50)
+// When using MessageGraph, limit is configured at build time
+g := graph.NewMessageGraph()
 
-// Register with manager
-builder := state.NewManagerBuilder()
-state.RegisterListKey(builder, LimitedMessagesKey)
-
-mgr := builder.Build()
+// Add message retention configuration
+compiled, _ := g.Build(graph.WithMessageRetention(50))
 ```
 
 ### Pruning strategies
@@ -944,14 +813,14 @@ When limit is reached, oldest messages are removed:
 
 ### Unlimited messages
 
-For workflows that need full history, use 0 as the max size:
+For workflows that need full history, use 0 as the limit:
 
 ```go
-// Unlimited message history (default for agent.MessagesKey)
-var UnlimitedMessagesKey = state.NewListKey[message.Message]("__messages__", 0)
+// Unlimited message history (default)
+compiled, _ := g.Build(graph.WithMessageRetention(0))
 ```
 
-**When to use:**
+**When to use unlimited:**
 - Short conversations (< 50 messages)
 - Analysis that needs full context
 - When using external message storage
@@ -972,45 +841,39 @@ Pause execution for human approval or input.
 ### Interrupt execution
 
 ```go
-builder.AddNodeFunc("request_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "status": "awaiting_approval",
-            "data": sensitiveData,
-        },
-        Interrupt: true,  // Pause here
-    }, nil
-})
+g.Node("request_approval", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(StatusKey, "awaiting_approval").
+        Set(DataKey, sensitiveData).
+        Interrupt(), nil  // Pause here
+}, "next")
 ```
 
 ### Resume with input
 
 ```go
 // Initial execution pauses at approval node
-seq := compiled.Run(ctx, messages,
+seq := compiled.Run(ctx, input,
     graph.WithRunID("approval-flow"),
-    graph.WithCheckpointer(checkpointer),
 )
 
 // Process events until interrupt
-for event, err := range seq {
-    // Handle events...
+for result := range seq {
+    if result.Interrupted {
+        break
+    }
 }
 
 // Human reviews and provides input
 // ...
 
-// Apply human input to state
-compiled.ApplyState(map[string]any{
-    "approved": true,
-    "reviewer": "alice@example.com",
-}, nil)
-
-// Resume execution
-seq = compiled.Run(ctx, messages,
+// Resume execution with updated state
+seq = compiled.Run(ctx, input,
     graph.WithRunID("approval-flow"),
-    graph.WithCheckpointer(checkpointer),
     graph.WithAutoRestore(true),
+    graph.WithStateUpdates(map[string]any{
+        "approved": true,
+        "reviewer": "alice@example.com",
+    }),
 )
 ```
 
@@ -1046,31 +909,47 @@ import (
     "github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
+// Define keys
+var ContentKey = graph.NewKey[string]("content", "")
+var SentKey = graph.NewKey[bool]("sent", false)
+
+// Create graph
+g := graph.New[string, bool](ContentKey, SentKey)
+
 // Define approval guard function
-approvalGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
-    // Check if approval is needed
-    content := state.GetFromView(view, contentKey)
+approvalGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
+    content := graph.Get(view, ContentKey)
     if containsSensitiveData(content) {
         return true, "Contains sensitive information", nil
     }
     return false, "", nil  // No approval needed
 }
 
-// Add interrupt with approval guard
-g.AddInterruptBefore("send_email",
+// Add node with approval guard
+g.Node("send_email", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    content := graph.Get(view, ContentKey)
+    sendEmail(content)
+    return graph.Set(SentKey, true).To(graph.END), nil
+}, graph.END)
+
+// Configure interrupt before node with guard
+g.InterruptBefore("send_email",
     graph.WithApprovalGuard(approvalGuard),
-    graph.WithFeedbackAnnotation(true),  // Record approval in message history
+    graph.WithFeedbackAnnotation(true),
     graph.WithApprovalTimeout(10 * time.Minute),
 )
 
+g.Start("send_email")
+
+// Build with checkpointer
+checkpointer := checkpoint.NewInMemory()
+compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
+
 // Step 1: Run until approval guard triggers
 runID := "email-workflow-001"
-for _, err := range compiled.Run(ctx, messages,
+for result := range compiled.Run(ctx, "Hello world",
     graph.WithRunID(runID),
-    graph.WithCheckpointOptions(
-        checkpoint.WithCheckpointer(checkpointer),
-        checkpoint.WithSaveInterval(1),
-    ),
+    graph.WithCheckpointInterval(1),
 ) {
     // Execution pauses when guard returns true
 }
@@ -1081,32 +960,24 @@ if cp.ApprovalMetadata != nil {
     for nodeName, pending := range cp.ApprovalMetadata.PendingApprovals {
         fmt.Printf("Approval needed for: %s\n", nodeName)
         fmt.Printf("Reason: %s\n", pending.Reason)
-        fmt.Printf("Requested at: %v\n", pending.RequestedAt)
     }
 }
 
 // Step 3: Provide approval response
 approval := &graph.ApprovalResponse{
-    Decision:  graph.ApprovalApproved,  // or ApprovalRejected, ApprovalEdit, ApprovalSkip
+    Decision:  graph.ApprovalApproved,
     Reason:    "Reviewed and approved",
     User:      "alice@example.com",
     Timestamp: time.Now(),
-    Edits: state.Updates{
-        contentKey.Name(): "Redacted sensitive content",  // Optional state edits
-    },
-    Annotations: map[string]any{
-        "department": "security",
-        "risk_level": "medium",
+    Edits: map[string]any{
+        ContentKey.Name(): "Redacted sensitive content",
     },
 }
 
 // Step 4: Resume with approval
-for _, err := range compiled.Run(ctx, messages,
+for result := range compiled.Run(ctx, "",
     graph.WithCheckpoint(cp),
     graph.WithApproval("send_email", approval),
-    graph.WithCheckpointOptions(
-        checkpoint.WithCheckpointer(checkpointer),  // Required for history
-    ),
 ) {
     // Execution continues with approval applied
 }
@@ -1114,8 +985,8 @@ for _, err := range compiled.Run(ctx, messages,
 // Step 5: Query approval history
 history, _ := checkpointer.GetApprovalHistory(ctx, runID)
 for _, record := range history {
-    fmt.Printf("%s: %s by %s at %v\n", 
-        record.NodeName, record.Decision, record.User, record.Timestamp)
+    fmt.Printf("%s: %s by %s\n", 
+        record.NodeName, record.Decision, record.User)
 }
 ```
 
@@ -1143,8 +1014,8 @@ editApproval := &graph.ApprovalResponse{
     Decision: graph.ApprovalEdit,
     Reason:   "Approved with modifications",
     User:     "editor@example.com",
-    Edits: state.Updates{
-        contentKey.Name(): "Modified content",
+    Edits: map[string]any{
+        ContentKey.Name(): "Modified content",
     },
 }
 
@@ -1161,8 +1032,8 @@ Guards control when approval is needed:
 
 ```go
 // Example: Sensitive keyword detection
-sensitiveGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
-    content := state.GetFromView(view, contentKey)
+sensitiveGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
+    content := graph.Get(view, ContentKey)
     keywords := []string{"confidential", "secret", "classified"}
     
     for _, kw := range keywords {
@@ -1174,8 +1045,8 @@ sensitiveGuard := func(ctx context.Context, view state.ReadView) (bool, string, 
 }
 
 // Example: Amount threshold
-amountGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
-    amount := state.GetFromView(view, amountKey)
+amountGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
+    amount := graph.Get(view, AmountKey)
     if amount > 10000 {
         return true, fmt.Sprintf("Amount exceeds $10k: $%.2f", amount), nil
     }
@@ -1183,7 +1054,7 @@ amountGuard := func(ctx context.Context, view state.ReadView) (bool, string, err
 }
 
 // Example: Always require approval
-alwaysGuard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+alwaysGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
     return true, "Manual approval required", nil
 }
 ```
@@ -1196,9 +1067,9 @@ Modify state as part of the approval process:
 approval := &graph.ApprovalResponse{
     Decision: graph.ApprovalApproved,
     User:     "reviewer@example.com",
-    Edits: state.Updates{
+    Edits: map[string]any{
         // Redact sensitive data
-        "content": redactSensitiveInfo(originalContent),
+        ContentKey.Name(): redactSensitiveInfo(originalContent),
         
         // Add approval metadata
         "approved_by": "reviewer@example.com",
@@ -1212,76 +1083,10 @@ approval := &graph.ApprovalResponse{
 
 State edits are applied BEFORE the node executes, allowing the node to see the modified state.
 
-### Accessing Approvals in Nodes
-
-Nodes can check for approval responses:
-
-```go
-sendNode := &graph.BaseNode{
-    NodeName: "send_email",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        // Check if approval was provided
-        approval := graph.ApprovalFromContext(ctx, "send_email")
-        if approval == nil {
-            // No approval in context - first execution
-            return []string{graph.EndNode}, state.Updates{
-                sentKey.Name(): false,
-            }, nil
-        }
-        
-        // Handle approval decision
-        switch approval.Decision {
-        case graph.ApprovalRejected:
-            log.Printf("Email rejected: %s", approval.Reason)
-            return []string{graph.EndNode}, state.Updates{
-                sentKey.Name(): false,
-                errorKey.Name(): approval.Reason,
-            }, nil
-            
-        case graph.ApprovalApproved:
-            // State edits already applied - just send
-            content := state.GetFromView(view, contentKey)
-            sendEmail(content)
-            return []string{graph.EndNode}, state.Updates{
-                sentKey.Name(): true,
-            }, nil
-        }
-        
-        return []string{graph.EndNode}, nil, nil
-    },
-}
-```
-
-### Approval History & Audit Trail
-
-Query complete approval history for compliance and debugging:
-
-```go
-// Get all approvals for a run
-history, err := checkpointer.GetApprovalHistory(ctx, runID)
-
-for _, record := range history {
-    fmt.Printf("Node: %s\n", record.NodeName)
-    fmt.Printf("Decision: %s\n", record.Decision)  // APPROVED, REJECTED, EDIT, SKIP
-    fmt.Printf("User: %s\n", record.User)
-    fmt.Printf("Reason: %s\n", record.Reason)
-    fmt.Printf("Timestamp: %v\n", record.Timestamp)
-    
-    if len(record.StateEdits) > 0 {
-        fmt.Printf("State edits: %v\n", record.StateEdits)
-    }
-    
-    if len(record.Annotations) > 0 {
-        fmt.Printf("Annotations: %v\n", record.Annotations)
-    }
-}
-```
-
 ### Approval Configuration Options
 
 ```go
-g.AddInterruptBefore("critical_action",
+g.InterruptBefore("critical_action",
     // Required: Guard function
     graph.WithApprovalGuard(guard),
     
@@ -1302,15 +1107,14 @@ Handle multiple approval points in a single workflow:
 
 ```go
 // Add approvals at different stages
-g.AddInterruptBefore("draft", graph.WithApprovalGuard(draftGuard))
-g.AddInterruptBefore("publish", graph.WithApprovalGuard(publishGuard))
+g.InterruptBefore("draft", graph.WithApprovalGuard(draftGuard))
+g.InterruptBefore("publish", graph.WithApprovalGuard(publishGuard))
 
 // Provide approvals for each stage
-for _, err := range compiled.Run(ctx, messages,
+for result := range compiled.Run(ctx, input,
     graph.WithCheckpoint(cp),
     graph.WithApproval("draft", draftApproval),
     graph.WithApproval("publish", publishApproval),
-    graph.WithCheckpointOptions(checkpoint.WithCheckpointer(checkpointer)),
 ) {
     // Process
 }
@@ -1321,7 +1125,6 @@ for _, err := range compiled.Run(ctx, messages,
 ```go
 // Check if approval is required but not provided
 if err := graph.CheckApproval(ctx, "send_email", true); err != nil {
-    // Handle missing approval
     log.Printf("Approval required: %v", err)
 }
 
@@ -1344,26 +1147,9 @@ if graph.IsApprovalRequired(err) {
 
 ### Production Best Practices
 
-**1. Always pass checkpointer when resuming:**
+**1. Use conditional guards to avoid unnecessary approvals:**
 ```go
-// ❌ Wrong - approval history won't persist
-compiled.Run(ctx, messages,
-    graph.WithCheckpoint(cp),
-    graph.WithApproval("node", approval),
-)
-
-// ✅ Correct - history persisted
-compiled.Run(ctx, messages,
-    graph.WithCheckpoint(cp),
-    graph.WithApproval("node", approval),
-    graph.WithCheckpointOptions(checkpoint.WithCheckpointer(checkpointer)),
-)
-```
-
-**2. Use conditional guards to avoid unnecessary approvals:**
-```go
-// Only trigger approval when actually needed
-guard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+guard := func(ctx context.Context, view graph.View) (bool, string, error) {
     if !needsReview(view) {
         return false, "", nil  // Auto-continue
     }
@@ -1371,24 +1157,7 @@ guard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
 }
 ```
 
-**3. Validate approvals before critical operations:**
-```go
-func criticalOperation(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    approval := graph.ApprovalFromContext(ctx, "critical_op")
-    if approval == nil {
-        return nil, nil, fmt.Errorf("missing required approval")
-    }
-    
-    if approval.Decision != graph.ApprovalApproved {
-        return nil, nil, fmt.Errorf("operation not approved")
-    }
-    
-    // Proceed with operation
-    // ...
-}
-```
-
-**4. Set appropriate timeouts:**
+**2. Set appropriate timeouts:**
 ```go
 // Short timeout for routine approvals
 graph.WithApprovalTimeout(5 * time.Minute)
@@ -1400,7 +1169,7 @@ graph.WithApprovalTimeout(24 * time.Hour)
 graph.WithApprovalTimeout(0)
 ```
 
-**5. Use annotations for rich audit data:**
+**3. Use annotations for rich audit data:**
 ```go
 approval := &graph.ApprovalResponse{
     Decision: graph.ApprovalApproved,
@@ -1410,45 +1179,106 @@ approval := &graph.ApprovalResponse{
         "risk_level":     "medium",
         "reviewed_by":    "Alice Smith",
         "policy_version": "2.1",
-        "ip_address":     "192.168.1.100",
-        "session_id":     "abc123",
     },
 }
 ```
 
-### Approval Metadata Structure
+See `examples/human_approval` for complete working examples with all approval scenarios.
 
-Stored in checkpoint for persistence:
+---
+
+## Managed values {#managed-values}
+
+Managed values are **ephemeral runtime state** that is NOT included in checkpoints. They're ideal for:
+
+- API keys and authentication tokens
+- Session state (user context, preferences)
+- Runtime metrics collectors
+- Cached computed values
+- Resource handles (connections, caches)
+
+### Why use managed values?
+
+Regular state (via `graph.Get`/`graph.Set`) is persisted to checkpoints. This is problematic for:
+
+1. **Sensitive data** - API keys shouldn't be stored in checkpoints
+2. **Runtime-only state** - Metrics, counters, and handles that don't survive restarts
+3. **Computed values** - State that should be recomputed on access
+
+### Types of managed values
+
+#### Static managed value
+
+Thread-safe storage for runtime configuration:
 
 ```go
-type ApprovalMetadata struct {
-    // Pending approvals awaiting human decision
-    PendingApprovals map[string]*PendingApproval
-    
-    // Complete history of all approvals
-    ApprovalHistory []ApprovalRecord
-}
+// Create with initial value
+var configMV = graph.NewManagedValue("config", &Config{
+    APIKey:  os.Getenv("API_KEY"),
+    Timeout: 30 * time.Second,
+})
 
-type PendingApproval struct {
-    NodeName      string
-    Reason        string
-    RequestedAt   time.Time
-    TimeoutAt     *time.Time
-    RequiredState map[string]any  // State snapshot for review
-}
-
-type ApprovalRecord struct {
-    NodeName    string
-    Decision    string  // "APPROVED", "REJECTED", "EDIT", "SKIP"
-    Reason      string
-    User        string
-    Timestamp   time.Time
-    StateEdits  state.Updates
-    Annotations map[string]any
+// Access in node
+func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
+    config := graph.GetManaged(ctx, view, configMV)
+    // Use config.APIKey, config.Timeout, etc.
+    return graph.Set(resultKey, result).End()
 }
 ```
 
-See `examples/human_approval` for complete working examples with all three approval scenarios.
+#### Provider (always fresh)
+
+Recomputed on every access:
+
+```go
+var counterMV = graph.NewManagedValueProvider("counter", func(ctx context.Context) (int64, error) {
+    return atomic.AddInt64(&count, 1), nil
+})
+```
+
+#### Provider with caching
+
+Add `WithCacheTTL` to cache the computed value:
+
+```go
+// Cached: reuses value for 5 seconds, then recomputes
+var cachedTimeMV = graph.NewManagedValueProvider("cached_time", func(ctx context.Context) (time.Time, error) {
+    return time.Now(), nil
+}, graph.WithCacheTTL(5*time.Second))
+
+// Invalidate cache when needed
+cachedTimeMV.Invalidate()
+```
+
+### Using managed values
+
+Pass managed values when running the graph:
+
+```go
+// Define managed values
+var apiKeyMV = graph.NewManagedValue("api_key", os.Getenv("API_KEY"))
+var metricsMV = graph.NewManagedValueProvider("metrics", computeMetrics)
+
+// Pass to Run
+for output, err := range compiled.Run(ctx, input,
+    graph.WithManagedValues(apiKeyMV, metricsMV)) {
+    // ...
+}
+```
+
+### Comparison with regular state
+
+| Feature | Regular State | Managed Values |
+|---------|--------------|----------------|
+| Access | `graph.Get(view, key)` | `graph.GetManaged(ctx, view, mv)` |
+| Checkpointed | ✅ Yes | ❌ No |
+| Survives restart | ✅ Yes | ❌ No |
+| Type-safe | ✅ Yes | ✅ Yes |
+| Thread-safe | ✅ Yes | ✅ Yes |
+| Sensitive data | ❌ No | ✅ Yes |
+| Computed values | ❌ No | ✅ Yes |
+
+See `examples/managed_values` for a complete working example.
 
 ---
 
@@ -1458,7 +1288,7 @@ See `examples/human_approval` for complete working examples with all three appro
 
 **Do:**
 - Set appropriate checkpoint intervals (balance performance vs recoverability)
-- Use meaningful thread IDs (workflow-{id}, user-{id}-session-{id})
+- Use meaningful run IDs (workflow-{id}, user-{id}-session-{id})
 - Clean up old checkpoints periodically
 - Test recovery paths regularly
 

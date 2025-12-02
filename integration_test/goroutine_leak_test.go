@@ -7,140 +7,208 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestEarlyConsumerTermination verifies that stopping iteration early doesn't leak goroutines.
-// This tests the fix for the iterator goroutine leak issue.
-func TestEarlyConsumerTermination(t *testing.T) {
-	ctx := context.Background()
+// TestNoGoroutineLeaks_SimpleGraph tests that simple graph execution doesn't leak goroutines.
+func TestNoGoroutineLeaks_SimpleGraph(t *testing.T) {
+	t.Parallel()
 
-	// Create a graph with many nodes to ensure runtime would continue if not cancelled
-	sm := newTestManager()
+	// Force GC to clean up any pending goroutines
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
 
-	g, err := graph.NewGraph(sm)
-	if err != nil {
-		t.Fatalf("Failed to create graph: %v", err)
-	}
+	initialGoroutines := runtime.NumGoroutine()
 
-	// Add multiple nodes that would take time to execute
 	for i := 0; i < 10; i++ {
-		nodeName := string(rune('A' + i))
-		nextNode := string(rune('A' + i + 1))
-		if i == 9 {
-			nextNode = graph.EndNode
-		}
-		g.AddNode(&graph.BaseNode{
-			NodeName:        nodeName,
-			DeclaredTargets: []string{nextNode},
-			Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
-				// Simulate work
-				time.Sleep(10 * time.Millisecond)
-				return []string{nextNode}, nil, nil
-			},
-		})
+		g := graph.New[string, string](ResultKey)
 
-		if i == 0 {
-			g.SetEntryPoint(nodeName)
+		g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			input := graph.Get(view, ResultKey)
+			return graph.Set(ResultKey, input+"_processed").End()
+		}, graph.END)
+
+		g.Start("process")
+
+		compiled, err := g.Build()
+		require.NoError(t, err)
+
+		for _, err := range compiled.Run(context.Background(), "test") {
+			require.NoError(t, err)
 		}
 	}
-	// Compile the graph
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	if err != nil {
-		t.Fatalf("Failed to compile graph: %v", err)
-	}
 
-	// Count goroutines before execution
+	// Force GC and wait
 	runtime.GC()
-	time.Sleep(50 * time.Millisecond) // Let GC settle
-	goroutinesBefore := runtime.NumGoroutine()
-
-	// Run the graph but stop after first result (early termination)
-	count := 0
-	for result := range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("start")}) {
-		t.Logf("Got result: %v", result)
-		count++
-		if count >= 2 {
-			// Stop early - this should cancel the runtime and not leak goroutines
-			break
-		}
-	}
-
-	// Give time for goroutines to clean up
 	time.Sleep(100 * time.Millisecond)
-	runtime.GC()
-	time.Sleep(50 * time.Millisecond)
 
-	// Count goroutines after execution
-	goroutinesAfter := runtime.NumGoroutine()
+	finalGoroutines := runtime.NumGoroutine()
 
-	// There should not be a significant increase in goroutines
 	// Allow some tolerance for background goroutines
-	goroutineIncrease := goroutinesAfter - goroutinesBefore
-	if goroutineIncrease > 5 {
-		t.Errorf("Potential goroutine leak detected: before=%d, after=%d, increase=%d",
-			goroutinesBefore, goroutinesAfter, goroutineIncrease)
-	} else {
-		t.Logf("✅ No goroutine leak: before=%d, after=%d, increase=%d",
-			goroutinesBefore, goroutinesAfter, goroutineIncrease)
-	}
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine count increased significantly: before=%d, after=%d", initialGoroutines, finalGoroutines)
 }
 
-// TestMultipleEarlyTerminations ensures the fix works across multiple runs
-func TestMultipleEarlyTerminations(t *testing.T) {
-	ctx := context.Background()
+// TestNoGoroutineLeaks_CancelledContext tests cleanup after context cancellation.
+func TestNoGoroutineLeaks_CancelledContext(t *testing.T) {
+	t.Parallel()
 
 	runtime.GC()
-	time.Sleep(50 * time.Millisecond)
-	goroutinesBefore := runtime.NumGoroutine()
+	time.Sleep(10 * time.Millisecond)
 
-	// Run multiple graphs with early termination
-	for run := 0; run < 5; run++ {
-		sm := newTestManager()
-		g, _ := graph.NewGraph(sm)
+	initialGoroutines := runtime.NumGoroutine()
 
-		// Simple 3-node graph
-		for i := 0; i < 3; i++ {
-			nodeName := string(rune('A' + i))
-			nextNode := string(rune('A' + i + 1))
-			if i == 2 {
-				nextNode = graph.EndNode
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		g := graph.New[string, string](ResultKey)
+
+		g.Node("slow", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			// Check for cancellation
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(10 * time.Millisecond):
+				// Continue
 			}
-			g.AddNode(&graph.BaseNode{
-				NodeName:        nodeName,
-				DeclaredTargets: []string{nextNode},
-				Fn: func(ctx context.Context, s state.ReadView) ([]string, state.Updates, error) {
-					time.Sleep(5 * time.Millisecond)
-					return []string{nextNode}, nil, nil
-				},
-			})
-			if i == 0 {
-				g.SetEntryPoint(nodeName)
+			return graph.Set(ResultKey, "done").End()
+		}, graph.END)
 
-			} else {
-			}
+		g.Start("slow")
+
+		compiled, err := g.Build()
+		require.NoError(t, err)
+
+		// Cancel immediately
+		cancel()
+
+		for _, err := range compiled.Run(ctx, "test") {
+			// Expect context cancelled error
+			_ = err
 		}
-		// Connect last node to end
-		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
-
-		// Stop after first result
-		for range compiled.Run(ctx, []message.Message{message.NewHumanMessageFromText("test")}) {
-			break // Immediate early termination
-		}
-	} // Allow cleanup
-	time.Sleep(200 * time.Millisecond)
-	runtime.GC()
-	time.Sleep(50 * time.Millisecond)
-
-	goroutinesAfter := runtime.NumGoroutine()
-	goroutineIncrease := goroutinesAfter - goroutinesBefore
-
-	if goroutineIncrease > 10 {
-		t.Errorf("Goroutine leak after multiple runs: before=%d, after=%d, increase=%d",
-			goroutinesBefore, goroutinesAfter, goroutineIncrease)
-	} else {
-		t.Logf("✅ No leak across multiple runs: before=%d, after=%d, increase=%d",
-			goroutinesBefore, goroutinesAfter, goroutineIncrease)
 	}
+
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine leak after cancellation: before=%d, after=%d", initialGoroutines, finalGoroutines)
+}
+
+// TestNoGoroutineLeaks_ParallelExecution tests cleanup in parallel execution scenarios.
+func TestNoGoroutineLeaks_ParallelExecution(t *testing.T) {
+	t.Parallel()
+
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+
+	initialGoroutines := runtime.NumGoroutine()
+
+	for i := 0; i < 5; i++ {
+		g := graph.New[string, string](ResultKey)
+
+		g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			return graph.Cmd().To("worker1", "worker2", "worker3")
+		}, "worker1", "worker2", "worker3")
+
+		for _, name := range []string{"worker1", "worker2", "worker3"} {
+			workerName := name
+			g.Node(workerName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				return graph.Cmd().To("merge")
+			}, "merge")
+		}
+
+		g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			return graph.Set(ResultKey, "merged").End()
+		}, graph.END)
+
+		g.Start("start")
+
+		compiled, err := g.Build()
+		require.NoError(t, err)
+
+		for _, err := range compiled.Run(context.Background(), "test") {
+			require.NoError(t, err)
+		}
+	}
+
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine leak in parallel execution: before=%d, after=%d", initialGoroutines, finalGoroutines)
+}
+
+// TestNoGoroutineLeaks_ErrorScenarios tests cleanup when nodes return errors.
+func TestNoGoroutineLeaks_ErrorScenarios(t *testing.T) {
+	t.Parallel()
+
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+
+	initialGoroutines := runtime.NumGoroutine()
+
+	for i := 0; i < 5; i++ {
+		g := graph.New[string, string](ResultKey)
+
+		g.Node("failing", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			return nil, assert.AnError
+		}, graph.END)
+
+		g.Start("failing")
+
+		compiled, err := g.Build()
+		require.NoError(t, err)
+
+		for _, err := range compiled.Run(context.Background(), "test") {
+			// Expect error
+			assert.Error(t, err)
+		}
+	}
+
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine leak after errors: before=%d, after=%d", initialGoroutines, finalGoroutines)
+}
+
+// TestNoGoroutineLeaks_MultipleRuns tests cleanup across multiple runs of the same graph.
+func TestNoGoroutineLeaks_MultipleRuns(t *testing.T) {
+	t.Parallel()
+
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+
+	initialGoroutines := runtime.NumGoroutine()
+
+	g := graph.New[string, string](ResultKey)
+
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		input := graph.Get(view, ResultKey)
+		return graph.Set(ResultKey, input+"_done").End()
+	}, graph.END)
+
+	g.Start("process")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	// Run multiple times
+	for i := 0; i < 20; i++ {
+		for _, err := range compiled.Run(context.Background(), "test") {
+			require.NoError(t, err)
+		}
+	}
+
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+5,
+		"Goroutine leak after multiple runs: before=%d, after=%d", initialGoroutines, finalGoroutines)
 }

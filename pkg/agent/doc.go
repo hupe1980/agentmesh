@@ -131,10 +131,11 @@ Tool errors are returned to the agent for recovery:
 
 Combine multiple agents into larger workflows using graph:
 
-	builder := graph.NewBuilder()
-	builder.AddCommandNode("classifier", graph.NewTargetSet("researcher", "writer"), classifierAgent)
-	builder.AddNode(graph.NewNode("researcher", []string{"writer"}, researchAgent))
-	builder.AddNode(graph.NewNode("writer", []string{graph.EndNode}, writerAgent))
+	g := graph.NewMessageGraph()
+	g.CommandNode("classifier", classifierAgent, "researcher", "writer")
+	g.AgentNode("researcher", researchAgent, "writer")
+	g.AgentNode("writer", writerAgent, graph.END)
+	g.Start("classifier")
 	// ...
 
 # Supervisor Pattern
@@ -165,16 +166,3 @@ tasks to the most appropriate specialist based on the query.
 See examples/supervisor_simple for a complete example.
 */
 package agent
-
-import (
-	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-)
-
-// MessageRunnable is a type alias for the common pattern of Runnables that
-// take a list of messages as input and return messages as output.
-// This simplifies agent constructor signatures and improves code readability.
-//
-// Instead of: graph.Runnable[[]message.Message, message.Message]
-// Use:        agent.MessageRunnable
-type MessageRunnable = graph.Runnable[[]message.Message, message.Message]

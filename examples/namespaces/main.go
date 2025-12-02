@@ -1,3 +1,8 @@
+// Package main demonstrates namespace-based state isolation.
+//
+// This example shows how to use graph.WithNamespace() to restrict
+// which state keys a node can read and write. Nodes wrapped with
+// WithNamespace can only access keys within their namespace prefix.
 package main
 
 import (
@@ -5,165 +10,101 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hupe1980/agentmesh/pkg/state"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// This example demonstrates the namespace system for state isolation.
-// Namespaces allow different components (agents, subgraphs, tools) to
-// have their own isolated state while sharing the same state manager.
+// Define keys with namespace prefixes
+// Convention: namespace.keyname (e.g., "agent1.counter")
+var (
+	// Agent 1's private namespace
+	agent1Data   = graph.NewKey("agent1.data", "")
+	agent1Status = graph.NewKey("agent1.status", "")
+
+	// Agent 2's private namespace
+	agent2Data   = graph.NewKey("agent2.data", "")
+	agent2Status = graph.NewKey("agent2.status", "")
+
+	// Global key (no namespace prefix - accessible to all)
+	sharedResult = graph.NewKey("result", "")
+)
 
 func main() {
 	ctx := context.Background()
-	builder := state.NewManagerBuilder()
-
-	// 1. Global Keys (Default) - Simple, no prefix
-	// Use global keys when you don't need isolation
-	var GlobalConfig = state.NewKey[string]("config", "")
-	var GlobalCounter = state.NewKey[int]("counter", 0)
-
-	if err := state.RegisterKey(builder, GlobalConfig); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, GlobalCounter); err != nil {
-		log.Fatal(err)
-	}
-
-	// 2. Namespaced Keys - Use when you need isolation
-	// Create namespaces for different agents
-	agent1NS := state.MustNamespace("agent1")
-	agent2NS := state.MustNamespace("agent2")
-
-	// Create namespaced keys with dot notation: "agent1.status"
-	agent1Status := state.TypedKey[string](agent1NS, "status", "")
-	agent1Progress := state.TypedKey[int](agent1NS, "progress", 0)
-	agent2Status := state.TypedKey[string](agent2NS, "status", "")
-	agent2Progress := state.TypedKey[int](agent2NS, "progress", 0)
-
-	// Register namespaced keys
-	if err := state.RegisterKey(builder, agent1Status); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, agent1Progress); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, agent2Status); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, agent2Progress); err != nil {
-		log.Fatal(err)
-	}
-
-	// Also register agent3 keys for later use (for namespace copy example)
-	agent3NS := state.MustNamespace("agent3")
-	agent3Status := state.TypedKey[string](agent3NS, "status", "")
-	agent3Progress := state.TypedKey[int](agent3NS, "progress", 0)
-	if err := state.RegisterKey(builder, agent3Status); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.RegisterKey(builder, agent3Progress); err != nil {
-		log.Fatal(err)
-	}
-
-	// Build the manager after all registrations
-	mgr := builder.Build()
-
-	// Demonstrate global keys
-	fmt.Println("=== Global Keys (Default) ===")
-	// Set global values
-	if err := state.Set(ctx, mgr, GlobalConfig, "production"); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.Set(ctx, mgr, GlobalCounter, 100); err != nil {
-		log.Fatal(err)
-	}
-	// Read global values
-	config, _ := state.Get(ctx, mgr, GlobalConfig)
-	counter, _ := state.Get(ctx, mgr, GlobalCounter)
-	fmt.Printf("Config: %s\n", config)
-	fmt.Printf("Counter: %d\n", counter)
+	fmt.Println("=== Namespaces Example ===")
+	fmt.Println("  Demonstrates state isolation with graph.WithNamespace()")
 	fmt.Println()
 
-	// Demonstrate namespaced keys
-	fmt.Println("=== Namespaced Keys ===")
-	fmt.Println("Keys are isolated by namespace prefix")
+	// Build graph with all keys
+	g := graph.New[any, any](agent1Data, agent1Status, agent2Data, agent2Status, sharedResult)
 
-	// Set values - no collisions even with same key names
-	if err := state.Set(ctx, mgr, agent1Status, "processing"); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.Set(ctx, mgr, agent1Progress, 50); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.Set(ctx, mgr, agent2Status, "waiting"); err != nil {
-		log.Fatal(err)
-	}
-	if err := state.Set(ctx, mgr, agent2Progress, 0); err != nil {
-		log.Fatal(err)
-	}
+	// Create namespaces for each agent
+	ns1 := graph.NewNamespace("agent1")
+	ns2 := graph.NewNamespace("agent2")
 
-	fmt.Println("=== Namespaced Keys (Isolation) ===")
-	a1Status, _ := state.Get(ctx, mgr, agent1Status)
-	a1Progress, _ := state.Get(ctx, mgr, agent1Progress)
-	a2Status, _ := state.Get(ctx, mgr, agent2Status)
-	a2Progress, _ := state.Get(ctx, mgr, agent2Progress)
-	fmt.Printf("Agent1 - Status: %s, Progress: %d%%\n", a1Status, a1Progress)
-	fmt.Printf("Agent2 - Status: %s, Progress: %d%%\n", a2Status, a2Progress)
-	fmt.Println()
+	// Initialize shared state (no namespace restriction)
+	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [init] Setting up initial state")
+		return graph.Set(agent1Data, "agent1-initial").
+			With(graph.SetValue(agent2Data, "agent2-initial")).
+			To("agent1_process", "agent2_process")
+	}, "agent1_process", "agent2_process")
 
-	// 3. Namespace Operations
-	// Get a view of all keys in a specific namespace
-	view, err := mgr.CreateReadView(ctx)
+	// Agent 1 node - can only access agent1.* keys (and optionally globals)
+	g.Node("agent1_process", graph.WithNamespace(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Can read own namespace
+		data := graph.Get(view, agent1Data)
+		fmt.Printf("  [agent1] Read own data: %s\n", data)
+
+		// Cannot read agent2's data (returns zero value)
+		otherData := graph.Get(view, agent2Data)
+		fmt.Printf("  [agent1] Tried to read agent2.data: '%s' (empty = blocked)\n", otherData)
+
+		// Can write to own namespace
+		return graph.Set(agent1Status, "processed").To("merge")
+	}, ns1, false), "merge") // includeGlobal=false
+
+	// Agent 2 node - can only access agent2.* keys (and optionally globals)
+	g.Node("agent2_process", graph.WithNamespace(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Can read own namespace
+		data := graph.Get(view, agent2Data)
+		fmt.Printf("  [agent2] Read own data: %s\n", data)
+
+		// Cannot read agent1's data (returns zero value)
+		otherData := graph.Get(view, agent1Data)
+		fmt.Printf("  [agent2] Tried to read agent1.data: '%s' (empty = blocked)\n", otherData)
+
+		// Can write to own namespace
+		return graph.Set(agent2Status, "processed").To("merge")
+	}, ns2, false), "merge") // includeGlobal=false
+
+	// Merge node - can access global result (uses namespace with includeGlobal=true)
+	g.Node("merge", graph.WithNamespace(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Can access global key when includeGlobal=true
+		fmt.Println("  [merge] Combining results from both agents")
+
+		// Note: This node uses agent1 namespace but with includeGlobal=true
+		// So it can write to the global "result" key
+		return graph.Set(sharedResult, "both agents completed").To(graph.END)
+	}, ns1, true), graph.END) // includeGlobal=true allows writing to global keys
+
+	g.Start("init")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("=== Namespace Views ===")
-	agent1View := state.GetNamespaceView(view, agent1NS)
-	fmt.Printf("Agent1 namespace keys: %v\n", agent1View)
-
-	globalView := state.GetNamespaceView(view, state.Global)
-	fmt.Printf("Global namespace keys: %v\n", globalView)
-	fmt.Println()
-
-	// 4. List all namespaces
-	fmt.Println("=== Active Namespaces ===")
-	namespaces := state.ListNamespaces(view)
-	for _, ns := range namespaces {
-		if ns.IsGlobal() {
-			fmt.Println("- (global)")
-		} else {
-			fmt.Printf("- %s\n", ns.Name())
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
+
 	fmt.Println()
-
-	// 5. Copy namespace (useful for subgraph handoffs)
-	// agent3 keys were already registered at the beginning
-
-	// Copy agent1 state to agent3
-	if err := state.CopyNamespace(ctx, mgr, agent1NS, agent3NS); err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("=== Namespace Copy (agent1 -> agent3) ===")
-	a3Status, _ := state.Get(ctx, mgr, agent3Status)
-	a3Progress, _ := state.Get(ctx, mgr, agent3Progress)
-	fmt.Printf("Agent3 - Status: %s, Progress: %d%% (copied from Agent1)\n", a3Status, a3Progress)
-	fmt.Println()
-
-	// 6. Key introspection
-	fmt.Println("=== Key Introspection ===")
-	fmt.Printf("agent1Status key name: %s\n", agent1Status.Name())
-	fmt.Printf("Is namespaced? %v\n", state.IsNamespaced(agent1Status.Name()))
-
-	nsName, localName := state.ParseNamespacedKey(agent1Status.Name())
-	fmt.Printf("Namespace: %s, Local name: %s\n", nsName, localName)
-	fmt.Println()
-
-	// Summary
-	fmt.Println("=== Summary ===")
-	fmt.Println("✓ Global keys: Simple, no prefix (e.g., 'config', 'counter')")
-	fmt.Println("✓ Namespaced keys: Isolated with dot notation (e.g., 'agent1.status')")
-	fmt.Println("✓ Zero overhead: Just string prefixes, full type safety")
-	fmt.Println("✓ Operations: GetNamespaceView, ListNamespaces, CopyNamespace")
+	fmt.Println("  Namespace features:")
+	fmt.Println("    • graph.NewNamespace('prefix') - create a namespace")
+	fmt.Println("    • graph.WithNamespace(fn, ns, includeGlobal) - restrict node access")
+	fmt.Println("    • Keys with 'prefix.' are in the namespace")
+	fmt.Println("    • Keys without dots are global (if includeGlobal=true)")
+	fmt.Println("    • Violations return zero values for reads, error for writes")
 }

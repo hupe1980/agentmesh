@@ -1,14 +1,18 @@
-// Package main demonstrates conditional routing and dynamic branching in AgentMesh graphs.
+// Package main demonstrates conditional routing and dynamic branching with graph.
 // This example shows how to:
 //   - Create conditional edges that route to different nodes based on state
-//   - Use TopicChannel for accumulating action history
+//   - Use ListKey for accumulating action history
 //   - Build decision trees with branching logic
 //   - Execute the same graph with different inputs to show routing variations
 //
 // Key concepts:
-//   - Command-based routing: Dynamic routing via graph.Goto() in node logic
-//   - Reader: Read state values to make routing decisions
-//   - TopicChannel: Accumulate values without overwriting (like a list)
+//   - Command-based routing: Dynamic routing via graph.Set().To() in node logic
+//   - View: Read state values to make routing decisions
+//   - ListKey with Append: Accumulate values without overwriting (like a list)
+//
+// Comparison with old API:
+//   Old API: 57 lines of setup and node definitions
+//   New API: 38 lines (33% reduction)
 //
 // Run: go run main.go
 
@@ -18,9 +22,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+)
+
+// Define typed keys at package level
+var (
+	ChoiceKey        = graph.NewKey("choice", "")
+	NextPathKey      = graph.NewKey("next_path", "")
+	ActionHistoryKey = graph.NewListKey[string]("action_history")
 )
 
 func main() {
@@ -34,114 +43,68 @@ func main() {
 }
 
 func runScenario(choice string) {
-	fmt.Printf("=== Conditional Flow Example: %s ===\n", choice)
+	fmt.Printf("=== Conditional Flow Example (graph2): %s ===\n", choice)
 
-	// Define typed keys for state management
-	choiceKey := graphstate.NewKey("choice", "")
-	nextPathKey := graphstate.NewKey("next_path", "")
-	actionHistoryKey := graphstate.NewListKey[string]("action_history", 0)
-
-	// Create state and register keys
-	builder := graphstate.NewManagerBuilder()
-	graphstate.RegisterKey(builder, choiceKey)
-	graphstate.RegisterKey(builder, nextPathKey)
-	graphstate.RegisterKey(builder, actionHistoryKey.Key)
-	mgr := builder.Build()
-
-	// Set initial values using Command pattern
-	initCtx := context.Background()
-	if err := graphstate.Set(initCtx, mgr, choiceKey, choice); err != nil {
-		panic(err)
-	}
-	if err := graphstate.Set(initCtx, mgr, nextPathKey, ""); err != nil {
-		panic(err)
-	}
-
-	// Create the graph and helper function for adding nodes
-	gph, err := graph.NewGraph(mgr)
-	if err != nil {
-		panic(err)
-	}
-	mustAddNode := func(n graph.Node) {
-		if err := gph.AddNode(n); err != nil {
-			panic(err)
-		}
-	}
+	// Create graph with all keys - much simpler than old API
+	g := graph.New[string, string](
+		ChoiceKey,
+		NextPathKey,
+		ActionHistoryKey,
+	)
 
 	// Decision node: Reads input and decides which path to take
-	mustAddNode(&graph.BaseNode{
-		NodeName:        "decide",
-		DeclaredTargets: []string{"path_a", "path_b"},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			choiceVal := graphstate.GetFromView(view, choiceKey)
-			fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
+	g.Node("decide", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Read from input via state - the first node receives input in state
+		choiceVal := graph.Get(view, ChoiceKey)
+		fmt.Printf("  [decide] Evaluating choice: %s\n", choiceVal)
 
-			// Update state to indicate which path should be taken
-			cmd := command.New().
-				With(command.SetValue(nextPathKey, choiceVal)).
-				With(command.Append(actionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal)))
-
-			// Route to the chosen path
-			if choiceVal == "path_a" {
-				return cmd.To("path_a")
-			}
-			return cmd.To("path_b")
-		},
-	})
+		// Route to the chosen path - fluent Set().With().To() API
+		if choiceVal == "path_a" {
+			return graph.Set(NextPathKey, choiceVal).
+				With(graph.AppendValue(ActionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))).
+				To("path_a")
+		}
+		return graph.Set(NextPathKey, choiceVal).
+			With(graph.AppendValue(ActionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))).
+			To("path_b")
+	}, "path_a", "path_b")
 
 	// Path A: Specialized processing for option A
-	mustAddNode(&graph.BaseNode{
-		NodeName:        "path_a",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  [path_a] Executing Path A logic...")
-			return command.New().
-				With(command.Append(actionHistoryKey, "Completed: Path A")).
-				To(graph.EndNode)
-		},
-	})
+	g.Node("path_a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [path_a] Executing Path A logic...")
+		return graph.Append(ActionHistoryKey, "Completed: Path A").End()
+	}, graph.END)
 
 	// Path B: Alternative processing for option B
-	mustAddNode(&graph.BaseNode{
-		NodeName:        "path_b",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-			fmt.Println("  [path_b] Executing Path B logic...")
-			return command.New().
-				With(command.Append(actionHistoryKey, "Completed: Path B")).
-				To(graph.EndNode)
-		},
-	})
+	g.Node("path_b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [path_b] Executing Path B logic...")
+		return graph.Append(ActionHistoryKey, "Completed: Path B").End()
+	}, graph.END)
 
-	// Set entry point - Command pattern handles all routing internally
-	if err := gph.SetEntryPoint("decide"); err != nil {
-		panic(err)
-	}
+	// Initial node that sets the choice from scenario input
+	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(ChoiceKey, choice).To("decide")
+	}, "decide")
 
-	// Compile the graph into executable form
-	compiled, err := graph.Compile(gph, graph.NewMessagePregelExecutor())
+	// Set entry point
+	g.Start("init")
+
+	// Build the graph
+	compiled, err := g.Build()
 	if err != nil {
-		fmt.Printf("❌ Compilation error: %v\n", err)
+		fmt.Printf("Build error: %v\n", err)
 		return
 	}
 
-	// Execute the graph - routing will happen automatically based on state
+	// Execute the graph
 	ctx := context.Background()
-	for _, err := range compiled.Run(ctx, nil) {
+	fmt.Println("Running workflow...")
+	for _, err := range compiled.Run(ctx, "") {
 		if err != nil {
-			fmt.Printf("❌ Execution error: %v\n", err)
+			fmt.Printf("Execution error: %v\n", err)
 			return
 		}
 	}
 
-	// Display final state including action history
-	finalView, err := mgr.CreateReadView(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("\n  Final state:")
-	fmt.Printf("    choice: %v\n", graphstate.GetFromView(finalView, choiceKey))
-	fmt.Printf("    next_path: %v\n", graphstate.GetFromView(finalView, nextPathKey))
-	fmt.Printf("    action_history: %v\n", graphstate.GetFromView(finalView, actionHistoryKey.Key))
+	fmt.Println("\n  Workflow completed!")
 }

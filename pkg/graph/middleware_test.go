@@ -3,292 +3,307 @@ package graph_test
 import (
 	"context"
 	"errors"
-	"iter"
+	"log/slog"
+	"os"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockExecutor is a simple test executor that collects execution data
-type mockExecutor struct {
-	calls []string
-}
-
-func (m *mockExecutor) Run(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-	m.calls = append(m.calls, "executor")
-	return func(yield func(state.Updates, error) bool) {
-		yield(state.Updates{"executed": true}, nil)
-	}
-}
-
-// trackingMiddleware tracks middleware execution order
-type trackingMiddleware struct {
-	name  string
-	calls *[]string
-}
-
-func (tm *trackingMiddleware) Wrap(next graph.Executor[[]message.Message, state.Updates]) graph.Executor[[]message.Message, state.Updates] {
-	return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-		*tm.calls = append(*tm.calls, tm.name+"-before")
-		results := next.Run(ctx, compiled, input, opts...)
-		// Wrap the iterator to track "after"
-		return func(yield func(state.Updates, error) bool) {
-			for update, err := range results {
-				if !yield(update, err) {
-					break
-				}
-			}
-			*tm.calls = append(*tm.calls, tm.name+"-after")
-		}
-	})
-}
-
-func TestMiddlewareFunc_Wrap(t *testing.T) {
-	var calls []string
-
-	middlewareFunc := graph.MiddlewareFunc[[]message.Message, state.Updates](func(next graph.Executor[[]message.Message, state.Updates]) graph.Executor[[]message.Message, state.Updates] {
-		return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			calls = append(calls, "middleware")
-			return next.Run(ctx, compiled, input, opts...)
-		})
-	})
-
-	executor := &mockExecutor{calls: []string{}}
-	wrapped := middlewareFunc.Wrap(executor)
-
-	// Execute wrapped middleware
+func TestWithNodeName(t *testing.T) {
 	ctx := context.Background()
-	results := wrapped.Run(ctx, nil, nil)
 
-	// Consume the iterator
-	for _, err := range results {
-		require.NoError(t, err)
-	}
+	// Initially no node name
+	assert.Equal(t, "", graph.NodeNameFromContext(ctx))
 
-	assert.Contains(t, calls, "middleware")
-	assert.Contains(t, executor.calls, "executor")
+	// Attach node name
+	ctx = graph.WithNodeName(ctx, "myNode")
+	assert.Equal(t, "myNode", graph.NodeNameFromContext(ctx))
 }
 
-func TestChain_SingleMiddleware(t *testing.T) {
-	var calls []string
+func TestChain(t *testing.T) {
+	var order []int
 
-	executor := &mockExecutor{calls: []string{}}
-	middleware := &trackingMiddleware{
-		name:  "mw1",
-		calls: &calls,
-	}
-
-	chained := graph.Chain(executor, middleware)
-
-	ctx := context.Background()
-	results := chained.Run(ctx, nil, nil)
-
-	// Consume iterator
-	for _, err := range results {
-		require.NoError(t, err)
-	}
-
-	// Check execution order
-	require.Len(t, calls, 2)
-	assert.Equal(t, "mw1-before", calls[0])
-	assert.Equal(t, "mw1-after", calls[1])
-	assert.Contains(t, executor.calls, "executor")
-}
-
-func TestChain_MultipleMiddleware(t *testing.T) {
-	var calls []string
-
-	executor := &mockExecutor{calls: []string{}}
-	mw1 := &trackingMiddleware{name: "mw1", calls: &calls}
-	mw2 := &trackingMiddleware{name: "mw2", calls: &calls}
-	mw3 := &trackingMiddleware{name: "mw3", calls: &calls}
-
-	// Chain middleware - first should be outermost
-	chained := graph.Chain(executor, mw1, mw2, mw3)
-
-	ctx := context.Background()
-	results := chained.Run(ctx, nil, nil)
-
-	// Consume iterator
-	for _, err := range results {
-		require.NoError(t, err)
-	}
-
-	// Verify order: mw1 → mw2 → mw3 → executor → mw3 → mw2 → mw1
-	require.Len(t, calls, 6)
-	assert.Equal(t, "mw1-before", calls[0])
-	assert.Equal(t, "mw2-before", calls[1])
-	assert.Equal(t, "mw3-before", calls[2])
-	assert.Equal(t, "mw3-after", calls[3])
-	assert.Equal(t, "mw2-after", calls[4])
-	assert.Equal(t, "mw1-after", calls[5])
-}
-
-func TestChain_NoMiddleware(t *testing.T) {
-	executor := &mockExecutor{calls: []string{}}
-
-	// Chain with no middleware should return original executor
-	chained := graph.Chain(executor)
-
-	ctx := context.Background()
-	results := chained.Run(ctx, nil, nil)
-
-	// Consume iterator
-	for _, err := range results {
-		require.NoError(t, err)
-	}
-
-	assert.Contains(t, executor.calls, "executor")
-}
-
-func TestWrapFunc(t *testing.T) {
-	t.Run("simple_wrapper", func(t *testing.T) {
-		var executed bool
-
-		wrapper := graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			executed = true
-			return func(yield func(state.Updates, error) bool) {
-				yield(state.Updates{"result": "success"}, nil)
-			}
-		})
-
-		results := wrapper.Run(context.Background(), nil, nil)
-
-		var updates []state.Updates
-		for update, err := range results {
-			require.NoError(t, err)
-			updates = append(updates, update)
+	mw1 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			order = append(order, 1)
+			cmd, err := next(ctx, view)
+			order = append(order, 10)
+			return cmd, err
 		}
-
-		assert.True(t, executed)
-		require.Len(t, updates, 1)
-		assert.Equal(t, "success", updates[0]["result"])
-	})
-
-	t.Run("error_handling", func(t *testing.T) {
-		expectedErr := errors.New("execution failed")
-
-		wrapper := graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			return func(yield func(state.Updates, error) bool) {
-				yield(nil, expectedErr)
-			}
-		})
-
-		results := wrapper.Run(context.Background(), nil, nil)
-
-		for _, err := range results {
-			assert.Equal(t, expectedErr, err)
-		}
-	})
-
-	t.Run("multiple_yields", func(t *testing.T) {
-		wrapper := graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			return func(yield func(state.Updates, error) bool) {
-				if !yield(state.Updates{"step": 1}, nil) {
-					return
-				}
-				if !yield(state.Updates{"step": 2}, nil) {
-					return
-				}
-				yield(state.Updates{"step": 3}, nil)
-			}
-		})
-
-		results := wrapper.Run(context.Background(), nil, nil)
-
-		var steps []int
-		for update, err := range results {
-			require.NoError(t, err)
-			steps = append(steps, update["step"].(int))
-		}
-
-		assert.Equal(t, []int{1, 2, 3}, steps)
-	})
-}
-
-func TestExecutorWrapper_Run(t *testing.T) {
-	var capturedCtx context.Context
-	var capturedInput []message.Message
-
-	wrapper := graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-		capturedCtx = ctx
-		capturedInput = input
-		return func(yield func(state.Updates, error) bool) {
-			yield(state.Updates{}, nil)
-		}
-	})
-
-	ctx := context.Background()
-	input := []message.Message{message.NewHumanMessageFromText("test")}
-
-	results := wrapper.Run(ctx, nil, input)
-
-	// Consume iterator
-	for _, err := range results {
-		require.NoError(t, err)
 	}
 
-	assert.Equal(t, ctx, capturedCtx)
-	assert.Equal(t, input, capturedInput)
-}
-
-func TestMiddleware_ErrorPropagation(t *testing.T) {
-	expectedErr := errors.New("middleware error")
-
-	errorMiddleware := graph.MiddlewareFunc[[]message.Message, state.Updates](func(next graph.Executor[[]message.Message, state.Updates]) graph.Executor[[]message.Message, state.Updates] {
-		return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			return func(yield func(state.Updates, error) bool) {
-				yield(nil, expectedErr)
-			}
-		})
-	})
-
-	executor := &mockExecutor{calls: []string{}}
-	wrapped := errorMiddleware.Wrap(executor)
-
-	results := wrapped.Run(context.Background(), nil, nil)
-
-	for _, err := range results {
-		assert.Equal(t, expectedErr, err)
+	mw2 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			order = append(order, 2)
+			cmd, err := next(ctx, view)
+			order = append(order, 20)
+			return cmd, err
+		}
 	}
 
-	// Executor should not have been called due to error
-	assert.Empty(t, executor.calls)
-}
-
-func TestMiddleware_ContextPropagation(t *testing.T) {
-	type ctxKey string
-	const testKey ctxKey = "test"
-
-	middleware := graph.MiddlewareFunc[[]message.Message, state.Updates](func(next graph.Executor[[]message.Message, state.Updates]) graph.Executor[[]message.Message, state.Updates] {
-		return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-			// Add value to context
-			ctx = context.WithValue(ctx, testKey, "middleware-value")
-			return next.Run(ctx, compiled, input, opts...)
-		})
-	})
-
-	var capturedValue string
-	testExecutor := graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[[]message.Message, state.Updates], input []message.Message, opts ...graph.RunOption) iter.Seq2[state.Updates, error] {
-		if val := ctx.Value(testKey); val != nil {
-			capturedValue = val.(string)
+	mw3 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			order = append(order, 3)
+			cmd, err := next(ctx, view)
+			order = append(order, 30)
+			return cmd, err
 		}
-		return func(yield func(state.Updates, error) bool) {
-			yield(state.Updates{}, nil)
-		}
-	})
-
-	wrapped := middleware.Wrap(testExecutor)
-	results := wrapped.Run(context.Background(), nil, nil)
-
-	// Consume iterator
-	for _, err := range results {
-		require.NoError(t, err)
 	}
 
-	assert.Equal(t, "middleware-value", capturedValue)
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		order = append(order, 100)
+		return graph.To(graph.END)
+	}
+
+	chained := graph.Chain(mw1, mw2, mw3)(inner)
+	_, err := chained(context.Background(), nil)
+	require.NoError(t, err)
+
+	// Order should be: 1 -> 2 -> 3 -> 100 -> 30 -> 20 -> 10
+	assert.Equal(t, []int{1, 2, 3, 100, 30, 20, 10}, order)
+}
+
+func TestLoggingMiddleware(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	mw := graph.LoggingMiddleware(logger)
+
+	called := false
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		called = true
+		return graph.To(graph.END)
+	}
+
+	wrapped := mw(inner)
+	ctx := graph.WithNodeName(context.Background(), "testNode")
+	_, err := wrapped(ctx, nil)
+
+	require.NoError(t, err)
+	assert.True(t, called)
+}
+
+func TestLoggingMiddlewareWithError(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	mw := graph.LoggingMiddleware(logger)
+
+	expectedErr := errors.New("test error")
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		return nil, expectedErr
+	}
+
+	wrapped := mw(inner)
+	ctx := graph.WithNodeName(context.Background(), "errorNode")
+	_, err := wrapped(ctx, nil)
+
+	assert.ErrorIs(t, err, expectedErr)
+}
+
+func TestTimingMiddleware(t *testing.T) {
+	var recordedNode string
+	var recordedDuration time.Duration
+
+	mw := graph.TimingMiddleware(func(nodeName string, d time.Duration) {
+		recordedNode = nodeName
+		recordedDuration = d
+	})
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		time.Sleep(10 * time.Millisecond)
+		return graph.To(graph.END)
+	}
+
+	wrapped := mw(inner)
+	ctx := graph.WithNodeName(context.Background(), "timedNode")
+	_, err := wrapped(ctx, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "timedNode", recordedNode)
+	assert.GreaterOrEqual(t, recordedDuration, 10*time.Millisecond)
+}
+
+func TestTimingMiddlewareNilCallback(t *testing.T) {
+	mw := graph.TimingMiddleware(nil)
+
+	called := false
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		called = true
+		return graph.To(graph.END)
+	}
+
+	wrapped := mw(inner)
+	_, err := wrapped(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.True(t, called)
+}
+
+func TestRecoveryMiddleware(t *testing.T) {
+	var recoveredNode string
+	var recoveredValue any
+
+	mw := graph.RecoveryMiddleware(func(nodeName string, recovered any) {
+		recoveredNode = nodeName
+		recoveredValue = recovered
+	})
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		panic("test panic")
+	}
+
+	wrapped := mw(inner)
+	ctx := graph.WithNodeName(context.Background(), "panicNode")
+	_, err := wrapped(ctx, nil)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "panic in node panicNode")
+	assert.Equal(t, "panicNode", recoveredNode)
+	assert.Equal(t, "test panic", recoveredValue)
+}
+
+func TestRecoveryMiddlewareWithErrorPanic(t *testing.T) {
+	panicErr := errors.New("panic error")
+
+	mw := graph.RecoveryMiddleware(nil)
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		panic(panicErr)
+	}
+
+	wrapped := mw(inner)
+	_, err := wrapped(context.Background(), nil)
+
+	assert.ErrorIs(t, err, panicErr)
+}
+
+func TestRecoveryMiddlewareNoPanic(t *testing.T) {
+	mw := graph.RecoveryMiddleware(func(nodeName string, recovered any) {
+		t.Fatal("should not be called")
+	})
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}
+
+	wrapped := mw(inner)
+	_, err := wrapped(context.Background(), nil)
+
+	require.NoError(t, err)
+}
+
+func TestConditionalMiddleware(t *testing.T) {
+	var innerCalled int32
+
+	mw := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			atomic.AddInt32(&innerCalled, 1)
+			return next(ctx, view)
+		}
+	}
+
+	condition := func(ctx context.Context) bool {
+		return graph.NodeNameFromContext(ctx) == "apply"
+	}
+
+	conditionalMW := graph.ConditionalMiddleware(condition, mw)
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}
+
+	wrapped := conditionalMW(inner)
+
+	// When condition is true
+	ctx := graph.WithNodeName(context.Background(), "apply")
+	_, err := wrapped(ctx, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&innerCalled))
+
+	// When condition is false
+	ctx = graph.WithNodeName(context.Background(), "skip")
+	_, err = wrapped(ctx, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&innerCalled)) // Not incremented
+}
+
+func TestNodeMiddleware(t *testing.T) {
+	var appliedNodes []string
+
+	mw := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			appliedNodes = append(appliedNodes, graph.NodeNameFromContext(ctx))
+			return next(ctx, view)
+		}
+	}
+
+	nodeMW := graph.NodeMiddleware([]string{"nodeA", "nodeB"}, mw)
+
+	inner := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}
+
+	wrapped := nodeMW(inner)
+
+	// Apply to nodeA
+	ctx := graph.WithNodeName(context.Background(), "nodeA")
+	_, _ = wrapped(ctx, nil)
+
+	// Apply to nodeB
+	ctx = graph.WithNodeName(context.Background(), "nodeB")
+	_, _ = wrapped(ctx, nil)
+
+	// Should not apply to nodeC
+	ctx = graph.WithNodeName(context.Background(), "nodeC")
+	_, _ = wrapped(ctx, nil)
+
+	assert.Equal(t, []string{"nodeA", "nodeB"}, appliedNodes)
+}
+
+func TestChainedMiddlewareInGraph(t *testing.T) {
+	var order []string
+
+	mw1 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			order = append(order, "mw1-before")
+			cmd, err := next(ctx, view)
+			order = append(order, "mw1-after")
+			return cmd, err
+		}
+	}
+
+	mw2 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			order = append(order, "mw2-before")
+			cmd, err := next(ctx, view)
+			order = append(order, "mw2-after")
+			return cmd, err
+		}
+	}
+
+	counterKey := graph.NewKey("counter", 0)
+
+	g := graph.New[any, any](counterKey)
+	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		order = append(order, "node-execute")
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("a")
+	g.WithMiddleware(graph.Chain(mw1, mw2))
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	for range compiled.Run(context.Background(), nil) {
+	}
+
+	assert.Equal(t, []string{
+		"mw1-before",
+		"mw2-before",
+		"node-execute",
+		"mw2-after",
+		"mw1-after",
+	}, order)
 }

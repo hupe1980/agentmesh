@@ -9,9 +9,9 @@ type ValidationErrorType string
 
 // Validation error type constants.
 const (
-	// ErrorTypeCycle indicates a cycle in the graph.
 	ErrorTypeCycle            ValidationErrorType = "CYCLE"
 	ErrorTypeDisconnected     ValidationErrorType = "DISCONNECTED"
+	ErrorTypeDuplicateKey     ValidationErrorType = "DUPLICATE_KEY"
 	ErrorTypeInvalidEntryNode ValidationErrorType = "INVALID_ENTRY_NODE"
 	ErrorTypeInvalidEndNode   ValidationErrorType = "INVALID_END_NODE"
 	ErrorTypeMissingNode      ValidationErrorType = "MISSING_NODE"
@@ -43,14 +43,13 @@ const (
 	ValidationLevelNone ValidationLevel = iota
 	// ValidationLevelBasic performs basic structural validation.
 	ValidationLevelBasic
-	// ValidationLevelStrict performs comprehensive validation.
+	// ValidationLevelStrict performs comprehensive validation including cycle detection.
 	ValidationLevelStrict
 )
 
 // ValidationOptions configures graph validation behavior.
 type ValidationOptions struct {
 	Level                  ValidationLevel
-	SkipValidation         bool
 	AllowCycles            bool
 	AllowDisconnectedNodes bool
 }
@@ -59,7 +58,6 @@ type ValidationOptions struct {
 func DefaultValidationOptions() ValidationOptions {
 	return ValidationOptions{
 		Level:                  ValidationLevelBasic,
-		SkipValidation:         false,
 		AllowCycles:            true, // BSP model handles cycles
 		AllowDisconnectedNodes: false,
 	}
@@ -69,84 +67,98 @@ func DefaultValidationOptions() ValidationOptions {
 func StrictValidationOptions() ValidationOptions {
 	return ValidationOptions{
 		Level:                  ValidationLevelStrict,
-		SkipValidation:         false,
 		AllowCycles:            false,
 		AllowDisconnectedNodes: false,
 	}
 }
 
-// validator validates graph structure.
-type validator struct {
-	opts ValidationOptions
-}
+// Validate performs validation on a built graph and returns any errors found.
+// This is useful for more detailed error reporting than Build() provides.
+func (g *Graph[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
+	opt := DefaultValidationOptions()
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 
-// newValidator creates a new validator with the given options.
-func newValidator(opts ValidationOptions) *validator {
-	return &validator{opts: opts}
-}
+	if opt.Level == ValidationLevelNone {
+		return nil
+	}
 
-// validate performs validation checks on the graph.
-func (v *validator) validate(g *Graph) []ValidationError {
 	var errors []ValidationError
 
-	// Basic structural validation
-	errors = append(errors, v.validateNodes(g)...)
-	errors = append(errors, v.validateEdges(g)...)
-	errors = append(errors, v.validateCommandTargets(g)...) // Validate DeclaredTargets instead of branches
-	errors = append(errors, v.validateEntryPoints(g)...)
+	// Key validation
+	errors = append(errors, g.validateKeys()...)
+
+	// Basic validation
+	errors = append(errors, g.validateNodes()...)
+	errors = append(errors, g.validateEdges()...)
+	errors = append(errors, g.validateEntryPoints()...)
 
 	// Strict validation
-	if v.opts.Level >= ValidationLevelStrict {
-		if !v.opts.AllowCycles {
-			errors = append(errors, v.validateAcyclic(g)...)
+	if opt.Level >= ValidationLevelStrict {
+		if !opt.AllowCycles {
+			errors = append(errors, g.detectCycles()...)
 		}
-		if !v.opts.AllowDisconnectedNodes {
-			errors = append(errors, v.validateConnectivity(g)...)
+		if !opt.AllowDisconnectedNodes {
+			errors = append(errors, g.detectDisconnected()...)
 		}
 	}
 
 	return errors
 }
 
-// validateNodes checks that all nodes are valid.
-func (v *validator) validateNodes(g *Graph) []ValidationError {
+// validateKeys checks for duplicate key names.
+func (g *Graph[I, O]) validateKeys() []ValidationError {
 	var errors []ValidationError
 
-	if len(g.Nodes) == 0 {
-		errors = append(errors, ValidationError{
-			Type:    ErrorTypeMissingNode,
-			Message: "graph has no nodes",
-		})
-	}
-
-	// Check for duplicate node names
 	seen := make(map[string]bool)
-	for name := range g.Nodes {
+	for _, key := range g.keys {
+		name := extractKeyName(key)
+		if name == "" {
+			continue
+		}
+
 		if seen[name] {
 			errors = append(errors, ValidationError{
-				Type:    ErrorTypeDuplicateNode,
-				Node:    name,
-				Message: "duplicate node name",
+				Type:    ErrorTypeDuplicateKey,
+				Message: fmt.Sprintf("duplicate key: %s", name),
 			})
 		}
+
 		seen[name] = true
 	}
 
 	return errors
 }
 
-// validateEdges checks that the entry point references an existing node.
-func (v *validator) validateEdges(g *Graph) []ValidationError {
+// validateNodes checks that all nodes have been defined.
+func (g *Graph[I, O]) validateNodes() []ValidationError {
 	var errors []ValidationError
 
-	// Check all entry points exist
-	for _, entryPoint := range g.EntryPoints {
-		if entryPoint != EndNode {
-			if _, exists := g.Nodes[entryPoint]; !exists {
+	if len(g.nodes) == 0 {
+		errors = append(errors, ValidationError{
+			Type:    ErrorTypeMissingNode,
+			Message: "graph has no nodes",
+		})
+	}
+
+	return errors
+}
+
+// validateEdges checks that all edge targets are valid.
+func (g *Graph[I, O]) validateEdges() []ValidationError {
+	var errors []ValidationError
+
+	for _, n := range g.nodes {
+		for _, target := range n.targets {
+			if target == END {
+				continue
+			}
+			if _, ok := g.nodes[target]; !ok {
 				errors = append(errors, ValidationError{
 					Type:    ErrorTypeInvalidEdge,
-					Node:    StartNode,
-					Message: fmt.Sprintf("entry point references non-existent node %q", entryPoint),
+					Node:    n.name,
+					Message: fmt.Sprintf("target node %q does not exist", target),
 				})
 			}
 		}
@@ -155,168 +167,122 @@ func (v *validator) validateEdges(g *Graph) []ValidationError {
 	return errors
 }
 
-// validateCommandTargets checks that all node DeclaredTargets are valid.
-func (v *validator) validateCommandTargets(g *Graph) []ValidationError {
+// validateEntryPoints checks that entry points are valid.
+func (g *Graph[I, O]) validateEntryPoints() []ValidationError {
 	var errors []ValidationError
 
-	// Validate each node's DeclaredTargets
-	for name, node := range g.Nodes {
-		targets := node.Targets()
-		for _, target := range targets {
-			// Allow virtual START/END nodes
-			if target != StartNode && target != EndNode {
-				if _, exists := g.Nodes[target]; !exists {
-					errors = append(errors, ValidationError{
-						Type:    ErrorTypeInvalidBranch, // Reuse error type
-						Node:    name,
-						Message: fmt.Sprintf("node declares non-existent target %q", target),
-					})
-				}
-			}
-		}
-	}
-
-	return errors
-}
-
-// validateEntryPoints checks that START and END nodes are properly connected.
-func (v *validator) validateEntryPoints(g *Graph) []ValidationError {
-	var errors []ValidationError
-
-	// Check for at least one entry point
-	if len(g.EntryPoints) == 0 {
+	if len(g.entryPoints) == 0 {
 		errors = append(errors, ValidationError{
 			Type:    ErrorTypeInvalidEntryNode,
-			Message: fmt.Sprintf("graph has no entry points (no edges from %s node)", StartNode),
+			Message: "no entry point defined",
 		})
+		return errors
 	}
 
-	// Check for END node connections (via Command node targets)
-	hasEndConnection := false
-	for _, node := range g.Nodes {
-		targets := node.Targets()
-		for _, target := range targets {
-			if target == EndNode {
-				hasEndConnection = true
-				break
-			}
+	for _, ep := range g.entryPoints {
+		if _, ok := g.nodes[ep]; !ok {
+			errors = append(errors, ValidationError{
+				Type:    ErrorTypeInvalidEntryNode,
+				Node:    ep,
+				Message: fmt.Sprintf("entry point %q does not exist", ep),
+			})
 		}
-		if hasEndConnection {
-			break
-		}
-	}
-
-	if !hasEndConnection {
-		errors = append(errors, ValidationError{
-			Type:    ErrorTypeInvalidEndNode,
-			Message: fmt.Sprintf("graph has no routing to %s node", EndNode),
-		})
 	}
 
 	return errors
 }
 
-// validateAcyclic checks that the graph is acyclic using DFS.
-func (v *validator) validateAcyclic(g *Graph) []ValidationError {
+// detectCycles detects cycles in the graph using DFS.
+func (g *Graph[I, O]) detectCycles() []ValidationError {
 	var errors []ValidationError
+
+	// Track visited and recursion stack
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
 
-	var hasCycle func(string) bool
-	hasCycle = func(node string) bool {
-		visited[node] = true
-		recStack[node] = true
+	var dfs func(name string) bool
+	dfs = func(name string) bool {
+		visited[name] = true
+		recStack[name] = true
 
-		//nolint:nestif // Acceptable nesting for cycle detection algorithm
-		// Check entry point edges
-		if node == StartNode {
-			for _, entryPoint := range g.EntryPoints {
-				if !visited[entryPoint] {
-					if hasCycle(entryPoint) {
-						return true
-					}
-				} else if recStack[entryPoint] {
-					errors = append(errors, ValidationError{
-						Type:    ErrorTypeCycle,
-						Node:    node,
-						Message: fmt.Sprintf("cycle detected: %s -> %s", node, entryPoint),
-					})
-					return true
-				}
-			}
+		n, ok := g.nodes[name]
+		if !ok {
+			return false
 		}
-		// Check node targets
-		//nolint:nestif // Cycle detection requires nested traversal
-		if n, exists := g.Nodes[node]; exists {
-			for _, target := range n.Targets() {
-				if !visited[target] {
-					if hasCycle(target) {
-						return true
-					}
-				} else if recStack[target] {
-					errors = append(errors, ValidationError{
-						Type:    ErrorTypeCycle,
-						Node:    node,
-						Message: fmt.Sprintf("cycle detected: %s -> %s", node, target),
-					})
+
+		for _, target := range n.targets {
+			if target == END {
+				continue
+			}
+			if !visited[target] {
+				if dfs(target) {
 					return true
 				}
+			} else if recStack[target] {
+				// Found a cycle
+				errors = append(errors, ValidationError{
+					Type:    ErrorTypeCycle,
+					Node:    name,
+					Message: fmt.Sprintf("cycle detected: %s -> %s", name, target),
+				})
+				return true
 			}
 		}
 
-		recStack[node] = false
+		recStack[name] = false
 		return false
 	}
 
-	for node := range g.Nodes {
-		if !visited[node] {
-			hasCycle(node)
+	// Start DFS from each entry point
+	for _, ep := range g.entryPoints {
+		if !visited[ep] {
+			dfs(ep)
 		}
 	}
 
 	return errors
 }
 
-// validateConnectivity checks that all nodes are reachable from START.
-func (v *validator) validateConnectivity(g *Graph) []ValidationError {
+// detectDisconnected finds nodes that are not reachable from entry points.
+func (g *Graph[I, O]) detectDisconnected() []ValidationError {
 	var errors []ValidationError
 
-	// Build adjacency list
-	adj := make(map[string][]string)
-	// Add entry point edges
-	adj[StartNode] = append(adj[StartNode], g.EntryPoints...)
-	// Add node targets
-	for name, node := range g.Nodes {
-		targets := node.Targets()
-		if len(targets) > 0 {
-			adj[name] = append(adj[name], targets...)
-		}
-	}
-
-	// BFS from START node
-	visited := make(map[string]bool)
-	queue := []string{StartNode}
-	visited[StartNode] = true
+	// BFS from entry points to find all reachable nodes
+	reachable := make(map[string]bool)
+	queue := make([]string, 0, len(g.entryPoints))
+	queue = append(queue, g.entryPoints...)
 
 	for len(queue) > 0 {
-		node := queue[0]
+		name := queue[0]
 		queue = queue[1:]
 
-		for _, next := range adj[node] {
-			if !visited[next] {
-				visited[next] = true
-				queue = append(queue, next)
+		if reachable[name] {
+			continue
+		}
+		reachable[name] = true
+
+		n, ok := g.nodes[name]
+		if !ok {
+			continue
+		}
+
+		for _, target := range n.targets {
+			if target == END {
+				continue
+			}
+			if !reachable[target] {
+				queue = append(queue, target)
 			}
 		}
 	}
 
-	// Check for disconnected nodes (excluding virtual START/END)
-	for node := range g.Nodes {
-		if !visited[node] && node != StartNode && node != EndNode {
+	// Check for unreachable nodes
+	for name := range g.nodes {
+		if !reachable[name] {
 			errors = append(errors, ValidationError{
 				Type:    ErrorTypeDisconnected,
-				Node:    node,
-				Message: "node is not reachable from START",
+				Node:    name,
+				Message: fmt.Sprintf("node %q is not reachable from any entry point", name),
 			})
 		}
 	}

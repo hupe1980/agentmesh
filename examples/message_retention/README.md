@@ -4,7 +4,7 @@
 Demonstrates conversation history management with message retention policies using typed list keys. Shows how to limit message history to prevent out-of-memory issues in long-running agent conversations.
 
 ## Key Concepts
-- **Message Retention**: Limit history size using `ListKey` maxSize parameter
+- **Message Retention**: Limit history size using `ListKey` with maxSize option
 - **Automatic Pruning**: Older messages removed when limit exceeded
 - **Memory Efficiency**: Prevent OOM in long conversations
 - **Context Window Management**: Keep relevant history for LLMs
@@ -37,27 +37,39 @@ Messages retained: 4 (maxSize=100)
 
 ### 1. Create ListKey with Message Limit
 ```go
-// Unlimited messages (maxSize=0)
-var UnlimitedKey = state.NewListKey[message.Message]("__messages__", 0)
+// Unlimited messages (no limit)
+var UnlimitedKey = graph.NewListKey[message.Message]("messages")
 
 // Limited to 100 messages
-var LimitedKey = state.NewListKey[message.Message]("__messages__", 100)
+var LimitedKey = graph.NewListKey[message.Message]("messages", 
+    graph.WithMaxSize(100),
+)
 ```
 
-### 2. Register Key with State Manager
+### 2. Create Graph with Key
 ```go
-builder := state.NewManagerBuilder()
-state.RegisterListKey(builder, messagesKey)
+g := graph.New[[]message.Message, message.Message](LimitedKey)
 
-mgr := builder.Build()
-g, err := graph.NewGraph(mgr)
+g.Node("agent", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
+    messages := graph.GetList(input, LimitedKey)
+    
+    // Process messages...
+    response := message.NewAIMessageFromText("Hello!")
+    
+    return graph.Append(LimitedKey, response).ToEnd(), nil
+}, graph.END)
+
+g.Start("agent")
 ```
 
 ### 3. Automatic Pruning Behavior
 When the message limit is exceeded, the oldest messages are automatically removed:
 
 ```go
-messagesKey := state.NewListKey[message.Message]("__messages__", 10)
+// Create key with max 10 messages
+var MessagesKey = graph.NewListKey[message.Message]("messages",
+    graph.WithMaxSize(10),
+)
 
 // After adding 15 messages:
 //  - Messages 1-5 are automatically pruned
@@ -66,14 +78,17 @@ messagesKey := state.NewListKey[message.Message]("__messages__", 10)
 
 ### 4. Access Messages from State
 ```go
-view, _ := manager.CreateReadView(ctx)
-messages := state.GetFromView(view, messagesKey.Key) // ListKey embeds Key[[]T]
-fmt.Printf("Message count: %d\n", len(messages))
+g.Node("processor", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
+    messages := graph.GetList(input, MessagesKey)
+    fmt.Printf("Message count: %d\n", len(messages))
+    
+    return graph.ToEnd(), nil
+}, graph.END)
 ```
 
 ## Message Lifecycle
 
-### Without Retention (maxSize=0)
+### Without Retention (no maxSize)
 ```
 Message 1 → Message 2 → Message 3 → ... → Message 1000
 All messages kept in memory
@@ -97,22 +112,28 @@ Message 91-100: Retained (last 10)
 ### Chat Applications
 ```go
 // Keep last 100 messages (~50 conversation turns)
-var ChatMessagesKey = state.NewListKey[message.Message]("__messages__", 100)
+var ChatMessagesKey = graph.NewListKey[message.Message]("messages",
+    graph.WithMaxSize(100),
+)
 ```
 
 ### Production Agents
 ```go
 // Larger buffer for complex workflows
-var AgentMessagesKey = state.NewListKey[message.Message]("__messages__", 200)
+var AgentMessagesKey = graph.NewListKey[message.Message]("messages",
+    graph.WithMaxSize(200),
+)
 ```
 
 ### LLM Context Management
 ```go
 // GPT-4: ~8K tokens ≈ 40-50 messages
-var ContextKey = state.NewListKey[message.Message]("__messages__", 50)
+var ContextKey = graph.NewListKey[message.Message]("messages",
+    graph.WithMaxSize(50),
+)
 ```
 
 ## Related Examples
-- [State Management](../state_builder/) - Basic typed key registration
+- [State Builder](../state_builder/) - Basic typed key registration
 - [Checkpointing](../checkpointing/) - Persist message history
 - [Basic Agent](../basic_agent/) - Simple agent with message handling

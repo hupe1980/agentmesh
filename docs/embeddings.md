@@ -65,9 +65,9 @@ embedder := openai.NewEmbedder(func(o *openai.Options) {
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Store documents
-vectorMem.Add(ctx, "session1", message.NewHumanMessage("Python is a programming language"))
-vectorMem.Add(ctx, "session1", message.NewHumanMessage("JavaScript runs in browsers"))
-vectorMem.Add(ctx, "session1", message.NewHumanMessage("Dogs are popular pets"))
+vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("Python is a programming language"))
+vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("JavaScript runs in browsers"))
+vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("Dogs are popular pets"))
 
 // Semantic search - finds Python document even though query uses different words
 results, _ := vectorMem.Recall(ctx, "session1", &memory.RecallFilter{
@@ -116,9 +116,9 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Load knowledge base
-vectorMem.Add(ctx, "kb", message.NewHumanMessage("AgentMesh uses Pregel BSP for graph execution"))
-vectorMem.Add(ctx, "kb", message.NewHumanMessage("Checkpointing enables time-travel debugging"))
-vectorMem.Add(ctx, "kb", message.NewHumanMessage("Tools allow agents to call external APIs"))
+vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("AgentMesh uses Pregel BSP for graph execution"))
+vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("Checkpointing enables time-travel debugging"))
+vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("Tools allow agents to call external APIs"))
 
 // Create retriever
 retriever := &memoryRetriever{memory: vectorMem, sessionID: "kb"}
@@ -128,9 +128,9 @@ ragAgent, _ := agent.NewRAGAgent(model, retriever)
 
 // Query uses retrieved context
 msgs := []message.Message{
-    message.NewHumanMessage("How does AgentMesh handle execution?"),
+    message.NewHumanMessageFromText("How does AgentMesh handle execution?"),
 }
-messages, _ := agent.CollectMessages(ragAgent.Run(ctx, msgs))
+messages, _ := graph.Collect(ragAgent.Run(ctx, msgs))
 // Response includes information about Pregel BSP from knowledge base
 ```
 
@@ -202,7 +202,7 @@ func TestVectorMemory(t *testing.T) {
     mem := memory.NewVectorMemory(embedder)
     
     // Test without OpenAI API
-    mem.Add(ctx, "test", message.NewHumanMessage("hello"))
+    mem.Add(ctx, "test", message.NewHumanMessageFromText("hello"))
     results, err := mem.Recall(ctx, "test", &memory.RecallFilter{
         Query: "hello",
         K:     1,
@@ -294,9 +294,9 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Store multi-session conversations
-vectorMem.Add(ctx, "user123", message.NewHumanMessage("I love Python"))
-vectorMem.Add(ctx, "user123", message.NewAIMessage("Python is great for data science!"))
-vectorMem.Add(ctx, "user456", message.NewHumanMessage("JavaScript is my favorite"))
+vectorMem.Add(ctx, "user123", message.NewHumanMessageFromText("I love Python"))
+vectorMem.Add(ctx, "user123", message.NewAIMessageFromText("Python is great for data science!"))
+vectorMem.Add(ctx, "user456", message.NewHumanMessageFromText("JavaScript is my favorite"))
 
 // Semantic recall across sessions
 results, err := vectorMem.Recall(ctx, "user123", &memory.RecallFilter{
@@ -343,8 +343,8 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Load historical context
-vectorMem.Add(ctx, "user", message.NewHumanMessage("My project uses TypeScript"))
-vectorMem.Add(ctx, "user", message.NewHumanMessage("I prefer functional programming"))
+vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("My project uses TypeScript"))
+vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("I prefer functional programming"))
 
 // Create agent
 agent, _ := agent.NewReActAgent(model,
@@ -359,7 +359,7 @@ history, _ := vectorMem.Recall(ctx, "user", &memory.RecallFilter{
 
 // Prepend history to conversation
 messages := append(history, currentMessages...)
-results, err := agent.CollectMessages(agent.Run(ctx, messages))
+results, err := graph.Collect(agent.Run(ctx, messages))
 if err != nil {
     log.Fatal(err)
 }
@@ -568,7 +568,7 @@ func TestSemanticSearch(t *testing.T) {
     mem := memory.NewVectorMemory(embedder)
     
     // Test logic without OpenAI dependency
-    mem.Add(ctx, "test", message.NewHumanMessage("test message"))
+    mem.Add(ctx, "test", message.NewHumanMessageFromText("test message"))
     results, err := mem.Recall(ctx, "test", &memory.RecallFilter{
         Query: "test",
         K:     1,

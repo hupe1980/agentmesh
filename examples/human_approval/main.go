@@ -1,429 +1,89 @@
-// Package main demonstrates advanced human-in-the-loop workflows with approval guards.
-//
-// This example shows the new approval workflow features:
-// - ApprovalGuard: Conditional approval based on state evaluation
-// - WithApprovalGuard: Configure when approval is needed dynamically
-// - ApprovalResponse: Structured approval decisions with metadata
-// - State edits: Modify state when approving
-// - Feedback annotations: Record decisions in message history
-// - Approval history: Track all approval decisions in checkpoints
-//
-// Workflow:
-// 1. Draft an email automatically
-// 2. Approval guard evaluates if content needs review (checks for sensitive keywords)
-// 3. If guard returns true, execution pauses for human approval
-// 4. User reviews and provides structured ApprovalResponse (approve/reject/edit)
-// 5. Resume with WithApproval() - state edits applied automatically
-// 6. Node accesses approval decision via ApprovalFromContext()
-// 7. Feedback annotation added to message history
-// 8. Approval recorded in checkpoint history for audit
-
+// Package main demonstrates human-in-the-loop approval workflow.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
+)
+
+var (
+	taskKey   = graph.NewKey("task", "")
+	statusKey = graph.NewKey("status", "pending")
 )
 
 func main() {
 	ctx := context.Background()
+	fmt.Println("=== Human Approval Example ===")
 
-	fmt.Println("=== Advanced Approval Workflow with Guards ===")
+	// Build graph with approval checkpoint
+	g := graph.New[any, any](taskKey, statusKey)
 
-	// Scenario 1: Sensitive content triggers approval
-	runSensitiveContentWorkflow(ctx)
+	g.Node("prepare", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [prepare] Preparing task for approval")
+		return graph.Set(taskKey, "delete-production-database").
+			With(graph.SetValue(statusKey, "awaiting_approval")).
+			To("approve")
+	}, "approve")
 
-	fmt.Println("\n" + strings.Repeat("=", 60))
+	// Node that requires approval before execution
+	g.Node("approve", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		task := graph.Get(view, taskKey)
+		fmt.Printf("  [approve] Processing approved task: %s\n", task)
+		return graph.Set(statusKey, "approved").To("execute")
+	}, "execute")
 
-	// Scenario 2: Non-sensitive content auto-continues
-	runNormalContentWorkflow(ctx)
+	g.Node("execute", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		task := graph.Get(view, taskKey)
+		fmt.Printf("  [execute] Executing: %s\n", task)
+		return graph.Set(statusKey, "completed").End()
+	}, graph.END)
 
-	fmt.Println("\n" + strings.Repeat("=", 60))
+	g.Start("prepare")
 
-	// Scenario 3: Rejection workflow
-	runRejectionWorkflow(ctx)
-}
+	// Add interrupt before the approve node
+	g.InterruptBefore("approve")
 
-// runSensitiveContentWorkflow demonstrates approval guard detecting sensitive content
-func runSensitiveContentWorkflow(ctx context.Context) {
-	fmt.Println("\n=== Scenario 1: Sensitive Content Requires Approval ===")
-
-	// Create state manager
-	builder := state.NewManagerBuilder()
-	topicKey := state.NewKey("topic", "")
-	draftKey := state.NewKey("draft", "")
-	sentKey := state.NewKey("sent", false)
-
-	state.RegisterKey(builder, topicKey)
-	state.RegisterKey(builder, draftKey)
-	state.RegisterKey(builder, sentKey)
-	mgr := builder.Build()
-
-	// Initialize with sensitive topic
-	mgr.ApplyUpdates(ctx, state.Updates{
-		topicKey.Name(): "Confidential: Q4 Layoff Plans",
-	})
-
-	// Build graph
-	g, _ := graph.NewGraph(mgr)
-
-	// Draft node
-	draftNode := &graph.BaseNode{
-		NodeName:        "draft_email",
-		DeclaredTargets: []string{"send_email"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			topic := state.GetFromView(view, topicKey)
-			fmt.Printf("📝 Drafting email about: %s\n", topic)
-
-			draft := fmt.Sprintf("Subject: %s\n\nDear Team,\n\nImportant update regarding: %s\n\nBest regards", topic, topic)
-
-			return []string{"send_email"}, state.Updates{
-				draftKey.Name(): draft,
-			}, nil
-		},
+	compiled, err := g.Build()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	// Send node with approval context access
-	sendNode := &graph.BaseNode{
-		NodeName:        "send_email",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			// Check for approval response from context
-			approval := graph.ApprovalFromContext(ctx, "send_email")
-
-			if approval != nil {
-				fmt.Printf("✅ Approval received: %s (by %s)\n", approval.Decision, approval.User)
-				fmt.Printf("   Reason: %s\n", approval.Reason)
-
-				switch approval.Decision {
-				case graph.ApprovalRejected:
-					fmt.Println("❌ Email sending cancelled by user")
-					return []string{graph.EndNode}, state.Updates{
-						sentKey.Name(): false,
-					}, nil
-
-				case graph.ApprovalApproved:
-					// State edits from approval.Edits are already applied automatically
-					// We just need to send the email
-					draft := state.GetFromView(view, draftKey)
-					fmt.Printf("📧 Sending email:\n%s\n", draft)
-					return []string{graph.EndNode}, state.Updates{
-						sentKey.Name(): true,
-					}, nil
-				}
-			}
-
-			// No approval needed - send directly
-			draft := state.GetFromView(view, draftKey)
-			fmt.Printf("📧 Sending email:\n%s\n", draft)
-			return []string{graph.EndNode}, state.Updates{
-				sentKey.Name(): true,
-			}, nil
-		},
-	}
-
-	g.AddNode(draftNode)
-	g.AddNode(sendNode)
-	g.SetEntryPoint("draft_email")
-
-	// Add interrupt with approval guard
-	g.AddInterruptBefore("send_email",
-		graph.WithApprovalGuard(func(ctx context.Context, view state.ReadView) (bool, string, error) {
-			// Check if draft contains sensitive keywords
-			draftStr := state.GetFromView(view, draftKey)
-			sensitiveKeywords := []string{"confidential", "layoff", "termination", "secret", "classified"}
-			for _, keyword := range sensitiveKeywords {
-				if strings.Contains(strings.ToLower(draftStr), keyword) {
-					return true, fmt.Sprintf("Contains sensitive keyword: %s", keyword), nil
-				}
-			}
-
-			return false, "", nil // No approval needed
-		}),
-		graph.WithFeedbackAnnotation(true), // Record approval in message history
-	)
-
-	compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
-
-	checkpointer := checkpoint.NewInMemoryCheckpointer()
-	runID := "sensitive-email-001"
-
-	// Step 1: Run until approval guard triggers
-	fmt.Println("→ Running workflow...")
-	for _, err := range compiled.Run(ctx, []message.Message{},
-		graph.WithRunID(runID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1),
-		),
-	) {
+	// First run - will interrupt at approval
+	fmt.Println("\n--- First Run (will pause for approval) ---")
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
-			log.Printf("Error: %v", err)
+			var intErr *graph.InterruptError
+			if errors.As(err, &intErr) {
+				fmt.Printf("  [INTERRUPT] Paused before node: %s\n", intErr.NodeName)
+				fmt.Println("  Simulating human review...")
+			} else {
+				log.Fatal(err)
+			}
 		}
 	}
 
-	fmt.Println("⏸️  Execution paused - approval required")
-
-	// Step 2: Load checkpoint and show approval details
-	cp, _ := checkpointer.Load(ctx, runID)
-
-	if cp.ApprovalMetadata != nil && len(cp.ApprovalMetadata.PendingApprovals) > 0 {
-		for nodeName, pending := range cp.ApprovalMetadata.PendingApprovals {
-			fmt.Printf("📋 Pending Approval for: %s\n", nodeName)
-			fmt.Printf("   Reason: %s\n", pending.Reason)
-			fmt.Printf("   Requested: %v\n", pending.RequestedAt)
-		}
-	}
-
-	fmt.Printf("\n📄 Current Draft:\n%s\n\n", cp.State["draft"])
-
-	// Step 3: User reviews and provides structured approval
-	fmt.Println("→ User reviewing and editing draft...")
-
-	editedDraft := "Subject: Confidential: Q4 Layoff Plans\n\nDear Team,\n\n[REVIEWED] Important update regarding: Q4 Organizational Changes\n\n**This content has been reviewed and approved for internal distribution only.**\n\nBest regards"
-
+	// Resume with approval
+	fmt.Println("\n--- Resume with Approval ---")
 	approval := &graph.ApprovalResponse{
 		Decision:  graph.ApprovalApproved,
-		Reason:    "Reviewed and approved with disclaimer added",
-		User:      "alice@example.com",
+		Reason:    "Approved by admin",
+		User:      "admin@example.com",
 		Timestamp: time.Now(),
-		Edits: state.Updates{
-			draftKey.Name(): editedDraft,
-		},
-		Annotations: map[string]any{
-			"department": "HR",
-			"risk_level": "high",
-		},
 	}
-
-	fmt.Printf("✅ Approval Decision: %s\n", approval.Decision)
-	fmt.Printf("   By: %s\n", approval.User)
-	fmt.Printf("   With edits: Yes\n\n")
-
-	// Step 4: Resume with approval
-	fmt.Println("→ Resuming workflow with approval...")
-	for _, err := range compiled.Run(ctx, []message.Message{},
-		graph.WithCheckpoint(cp),
-		graph.WithApproval("send_email", approval),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer), // Need checkpointer to save approval history
-		),
-	) {
+	for _, err := range compiled.Run(ctx, nil, graph.WithApproval("approve", approval)) {
 		if err != nil {
-			log.Printf("Error: %v", err)
+			log.Fatal(err)
 		}
 	}
 
-	// Step 5: Check approval history
-	fmt.Println("\n📊 Approval History:")
-	history, _ := checkpointer.GetApprovalHistory(ctx, runID)
-	for i, record := range history {
-		fmt.Printf("  %d. Node: %s, Decision: %s, User: %s\n", i+1, record.NodeName, record.Decision, record.User)
-		fmt.Printf("     Reason: %s\n", record.Reason)
-		fmt.Printf("     Timestamp: %v\n", record.Timestamp)
-		if len(record.StateEdits) > 0 {
-			fmt.Printf("     Had edits: Yes\n")
-		}
-	}
-}
-
-// runNormalContentWorkflow demonstrates guard allowing auto-continue
-func runNormalContentWorkflow(ctx context.Context) {
-	fmt.Println("\n=== Scenario 2: Normal Content Auto-Continues ===")
-
-	builder := state.NewManagerBuilder()
-	topicKey := state.NewKey("topic", "")
-	draftKey := state.NewKey("draft", "")
-	sentKey := state.NewKey("sent", false)
-
-	state.RegisterKey(builder, topicKey)
-	state.RegisterKey(builder, draftKey)
-	state.RegisterKey(builder, sentKey)
-	mgr := builder.Build()
-
-	// Non-sensitive topic
-	mgr.ApplyUpdates(ctx, state.Updates{
-		topicKey.Name(): "Weekly Team Standup Notes",
-	})
-
-	g, _ := graph.NewGraph(mgr)
-
-	draftNode := &graph.BaseNode{
-		NodeName:        "draft_email",
-		DeclaredTargets: []string{"send_email"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			topic := state.GetFromView(view, topicKey)
-			fmt.Printf("📝 Drafting email about: %s\n", topic)
-			draft := fmt.Sprintf("Subject: %s\n\nHi team,\n\nHere are this week's updates...\n\nCheers", topic)
-			return []string{"send_email"}, state.Updates{draftKey.Name(): draft}, nil
-		},
-	}
-
-	sendNode := &graph.BaseNode{
-		NodeName:        "send_email",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			draft := state.GetFromView(view, draftKey)
-			fmt.Printf("📧 Sending email (no approval needed):\n%s\n", draft)
-			return []string{graph.EndNode}, state.Updates{sentKey.Name(): true}, nil
-		},
-	}
-
-	g.AddNode(draftNode)
-	g.AddNode(sendNode)
-	g.SetEntryPoint("draft_email")
-
-	// Same approval guard - will return false for non-sensitive content
-	g.AddInterruptBefore("send_email",
-		graph.WithApprovalGuard(func(ctx context.Context, view state.ReadView) (bool, string, error) {
-			draftStr := state.GetFromView(view, draftKey)
-			sensitiveKeywords := []string{"confidential", "layoff", "termination"}
-			for _, keyword := range sensitiveKeywords {
-				if strings.Contains(strings.ToLower(draftStr), keyword) {
-					return true, fmt.Sprintf("Contains sensitive keyword: %s", keyword), nil
-				}
-			}
-			return false, "", nil // Guard says: no approval needed!
-		}),
-	)
-
-	compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
-
-	fmt.Println("→ Running workflow...")
-	for _, err := range compiled.Run(ctx, []message.Message{},
-		graph.WithRunID("normal-email-001"),
-	) {
-		if err != nil {
-			log.Printf("Error: %v", err)
-		}
-	}
-
-	fmt.Println("✅ Workflow completed without approval (guard allowed auto-continue)")
-}
-
-// runRejectionWorkflow demonstrates user rejection
-func runRejectionWorkflow(ctx context.Context) {
-	fmt.Println("\n=== Scenario 3: User Rejects ===")
-
-	builder := state.NewManagerBuilder()
-	topicKey := state.NewKey("topic", "")
-	draftKey := state.NewKey("draft", "")
-	sentKey := state.NewKey("sent", false)
-
-	state.RegisterKey(builder, topicKey)
-	state.RegisterKey(builder, draftKey)
-	state.RegisterKey(builder, sentKey)
-	mgr := builder.Build()
-
-	mgr.ApplyUpdates(ctx, state.Updates{
-		topicKey.Name(): "Secret Project Alpha Launch",
-	})
-
-	g, _ := graph.NewGraph(mgr)
-
-	draftNode := &graph.BaseNode{
-		NodeName:        "draft_email",
-		DeclaredTargets: []string{"send_email"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			topic := state.GetFromView(view, topicKey)
-			fmt.Printf("📝 Drafting email about: %s\n", topic)
-			draft := fmt.Sprintf("Subject: %s\n\nAll hands announcement...", topic)
-			return []string{"send_email"}, state.Updates{draftKey.Name(): draft}, nil
-		},
-	}
-
-	sendNode := &graph.BaseNode{
-		NodeName:        "send_email",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			approval := graph.ApprovalFromContext(ctx, "send_email")
-
-			if approval != nil && approval.Decision == graph.ApprovalRejected {
-				fmt.Printf("❌ Sending cancelled: %s\n", approval.Reason)
-				return []string{graph.EndNode}, state.Updates{sentKey.Name(): false}, nil
-			}
-
-			return []string{graph.EndNode}, state.Updates{sentKey.Name(): true}, nil
-		},
-	}
-
-	g.AddNode(draftNode)
-	g.AddNode(sendNode)
-	g.SetEntryPoint("draft_email")
-	g.AddInterruptBefore("send_email",
-		graph.WithApprovalGuard(func(ctx context.Context, view state.ReadView) (bool, string, error) {
-			return true, "Always requires approval", nil // Always interrupt
-		}),
-		graph.WithFeedbackAnnotation(true),
-	)
-
-	compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
-	checkpointer := checkpoint.NewInMemoryCheckpointer()
-	runID := "reject-email-001"
-
-	fmt.Println("→ Running until approval...")
-	for _, err := range compiled.Run(ctx, []message.Message{},
-		graph.WithRunID(runID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1),
-		),
-	) {
-		if err != nil {
-			log.Printf("Error: %v", err)
-		}
-	}
-
-	cp, _ := checkpointer.Load(ctx, runID)
-
-	fmt.Println("\n→ User rejecting draft...")
-
-	rejection := &graph.ApprovalResponse{
-		Decision:  graph.ApprovalRejected,
-		Reason:    "Project not yet announced publicly - content too sensitive",
-		User:      "security@example.com",
-		Timestamp: time.Now(),
-		Annotations: map[string]any{
-			"security_risk": "critical",
-			"policy":        "pre-announcement-block",
-		},
-	}
-
-	fmt.Printf("❌ Rejection Decision: %s\n", rejection.Reason)
-	fmt.Printf("   By: %s\n\n", rejection.User)
-
-	fmt.Println("→ Resuming with rejection...")
-	for _, err := range compiled.Run(ctx, []message.Message{},
-		graph.WithCheckpoint(cp),
-		graph.WithApproval("send_email", rejection),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer), // Need checkpointer to save approval history
-		),
-	) {
-		if err != nil {
-			log.Printf("Error: %v", err)
-		}
-	}
-
-	// Check final state
-	view, _ := mgr.CreateReadView(ctx)
-	sent := state.GetFromView(view, sentKey)
-	fmt.Printf("\n✅ Final Result: Email sent = %v\n", sent)
-
-	// Check approval history
-	history, _ := checkpointer.GetApprovalHistory(ctx, runID)
-	fmt.Printf("📊 Approval History: %d record(s)\n", len(history))
-	for _, record := range history {
-		fmt.Printf("   - %s by %s: %s\n", record.Decision, record.User, record.Reason)
-	}
-
-	fmt.Println("\n=== All Scenarios Complete ===")
+	fmt.Println("\n  Human approval workflow enables:")
+	fmt.Println("    • Pausing before sensitive operations")
+	fmt.Println("    • Human review of planned actions")
+	fmt.Println("    • Audit trail of approvals")
+	fmt.Println("    • Resume/reject capability")
 }

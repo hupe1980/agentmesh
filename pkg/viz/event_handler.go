@@ -3,7 +3,7 @@ package viz
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/event"
 )
 
 // GraphEventHandler adapts viz to work with the graph event bus.
@@ -23,13 +23,13 @@ func NewGraphEventHandler(server *Server, runID string) *GraphEventHandler {
 	}
 }
 
-// HandleEvent implements graph.EventHandler interface.
-func (h *GraphEventHandler) HandleEvent(ctx context.Context, event graph.Event) error {
+// HandleEvent implements event.Handler interface.
+func (h *GraphEventHandler) HandleEvent(ctx context.Context, e event.Event) error {
 	// Convert graph event to enhanced ExecutionEvent
-	vizEvent := ConvertGraphEvent(event, h.runID)
+	vizEvent := ConvertGraphEvent(e, h.runID)
 
 	// Update graph state and get visualization update
-	h.updateGraphState(event, &vizEvent)
+	h.updateGraphState(e, &vizEvent)
 
 	// Store event
 	if err := h.server.eventStore.Append(vizEvent); err != nil {
@@ -47,47 +47,47 @@ func (h *GraphEventHandler) HandleEvent(ctx context.Context, event graph.Event) 
 }
 
 // updateGraphState updates the graph visualization state based on the event.
-func (h *GraphEventHandler) updateGraphState(event graph.Event, vizEvent *ExecutionEvent) {
+func (h *GraphEventHandler) updateGraphState(e event.Event, vizEvent *ExecutionEvent) {
 	var stateUpdate *GraphStateUpdate
 
-	switch event.Type {
-	case graph.EventNodeQueued:
+	switch e.Type {
+	case event.EventNodeQueued:
 		vizEvent.NodeStatus = NodeStatusQueued
-		stateUpdate = h.stateTracker.UpdateNodeStatus(event.Node, NodeStatusQueued, event.Superstep)
+		stateUpdate = h.stateTracker.UpdateNodeStatus(e.Node, NodeStatusQueued, e.Superstep)
 
-	case graph.EventNodeStart:
+	case event.EventNodeStart:
 		vizEvent.NodeStatus = NodeStatusActive
-		stateUpdate = h.stateTracker.UpdateNodeStatus(event.Node, NodeStatusActive, event.Superstep)
+		stateUpdate = h.stateTracker.UpdateNodeStatus(e.Node, NodeStatusActive, e.Superstep)
 
-	case graph.EventNodeComplete:
+	case event.EventNodeComplete:
 		vizEvent.NodeStatus = NodeStatusCompleted
-		stateUpdate = h.stateTracker.UpdateNodeStatus(event.Node, NodeStatusCompleted, event.Superstep)
+		stateUpdate = h.stateTracker.UpdateNodeStatus(e.Node, NodeStatusCompleted, e.Superstep)
 
 		// Track edge traversals (node -> next nodes)
-		if nextNodes, ok := event.Data["next_nodes"].([]string); ok {
+		if nextNodes, ok := e.Data["next_nodes"].([]string); ok {
 			for _, nextNode := range nextNodes {
-				edgeUpdate := h.stateTracker.AddEdgeTraversal(event.Node, nextNode, event.Superstep)
+				edgeUpdate := h.stateTracker.AddEdgeTraversal(e.Node, nextNode, e.Superstep)
 				if edgeUpdate != nil {
 					h.broadcastStateUpdate(edgeUpdate)
 				}
 			}
 		}
 
-	case graph.EventNodeError:
+	case event.EventNodeError:
 		vizEvent.NodeStatus = NodeStatusError
-		stateUpdate = h.stateTracker.UpdateNodeStatus(event.Node, NodeStatusError, event.Superstep)
+		stateUpdate = h.stateTracker.UpdateNodeStatus(e.Node, NodeStatusError, e.Superstep)
 
-	case graph.EventInterrupt:
-		if event.Node != "" {
+	case event.EventInterrupt:
+		if e.Node != "" {
 			vizEvent.NodeStatus = NodeStatusPaused
-			stateUpdate = h.stateTracker.UpdateNodeStatus(event.Node, NodeStatusPaused, event.Superstep)
+			stateUpdate = h.stateTracker.UpdateNodeStatus(e.Node, NodeStatusPaused, e.Superstep)
 		}
 
-	case graph.EventStateUpdate:
+	case event.EventStateUpdate:
 		// Extract state keys if available
-		if keys, ok := event.Data["keys"].([]string); ok {
+		if keys, ok := e.Data["keys"].([]string); ok {
 			sizeBytes := 0
-			if size, ok := event.Data["size"].(int); ok {
+			if size, ok := e.Data["size"].(int); ok {
 				sizeBytes = size
 			}
 			stateUpdate = h.stateTracker.UpdateState(keys, sizeBytes)
@@ -113,11 +113,11 @@ func (h *GraphEventHandler) broadcastStateUpdate(update *GraphStateUpdate) {
 // If no event bus exists in the context, one is created automatically.
 // Returns the context with the event bus attached (reusing existing or creating new).
 func (h *GraphEventHandler) SubscribeToGraph(ctx context.Context) context.Context {
-	eventBus := graph.EventBusFromContext(ctx)
+	eventBus := event.BusFromContext(ctx)
 	if eventBus == nil {
 		// Create event bus on demand
-		eventBus = graph.NewEventBus()
-		ctx = graph.WithEventBus(ctx, eventBus)
+		eventBus = event.NewBus()
+		ctx = event.WithBus(ctx, eventBus)
 	}
 
 	// Subscribe to all events (no type filter = receive everything)

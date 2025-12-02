@@ -88,7 +88,7 @@ func WithSystemPrompt(prompt string) HandoffOption {
 func HandoffToAgent(
 	agentName string,
 	agentDescription string,
-	agentGraph graph.Runnable[[]message.Message, message.Message],
+	agentGraph *graph.Graph[[]message.Message, message.Message],
 	options ...HandoffOption,
 ) (*FuncTool[HandoffArgs, string], error) {
 	if agentGraph == nil {
@@ -138,7 +138,7 @@ func HandoffToAgent(
 // executeHandoff performs the actual agent invocation with context control.
 func executeHandoff(
 	ctx context.Context,
-	agentGraph graph.Runnable[[]message.Message, message.Message],
+	agentGraph *graph.Graph[[]message.Message, message.Message],
 	args HandoffArgs,
 	config *HandoffConfig,
 ) (string, error) {
@@ -160,7 +160,7 @@ func executeHandoff(
 	// Add the actual task
 	messages = append(messages, message.NewHumanMessageFromText(args.Task))
 
-	// Execute the worker agent graph
+	// Execute the worker agent graph (assumes graph is already built)
 	lastMsg, err := graph.Last(agentGraph.Run(ctx, messages))
 	if err != nil {
 		return "", fmt.Errorf("agent execution failed: %w", err)

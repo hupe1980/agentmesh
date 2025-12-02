@@ -1,175 +1,180 @@
 # Example: Human Pause
 
 ## Overview
-Demonstrates human-in-the-loop workflows where execution pauses for human approval before continuing. Essential for critical decisions and compliance requirements.
+Demonstrates human-in-the-loop workflows where execution pauses for human input before continuing. Essential for interactive workflows, approvals, and human oversight.
 
 ## Key Concepts
-- **Human Approval**: Pause execution for user input
-- **Conditional Resume**: Continue based on human decision
-- **State Persistence**: Checkpoint during pause
-- **Workflow Control**: Human oversight of agent actions
+- **InterruptBefore**: Pause execution before a specific node
+- **Checkpointing**: Save state automatically when paused
+- **State Updates**: Modify checkpoint state with human input
+- **WithApproval**: Bypass interrupt on resume
+- **WithCheckpoint**: Resume from saved state
 
 ## Running
 ```bash
-cd examples/human_pause
-go run main.go
+go run examples/human_pause/main.go
 ```
 
 ## Expected Output
 ```
-Step 1: research
-  Researched 'Impact of AI on climate change'
-  Summarized findings
+=== Human Pause Example ===
+  Demonstrates pausing for human input and resuming
 
-Step 2: draft
-  Generated draft report
+--- First Run (will pause for input) ---
+  [ask] Preparing question for human...
 
-⏸️  PAUSE: Waiting for human approval
-  Current draft: "AI can significantly impact climate change..."
-  
-👤 Human Decision: approve | reject | edit
-> approve
+  ⏸️  Paused before: wait_for_answer
+     Checkpoint saved automatically
 
-✓ Human approved - continuing...
+  [Human provides answer: 'Paris']
 
-Step 3: publish
-  Report published successfully
+--- Resuming with Human Input ---
+  [ask] Preparing question for human...
+  [wait_for_answer] Answer received: Paris
+  [process_answer] Processing answer: Paris
+  [process_answer] ✓ Correct!
 
-Workflow complete!
+  ✓ Workflow completed!
+
+  Human pause pattern:
+    1. InterruptBefore(node) - pause before a node
+    2. Checkpoint saved automatically
+    3. Load checkpoint, update state with human input
+    4. WithApproval(node) - bypass interrupt on resume
+    5. WithCheckpoint(cp) - resume from saved state
 ```
 
 ## Code Walkthrough
 
-### 1. Create Pause Node
+### 1. Define State Keys
 ```go
-builder.AddNodeFunc("human_review", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    draft, _ := s.Get("draft").(string)
-    
-    fmt.Printf("⏸️  Pausing for review\n")
-    fmt.Printf("Draft: %s\n", draft)
-    
-    // Mark as paused (checkpoint will preserve this)
-    return &graph.NodeResult{
-        Pause: true,
-        Updates: map[string]any{
-            "status": "awaiting_approval",
-        },
-    }, nil
-})
+var (
+    questionKey = graph.NewKey("question", "")
+    answerKey   = graph.NewKey("answer", "")
+)
 ```
 
-### 2. Resume with Input
+### 2. Create Checkpointer and Graph
 ```go
-// Later, when human provides input:
-result, _ := graph.Last(compiled.Run(ctx, nil,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID(runID),
-    graph.WithResumeFromPause(),
-    graph.WithInput(map[string]any{
-        "human_input": "approved",
-    }),
-))
+checkpointer := checkpoint.NewInMemoryCheckpointer()
+runID := "pause-run-001"
+
+g := graph.New[any, any](questionKey, answerKey)
+
+// Configure checkpointer
+g.WithCheckpointer(checkpointer, runID)
 ```
 
-### 3. Process Human Decision
+### 3. Add Interrupt Before Node
 ```go
-builder.AddNodeFunc("process_approval", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    decision, _ := s.Get("human_input").(string)
-    
-    if decision == "approved" {
-        return &graph.NodeResult{
-            Updates: map[string]any{"status": "approved"},
-        }, nil
+// Pause execution before wait_for_answer
+g.InterruptBefore("wait_for_answer")
+```
+
+### 4. First Run (Pauses)
+```go
+for _, err := range compiled.Run(ctx, nil, graph.WithRunID(runID)) {
+    if err != nil {
+        var intErr *graph.InterruptError
+        if errors.As(err, &intErr) {
+            fmt.Printf("Paused before: %s\n", intErr.NodeName)
+            break // Checkpoint saved automatically
+        }
+        log.Fatal(err)
     }
-    
-    return nil, fmt.Errorf("rejected by human")
+}
+```
+
+### 5. Resume with Human Input
+```go
+// Load saved checkpoint
+savedCheckpoint, _ := checkpointer.Load(ctx, runID)
+
+// Create approval to bypass interrupt
+approval := &graph.ApprovalResponse{
+    Decision:  graph.ApprovalApproved,
+    Reason:    "Human provided input",
+    Timestamp: time.Now(),
+}
+
+// Resume execution with state updates
+for _, err := range compiled.Run(ctx, nil,
+    graph.WithRunID(runID),
+    graph.WithCheckpoint(savedCheckpoint),
+    graph.WithStateUpdates(map[string]any{
+        answerKey.Name(): "Paris",
+    }),
+    graph.WithApproval("wait_for_answer", approval),
+) {
+    // ...
+}
+```
+
+## API Reference
+
+### InterruptBefore
+```go
+g.InterruptBefore("node_name")  // Pause before this node executes
+```
+
+### WithCheckpointer
+```go
+g.WithCheckpointer(checkpointer, runID)  // Enable automatic checkpointing
+```
+
+### WithCheckpoint
+```go
+graph.WithCheckpoint(cp)  // Resume from a saved checkpoint
+```
+
+### WithStateUpdates
+```go
+graph.WithStateUpdates(map[string]any{  // Inject values when resuming
+    "answer": "Paris",
+    "approved": true,
 })
+```
+
+### WithApproval
+```go
+graph.WithApproval("node_name", approval)  // Bypass interrupt for node
+```
+
+### ApprovalResponse
+```go
+approval := &graph.ApprovalResponse{
+    Decision:  graph.ApprovalApproved,  // or ApprovalRejected
+    Reason:    "Human approved",
+    User:      "user@example.com",
+    Timestamp: time.Now(),
+}
 ```
 
 ## Workflow Patterns
 
-### Approval Gate
+### Q&A Flow
 ```
-research → draft → [PAUSE: human review] → publish
+ask → [PAUSE: wait_for_answer] → process_answer
 ```
 
-### Decision Branch
+### Approval Gate
 ```
-analyze → [PAUSE: choose strategy] → strategy_a | strategy_b
+prepare → [PAUSE: approve] → execute
 ```
 
 ### Iterative Refinement
 ```
-generate → [PAUSE: feedback] → refine → [PAUSE: feedback] → finalize
+draft → [PAUSE: review] → revise → [PAUSE: review] → publish
 ```
 
 ## What This Example Teaches
-- ✅ Human-in-the-loop workflows
-- ✅ Execution pause and resume
-- ✅ State persistence during pause
-- ✅ Conditional workflow continuation
-- ✅ Human approval gates
-
-## Production Implementation
-
-### Web API Integration
-```go
-// Pause and return to user
-result, _ := graph.Last(compiled.Run(ctx, messages,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID(sessionID),
-))
-
-if result.Paused {
-    // Send to user for approval
-    return http.StatusAccepted, map[string]any{
-        "status": "paused",
-        "runID": sessionID,
-        "pendingDecision": result.PendingData,
-    }
-}
-```
-
-### Resume from API
-```go
-// When user responds
-func handleApproval(w http.ResponseWriter, r *http.Request) {
-    runID := r.FormValue("runID")
-    decision := r.FormValue("decision")
-    
-    result, _ := graph.Last(compiled.Run(ctx, nil,
-        graph.WithCheckpointer(checkpointer),
-        graph.WithRunID(runID),
-        graph.WithResumeFromPause(),
-        graph.WithInput(map[string]any{
-            "human_decision": decision,
-        }),
-    )
-}
-```
-
-### Timeout Handling
-```go
-// Auto-resume after timeout
-go func() {
-    time.Sleep(5 * time.Minute)
-    
-    // Check if still paused
-    ckpt, _ := checkpointer.Load(ctx, runID)
-    if len(ckpt.PausedNodes) > 0 {
-        // Auto-approve or reject
-        resumeWithDefault(runID, "timeout")
-    }
-}()
-```
-
-## Next Steps
-- Integrate with web UI for approvals
-- Add timeout mechanisms
-- Implement approval workflows
-- See **examples/checkpointing** for state persistence
+- ✅ Pausing execution for human input
+- ✅ Automatic checkpoint saving
+- ✅ Modifying state during pause
+- ✅ Resuming with approval
+- ✅ Human-in-the-loop patterns
 
 ## See Also
-- [pkg/checkpoint](../../pkg/checkpoint) - State persistence
-- [pkg/graph](../../pkg/graph) - Pause/resume API
+- [examples/human_approval](../human_approval) - Approval workflows
 - [examples/checkpointing](../checkpointing) - Checkpoint basics
+- [pkg/checkpoint](../../pkg/checkpoint) - Checkpointer API

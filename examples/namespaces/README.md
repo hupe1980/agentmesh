@@ -1,37 +1,59 @@
 # Namespace Example
 
-This example demonstrates AgentMesh's namespace system for state isolation.
+This example demonstrates AgentMesh's namespace system for state isolation using `graph.WithNamespace()`.
 
 ## Overview
 
-Namespaces allow different components (agents, subgraphs, tools) to have their own isolated state while sharing the same state manager. This is useful for:
+Namespaces restrict which state keys a node can read and write. Nodes wrapped with `WithNamespace` can only access keys within their namespace prefix. This is useful for:
 
-- **Multi-agent systems** - Each agent has its own state space
-- **Subgraph isolation** - Subgraphs don't interfere with each other
-- **Tool state** - Tools can maintain their own state without conflicts
-- **State organization** - Group related keys together
+- **Multi-agent systems** - Each agent has its own isolated state space
+- **Security** - Prevent nodes from accessing data they shouldn't
+- **State organization** - Group related keys together with prefixes
 
 ## Key Concepts
 
-### Global Keys (Default)
-Global keys have no prefix and are simple to use:
+### Key Naming Convention
+Keys use dot notation (`namespace.keyname`) for isolation:
 ```go
-var ConfigKey = state.NewKey[string]("config", "")
-var CounterKey = state.NewKey[int]("counter", 0)
+// Agent 1's private keys
+agent1Data   := graph.NewKey("agent1.data", "")
+agent1Status := graph.NewKey("agent1.status", "")
+
+// Agent 2's private keys
+agent2Data   := graph.NewKey("agent2.data", "")
+agent2Status := graph.NewKey("agent2.status", "")
+
+// Global key (no namespace prefix)
+sharedResult := graph.NewKey("result", "")
 ```
 
-### Namespaced Keys
-Namespaced keys use dot notation (`namespace.keyname`) for isolation:
+### Creating Namespaces
 ```go
-agent1NS := state.MustNamespace("agent1")
-statusKey := state.TypedKey[string](agent1NS, "status", "")  // "agent1.status"
+// Create a namespace
+ns1 := graph.NewNamespace("agent1")
+ns2 := graph.NewNamespace("agent2")
+```
+
+### Wrapping Nodes with Namespaces
+```go
+// Node can only access "agent1.*" keys
+g.Node("agent1_process", graph.WithNamespace(
+    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+        // Can read: agent1.data, agent1.status
+        // Cannot read: agent2.data, agent2.status (returns zero value)
+        data := graph.Get(view, agent1Data)
+        return graph.Set(agent1Status, "done").To("next")
+    },
+    ns1,           // namespace to restrict to
+    false,         // includeGlobal: can this node access global keys?
+), "next")
 ```
 
 ### Benefits
-- **Zero overhead** - Just string prefixes, no runtime cost
+- **Zero overhead** - Just string prefix matching, no runtime cost
 - **Full type safety** - Compile-time type checking with generics
 - **No collisions** - Keys with same name in different namespaces don't conflict
-- **Progressive complexity** - Start with global keys, add namespaces when needed
+- **Graceful degradation** - Reading blocked keys returns zero value, writing returns error
 
 ## Running the Example
 
@@ -39,91 +61,73 @@ statusKey := state.TypedKey[string](agent1NS, "status", "")  // "agent1.status"
 go run examples/namespaces/main.go
 ```
 
-## Output
+## Expected Output
 
-The example demonstrates:
+```
+=== Namespaces Example ===
+  Demonstrates state isolation with graph.WithNamespace()
 
-1. **Global Keys** - Simple keys without namespaces
-2. **Namespaced Keys** - Isolated state for different agents
-3. **Namespace Views** - Filtering state by namespace
-4. **Listing Namespaces** - Discovering active namespaces
-5. **Copying Namespaces** - Transferring state between agents
-6. **Key Introspection** - Examining key structure
+  [init] Setting up initial state
+  [agent1] Read own data: agent1-initial
+  [agent1] Tried to read agent2.data: '' (empty = blocked)
+  [agent2] Read own data: agent2-initial
+  [agent2] Tried to read agent1.data: '' (empty = blocked)
+  [merge] Combining results from both agents
+
+  Namespace features:
+    • graph.NewNamespace('prefix') - create a namespace
+    • graph.WithNamespace(fn, ns, includeGlobal) - restrict node access
+    • Keys with 'prefix.' are in the namespace
+    • Keys without dots are global (if includeGlobal=true)
+    • Violations return zero values for reads, error for writes
+```
 
 ## API Reference
 
 ### Creating Namespaces
 ```go
-// Create namespace (returns error if invalid)
-ns, err := state.NewNamespace("agent1")
-
-// Create namespace (panics if invalid) 
-ns := state.MustNamespace("agent1")
-
-// Global namespace (no prefix)
-globalNS := state.Global
+// Create a namespace for prefix matching
+ns := graph.NewNamespace("agent1")
 ```
 
-### Creating Keys
+### Wrapping Node Functions
 ```go
-// Global key
-key := state.NewKey[int]("counter", 0)
+// Restrict node to only access keys matching "agent1.*"
+wrappedFn := graph.WithNamespace(nodeFn, ns, includeGlobal)
 
-// Namespaced key
-ns := state.MustNamespace("agent1")
-key := state.TypedKey[int](ns, "counter", 0)  // "agent1.counter"
-
-// Namespaced list key
-listKey := state.TypedListKey[string](ns, "messages", 100, nil)  // "agent1.messages"
+// Parameters:
+// - nodeFn: The original node function
+// - ns: The namespace to restrict access to
+// - includeGlobal: If true, also allows access to keys without a namespace prefix
 ```
 
-### Namespace Operations
+### includeGlobal Parameter
+- `false`: Node can ONLY access keys with the namespace prefix
+- `true`: Node can access namespace keys AND global keys (no dot in name)
+
 ```go
-// Get view of namespace
-view, _ := mgr.CreateReadView(ctx)
-nsView := state.GetNamespaceView(view, ns)
+// Can access: agent1.data, agent1.status
+// Cannot access: result, agent2.data
+graph.WithNamespace(fn, ns1, false)
 
-// List all namespaces
-namespaces := state.ListNamespaces(view)
-
-// Copy namespace (requires target keys to be registered)
-state.CopyNamespace(ctx, mgr, fromNS, toNS)
+// Can access: agent1.data, agent1.status, result
+// Cannot access: agent2.data
+graph.WithNamespace(fn, ns1, true)
 ```
 
-### Key Introspection
-```go
-// Check if key is namespaced
-isNS := state.IsNamespaced("agent1.status")  // true
-isNS = state.IsNamespaced("config")          // false
+## When to Use Namespaces
 
-// Parse namespaced key
-ns, local := state.ParseNamespacedKey("agent1.status")  // "agent1", "status"
+**Use namespaces when:**
+- Multiple agents need isolated state
+- You want to prevent accidental cross-agent data access
+- Building multi-tenant or sandboxed workflows
 
-// Extract namespace from key
-ns := state.ExtractNamespace("agent1.status")  // Namespace{name: "agent1"}
-```
-
-## Design Philosophy
-
-### Global First
-The namespace system follows a **global-first** philosophy:
-- Default behavior: Use simple global keys
-- Opt-in complexity: Add namespaces only when you need isolation
-- No forced prefixes: Most code doesn't need namespaces
-
-### When to Use Namespaces
-Use namespaces when you need:
-- Multiple instances of the same component
-- Isolation between subsystems
-- Clear organizational boundaries
-- Subgraph state separation
-
-Don't use namespaces when:
+**Don't use namespaces when:**
 - You have a single agent
-- Keys are naturally unique
-- Simplicity is more important than organization
+- All nodes need full state access
+- Simplicity is more important than isolation
 
 ## Related Examples
 - `basic_agent/` - Simple agent without namespaces
 - `supervisor_agent/` - Multi-agent coordination
-- `subgraph/` - Subgraph isolation
+- `subgraph/` - Subgraph state isolation

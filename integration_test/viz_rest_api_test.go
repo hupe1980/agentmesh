@@ -65,7 +65,7 @@ func TestVizServerRESTEndpoints(t *testing.T) {
 
 	// Wait for server to start
 	<-serverStarted
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
@@ -78,7 +78,7 @@ func TestVizServerRESTEndpoints(t *testing.T) {
 		runID := testExecuteGraph(t, baseURL)
 
 		// Wait for execution to start
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
 		// Run dependent tests with the runID
 		t.Run("GetRunDetails", func(t *testing.T) {
@@ -617,7 +617,7 @@ func TestVizServerInvalidEndpoints(t *testing.T) {
 }
 
 // Helper function to create a test graph with mock model that tracks costs
-func createVizTestGraph(t *testing.T) *graph.Compiled[[]message.Message, message.Message] {
+func createVizTestGraph(t *testing.T) *graph.Graph[[]message.Message, message.Message] {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 
@@ -694,11 +694,8 @@ func createVizTestGraph(t *testing.T) *graph.Compiled[[]message.Message, message
 	)
 	require.NoError(t, err, "Failed to create ReAct agent")
 
-	// Type assert to the expected return type
-	compiled, ok := reactAgent.(*graph.Compiled[[]message.Message, message.Message])
-	require.True(t, ok, "ReAct agent must be a compiled graph")
-
-	return compiled
+	// reactAgent is already the correct type (*graph.Graph[[]message.Message, message.Message])
+	return reactAgent
 }
 
 func testGetOpenAPISpec(t *testing.T, baseURL string) {
@@ -802,7 +799,7 @@ func TestVizServerWebSocket(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(200 * time.Millisecond) // Wait for server to start
+	time.Sleep(50 * time.Millisecond) // Wait for server to start
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/ws", port)
@@ -832,8 +829,8 @@ func testWebSocketConnection(t *testing.T, wsURL string) {
 		t.Errorf("Failed to send ping: %v", err)
 	}
 
-	// Set read deadline to avoid hanging
-	ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// Set short read deadline - we just want to verify connection works
+	ws.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 
 	// Try to read a pong response
 	_, _, readErr := ws.ReadMessage()
@@ -1061,7 +1058,7 @@ func TestEventCollection(t *testing.T) {
 	}()
 
 	<-serverStarted
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
@@ -1100,12 +1097,12 @@ func TestEventCollection(t *testing.T) {
 		status, _ := run["status"].(string)
 		finalStatus = status
 		return status == "completed" || status == "failed"
-	}, 10*time.Second, 200*time.Millisecond, "Execution should complete")
+	}, 3*time.Second, 50*time.Millisecond, "Execution should complete")
 
 	t.Logf("Run completed with status: %s", finalStatus)
 
 	// Give event store time to process all events
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	// Verify events were captured
 	resp, err = http.Get(fmt.Sprintf("%s/api/runs/%s/events", baseURL, runID))
@@ -1187,7 +1184,7 @@ func TestWebSocketEventContent(t *testing.T) {
 	}()
 
 	<-serverStarted
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Connect WebSocket
 	wsURL := fmt.Sprintf("ws://127.0.0.1:%d/ws", port)
@@ -1196,7 +1193,7 @@ func TestWebSocketEventContent(t *testing.T) {
 	defer ws.Close()
 
 	// Give WebSocket connection time to establish
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	// Start collecting messages in background
 	messages := make([]map[string]any, 0)
@@ -1242,10 +1239,10 @@ func TestWebSocketEventContent(t *testing.T) {
 	t.Logf("Subscribed to run: %s", runID)
 
 	// Give server time to process subscription
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
-	// Collect messages with timeout
-	timeout := time.After(6 * time.Second)
+	// Collect messages with timeout - short timeout since graph execution is fast
+	timeout := time.After(2 * time.Second)
 	collectMessages := true
 
 	for collectMessages {
@@ -1257,7 +1254,7 @@ func TestWebSocketEventContent(t *testing.T) {
 			collectMessages = false
 		case <-done:
 			// WebSocket closed, collect any remaining messages
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 			for len(messageChan) > 0 {
 				msg := <-messageChan
 				messages = append(messages, msg)
@@ -1333,7 +1330,7 @@ func TestRunStatusTransitions(t *testing.T) {
 	}()
 
 	<-serverStarted
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 

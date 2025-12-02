@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
 	toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
@@ -83,11 +83,11 @@ func main() {
 
 	// 4. Event Bus Integration
 	fmt.Println("4. Event Bus System:")
-	eventBus := graph.NewEventBus()
-	ctx = graph.WithEventBus(ctx, eventBus)
+	eventBus := event.NewBus()
+	ctx = event.WithBus(ctx, eventBus)
 
 	eventCount := 0
-	eventBus.Subscribe(graph.EventHandlerFunc(func(ctx context.Context, event graph.Event) error {
+	eventBus.Subscribe(event.HandlerFunc(func(ctx context.Context, event event.Event) error {
 		eventCount++
 		fmt.Printf("   [%s] %s at %s\n", event.Type, event.Node, event.Timestamp.Format("15:04:05"))
 		return nil

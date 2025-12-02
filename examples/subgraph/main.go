@@ -1,380 +1,179 @@
-// Package main demonstrates composing graphs with SubgraphNode for type-safe subgraph composition.
+// Package main demonstrates subgraph composition using graph.Subgraph().
+//
 // This example shows how to:
-//   - Build isolated subgraphs with their own state management
-//   - Use type-safe input/output mappers to exchange data between parent and subgraph
-//   - Compose subgraphs into a parent pipeline
-//   - Organize reusable subgraphs as functions
-
+//   - Create reusable subgraphs with their own state
+//   - Compose subgraphs into parent graphs using graph.Subgraph()
+//   - Map state between parent and child graphs
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Input/Output types for subgraphs
-type ValidationInput struct {
-	Data map[string]interface{}
+// Parent graph keys
+var (
+	inputKey  = graph.NewKey("input", "")
+	resultKey = graph.NewKey("result", "")
+	stepsKey  = graph.NewListKey[string]("steps")
+)
+
+// Subgraph keys (isolated state)
+var (
+	subInputKey  = graph.NewKey("sub_input", "")
+	subOutputKey = graph.NewKey("sub_output", "")
+)
+
+// createValidationSubgraph creates a reusable validation subgraph
+func createValidationSubgraph() *graph.Graph[string, string] {
+	g := graph.New[string, string](subInputKey, subOutputKey)
+
+	g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		input := graph.Get(view, subInputKey)
+		fmt.Printf("    [validate] Checking format of: %s\n", input)
+		if strings.TrimSpace(input) == "" {
+			return graph.Fail(fmt.Errorf("empty input"))
+		}
+		return graph.To("validate_content")
+	}, "validate_content")
+
+	g.Node("validate_content", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		input := graph.Get(view, subInputKey)
+		fmt.Printf("    [validate] Checking content of: %s\n", input)
+		// Validation passed - set output
+		return graph.Set(subOutputKey, "validated:"+input).End()
+	}, graph.END)
+
+	g.Start("validate_format")
+
+	return g
 }
 
-type ValidationOutput struct {
-	Valid  bool
-	Errors []string
-}
+// createTransformSubgraph creates a reusable transformation subgraph
+func createTransformSubgraph() *graph.Graph[string, string] {
+	g := graph.New[string, string](subInputKey, subOutputKey)
 
-type EnrichmentInput struct {
-	Data map[string]interface{}
-}
+	g.Node("normalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		input := graph.Get(view, subInputKey)
+		normalized := strings.ToLower(strings.TrimSpace(input))
+		fmt.Printf("    [transform] Normalized: %s\n", normalized)
+		return graph.Set(subOutputKey, normalized).To("enrich")
+	}, "enrich")
 
-type EnrichmentOutput struct {
-	Enriched map[string]interface{}
-}
+	g.Node("enrich", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		output := graph.Get(view, subOutputKey)
+		enriched := fmt.Sprintf("enriched(%s)", output)
+		fmt.Printf("    [transform] Enriched: %s\n", enriched)
+		return graph.Set(subOutputKey, enriched).End()
+	}, graph.END)
 
-// buildValidationSubgraph creates a reusable validation subgraph
-func buildValidationSubgraph() (*graph.Compiled[ValidationInput, ValidationOutput], error) {
-	// Create isolated state manager for subgraph
-	stateBuilder := state.NewManagerBuilder()
+	g.Start("normalize")
 
-	// Subgraph-internal keys
-	inputKey := state.NewKey[map[string]interface{}]("input_data", nil)
-	validKey := state.NewKey[bool]("valid", false)
-	errorsKey := state.NewListKey[string]("errors", 0)
-
-	state.RegisterKey(stateBuilder, inputKey)
-	state.RegisterKey(stateBuilder, validKey)
-	state.RegisterListKey(stateBuilder, errorsKey)
-	manager := stateBuilder.Build()
-
-	// Create graph
-	subgraph, err := graph.NewGraph(manager)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add validation logic
-	subgraph.AddNode(&graph.BaseNode{
-		NodeName:        "check_required",
-		DeclaredTargets: []string{"check_values"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			data := state.GetFromView(view, inputKey)
-
-			fmt.Println("  [Validation] Checking required fields...")
-
-			var errors []string
-			required := []string{"user_id", "email", "score"}
-			for _, field := range required {
-				if _, ok := data[field]; !ok {
-					errors = append(errors, fmt.Sprintf("missing field: %s", field))
-				}
-			}
-
-			return []string{"check_values"}, state.Updates{
-				errorsKey.Name(): errors,
-			}, nil
-		},
-	})
-
-	subgraph.AddNode(&graph.BaseNode{
-		NodeName:        "check_values",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			data := state.GetFromView(view, inputKey)
-			currentErrors := state.GetFromView(view, errorsKey.Key)
-
-			fmt.Println("  [Validation] Checking value constraints...")
-
-			if score, ok := data["score"].(float64); ok {
-				if score < 0 || score > 100 {
-					currentErrors = append(currentErrors, "score must be between 0 and 100")
-				}
-			}
-
-			valid := len(currentErrors) == 0
-			fmt.Printf("  [Validation] Result: valid=%v, errors=%d\n", valid, len(currentErrors))
-
-			return []string{graph.EndNode}, state.Updates{
-				validKey.Name():  valid,
-				errorsKey.Name(): currentErrors,
-			}, nil
-		},
-	})
-
-	subgraph.SetEntryPoint("check_required")
-
-	// Create executor with type-safe I/O
-	executor := graph.NewPregelExecutor(
-		func(input ValidationInput) state.Updates {
-			return state.Updates{
-				inputKey.Name(): input.Data,
-			}
-		},
-		errorsKey.Name(),
-		func(val any) ValidationOutput {
-			manager := subgraph.Manager()
-			view, _ := manager.CreateReadView(context.Background())
-
-			return ValidationOutput{
-				Valid:  state.GetFromView(view, validKey),
-				Errors: state.GetFromView(view, errorsKey.Key),
-			}
-		},
-	)
-
-	return graph.Compile(subgraph, executor)
-}
-
-// buildEnrichmentSubgraph creates a reusable enrichment subgraph
-func buildEnrichmentSubgraph() (*graph.Compiled[EnrichmentInput, EnrichmentOutput], error) {
-	stateBuilder := state.NewManagerBuilder()
-
-	inputKey := state.NewKey[map[string]interface{}]("input", nil)
-	metadataKey := state.NewKey[map[string]interface{}]("metadata", nil)
-	resultKey := state.NewKey[map[string]interface{}]("result", nil)
-
-	state.RegisterKey(stateBuilder, inputKey)
-	state.RegisterKey(stateBuilder, metadataKey)
-	state.RegisterKey(stateBuilder, resultKey)
-	manager := stateBuilder.Build()
-
-	subgraph, err := graph.NewGraph(manager)
-	if err != nil {
-		return nil, err
-	}
-
-	subgraph.AddNode(&graph.BaseNode{
-		NodeName:        "add_metadata",
-		DeclaredTargets: []string{"calculate_grade"},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			fmt.Println("  [Enrichment] Adding metadata...")
-
-			metadata := map[string]interface{}{
-				"timestamp": "2024-01-01T00:00:00Z",
-				"enriched":  true,
-				"version":   "2.0",
-			}
-
-			return []string{"calculate_grade"}, state.Updates{
-				metadataKey.Name(): metadata,
-			}, nil
-		},
-	})
-
-	subgraph.AddNode(&graph.BaseNode{
-		NodeName:        "calculate_grade",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			data := state.GetFromView(view, inputKey)
-			metadata := state.GetFromView(view, metadataKey)
-
-			fmt.Println("  [Enrichment] Calculating grade...")
-
-			result := make(map[string]interface{})
-			for k, v := range data {
-				result[k] = v
-			}
-			for k, v := range metadata {
-				result[k] = v
-			}
-
-			// Add grade based on score
-			if score, ok := data["score"].(float64); ok {
-				var grade string
-				if score >= 90 {
-					grade = "A"
-				} else if score >= 80 {
-					grade = "B"
-				} else if score >= 70 {
-					grade = "C"
-				} else {
-					grade = "D"
-				}
-				result["grade"] = grade
-			}
-
-			fmt.Printf("  [Enrichment] Result: %v\n", result)
-
-			return []string{graph.EndNode}, state.Updates{
-				resultKey.Name(): result,
-			}, nil
-		},
-	})
-
-	subgraph.SetEntryPoint("add_metadata")
-
-	executor := graph.NewPregelExecutor(
-		func(input EnrichmentInput) state.Updates {
-			return state.Updates{
-				inputKey.Name(): input.Data,
-			}
-		},
-		resultKey.Name(),
-		func(val any) EnrichmentOutput {
-			if enriched, ok := val.(map[string]interface{}); ok {
-				return EnrichmentOutput{Enriched: enriched}
-			}
-			return EnrichmentOutput{Enriched: make(map[string]interface{})}
-		},
-	)
-
-	return graph.Compile(subgraph, executor)
+	return g
 }
 
 func main() {
-	fmt.Println("=== SubgraphNode Composition Example ===")
-	fmt.Println()
-
 	ctx := context.Background()
-
-	// Build reusable subgraphs
-	fmt.Println("Building subgraphs...")
-	validationCompiled, err := buildValidationSubgraph()
-	if err != nil {
-		log.Fatalf("Failed to build validation subgraph: %v", err)
-	}
-
-	enrichmentCompiled, err := buildEnrichmentSubgraph()
-	if err != nil {
-		log.Fatalf("Failed to build enrichment subgraph: %v", err)
-	}
+	fmt.Println("=== Subgraph Composition Example ===")
+	fmt.Println("  Demonstrates graph.Subgraph() for composing reusable graphs")
 	fmt.Println()
 
-	// Create parent graph state keys
-	parentBuilder := state.NewManagerBuilder()
-	dataKey := state.NewKey[map[string]interface{}]("data", nil)
-	validKey := state.NewKey[bool]("valid", false)
-	errorsKey := state.NewListKey[string]("errors", 0)
-	enrichedKey := state.NewKey[map[string]interface{}]("enriched", nil)
-	statusKey := state.NewKey[string]("status", "")
+	// Create reusable subgraphs
+	validationSubgraph := createValidationSubgraph()
+	transformSubgraph := createTransformSubgraph()
 
-	state.RegisterKey(parentBuilder, dataKey)
-	state.RegisterKey(parentBuilder, validKey)
-	state.RegisterListKey(parentBuilder, errorsKey)
-	state.RegisterKey(parentBuilder, enrichedKey)
-	state.RegisterKey(parentBuilder, statusKey)
-
-	parentManager := parentBuilder.Build()
-
-	// Create SubgraphNodes with type-safe mappers
-	validationNode := graph.NewSubgraphNode(
-		"validation",
-		validationCompiled,
-		// Input mapper: parent state → ValidationInput
-		func(ctx context.Context, view state.ReadView) (ValidationInput, error) {
-			return ValidationInput{
-				Data: state.GetFromView(view, dataKey),
-			}, nil
-		},
-		// Output mapper: ValidationOutput → parent state updates
-		func(ctx context.Context, output ValidationOutput) (state.Updates, error) {
-			return state.Updates{
-				validKey.Name():  output.Valid,
-				errorsKey.Name(): output.Errors,
-			}, nil
-		},
-		[]string{"enrichment", graph.EndNode},
-		graph.WithSubgraphVersion("1.0.0"),
-		graph.WithSubgraphMetadata("description", "Data validation subgraph"),
-	)
-
-	enrichmentNode := graph.NewSubgraphNode(
-		"enrichment",
-		enrichmentCompiled,
-		func(ctx context.Context, view state.ReadView) (EnrichmentInput, error) {
-			return EnrichmentInput{
-				Data: state.GetFromView(view, dataKey),
-			}, nil
-		},
-		func(ctx context.Context, output EnrichmentOutput) (state.Updates, error) {
-			return state.Updates{
-				enrichedKey.Name(): output.Enriched,
-			}, nil
-		},
-		[]string{"output"},
-		graph.WithSubgraphVersion("2.0.0"),
-		graph.WithSubgraphMetadata("description", "Data enrichment subgraph"),
-	)
-
-	// Build parent pipeline with explicit manager
-	builder, err := graph.NewBuilder(
-		graph.NewMessagePregelExecutor(),
-		graph.WithManager[[]message.Message, message.Message](parentManager),
-	)
-	if err != nil {
-		log.Fatalf("Failed to create builder: %v", err)
+	// Build them once (they can be reused)
+	if _, err := validationSubgraph.Build(); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := transformSubgraph.Build(); err != nil {
+		log.Fatal(err)
 	}
 
-	// Input node
-	builder.AddNodeFunc("input", []string{"validation"},
-		func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			fmt.Println("[Input] Processing initial data")
+	// Build the main graph that orchestrates subgraphs
+	g := graph.New[any, any](inputKey, resultKey, stepsKey)
 
-			data := map[string]interface{}{
-				"user_id": "12345",
-				"email":   "user@example.com",
-				"score":   85.5,
-			}
+	// Entry point
+	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [start] Beginning workflow")
+		return graph.Set(inputKey, "  Raw Data  ").
+			With(graph.AppendValue(stepsKey, "Started main workflow")).
+			To("run_validation")
+	}, "run_validation")
 
-			return []string{"validation"}, state.Updates{
-				dataKey.Name():   data,
-				statusKey.Name(): "processing",
+	// Use graph.Subgraph() to embed the validation subgraph
+	g.Node("run_validation", graph.Subgraph(
+		validationSubgraph,
+		// Input mapper: parent state -> subgraph input
+		func(ctx context.Context, view graph.View) (string, error) {
+			input := graph.Get(view, inputKey)
+			fmt.Printf("  [parent] Mapping input to validation subgraph: %s\n", input)
+			return input, nil
+		},
+		// Output mapper: subgraph output -> parent state updates
+		func(ctx context.Context, output string) (graph.Updates, error) {
+			fmt.Printf("  [parent] Got validation result: %s\n", output)
+			return graph.Updates{
+				inputKey.Name(): output,
+				stepsKey.Name(): graph.SliceOf[string]([]string{"Validation completed"}),
 			}, nil
 		},
-	)
+	), "run_transform")
 
-	// Add subgraph nodes
-	builder.AddSubgraphNode(validationNode)
-	builder.AddSubgraphNode(enrichmentNode)
-
-	// Output node
-	builder.AddNodeFunc("output", []string{graph.EndNode},
-		func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			valid := state.GetFromView(view, validKey)
-			errors := state.GetFromView(view, errorsKey.Key)
-			enriched := state.GetFromView(view, enrichedKey)
-
-			fmt.Println("\n[Output] Final results:")
-			fmt.Printf("  Valid: %v\n", valid)
-			if len(errors) > 0 {
-				fmt.Printf("  Errors: %v\n", errors)
-			}
-			fmt.Printf("  Enriched data: %v\n", enriched)
-
-			return []string{graph.EndNode}, state.Updates{
-				statusKey.Name(): "completed",
+	// Use graph.Subgraph() to embed the transformation subgraph
+	g.Node("run_transform", graph.Subgraph(
+		transformSubgraph,
+		// Input mapper
+		func(ctx context.Context, view graph.View) (string, error) {
+			input := graph.Get(view, inputKey)
+			fmt.Printf("  [parent] Mapping input to transform subgraph: %s\n", input)
+			return input, nil
+		},
+		// Output mapper
+		func(ctx context.Context, output string) (graph.Updates, error) {
+			fmt.Printf("  [parent] Got transform result: %s\n", output)
+			return graph.Updates{
+				resultKey.Name(): output,
+				stepsKey.Name():  graph.SliceOf[string]([]string{"Transform completed"}),
 			}, nil
 		},
-	)
+	), "finalize")
 
-	builder.SetEntryPoint("input")
+	// Finalize and show results
+	g.Node("finalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		result := graph.Get(view, resultKey)
+		steps := graph.GetList(view, stepsKey)
 
-	// Compile parent graph
-	fmt.Println("Compiling parent pipeline...")
-	compiled, err := builder.Compile()
+		fmt.Println("\n  Workflow Summary:")
+		fmt.Printf("    Final result: %s\n", result)
+		fmt.Println("    Steps executed:")
+		for i, step := range steps {
+			fmt.Printf("      %d. %s\n", i+1, step)
+		}
+		return graph.To(graph.END)
+	}, graph.END)
+
+	g.Start("start")
+
+	compiled, err := g.Build()
 	if err != nil {
-		log.Fatalf("Failed to compile: %v", err)
+		log.Fatal(err)
 	}
-	fmt.Println()
 
-	// Execute pipeline
-	fmt.Println("Executing pipeline with SubgraphNode composition:")
-	fmt.Println()
-
-	for _, err := range compiled.Run(ctx, []message.Message{}) {
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
-			log.Printf("Error: %v", err)
-			break
+			log.Fatal(err)
 		}
 	}
 
-	fmt.Println("\n=== Pipeline Complete ===")
-	fmt.Println("\nKey takeaways:")
-	fmt.Println("  • Each subgraph has isolated state (cannot access parent state)")
-	fmt.Println("  • Type-safe input/output mappers exchange data")
-	fmt.Println("  • Subgraphs are reusable across multiple graphs")
-	fmt.Println("  • Version tracking for compatibility")
+	fmt.Println()
+	fmt.Println("  Subgraph features:")
+	fmt.Println("    • graph.Subgraph(sub, inputMapper, outputMapper)")
+	fmt.Println("    • Subgraphs have isolated state")
+	fmt.Println("    • Input/output mappers bridge parent ↔ child state")
+	fmt.Println("    • Subgraphs can be reused across multiple nodes")
 }

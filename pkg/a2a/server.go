@@ -7,19 +7,18 @@ import (
 	a2atypes "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
 // Executor implements a2asrv.AgentExecutor and provides A2A protocol integration for compiled
 // graphs to be exposed as A2A-compliant services.
 type Executor struct {
-	runnable agent.MessageRunnable
+	runnable *graph.MessageGraph
 }
 
 // NewExecutor creates a new A2A executor that wraps an AgentMesh agent or compiled graph.
-// Accepts any agent.MessageRunnable (agents, compiled graphs, etc.).
-func NewExecutor(runnable agent.MessageRunnable) *Executor {
+// Accepts any *graph.MessageGraph (agents, compiled graphs, etc.).
+func NewExecutor(runnable *graph.MessageGraph) *Executor {
 	return &Executor{runnable: runnable}
 }
 
@@ -65,11 +64,11 @@ func (e *Executor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q 
 
 // StreamingExecutor wraps an AgentMesh Runnable with streaming support.
 type StreamingExecutor struct {
-	compiled agent.MessageRunnable
+	compiled *graph.MessageGraph
 }
 
 // NewStreamingExecutor creates a new streaming A2A executor.
-func NewStreamingExecutor(compiled agent.MessageRunnable) *StreamingExecutor {
+func NewStreamingExecutor(compiled *graph.MessageGraph) *StreamingExecutor {
 	return &StreamingExecutor{compiled: compiled}
 }
 

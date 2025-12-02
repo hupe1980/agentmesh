@@ -1,3 +1,4 @@
+// Package main demonstrates graph introspection capabilities.
 package main
 
 import (
@@ -9,9 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/hupe1980/agentmesh/pkg/command"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // Helper function to repeat strings
@@ -23,78 +22,61 @@ func repeatString(char string, count int) string {
 	return result
 }
 
+// Define state keys
+var (
+	validKey     = graph.NewKey("valid", false)
+	priorityKey  = graph.NewKey("priority", "")
+	processedKey = graph.NewKey("processed", false)
+	completeKey  = graph.NewKey("complete", false)
+)
+
 func main() {
 	// Build a complex graph with conditional routing
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
-	if err != nil {
-		panic(err)
-	}
+	g := graph.New[any, any](validKey, priorityKey, processedKey, completeKey)
 
-	// Define state keys
-	validKey := graphstate.NewKey("valid", false)
-	priorityKey := graphstate.NewKey("priority", "")
-	processedKey := graphstate.NewKey("processed", false)
-	completeKey := graphstate.NewKey("complete", false)
-
-	// Add nodes
-	builder.AddNodeFunc("input_validator", []string{"router"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	// Add nodes using the new builder API
+	g.Node("input_validator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		fmt.Println("✓ Validating input...")
-		updates, err := command.New().
-			With(command.SetValue(validKey, true)).
-			With(command.SetValue(priorityKey, "high")).
-			Build()
-		return []string{"router"}, updates, err
-	})
+		return graph.Set(validKey, true).
+			With(graph.SetValue(priorityKey, "high")).
+			To("router")
+	}, "router")
 
-	builder.AddNodeFunc("router", []string{"high_priority_handler", "normal_handler"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		fmt.Println("✓ Routing request...")
-		priority := graphstate.GetFromView(view, priorityKey)
+		priority := graph.Get(view, priorityKey)
 		if priority == "high" {
-			return []string{"high_priority_handler"}, nil, nil
+			return graph.To("high_priority_handler")
 		}
-		return []string{"normal_handler"}, nil, nil
-	})
+		return graph.To("normal_handler")
+	}, "high_priority_handler", "normal_handler")
 
-	builder.AddNodeFunc("high_priority_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	g.Node("high_priority_handler", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		fmt.Println("✓ Handling high priority request...")
-		updates, err := command.New().
-			With(command.SetValue(processedKey, true)).
-			Build()
-		return []string{"aggregator"}, updates, err
-	})
+		return graph.Set(processedKey, true).To("aggregator")
+	}, "aggregator")
 
-	builder.AddNodeFunc("normal_handler", []string{"aggregator"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	g.Node("normal_handler", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		fmt.Println("✓ Handling normal request...")
-		updates, err := command.New().
-			With(command.SetValue(processedKey, true)).
-			Build()
-		return []string{"aggregator"}, updates, err
-	})
+		return graph.Set(processedKey, true).To("aggregator")
+	}, "aggregator")
 
-	builder.AddNodeFunc("aggregator", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	g.Node("aggregator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		fmt.Println("✓ Aggregating results...")
-		updates, err := command.New().
-			With(command.SetValue(completeKey, true)).
-			Build()
-		return []string{graph.EndNode}, updates, err
-	})
+		return graph.Set(completeKey, true).End()
+	}, graph.END)
 
-	builder.SetEntryPoint("input_validator")
-
-	// Compile the graph - this is where topology is computed and validated
-	runnableGraph, err := builder.Compile()
-	if err != nil {
-		panic(err)
-	}
+	// Set entry point
+	g.Start("input_validator")
 
 	fmt.Println("\n" + repeatString("=", 80))
-	fmt.Println("GRAPH INTROSPECTION DEMO - Using CompiledGraph Introspection")
+	fmt.Println("GRAPH INTROSPECTION DEMO")
 	fmt.Println(repeatString("=", 80) + "\n")
 
 	// 1. List all nodes
 	fmt.Println("📋 ALL NODES:")
 	fmt.Println(repeatString("-", 80))
-	nodes := runnableGraph.GetNodes()
+	nodes := g.GetNodes()
 	for i, node := range nodes {
 		fmt.Printf("%d. %s\n", i+1, node)
 	}
@@ -103,7 +85,7 @@ func main() {
 	fmt.Println("\n🔍 NODE DETAILS:")
 	fmt.Println(repeatString("-", 80))
 	for _, nodeName := range nodes {
-		info, err := runnableGraph.GetNodeInfo(nodeName)
+		info, err := g.GetNodeInfo(nodeName)
 		if err != nil {
 			continue
 		}
@@ -111,26 +93,24 @@ func main() {
 		fmt.Printf("  Type:               %s\n", info.Type)
 		fmt.Printf("  Incoming Edges:     %d\n", info.IncomingEdges)
 		fmt.Printf("  Outgoing Edges:     %d\n", info.OutgoingEdges)
-		fmt.Printf("  Has Retry Policy:   %v\n", info.HasRetryPolicy)
-		if info.HasCommandRouting {
-			fmt.Printf("  Declared Targets:   %v\n", info.DeclaredTargets)
-		}
+		fmt.Printf("  Is Entry Point:     %v\n", info.IsEntryPoint)
+		fmt.Printf("  Has Interrupt:      %v\n", info.HasInterrupt)
+		fmt.Printf("  Declared Targets:   %v\n", info.DeclaredTargets)
 	}
 
 	// 3. Get topology overview
 	fmt.Println("\n🗺️  TOPOLOGY OVERVIEW:")
 	fmt.Println(repeatString("-", 80))
-	topo := runnableGraph.GetTopology()
+	topo := g.GetTopology()
 	fmt.Printf("Entry Points:      %v\n", topo.EntryPoints)
 	fmt.Printf("Exit Points:       %v\n", topo.ExitPoints)
-	fmt.Printf("Command Nodes:     %v\n", topo.CommandNodes)
-	fmt.Printf("Max Depth:         %d\n", topo.MaxDepth)
-	fmt.Printf("Estimated Paths:   %d\n", topo.TotalPaths)
+	fmt.Printf("Total Nodes:       %d\n", len(topo.Nodes))
+	fmt.Printf("Total Edges:       %d\n", len(topo.Edges))
 
 	// 4. Get metrics
 	fmt.Println("\n📊 GRAPH METRICS:")
 	fmt.Println(repeatString("-", 80))
-	metrics := runnableGraph.GetMetrics()
+	metrics := g.GetMetrics()
 	fmt.Printf("Total Nodes:          %d\n", metrics.TotalNodes)
 	fmt.Printf("Total Edges:          %d\n", metrics.TotalEdges)
 	fmt.Printf("Average Fan-Out:      %.2f\n", metrics.AverageFanOut)
@@ -139,19 +119,7 @@ func main() {
 	fmt.Printf("Max Fan-In:           %d\n", metrics.MaxFanIn)
 	fmt.Printf("Cyclomatic Complexity: %d\n", metrics.CyclomaticComplexity)
 
-	// 5. Get dependencies for a specific node
-	fmt.Println("\n🔗 DEPENDENCIES (router node):")
-	fmt.Println(repeatString("-", 80))
-	deps, err := runnableGraph.GetNodeDependencies("router")
-	if err == nil {
-		fmt.Printf("Direct Predecessors:  %v\n", deps.DirectPredecessors)
-		fmt.Printf("Direct Successors:    %v\n", deps.DirectSuccessors)
-		fmt.Printf("All Predecessors:     %v\n", deps.AllPredecessors)
-		fmt.Printf("All Successors:       %v\n", deps.AllSuccessors)
-		fmt.Printf("Depth from START:     %d\n", deps.Depth)
-	}
-
-	// 6. Export topology as JSON for external visualization
+	// 5. Export topology as JSON
 	fmt.Println("\n📄 JSON EXPORT (Topology):")
 	fmt.Println(repeatString("-", 80))
 	jsonData, err := json.MarshalIndent(topo, "", "  ")
@@ -159,14 +127,12 @@ func main() {
 		fmt.Println(string(jsonData))
 	}
 
-	// 7. Generate Mermaid flowchart and save to file
-	fmt.Println("\n📊 GENERATE MERMAID FLOWCHART:")
+	// 6. Generate Mermaid flowchart
+	fmt.Println("\n📊 MERMAID FLOWCHART:")
 	fmt.Println(repeatString("-", 80))
+	flowchart := g.MermaidFlowchart("TD")
 
-	// Generate flowchart using compiled graph introspection
-	flowchart := runnableGraph.MermaidFlowchart("TD")
-
-	// Save to .mmd file in the same directory as main.go
+	// Save to .mmd file
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		log.Printf("Failed to get current file path")

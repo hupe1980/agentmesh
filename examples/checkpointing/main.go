@@ -1,311 +1,220 @@
-// Package main demonstrates checkpointing.
-
+// Package main demonstrates checkpointing for fault tolerance and resume.
+//
+// Checkpointing enables:
+//   - Save execution state at each superstep
+//   - Resume from checkpoint after failure
+//   - Time-travel debugging
+//   - Audit trails of execution
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
+)
+
+// State keys for tracking workflow progress
+var (
+	stepKey   = graph.NewKey("step", 0)
+	statusKey = graph.NewKey("status", "")
+	dataKey   = graph.NewKey("data", "")
 )
 
 func main() {
 	ctx := context.Background()
-	fmt.Println("=== Checkpoint Demo ===")
-	runDemo(ctx)
+	fmt.Println("=== Checkpointing Example ===")
+
+	// Example 1: Basic checkpointing with in-memory storage
+	fmt.Println("\n--- Example 1: Basic Checkpointing ---")
+	basicCheckpointingExample(ctx)
+
+	// Example 2: Resume from checkpoint
+	fmt.Println("\n--- Example 2: Resume from Checkpoint ---")
+	resumeFromCheckpointExample(ctx)
+
+	// Example 3: List and inspect checkpoints
+	fmt.Println("\n--- Example 3: Checkpoint Inspection ---")
+	inspectCheckpointsExample(ctx)
 }
 
-func runDemo(ctx context.Context) {
-	runID := "demo-workflow-123"
+func basicCheckpointingExample(ctx context.Context) {
+	// Create an in-memory checkpointer
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	fmt.Println("This demo shows:")
-	fmt.Println("1. Automatic checkpoint saving after each superstep")
-	fmt.Println("2. Viewing checkpoint history")
-	fmt.Println("3. Time-travel debugging (loading past states)")
-	fmt.Println("4. Resuming from a checkpoint (simulated failure recovery)")
-	fmt.Println()
+	// Build workflow graph
+	g := graph.New[any, any](stepKey, statusKey, dataKey)
 
-	// === Part 1: Run workflow with automatic checkpointing ===
-	fmt.Println("=== Part 1: Workflow with Automatic Checkpointing ===")
-	fmt.Printf("Run ID: %s\n", runID)
-	fmt.Println("Checkpoints will be saved automatically after every superstep")
-	fmt.Println()
+	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [init] Starting workflow...")
+		return graph.Set(stepKey, 1).
+			With(graph.SetValue(statusKey, "initialized")).
+			To("process")
+	}, "process")
 
-	compiled := buildWorkflow()
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		step := graph.Get(view, stepKey)
+		fmt.Printf("  [process] Processing step %d...\n", step)
+		return graph.Set(stepKey, step+1).
+			With(graph.SetValue(statusKey, "processing")).
+			With(graph.SetValue(dataKey, "processed-data")).
+			To("validate")
+	}, "validate")
 
-	seq := compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1), // Save after every superstep
-			checkpoint.WithAutoRestore(false),
-		))
+	g.Node("validate", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		step := graph.Get(view, stepKey)
+		data := graph.Get(view, dataKey)
+		fmt.Printf("  [validate] Validating step %d, data=%s\n", step, data)
+		return graph.Set(stepKey, step+1).
+			With(graph.SetValue(statusKey, "validated")).
+			To("complete")
+	}, "complete")
 
-	fmt.Println("Workflow Results:")
-	eventCount := 0
-	for event, err := range seq {
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			break
-		}
-		eventCount++
-		fmt.Printf("Events: %d, Message: %s\n", eventCount, event.Type())
-	}
+	g.Node("complete", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		step := graph.Get(view, stepKey)
+		fmt.Printf("  [complete] Completing at step %d\n", step)
+		return graph.Set(statusKey, "completed").End()
+	}, graph.END)
 
-	// === Part 2: View checkpoint history ===
-	fmt.Println("=== Part 2: Viewing Checkpoint History ===")
-	checkpoints, err := checkpointer.List(ctx, runID)
+	g.Start("init")
+
+	// Configure with checkpointer
+	g.WithCheckpointer(checkpointer, "run-001")
+
+	compiled, err := g.Build()
 	if err != nil {
-		log.Fatalf("Failed to list: %v", err)
+		log.Fatalf("Failed to build: %v", err)
 	}
 
-	fmt.Printf("Found %d checkpoints (saved automatically):\n\n", len(checkpoints))
-	for i, cp := range checkpoints {
-		fmt.Printf("Checkpoint %d (Superstep %d):\n", i+1, cp.Superstep)
-		fmt.Printf("  Time:      %v\n", cp.Timestamp.Format("15:04:05.000"))
-		fmt.Printf("  Step:      %v\n", cp.State["step"])
-		fmt.Printf("  Status:    %v\n", cp.State["status"])
-		if data := cp.State["data"]; data != nil {
-			fmt.Printf("  Data:      %v\n", data)
-		}
-		fmt.Printf("  Completed: %v\n", cp.CompletedNodes)
-		fmt.Println()
-	}
-
-	// === Part 3: Time-travel debugging ===
-	fmt.Println("=== Part 3: Time-Travel Debugging ===")
-	fmt.Println("Loading checkpoint from superstep 2 to inspect past state...")
-	fmt.Println()
-
-	cp2, err := checkpointer.LoadAtSuperstep(ctx, runID, 2)
-	if err != nil {
-		log.Fatalf("Failed to load: %v", err)
-	}
-
-	if cp2 != nil {
-		fmt.Println("✓ Time-traveled to superstep 2:")
-		fmt.Printf("  Status at that time: %v\n", cp2.State["status"])
-		fmt.Printf("  Data processed:      %v\n", cp2.State["data"])
-		fmt.Printf("  Nodes completed:     %v\n", cp2.CompletedNodes)
-		fmt.Println()
-		fmt.Println("This is useful for:")
-		fmt.Println("  • Debugging: See exact state when error occurred")
-		fmt.Println("  • Auditing: Track what happened at each step")
-		fmt.Println("  • Testing: Verify intermediate states")
-	}
-	fmt.Println()
-
-	// === Part 4: Simulate failure and resume ===
-	fmt.Println("=== Part 4: Failure Recovery (Resume from Checkpoint) ===")
-	fmt.Println("Simulating a workflow that fails mid-execution...")
-	fmt.Println()
-
-	// Build a workflow that "fails" after step 2
-	failingWorkflow := buildFailingWorkflow()
-	failRunID := "failing-workflow"
-
-	// First attempt - will fail
-	failSeq := failingWorkflow.Run(ctx, nil,
-		graph.WithRunID(failRunID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1),
-			checkpoint.WithAutoRestore(false),
-		),
-	)
-
-	for _, err := range failSeq {
+	// Run workflow - checkpoints are saved at each superstep
+	fmt.Println("\n  Running workflow with checkpointing enabled...")
+	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
-			fmt.Printf("❌ Workflow failed: %v\n", err)
-			break
-		}
-	}
-	fmt.Println()
-
-	// Check what was saved
-	failCheckpoints, _ := checkpointer.List(ctx, failRunID)
-	fmt.Printf("Checkpoints saved before failure: %d\n", len(failCheckpoints))
-	if len(failCheckpoints) > 0 {
-		last := failCheckpoints[0]
-		fmt.Printf("Last good state: Superstep %d, Status: %v\n", last.Superstep, last.State["status"])
-	}
-	fmt.Println()
-
-	// Now resume with auto-restore
-	fmt.Println("Resuming from last checkpoint with auto-restore enabled...")
-	fixedWorkflow := buildFixedWorkflow()
-
-	resumeSeq := fixedWorkflow.Run(ctx, nil,
-		graph.WithRunID(failRunID),
-		graph.WithCheckpointOptions(
-			checkpoint.WithCheckpointer(checkpointer),
-			checkpoint.WithSaveInterval(1),
-			checkpoint.WithAutoRestore(true), // ← Automatically resume from last checkpoint
-		),
-	)
-
-	var lastErr error
-	for _, err := range resumeSeq {
-		if err != nil {
-			lastErr = err
-			log.Printf("Error: %v", err)
+			log.Fatalf("Error: %v", err)
 		}
 	}
 
-	if lastErr == nil {
-		fmt.Println("✓ Workflow recovered and completed successfully!")
-		fmt.Println("  • Restored state from last checkpoint")
-		fmt.Println("  • Skipped already-completed nodes")
-		fmt.Println("  • Continued from where it left off")
-	}
-	fmt.Println()
+	fmt.Println("\n  ✓ Workflow completed with checkpoints saved!")
 
-	// === Part 5: Statistics ===
-	fmt.Println("=== Part 5: Checkpoint Statistics ===")
+	// Show saved checkpoints using Stats()
 	stats := checkpointer.Stats()
-	fmt.Printf("Total runs tracked: %d\n", len(stats))
-	for rid, count := range stats {
-		fmt.Printf("  %s: %d checkpoints\n", rid, count)
+	fmt.Printf("  Saved runs: %d\n", len(stats))
+	for runID, count := range stats {
+		fmt.Printf("    - %s: %d checkpoints\n", runID, count)
 	}
-	fmt.Println()
-
-	fmt.Println("=== Demo Complete ===")
-	fmt.Println()
-	fmt.Println("Key Features Demonstrated:")
-	fmt.Println("✓ Automatic checkpointing - no manual save() calls needed")
-	fmt.Println("✓ Time-travel debugging - inspect any past superstep")
-	fmt.Println("✓ Failure recovery - auto-resume from last checkpoint")
-	fmt.Println("✓ Zero-copy safety - checkpoints are immutable snapshots")
-	fmt.Println()
-	fmt.Println("For production workflows:")
-	fmt.Println("• Use SaveInterval to balance performance vs. recovery time")
-	fmt.Println("• Consider persistent storage (SQLite, PostgreSQL) for durability")
-	fmt.Println("• Set meaningful RunIDs for multi-user systems")
 }
 
-func buildWorkflow() *graph.Compiled[[]message.Message, message.Message] {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+func resumeFromCheckpointExample(ctx context.Context) {
+	// Create checkpointer and pre-populate with a "failed" run
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Simulate a partially completed run by saving a checkpoint
+	partialCheckpoint := &checkpoint.Checkpoint{
+		RunID:     "resume-run-001",
+		Superstep: 2,
+		State: map[string]any{
+			"step":   2,
+			"status": "processing",
+			"data":   "partial-data",
+		},
+		CompletedNodes: []string{"init", "process"},
+	}
+	if err := checkpointer.Save(ctx, partialCheckpoint); err != nil {
+		log.Fatalf("Failed to save partial checkpoint: %v", err)
+	}
+	fmt.Println("  Simulated partial run with checkpoint at superstep 2")
+
+	// Build graph that can resume
+	g := graph.New[any, any](stepKey, statusKey, dataKey)
+
+	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [init] Would run if starting fresh")
+		return graph.Set(stepKey, 1).To("process")
+	}, "process")
+
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		fmt.Println("  [process] Would run if starting fresh")
+		return graph.Set(stepKey, 2).To("validate")
+	}, "validate")
+
+	g.Node("validate", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		step := graph.Get(view, stepKey)
+		fmt.Printf("  [validate] Resuming! step=%d\n", step)
+		return graph.Set(stepKey, step+1).
+			With(graph.SetValue(statusKey, "validated")).
+			To("complete")
+	}, "complete")
+
+	g.Node("complete", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		step := graph.Get(view, stepKey)
+		fmt.Printf("  [complete] Finishing resumed run, step=%d\n", step)
+		return graph.Set(statusKey, "completed").End()
+	}, graph.END)
+
+	g.Start("init")
+	g.WithCheckpointer(checkpointer, "resume-run-001")
+
+	compiled, err := g.Build()
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to build: %v", err)
 	}
 
-	stepKey := graphstate.NewKey("step", 0)
-	statusKey := graphstate.NewKey("status", "")
-	dataKey := graphstate.NewKey("data", []string{})
-
-	builder.SetEntryPoint("step1")
-
-	builder.AddNodeFunc("step1", []string{"step2"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("→ Step 1: Initializing...")
-		time.Sleep(300 * time.Millisecond)
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 1
-		updates[statusKey.Name()] = "initialized"
-		return []string{"step2"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step2", []string{"step3"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("→ Step 2: Processing data...")
-		time.Sleep(300 * time.Millisecond)
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 2
-		updates[statusKey.Name()] = "processing"
-		updates[dataKey.Name()] = []string{"A", "B", "C"}
-		return []string{"step3"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step3", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("→ Step 3: Finalizing...")
-		time.Sleep(300 * time.Millisecond)
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 3
-		updates[statusKey.Name()] = "complete"
-		return []string{graph.EndNode}, updates, nil
-	})
-
-	compiled, err := builder.Compile()
+	// Load checkpoint and resume
+	cp, err := checkpointer.Load(ctx, "resume-run-001")
 	if err != nil {
-		log.Fatalf("Failed to compile: %v", err)
+		log.Fatalf("Failed to load checkpoint: %v", err)
 	}
-	return compiled
+
+	fmt.Printf("  Loaded checkpoint: superstep=%d, completed=%v\n",
+		cp.Superstep, cp.CompletedNodes)
+
+	// Resume execution from checkpoint
+	fmt.Println("\n  Resuming from checkpoint...")
+	for _, err := range compiled.Run(ctx, nil, graph.WithCheckpoint(cp)) {
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+	}
+
+	fmt.Println("\n  ✓ Resumed and completed successfully!")
 }
 
-func buildFailingWorkflow() *graph.Compiled[[]message.Message, message.Message] {
-	stepKey := graphstate.NewKey("step", 0)
-	statusKey := graphstate.NewKey("status", "")
+func inspectCheckpointsExample(ctx context.Context) {
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
-	if err != nil {
-		panic(err)
+	// Save a few checkpoints for different runs
+	for i := 1; i <= 3; i++ {
+		cp := &checkpoint.Checkpoint{
+			RunID:     fmt.Sprintf("inspect-run-%03d", i),
+			Superstep: int64(i * 2),
+			State: map[string]any{
+				"step":   i * 2,
+				"status": fmt.Sprintf("step-%d-complete", i*2),
+			},
+		}
+		if err := checkpointer.Save(ctx, cp); err != nil {
+			log.Fatalf("Failed to save: %v", err)
+		}
 	}
 
-	builder.SetEntryPoint("step1")
+	// List all runs using Stats()
+	stats := checkpointer.Stats()
 
-	builder.AddNodeFunc("step1", []string{"step2"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("  Step 1: OK")
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 1
-		updates[statusKey.Name()] = "ok"
-		return []string{"step2"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step2", []string{"step3"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("  Step 2: OK")
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 2
-		updates[statusKey.Name()] = "ok"
-		return []string{"step3"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step3", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		return nil, nil, fmt.Errorf("simulated failure at step 3")
-	})
-
-	compiled, _ := builder.Compile()
-	return compiled
-}
-
-func buildFixedWorkflow() *graph.Compiled[[]message.Message, message.Message] {
-	stepKey := graphstate.NewKey("step", 0)
-	statusKey := graphstate.NewKey("status", "")
-
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
-	if err != nil {
-		panic(err)
+	fmt.Printf("  Found %d saved runs:\n", len(stats))
+	for runID, count := range stats {
+		cp, err := checkpointer.Load(ctx, runID)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("    - %s: %d checkpoints, latest superstep=%d, state=%v\n",
+			runID, count, cp.Superstep, cp.State)
 	}
 
-	builder.SetEntryPoint("step1")
-
-	builder.AddNodeFunc("step1", []string{"step2"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("  Step 1: Skipped (already completed)")
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 1
-		updates[statusKey.Name()] = "ok"
-		return []string{"step2"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step2", []string{"step3"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("  Step 2: Skipped (already completed)")
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 2
-		updates[statusKey.Name()] = "ok"
-		return []string{"step3"}, updates, nil
-	})
-
-	builder.AddNodeFunc("step3", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		fmt.Println("  Step 3: Now succeeding (bug fixed)")
-		updates := graphstate.Updates{}
-		updates[stepKey.Name()] = 3
-		updates[statusKey.Name()] = "fixed!"
-		return []string{graph.EndNode}, updates, nil
-	})
-
-	compiled, _ := builder.Compile()
-	return compiled
+	fmt.Println("\n  Checkpointing enables:")
+	fmt.Println("    • Fault tolerance - resume after crashes")
+	fmt.Println("    • Time-travel debugging - inspect any state")
+	fmt.Println("    • Audit trails - track execution history")
+	fmt.Println("    • Long-running workflows - survive restarts")
 }

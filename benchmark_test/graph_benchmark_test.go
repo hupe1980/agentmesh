@@ -5,231 +5,261 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
-// Benchmark state operations with state v3 API
-
-func BenchmarkState_GetFromView(b *testing.B) {
-	builder := state.NewManagerBuilder()
-
-	// Define and register typed keys with default values
-	key1 := state.NewKey("key1", "")
-	key2 := state.NewKey("key2", 0)
-	key3 := state.NewKey("key3", []string{})
-
-	state.RegisterKey(builder, key1)
-	state.RegisterKey(builder, key2)
-	state.RegisterKey(builder, key3)
-	state.RegisterListKey(builder, agent.MessagesKey)
-	mgr := builder.Build()
-
-	// Set values
-	ctx := context.Background()
-	_ = state.Set(ctx, mgr, key1, "value1")
-	_ = state.Set(ctx, mgr, key2, 42)
-	_ = state.Set(ctx, mgr, key3, []string{"a", "b", "c"})
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		view, _ := mgr.CreateReadView(ctx)
-		_ = state.GetFromView(view, key1)
-	}
-}
-
-func BenchmarkState_ApplyUpdates(b *testing.B) {
-	builder := state.NewManagerBuilder()
-
-	key1 := state.NewKey("key1", "")
-	key2 := state.NewKey("key2", 0)
-	key3 := state.NewKey("key3", []string{})
-
-	state.RegisterKey(builder, key1)
-	state.RegisterKey(builder, key2)
-	state.RegisterKey(builder, key3)
-	state.RegisterListKey(builder, agent.MessagesKey)
-	mgr := builder.Build()
-
-	ctx := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = state.Set(ctx, mgr, key1, "value1")
-		_ = state.Set(ctx, mgr, key2, 42)
-		_ = state.Set(ctx, mgr, key3, []string{"a", "b", "c"})
-	}
-}
-
-// Benchmark message operations
-
-func BenchmarkState_AddMessages(b *testing.B) {
-	builder := state.NewManagerBuilder()
-	state.RegisterListKey(builder, agent.MessagesKey)
-	mgr := builder.Build()
-
-	msgs := []message.Message{
-		message.NewHumanMessageFromText("Hello"),
-		message.NewAIMessageFromText("Hi there"),
-	}
-
-	ctx := context.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, msg := range msgs {
-			_ = state.Append(ctx, mgr, agent.MessagesKey, msg)
-		}
-	}
-}
-
-func BenchmarkState_GetMessages(b *testing.B) {
-	builder := state.NewManagerBuilder()
-	state.RegisterListKey(builder, agent.MessagesKey)
-	mgr := builder.Build()
-
-	ctx := context.Background()
-	// Add 100 messages
-	for i := 0; i < 100; i++ {
-		var msg message.Message = message.NewHumanMessageFromText("Message")
-		_ = state.Append(ctx, mgr, agent.MessagesKey, msg)
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		view, _ := mgr.CreateReadView(ctx)
-		_ = state.GetFromView(view, agent.MessagesKey.Key)
-	}
-}
+// Common keys for benchmarks
+var (
+	CountKey = graph.NewKey("count", 0)
+	ValueKey = graph.NewKey("value", 0)
+	TextKey  = graph.NewKey("text", "")
+)
 
 // Benchmark graph execution
 
 func BenchmarkGraph_SimpleExecution(b *testing.B) {
-	countKey := state.NewKey("count", 0)
-
-	createSimpleGraph := func() graph.Runnable[[]message.Message, message.Message] {
-		builder := state.NewManagerBuilder()
-		state.RegisterKey(builder, countKey)
-		state.RegisterListKey(builder, agent.MessagesKey)
-		mgr := builder.Build()
-
-		ctx := context.Background()
-		_ = state.Set(ctx, mgr, countKey, 0)
-
-		g, _ := graph.NewGraph(mgr)
-
-		g.AddNode(&graph.BaseNode{
-			NodeName:        "increment",
-			DeclaredTargets: []string{graph.EndNode},
-			Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-				count := state.GetFromView(view, countKey)
-				updates := state.Updates{countKey.Name(): count + 1}
-				return []string{graph.EndNode}, updates, nil
-			},
-		})
-
-		g.SetEntryPoint("increment")
-
-		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
-		return compiled
-	}
+	ctx := context.Background()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		compiled := createSimpleGraph()
-		for range compiled.Run(context.Background(), nil) {
+		g := graph.New[int, int](CountKey)
+
+		g.Node("increment", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			count := graph.Get(view, CountKey)
+			return graph.Set(CountKey, count+1).End()
+		}, graph.END)
+
+		g.Start("increment")
+
+		compiled, _ := g.Build()
+		for range compiled.Run(ctx, 0) {
 		}
 	}
 }
 
 func BenchmarkGraph_LinearChain(b *testing.B) {
-	valueKey := state.NewKey("value", 0)
+	createChainGraph := func(length int) *graph.Graph[int, int] {
+		g := graph.New[int, int](ValueKey)
 
-	createChainGraph := func(length int) graph.Runnable[[]message.Message, message.Message] {
-		builder := state.NewManagerBuilder()
-		state.RegisterKey(builder, valueKey)
-		state.RegisterListKey(builder, agent.MessagesKey)
-		mgr := builder.Build()
-
-		ctx := context.Background()
-		_ = state.Set(ctx, mgr, valueKey, 0)
-
-		g, _ := graph.NewGraph(mgr)
-
-		for i := 0; i < length; i++ {
+		for i := range length {
 			name := fmt.Sprintf("node_%d", i)
-			nextNode := graph.EndNode
+			nextNode := graph.END
 			if i < length-1 {
 				nextNode = fmt.Sprintf("node_%d", i+1)
 			}
-			g.AddNode(&graph.BaseNode{
-				NodeName:        name,
-				DeclaredTargets: []string{nextNode},
-				Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-					val := state.GetFromView(view, valueKey)
-					updates := state.Updates{valueKey.Name(): val + 1}
-					return []string{nextNode}, updates, nil
-				},
-			})
 
-			if i == 0 {
-				g.SetEntryPoint(name)
-			}
+			// Capture loop variables
+			nodeName := name
+			next := nextNode
+
+			g.Node(nodeName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				val := graph.Get(view, ValueKey)
+				return graph.Set(ValueKey, val+1).To(next)
+			}, next)
 		}
 
-		compiled, _ := graph.Compile(g, graph.NewMessagePregelExecutor())
+		g.Start("node_0")
+
+		compiled, _ := g.Build()
 		return compiled
 	}
 
 	b.Run("Length5", func(b *testing.B) {
+		ctx := context.Background()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			compiled := createChainGraph(5)
-			for range compiled.Run(context.Background(), nil) {
+			for range compiled.Run(ctx, 0) {
 			}
 		}
 	})
 
 	b.Run("Length10", func(b *testing.B) {
+		ctx := context.Background()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			compiled := createChainGraph(10)
-			for range compiled.Run(context.Background(), nil) {
+			for range compiled.Run(ctx, 0) {
+			}
+		}
+	})
+
+	b.Run("Length20", func(b *testing.B) {
+		ctx := context.Background()
+		b.ResetTimer()
+		for b.Loop() {
+			compiled := createChainGraph(20)
+			for range compiled.Run(ctx, 0) {
 			}
 		}
 	})
 }
 
-func BenchmarkGraph_Compile(b *testing.B) {
-	createGraph := func() *graph.Graph {
-		builder := state.NewManagerBuilder()
-		state.RegisterListKey(builder, agent.MessagesKey)
-		mgr := builder.Build()
+func BenchmarkGraph_Build(b *testing.B) {
 
-		g, _ := graph.NewGraph(mgr)
+	for b.Loop() {
+		g := graph.New[int, int](ValueKey)
 
-		for i := 0; i < 10; i++ {
-			name := fmt.Sprintf("node_%d", i)
-			nextNode := graph.EndNode
-			if i < 9 {
-				nextNode = fmt.Sprintf("node_%d", i+1)
+		for j := range 10 {
+			name := fmt.Sprintf("node_%d", j)
+			nextNode := graph.END
+			if j < 9 {
+				nextNode = fmt.Sprintf("node_%d", j+1)
 			}
-			g.AddNode(&graph.BaseNode{
-				NodeName:        name,
-				DeclaredTargets: []string{nextNode},
-				Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-					return []string{nextNode}, nil, nil
-				},
-			})
-		}
-		g.SetEntryPoint("node_0")
 
-		return g
+			nodeName := name
+			next := nextNode
+
+			g.Node(nodeName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				return graph.Cmd().To(next)
+			}, next)
+		}
+
+		g.Start("node_0")
+		_, _ = g.Build()
+	}
+}
+
+func BenchmarkGraph_ParallelNodes(b *testing.B) {
+	ctx := context.Background()
+
+	for b.Loop() {
+		g := graph.New[int, int](ValueKey)
+
+		g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			return graph.Cmd().To("worker1", "worker2", "worker3")
+		}, "worker1", "worker2", "worker3")
+
+		for _, name := range []string{"worker1", "worker2", "worker3"} {
+			workerName := name
+			g.Node(workerName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				val := graph.Get(view, ValueKey)
+				return graph.Set(ValueKey, val+1).To("merge")
+			}, "merge")
+		}
+
+		g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			val := graph.Get(view, ValueKey)
+			return graph.Set(ValueKey, val).End()
+		}, graph.END)
+
+		g.Start("start")
+
+		compiled, _ := g.Build()
+		for range compiled.Run(ctx, 0) {
+		}
+	}
+}
+
+// Benchmark message-based graph execution
+
+var MessagesKey = graph.NewListKey[message.Message]("messages")
+
+func BenchmarkGraph_MessageExecution(b *testing.B) {
+	ctx := context.Background()
+
+	for b.Loop() {
+		g := graph.New[[]message.Message, message.Message](MessagesKey)
+
+		g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			var msg message.Message = message.NewAIMessageFromText("Response")
+			return graph.Append(MessagesKey, msg).End()
+		}, graph.END)
+
+		g.Start("process")
+
+		compiled, _ := g.Build()
+
+		input := []message.Message{
+			message.NewHumanMessageFromText("Hello"),
+		}
+
+		for range compiled.Run(ctx, input) {
+		}
+	}
+}
+
+func BenchmarkGraph_MessageChain(b *testing.B) {
+	ctx := context.Background()
+
+	b.Run("3Nodes", func(b *testing.B) {
+		b.ResetTimer()
+		for b.Loop() {
+			g := graph.New[[]message.Message, message.Message](MessagesKey)
+
+			g.Node("node1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				var msg message.Message = message.NewAIMessageFromText("From node1")
+				return graph.Append(MessagesKey, msg).To("node2")
+			}, "node2")
+
+			g.Node("node2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				var msg message.Message = message.NewAIMessageFromText("From node2")
+				return graph.Append(MessagesKey, msg).To("node3")
+			}, "node3")
+
+			g.Node("node3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+				var msg message.Message = message.NewAIMessageFromText("Final")
+				return graph.Append(MessagesKey, msg).End()
+			}, graph.END)
+
+			g.Start("node1")
+
+			compiled, _ := g.Build()
+
+			input := []message.Message{
+				message.NewHumanMessageFromText("Start"),
+			}
+
+			for range compiled.Run(ctx, input) {
+			}
+		}
+	})
+}
+
+func BenchmarkGraph_PrebuiltExecution(b *testing.B) {
+	// Build graph once outside the benchmark loop
+	g := graph.New[int, int](ValueKey)
+
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		val := graph.Get(view, ValueKey)
+		return graph.Set(ValueKey, val+1).End()
+	}, graph.END)
+
+	g.Start("process")
+
+	compiled, _ := g.Build()
+
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for range compiled.Run(ctx, 0) {
+		}
+	}
+}
+
+func BenchmarkGraph_PrebuiltMessageExecution(b *testing.B) {
+	// Build graph once outside the benchmark loop
+	g := graph.New[[]message.Message, message.Message](MessagesKey)
+
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		var msg message.Message = message.NewAIMessageFromText("Response")
+		return graph.Append(MessagesKey, msg).End()
+	}, graph.END)
+
+	g.Start("process")
+
+	compiled, _ := g.Build()
+
+	ctx := context.Background()
+	input := []message.Message{
+		message.NewHumanMessageFromText("Hello"),
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g := createGraph()
-		_, _ = graph.Compile(g, graph.NewMessagePregelExecutor())
+		for range compiled.Run(ctx, input) {
+		}
 	}
 }

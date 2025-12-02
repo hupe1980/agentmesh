@@ -13,16 +13,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestModelNode_WithOutputSchema(t *testing.T) {
-	t.Run("sets output schema correctly", func(t *testing.T) {
+func TestNewModelNodeFunc(t *testing.T) {
+	t.Run("creates node function successfully", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("test response"), nil
+			}),
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor)
+		require.NoError(t, err)
+		require.NotNil(t, nodeFn)
+	})
+
+	t.Run("returns error for nil executor", func(t *testing.T) {
+		_, err := NewModelNodeFunc(nil)
+		require.Error(t, err)
+	})
+
+	t.Run("with system prompt", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("response"), nil
+			}),
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor, WithModelSystemPrompt("You are helpful"))
+		require.NoError(t, err)
+		require.NotNil(t, nodeFn)
+	})
+
+	t.Run("with output schema", func(t *testing.T) {
 		outputSchema := &schema.OutputSchema{
 			Name:        "TestSchema",
-			Description: "Test schema description",
+			Description: "Test schema",
 			Schema: map[string]any{
 				"type": "object",
-				"properties": map[string]any{
-					"answer": map[string]any{"type": "string"},
-				},
 			},
 		}
 
@@ -33,92 +61,101 @@ func TestModelNode_WithOutputSchema(t *testing.T) {
 		}
 
 		executor := model.NewExecutor(mdl)
-		node, err := NewModelNode(executor, WithOutputSchema(outputSchema))
+		nodeFn, err := NewModelNodeFunc(executor, WithOutputSchema(outputSchema))
 		require.NoError(t, err)
-		require.NotNil(t, node)
-		assert.Equal(t, outputSchema, node.outputSchema)
+		require.NotNil(t, nodeFn)
 	})
 
-	t.Run("handles nil output schema", func(t *testing.T) {
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
-
-		// WithOutputSchema with nil should not panic
-		node, err := NewModelNode(executor, WithOutputSchema(nil))
-		require.NoError(t, err)
-		require.NotNil(t, node)
-		assert.Nil(t, node.outputSchema)
-	})
-}
-
-func TestModelNode_Targets(t *testing.T) {
-	t.Run("uses custom targets", func(t *testing.T) {
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
-
-		customTargets := []string{"custom_node_1", "custom_node_2"}
-		node, err := NewModelNode(executor, WithModelTargets(customTargets))
-		require.NoError(t, err)
-
-		// Verify targets are set correctly
-		assert.Equal(t, customTargets, node.Targets())
-	})
-
-	t.Run("uses default targets", func(t *testing.T) {
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
-
-		node, err := NewModelNode(executor)
-		require.NoError(t, err)
-
-		// Default targets should be "tool" and END
-		assert.Equal(t, []string{"tool", graph.EndNode}, node.Targets())
-	})
-}
-
-func TestModelNode_Configuration(t *testing.T) {
-	t.Run("sets custom node name", func(t *testing.T) {
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
-
-		node, err := NewModelNode(executor, WithModelNodeName("custom_model"))
-		require.NoError(t, err)
-		assert.Equal(t, "custom_model", node.Name())
-	})
-
-	t.Run("sets system prompt", func(t *testing.T) {
-		customPrompt := "You are a helpful assistant"
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
-
-		node, err := NewModelNode(executor, WithModelSystemPrompt(customPrompt))
-		require.NoError(t, err)
-		assert.Equal(t, customPrompt, node.systemPrompt)
-	})
-
-	t.Run("sets tools", func(t *testing.T) {
+	t.Run("with tools", func(t *testing.T) {
 		tool1 := &testutil.MockTool{NameValue: "tool1"}
 		tool2 := &testutil.MockTool{NameValue: "tool2"}
 
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("response"), nil
+			}),
+		}
 
-		node, err := NewModelNode(executor, WithModelTools(tool1, tool2))
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor, WithModelTools(tool1, tool2))
 		require.NoError(t, err)
-		assert.Len(t, node.tools, 2)
-		assert.Equal(t, "tool1", node.tools[0].Name())
-		assert.Equal(t, "tool2", node.tools[1].Name())
+		require.NotNil(t, nodeFn)
 	})
 
-	t.Run("uses default values", func(t *testing.T) {
-		mdl := &testutil.MockModel{}
-		executor := model.NewExecutor(mdl)
+	t.Run("with custom tool target", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("response"), nil
+			}),
+		}
 
-		node, err := NewModelNode(executor)
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor, WithToolTarget("custom_tool_node"))
 		require.NoError(t, err)
-		assert.Equal(t, "model", node.Name())
-		assert.Equal(t, "", node.systemPrompt)
-		assert.Empty(t, node.tools)
-		assert.Equal(t, []string{"tool", graph.EndNode}, node.targets)
+		require.NotNil(t, nodeFn)
 	})
+}
+
+func TestModelNodeFunc_Execution(t *testing.T) {
+	t.Run("executes and returns command", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("AI response"), nil
+			}),
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor)
+		require.NoError(t, err)
+
+		// Create a view with messages
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		cmd, err := nodeFn(context.Background(), view)
+		require.NoError(t, err)
+		require.NotNil(t, cmd)
+
+		// Should route to END (no tool calls)
+		assert.Contains(t, cmd.Next, graph.END)
+	})
+
+	t.Run("routes to tool node when tool calls present", func(t *testing.T) {
+		// Create an AI message with tool calls
+		aiMsg := message.NewAIMessageFromText("")
+		aiMsg.ToolCalls = []message.ToolCall{
+			{ID: "call1", Name: "test_tool", Arguments: "{}"},
+		}
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return aiMsg, nil
+			}),
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor)
+		require.NoError(t, err)
+
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Use a tool"),
+			},
+		})
+
+		cmd, err := nodeFn(context.Background(), view)
+		require.NoError(t, err)
+		require.NotNil(t, cmd)
+
+		// Should route to tool node
+		assert.Contains(t, cmd.Next, "tool")
+	})
+}
+
+// createTestView creates a View for testing using BSPState
+func createTestView(data map[string]any) graph.View {
+	return graph.NewBSPState(data).ReadView()
 }

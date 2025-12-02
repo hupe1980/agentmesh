@@ -1,22 +1,15 @@
 // Package main demonstrates real-time streaming execution in AgentMesh.
 //
 // This example shows how to:
-//   - Use Stream for live updates during graph execution
-//   - Stream partial results as nodes complete
+//   - Use the iterator-based execution model for streaming results
 //   - Track execution progress with real-time result handling
-//   - Stream LLM responses token-by-token for better UX
-//   - Handle cleanup with defer stream.Close() to prevent goroutine leaks
-//
-// Key concepts:
-//   - Stream: Real-time execution result channel for graph execution
-//   - Execution Results: NodeStart, NodeComplete, NodeError, GraphComplete
-//   - Proper cleanup: Always call stream.Close() or stream.Cancel()
+//   - Stream LLM responses for better UX
 //
 // Prerequisites:
-//   export OPENAI_API_KEY="sk-..."
+//
+//	export OPENAI_API_KEY="sk-..."
 //
 // Run: go run main.go
-
 package main
 
 import (
@@ -28,14 +21,23 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
-
-	"github.com/hupe1980/agentmesh/pkg/command"
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	pkgmodel "github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
-	graphstate "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/logrusorgru/aurora/v3"
+)
+
+// Define state keys
+var (
+	progressKey     = graph.NewKey("progress", "")
+	currentChunkKey = graph.NewKey("current_chunk", "")
+	statusKey       = graph.NewKey("status", "")
+	chunksTotalKey  = graph.NewKey("chunks_total", 0)
+	stepKey         = graph.NewKey("step", "")
+	qualityScoreKey = graph.NewKey("quality_score", 0.0)
+	verifiedKey     = graph.NewKey("verified", false)
 )
 
 func main() {
@@ -46,48 +48,21 @@ func main() {
 
 	model := openai.NewModel()
 
-	// Define state keys
-	progressKey := graphstate.NewKey("progress", "")
-	currentChunkKey := graphstate.NewKey("current_chunk", "")
-	statusKey := graphstate.NewKey("status", "")
-	chunksTotalKey := graphstate.NewKey("chunks_total", 0)
-	llmStatusKey := graphstate.NewKey("llm_status", "")
-	analysisStepKey := graphstate.NewKey("analysis_step", "")
-	validationKey := graphstate.NewKey("validation", "")
-	qualityScoreKey := graphstate.NewKey("quality_score", 0.0)
-	readyKey := graphstate.NewKey("ready", false)
-	verifiedKey := graphstate.NewKey("verified", false)
-
-	// Create state manager with all keys registered before building the graph
-	stateBuilder := graphstate.NewManagerBuilder()
-	// Register messages key for MessagePregelExecutor (required for streaming)
-	_ = graphstate.RegisterListKey(stateBuilder, agent.MessagesKey)
-	_ = graphstate.RegisterKey(stateBuilder, progressKey)
-	_ = graphstate.RegisterKey(stateBuilder, currentChunkKey)
-	_ = graphstate.RegisterKey(stateBuilder, statusKey)
-	_ = graphstate.RegisterKey(stateBuilder, chunksTotalKey)
-	_ = graphstate.RegisterKey(stateBuilder, llmStatusKey)
-	_ = graphstate.RegisterKey(stateBuilder, analysisStepKey)
-	_ = graphstate.RegisterKey(stateBuilder, validationKey)
-	_ = graphstate.RegisterKey(stateBuilder, qualityScoreKey)
-	_ = graphstate.RegisterKey(stateBuilder, readyKey)
-	_ = graphstate.RegisterKey(stateBuilder, verifiedKey)
-	mgr := stateBuilder.Build()
-
-	// Build a multi-node graph to demonstrate streaming
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor(), graph.WithManager[[]message.Message, message.Message](mgr))
-	if err != nil {
-		log.Fatalf("Failed to create builder with manager: %v", err)
-	}
-
-	builder.SetEntryPoint("data_processor")
+	// Create a message graph using message.Message types for LLM integration
+	g := graph.New[[]message.Message, message.Message](
+		agent.MessagesKey, // List key for messages - this is the output key
+		progressKey,
+		currentChunkKey,
+		statusKey,
+		chunksTotalKey,
+		stepKey,
+		qualityScoreKey,
+		verifiedKey,
+	)
 
 	// Node 1: Data processor with intermediate streaming
-	builder.AddNodeFunc("data_processor", []string{"llm_call"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		// Get the stream writer to emit intermediate results
+	g.Node("data_processor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
-
-		fmt.Println("   ⏳ Processing data in chunks...")
 
 		// Simulate processing multiple chunks and streaming progress
 		chunks := []string{"chunk1", "chunk2", "chunk3", "chunk4"}
@@ -96,104 +71,70 @@ func main() {
 
 			// Emit intermediate progress via stream
 			if streamWriter != nil {
-				updates, _ := command.New().
-					With(command.SetValue(progressKey, fmt.Sprintf("%d/%d", i+1, len(chunks)))).
-					With(command.SetValue(currentChunkKey, chunk)).
-					Build()
-				streamWriter(updates)
+				streamWriter(graph.Updates{
+					progressKey.Name():     fmt.Sprintf("%d/%d", i+1, len(chunks)),
+					currentChunkKey.Name(): chunk,
+				})
 			}
 		}
 
-		updates, err := command.New().
-			With(command.SetValue(statusKey, "data_processed")).
-			With(command.SetValue(chunksTotalKey, len(chunks))).
-			Build()
-		return []string{"llm_call"}, updates, err
-	})
+		return graph.Set(statusKey, "data_processed").
+			With(graph.SetValue(chunksTotalKey, len(chunks))).
+			To("llm_call")
+	}, "llm_call")
 
-	// Node 2: LLM call with streaming
-	builder.AddNodeFunc("llm_call", []string{"analyzer"}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
-		streamWriter := graph.GetStreamWriter(ctx)
+	// Node 2: LLM call
+	g.Node("llm_call", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Get messages from state using ListKey
+		msgs := graph.GetList(view, agent.MessagesKey)
 
-		fmt.Println("   ⏳ Calling LLM...")
-
-		// Emit pre-call status
-		if streamWriter != nil {
-			updates, _ := command.New().With(command.SetValue(llmStatusKey, "starting")).Build()
-			streamWriter(updates)
-		}
-
-		// Get messages from state
-		msgs := agent.GetMessages(view)
-
-		// Create request
-		req := &pkgmodel.Request{
-			Messages: msgs,
-		} // Call the model
+		// Create request and call model
+		req := &pkgmodel.Request{Messages: msgs}
 		resp, err := pkgmodel.Last(model.Generate(ctx, req))
 		if err != nil {
-			return nil, nil, err
+			return graph.Fail(err)
 		}
 
-		// Emit post-call status
-		if streamWriter != nil {
-			streamUpdates, _ := command.New().With(command.SetValue(llmStatusKey, "completed")).Build()
-			streamWriter(streamUpdates)
-		}
+		return graph.Set(statusKey, "llm_completed").
+			With(graph.AppendValue(agent.MessagesKey, resp.Message)).
+			To("analyzer")
+	}, "analyzer")
 
-		updates, err := command.New().
-			With(command.SetValue(statusKey, "llm_completed")).
-			With(command.Append(agent.MessagesKey, resp.Message)).
-			Build()
-		return []string{"analyzer"}, updates, err
-	})
-
-	// Node 3: Multi-step analyzer with detailed streaming
-	builder.AddNodeFunc("analyzer", []string{graph.EndNode}, func(ctx context.Context, view graphstate.ReadView) ([]string, graphstate.Updates, error) {
+	// Node 3: Multi-step analyzer with streaming progress
+	g.Node("analyzer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		streamWriter := graph.GetStreamWriter(ctx)
 
-		fmt.Println("   ⏳ Analyzing results...")
-
-		// Step 1: Validation
-		time.Sleep(300 * time.Millisecond)
-		if streamWriter != nil {
-			updates, _ := command.New().
-				With(command.SetValue(analysisStepKey, "validation")).
-				With(command.SetValue(validationKey, "passed")).
-				Build()
-			streamWriter(updates)
+		steps := []struct {
+			name   string
+			result string
+		}{
+			{"validation", "passed"},
+			{"quality_check", "score 0.95"},
+			{"finalization", "ready"},
 		}
 
-		// Step 2: Quality check
-		time.Sleep(300 * time.Millisecond)
-		if streamWriter != nil {
-			updates, _ := command.New().
-				With(command.SetValue(analysisStepKey, "quality_check")).
-				With(command.SetValue(qualityScoreKey, 0.95)).
-				Build()
-			streamWriter(updates)
+		for _, step := range steps {
+			time.Sleep(300 * time.Millisecond)
+
+			// Stream each step's progress
+			if streamWriter != nil {
+				streamWriter(graph.Updates{
+					stepKey.Name(): fmt.Sprintf("%s: %s", step.name, step.result),
+				})
+			}
 		}
 
-		// Step 3: Finalization
-		time.Sleep(300 * time.Millisecond)
-		if streamWriter != nil {
-			updates, _ := command.New().
-				With(command.SetValue(analysisStepKey, "finalization")).
-				With(command.SetValue(readyKey, true)).
-				Build()
-			streamWriter(updates)
-		}
+		return graph.Set(statusKey, "analysis_complete").
+			With(graph.SetValue(verifiedKey, true)).
+			With(graph.SetValue(qualityScoreKey, 0.95)).
+			End()
+	}, graph.END)
 
-		updates, err := command.New().
-			With(command.SetValue(statusKey, "analysis_complete")).
-			With(command.SetValue(verifiedKey, true)).
-			Build()
-		return []string{graph.EndNode}, updates, err
-	})
+	g.Start("data_processor")
 
-	compiled, err := builder.Compile()
+	compiled, err := g.Build()
 	if err != nil {
-		log.Fatalf("Failed to compile graph: %v", err)
+		log.Fatalf("Failed to build graph: %v", err)
 	}
 
 	// Prepare input messages
@@ -201,26 +142,48 @@ func main() {
 	human := message.NewHumanMessageFromText("Explain what graph streaming is in 2 sentences.")
 	messages := []message.Message{system, human}
 
-	ctx := context.Background()
+	// Create event bus to receive streaming updates
+	bus := event.NewBus()
+	bus.Subscribe(event.HandlerFunc(func(ctx context.Context, e event.Event) error {
+		if e.Type == event.EventStateUpdate {
+			if updates, ok := e.Data["updates"].(graph.Updates); ok {
+				// Print progress updates
+				if progress, ok := updates[progressKey.Name()]; ok {
+					fmt.Printf("   📊 Progress: %v", progress)
+					if chunk, ok := updates[currentChunkKey.Name()]; ok {
+						fmt.Printf(" (processing %v)", chunk)
+					}
+					fmt.Println()
+				}
+				// Print step updates
+				if step, ok := updates[stepKey.Name()]; ok {
+					fmt.Printf("   🔍 Step: %v\n", step)
+				}
+			}
+		} else if e.Type == event.EventNodeStart {
+			fmt.Printf("\n   ⏳ Starting node: %s\n", e.Node)
+		} else if e.Type == event.EventNodeComplete {
+			fmt.Printf("   ✓ Completed node: %s (took %v)\n", e.Node, e.Duration)
+		}
+		return nil
+	}), event.EventStateUpdate, event.EventNodeStart, event.EventNodeComplete)
+
+	ctx := event.WithBus(context.Background(), bus)
 
 	fmt.Println("🚀 Starting streaming execution...")
-	fmt.Println("📊 Watch as nodes emit intermediate results using StreamWriter")
+	fmt.Println("📊 Watch as nodes execute and emit results")
 	fmt.Println(strings.Repeat("=", 70))
 
-	// Stream the graph execution
-	seq := compiled.Run(ctx, messages)
-
-	// Track execution progress
+	// Stream the graph execution using iterator
 	eventCount := 0
-
-	for event, err := range seq {
+	for msg, err := range compiled.Run(ctx, messages) {
 		if err != nil {
-			log.Fatalf("Streaming error: %v", err)
+			log.Fatalf("Execution error: %v", err)
 		}
 
-		if event != nil && event.Type() == message.TypeAI {
-			// Print partial AI responses as they stream in
-			if aiMsg, ok := event.(*message.AIMessage); ok {
+		if msg.Type() == message.TypeAI {
+			// Print AI responses as they arrive
+			if aiMsg, ok := msg.(*message.AIMessage); ok {
 				for _, part := range aiMsg.Parts() {
 					if textPart, ok := part.(message.TextPart); ok {
 						fmt.Print(aurora.Green(textPart.Text))
@@ -233,34 +196,4 @@ func main() {
 
 	fmt.Println("\n" + strings.Repeat("=", 70))
 	fmt.Printf("\n✅ Streaming completed! Received %d total events\n", eventCount)
-
-	// Display final state
-	if mgr != nil {
-		finalView, err := mgr.CreateReadView(ctx)
-		if err != nil {
-			fmt.Printf("Error creating read view: %v\n", err)
-			return
-		}
-
-		fmt.Println("\n📊 Final State:")
-		fmt.Printf("   status = %v\n", graphstate.GetFromView(finalView, statusKey))
-		fmt.Printf("   chunks_total = %v\n", graphstate.GetFromView(finalView, chunksTotalKey))
-
-		// Show final messages
-		finalMessages := agent.GetMessages(finalView)
-		if len(finalMessages) > 0 {
-			fmt.Println("\n💬 Final Messages:")
-			for i, msg := range finalMessages {
-				content := ""
-				for _, part := range msg.Parts() {
-					if textPart, ok := part.(message.TextPart); ok {
-						content += textPart.Text
-					}
-				}
-				if content != "" {
-					fmt.Printf("   [%d] %s: %s\n", i+1, msg.Type(), content)
-				}
-			}
-		}
-	}
 }

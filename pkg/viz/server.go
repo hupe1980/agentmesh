@@ -14,6 +14,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/internal/safego"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -132,7 +133,7 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 // Register adds a runnable to the server.
-// For compiled graphs, use: server.Register("my-graph", viz.NewGraphAdapter(compiled))
+// For graphs, use: server.Register("my-graph", viz.NewGraphAdapter(graph))
 // For agents, use: server.Register("my-agent", viz.NewMessageAdapter(agent))
 func (s *Server) Register(id string, runnable Runnable) error {
 	return s.registry.Register(id, runnable)
@@ -182,10 +183,10 @@ func (s *Server) ExecuteGraph(ctx context.Context, graphID string, input any) (s
 	s.mu.Unlock()
 
 	// Subscribe interceptor instead of handler for execution control
-	eventBus := graph.EventBusFromContext(ctx)
+	eventBus := event.BusFromContext(ctx)
 	if eventBus == nil {
-		eventBus = graph.NewEventBus()
-		ctx = graph.WithEventBus(ctx, eventBus)
+		eventBus = event.NewBus()
+		ctx = event.WithBus(ctx, eventBus)
 	}
 	eventBus.Subscribe(interceptor)
 
@@ -226,7 +227,6 @@ func (s *Server) ExecuteGraph(ctx context.Context, graphID string, input any) (s
 			// Execute with server options (for graph execution tracking, not agent control)
 			runOpts := []graph.RunOption{
 				graph.WithRunID(runID),
-				graph.WithCheckpointer(s.config.Checkpointer),
 			}
 
 			// Consume outputs - use detached context so execution continues after HTTP response

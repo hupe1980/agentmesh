@@ -2,24 +2,36 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
-	stateif "github.com/hupe1980/agentmesh/pkg/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// Test-local message key definition to avoid import cycle with pkg/agent
-var testMessagesKey = stateif.NewListKey[message.Message]("__messages__", 0)
+// Test-local message key definition
+var testMessagesKey = graph.NewListKey[message.Message]("__messages__")
 
-// Helper function for tests
-func newTestManager() *stateif.Manager {
-	builder := stateif.NewManagerBuilder()
-	stateif.RegisterListKey(builder, testMessagesKey)
-	return builder.Build()
+// createMockWorkerGraph creates a simple graph that returns a fixed response
+func createMockWorkerGraph(t *testing.T, response string) *graph.Graph[[]message.Message, message.Message] {
+	g := graph.New[[]message.Message, message.Message](testMessagesKey)
+
+	g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		msg := message.Message(message.NewAIMessageFromText(response))
+		return graph.Append(testMessagesKey, msg).End()
+	}, graph.END)
+
+	g.Start("worker")
+
+	// Build the graph before returning
+	built, err := g.Build()
+	if err != nil {
+		t.Fatalf("failed to build mock graph: %v", err)
+	}
+
+	return built
 }
 
 func TestHandoffToAgent(t *testing.T) {
@@ -93,32 +105,27 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	mgr := newTestManager()
-	g, err := graph.NewGraph(mgr)
-	require.NoError(t, err)
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "worker",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view stateif.ReadView) ([]string, stateif.Updates, error) {
-			if failOnce {
-				failOnce = false
-				return nil, nil, assert.AnError
-			}
-			updates := stateif.Updates{}
-			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText("Success after retry")})
-			return []string{graph.EndNode}, updates, nil
-		},
-	})
-	if err := g.SetEntryPoint("worker"); err != nil {
-		t.Fatal(err)
-	}
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
+	g := graph.New[[]message.Message, message.Message](testMessagesKey)
+
+	g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		if failOnce {
+			failOnce = false
+			return graph.Fail(errors.New("temporary error"))
+		}
+		msg := message.Message(message.NewAIMessageFromText("Success after retry"))
+		return graph.Append(testMessagesKey, msg).End()
+	}, graph.END)
+
+	g.Start("worker")
+
+	// Build the graph before passing to the tool
+	built, err := g.Build()
 	require.NoError(t, err)
 
 	handoffTool, err := HandoffToAgent(
 		"test_agent",
 		"Test",
-		compiled,
+		built,
 		WithRetries(2), // Allow retry
 	)
 	require.NoError(t, err)
@@ -183,29 +190,4 @@ func TestIsValidResult(t *testing.T) {
 			assert.Equal(t, tt.expected, isValidResult(tt.result))
 		})
 	}
-}
-
-// createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) graph.Runnable[[]message.Message, message.Message] {
-	mgr := newTestManager()
-	g, err := graph.NewGraph(mgr)
-	require.NoError(t, err)
-
-	g.AddNode(&graph.BaseNode{
-		NodeName:        "worker",
-		DeclaredTargets: []string{graph.EndNode},
-		Fn: func(ctx context.Context, view stateif.ReadView) ([]string, stateif.Updates, error) {
-			updates := stateif.Updates{}
-			updates[testMessagesKey.Name()] = state.SliceOf[message.Message]([]message.Message{message.NewAIMessageFromText(response)})
-			return []string{graph.EndNode}, updates, nil
-		},
-	})
-
-	if err := g.SetEntryPoint("worker"); err != nil {
-		t.Fatal(err)
-	}
-
-	compiled, err := graph.Compile(g, graph.NewMessagePregelExecutor())
-	require.NoError(t, err)
-	return compiled
 }

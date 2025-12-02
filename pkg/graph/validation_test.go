@@ -1,90 +1,305 @@
-package graph
+package graph_test
 
 import (
+	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-func TestValidationError_Error(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      ValidationError
-		expected string
-	}{
-		{
-			name: "error with node",
-			err: ValidationError{
-				Type:    ErrorTypeCycle,
-				Node:    "nodeA",
-				Message: "creates a cycle",
-			},
-			expected: `[CYCLE] node="nodeA": creates a cycle`,
-		},
-		{
-			name: "error without node",
-			err: ValidationError{
-				Type:    ErrorTypeDisconnected,
-				Node:    "",
-				Message: "graph has disconnected components",
-			},
-			expected: "[DISCONNECTED] graph has disconnected components",
-		},
-		{
-			name: "missing node error",
-			err: ValidationError{
-				Type:    ErrorTypeMissingNode,
-				Node:    "missing",
-				Message: "node does not exist",
-			},
-			expected: `[MISSING_NODE] node="missing": node does not exist`,
-		},
-	}
+// ====================
+// Basic Validation Tests
+// ====================
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.err.Error())
-		})
+func TestValidateNoEntryPoint(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	// No Start() call
+
+	errs := g.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for missing entry point")
+	}
+	if errs[0].Type != graph.ErrorTypeInvalidEntryNode {
+		t.Errorf("expected ErrorTypeInvalidEntryNode, got %v", errs[0].Type)
 	}
 }
 
-func TestDefaultValidationOptions(t *testing.T) {
-	opts := DefaultValidationOptions()
+func TestValidateInvalidEntryPoint(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("nonexistent")
 
-	assert.Equal(t, ValidationLevelBasic, opts.Level)
-	assert.False(t, opts.SkipValidation)
-	assert.True(t, opts.AllowCycles)
-	assert.False(t, opts.AllowDisconnectedNodes)
+	errs := g.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for invalid entry point")
+	}
+	if errs[0].Type != graph.ErrorTypeInvalidEntryNode {
+		t.Errorf("expected ErrorTypeInvalidEntryNode, got %v", errs[0].Type)
+	}
 }
 
-func TestStrictValidationOptions(t *testing.T) {
-	opts := StrictValidationOptions()
+func TestValidateInvalidEdge(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("nonexistent")
+	}, "nonexistent") // Target doesn't exist
+	g.Start("a")
 
-	assert.Equal(t, ValidationLevelStrict, opts.Level)
-	assert.False(t, opts.SkipValidation)
-	assert.False(t, opts.AllowCycles)
-	assert.False(t, opts.AllowDisconnectedNodes)
+	errs := g.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for invalid edge")
+	}
+	if errs[0].Type != graph.ErrorTypeInvalidEdge {
+		t.Errorf("expected ErrorTypeInvalidEdge, got %v", errs[0].Type)
+	}
 }
 
-func TestValidationErrorTypes(t *testing.T) {
-	// Test that all error type constants are defined correctly
-	assert.Equal(t, ValidationErrorType("CYCLE"), ErrorTypeCycle)
-	assert.Equal(t, ValidationErrorType("DISCONNECTED"), ErrorTypeDisconnected)
-	assert.Equal(t, ValidationErrorType("INVALID_ENTRY_NODE"), ErrorTypeInvalidEntryNode)
-	assert.Equal(t, ValidationErrorType("INVALID_END_NODE"), ErrorTypeInvalidEndNode)
-	assert.Equal(t, ValidationErrorType("MISSING_NODE"), ErrorTypeMissingNode)
-	assert.Equal(t, ValidationErrorType("INVALID_BRANCH"), ErrorTypeInvalidBranch)
-	assert.Equal(t, ValidationErrorType("INVALID_EDGE"), ErrorTypeInvalidEdge)
-	assert.Equal(t, ValidationErrorType("DUPLICATE_NODE"), ErrorTypeDuplicateNode)
+func TestValidateValidGraph(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("b")
+	}, "b")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("a")
+
+	errs := g.Validate()
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
 }
 
-func TestValidationLevel(t *testing.T) {
-	// Test validation levels are distinct
-	assert.NotEqual(t, ValidationLevelNone, ValidationLevelBasic)
-	assert.NotEqual(t, ValidationLevelBasic, ValidationLevelStrict)
-	assert.NotEqual(t, ValidationLevelNone, ValidationLevelStrict)
+// ====================
+// Strict Validation Tests
+// ====================
 
-	// Test ordering
-	assert.Less(t, ValidationLevelNone, ValidationLevelBasic)
-	assert.Less(t, ValidationLevelBasic, ValidationLevelStrict)
+func TestValidateCycleDetection(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("b")
+	}, "b")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("a") // Cycle back to a
+	}, "a")
+	g.Start("a")
+
+	// Default validation allows cycles
+	errs := g.Validate()
+	if len(errs) != 0 {
+		t.Errorf("default validation should allow cycles, got %v", errs)
+	}
+
+	// Strict validation detects cycles
+	errs = g.Validate(graph.StrictValidationOptions())
+	if len(errs) == 0 {
+		t.Fatal("strict validation should detect cycle")
+	}
+	if errs[0].Type != graph.ErrorTypeCycle {
+		t.Errorf("expected ErrorTypeCycle, got %v", errs[0].Type)
+	}
+}
+
+func TestValidateDisconnectedNode(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END) // Not reachable from "a"
+	}, graph.END)
+	g.Start("a")
+
+	// Default (basic) validation does NOT detect disconnected nodes
+	errs := g.Validate()
+	if len(errs) != 0 {
+		t.Fatalf("basic validation should not detect disconnected nodes, got %v", errs)
+	}
+
+	// Strict validation detects disconnected nodes
+	errs = g.Validate(graph.StrictValidationOptions())
+	if len(errs) == 0 {
+		t.Fatal("strict validation should detect disconnected node")
+	}
+
+	// Find disconnected error
+	found := false
+	for _, err := range errs {
+		if err.Type == graph.ErrorTypeDisconnected && err.Node == "b" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected disconnected error for node 'b', got %v", errs)
+	}
+}
+
+func TestValidateAllowDisconnected(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END) // Not reachable from "a"
+	}, graph.END)
+	g.Start("a")
+
+	// Custom options allowing disconnected nodes
+	opts := graph.ValidationOptions{
+		Level:                  graph.ValidationLevelStrict,
+		AllowCycles:            true,
+		AllowDisconnectedNodes: true,
+	}
+	errs := g.Validate(opts)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors with AllowDisconnectedNodes, got %v", errs)
+	}
+}
+
+// ====================
+// Build with Validation Options Tests
+// ====================
+
+func TestBuildWithStrictValidation(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("b")
+	}, "b")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("a") // Cycle
+	}, "a")
+	g.Start("a")
+
+	// Default build allows cycles
+	_, err := g.Build()
+	if err != nil {
+		t.Errorf("default build should allow cycles, got %v", err)
+	}
+}
+
+func TestBuildWithStrictValidationRejectsCycle(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("b")
+	}, "b")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("a") // Cycle
+	}, "a")
+	g.Start("a")
+
+	// Strict build rejects cycles
+	_, err := g.Build(graph.WithStrictValidation())
+	if err == nil {
+		t.Fatal("strict build should reject cycle")
+	}
+}
+
+func TestBuildWithoutValidation(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("nonexistent") // Invalid edge
+	}, "nonexistent")
+	g.Start("a")
+
+	// Build without validation should succeed even with invalid edges
+	_, err := g.Build(graph.WithoutValidation())
+	if err != nil {
+		t.Errorf("build without validation should succeed, got %v", err)
+	}
+}
+
+func TestValidateNoNodes(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Start("a") // Entry point but no nodes
+
+	errs := g.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors for empty graph")
+	}
+}
+
+// ====================
+// Complex Graph Validation Tests
+// ====================
+
+func TestValidateComplexGraph(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("a", "b") // Fan-out
+	}, "a", "b")
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("merge")
+	}, "merge")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("merge")
+	}, "merge")
+	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END) // Fan-in
+	}, graph.END)
+	g.Start("start")
+
+	errs := g.Validate(graph.StrictValidationOptions())
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid complex graph, got %v", errs)
+	}
+}
+
+func TestValidateParallelEntryPoints(t *testing.T) {
+	g := graph.New[any, any]()
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("merge")
+	}, "merge")
+	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To("merge")
+	}, "merge")
+	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("a", "b") // Multiple entry points
+
+	errs := g.Validate(graph.StrictValidationOptions())
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for parallel entry points, got %v", errs)
+	}
+}
+
+func TestValidateDuplicateKey(t *testing.T) {
+	key1 := graph.NewKey[string]("mykey", "")
+	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
+
+	g := graph.New[any, any](key1, key2)
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("a")
+
+	errs := g.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for duplicate key")
+	}
+	if errs[0].Type != graph.ErrorTypeDuplicateKey {
+		t.Errorf("expected ErrorTypeDuplicateKey, got %v", errs[0].Type)
+	}
+}
+
+func TestBuildWithDuplicateKey(t *testing.T) {
+	key1 := graph.NewKey[string]("mykey", "")
+	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
+
+	g := graph.New[any, any](key1, key2)
+	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("a")
+
+	_, err := g.Build()
+	if err == nil {
+		t.Fatal("expected build error for duplicate key")
+	}
 }

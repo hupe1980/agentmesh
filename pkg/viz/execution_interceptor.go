@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/event"
 )
 
 // ExecutionInterceptor wraps graph event handling to add execution control.
@@ -21,33 +21,33 @@ func NewExecutionInterceptor(handler *GraphEventHandler) *ExecutionInterceptor {
 }
 
 // HandleEvent intercepts graph events to add execution control checks.
-func (i *ExecutionInterceptor) HandleEvent(ctx context.Context, event graph.Event) error {
+func (i *ExecutionInterceptor) HandleEvent(ctx context.Context, e event.Event) error {
 	// Get execution controller from context
 	controller := ExecutionControllerFromContext(ctx)
 
 	// If no controller, just pass through to normal handler
 	if controller == nil {
-		return i.handler.HandleEvent(ctx, event)
+		return i.handler.HandleEvent(ctx, e)
 	}
 
 	// Check for pause/breakpoint conditions based on event type
-	switch event.Type {
-	case graph.EventNodeStart:
+	switch e.Type {
+	case event.EventNodeStart:
 		// Check breakpoints before node execution
-		if err := i.checkBreakpoint(controller, event); err != nil {
+		if err := i.checkBreakpoint(controller, e); err != nil {
 			return err
 		}
 
-	case graph.EventSuperstepStart:
+	case event.EventSuperstepStart:
 		// Check for pause at superstep boundaries
-		if err := i.checkSuperstepPause(controller, event); err != nil {
+		if err := i.checkSuperstepPause(controller, e); err != nil {
 			return err
 		}
 
-	case graph.EventNodeError:
+	case event.EventNodeError:
 		// Check error breakpoints
-		if controller.CheckBreakpoint(event.Node, int64(event.Superstep), true) {
-			i.broadcastBreakpointHit(controller, event, "error")
+		if controller.CheckBreakpoint(e.Node, int64(e.Superstep), true) {
+			i.broadcastBreakpointHit(controller, e, "error")
 			if err := i.waitForCommand(controller); err != nil {
 				return err
 			}
@@ -55,14 +55,14 @@ func (i *ExecutionInterceptor) HandleEvent(ctx context.Context, event graph.Even
 	}
 
 	// Forward to original handler
-	return i.handler.HandleEvent(ctx, event)
+	return i.handler.HandleEvent(ctx, e)
 }
 
 // checkBreakpoint checks if execution should pause at a node breakpoint
-func (i *ExecutionInterceptor) checkBreakpoint(controller *ExecutionController, event graph.Event) error {
-	if controller.CheckBreakpoint(event.Node, int64(event.Superstep), false) {
+func (i *ExecutionInterceptor) checkBreakpoint(controller *ExecutionController, e event.Event) error {
+	if controller.CheckBreakpoint(e.Node, int64(e.Superstep), false) {
 		// Broadcast breakpoint hit
-		i.broadcastBreakpointHit(controller, event, "node")
+		i.broadcastBreakpointHit(controller, e, "node")
 
 		// Wait for command (resume, step, etc.)
 		return i.waitForCommand(controller)
@@ -71,8 +71,8 @@ func (i *ExecutionInterceptor) checkBreakpoint(controller *ExecutionController, 
 }
 
 // checkSuperstepPause checks if execution should pause at superstep boundary
-func (i *ExecutionInterceptor) checkSuperstepPause(controller *ExecutionController, event graph.Event) error {
-	if controller.ShouldPause("", int64(event.Superstep)) {
+func (i *ExecutionInterceptor) checkSuperstepPause(controller *ExecutionController, e event.Event) error {
+	if controller.ShouldPause("", int64(e.Superstep)) {
 		// Broadcast pause
 		i.handler.server.wsHub.BroadcastMessage(Message{
 			Type:  "control",
@@ -80,7 +80,7 @@ func (i *ExecutionInterceptor) checkSuperstepPause(controller *ExecutionControll
 			Data: map[string]any{
 				"event":     "paused",
 				"state":     controller.GetState(),
-				"superstep": event.Superstep,
+				"superstep": e.Superstep,
 				"reason":    "step_mode",
 			},
 		})
@@ -127,7 +127,7 @@ func (i *ExecutionInterceptor) waitForCommand(controller *ExecutionController) e
 }
 
 // broadcastBreakpointHit sends a breakpoint hit notification via WebSocket
-func (i *ExecutionInterceptor) broadcastBreakpointHit(controller *ExecutionController, event graph.Event, breakpointType string) {
+func (i *ExecutionInterceptor) broadcastBreakpointHit(controller *ExecutionController, e event.Event, breakpointType string) {
 	node, superstep := controller.GetCurrentPosition()
 
 	i.handler.server.wsHub.BroadcastMessage(Message{
@@ -139,20 +139,20 @@ func (i *ExecutionInterceptor) broadcastBreakpointHit(controller *ExecutionContr
 			"breakpoint_type": breakpointType,
 			"node":            node,
 			"superstep":       superstep,
-			"event_type":      string(event.Type),
+			"event_type":      string(e.Type),
 		},
 	})
 }
 
 // broadcastStateChange sends a state change notification via WebSocket
-func (i *ExecutionInterceptor) broadcastStateChange(controller *ExecutionController, event string) {
+func (i *ExecutionInterceptor) broadcastStateChange(controller *ExecutionController, eventName string) {
 	node, superstep := controller.GetCurrentPosition()
 
 	i.handler.server.wsHub.BroadcastMessage(Message{
 		Type:  "control",
 		RunID: i.handler.runID,
 		Data: map[string]any{
-			"event":     event,
+			"event":     eventName,
 			"state":     controller.GetState(),
 			"node":      node,
 			"superstep": superstep,

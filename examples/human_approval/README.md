@@ -14,18 +14,32 @@ This example demonstrates **advanced approval workflows** with conditional guard
 
 ## APIs Used
 
-### 1. Approval Guards
+### 1. Define State Keys
 
 ```go
-guard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
-    content := state.GetFromView(view, contentKey)
+var (
+    ContentKey = graph.NewKey("content", "")
+    StatusKey  = graph.NewKey("status", "")
+    SentKey    = graph.NewKey("sent", false)
+)
+```
+
+### 2. Create Graph with Approval Guard
+
+```go
+g := graph.New[string, string](ContentKey, StatusKey, SentKey)
+
+// Create guard function
+guard := func(ctx context.Context, input graph.NodeInput[string]) (bool, string, error) {
+    content := graph.Get(input, ContentKey)
     if containsSensitiveKeywords(content) {
         return true, "Contains sensitive data", nil
     }
     return false, "", nil  // Auto-continue
 }
 
-g.AddInterruptBefore("send_email",
+// Add interrupt before node with guard
+g.InterruptBefore("send_email",
     graph.WithApprovalGuard(guard),
     graph.WithFeedbackAnnotation(true),
     graph.WithApprovalTimeout(10 * time.Minute),
@@ -34,7 +48,7 @@ g.AddInterruptBefore("send_email",
 
 Guards dynamically decide if approval is needed based on current state. Return `false` to auto-continue without human intervention.
 
-### 2. Approval Responses
+### 3. Approval Responses
 
 ```go
 approval := &graph.ApprovalResponse{
@@ -42,8 +56,8 @@ approval := &graph.ApprovalResponse{
     Reason:    "Reviewed and approved with disclaimer",
     User:      "alice@example.com",
     Timestamp: time.Now(),
-    Edits: state.Updates{
-        contentKey.Name(): "Redacted content",  // Optional state edits
+    Edits: map[string]any{
+        "content": "Redacted content",  // Optional state edits
     },
     Annotations: map[string]any{
         "department": "security",
@@ -54,52 +68,46 @@ approval := &graph.ApprovalResponse{
 
 Structured approval decisions with optional state modifications and metadata.
 
-### 3. Resume with Approval
+### 4. Resume with Approval
 
 ```go
-compiled.Run(ctx, messages,
-    graph.WithCheckpoint(cp),
+compiled.Run(ctx, input,
+    graph.WithCheckpointer(checkpointer),
+    graph.WithRunID(runID),
     graph.WithApproval("send_email", approval),
-    graph.WithCheckpointOptions(
-        checkpoint.WithCheckpointer(checkpointer),  // Required for history
-    ),
 )
 ```
 
 Resume execution with approval decision. State edits are applied automatically before node execution.
 
-### 4. Access Approval in Nodes
+### 5. Access Approval in Nodes
 
 ```go
-sendNode := &graph.BaseNode{
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        approval := graph.ApprovalFromContext(ctx, "send_email")
-        if approval == nil {
-            // First execution - no approval yet
-            return []string{graph.EndNode}, nil, nil
-        }
-        
-        switch approval.Decision {
-        case graph.ApprovalRejected:
-            log.Printf("Rejected: %s", approval.Reason)
-            return []string{graph.EndNode}, state.Updates{
-                sentKey.Name(): false,
-            }, nil
-        case graph.ApprovalApproved:
-            // State edits already applied - proceed
-            content := state.GetFromView(view, contentKey)
-            sendEmail(content)
-            return []string{graph.EndNode}, state.Updates{
-                sentKey.Name(): true,
-            }, nil
-        }
-    },
-}
+g.Node("send_email", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+    approval := graph.ApprovalFromContext(ctx, "send_email")
+    if approval == nil {
+        // First execution - no approval yet
+        return graph.Set(SentKey, false).ToEnd(), nil
+    }
+    
+    switch approval.Decision {
+    case graph.ApprovalRejected:
+        log.Printf("Rejected: %s", approval.Reason)
+        return graph.Set(SentKey, false).ToEnd(), nil
+    case graph.ApprovalApproved:
+        // State edits already applied - proceed
+        content := graph.Get(input, ContentKey)
+        sendEmail(content)
+        return graph.Set(SentKey, true).ToEnd(), nil
+    }
+    
+    return graph.ToEnd(), nil
+}, graph.END)
 ```
 
 Nodes check for approval decisions and handle them appropriately.
 
-### 5. Query Approval History
+### 6. Query Approval History
 
 ```go
 history, _ := checkpointer.GetApprovalHistory(ctx, runID)
@@ -274,9 +282,9 @@ Approval #2:
 Guards dynamically determine if approval is needed:
 
 ```go
-guard := func(ctx context.Context, view state.ReadView) (bool, string, error) {
+guard := func(ctx context.Context, input graph.NodeInput[any]) (bool, string, error) {
     // Inspect current state
-    content := state.GetFromView(view, contentKey)
+    content := graph.Get(input, ContentKey)
     
     // Apply business rules
     if needsReview(content) {
@@ -318,9 +326,9 @@ Modify state during the approval process:
 ```go
 approval := &graph.ApprovalResponse{
     Decision: graph.ApprovalApproved,
-    Edits: state.Updates{
-        contentKey.Name(): "Redacted content",  // Applied automatically
-        statusKey.Name():  "reviewed",
+    Edits: map[string]any{
+        "content": "Redacted content",  // Applied automatically
+        "status":  "reviewed",
     },
 }
 ```
@@ -329,16 +337,7 @@ approval := &graph.ApprovalResponse{
 
 ### Approval History Persistence
 
-Complete audit trail stored in checkpoints:
-
-```go
-type ApprovalMetadata struct {
-    PendingApprovals map[string]*PendingApproval  // Current pending
-    ApprovalHistory  []*ApprovalRecord            // Historical record
-}
-```
-
-Query history for compliance, debugging, or analytics:
+Complete audit trail stored in checkpoints. Query history for compliance, debugging, or analytics:
 
 ```go
 history, _ := checkpointer.GetApprovalHistory(ctx, runID)
@@ -346,15 +345,11 @@ for _, record := range history {
     log.Printf("%s: %s by %s at %v",
         record.NodeName, record.Decision, record.User, record.Timestamp)
 }
-  return nil, graph.ErrHumanInterrupt
-  ```
-
-**Use interrupts for**: Predictable review points  
-**Use pause for**: Dynamic conditions detected during execution
+```
 
 ## Related Examples
 
-- [`human_pause`](../human_pause) - Original pause API
+- [`human_pause`](../human_pause) - Basic pause API
 - [`checkpointing`](../checkpointing) - Checkpoint basics
 - [`time_travel`](../time_travel) - Time-travel debugging
 
@@ -362,11 +357,3 @@ for _, record := range history {
 
 - [Checkpointing Documentation](../../docs/checkpointing.md)
 - [Architecture Overview](../../README.md#%EF%B8%8F-human-in-the-loop)
-
-## Notes
-
-- Interrupts are checked before/after node execution
-- Resume values are optional - nodes work without them
-- Checkpoints include metadata about what was interrupted
-- Multiple resume attempts are supported
-- Backward compatible - existing code continues to work

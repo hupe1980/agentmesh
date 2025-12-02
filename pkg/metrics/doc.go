@@ -23,7 +23,7 @@ Enable metrics in your graph:
 	meter := otel.Meter("agentmesh")
 	recorder := metrics.NewOpenTelemetryRecorder(meter)
 
-	compiled, _ := builder.Compile(
+	compiled, _ := g.Build(
 		graph.WithInstrumentation(&graph.Instrumentation{
 			MetricsRecorder: recorder,
 		}),

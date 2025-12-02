@@ -193,7 +193,7 @@ func (c *ChatBot) Chat(ctx context.Context, userID, message string) (string, err
     messages := append(history, message.NewHumanMessageFromText(message))
     
     // Execute agent
-    results, err := agent.CollectMessages(c.agent.Run(ctx, messages))
+    results, err := graph.Collect(c.agent.Run(ctx, messages))
     if err != nil {
         return "", err
     }
@@ -424,7 +424,7 @@ Persist memory alongside graph state:
 mem.Store(ctx, sessionID, messages)
 
 // Also checkpoint for resumability
-compiled, _ := builder.Compile()
+compiled, _ := g.Build()
 
 seq := compiled.Run(ctx, messages,
     graph.WithRunID(sessionID),

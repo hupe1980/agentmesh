@@ -79,7 +79,7 @@ RetryMiddleware{
 }
 ```
 
-**For Node-Level Retries**: Use `graph.WithRetryPolicy()` when adding nodes to retry specific operations.
+**For Node-Level Retries**: Use `g.NodeWithRetry()` when adding nodes to retry specific operations.
 
 ---
 
@@ -139,66 +139,66 @@ Aggregators provide a mechanism for **global coordination** across all nodes in 
 **Key characteristics**:
 - **Global visibility**: All nodes can read the aggregated value
 - **Accumulation semantics**: Values are combined using aggregator logic (sum, max, avg, etc.)
-- **Type-safe**: Registered via `state.RegisterAggregateKey[T]()`
+- **Type-safe**: Registered via aggregate keys
 - **Channel-based**: Integrated with state management system
 
 ### Built-in Aggregators
 
-AgentMesh provides several built-in aggregators in the `pkg/state/aggregators` package:
+Aggregators are available in the `pkg/pregel` package for use with the Pregel runtime:
 
-#### SumAggregator
+#### Custom Aggregator Implementation
 
-Accumulates numeric values across all node contributions:
+Define custom aggregators by implementing the `Aggregator` interface:
 
 ```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/state"
-    "github.com/hupe1980/agentmesh/pkg/state/aggregators"
-)
+import "github.com/hupe1980/agentmesh/pkg/pregel"
 
-// Create state manager builder
-builder := state.NewManagerBuilder()
+// SumAggregator accumulates numeric values
+type SumAggregator struct{}
 
-// Register aggregate key
-totalProcessedKey := state.NewKey[any]("total_processed", 0)
-state.RegisterAggregateKey(builder, totalProcessedKey, &aggregators.SumAggregator{})
+func (SumAggregator) Zero() any { return 0.0 }
 
-mgr := builder.Build()
-
-// In nodes - contribute via Command pattern
-func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    // Read current total
-    total, _ := state.GetFromView(view, totalProcessedKey)
-    fmt.Printf("Total processed: %v\n", total)
-    
-    // Contribute new count using Command pattern
-    return command.New().
-        Set(totalProcessedKey, 42.0).
-        To(graph.EndNode)
+func (SumAggregator) Aggregate(current, value any) any {
+    return current.(float64) + value.(float64)
 }
 
-// After execution, read final sum
-total, _ := state.Get(ctx, mgr, totalProcessedKey)
+// Use with Pregel runtime
+aggregators := map[string]pregel.Aggregator{
+    "sum": SumAggregator{},
+}
 ```
 
-**Returns**: `float64` - Sum of all contributed values
+The `Aggregator` interface:
+
+```go
+type Aggregator interface {
+    Zero() any                        // Identity element
+    Aggregate(current, value any) any // Combine values
+}
+```
 
 #### MinAggregator / MaxAggregator
 
-Tracks the minimum or maximum value across all nodes:
+Tracks the minimum or maximum value across all vertices:
 
 ```go
-minCostKey := state.NewKey[any]("min_cost", float64(1e308))
-maxPriorityKey := state.NewKey[any]("max_priority", float64(-1e308))
+type MinAggregator struct{}
 
-state.RegisterAggregateKey(mgr, minCostKey, &aggregators.MinAggregator{})
-state.RegisterAggregateKey(mgr, maxPriorityKey, &aggregators.MaxAggregator{})
+func (MinAggregator) Zero() any { return math.MaxFloat64 }
 
-// Contribute via Command pattern
-return command.New().
-    Set(minCostKey, estimatedCost).
-    Set(maxPriorityKey, taskPriority).
-    To(graph.EndNode)
+func (MinAggregator) Aggregate(current, value any) any {
+    if value.(float64) < current.(float64) {
+        return value
+    }
+    return current
+}
+
+// Contribute via graph.Set
+g.Node("optimizer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(MinCostKey, estimatedCost).
+        Set(MaxPriorityKey, taskPriority).
+        To(graph.END), nil
+}, graph.END)
 ```
 
 **Returns**: `float64` - Minimum or maximum value observed
@@ -208,19 +208,21 @@ return command.New().
 Computes the running average of numeric values using Welford's algorithm for numerical stability:
 
 ```go
-avgLatencyKey := state.NewKey[any]("avg_latency", nil)
-state.RegisterAggregateKey(mgr, avgLatencyKey, &aggregators.AvgAggregator{})
+var AvgLatencyKey = graph.NewAggregateKey[aggregators.AvgState](
+    "avg_latency",
+    &aggregators.AvgAggregator{},
+)
 
-// In node
-return command.New().
-    Set(avgLatencyKey, responseTime).
-    To(graph.EndNode)
+g := graph.New[string, string](AvgLatencyKey)
+
+g.Node("monitor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(AvgLatencyKey, responseTime).To(graph.END), nil
+}, graph.END)
 
 // Read result (returns AvgState)
-avgStateAny, _ := state.Get(ctx, mgr, avgLatencyKey)
-avgState := avgStateAny.(aggregators.AvgState)
-average := avgState.Mean
-count := avgState.Count
+// avgState := graph.Get(view, AvgLatencyKey)
+// average := avgState.Mean
+// count := avgState.Count
 ```
 
 **Returns**: `aggregators.AvgState{Mean: float64, Count: int64}` - Running mean and sample count
@@ -230,19 +232,21 @@ count := avgState.Count
 Computes the variance of numeric values using Welford's algorithm:
 
 ```go
-varianceKey := state.NewKey[any]("latency_variance", nil)
-state.RegisterAggregateKey(mgr, varianceKey, &aggregators.VarianceAggregator{})
+var VarianceKey = graph.NewAggregateKey[aggregators.VarianceState](
+    "latency_variance",
+    &aggregators.VarianceAggregator{},
+)
 
-// In node
-return command.New().
-    Set(varianceKey, responseTime).
-    To(graph.EndNode)
+g := graph.New[string, string](VarianceKey)
+
+g.Node("stats", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(VarianceKey, responseTime).To(graph.END), nil
+}, graph.END)
 
 // Read result
-varStateAny, _ := state.Get(ctx, mgr, varianceKey)
-varState := varStateAny.(aggregators.VarianceState)
-variance := varState.M2 / float64(varState.Count)
-stdDev := math.Sqrt(variance)
+// varState := graph.Get(view, VarianceKey)
+// variance := varState.M2 / float64(varState.Count)
+// stdDev := math.Sqrt(variance)
 ```
 
 **Returns**: `aggregators.VarianceState{Mean: float64, M2: float64, Count: int64}` - Mean, sum of squared differences (M2), and count
@@ -252,13 +256,17 @@ stdDev := math.Sqrt(variance)
 Counts non-nil contributions:
 
 ```go
-activeNodesKey := state.NewKey[any]("active_nodes", 0)
-state.RegisterAggregateKey(mgr, activeNodesKey, &aggregators.CountAggregator{})
+var ActiveNodesKey = graph.NewAggregateKey[int](
+    "active_nodes",
+    &aggregators.CountAggregator{},
+)
 
-// In node - any non-nil value increments
-return command.New().
-    Set(activeNodesKey, 1).
-    To(graph.EndNode)
+g := graph.New[string, string](ActiveNodesKey)
+
+g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    // Any non-nil value increments
+    return graph.Set(ActiveNodesKey, 1).To(graph.END), nil
+}, graph.END)
 ```
 
 **Returns**: `int` - Total count
@@ -268,48 +276,53 @@ return command.New().
 Boolean aggregators for convergence detection and monitoring:
 
 ```go
-allConvergedKey := state.NewKey[any]("all_converged", true)
-hasErrorsKey := state.NewKey[any]("has_errors", false)
+var AllConvergedKey = graph.NewAggregateKey[bool](
+    "all_converged",
+    &aggregators.AllTrueAggregator{},
+)
 
-state.RegisterAggregateKey(mgr, allConvergedKey, &aggregators.AllTrueAggregator{})
-state.RegisterAggregateKey(mgr, hasErrorsKey, &aggregators.AnyTrueAggregator{})
+var HasErrorsKey = graph.NewAggregateKey[bool](
+    "has_errors",
+    &aggregators.AnyTrueAggregator{},
+)
 
-// In node
-return command.New().
-    Set(allConvergedKey, isConverged).
-    Set(hasErrorsKey, hasError).
-    To(graph.EndNode)
+g := graph.New[string, string](AllConvergedKey, HasErrorsKey)
+
+g.Node("validator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(AllConvergedKey, isConverged).
+        Set(HasErrorsKey, hasError).
+        To(graph.END), nil
+}, graph.END)
 
 // Check convergence
-if allConverged, _ := state.Get(ctx, mgr, allConvergedKey); allConverged.(bool) {
-    // All nodes converged, can terminate early
-}
+// if graph.Get(view, AllConvergedKey) {
+//     // All nodes converged, can terminate early
+// }
 ```
 
 **Returns**: `bool` - Logical AND (AllTrue) or OR (AnyTrue)
 
 ### Using Aggregators in Nodes
 
-Nodes contribute to aggregators via normal `state.Updates` and read accumulated values from `state.ReadView`:
+Nodes contribute to aggregators via `graph.Set()` and read accumulated values via `graph.Get()`:
 
 ```go
-func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
+g.Node("processor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Read current aggregated values
-    totalProcessed, _ := state.GetFromView(view, totalProcessedKey)
-    avgLatency, _ := state.GetFromView(view, avgLatencyKey)
+    totalProcessed := graph.Get(view, TotalProcessedKey)
+    avgLatency := graph.Get(view, AvgLatencyKey)
     
-    fmt.Printf("Progress: %v items, avg latency: %v\n", totalProcessed, avgLatency)
+    fmt.Printf("Progress: %v items, avg latency: %v\n", totalProcessed, avgLatency.Mean)
     
     // Process some items
     itemsProcessed := 42
     latency := 150.0
     
-    // Contribute to aggregators via Command pattern
-    return command.New().
-        Set(totalProcessedKey, float64(itemsProcessed)).
-        Set(avgLatencyKey, latency).
-        To(graph.EndNode)
-}
+    // Contribute to aggregators via graph.Set
+    return graph.Set(TotalProcessedKey, float64(itemsProcessed)).
+        Set(AvgLatencyKey, latency).
+        To(graph.END), nil
+}, graph.END)
 ```
 
 **Use cases**:
@@ -321,10 +334,9 @@ func processorNode(ctx context.Context, view state.ReadView) ([]string, state.Up
 
 ### Custom Aggregators
 
-Implement the `state.Aggregator` interface for custom reduction logic:
+Implement the `Aggregator` interface for custom reduction logic:
 
 ```go
-// From pkg/state/internal/channel/channel.go
 type Aggregator interface {
     Zero() any
     Aggregate(current, value any) any
@@ -336,9 +348,7 @@ type Aggregator interface {
 Track values to compute median:
 
 ```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/state"
-)
+import "github.com/hupe1980/agentmesh/pkg/graph"
 
 type MedianAggregator struct{}
 
@@ -361,22 +371,21 @@ func (a *MedianAggregator) Aggregate(current, value any) any {
 }
 
 // Usage
-builder := state.NewManagerBuilder()
-medianKey := state.NewKey[any]("latency_median", nil)
-state.RegisterAggregateKey(builder, medianKey, &MedianAggregator{})
+var MedianKey = graph.NewAggregateKey[medianState](
+    "latency_median",
+    &MedianAggregator{},
+)
 
-mgr := builder.Build()
+g := graph.New[string, string](MedianKey)
 
-// In node
-return command.New().
-    Set(medianKey, latency).
-    To(graph.EndNode)
+g.Node("collector", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(MedianKey, latency).To(graph.END), nil
+}, graph.END)
 
 // After execution, compute median from collected values
-medianStateAny, _ := state.Get(ctx, mgr, medianKey)
-ms := medianStateAny.(medianState)
-sort.Float64s(ms.Values)
-median := ms.Values[len(ms.Values)/2]
+// ms := graph.Get(view, MedianKey)
+// sort.Float64s(ms.Values)
+// median := ms.Values[len(ms.Values)/2]
 ```
 
 #### Example: Histogram Aggregator
@@ -418,10 +427,10 @@ func (a *HistogramAggregator) Aggregate(current, value any) any {
 }
 
 // Usage
-histogramKey := state.NewKey[any]("response_time_histogram", nil)
-state.RegisterAggregateKey(mgr, histogramKey, &HistogramAggregator{
-    Bins: []float64{100, 200, 500, 1000}, // <100ms, 100-200ms, etc.
-})
+var HistogramKey = graph.NewAggregateKey[histogramState](
+    "response_time_histogram",
+    &HistogramAggregator{Bins: []float64{100, 200, 500, 1000}},
+)
 ```
 
 ### Advanced Patterns
@@ -431,39 +440,27 @@ state.RegisterAggregateKey(mgr, histogramKey, &HistogramAggregator{
 Use aggregators to detect when a graph has converged:
 
 ```go
-type ErrorAggregator struct{}
+var GlobalErrorKey = graph.NewAggregateKey[float64](
+    "global_error",
+    &aggregators.SumAggregator{},
+)
 
-func (a *ErrorAggregator) Aggregate(ctx context.Context, accumulated any, contributions []any) (any, error) {
-    var totalError float64
-    for _, contrib := range contributions {
-        if err, ok := contrib.(float64); ok {
-            totalError += err
-        }
-    }
-    return totalError, nil
-}
+g := graph.New[string, string](GlobalErrorKey)
 
-// In node: check for convergence
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+g.Node("optimizer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Calculate local error
     localError := computeLocalError()
-    s.Aggregate("global_error", localError)
     
     // Check previous superstep's global error
-    snap := s.AggregatesSnapshot()
-    if snap != nil {
-        if globalError, ok := snap["global_error"].(float64); ok {
-            if globalError < 0.001 {
-                // Converged! Route to END
-                return &graph.NodeResult{
-                    return map[string]any{"converged": true}, nil
-            }
-        }
+    globalError := graph.Get(view, GlobalErrorKey)
+    if globalError < 0.001 {
+        // Converged! Route to END
+        return graph.Set(GlobalErrorKey, localError).To(graph.END), nil
     }
     
     // Continue processing
-    return nil, nil
-}
+    return graph.Set(GlobalErrorKey, localError).To("optimizer"), nil
+}, "optimizer", graph.END)
 ```
 
 #### Distributed Counting
@@ -471,52 +468,51 @@ RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, err
 Track statistics across parallel branches:
 
 ```go
-// Set up counters
-executor := graph.NewPregelExecutor(
-    graph.WithPregelAggregators(map[string]pregel.Aggregator{
-        "success_count": pregel.SumAggregator{},
-        "failure_count": pregel.SumAggregator{},
-        "total_latency": pregel.SumAggregator{},
-    }),
+var SuccessCountKey = graph.NewAggregateKey[float64](
+    "success_count",
+    &aggregators.SumAggregator{},
 )
-g.WithExecutor(executor)
-compiled, _ := exec.CompileGraph(g)
 
-// In each parallel node (Pregel-style aggregation)
-func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
+var FailureCountKey = graph.NewAggregateKey[float64](
+    "failure_count",
+    &aggregators.SumAggregator{},
+)
+
+var TotalLatencyKey = graph.NewAggregateKey[float64](
+    "total_latency",
+    &aggregators.SumAggregator{},
+)
+
+g := graph.New[string, string](SuccessCountKey, FailureCountKey, TotalLatencyKey)
+
+// Parallel worker nodes
+g.Node("worker1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     start := time.Now()
-    
     result, err := doWork()
-    latency := time.Since(start).Milliseconds()
+    latency := float64(time.Since(start).Milliseconds())
     
-    // Note: Aggregation API depends on Pregel runtime context
-    // This is a conceptual example
     if err != nil {
-        return nil, err
+        return graph.Set(FailureCountKey, 1.0).
+            Set(TotalLatencyKey, latency).
+            To("reporter"), nil
     }
-    return result, nil
-}
+    return graph.Set(SuccessCountKey, 1.0).
+        Set(TotalLatencyKey, latency).
+        To("reporter"), nil
+}, "reporter")
 
-// In final reporting node (Pregel-style)
-func(ctx context.Context, view *state.ReadView) (state.Updates, error) {
-    // Note: Aggregates are specific to Pregel runtime
-    // This is a conceptual example
-    
-    successCount := 0.0 // Would come from aggregates snapshot
-    failureCount := snap["failure_count"].(float64)
-    totalLatency := snap["total_latency"].(float64)
+// Final reporting node
+g.Node("reporter", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    successCount := graph.Get(view, SuccessCountKey)
+    failureCount := graph.Get(view, FailureCountKey)
+    totalLatency := graph.Get(view, TotalLatencyKey)
     avgLatency := totalLatency / (successCount + failureCount)
     
     log.Printf("Success: %.0f, Failures: %.0f, Avg Latency: %.2fms",
         successCount, failureCount, avgLatency)
     
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            "success_rate": successCount / (successCount + failureCount),
-            "avg_latency_ms": avgLatency,
-        },
-    }, nil
-}
+    return graph.To(graph.END), nil
+}, graph.END)
 ```
 
 ### BSP Semantics & Aggregators
@@ -528,13 +524,13 @@ Understanding the BSP (Bulk Synchronous Parallel) model is key to using aggregat
 ```
 Superstep N:
 1. All nodes execute in parallel
-2. Nodes contribute to aggregators via Aggregate()
+2. Nodes contribute to aggregators via graph.Set()
 3. Barrier: wait for all nodes to complete
 4. Aggregate values computed by combining contributions
 5. New aggregate values become visible
 
 Superstep N+1:
-1. Nodes read aggregates from superstep N via AggregatesSnapshot()
+1. Nodes read aggregates from superstep N via graph.Get()
 2. Nodes contribute to aggregators for superstep N+1
 3. ... repeat
 ```
@@ -543,43 +539,8 @@ Superstep N+1:
 
 1. **Contributions are isolated**: Values aggregated in superstep N are NOT visible until superstep N+1
 2. **Thread-safe by design**: Aggregation happens after the barrier, no need for locks
-3. **Multiple contributions**: Same node can call `Aggregate()` multiple times in one superstep
+3. **Multiple contributions**: Same node can set aggregate multiple times in one superstep
 4. **Reset between retries**: If a node fails and retries, its aggregate contributions are cleared
-
-#### Example: Multi-Superstep Coordination
-
-```go
-// Node A contributes in superstep 0
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    s.Aggregate("counter", 10)  // Contributed in superstep 0
-    
-    snap := s.AggregatesSnapshot()
-    // snap["counter"] is NOT 10 yet - it's the value from superstep -1 (initial value)
-    
-    return &graph.NodeResult{}, nil
-}
-
-// Node B reads in superstep 1
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    snap := s.AggregatesSnapshot()
-    if snap != nil {
-        counter := snap["counter"].(float64)
-        // Now counter is 10 (from superstep 0)
-    }
-    
-    s.Aggregate("counter", 5)  // Add 5 more for superstep 1
-    return &graph.NodeResult{}, nil
-}
-
-// Node C reads in superstep 2
-RunFunc: func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    snap := s.AggregatesSnapshot()
-    counter := snap["counter"].(float64)
-    // Now counter is 15 (10 + 5 from supersteps 0 and 1)
-    
-    return &graph.NodeResult{}, nil
-}
-```
 
 ### Performance Considerations
 
@@ -613,124 +574,102 @@ Subgraphs enable **hierarchical composition** by embedding compiled graphs as no
 ### Basic Usage
 
 ```go
-// Create a subgraph
-subState := graph.NewStateManager(0)
-subGraph := graph.NewGraph(subState)
+import "github.com/hupe1980/agentmesh/pkg/graph"
 
-subGraph.AddNodeFunc("process", func(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
-    value := s.Get("value").(int)
+// Define keys
+var ValueKey = graph.NewKey[int]("value", 0)
+var ResultKey = graph.NewKey[int]("result", 0)
+
+// Create a subgraph that doubles the value
+sub := graph.New[int, int](ValueKey, ResultKey)
+
+sub.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    value := graph.Get(view, ValueKey)
     doubled := value * 2
-    return &graph.NodeResult{
-        Updates: map[string]any{"result": doubled},
-    }, nil
-})
+    return graph.Set(ResultKey, doubled).To(graph.END), nil
+}, graph.END)
 
-subGraph.AddNode(&graph.BaseNode{
-    NodeName:        "process",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        value := state.GetFromView(view, ValueKey)
-        doubled := value * 2
-        return command.New().
-            Set(resultKey, doubled).
-            To(graph.EndNode)
-    },
-})
-subGraph.SetEntryPoint("process")
+sub.Start("process")
 
 // Compile the subgraph
-compiledSub, err := exec.CompileGraph(subGraph)
+compiledSub, _ := sub.Build()
 
-// Use as a node in parent graph
-parentState := graph.NewStateManager(0)
-parent := graph.NewGraph(parentState)
+// Create parent graph
+parent := graph.New[int, int](ValueKey, ResultKey)
 
-parent.AddNodeFunc("prepare", func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-    return command.New().
-        Set(valueKey, 21).
-        To("doubler")
-})
+parent.Node("prepare", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    return graph.Set(ValueKey, 21).To("doubler"), nil
+}, "doubler")
 
 // Embed subgraph as a node
-parent.AddSubgraph("doubler", compiledSub)
+parent.Subgraph("doubler", compiledSub, graph.END)
 
-// Parent nodes use tuple return
-parent.AddNode(&graph.BaseNode{
-    NodeName:        "prepare",
-    DeclaredTargets: []string{"doubler"},
-    Fn: func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-        return command.New().
-            Set(valueKey, 21).
-            To("doubler")
-    },
-})
-parent.SetEntryPoint("prepare")
+parent.Start("prepare")
+compiled, _ := parent.Build()
+
+// Execute: 21 * 2 = 42
+result, _ := graph.Invoke(context.Background(), compiled, 0)
 ```
 
 ### State Mapping
 
-Map parent state to subgraph state and back using `AsNodeWithStateMapping`:
+Map parent state to subgraph state and back:
 
 ```go
-parent.AddNode(compiledSub.AsNodeWithStateMapping(
-    "processor",
-    // Map parent state -> subgraph input (values and messages)
-    func(parentState state.Reader) (map[string]any, []graph.MessageEvent) {
-        return map[string]any{
-            "input": parentState.Get("data"),
-        }, nil
-    },
-    // Map subgraph output -> parent state updates (values and messages)
-    func(subState state.Reader) (map[string]any, []graph.MessageEvent) {
-        return map[string]any{
-            "processed_data": subState.Get("output"),
-        }, nil
-    },
-))
+var DataKey = graph.NewKey[string]("data", "")
+var InputKey = graph.NewKey[string]("input", "")
+var OutputKey = graph.NewKey[string]("output", "")
+var ProcessedDataKey = graph.NewKey[string]("processed_data", "")
+
+parent := graph.New[string, string](DataKey, ProcessedDataKey)
+sub := graph.New[string, string](InputKey, OutputKey)
+
+// Map parent state -> subgraph input
+inputMapper := func(parentView graph.View) map[string]any {
+    return map[string]any{
+        InputKey.Name(): graph.Get(parentView, DataKey),
+    }
+}
+
+// Map subgraph output -> parent state updates
+outputMapper := func(subView graph.View) map[string]any {
+    return map[string]any{
+        ProcessedDataKey.Name(): graph.Get(subView, OutputKey),
+    }
+}
+
+parent.SubgraphWithMapping("processor", compiledSub, inputMapper, outputMapper, graph.END)
 ```
 
 ### Use Cases
 
 **Multi-stage pipelines**:
 ```go
-// Validation -> Enrichment -> Analysis
-validationSub, _ := exec.CompileGraph(createValidationGraph())
-enrichmentSub, _ := exec.CompileGraph(createEnrichmentGraph())
-analysisSub, _ := exec.CompileGraph(createAnalysisGraph())
+// Create separate graphs for each stage
+validationSub, _ := createValidationGraph().Build()
+enrichmentSub, _ := createEnrichmentGraph().Build()
+analysisSub, _ := createAnalysisGraph().Build()
 
-pipeline := graph.NewGraph(state)
-pipeline.AddSubgraph("validate", validationSub)
-pipeline.AddSubgraph("enrich", enrichmentSub)
-pipeline.AddSubgraph("analyze", analysisSub)
+// Compose into pipeline
+pipeline := graph.New[string, string](StatusKey, ResultKey)
 
-// Pipeline stages with tuple return routing
-pipeline.AddNode(&graph.BaseNode{
-    NodeName:        "validate",
-    DeclaredTargets: []string{"enrich"},
-    Fn:              validateFunc,
-})
-pipeline.AddNode(&graph.BaseNode{
-    NodeName:        "enrich",
-    DeclaredTargets: []string{"analyze"},
-    Fn:              enrichFunc,
-})
-pipeline.AddNode(&graph.BaseNode{
-    NodeName:        "analyze",
-    DeclaredTargets: []string{graph.EndNode},
-    Fn:              analyzeFunc,
-})
-pipeline.SetEntryPoint("validate")
+pipeline.Subgraph("validate", validationSub, "enrich")
+pipeline.Subgraph("enrich", enrichmentSub, "analyze")
+pipeline.Subgraph("analyze", analysisSub, graph.END)
+
+pipeline.Start("validate")
+compiled, _ := pipeline.Build()
 ```
 
 **Reusable components**:
 ```go
 // Create reusable authentication subgraph
-authSub, _ := exec.CompileGraph(createAuthGraph())
+authSub, _ := createAuthGraph().Build()
 
 // Use in multiple parent graphs
-apiGraph.AddSubgraph("auth", authSub)
-adminGraph.AddSubgraph("auth", authSub)
-publicGraph.AddSubgraph("auth", authSub)
+apiGraph.Subgraph("auth", authSub, "process")
+adminGraph.Subgraph("auth", authSub, "admin_process")
+publicGraph.Subgraph("auth", authSub, "public_process")
 ```
 
 ### Best Practices
@@ -743,6 +682,6 @@ publicGraph.AddSubgraph("auth", authSub)
 **See Also**:
 - `examples/subgraph` - Complete multi-stage pipeline example
 - [Core Concepts: Graphs](/core-concepts/#graphs-and-nodes) - Graph fundamentals
-- API Reference: [`AddSubgraph`](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Builder.AddSubgraph)
+- API Reference: [`Subgraph`](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Builder.Subgraph)
 
 ---

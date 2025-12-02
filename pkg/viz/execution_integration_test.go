@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -143,8 +143,8 @@ func TestExecutionInterceptor_HandleEvent(t *testing.T) {
 	})
 
 	// Create node start event
-	event := graph.Event{
-		Type:      graph.EventNodeStart,
+	event := event.Event{
+		Type:      event.EventNodeStart,
 		Node:      "test-node",
 		Superstep: 1,
 	}
@@ -189,8 +189,8 @@ func TestExecutionInterceptor_NoController(t *testing.T) {
 	ctx := context.Background()
 
 	// Create event
-	event := graph.Event{
-		Type:      graph.EventNodeStart,
+	event := event.Event{
+		Type:      event.EventNodeStart,
 		Node:      "test-node",
 		Superstep: 1,
 	}

@@ -1,402 +1,324 @@
 ---
 layout: doc
 title: Streaming
-description: Real-time visibility into graph execution with Go 1.24+ iterators.
-permalink: /streaming/
-example: streaming
-hero:
-  title: Streaming & Real-Time Updates
-  description: Observe intermediate progress, node-by-node execution, and incremental updates as they happen.
-  primary_cta:
-    label: Enable streaming
-    href: "#graph-level-streaming"
-  secondary_cta:
-    label: View example →
-    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/streaming"
-    external: true
-sidebar:
-  - title: Overview
-    url: "#overview"
-  - title: Graph-Level Streaming
-    url: "#graph-level-streaming"
-  - title: Node-Level Streaming
-    url: "#node-level-streaming"
-  - title: Model Streaming
-    url: "#model-streaming"
+description: Real-time streaming of graph execution in AgentMesh
 ---
 
-AgentMesh provides comprehensive streaming capabilities that enable real-time visibility into graph execution through Go 1.24+ iterators (`iter.Seq2`). This allows you to observe intermediate progress, node-by-node execution, and incremental updates as they happen.
+# Streaming
 
-## Overview {#overview}
-
-AgentMesh supports two complementary streaming patterns:
-
-1. **Graph-Level Streaming**: Observe execution flow between nodes using iterators
-2. **Node-Level Streaming**: Emit intermediate progress from within nodes
-
-Both patterns work seamlessly together to provide complete visibility into your agent workflows.
+AgentMesh provides built-in support for streaming graph execution results in real-time. This enables responsive UIs, progress monitoring, and handling long-running workflows.
 
 ---
 
-## Graph-Level Streaming
+## Overview
 
-### Basic Usage
+Streaming in AgentMesh works through:
 
-The `Run()` method returns an `iter.Seq2[state.ExecutionResult, error]` iterator that yields execution events in real-time:
+1. **Iterators**: The `Run()` method returns an iterator (`iter.Seq2`) that yields execution results
+2. **Intermediate Updates**: Nodes emit intermediate results via the StreamWriter
+3. **Event Processing**: Consumers iterate over results as they become available
 
 ```go
-// Create and compile your graph
-compiled, err := builder.Compile()
+import (
+    "github.com/hupe1980/agentmesh/pkg/graph"
+)
+
+// Define state keys
+var StatusKey = graph.NewKey("status", "")
+
+// Create graph
+g := graph.New[string, string](StatusKey)
+
+g.Node("process", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+    // Get the stream writer from context
+    streamWriter := graph.GetStreamWriter(ctx)
+    
+    // Emit intermediate updates
+    if streamWriter != nil {
+        streamWriter(&graph.NodeResult{
+            Updates: map[string]any{"progress": 0.5},
+        })
+    }
+    
+    return graph.Set(StatusKey, "complete").ToEnd(), nil
+}, graph.END)
+
+g.Start("process")
+
+compiled, _ := g.Build()
+
+// Stream results
+for result, err := range compiled.Run(ctx, "start") {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Node: %s, Updates: %v\n", result.Node, result.Updates)
+}
+```
+
+---
+
+## Core Concepts
+
+### ExecutionResult
+
+Each yielded result contains:
+
+```go
+type ExecutionResult[O any] struct {
+    Node    string         // Name of the node that produced this result
+    Updates map[string]any // State updates from this node
+    Output  O              // Final output (on final iteration only)
+}
+```
+
+### StreamWriter
+
+The StreamWriter allows nodes to emit intermediate results during execution:
+
+```go
+type StreamWriter func(*NodeResult)
+
+type NodeResult struct {
+    Updates map[string]any
+}
+```
+
+---
+
+## Basic Streaming
+
+### Processing Results
+
+```go
+var CounterKey = graph.NewKey("counter", 0)
+
+g := graph.New[int, int](CounterKey)
+
+g.Node("counter", func(ctx context.Context, input graph.NodeInput[int]) (graph.Command, error) {
+    streamWriter := graph.GetStreamWriter(ctx)
+    
+    for i := 1; i <= 10; i++ {
+        time.Sleep(100 * time.Millisecond)
+        
+        // Emit progress updates
+        if streamWriter != nil {
+            streamWriter(&graph.NodeResult{
+                Updates: map[string]any{
+                    "progress": i * 10,
+                    "step":     i,
+                },
+            })
+        }
+    }
+    
+    return graph.Set(CounterKey, 10).ToEnd(), nil
+}, graph.END)
+
+g.Start("counter")
+
+compiled, _ := g.Build()
+
+// Process each result as it arrives
+for result, err := range compiled.Run(ctx, 0) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    if result.Updates != nil {
+        fmt.Printf("Progress: %v%%\n", result.Updates["progress"])
+    }
+}
+```
+
+### Collecting All Results
+
+```go
+// Collect all results into a slice
+results, err := graph.Collect(compiled.Run(ctx, input))
 if err != nil {
     log.Fatal(err)
 }
 
-// Execute with iterator pattern
-for result, err := range compiled.Run(ctx, messages) {
-    if err != nil {
-        log.Fatalf("Execution error: %v", err)
-    }
-    
-    // Handle the execution result
+for _, result := range results {
     fmt.Printf("Node: %s\n", result.Node)
-    fmt.Printf("Updates: %v\n", result.Updates)
-    fmt.Printf("Messages: %v\n", result.Messages)
 }
 ```
 
-### Execution Results
-
-Each `state.ExecutionResult` contains:
+### Getting Final Result Only
 
 ```go
-type ExecutionResult struct {
-    Message   message.Message // Single message content (one message per result)
-    ID        string          // UUID result identifier
-    GraphID   string          // Graph run ID
-    Node      string          // Node that created this result
-    Timestamp time.Time       // Creation timestamp
-    Updates   map[string]any  // State updates from the node
-    Partial   bool            // True if intermediate streaming result
+// Get only the last (final) result
+result, err := graph.Last(compiled.Run(ctx, input))
+if err != nil {
+    log.Fatal(err)
 }
-```
 
-**Key Fields**:
-- `Message`: Single message produced by the node
-- `Node`: Name of the node that executed
-- `Updates`: State changes applied to the graph
-- `Partial`: Indicates intermediate streaming results (not yet applied to state)
-
-### Iterator Pattern Benefits
-
-1. **Type-Safe**: Compile-time checking of result types
-2. **Resource Efficient**: Lazy evaluation, process events as they arrive
-3. **Error Handling**: Errors yielded inline with results
-4. **Cancellation**: Context cancellation stops execution immediately
-
----
-
-## Node-Level Streaming (StreamWriter Pattern)
-
-### The StreamWriter Pattern
-
-Nodes can emit intermediate progress without waiting for completion using the **StreamWriter pattern**:
-
-```go
-builder.AddNodeFunc("processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    // Get the stream writer from context
-    streamWriter := graph.GetStreamWriter(ctx)
-    
-    // Process data in chunks
-    for i, chunk := range chunks {
-        processChunk(chunk)
-        
-        // Emit intermediate progress
-        if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "progress": fmt.Sprintf("%d/%d", i+1, len(chunks)),
-                    "chunk":    chunk,
-                },
-            })
-        }
-    }
-    
-    // Return final result
-    return &graph.NodeResult{
-        Updates: map[string]any{"status": "complete"},
-    }, nil
-})
-```
-
-### How It Works
-
-1. **Extract StreamWriter**: `streamWriter := graph.GetStreamWriter(ctx)`
-2. **Check for nil**: StreamWriter is available when graph execution supports intermediate updates
-3. **Emit Updates**: Call `streamWriter(result)` to send intermediate events
-4. **Return Final Result**: Node still returns its final `NodeResult` as usual
-
-**Important**: Intermediate updates from StreamWriter are **not applied to graph state**. They are purely for observation and user feedback.
-
-> **Note**: StreamWriter support depends on the execution backend. The Pregel executor supports intermediate streaming.
-
----
-
-## Complete Example
-
-Here's a comprehensive example demonstrating both streaming patterns:
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "time"
-    
-    "github.com/hupe1980/agentmesh/pkg/graph"
-    "github.com/hupe1980/agentmesh/pkg/message"
-)
-
-func main() {
-    builder := graph.NewBuilder()
-    
-    // Node 1: Data processor with intermediate streaming
-    builder.AddNodeFunc("data_processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        streamWriter := graph.GetStreamWriter(ctx)
-        
-        chunks := []string{"chunk1", "chunk2", "chunk3", "chunk4"}
-        for i, chunk := range chunks {
-            time.Sleep(300 * time.Millisecond)
-            
-            // Emit intermediate progress
-            if streamWriter != nil {
-                streamWriter(&graph.NodeResult{
-                    Updates: map[string]any{
-                        "progress":      fmt.Sprintf("%d/%d", i+1, len(chunks)),
-                        "current_chunk": chunk,
-                    },
-                })
-            }
-        }
-        
-        // Return final result (applied to state)
-        return &graph.NodeResult{
-            Updates: map[string]any{
-                "status":       "data_processed",
-                "chunks_total": len(chunks),
-            },
-        }, nil
-    })
-    
-    // Node 2: Multi-step analyzer
-    builder.AddNodeFunc("analyzer", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-        streamWriter := graph.GetStreamWriter(ctx)
-        
-        // Step 1: Validation
-        time.Sleep(200 * time.Millisecond)
-        if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "step":       "validation",
-                    "validation": "passed",
-                },
-            })
-        }
-        
-        // Step 2: Quality check
-        time.Sleep(200 * time.Millisecond)
-        if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "step":          "quality_check",
-                    "quality_score": 0.95,
-                },
-            })
-        }
-        
-        // Final result
-        return &graph.NodeResult{
-            Updates: map[string]any{
-                "status":   "complete",
-                "verified": true,
-            },
-        }, nil
-    })
-    
-    // Build graph with tuple return routing
-    g.AddNode(&graph.BaseNode{
-        NodeName:        "data_processor",
-        DeclaredTargets: []string{"analyzer"},
-        Fn:              dataProcessorFunc,
-    })
-    g.AddNode(&graph.BaseNode{
-        NodeName:        "analyzer",
-        DeclaredTargets: []string{graph.EndNode},
-        Fn:              analyzerFunc,
-    })
-    g.SetEntryPoint("data_processor")
-    
-    compiled, _ := builder.Compile()
-    
-    // Execute with iterator
-    for result, err := range compiled.Run(context.Background(), nil) {
-        if err != nil {
-            fmt.Printf("❌ Error: %v\n", err)
-            continue
-        }
-        
-        // Display node execution
-        fmt.Printf("\n📍 Node: %s\n", result.Node)
-        
-        // Show state updates
-        if len(result.Updates) > 0 {
-            fmt.Printf("   ✅ Updates: %v\n", result.Updates)
-        }
-        
-        // Show new messages
-        if len(result.Messages) > 0 {
-            fmt.Printf("   💬 Messages: %d new\n", len(result.Messages))
-        }
-    }
-}
-```
-
-**Output**:
-```
-📍 Starting node: data_processor
-   ⚡ Progress: map[progress:1/4 current_chunk:chunk1]
-   ⚡ Progress: map[progress:2/4 current_chunk:chunk2]
-   ⚡ Progress: map[progress:3/4 current_chunk:chunk3]
-   ⚡ Progress: map[progress:4/4 current_chunk:chunk4]
-   ✅ Completed: map[status:data_processed chunks_total:4]
-
-📍 Starting node: analyzer
-   ⚡ Progress: map[step:validation validation:passed]
-   ⚡ Progress: map[step:quality_check quality_score:0.95]
-   ✅ Completed: map[status:complete verified:true]
+fmt.Printf("Final output: %v\n", result.Output)
 ```
 
 ---
 
-## Use Cases
+## Message Graph Streaming
 
-### 1. Progress Bars and Loading States
-
-```go
-builder.AddNodeFunc("batch_processor", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    streamWriter := graph.GetStreamWriter(ctx)
-    
-    for i, item := range items {
-        process(item)
-        
-        if streamWriter != nil {
-            percentage := float64(i+1) / float64(len(items)) * 100
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "progress_percent": percentage,
-                    "items_processed":  i + 1,
-                    "items_total":      len(items),
-                },
-            })
-        }
-    }
-    
-    return &graph.NodeResult{Updates: map[string]any{"status": "complete"}}, nil
-})
-```
-
-### 2. LLM Token Streaming
+For conversational AI workflows using `MessageGraph`:
 
 ```go
-builder.AddNodeFunc("llm_call", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+g := graph.NewMessageGraph()
+
+g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
+    messages := input.State(graph.MessagesKey)
     
-    // Stream from the model
-    seq := model.Generate(ctx, &model.Request{
-        Messages: messages,
-        Stream:   true,
-    })
-    
+    // Stream LLM response tokens
     var fullResponse strings.Builder
     
-    // Forward model tokens to graph stream
-    for chunk, err := range seq {
-        if err != nil {
-            return nil, err
-        }
+    llmStream := model.StreamChat(ctx, messages)
+    for chunk := range llmStream {
+        fullResponse.WriteString(chunk.Content)
         
-        // Stream partial response out of the node
-        sw.Write(message.NewAIMessageFromText(chunk.Message.String()))
-        
-        fullResponse.WriteString(chunk.Message.String())
-    }
-    
-    // Return final, complete message
-    return &graph.NodeResult{
-        Updates: map[string]any{
-            agent.MessagesKey.Name(): []message.Message{
-                message.NewAIMessageFromText(fullResponse.String()),
-            },
-        },
-    }, nil
-})
-```
-
-### 3. Multi-Stage Processing
-
-```go
-builder.AddNodeFunc("pipeline", func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
-    streamWriter := graph.GetStreamWriter(ctx)
-    
-    stages := []struct {
-        name string
-        fn   func() error
-    }{
-        {"Loading data", loadData},
-        {"Transforming", transform},
-        {"Validating", validate},
-        {"Saving", save},
-    }
-    
-    for i, stage := range stages {
+        // Stream each token to the client
         if streamWriter != nil {
             streamWriter(&graph.NodeResult{
                 Updates: map[string]any{
-                    "current_stage": stage.name,
-                    "stage_number":  i + 1,
-                    "total_stages":  len(stages),
+                    "type":    "token",
+                    "content": chunk.Content,
                 },
             })
         }
-        
-        if err := stage.fn(); err != nil {
-            return nil, err
-        }
     }
     
-    return &graph.NodeResult{Updates: map[string]any{"status": "complete"}}, nil
-})
+    response := message.NewAIMessageFromText(fullResponse.String())
+    return graph.Append(graph.MessagesKey, response).ToEnd(), nil
+}, graph.END)
+
+g.Start("assistant")
+
+compiled, _ := g.Build()
+
+// Stream chat tokens
+for result, err := range compiled.Run(ctx, []message.Message{userMsg}) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    if result.Updates["type"] == "token" {
+        fmt.Print(result.Updates["content"]) // Print tokens as they arrive
+    }
+}
+```
+
+---
+
+## Multi-Node Streaming
+
+Stream results across multiple nodes:
+
+```go
+var (
+    DataKey   = graph.NewListKey[string]("data")
+    StatusKey = graph.NewKey("status", "")
+)
+
+g := graph.New[string, string](DataKey, StatusKey)
+
+// First node: fetch data
+g.Node("fetch", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+    streamWriter := graph.GetStreamWriter(ctx)
+    
+    if streamWriter != nil {
+        streamWriter(&graph.NodeResult{
+            Updates: map[string]any{"stage": "fetching"},
+        })
+    }
+    
+    time.Sleep(1 * time.Second) // Simulate fetch
+    
+    return graph.Set(StatusKey, "fetched").Append(DataKey, "item1", "item2").To("process"), nil
+}, "process")
+
+// Second node: process data
+g.Node("process", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+    streamWriter := graph.GetStreamWriter(ctx)
+    data := graph.GetList(input, DataKey)
+    
+    for i, item := range data {
+        if streamWriter != nil {
+            streamWriter(&graph.NodeResult{
+                Updates: map[string]any{
+                    "stage":    "processing",
+                    "item":     item,
+                    "progress": float64(i+1) / float64(len(data)),
+                },
+            })
+        }
+        time.Sleep(500 * time.Millisecond)
+    }
+    
+    return graph.Set(StatusKey, "complete").ToEnd(), nil
+}, graph.END)
+
+g.Start("fetch")
+
+compiled, _ := g.Build()
+
+// Track progress across all nodes
+for result, err := range compiled.Run(ctx, "start") {
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    if stage, ok := result.Updates["stage"]; ok {
+        fmt.Printf("[%s] Stage: %s\n", result.Node, stage)
+    }
+}
+```
+
+---
+
+## Context Cancellation
+
+Streaming respects context cancellation:
+
+```go
+// Create cancellable context
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+// Iteration stops when context is cancelled
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        if errors.Is(err, context.DeadlineExceeded) {
+            fmt.Println("Execution timed out")
+        }
+        break
+    }
+    processResult(result)
+}
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Always Check for nil
+### 1. Always Check StreamWriter
 
 ```go
-// ✅ Good
-if streamWriter != nil {
-    streamWriter(result)
+func processNode(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+    streamWriter := graph.GetStreamWriter(ctx)
+    
+    // Always check if streaming is enabled
+    if streamWriter != nil {
+        streamWriter(&graph.NodeResult{
+            Updates: map[string]any{"status": "starting"},
+        })
+    }
+    
+    return graph.Set(StatusKey, "done").ToEnd(), nil
 }
-
-// ❌ Bad - will panic if Stream() not used
-streamWriter(result)
 ```
 
-StreamWriter availability depends on the execution backend configuration.
-
-### 2. Don't Stream Excessively
+### 2. Throttle High-Frequency Updates
 
 ```go
 // ❌ Bad - too many events
@@ -480,12 +402,8 @@ async function executeGraph(messages: Message[]) {
         const event = JSON.parse(chunk);
         
         // Update UI based on event
-        if (event.Result) {
-            // Intermediate update
-            updateProgress(event.Result.Updates);
-        } else if (event.Updates) {
-            // Final node result
-            updateNodeStatus(event.Node, event.Updates);
+        if (event.Updates) {
+            updateProgress(event.Updates);
         }
     }
 }
@@ -522,14 +440,6 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
     }
 }
 ```
-
-## Proper Cleanup
-
-For proper cleanup and resource management:
-
-- Always cancel contexts when done
-- Close any open streams or connections
-- Handle errors and edge cases in streaming logic
 
 ---
 
@@ -588,10 +498,10 @@ You can include custom metadata in intermediate updates:
 ```go
 streamWriter(&graph.NodeResult{
     Updates: map[string]any{
-        "event_type": "custom_metric",
+        "event_type":  "custom_metric",
         "metric_name": "tokens_per_second",
-        "value": 125.3,
-        "timestamp": time.Now(),
+        "value":       125.3,
+        "timestamp":   time.Now(),
     },
 })
 ```
@@ -599,14 +509,14 @@ streamWriter(&graph.NodeResult{
 ### Conditional Streaming
 
 ```go
-var VerboseKey = state.NewKey("verbose", false)
+var VerboseKey = graph.NewKey("verbose", false)
 
-func process(ctx context.Context, view *state.ReadView) (*graph.NodeResult, error) {
+g.Node("process", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    verbose := state.GetFromView(view, VerboseKey)
+    verbose := graph.Get(input, VerboseKey)
     
-    for i, item := range items {
-        process(item)
+    for _, item := range items {
+        processItem(item)
         
         // Only stream if verbose mode enabled
         if verbose && streamWriter != nil {
@@ -616,26 +526,32 @@ func process(ctx context.Context, view *state.ReadView) (*graph.NodeResult, erro
         }
     }
     
-    return &graph.NodeResult{Updates: map[string]any{"status": "done"}}, nil
-}
+    return graph.Set(StatusKey, "done").ToEnd(), nil
+}, graph.END)
 ```
 
 ### Error Handling
 
 ```go
-// Errors in intermediate updates don't stop execution
-if streamWriter != nil {
-    streamWriter(&graph.NodeResult{
-        Updates: map[string]any{
-            "warning": "Rate limit approaching",
-        },
-    })
-}
-
-// Returning error stops execution
-if criticalError != nil {
-    return nil, fmt.Errorf("critical: %w", criticalError)
-}
+g.Node("processor", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
+    streamWriter := graph.GetStreamWriter(ctx)
+    
+    // Errors in intermediate updates don't stop execution
+    if streamWriter != nil {
+        streamWriter(&graph.NodeResult{
+            Updates: map[string]any{
+                "warning": "Rate limit approaching",
+            },
+        })
+    }
+    
+    // Returning error stops execution
+    if criticalError != nil {
+        return nil, fmt.Errorf("critical: %w", criticalError)
+    }
+    
+    return graph.Set(StatusKey, "done").ToEnd(), nil
+}, graph.END)
 ```
 
 ---
@@ -644,5 +560,5 @@ if criticalError != nil {
 
 - [Graph Execution](./getting-started.md#execution)
 - [Node Implementation](./architecture.md#nodes)
-- [State Management](./architecture.md#state)
+- [State Management](./state-management.md)
 - [Complete Example](../examples/streaming/main.go)

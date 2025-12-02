@@ -3,57 +3,37 @@ package agent
 import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 // MessagesKey is the standard key for storing conversation messages in agent state.
-// This is the agent-layer equivalent of what was previously in pkg/state.
-// Messages are stored as message.Message instances in append-only fashion.
-// Use 0 for unbounded message history, or a positive number to limit history.
-var MessagesKey = state.NewListKey[message.Message](graph.MessagesKeyName, 0)
+// This is an alias to graph.MessagesKey for convenient use in the agent package.
+var MessagesKey = graph.MessagesKey
 
-// GetMessages retrieves the message history from a ReadView.
+// GetMessages retrieves the message history from a View.
 // Returns an empty slice if no messages exist.
 //
 // Example:
 //
-//	view, _ := mgr.CreateReadView(ctx)
 //	messages := agent.GetMessages(view)
 //	for _, msg := range messages {
 //	    fmt.Println(msg.Content())
 //	}
-func GetMessages(view state.ReadView) []message.Message {
-	return state.GetFromView(view, MessagesKey.Key)
+func GetMessages(view graph.View) []message.Message {
+	return graph.GetList(view, MessagesKey)
 }
 
 // LastMessage returns the last message from the history, or nil if empty.
 //
 // Example:
 //
-//	view, _ := mgr.CreateReadView(ctx)
 //	lastMsg := agent.LastMessage(view)
 //	if lastMsg != nil {
 //	    fmt.Println("Last:", lastMsg.Content())
 //	}
-func LastMessage(view state.ReadView) message.Message {
+func LastMessage(view graph.View) message.Message {
 	msgs := GetMessages(view)
 	if len(msgs) == 0 {
 		return nil
 	}
 	return msgs[len(msgs)-1]
-}
-
-// RegisterMessagesKey registers the MessagesKey with a state manager builder.
-// This should be called during agent initialization to ensure the messages
-// channel is properly set up in the state system.
-//
-// Example:
-//
-//	builder := state.NewManagerBuilder()
-//	if err := agent.RegisterMessagesKey(builder); err != nil {
-//	    return err
-//	}
-//	mgr := builder.Build()
-func RegisterMessagesKey(builder *state.ManagerBuilder) error {
-	return state.RegisterListKey(builder, MessagesKey)
 }

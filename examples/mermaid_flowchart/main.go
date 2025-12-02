@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/state"
 )
 
 func main() {
@@ -25,148 +24,145 @@ func main() {
 }
 
 func simpleWorkflow() {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	g := graph.New[any, any]()
+
+	g.Node("preprocess", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("process")
+	}, "process")
+
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("postprocess")
+	}, "postprocess")
+
+	g.Node("postprocess", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+
+	g.Start("preprocess")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	builder.
-		AddNodeFunc("preprocess", []string{"process"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"process"}, nil, nil
-		}).
-		AddNodeFunc("process", []string{"postprocess"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"postprocess"}, nil, nil
-		}).
-		AddNodeFunc("postprocess", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		}).
-		SetEntryPoint("preprocess")
-
-	compiled, err := builder.Compile()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rg := compiled
-	fmt.Println(rg.MermaidFlowchart("LR"))
+	fmt.Println(compiled.MermaidFlowchart("LR"))
 }
 
 func conditionalWorkflow() {
-	categoryKey := state.NewKey("category", "")
+	categoryKey := graph.NewKey("category", "")
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	g := graph.New[any, any](categoryKey)
+
+	g.Node("analyze", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		category := "simple"
+		if category == "simple" {
+			return graph.Set(categoryKey, category).To("simple_path")
+		}
+		return graph.Set(categoryKey, category).To("complex_path")
+	}, "simple_path", "complex_path")
+
+	g.Node("simple_path", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("finalize")
+	}, "finalize")
+
+	g.Node("complex_path", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("finalize")
+	}, "finalize")
+
+	g.Node("finalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+
+	g.Start("analyze")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	builder.
-		AddNodeFunc("analyze", []string{"simple_path", "complex_path"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			updates := state.Updates{}
-			updates[categoryKey.Name()] = "simple"
-
-			category := "simple" // Just set it above
-			if category == "simple" {
-				return []string{"simple_path"}, updates, nil
-			}
-			return []string{"complex_path"}, updates, nil
-		}).
-		AddNodeFunc("simple_path", []string{"finalize"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"finalize"}, nil, nil
-		}).
-		AddNodeFunc("complex_path", []string{"finalize"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"finalize"}, nil, nil
-		}).
-		AddNodeFunc("finalize", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		}).
-		SetEntryPoint("analyze")
-
-	compiled, err := builder.Compile()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rg := compiled
-	fmt.Println(rg.MermaidFlowchart("TD"))
+	fmt.Println(compiled.MermaidFlowchart("TD"))
 }
 
 func parallelWorkflow() {
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	g := graph.New[any, any]()
+
+	g.Node("split", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		// Fan out to all workers in parallel
+		return graph.Cmd().To("worker_1", "worker_2", "worker_3")
+	}, "worker_1", "worker_2", "worker_3")
+
+	g.Node("worker_1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("merge")
+	}, "merge")
+
+	g.Node("worker_2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("merge")
+	}, "merge")
+
+	g.Node("worker_3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("merge")
+	}, "merge")
+
+	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+
+	g.Start("split")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	builder.
-		AddNodeFunc("split", []string{"worker_1", "worker_2", "worker_3"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"worker_1", "worker_2", "worker_3"}, nil, nil
-		}).
-		AddNodeFunc("worker_1", []string{"merge"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"merge"}, nil, nil
-		}).
-		AddNodeFunc("worker_2", []string{"merge"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"merge"}, nil, nil
-		}).
-		AddNodeFunc("worker_3", []string{"merge"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"merge"}, nil, nil
-		}).
-		AddNodeFunc("merge", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		}).
-		SetEntryPoint("split")
-
-	compiled, err := builder.Compile()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rg := compiled
-	fmt.Println(rg.MermaidFlowchart("TD"))
+	fmt.Println(compiled.MermaidFlowchart("TD"))
 }
 
 func complexWorkflow() {
-	validKey := state.NewKey("valid", false)
-	priorityKey := state.NewKey("priority", "")
+	validKey := graph.NewKey("valid", false)
+	priorityKey := graph.NewKey("priority", "")
 
-	builder, err := graph.NewBuilder(graph.NewMessagePregelExecutor())
+	g := graph.New[any, any](validKey, priorityKey)
+
+	g.Node("input_validation", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		priority := "high"
+		if priority == "high" {
+			return graph.Set(validKey, true).
+				With(graph.SetValue(priorityKey, priority)).
+				To("high_priority")
+		}
+		return graph.Set(validKey, true).
+			With(graph.SetValue(priorityKey, priority)).
+			To("normal_priority")
+	}, "high_priority", "normal_priority")
+
+	g.Node("high_priority", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("transform")
+	}, "transform")
+
+	g.Node("normal_priority", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("transform")
+	}, "transform")
+
+	g.Node("transform", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("enrich")
+	}, "enrich")
+
+	g.Node("enrich", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("aggregate")
+	}, "aggregate")
+
+	g.Node("aggregate", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().To("output")
+	}, "output")
+
+	g.Node("output", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Cmd().End()
+	}, graph.END)
+
+	g.Start("input_validation")
+
+	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	builder.
-		AddNodeFunc("input_validation", []string{"high_priority", "normal_priority"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			updates := state.Updates{}
-			updates[validKey.Name()] = true
-			updates[priorityKey.Name()] = "high"
-
-			priority := "high" // Just set it above
-			if priority == "high" {
-				return []string{"high_priority"}, updates, nil
-			}
-			return []string{"normal_priority"}, updates, nil
-		}).
-		AddNodeFunc("high_priority", []string{"transform"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"transform"}, nil, nil
-		}).
-		AddNodeFunc("normal_priority", []string{"transform"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"transform"}, nil, nil
-		}).
-		AddNodeFunc("transform", []string{"enrich"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"enrich"}, nil, nil
-		}).
-		AddNodeFunc("enrich", []string{"aggregate"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"aggregate"}, nil, nil
-		}).
-		AddNodeFunc("aggregate", []string{"output"}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{"output"}, nil, nil
-		}).
-		AddNodeFunc("output", []string{graph.EndNode}, func(ctx context.Context, view state.ReadView) ([]string, state.Updates, error) {
-			return []string{graph.EndNode}, nil, nil
-		}).
-		SetEntryPoint("input_validation")
-
-	compiled, err := builder.Compile()
-	if err != nil {
-		log.Fatal(err)
-	}
-	rg := compiled
-	fmt.Println(rg.MermaidFlowchart("LR"))
+	fmt.Println(compiled.MermaidFlowchart("LR"))
 
 	fmt.Println("\n\n📊 You can copy the above Mermaid code and paste it into:")
 	fmt.Println("   - https://mermaid.live/")
