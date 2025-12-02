@@ -220,8 +220,8 @@ func (store *MessageBus[M]) mailboxKey(vertex string) string {
 }
 
 // Send delivers messages to target vertices.
-// Uses Redis pipelining for batch efficiency.
-// Messages are serialized and stored in Redis lists.
+// Uses Redis pipelining with message grouping for optimal batch efficiency.
+// Messages are grouped by target vertex to minimize Redis operations.
 // Frontier tracking is handled by Runtime's shardedFrontier.
 func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[M]) error {
 	if len(messages) == 0 {
@@ -232,9 +232,9 @@ func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[
 		return fmt.Errorf("message bus is closed")
 	}
 
-	// Use pipeline for batch operations
-	pipe := store.client.Pipeline()
-
+	// Group messages by target vertex to minimize Redis operations
+	// This reduces Expire calls from O(n) to O(vertices)
+	grouped := make(map[string][]any)
 	for _, msg := range messages {
 		if msg.To == "" {
 			continue
@@ -246,17 +246,30 @@ func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[
 			return fmt.Errorf("failed to serialize message to %q: %w", msg.To, err)
 		}
 
-		// Add message to vertex's mailbox (LPUSH for FIFO with RPOP)
-		mailboxKey := store.mailboxKey(msg.To)
-		pipe.LPush(ctx, mailboxKey, data)
+		grouped[msg.To] = append(grouped[msg.To], data)
+	}
 
-		// Set TTL to prevent memory leaks
+	if len(grouped) == 0 {
+		return nil
+	}
+
+	// Use pipeline for batch operations
+	pipe := store.client.Pipeline()
+
+	for vertex, serializedMsgs := range grouped {
+		mailboxKey := store.mailboxKey(vertex)
+
+		// Push all messages for this vertex in a single LPUSH command
+		// Redis LPUSH accepts multiple values: LPUSH key value1 value2 ...
+		pipe.LPush(ctx, mailboxKey, serializedMsgs...)
+
+		// Set TTL once per vertex instead of once per message
 		if store.ttl > 0 {
 			pipe.Expire(ctx, mailboxKey, store.ttl)
 		}
 	}
 
-	// Execute pipeline
+	// Execute pipeline in single round-trip
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("failed to send messages: %w", err)
 	}
