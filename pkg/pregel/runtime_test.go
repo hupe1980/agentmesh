@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/metrics"
+	"github.com/hupe1980/agentmesh/pkg/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -655,4 +657,419 @@ func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
 	assert.Equal(t, int64(0), rt.CurrentSuperstep())
 	rt.SetSuperstep(7)
 	assert.Equal(t, int64(7), rt.CurrentSuperstep())
+}
+
+// Tests for extracted runSuperstep components
+
+func TestRuntime_PrepareFrontierNodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		frontier map[string]struct{}
+		want     []string
+	}{
+		{
+			name:     "empty frontier",
+			frontier: map[string]struct{}{},
+			want:     []string{},
+		},
+		{
+			name: "single node",
+			frontier: map[string]struct{}{
+				"A": {},
+			},
+			want: []string{"A"},
+		},
+		{
+			name: "multiple nodes sorted",
+			frontier: map[string]struct{}{
+				"C": {},
+				"A": {},
+				"B": {},
+			},
+			want: []string{"A", "B", "C"},
+		},
+		{
+			name: "numeric names sorted lexicographically",
+			frontier: map[string]struct{}{
+				"node_3": {},
+				"node_1": {},
+				"node_2": {},
+			},
+			want: []string{"node_1", "node_2", "node_3"},
+		},
+		{
+			name: "mixed case names",
+			frontier: map[string]struct{}{
+				"Zebra":  {},
+				"apple":  {},
+				"Banana": {},
+			},
+			want: []string{"Banana", "Zebra", "apple"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			got := rt.prepareFrontierNodes(tt.frontier)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRuntime_PrepareFrontierNodes_Determinism(t *testing.T) {
+	// Test that prepareFrontierNodes returns consistent ordering across multiple calls
+	frontier := map[string]struct{}{
+		"node_5": {},
+		"node_1": {},
+		"node_3": {},
+		"node_2": {},
+		"node_4": {},
+	}
+
+	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+
+	// Run multiple times and verify consistency
+	first := rt.prepareFrontierNodes(frontier)
+	for i := 0; i < 10; i++ {
+		got := rt.prepareFrontierNodes(frontier)
+		assert.Equal(t, first, got, "prepareFrontierNodes should return consistent ordering")
+	}
+}
+
+func TestRuntime_SetupSuperstepObservability(t *testing.T) {
+	tests := []struct {
+		name          string
+		superstep     int64
+		frontierNodes []string
+	}{
+		{
+			name:          "empty frontier",
+			superstep:     1,
+			frontierNodes: []string{},
+		},
+		{
+			name:          "single node",
+			superstep:     5,
+			frontierNodes: []string{"A"},
+		},
+		{
+			name:          "multiple nodes",
+			superstep:     10,
+			frontierNodes: []string{"A", "B", "C"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			ctx := context.Background()
+
+			// Setup observability
+			newCtx, cleanup := rt.setupSuperstepObservability(ctx, tt.superstep, tt.frontierNodes)
+
+			// Verify context is returned
+			assert.NotNil(t, newCtx)
+			assert.NotNil(t, cleanup)
+
+			// Verify cleanup can be called without panic
+			assert.NotPanics(t, func() {
+				cleanup()
+			})
+
+			// Verify cleanup is idempotent
+			assert.NotPanics(t, func() {
+				cleanup()
+			})
+		})
+	}
+}
+
+func TestRuntime_SetupSuperstepObservability_ContextValues(t *testing.T) {
+	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	ctx := context.Background()
+	frontierNodes := []string{"A", "B", "C"}
+
+	newCtx, cleanup := rt.setupSuperstepObservability(ctx, 42, frontierNodes)
+	defer cleanup()
+
+	// Verify that trace and metrics contexts are preserved
+	tp := trace.FromContext(newCtx)
+	assert.NotNil(t, tp, "trace provider should be accessible from context")
+
+	mp := metrics.FromContext(newCtx)
+	assert.NotNil(t, mp, "metrics provider should be accessible from context")
+}
+
+func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
+	t.Run("no callback configured", func(t *testing.T) {
+		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		ctx := context.Background()
+		frontierNodes := []string{"A", "B"}
+
+		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		assert.NoError(t, err, "should not error when callback is not configured")
+	})
+
+	t.Run("callback succeeds", func(t *testing.T) {
+		callbackCalled := false
+		var receivedSuperstep int64
+		var receivedInfo FrontierInfo
+
+		callback := func(_ context.Context, superstep int64, info FrontierInfo) error {
+			callbackCalled = true
+			receivedSuperstep = superstep
+			receivedInfo = info
+			return nil
+		}
+
+		rt := MustNewRuntime[noopState, mockMessage](
+			noopGraph{},
+			nil,
+			WithOnSuperstepStart[noopState, mockMessage](callback),
+		)
+
+		ctx := context.Background()
+		frontierNodes := []string{"A", "B", "C"}
+
+		err := rt.executeSuperstepStartCallback(ctx, 42, frontierNodes)
+		assert.NoError(t, err)
+		assert.True(t, callbackCalled, "callback should have been called")
+		assert.Equal(t, int64(42), receivedSuperstep)
+		assert.Equal(t, 3, receivedInfo.Size)
+		assert.Equal(t, frontierNodes, receivedInfo.Nodes)
+	})
+
+	t.Run("callback returns error", func(t *testing.T) {
+		expectedErr := fmt.Errorf("callback failed")
+		callback := func(_ context.Context, _ int64, _ FrontierInfo) error {
+			return expectedErr
+		}
+
+		rt := MustNewRuntime[noopState, mockMessage](
+			noopGraph{},
+			nil,
+			WithOnSuperstepStart[noopState, mockMessage](callback),
+		)
+
+		ctx := context.Background()
+		frontierNodes := []string{"A"}
+
+		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "superstep start callback failed")
+		assert.Contains(t, err.Error(), "callback failed")
+	})
+
+	t.Run("callback respects context cancellation", func(t *testing.T) {
+		callback := func(ctx context.Context, _ int64, _ FrontierInfo) error {
+			// Simulate work that checks context
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+				return nil
+			}
+		}
+
+		rt := MustNewRuntime[noopState, mockMessage](
+			noopGraph{},
+			nil,
+			WithOnSuperstepStart[noopState, mockMessage](callback),
+		)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		frontierNodes := []string{"A"}
+
+		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "superstep start callback failed")
+	})
+}
+
+func TestRuntime_ExecuteSuperstepVertices(t *testing.T) {
+	t.Run("empty vertex list", func(t *testing.T) {
+		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		ctx := context.Background()
+
+		err := rt.executeSuperstepVertices(ctx, []string{}, 1)
+		assert.NoError(t, err)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		// Create a graph with slow vertices
+		var callCount int
+		mu := &sync.Mutex{}
+
+		slowNode := &mockNode{
+			name:   "slow",
+			next:   "",
+			called: &callCount,
+			callMu: mu,
+			delay:  1 * time.Second, // Long delay
+		}
+
+		graph := &mockGraph{
+			rootNodes: []string{"slow"},
+			nodes: map[string]*mockNode{
+				"slow": slowNode,
+			},
+		}
+
+		rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+
+		// Seed the message bus to trigger execution
+		err := rt.Deliver(context.Background(), Message[mockMessage]{
+			From: "external",
+			To:   "slow",
+			Data: mockMessage{Value: 1},
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		err = rt.executeSuperstepVertices(ctx, []string{"slow"}, 1)
+
+		// Should respect context timeout
+		assert.Error(t, err)
+	})
+}
+
+func TestRuntime_ExecuteSuperstepVertices_WithMaxWorkers(t *testing.T) {
+	tests := []struct {
+		name       string
+		maxWorkers int
+		numNodes   int
+	}{
+		{
+			name:       "single worker",
+			maxWorkers: 1,
+			numNodes:   3,
+		},
+		{
+			name:       "multiple workers",
+			maxWorkers: 4,
+			numNodes:   8,
+		},
+		{
+			name:       "more workers than nodes",
+			maxWorkers: 10,
+			numNodes:   3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var callCount int
+			mu := &sync.Mutex{}
+
+			nodes := make(map[string]*mockNode)
+			nodeNames := make([]string, tt.numNodes)
+
+			for i := 0; i < tt.numNodes; i++ {
+				name := fmt.Sprintf("node_%d", i)
+				nodeNames[i] = name
+				nodes[name] = &mockNode{
+					name:   name,
+					next:   "",
+					called: &callCount,
+					callMu: mu,
+					delay:  0,
+				}
+			}
+
+			graph := &mockGraph{
+				rootNodes: nodeNames[:1], // Just first node as root
+				nodes:     nodes,
+			}
+
+			rt := MustNewRuntime[mockState, mockMessage](
+				graph,
+				nil,
+				WithMaxWorkers[mockState, mockMessage](tt.maxWorkers),
+			)
+
+			// Seed messages for all nodes
+			ctx := context.Background()
+			for _, name := range nodeNames {
+				err := rt.Deliver(ctx, Message[mockMessage]{
+					From: "external",
+					To:   name,
+					Data: mockMessage{Value: 1},
+				})
+				require.NoError(t, err)
+			}
+
+			err := rt.executeSuperstepVertices(ctx, nodeNames, 1)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.numNodes, callCount, "all nodes should be executed")
+		})
+	}
+}
+
+func TestRuntime_RunSuperstep_Integration(t *testing.T) {
+	// Test the full runSuperstep flow with all extracted components
+	t.Run("complete superstep execution", func(t *testing.T) {
+		var callCount int
+		var sent []Message[mockMessage]
+		mu1, mu2 := &sync.Mutex{}, &sync.Mutex{}
+
+		graph := &mockGraph{
+			rootNodes: []string{"A"},
+			nodes: map[string]*mockNode{
+				"A": {
+					name:       "A",
+					next:       "B",
+					called:     &callCount,
+					callMu:     mu1,
+					messagesMu: mu2,
+					messages:   &sent,
+					delay:      0,
+				},
+				"B": {
+					name:       "B",
+					next:       "",
+					called:     &callCount,
+					callMu:     mu1,
+					messagesMu: mu2,
+					messages:   &sent,
+					delay:      0,
+				},
+			},
+		}
+
+		callbackCalled := false
+		callback := func(_ context.Context, _ int64, info FrontierInfo) error {
+			callbackCalled = true
+			assert.Greater(t, info.Size, 0, "frontier should not be empty")
+			return nil
+		}
+
+		rt := MustNewRuntime[mockState, mockMessage](
+			graph,
+			nil,
+			WithOnSuperstepStart[mockState, mockMessage](callback),
+		)
+
+		ctx := context.Background()
+		frontier := map[string]struct{}{"A": {}}
+
+		err := rt.runSuperstep(ctx, frontier, 1)
+		assert.NoError(t, err)
+		assert.True(t, callbackCalled, "callback should be invoked")
+		assert.Equal(t, 1, callCount, "vertex A should be executed")
+		assert.Len(t, sent, 1, "one message should be sent")
+	})
+
+	t.Run("empty frontier no-op", func(t *testing.T) {
+		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		ctx := context.Background()
+		frontier := map[string]struct{}{}
+
+		err := rt.runSuperstep(ctx, frontier, 1)
+		assert.NoError(t, err)
+	})
 }

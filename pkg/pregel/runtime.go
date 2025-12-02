@@ -613,65 +613,20 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 		return nil
 	}
 
-	// Observability: Create superstep-level span
-	tp := trace.FromContext(ctx)
-	tracer := tp.Tracer("agentmesh.pregel")
+	// Prepare frontier nodes (sorted for determinism)
+	frontierNodes := r.prepareFrontierNodes(frontier)
 
-	// Build frontier composition for diagnostics
-	frontierNodes := make([]string, 0, len(frontier))
-	for name := range frontier {
-		frontierNodes = append(frontierNodes, name)
-	}
-	sort.Strings(frontierNodes)
+	// Setup observability context
+	ctx, cleanup := r.setupSuperstepObservability(ctx, superstep, frontierNodes)
+	defer cleanup()
 
-	ctx, superstepSpan := tracer.Start(ctx, "superstep.execute",
-		trace.Attr{Key: "superstep", Value: superstep},
-		trace.Attr{Key: "frontier.size", Value: len(frontier)},
-		trace.Attr{Key: "frontier.nodes", Value: strings.Join(frontierNodes, ",")})
-	defer superstepSpan.End(nil)
-
-	// Observability: Record superstep metrics
-	mp := metrics.FromContext(ctx)
-	superstepStart := time.Now()
-	activeVerticesGauge := mp.Counter("superstep.active_vertices")
-	activeVerticesGauge.Add(ctx, float64(len(frontier)))
-	defer func() {
-		duration := time.Since(superstepStart)
-		superstepDuration := mp.Histogram("superstep.duration_ms")
-		superstepDuration.Record(ctx, float64(duration.Milliseconds()))
-	}()
-
-	// Diagnostic logging for frontier state
-	logger := logging.FromContext(ctx)
-	logger.Debug("Superstep starting",
-		"superstep", superstep,
-		"frontier_size", len(frontier),
-		"frontier_nodes", frontierNodes)
-
-	// Call superstep start callback (for BSP snapshot creation)
-	if r.opts.OnSuperstepStart != nil {
-		frontierInfo := FrontierInfo{
-			Size:  len(frontier),
-			Nodes: frontierNodes,
-		}
-		if err := r.opts.OnSuperstepStart(ctx, superstep, frontierInfo); err != nil {
-			return fmt.Errorf("superstep start callback failed: %w", err)
-		}
+	// Execute superstep start callback
+	if err := r.executeSuperstepStartCallback(ctx, superstep, frontierNodes); err != nil {
+		return err
 	}
 
-	// Setup execution context
-	superCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// Extract and sort vertex names for deterministic execution order
-	names := make([]string, 0, len(frontier))
-	for name := range frontier {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	// Execute vertices in parallel (draining happens inside worker loop)
-	if err := r.executeVerticesParallel(superCtx, names, superstep, cancel); err != nil {
+	// Execute vertices in parallel
+	if err := r.executeSuperstepVertices(ctx, frontierNodes, superstep); err != nil {
 		return err
 	}
 
@@ -679,6 +634,81 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	r.finalizeAggregators()
 
 	return ctx.Err()
+}
+
+// prepareFrontierNodes extracts and sorts vertex names from the frontier map.
+// Returns a sorted slice for deterministic execution order.
+func (r *Runtime[S, M]) prepareFrontierNodes(frontier map[string]struct{}) []string {
+	nodes := make([]string, 0, len(frontier))
+	for name := range frontier {
+		nodes = append(nodes, name)
+	}
+	sort.Strings(nodes)
+	return nodes
+}
+
+// setupSuperstepObservability initializes tracing, metrics, and logging for a superstep.
+// Returns the instrumented context and a cleanup function to be called with defer.
+func (r *Runtime[S, M]) setupSuperstepObservability(ctx context.Context, superstep int64, frontierNodes []string) (context.Context, func()) {
+	// Observability: Create superstep-level span
+	tp := trace.FromContext(ctx)
+	tracer := tp.Tracer("agentmesh.pregel")
+
+	ctx, superstepSpan := tracer.Start(ctx, "superstep.execute",
+		trace.Attr{Key: "superstep", Value: superstep},
+		trace.Attr{Key: "frontier.size", Value: len(frontierNodes)},
+		trace.Attr{Key: "frontier.nodes", Value: strings.Join(frontierNodes, ",")})
+
+	// Observability: Record superstep metrics
+	mp := metrics.FromContext(ctx)
+	superstepStart := time.Now()
+	activeVerticesGauge := mp.Counter("superstep.active_vertices")
+	activeVerticesGauge.Add(ctx, float64(len(frontierNodes)))
+
+	// Diagnostic logging for frontier state
+	logger := logging.FromContext(ctx)
+	logger.Debug("Superstep starting",
+		"superstep", superstep,
+		"frontier_size", len(frontierNodes),
+		"frontier_nodes", frontierNodes)
+
+	// Return cleanup function that records duration and ends span
+	cleanup := func() {
+		duration := time.Since(superstepStart)
+		superstepDuration := mp.Histogram("superstep.duration_ms")
+		superstepDuration.Record(ctx, float64(duration.Milliseconds()))
+		superstepSpan.End(nil)
+	}
+
+	return ctx, cleanup
+}
+
+// executeSuperstepStartCallback invokes the optional OnSuperstepStart callback if configured.
+func (r *Runtime[S, M]) executeSuperstepStartCallback(ctx context.Context, superstep int64, frontierNodes []string) error {
+	if r.opts.OnSuperstepStart == nil {
+		return nil
+	}
+
+	frontierInfo := FrontierInfo{
+		Size:  len(frontierNodes),
+		Nodes: frontierNodes,
+	}
+
+	if err := r.opts.OnSuperstepStart(ctx, superstep, frontierInfo); err != nil {
+		return fmt.Errorf("superstep start callback failed: %w", err)
+	}
+
+	return nil
+}
+
+// executeSuperstepVertices orchestrates parallel execution of all vertices in the superstep.
+func (r *Runtime[S, M]) executeSuperstepVertices(ctx context.Context, vertexNames []string, superstep int64) error {
+	// Setup execution context with cancellation
+	superCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Execute vertices in parallel (draining happens inside worker loop)
+	return r.executeVerticesParallel(superCtx, vertexNames, superstep, cancel)
 }
 
 // executeVerticesParallel executes all vertices in parallel using a worker pool.
