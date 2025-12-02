@@ -1,6 +1,6 @@
 module github.com/hupe1980/agentmesh
 
-go 1.24.4
+go 1.24.11
 
 require (
 	github.com/a2aproject/a2a-go v0.3.2
