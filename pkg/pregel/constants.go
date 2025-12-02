@@ -23,6 +23,10 @@ const (
 	//   - Memory safety: Prevents unbounded memory growth and OOM crashes
 	//   - Performance: Allows high message throughput with minimal blocking
 	//   - Backpressure: Naturally throttles producers when consumers are slow
+	//
+	// Why 10,000? Sized for typical agent workflows where nodes exchange 100-1000
+	// messages per superstep. At ~100 bytes/message, this limits per-vertex memory
+	// to ~1MB, allowing 1000+ vertices before memory concerns (~1GB total).
 	// Users can override this via RuntimeOptions.MaxMailboxSize.
 	DefaultMaxMailboxSize = 10000
 )
