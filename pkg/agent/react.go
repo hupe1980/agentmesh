@@ -80,6 +80,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error)
 	modelFn, err := NewModelNodeFunc(modelExecutor,
 		WithModelSystemPrompt(config.systemPrompt),
 		WithModelTools(tools...),
+		WithOutputSchema(config.outputSchema),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
