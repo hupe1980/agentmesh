@@ -70,20 +70,20 @@ func TestPregelExecutorWithCustomExecutor(t *testing.T) {
 	}
 }
 
-func TestPregelExecutorWithMaxSupersteps(t *testing.T) {
+func TestPregelExecutorWithMaxSteps(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 	var iterations atomic.Int32
 
 	g := graph.New[any, any](counterKey)
 	g.Node("loop", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		iterations.Add(1)
-		// Infinite loop - will be stopped by max supersteps
+		// Infinite loop - will be stopped by max steps
 		return graph.To("loop")
 	}, "loop", graph.END)
 	g.Start("loop")
 
-	// Use executor with limited supersteps
-	executor := graph.NewPregelExecutor[any, any]().WithMaxSupersteps(5)
+	// Use executor with limited execution steps
+	executor := graph.NewPregelExecutor[any, any]().WithMaxSteps(5)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
@@ -92,7 +92,7 @@ func TestPregelExecutorWithMaxSupersteps(t *testing.T) {
 	}
 
 	for _, err := range compiled.Run(context.Background(), nil) {
-		// MaxSupersteps should trigger stop, may produce an error or just stop
+		// MaxSteps should trigger stop, may produce an error or just stop
 		_ = err
 	}
 

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hupe1980/agentmesh/internal/chanutil"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/quota"
@@ -472,12 +473,9 @@ func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 		// Yield events from single goroutine (satisfies iter.Seq2 contract)
 		for eoe := range ch {
 			if !yield(eoe.event, eoe.err) {
-				// Consumer stopped iteration - drain remaining events to prevent deadlock
-				go func() {
-					//nolint:revive // Need to drain channel to prevent goroutine leak
-					for range ch {
-					}
-				}()
+				// Consumer stopped iteration - drain remaining events to prevent goroutine leak
+				// Using DrainUntilClosed ensures proper cleanup when channel closes
+				go chanutil.DrainUntilClosed(ch)
 				<-doneChan // Wait for execution to complete
 				return
 			}

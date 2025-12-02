@@ -25,7 +25,7 @@ func isNilOrZero[T any](v T) bool {
 	}
 	// Check if value is nil or empty (for slices, maps, channels)
 	switch val.Kind() {
-	case reflect.Ptr, reflect.Chan, reflect.Func, reflect.Interface:
+	case reflect.Pointer, reflect.Chan, reflect.Func, reflect.Interface:
 		return val.IsNil()
 	case reflect.Slice, reflect.Map:
 		// Treat empty slices/maps as "no input" to preserve checkpoint state
@@ -131,15 +131,15 @@ func convertFromPendingWrites(writes []checkpoint.PendingWrite) map[string]any {
 // PregelExecutor executes graphs using the Pregel BSP runtime.
 type PregelExecutor[I, O any] struct {
 	maxWorkers int
-	maxIters   int
-	messageBus pregel.MessageBus[Updates]
+	maxSteps   int
+	backend    DistributedBackend
 }
 
 // NewPregelExecutor creates a new Pregel executor with default settings.
 func NewPregelExecutor[I, O any]() *PregelExecutor[I, O] {
 	return &PregelExecutor[I, O]{
 		maxWorkers: 4,
-		maxIters:   100,
+		maxSteps:   100,
 	}
 }
 
@@ -151,17 +151,21 @@ func (e *PregelExecutor[I, O]) WithMaxWorkers(n int) *PregelExecutor[I, O] {
 	return e
 }
 
-// WithMaxSupersteps sets the maximum number of supersteps.
-func (e *PregelExecutor[I, O]) WithMaxSupersteps(maxSteps int) *PregelExecutor[I, O] {
+// WithMaxSteps sets the maximum number of execution steps (iterations).
+func (e *PregelExecutor[I, O]) WithMaxSteps(maxSteps int) *PregelExecutor[I, O] {
 	if maxSteps > 0 {
-		e.maxIters = maxSteps
+		e.maxSteps = maxSteps
 	}
 	return e
 }
 
-// WithMessageBus sets a custom message bus for distributed execution.
-func (e *PregelExecutor[I, O]) WithMessageBus(bus pregel.MessageBus[Updates]) *PregelExecutor[I, O] {
-	e.messageBus = bus
+// WithBackend sets a custom distributed backend for multi-node execution.
+// The backend abstracts the underlying message-passing mechanism, allowing
+// the graph to run across multiple machines without exposing Pregel concepts.
+//
+// Use NewPregelBackend() to adapt existing Pregel MessageBus implementations.
+func (e *PregelExecutor[I, O]) WithBackend(backend DistributedBackend) *PregelExecutor[I, O] {
+	e.backend = backend
 	return e
 }
 
@@ -213,14 +217,14 @@ func buildRuntimeOptions[I, O any](
 		maxWorkers = runCfg.maxConcurrency
 	}
 
-	maxIters := e.maxIters
+	maxSteps := e.maxSteps
 	if runCfg.maxIterations > 0 {
-		maxIters = runCfg.maxIterations
+		maxSteps = runCfg.maxIterations
 	}
 
 	opts := []pregel.RuntimeOption[*ExecutorConfig[I, O], Updates]{
 		pregel.WithMaxWorkers[*ExecutorConfig[I, O], Updates](maxWorkers),
-		pregel.WithMaxIterations[*ExecutorConfig[I, O], Updates](maxIters),
+		pregel.WithMaxIterations[*ExecutorConfig[I, O], Updates](maxSteps),
 		pregel.WithOnSuperstepStart[*ExecutorConfig[I, O], Updates](
 			func(ctx context.Context, superstep int64, frontier pregel.FrontierInfo) error {
 				event.Publish(ctx, event.Event{
@@ -251,8 +255,10 @@ func buildRuntimeOptions[I, O any](
 		),
 	}
 
-	if e.messageBus != nil {
-		opts = append(opts, pregel.WithMessageBus[*ExecutorConfig[I, O]](e.messageBus))
+	// Convert graph-layer backend to Pregel MessageBus internally
+	if e.backend != nil {
+		bus := &backendToMessageBusAdapter{backend: e.backend}
+		opts = append(opts, pregel.WithMessageBus[*ExecutorConfig[I, O]](bus))
 	}
 
 	return opts

@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -24,14 +23,12 @@ type Manager struct {
 
 	// Time limits
 	maxExecutionTime time.Duration
-	startTime        time.Time
+	startTime        atomic.Int64 // Unix nanoseconds
 
 	// Enforcement actions
 	onMemoryExceeded    ActionFunc
 	onGoroutineExceeded ActionFunc
 	onTimeExceeded      ActionFunc
-
-	mu sync.RWMutex
 }
 
 // ActionFunc defines a callback invoked when a quota is exceeded.
@@ -110,9 +107,7 @@ func New(opts ...Option) *Manager {
 // Start initializes the quota manager for a new execution.
 // Must be called before using CheckMemory, AcquireGoroutine, or CheckTime.
 func (m *Manager) Start() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.startTime = time.Now()
+	m.startTime.Store(time.Now().UnixNano())
 	m.activeGoroutines.Store(0)
 }
 
@@ -174,16 +169,19 @@ func (m *Manager) ReleaseGoroutine() {
 
 // CheckTime verifies execution duration is within quota.
 // Returns an error if time limit is exceeded and action decides to fail.
+// Uses atomic operations to prevent TOCTOU (time-of-check-time-of-use) races.
 func (m *Manager) CheckTime(ctx context.Context) error {
 	if m.maxExecutionTime == 0 {
 		return nil // Unlimited
 	}
 
-	m.mu.RLock()
-	startTime := m.startTime
-	m.mu.RUnlock()
+	// Single atomic load + calculation to prevent race condition
+	startNano := m.startTime.Load()
+	if startNano == 0 {
+		return nil // Not started yet
+	}
 
-	elapsed := time.Since(startTime)
+	elapsed := time.Since(time.Unix(0, startNano))
 	if elapsed <= m.maxExecutionTime {
 		return nil // Within limit
 	}
@@ -194,15 +192,18 @@ func (m *Manager) CheckTime(ctx context.Context) error {
 
 // Stats returns current resource usage statistics.
 func (m *Manager) Stats() Stats {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	// Calculate elapsed time atomically
+	var elapsed time.Duration
+	if startNano := m.startTime.Load(); startNano != 0 {
+		elapsed = time.Since(time.Unix(0, startNano))
+	}
 
 	return Stats{
 		MemoryBytes:      m.memoryCheckFunc(),
 		MaxMemoryBytes:   m.maxMemoryBytes,
 		ActiveGoroutines: int(m.activeGoroutines.Load()),
 		MaxGoroutines:    int(m.maxGoroutines),
-		Elapsed:          time.Since(m.startTime),
+		Elapsed:          elapsed,
 		MaxExecutionTime: m.maxExecutionTime,
 	}
 }
@@ -242,5 +243,5 @@ func defaultGoroutineAction(usage, limit any) error {
 func defaultTimeAction(usage, limit any) error {
 	elapsed := usage.(time.Duration)
 	maxTime := limit.(time.Duration)
-	return fmt.Errorf("execution time quota exceeded: elapsed %s, limit %s", elapsed, maxTime)
+	return fmt.Errorf("quota: execution time exceeded: %v (limit: %v)", elapsed, maxTime)
 }

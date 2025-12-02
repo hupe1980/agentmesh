@@ -85,8 +85,9 @@ func TestDistributedStateSync(t *testing.T) {
 
 	g.Start("node1")
 
-	// Use executor with Redis message bus
-	executor := graph.NewPregelExecutor[any, any]().WithMessageBus(bus)
+	// Use executor with Redis distributed backend
+	backend := graph.NewPregelBackend(bus)
+	executor := graph.NewPregelExecutor[any, any]().WithBackend(backend)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
@@ -164,8 +165,9 @@ func TestDistributedStateParallel(t *testing.T) {
 	// Both workers start in parallel
 	g.Start("worker1", "worker2")
 
-	// Use executor with Redis message bus
-	executor := graph.NewPregelExecutor[any, any]().WithMessageBus(bus)
+	// Use executor with Redis distributed backend
+	backend := graph.NewPregelBackend(bus)
+	executor := graph.NewPregelExecutor[any, any]().WithBackend(backend)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
