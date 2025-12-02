@@ -85,16 +85,16 @@ import (
 )
 
 // Create message graph (auto-includes MessagesKey)
-g := graph.NewMessageGraph()
+g := message.NewGraph()
 
 // Add agent node
 g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     
     // Process messages with model...
     response := message.NewAIMessageFromText("Hello!")
     
-    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
 g.Start("agent")
@@ -344,7 +344,7 @@ results, err := graph.Collect(compiled.Run(ctx, input))
 | Function | Description |
 |----------|-------------|
 | `graph.New[I, O](keys...)` | Create typed graph with state keys |
-| `graph.NewMessageGraph(keys...)` | Create message-based graph for agents |
+| `message.NewGraph(keys...)` | Create message-based graph for agents |
 
 ### Graph Methods
 

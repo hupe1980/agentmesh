@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/internal/testutil"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
@@ -133,7 +132,7 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 }
 
 // createMockWorker creates a simple mock worker agent for testing
-func createMockWorker(expertise string) (*graph.CompiledMessageGraph, error) {
+func createMockWorker(expertise string) (*message.CompiledMessageGraph, error) {
 	mockModel := &testutil.MockModel{
 		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("worker response: " + expertise), nil

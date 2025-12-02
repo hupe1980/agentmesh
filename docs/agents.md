@@ -290,11 +290,11 @@ import (
 var CategoryKey = graph.NewKey[string]("category", "")
 
 // Create message graph for agent workflows
-g := graph.NewMessageGraph(CategoryKey)
+g := message.NewGraph(CategoryKey)
 
 // Add nodes using fluent API
 g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     category := classifyIntent(messages)
     
     if category == "support" {
@@ -305,12 +305,12 @@ g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, e
 
 g.Node("handle_support", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Support response...")
-    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
 g.Node("handle_sales", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Sales response...")
-    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
 g.Start("classify")
@@ -331,13 +331,13 @@ Nodes receive a `View` and return a `Command`:
 g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Read state with typed keys
     previousValue := graph.Get(view, MyKey)
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     
     // Process...
     
     // Return updates and routing
     return graph.Set(MyKey, newValue).
-        Append(graph.MessagesKey, newMessage).
+        Append(message.MessagesKey, newMessage).
         To("next_node"), nil
 }, "next_node")
 ```
@@ -410,27 +410,27 @@ researchSub := createResearchGraph()
 compiledResearch, _ := researchSub.Build()
 
 // Create parent graph
-parent := graph.NewMessageGraph()
+parent := message.NewGraph()
 
 // Embed subgraph as a node using graph.Subgraph with mappers
 parent.Node("research", graph.Subgraph(
     compiledResearch,
     // InputMapper: transform parent messages to subgraph input
     func(ctx context.Context, view graph.View) ([]message.Message, error) {
-        messages := graph.GetList(view, graph.MessagesKey)
+        messages := message.GetMessages(view)
         // Filter or transform messages for research subgraph
         return messages, nil
     },
     // OutputMapper: merge research results back to parent
     func(ctx context.Context, output message.Message) (graph.Updates, error) {
-        return graph.Append(graph.MessagesKey, output), nil
+        return graph.Append(message.MessagesKey, output), nil
     },
 ), "synthesize")
 
 parent.Node("synthesize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     // Synthesize research results...
-    return graph.Append(graph.MessagesKey, summary).To(graph.END)
+    return graph.Append(message.MessagesKey, summary).To(graph.END)
 }, graph.END)
 
 parent.Start("research")

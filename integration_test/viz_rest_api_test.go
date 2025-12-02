@@ -18,7 +18,6 @@ import (
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/viz"
@@ -617,7 +616,7 @@ func TestVizServerInvalidEndpoints(t *testing.T) {
 }
 
 // Helper function to create a test graph with mock model that tracks costs
-func createVizTestGraph(t *testing.T) *graph.CompiledMessageGraph {
+func createVizTestGraph(t *testing.T) *message.CompiledMessageGraph {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 
@@ -694,7 +693,7 @@ func createVizTestGraph(t *testing.T) *graph.CompiledMessageGraph {
 	)
 	require.NoError(t, err, "Failed to create ReAct agent")
 
-	// reactAgent is already the correct type (*graph.Graph[[]message.Message, message.Message])
+	// reactAgent is already the correct type (*message.CompiledMessageGraph)
 	return reactAgent
 }
 

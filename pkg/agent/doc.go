@@ -129,9 +129,9 @@ Tool errors are returned to the agent for recovery:
 
 # Multi-Agent Systems
 
-Combine multiple agents into larger workflows using graph:
+Combine multiple agents into larger workflows using message graph:
 
-	g := graph.NewMessageGraph()
+	g := message.NewGraph()
 	g.CommandNode("classifier", classifierAgent, "researcher", "writer")
 	g.AgentNode("researcher", researchAgent, "writer")
 	g.AgentNode("writer", writerAgent, graph.END)

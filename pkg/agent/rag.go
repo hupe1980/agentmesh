@@ -107,7 +107,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.CompiledMessageGraph, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*message.CompiledMessageGraph, error) {
 	if err := validate.All(
 		validate.NotNil(mdl, "model"),
 		validate.NotNil(retriever, "retriever"),
@@ -120,8 +120,8 @@ func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOpti
 		opt(&config)
 	}
 
-	// Build graph - MessagesKey is automatically included by NewMessageGraph
-	g := graph.NewMessageGraph(DocumentsKey)
+	// Build graph - MessagesKey is automatically included by message.NewGraph
+	g := message.NewGraph(DocumentsKey)
 	g.Node("retrieve", createRetrieveNode(retriever), "generate")
 	g.Node("generate", createGenerateNode(mdl, config), graph.END)
 	g.Start("retrieve")

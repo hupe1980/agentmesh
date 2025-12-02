@@ -158,7 +158,7 @@ var (
     StatusKey   = graph.NewKey[string]("status", "")
     ValidKey    = graph.NewKey[bool]("valid", false)
     TagsKey     = graph.NewListKey[string]("tags")
-    MessagesKey = graph.MessagesKey  // Built-in message list key
+    MessagesKey = message.MessagesKey  // Built-in message list key
 )
 
 // Use in node function
@@ -796,7 +796,7 @@ Control conversation history to prevent context overflow and manage costs.
 var LimitedMessagesKey = graph.NewListKey[message.Message]("messages")
 
 // When using MessageGraph, limit is configured at build time
-g := graph.NewMessageGraph()
+g := message.NewGraph()
 
 // Add message retention configuration
 compiled, _ := g.Build(graph.WithMessageRetention(50))

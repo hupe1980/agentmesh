@@ -374,7 +374,7 @@ The **ConditionalEvaluator** handles conditional edges that determine routing at
 
 ```go
 g.Node("classifier", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     category := analyzeInput(messages)
     
     // Return different paths based on runtime data
@@ -556,12 +556,12 @@ compiled, err := g.Build()
 For agent workflows with message handling:
 
 ```go
-g := graph.NewMessageGraph()
+g := message.NewGraph()
 
 g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     response := processMessages(messages)
-    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
 g.Start("agent")
@@ -623,7 +623,7 @@ var ConfigKey = graph.NewKey[Config]("config", Config{})
 
 // List keys
 var TagsKey = graph.NewListKey[string]("tags")
-var MessagesKey = graph.MessagesKey  // Built-in message list key
+var MessagesKey = message.MessagesKey  // Built-in message list key
 ```
 
 ### Reading State

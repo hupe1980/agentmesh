@@ -30,11 +30,11 @@ func buildSimpleGraph() (*graph.CompiledGraph[any, any], error) {
 }
 
 // buildMessageGraph creates a graph that works with messages
-func buildMessageGraph() (*graph.CompiledMessageGraph, error) {
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+func buildMessageGraph() (*message.CompiledMessageGraph, error) {
+	g := message.NewGraph()
 	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("processed")
-		return graph.Append(MessagesKey, msg).End()
+		return graph.Append(message.MessagesKey, msg).End()
 	}, graph.END)
 	g.Start("process")
 	return g.Build()

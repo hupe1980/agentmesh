@@ -27,7 +27,7 @@ sidebar:
     url: "#error-handling"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `graph.NewMessageGraph()` for conversational agents.
+> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `message.NewGraph()` for conversational agents.
 
 ## Runnable interface {#runnable-interface}
 
@@ -80,7 +80,7 @@ type CompiledMessageGraph = CompiledGraph[[]message.Message, message.Message]
 
 ### Usage example
 
-All agent constructors return `*graph.CompiledMessageGraph` (already compiled):
+All agent constructors return `*message.CompiledMessageGraph` (already compiled):
 
 ```go
 import (
@@ -88,7 +88,7 @@ import (
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// Agent constructors return *graph.CompiledMessageGraph (ready to run)
+// Agent constructors return *message.CompiledMessageGraph (ready to run)
 reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
 if err != nil {
     return err
@@ -123,7 +123,7 @@ g.Run(ctx, messages)  // Error: Graph has no Run method
 
 **Easy composition:**
 ```go
-// All agents are *graph.CompiledMessageGraph - compose freely
+// All agents are *message.CompiledMessageGraph - compose freely
 worker1, _ := agent.NewReActAgent(model)
 worker2, _ := agent.NewReActAgent(model)
 supervisor, _ := agent.NewSupervisorAgent(model,
@@ -355,9 +355,9 @@ g := graph.NewMessageGraph()
 
 // MessagesKey is available
 g.Node("chat", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := graph.GetList(view, graph.MessagesKey)
+    messages := message.GetMessages(view)
     // ... process messages
-    return graph.Append(graph.MessagesKey, response).To(graph.END), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 ```
 

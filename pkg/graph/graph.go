@@ -7,7 +7,6 @@ import (
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // END is the terminal node constant.
@@ -92,24 +91,6 @@ func New[I, O any](keys ...StateKey) *Graph[I, O] {
 		outputIsList: outputIsList,
 		nodes:        make(map[string]*node),
 	}
-}
-
-// MessageGraph is a graph builder that processes message sequences.
-// This is the standard type for conversational agents.
-type MessageGraph = Graph[[]message.Message, message.Message]
-
-// CompiledMessageGraph is an executable message graph.
-type CompiledMessageGraph = CompiledGraph[[]message.Message, message.Message]
-
-// MessagesKey is the standard key for storing conversation messages in graph state.
-// Messages are stored as message.Message instances in append-only fashion.
-var MessagesKey = NewListKey[message.Message]("messages")
-
-// NewMessageGraph creates a message-based graph for conversational agents.
-// Automatically includes MessagesKey. Additional keys can be passed.
-func NewMessageGraph(keys ...StateKey) *MessageGraph {
-	allKeys := append([]StateKey{MessagesKey}, keys...)
-	return New[[]message.Message, message.Message](allKeys...)
 }
 
 // Node adds a node to the graph.

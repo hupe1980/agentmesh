@@ -5,6 +5,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -33,10 +34,10 @@ import (
 // Example with dynamic toolset:
 //
 //	mcpToolset := mcp.NewToolset(mcp.NewStdioSessionFactory("mcp-server", []string{}))
-//	agent, err := agent.NewReActAgent(model,
+//	agt, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledMessageGraph, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.CompiledMessageGraph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
@@ -99,8 +100,8 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledMessage
 		return nil, fmt.Errorf("agent/react: create tool node: %w", err)
 	}
 
-	// Build graph - MessagesKey is automatically included by NewMessageGraph
-	g := graph.NewMessageGraph()
+	// Build graph - MessagesKey is automatically included by message.NewGraph
+	g := message.NewGraph()
 	g.Node("model", modelFn, "tool", graph.END)
 	g.Node("tool", toolFn, "model")
 	g.Start("model")

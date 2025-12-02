@@ -164,11 +164,11 @@ fmt.Printf("Final output: %v\n", result.Output)
 For conversational AI workflows using `MessageGraph`:
 
 ```go
-g := graph.NewMessageGraph()
+g := message.NewGraph()
 
 g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    messages := input.State(graph.MessagesKey)
+    messages := input.State(message.MessagesKey)
     
     // Stream LLM response tokens
     var fullResponse strings.Builder
@@ -189,7 +189,7 @@ g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Me
     }
     
     response := message.NewAIMessageFromText(fullResponse.String())
-    return graph.Append(graph.MessagesKey, response).ToEnd(), nil
+    return graph.Append(message.MessagesKey, response).ToEnd(), nil
 }, graph.END)
 
 g.Start("assistant")

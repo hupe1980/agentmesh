@@ -59,7 +59,7 @@ import (
 var StatusKey = graph.NewKey[string]("status", "")
 
 // Create graph
-g := graph.NewMessageGraph(StatusKey)
+g := message.NewGraph(StatusKey)
 
 g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     return graph.Set(StatusKey, "done").To(graph.END), nil
