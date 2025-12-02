@@ -27,17 +27,39 @@ sidebar:
     url: "#error-handling"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for custom graphs or `graph.NewMessageGraph()` for conversational agents.
+> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `graph.NewMessageGraph()` for conversational agents.
 
 ## Runnable interface {#runnable-interface}
 
-The graph `Run` method is the core abstraction for executable workflows in AgentMesh. All compiled graphs implement the iterator-based execution pattern.
+The graph `Run` method is the core abstraction for executable workflows in AgentMesh. Only compiled graphs can be executed - this separation ensures graphs are validated before running.
+
+### Graph vs CompiledGraph
+
+AgentMesh separates graph **building** from graph **execution**:
+
+```go
+// Graph is the builder - define nodes and edges
+g := graph.New[string, string](keys...)
+g.Node("fetch", fetchFunc, "process")
+g.Start("fetch")
+
+// CompiledGraph is the executor - run the workflow
+compiled, err := g.Build()  // Validates and compiles
+if err != nil {
+    return err
+}
+
+// Only CompiledGraph has Run()
+for output, err := range compiled.Run(ctx, input) {
+    // process outputs...
+}
+```
 
 ### Interface pattern
 
 ```go
-// Compiled graphs return an iterator of outputs
-func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
+// CompiledGraph.Run returns an iterator of outputs
+func (g *CompiledGraph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
 ```
 
 **Type parameters:**
@@ -49,14 +71,16 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 For conversational agents, AgentMesh provides:
 
 ```go
-// MessageGraph is a graph that processes message sequences
-// Defined in pkg/graph/graph.go
+// MessageGraph is a graph builder for message processing
 type MessageGraph = Graph[[]message.Message, message.Message]
+
+// CompiledMessageGraph is an executable message graph
+type CompiledMessageGraph = CompiledGraph[[]message.Message, message.Message]
 ```
 
 ### Usage example
 
-All agent constructors return `*graph.MessageGraph`:
+All agent constructors return `*graph.CompiledMessageGraph` (already compiled):
 
 ```go
 import (
@@ -64,13 +88,13 @@ import (
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-// Agent constructors return *graph.MessageGraph
+// Agent constructors return *graph.CompiledMessageGraph (ready to run)
 reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
 if err != nil {
     return err
 }
 
-// Execute with iterator pattern
+// Execute with iterator pattern - no Build() needed!
 for msg, err := range reactAgent.Run(ctx, messages) {
     if err != nil {
         return err
@@ -86,16 +110,20 @@ lastMsg, err := graph.Last(reactAgent.Run(ctx, messages))
 
 **Compile-time type safety:**
 ```go
-// ✅ Type-safe: MessageGraph accepts []message.Message
+// ✅ Type-safe: CompiledMessageGraph accepts []message.Message
 reactAgent.Run(ctx, messages)
 
 // ❌ Compile error: won't accept wrong input type
 reactAgent.Run(ctx, "invalid input")
+
+// ❌ Compile error: can't run uncompiled graph
+g := graph.NewMessageGraph()
+g.Run(ctx, messages)  // Error: Graph has no Run method
 ```
 
 **Easy composition:**
 ```go
-// All agents are *graph.MessageGraph - compose freely
+// All agents are *graph.CompiledMessageGraph - compose freely
 worker1, _ := agent.NewReActAgent(model)
 worker2, _ := agent.NewReActAgent(model)
 supervisor, _ := agent.NewSupervisorAgent(model,
@@ -534,9 +562,6 @@ for output, err := range compiled.Run(ctx, input) {
         case errors.Is(err, graph.ErrNotBuilt):
             log.Error("Graph not compiled - call Build() first")
             
-        case errors.Is(err, graph.ErrAlreadyBuilt):
-            log.Error("Graph already compiled")
-            
         case errors.Is(err, graph.ErrNoEntryPoint):
             log.Error("No entry point set - call Start()")
             
@@ -566,7 +591,6 @@ for output, err := range compiled.Run(ctx, input) {
 | `ErrDuplicateKey` | Duplicate state key name |
 | `ErrInvalidTarget` | Invalid target node reference |
 | `ErrNotBuilt` | Graph not built (call `Build()` first) |
-| `ErrAlreadyBuilt` | Graph already built |
 
 ### InterruptError
 

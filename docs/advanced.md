@@ -598,22 +598,34 @@ compiledSub, _ := sub.Build()
 parent := graph.New[int, int](ValueKey, ResultKey)
 
 parent.Node("prepare", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    return graph.Set(ValueKey, 21).To("doubler"), nil
+    return graph.Set(ValueKey, 21).To("doubler")
 }, "doubler")
 
-// Embed subgraph as a node
-parent.Subgraph("doubler", compiledSub, graph.END)
+// Embed subgraph as a node using graph.Subgraph
+parent.Node("doubler", graph.Subgraph(
+    compiledSub,
+    // InputMapper: pass the value from parent to subgraph
+    func(ctx context.Context, view graph.View) (int, error) {
+        return graph.Get(view, ValueKey), nil
+    },
+    // OutputMapper: map subgraph result back to parent
+    func(ctx context.Context, output int) (graph.Updates, error) {
+        return graph.Updates{
+            ResultKey.Name(): output,
+        }, nil
+    },
+), graph.END)
 
 parent.Start("prepare")
 compiled, _ := parent.Build()
 
 // Execute: 21 * 2 = 42
-result, _ := graph.Invoke(context.Background(), compiled, 0)
+result, _ := graph.Last(compiled.Run(context.Background(), 0))
 ```
 
 ### State Mapping
 
-Map parent state to subgraph state and back:
+Map parent state to subgraph state and back using `graph.Subgraph()` with InputMapper and OutputMapper functions:
 
 ```go
 var DataKey = graph.NewKey[string]("data", "")
@@ -624,22 +636,29 @@ var ProcessedDataKey = graph.NewKey[string]("processed_data", "")
 parent := graph.New[string, string](DataKey, ProcessedDataKey)
 sub := graph.New[string, string](InputKey, OutputKey)
 
-// Map parent state -> subgraph input
-inputMapper := func(parentView graph.View) map[string]any {
-    return map[string]any{
-        InputKey.Name(): graph.Get(parentView, DataKey),
-    }
-}
+// Build and compile the subgraph
+compiledSub, _ := sub.Build()
 
-// Map subgraph output -> parent state updates
-outputMapper := func(subView graph.View) map[string]any {
-    return map[string]any{
-        ProcessedDataKey.Name(): graph.Get(subView, OutputKey),
-    }
-}
-
-parent.SubgraphWithMapping("processor", compiledSub, inputMapper, outputMapper, graph.END)
+// Use graph.Subgraph with mappers
+parent.Node("processor", graph.Subgraph(
+    compiledSub,
+    // InputMapper: parent state -> subgraph input
+    func(ctx context.Context, view graph.View) (string, error) {
+        data := graph.Get(view, DataKey)
+        return data, nil
+    },
+    // OutputMapper: subgraph output -> parent state updates
+    func(ctx context.Context, output string) (graph.Updates, error) {
+        return graph.Updates{
+            ProcessedDataKey.Name(): output,
+        }, nil
+    },
+), graph.END)
 ```
+
+**Type Aliases**: For cleaner code, AgentMesh provides type aliases:
+- `graph.InputMapper[SI any]` - Maps parent state to subgraph input
+- `graph.OutputMapper[SO any]` - Maps subgraph output to parent state updates
 
 ### Use Cases
 
@@ -651,11 +670,37 @@ enrichmentSub, _ := createEnrichmentGraph().Build()
 analysisSub, _ := createAnalysisGraph().Build()
 
 // Compose into pipeline
-pipeline := graph.New[string, string](StatusKey, ResultKey)
+pipeline := graph.New[string, string](DataKey, ResultKey)
 
-pipeline.Subgraph("validate", validationSub, "enrich")
-pipeline.Subgraph("enrich", enrichmentSub, "analyze")
-pipeline.Subgraph("analyze", analysisSub, graph.END)
+pipeline.Node("validate", graph.Subgraph(
+    validationSub,
+    func(ctx context.Context, view graph.View) (string, error) {
+        return graph.Get(view, DataKey), nil
+    },
+    func(ctx context.Context, output string) (graph.Updates, error) {
+        return graph.Set(DataKey, output), nil
+    },
+), "enrich")
+
+pipeline.Node("enrich", graph.Subgraph(
+    enrichmentSub,
+    func(ctx context.Context, view graph.View) (string, error) {
+        return graph.Get(view, DataKey), nil
+    },
+    func(ctx context.Context, output string) (graph.Updates, error) {
+        return graph.Set(DataKey, output), nil
+    },
+), "analyze")
+
+pipeline.Node("analyze", graph.Subgraph(
+    analysisSub,
+    func(ctx context.Context, view graph.View) (string, error) {
+        return graph.Get(view, DataKey), nil
+    },
+    func(ctx context.Context, output string) (graph.Updates, error) {
+        return graph.Set(ResultKey, output), nil
+    },
+), graph.END)
 
 pipeline.Start("validate")
 compiled, _ := pipeline.Build()
@@ -666,10 +711,18 @@ compiled, _ := pipeline.Build()
 // Create reusable authentication subgraph
 authSub, _ := createAuthGraph().Build()
 
-// Use in multiple parent graphs
-apiGraph.Subgraph("auth", authSub, "process")
-adminGraph.Subgraph("auth", authSub, "admin_process")
-publicGraph.Subgraph("auth", authSub, "public_process")
+// Define standard mappers for auth flow
+authInput := func(ctx context.Context, view graph.View) (AuthData, error) {
+    return AuthData{Token: graph.Get(view, TokenKey)}, nil
+}
+authOutput := func(ctx context.Context, output AuthResult) (graph.Updates, error) {
+    return graph.Set(UserKey, output.User), nil
+}
+
+// Use in multiple parent graphs with the same mappers
+apiGraph.Node("auth", graph.Subgraph(authSub, authInput, authOutput), "process")
+adminGraph.Node("auth", graph.Subgraph(authSub, authInput, authOutput), "admin_process")
+publicGraph.Node("auth", graph.Subgraph(authSub, authInput, authOutput), "public_process")
 ```
 
 ### Best Practices

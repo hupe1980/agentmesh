@@ -52,7 +52,7 @@ func NewFuncTool[T any, R any](
 
 	schema, err := jsonschema.MapFromStruct(*new(T))
 	if err != nil {
-		return nil, fmt.Errorf("NewFuncToolFromType: %w", err)
+		return nil, fmt.Errorf("tool/func: create from type: %w", err)
 	}
 
 	return &FuncTool[T, R]{name: name, description: description, fn: fn, parameters: schema}, nil
@@ -104,18 +104,18 @@ func (t *FuncTool[T, R]) Definition() *Definition {
 func (t *FuncTool[T, R]) Call(ctx context.Context, args string) (any, error) {
 	// Validate parameters against JSON Schema using helper (no fallback)
 	if err := jsonschema.Validate(t.parameters, args); err != nil {
-		return nil, fmt.Errorf("tool %q: invalid arguments: %w", t.name, err)
+		return nil, fmt.Errorf("tool/func %q: invalid arguments: %w", t.name, err)
 	}
 
 	var parsedArgs T
 	if err := json.Unmarshal([]byte(args), &parsedArgs); err != nil {
-		return nil, fmt.Errorf("tool %q: invalid JSON arguments: %w", t.name, err)
+		return nil, fmt.Errorf("tool/func %q: invalid JSON arguments: %w", t.name, err)
 	}
 
 	// Respect cancellation early
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("tool %q: canceled: %w", t.name, ctx.Err())
+		return nil, fmt.Errorf("tool/func %q: canceled: %w", t.name, ctx.Err())
 	default:
 	}
 

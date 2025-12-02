@@ -34,10 +34,13 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 	}
 
 	// Create message bus
-	bus := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: "test-basic",
 		TTL:       1 * time.Minute,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Test Ping
@@ -127,9 +130,12 @@ func TestRedisMessageBus_ConcurrentAccess(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	bus := predis.NewMessageBus[int](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[int](addr, "", 0, &predis.Options{
 		Namespace: "test-concurrent",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Concurrent senders
@@ -196,9 +202,12 @@ func TestRedisMessageBus_Persistence(t *testing.T) {
 	namespace := "test-persistence"
 
 	// Create first bus, send messages, then close
-	bus1 := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus1, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: namespace,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 
 	messages := []pregel.Message[string]{
 		{To: "vertex1", Data: "persistent1"},
@@ -213,9 +222,12 @@ func TestRedisMessageBus_Persistence(t *testing.T) {
 	bus1.Close()
 
 	// Create second bus with same namespace, verify messages still there
-	bus2 := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus2, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: namespace,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus2.Close()
 
 	// Verify messages are still there after reconnect
@@ -245,14 +257,20 @@ func TestRedisMessageBus_NamespaceIsolation(t *testing.T) {
 	}
 
 	// Create two buses with different namespaces
-	bus1 := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus1, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: "namespace1",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus1.Close()
 
-	bus2 := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus2, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: "namespace2",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus2.Close()
 
 	// Send messages to bus1
@@ -303,9 +321,12 @@ func TestRedisMessageBus_CleanNamespace(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	bus := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
-		Namespace: "test-cleanup",
+	bus, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+		Namespace: "test-clean",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Send messages
@@ -361,9 +382,12 @@ func TestRedisMessageBus_Stats(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	bus := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: "test-stats",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Send varying numbers of messages to different vertices
@@ -413,9 +437,12 @@ func TestRedisMessageBus_EmptyOperations(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	bus := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[string](addr, "", 0, &predis.Options{
 		Namespace: "test-empty",
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Send empty message slice
@@ -462,7 +489,10 @@ func TestRedisMessageBus_ClosedOperations(t *testing.T) {
 		t.Fatalf("Failed to get Redis endpoint: %v", err)
 	}
 
-	bus := predis.NewMessageBus[string](addr, "", 0, nil)
+	bus, err := predis.NewMessageBus[string](addr, "", 0, nil)
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 
 	// Close the bus
 	if err := bus.Close(); err != nil {

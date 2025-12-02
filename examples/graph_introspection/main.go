@@ -69,6 +69,12 @@ func main() {
 	// Set entry point
 	g.Start("input_validator")
 
+	// Build the graph to get the compiled version for introspection
+	compiled, err := g.Build()
+	if err != nil {
+		log.Fatalf("Failed to build graph: %v", err)
+	}
+
 	fmt.Println("\n" + repeatString("=", 80))
 	fmt.Println("GRAPH INTROSPECTION DEMO")
 	fmt.Println(repeatString("=", 80) + "\n")
@@ -76,7 +82,7 @@ func main() {
 	// 1. List all nodes
 	fmt.Println("📋 ALL NODES:")
 	fmt.Println(repeatString("-", 80))
-	nodes := g.GetNodes()
+	nodes := compiled.GetNodes()
 	for i, node := range nodes {
 		fmt.Printf("%d. %s\n", i+1, node)
 	}
@@ -85,7 +91,7 @@ func main() {
 	fmt.Println("\n🔍 NODE DETAILS:")
 	fmt.Println(repeatString("-", 80))
 	for _, nodeName := range nodes {
-		info, err := g.GetNodeInfo(nodeName)
+		info, err := compiled.GetNodeInfo(nodeName)
 		if err != nil {
 			continue
 		}
@@ -101,7 +107,7 @@ func main() {
 	// 3. Get topology overview
 	fmt.Println("\n🗺️  TOPOLOGY OVERVIEW:")
 	fmt.Println(repeatString("-", 80))
-	topo := g.GetTopology()
+	topo := compiled.GetTopology()
 	fmt.Printf("Entry Points:      %v\n", topo.EntryPoints)
 	fmt.Printf("Exit Points:       %v\n", topo.ExitPoints)
 	fmt.Printf("Total Nodes:       %d\n", len(topo.Nodes))
@@ -110,7 +116,7 @@ func main() {
 	// 4. Get metrics
 	fmt.Println("\n📊 GRAPH METRICS:")
 	fmt.Println(repeatString("-", 80))
-	metrics := g.GetMetrics()
+	metrics := compiled.GetMetrics()
 	fmt.Printf("Total Nodes:          %d\n", metrics.TotalNodes)
 	fmt.Printf("Total Edges:          %d\n", metrics.TotalEdges)
 	fmt.Printf("Average Fan-Out:      %.2f\n", metrics.AverageFanOut)
@@ -130,7 +136,7 @@ func main() {
 	// 6. Generate Mermaid flowchart
 	fmt.Println("\n📊 MERMAID FLOWCHART:")
 	fmt.Println(repeatString("-", 80))
-	flowchart := g.MermaidFlowchart("TD")
+	flowchart := compiled.MermaidFlowchart("TD")
 
 	// Save to .mmd file
 	_, filename, _, ok := runtime.Caller(0)

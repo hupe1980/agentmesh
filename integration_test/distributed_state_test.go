@@ -33,10 +33,13 @@ func TestDistributedStateSync(t *testing.T) {
 	}
 
 	// Create Redis message bus for graph.Updates
-	bus := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
 		Namespace: "test-distributed-state",
 		TTL:       1 * time.Minute,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Test Ping
@@ -123,10 +126,13 @@ func TestDistributedStateParallel(t *testing.T) {
 	}
 
 	// Create Redis message bus
-	bus := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
+	bus, err := predis.NewMessageBus[graph.Updates](addr, "", 0, &predis.Options{
 		Namespace: "test-parallel-state",
 		TTL:       1 * time.Minute,
 	})
+	if err != nil {
+		t.Fatalf("Failed to create message bus: %v", err)
+	}
 	defer bus.Close()
 
 	// Define state keys

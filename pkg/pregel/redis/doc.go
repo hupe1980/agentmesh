@@ -12,8 +12,8 @@
 //	    predis "github.com/hupe1980/agentmesh/pkg/pregel/redis"
 //	)
 //
-//	// Create Redis message bus
-//	bus := predis.NewMessageBus[MyMessageType](
+//	// Create Redis message bus (development - localhost, no auth)
+//	bus, err := predis.NewMessageBus[MyMessageType](
 //	    "localhost:6379",  // Redis address
 //	    "",                // Password (empty if no auth)
 //	    0,                 // Database number
@@ -22,6 +22,9 @@
 //	        TTL: 1 * time.Hour,
 //	    },
 //	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //	defer bus.Close()
 //
 //	// Use with pregel runtime
@@ -77,5 +80,8 @@
 //
 //	container, err := redis.Run(ctx, "redis:7-alpine")
 //	addr, err := container.Endpoint(ctx, "")
-//	bus := predis.NewMessageBus[MyMessage](addr, "", 0, nil)
+//	bus, err := predis.NewMessageBus[MyMessage](addr, "", 0, nil)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 package redis

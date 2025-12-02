@@ -97,11 +97,14 @@ import (
 //	    MinVersion: tls.VersionTLS13,
 //	}
 //
-//	bus := redis.NewMessageBus[state.Updates]("localhost:6379", "your-password", 0, &redis.Options{
+//	bus, err := redis.NewMessageBus[state.Updates]("localhost:6379", "your-password", 0, &redis.Options{
 //	    Codec:     pregel.NewGOBCodec(),
 //	    TLSConfig: tlsConfig,
 //	    // ... other security options
 //	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 //	// 3. Consider adding message signing
 //	signer := NewHMACSigner(secretKey)

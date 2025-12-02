@@ -27,7 +27,7 @@ func extractUserQuery(messages []message.Message) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("no user query found")
+	return "", fmt.Errorf("agent/rag: no user query found")
 }
 
 // extractDocumentContent converts retrieval documents to string slices.
@@ -44,7 +44,7 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("no query messages"))
+			return graph.Fail(fmt.Errorf("agent/rag: no query messages"))
 		}
 
 		query, err := extractUserQuery(msgs)
@@ -54,7 +54,7 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 
 		docs, err := retriever.Retrieve(ctx, query)
 		if err != nil {
-			return graph.Fail(fmt.Errorf("retrieval failed: %w", err))
+			return graph.Fail(fmt.Errorf("agent/rag: retrieval failed: %w", err))
 		}
 
 		return graph.Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
@@ -66,7 +66,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("no messages in state"))
+			return graph.Fail(fmt.Errorf("agent/rag: no messages in state"))
 		}
 
 		docs := graph.Get(view, DocumentsKey)
@@ -107,7 +107,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.MessageGraph, error) {
+func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.CompiledMessageGraph, error) {
 	if err := validate.All(
 		validate.NotNil(mdl, "model"),
 		validate.NotNil(retriever, "retriever"),

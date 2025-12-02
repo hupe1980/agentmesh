@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"iter"
-	"reflect"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/message"
@@ -21,8 +20,6 @@ var (
 	ErrDuplicateNode = errors.New("graph: duplicate node name")
 	ErrDuplicateKey  = errors.New("graph: duplicate key")
 	ErrInvalidTarget = errors.New("graph: invalid target node")
-	ErrNotBuilt      = errors.New("graph: graph not built, call Build() first")
-	ErrAlreadyBuilt  = errors.New("graph: graph already built")
 )
 
 // node represents an internal node in the graph.
@@ -39,11 +36,11 @@ type interruptPoint struct {
 	config   *interruptConfig
 }
 
-// Graph is an executable workflow.
-// Create with New(), add nodes, then Build().
+// Graph is a workflow builder.
+// Create with New(), add nodes, then Build() to get a CompiledGraph.
 // I = input type, O = output type.
 type Graph[I, O any] struct {
-	keys         []any
+	keys         []StateKey
 	outputKey    string // Name of the key that produces outputs
 	outputIsList bool   // True if output key is a ListKey
 	nodes        map[string]*node
@@ -56,9 +53,23 @@ type Graph[I, O any] struct {
 	runID        string
 	middleware   []Middleware
 	executor     Executor[I, O]
+}
 
-	// Internal state
-	built bool
+// CompiledGraph is an executable workflow.
+// Created by calling Build() on a Graph.
+type CompiledGraph[I, O any] struct {
+	keys         []StateKey
+	outputKey    string
+	outputIsList bool
+	nodes        map[string]*node
+	entryPoints  []string
+	interrupts   []interruptPoint
+
+	store        Store
+	checkpointer checkpoint.Checkpointer
+	runID        string
+	middleware   []Middleware
+	executor     Executor[I, O]
 }
 
 // New creates a graph with the given state keys.
@@ -67,12 +78,12 @@ type Graph[I, O any] struct {
 // For ListKey[O], new items are yielded as outputs.
 // For Key[O], the value is yielded when set.
 // Duplicate keys will cause Build() to fail.
-func New[I, O any](keys ...any) *Graph[I, O] {
+func New[I, O any](keys ...StateKey) *Graph[I, O] {
 	var outputKey string
 	var outputIsList bool
 	if len(keys) > 0 {
-		outputKey = extractKeyName(keys[0])
-		outputIsList = isListKey(keys[0])
+		outputKey = keys[0].Name()
+		outputIsList = keys[0].IsList()
 	}
 
 	return &Graph[I, O]{
@@ -83,29 +94,12 @@ func New[I, O any](keys ...any) *Graph[I, O] {
 	}
 }
 
-// extractKeyName gets the name from a Key or ListKey.
-func extractKeyName(key any) string {
-	type namer interface {
-		Name() string
-	}
-	if k, ok := key.(namer); ok {
-		return k.Name()
-	}
-	return ""
-}
-
-// isListKey checks if a key is a ListKey (uses reflection to check type name).
-func isListKey(key any) bool {
-	if key == nil {
-		return false
-	}
-	t := reflect.TypeOf(key)
-	return t.Name() != "" && len(t.Name()) > 7 && t.Name()[:7] == "ListKey"
-}
-
-// MessageGraph is a graph that processes message sequences.
+// MessageGraph is a graph builder that processes message sequences.
 // This is the standard type for conversational agents.
 type MessageGraph = Graph[[]message.Message, message.Message]
+
+// CompiledMessageGraph is an executable message graph.
+type CompiledMessageGraph = CompiledGraph[[]message.Message, message.Message]
 
 // MessagesKey is the standard key for storing conversation messages in graph state.
 // Messages are stored as message.Message instances in append-only fashion.
@@ -113,17 +107,14 @@ var MessagesKey = NewListKey[message.Message]("messages")
 
 // NewMessageGraph creates a message-based graph for conversational agents.
 // Automatically includes MessagesKey. Additional keys can be passed.
-func NewMessageGraph(keys ...any) *MessageGraph {
-	allKeys := append([]any{MessagesKey}, keys...)
+func NewMessageGraph(keys ...StateKey) *MessageGraph {
+	allKeys := append([]StateKey{MessagesKey}, keys...)
 	return New[[]message.Message, message.Message](allKeys...)
 }
 
 // Node adds a node to the graph.
 // Targets are the possible next nodes (use END for terminal).
 func (g *Graph[I, O]) Node(name string, fn NodeFunc, targets ...string) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.nodes[name] = &node{name: name, fn: fn, targets: targets}
 	return g
 }
@@ -141,10 +132,13 @@ func (g *Graph[I, O]) Node(name string, fn NodeFunc, targets ...string) *Graph[I
 //	        return graph.Set(resultKey, out.Result), nil
 //	    },
 //	), "next")
+//
+// The InputMapper transforms parent state into subgraph input.
+// The OutputMapper transforms subgraph output into parent state updates.
 func Subgraph[SI, SO any](
-	sub *Graph[SI, SO],
-	inputMapper func(ctx context.Context, view View) (SI, error),
-	outputMapper func(ctx context.Context, output SO) (Updates, error),
+	sub *CompiledGraph[SI, SO],
+	inputMapper InputMapper[SI],
+	outputMapper OutputMapper[SO],
 ) NodeFunc {
 	return func(ctx context.Context, view View) (*Command, error) {
 		// Map parent state to subgraph input
@@ -175,9 +169,6 @@ func Subgraph[SI, SO any](
 // Start sets the entry point node(s).
 // Multiple entry points run in parallel.
 func (g *Graph[I, O]) Start(names ...string) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.entryPoints = names
 	return g
 }
@@ -185,9 +176,6 @@ func (g *Graph[I, O]) Start(names ...string) *Graph[I, O] {
 // InterruptBefore adds an interrupt before the specified node.
 // When execution reaches this node, it will pause and yield an interrupt event.
 func (g *Graph[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -203,9 +191,6 @@ func (g *Graph[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption) 
 // InterruptAfter adds an interrupt after the specified node.
 // When execution completes this node, it will pause and yield an interrupt event.
 func (g *Graph[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -220,18 +205,12 @@ func (g *Graph[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption) *
 
 // WithStore sets a custom state store.
 func (g *Graph[I, O]) WithStore(store Store) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.store = store
 	return g
 }
 
 // WithCheckpointer sets the checkpointer and run ID.
 func (g *Graph[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID string) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.checkpointer = cp
 	g.runID = runID
 	return g
@@ -239,18 +218,12 @@ func (g *Graph[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID string)
 
 // WithMiddleware adds middleware to the graph.
 func (g *Graph[I, O]) WithMiddleware(mw ...Middleware) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.middleware = append(g.middleware, mw...)
 	return g
 }
 
 // WithExecutor sets a custom executor.
 func (g *Graph[I, O]) WithExecutor(exec Executor[I, O]) *Graph[I, O] {
-	if g.built {
-		return g
-	}
 	g.executor = exec
 	return g
 }
@@ -289,12 +262,8 @@ func WithoutValidation() BuildOption {
 }
 
 // Build compiles and validates the graph.
-// Returns an executable graph or an error.
-func (g *Graph[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
-	if g.built {
-		return nil, ErrAlreadyBuilt
-	}
-
+// Returns an executable CompiledGraph or an error.
+func (g *Graph[I, O]) Build(opts ...BuildOption) (*CompiledGraph[I, O], error) {
 	// Apply build options
 	cfg := &buildConfig{
 		validationOpts: DefaultValidationOptions(),
@@ -310,23 +279,29 @@ func (g *Graph[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 	}
 
 	// Set defaults
-	if g.store == nil {
-		g.store = newMemoryStore()
+	store := g.store
+	if store == nil {
+		store = newMemoryStore()
 	}
 
-	g.built = true
-	return g, nil
+	return &CompiledGraph[I, O]{
+		keys:         g.keys,
+		outputKey:    g.outputKey,
+		outputIsList: g.outputIsList,
+		nodes:        g.nodes,
+		entryPoints:  g.entryPoints,
+		interrupts:   g.interrupts,
+		store:        store,
+		checkpointer: g.checkpointer,
+		runID:        g.runID,
+		middleware:   g.middleware,
+		executor:     g.executor,
+	}, nil
 }
 
-// Run executes the graph with input.
-func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
+// Run executes the compiled graph with input.
+func (g *CompiledGraph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
-		if !g.built {
-			var zero O
-			yield(zero, ErrNotBuilt)
-			return
-		}
-
 		// Build executor config
 		cfg := g.buildExecutorConfig()
 
@@ -345,8 +320,8 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 	}
 }
 
-// buildExecutorConfig creates the executor configuration from the graph.
-func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
+// buildExecutorConfig creates the executor configuration from the compiled graph.
+func (g *CompiledGraph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 	// Build nodes map
 	nodes := make(map[string]ExecutorNode, len(g.nodes))
 	for name, n := range g.nodes {

@@ -67,6 +67,14 @@ type interruptConfig struct {
 // ApprovalGuard determines if approval is needed.
 type ApprovalGuard func(ctx context.Context, view View) (needsApproval bool, reason string, err error)
 
+// InputMapper maps parent graph state to subgraph input.
+// Used with Subgraph to transform parent state into the input type expected by the child graph.
+type InputMapper[SI any] func(ctx context.Context, view View) (SI, error)
+
+// OutputMapper maps subgraph output to parent graph state updates.
+// Used with Subgraph to transform child graph output into state updates for the parent.
+type OutputMapper[SO any] func(ctx context.Context, output SO) (Updates, error)
+
 // WithApprovalGuard sets a guard function for the interrupt.
 func WithApprovalGuard(guard ApprovalGuard) InterruptOption {
 	return func(cfg *interruptConfig) {

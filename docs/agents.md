@@ -402,7 +402,7 @@ The aggregator waits for all incoming nodes to complete before executing.
 
 ## Subgraphs {#subgraphs}
 
-Compose complex workflows from reusable graph components:
+Compose complex workflows from reusable graph components using `graph.Subgraph()`:
 
 ```go
 // Create a research subgraph
@@ -412,17 +412,31 @@ compiledResearch, _ := researchSub.Build()
 // Create parent graph
 parent := graph.NewMessageGraph()
 
-// Embed subgraph as a node
-parent.Subgraph("research", compiledResearch, "synthesize")
+// Embed subgraph as a node using graph.Subgraph with mappers
+parent.Node("research", graph.Subgraph(
+    compiledResearch,
+    // InputMapper: transform parent messages to subgraph input
+    func(ctx context.Context, view graph.View) ([]message.Message, error) {
+        messages := graph.GetList(view, graph.MessagesKey)
+        // Filter or transform messages for research subgraph
+        return messages, nil
+    },
+    // OutputMapper: merge research results back to parent
+    func(ctx context.Context, output message.Message) (graph.Updates, error) {
+        return graph.Append(graph.MessagesKey, output), nil
+    },
+), "synthesize")
 
 parent.Node("synthesize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     messages := graph.GetList(view, graph.MessagesKey)
     // Synthesize research results...
-    return graph.Append(graph.MessagesKey, summary).To(graph.END), nil
+    return graph.Append(graph.MessagesKey, summary).To(graph.END)
 }, graph.END)
 
 parent.Start("research")
 compiled, _ := parent.Build()
 ```
+
+**Type Safety**: The `InputMapper[SI]` and `OutputMapper[SO]` type aliases provide clear signatures for state transformation functions.
 
 See `examples/subgraph` for a complete demonstration.

@@ -11,9 +11,9 @@ import (
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string              // Unique identifier for the worker
-	Description string              // Description of the worker's expertise
-	Agent       *graph.MessageGraph // The agent to delegate work to
+	Name        string                      // Unique identifier for the worker
+	Description string                      // Description of the worker's expertise
+	Agent       *graph.CompiledMessageGraph // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -30,8 +30,8 @@ type supervisorOptions struct {
 type SupervisorOption func(*supervisorOptions)
 
 // WithWorker adds a worker agent to the supervisor.
-// The agent must be a *graph.MessageGraph (e.g., created via NewReActAgent).
-func WithWorker(name, description string, agent *graph.MessageGraph) SupervisorOption {
+// The agent must be a *graph.CompiledMessageGraph (e.g., created via NewReActAgent).
+func WithWorker(name, description string, agent *graph.CompiledMessageGraph) SupervisorOption {
 	return func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -97,8 +97,8 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 // NewSupervisorAgent creates a supervisor agent that delegates work to specialized worker agents.
 // The supervisor uses a model to decide which worker should handle each request.
 //
-// Returns a *graph.MessageGraph that enables type-safe composition with other agents.
-// Worker agents must also be *graph.MessageGraph.
+// Returns a *graph.CompiledMessageGraph that enables type-safe composition with other agents.
+// Worker agents must also be *graph.CompiledMessageGraph.
 //
 // Example:
 //
@@ -110,7 +110,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.MessageGraph, error) {
+func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*graph.CompiledMessageGraph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}

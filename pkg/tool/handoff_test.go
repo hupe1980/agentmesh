@@ -15,7 +15,7 @@ import (
 var testMessagesKey = graph.NewListKey[message.Message]("__messages__")
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) *graph.Graph[[]message.Message, message.Message] {
+func createMockWorkerGraph(t *testing.T, response string) *graph.CompiledGraph[[]message.Message, message.Message] {
 	g := graph.New[[]message.Message, message.Message](testMessagesKey)
 
 	g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {

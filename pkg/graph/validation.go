@@ -72,7 +72,7 @@ func StrictValidationOptions() ValidationOptions {
 	}
 }
 
-// Validate performs validation on a built graph and returns any errors found.
+// Validate performs validation on the graph and returns any errors found.
 // This is useful for more detailed error reporting than Build() provides.
 func (g *Graph[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
 	opt := DefaultValidationOptions()
@@ -113,7 +113,7 @@ func (g *Graph[I, O]) validateKeys() []ValidationError {
 
 	seen := make(map[string]bool)
 	for _, key := range g.keys {
-		name := extractKeyName(key)
+		name := key.Name()
 		if name == "" {
 			continue
 		}

@@ -88,11 +88,11 @@ func WithSystemPrompt(prompt string) HandoffOption {
 func HandoffToAgent(
 	agentName string,
 	agentDescription string,
-	agentGraph *graph.Graph[[]message.Message, message.Message],
+	agentGraph *graph.CompiledGraph[[]message.Message, message.Message],
 	options ...HandoffOption,
 ) (*FuncTool[HandoffArgs, string], error) {
 	if agentGraph == nil {
-		return nil, fmt.Errorf("handoff tool %q: agent graph cannot be nil", agentName)
+		return nil, fmt.Errorf("tool/handoff %q: agent graph cannot be nil", agentName)
 	}
 
 	config := &HandoffConfig{
@@ -111,7 +111,7 @@ func HandoffToAgent(
 	handoffFn := func(ctx context.Context, args HandoffArgs) (string, error) {
 		// Validate task is provided
 		if args.Task == "" {
-			return "", fmt.Errorf("task is required for handoff to %s", agentName)
+			return "", fmt.Errorf("tool/handoff: task is required for handoff to %s", agentName)
 		}
 
 		// Execute with retry logic
@@ -120,7 +120,7 @@ func HandoffToAgent(
 			result, err := executeHandoff(ctx, agentGraph, args, config)
 			if err == nil {
 				if config.ValidateResults && !isValidResult(result) {
-					lastErr = fmt.Errorf("agent returned invalid result")
+					lastErr = fmt.Errorf("tool/handoff: agent returned invalid result")
 					continue
 				}
 				return result, nil
@@ -128,7 +128,7 @@ func HandoffToAgent(
 			lastErr = err
 		}
 
-		return "", fmt.Errorf("handoff to %s failed after %d attempts: %w",
+		return "", fmt.Errorf("tool/handoff: handoff to %s failed after %d attempts: %w",
 			agentName, config.RetryAttempts, lastErr)
 	}
 
@@ -138,7 +138,7 @@ func HandoffToAgent(
 // executeHandoff performs the actual agent invocation with context control.
 func executeHandoff(
 	ctx context.Context,
-	agentGraph *graph.Graph[[]message.Message, message.Message],
+	agentGraph *graph.CompiledGraph[[]message.Message, message.Message],
 	args HandoffArgs,
 	config *HandoffConfig,
 ) (string, error) {
@@ -163,11 +163,11 @@ func executeHandoff(
 	// Execute the worker agent graph (assumes graph is already built)
 	lastMsg, err := graph.Last(agentGraph.Run(ctx, messages))
 	if err != nil {
-		return "", fmt.Errorf("agent execution failed: %w", err)
+		return "", fmt.Errorf("tool/handoff: agent execution failed: %w", err)
 	}
 
 	if lastMsg == nil {
-		return "", fmt.Errorf("agent produced no messages")
+		return "", fmt.Errorf("tool/handoff: agent produced no messages")
 	}
 
 	// Extract text from the last message

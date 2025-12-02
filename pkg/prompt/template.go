@@ -11,10 +11,10 @@ import (
 
 var (
 	// ErrMissingVariable is returned when a required template variable is not provided
-	ErrMissingVariable = errors.New("missing template variable")
+	ErrMissingVariable = errors.New("prompt: missing template variable")
 
 	// ErrInvalidTemplate is returned when the template syntax is malformed
-	ErrInvalidTemplate = errors.New("invalid template syntax")
+	ErrInvalidTemplate = errors.New("prompt: invalid template syntax")
 )
 
 // Template represents a prompt template with placeholders for variable substitution.

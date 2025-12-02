@@ -39,7 +39,7 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 }
 
 func BenchmarkGraph_LinearChain(b *testing.B) {
-	createChainGraph := func(length int) *graph.Graph[int, int] {
+	createChainGraph := func(length int) *graph.CompiledGraph[int, int] {
 		g := graph.New[int, int](ValueKey)
 
 		for i := range length {

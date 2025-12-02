@@ -12,13 +12,13 @@ import (
 var (
 	// ErrInvalidSignature indicates the checkpoint signature verification failed.
 	// This could mean the checkpoint was tampered with or signed with a different key.
-	ErrInvalidSignature = errors.New("invalid checkpoint signature")
+	ErrInvalidSignature = errors.New("checkpoint: invalid signature")
 
 	// ErrSigningKeyRequired indicates signing was expected but no key was provided.
-	ErrSigningKeyRequired = errors.New("signing key required but not configured")
+	ErrSigningKeyRequired = errors.New("checkpoint: signing key required but not configured")
 
 	// ErrEmptySigningKey indicates an empty signing key was provided.
-	ErrEmptySigningKey = errors.New("signing key cannot be empty")
+	ErrEmptySigningKey = errors.New("checkpoint: signing key cannot be empty")
 )
 
 // SignCheckpoint generates an HMAC-SHA256 signature for a checkpoint using the provided key.

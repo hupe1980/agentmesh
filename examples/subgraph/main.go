@@ -29,7 +29,7 @@ var (
 )
 
 // createValidationSubgraph creates a reusable validation subgraph
-func createValidationSubgraph() *graph.Graph[string, string] {
+func createValidationSubgraph() *graph.CompiledGraph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
 	g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
@@ -50,11 +50,16 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 
 	g.Start("validate_format")
 
-	return g
+	compiled, err := g.Build()
+	if err != nil {
+		panic(err)
+	}
+
+	return compiled
 }
 
 // createTransformSubgraph creates a reusable transformation subgraph
-func createTransformSubgraph() *graph.Graph[string, string] {
+func createTransformSubgraph() *graph.CompiledGraph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
 	g.Node("normalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
@@ -73,7 +78,12 @@ func createTransformSubgraph() *graph.Graph[string, string] {
 
 	g.Start("normalize")
 
-	return g
+	compiled, err := g.Build()
+	if err != nil {
+		panic(err)
+	}
+
+	return compiled
 }
 
 func main() {
@@ -82,17 +92,9 @@ func main() {
 	fmt.Println("  Demonstrates graph.Subgraph() for composing reusable graphs")
 	fmt.Println()
 
-	// Create reusable subgraphs
+	// Create reusable subgraphs (already compiled)
 	validationSubgraph := createValidationSubgraph()
 	transformSubgraph := createTransformSubgraph()
-
-	// Build them once (they can be reused)
-	if _, err := validationSubgraph.Build(); err != nil {
-		log.Fatal(err)
-	}
-	if _, err := transformSubgraph.Build(); err != nil {
-		log.Fatal(err)
-	}
 
 	// Build the main graph that orchestrates subgraphs
 	g := graph.New[any, any](inputKey, resultKey, stepsKey)

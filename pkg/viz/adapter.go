@@ -9,14 +9,14 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// GraphAdapter wraps a typed graph.Graph to implement the viz.Runnable interface.
+// GraphAdapter wraps a typed graph.CompiledGraph to implement the viz.Runnable interface.
 // This adapter handles type conversion from HTTP input to graph input.
 type GraphAdapter[I, O any] struct {
-	g *graph.Graph[I, O]
+	g *graph.CompiledGraph[I, O]
 }
 
-// NewGraphAdapter creates an adapter for any built graph.
-func NewGraphAdapter[I, O any](g *graph.Graph[I, O]) *GraphAdapter[I, O] {
+// NewGraphAdapter creates an adapter for any compiled graph.
+func NewGraphAdapter[I, O any](g *graph.CompiledGraph[I, O]) *GraphAdapter[I, O] {
 	return &GraphAdapter[I, O]{g: g}
 }
 
@@ -57,11 +57,11 @@ func (a *GraphAdapter[I, O]) MermaidFlowchart(direction string) string {
 // MessageAdapter wraps message-based graphs (agents) to implement viz.Runnable.
 // This adapter converts HTTP input to message slices and runs the agent.
 type MessageAdapter struct {
-	g *graph.Graph[[]message.Message, message.Message]
+	g *graph.CompiledGraph[[]message.Message, message.Message]
 }
 
 // NewMessageAdapter creates an adapter for message-based agents.
-func NewMessageAdapter(g *graph.Graph[[]message.Message, message.Message]) *MessageAdapter {
+func NewMessageAdapter(g *graph.CompiledGraph[[]message.Message, message.Message]) *MessageAdapter {
 	return &MessageAdapter{g: g}
 }
 

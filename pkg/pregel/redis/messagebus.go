@@ -120,12 +120,20 @@ type Options struct {
 // db: Redis database number (0-15)
 // opts: Optional configuration (can be nil for defaults)
 //
-// Example (Development - localhost, no TLS):
+// Security:
+//   - TLS is REQUIRED when using password authentication (production)
+//   - Returns error if password is set but TLSConfig is nil
+//   - Only localhost without password is allowed to skip TLS (development)
 //
-//	store := redis.NewMessageBus[MyMessage]("localhost:6379", "", 0, &redis.Options{
+// Example (Development - localhost, no auth, no TLS):
+//
+//	store, err := redis.NewMessageBus[MyMessage]("localhost:6379", "", 0, &redis.Options{
 //	    Namespace: "mygraph",
 //	    TTL: 1 * time.Hour,
 //	})
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //	defer store.Close()
 //
 // Example (Production - with TLS and authentication):
@@ -135,7 +143,7 @@ type Options struct {
 //	    // InsecureSkipVerify: false (default - verify server cert)
 //	}
 //
-//	store := redis.NewMessageBus[MyMessage](
+//	store, err := redis.NewMessageBus[MyMessage](
 //	    "redis.example.com:6380",
 //	    "your-secure-password",
 //	    0,
@@ -145,10 +153,19 @@ type Options struct {
 //	        TLSConfig: tlsConfig,
 //	    },
 //	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //	defer store.Close()
-func NewMessageBus[M any](addr, password string, db int, opts *Options) *MessageBus[M] {
+func NewMessageBus[M any](addr, password string, db int, opts *Options) (*MessageBus[M], error) {
 	if opts == nil {
 		opts = &Options{}
+	}
+
+	// SECURITY: Require TLS when using password authentication
+	// This prevents credential theft and network eavesdropping in production
+	if password != "" && opts.TLSConfig == nil {
+		return nil, fmt.Errorf("pregel/redis: TLS required when using password authentication (set Options.TLSConfig)")
 	}
 
 	// Set defaults
@@ -194,7 +211,7 @@ func NewMessageBus[M any](addr, password string, db int, opts *Options) *Message
 		namespace: opts.Namespace,
 		ttl:       opts.TTL,
 		codec:     opts.Codec,
-	}
+	}, nil
 }
 
 // mailboxKey returns the Redis key for a vertex's mailbox

@@ -314,7 +314,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	p1DataKey := graph.NewKey("p1_data", "")
 	resultKey := graph.NewKey("result", "")
 
-	buildGraph := func() *graph.Graph[any, any] {
+	buildGraph := func() *graph.CompiledGraph[any, any] {
 		g := graph.New[any, any](p1DataKey, resultKey)
 
 		g.Node("partition_1_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {

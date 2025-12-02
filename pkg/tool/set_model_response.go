@@ -53,21 +53,21 @@ func NewSetModelResponseTool(outputSchema any) (*SetModelResponseTool, error) {
 
 	switch s := outputSchema.(type) {
 	case nil:
-		return nil, fmt.Errorf("NewSetModelResponseTool: nil output schema")
+		return nil, fmt.Errorf("tool/set_model_response: nil output schema")
 	case map[string]any:
 		schemaMap = maps.Clone(s)
 	case schema.OutputSchema:
 		schemaMap = maps.Clone(s.Schema)
 	case *schema.OutputSchema:
 		if s == nil {
-			return nil, fmt.Errorf("NewSetModelResponseTool: nil output schema pointer")
+			return nil, fmt.Errorf("tool/set_model_response: nil output schema pointer")
 		}
 		schemaMap = maps.Clone(s.Schema)
 	default:
 		// Try to convert as struct
 		converted, err := jsonschema.MapFromStruct(outputSchema)
 		if err != nil {
-			return nil, fmt.Errorf("NewSetModelResponseTool: %w", err)
+			return nil, fmt.Errorf("tool/set_model_response: %w", err)
 		}
 		schemaMap = converted
 	}
@@ -117,7 +117,7 @@ func (t *SetModelResponseTool) Parameters() map[string]any {
 func (t *SetModelResponseTool) Call(ctx context.Context, args string) (any, error) {
 	// Validate args against schema
 	if err := jsonschema.Validate(t.outputSchema, args); err != nil {
-		return nil, fmt.Errorf("invalid model response: %w", err)
+		return nil, fmt.Errorf("tool/set_model_response: invalid model response: %w", err)
 	}
 
 	return args, nil

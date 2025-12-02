@@ -25,6 +25,14 @@ type Aggregator interface {
 // Message instance.
 type Combiner[M any] func(existing, incoming Message[M]) Message[M]
 
+// SuperstepStartCallback is invoked before each superstep begins.
+// Useful for creating BSP-compliant state snapshots or logging.
+type SuperstepStartCallback func(ctx context.Context, superstep int64, frontier FrontierInfo) error
+
+// SuperstepCompleteCallback is invoked after each superstep completes successfully.
+// Useful for checkpointing, progress monitoring, or applying state updates.
+type SuperstepCompleteCallback func(ctx context.Context, superstep int64) error
+
 // VertexContext exposes runtime services to a vertex implementation during Run.
 // Aggregate is nil when no aggregators are configured, and Aggregates contains
 // the completed reductions from the previous superstep. Send may be called zero

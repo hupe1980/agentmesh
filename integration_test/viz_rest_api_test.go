@@ -617,7 +617,7 @@ func TestVizServerInvalidEndpoints(t *testing.T) {
 }
 
 // Helper function to create a test graph with mock model that tracks costs
-func createVizTestGraph(t *testing.T) *graph.Graph[[]message.Message, message.Message] {
+func createVizTestGraph(t *testing.T) *graph.CompiledMessageGraph {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 

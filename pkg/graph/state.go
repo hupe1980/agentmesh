@@ -8,12 +8,31 @@ import (
 	"sync/atomic"
 )
 
+// StateKey is the interface that all state keys must implement.
+// Both Key[T] and ListKey[T] satisfy this interface.
+type StateKey interface {
+	// Name returns the unique name of this key.
+	Name() string
+
+	// IsList returns true if this is a ListKey.
+	IsList() bool
+
+	// stateKey is a marker method to prevent external implementations.
+	stateKey()
+}
+
 // Key defines a typed state channel.
 // Zero value is used as default.
 type Key[T any] struct {
 	name string
 	zero T
 }
+
+// stateKey implements StateKey.
+func (Key[T]) stateKey() {}
+
+// IsList returns false for Key.
+func (Key[T]) IsList() bool { return false }
 
 // NewKey creates a state key with a default value.
 func NewKey[T any](name string, defaultValue T) Key[T] {
@@ -34,6 +53,12 @@ func (k Key[T]) Default() T {
 type ListKey[T any] struct {
 	name string
 }
+
+// stateKey implements StateKey.
+func (ListKey[T]) stateKey() {}
+
+// IsList returns true for ListKey.
+func (ListKey[T]) IsList() bool { return true }
 
 // NewListKey creates a list state key.
 func NewListKey[T any](name string) ListKey[T] {

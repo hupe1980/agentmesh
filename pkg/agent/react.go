@@ -36,7 +36,7 @@ import (
 //	agent, err := agent.NewReActAgent(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.MessageGraph, error) {
+func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.CompiledMessageGraph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.MessageGraph, e
 	if len(tools) > 0 {
 		caps := mdl.Capabilities()
 		if !caps.Tools {
-			return nil, fmt.Errorf("react agent: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
+			return nil, fmt.Errorf("agent/react: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
 		}
 	}
 
@@ -81,7 +81,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.MessageGraph, e
 		WithModelTools(tools...),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to create model node: %w", err)
+		return nil, fmt.Errorf("agent/react: create model node: %w", err)
 	}
 
 	// Create tool executor - use sequential by default for deterministic behavior
@@ -96,7 +96,7 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*graph.MessageGraph, e
 	// Tool node function
 	toolFn, err := NewToolNodeFunc(toolExecutor)
 	if err != nil {
-		return nil, fmt.Errorf("react agent: failed to create tool node: %w", err)
+		return nil, fmt.Errorf("agent/react: create tool node: %w", err)
 	}
 
 	// Build graph - MessagesKey is automatically included by NewMessageGraph
