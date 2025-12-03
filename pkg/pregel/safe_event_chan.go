@@ -50,51 +50,53 @@ func newSafeEventChan[M any](bufferSize int) *safeEventChan[M] {
 	}
 }
 
-// Send attempts to send an event to the channel. Returns true if successful,
-// false if the channel is closed or the send times out.
+// Send attempts to deliver an event to the channel. Returns true if successful
+// and false if the channel is closed or backpressure forces a timeout.
 //
-// The method uses an RWMutex to prevent sending on a closed channel.
-// The RWMutex provides true race-free operation:
-//   - Send() acquires RLock for the entire send operation
-//   - Close() acquires exclusive Lock, blocking all sends
-//   - Once Close() acquires Lock, no Send() can be in progress
-//   - Channel can be safely closed with no concurrent access
+// Implementation details:
+//   - Send() acquires RLock for the entire operation so Close() cannot race it.
+//   - A non-blocking fast path attempts the send without allocating timers when
+//     buffer capacity exists (the common case).
+//   - When the buffer is full, we fall back to a cancellable timer via
+//     time.NewTimer, ensuring timeouts do not leak goroutines or wakeups.
 //
-// This approach:
-//   - Guarantees no "send on closed channel" panics (race-free)
-//   - Passes race detector (no concurrent channel access during close)
-//   - Maintains non-blocking semantics with timeout for backpressure
-//   - Uses standard Go synchronization patterns
+// This design keeps observability emits allocation-free under steady load while
+// still enforcing a bounded 100ms wait when consumers fall behind.
 //
-// The RLock is held during the entire select statement including the timeout,
-// which is acceptable because:
-//   - RLock allows multiple concurrent senders (no serialization)
-//   - Close() is a rare operation (once per runtime execution)
-//   - Brief timeout (100ms) is acceptable latency for graceful shutdown
-//
-// For production systems with slow consumers, consider:
-//   - Increasing buffer size (DefaultEventChanBufferSize)
-//   - Using backpressure at the application level
-//   - Implementing event sampling/aggregation
+// For production systems with slow consumers, consider increasing
+// DefaultEventChanBufferSize, sampling events, or handling backpressure at the
+// application layer.
 func (s *safeEventChan[M]) Send(evt Event[M], err error) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Check if channel is closed
 	if s.closed {
 		return false
 	}
 
-	// Create timeout timer
-	timeout := time.After(100 * time.Millisecond)
+	msg := eventOrError[M]{event: evt, err: err}
 
-	// Perform the send with timeout
-	// We hold RLock during this operation, preventing Close() from proceeding
+	// Fast path: try immediate, non-blocking send to avoid timers when buffer has capacity.
 	select {
-	case s.ch <- eventOrError[M]{event: evt, err: err}:
+	case s.ch <- msg:
 		return true
-	case <-timeout:
-		// Timeout occurred - channel is likely full or consumer is slow
+	default:
+	}
+
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case s.ch <- msg:
+		return true
+	case <-timer.C:
 		return false
 	}
 }

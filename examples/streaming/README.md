@@ -8,6 +8,7 @@ Demonstrates real-time streaming execution in AgentMesh. Shows how to get live u
 - **StreamChunk**: Token-level updates from LLM model streaming
 - **Event Types**: NodeStart, NodeComplete, NodeError, GraphComplete
 - **Proper Cleanup**: Always call stream.Close() or stream.Cancel()
+- **Backpressure**: Event streams use a fast-path channel with a bounded 100 ms timeout, so listeners get low-latency updates without spawning thousands of timers when paused.
 
 ## Prerequisites
 ```bash

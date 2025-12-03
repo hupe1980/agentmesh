@@ -285,6 +285,16 @@ for msg, err := range compiled.Run(ctx, messages) {
 ✅ **Custom instrumentation** - Full provider access in nodes  
 ✅ **Context propagation** - Providers automatically available everywhere
 
+## Event Stream Backpressure
+
+AgentMesh streams execution events through a dedicated `safeEventChan` so UIs and CLIs can render progress in real time. The channel now uses a non-blocking fast path (no timers allocated when there is buffer space) and a cancellable 100 ms timeout when consumers fall behind. This keeps observability overhead near zero during steady-state runs while still providing bounded backpressure if you pause or slow a listener.
+
+- **Fast path** – Immediate sends avoid creating `time.After` timers entirely.
+- **Bounded waits** – When the buffer is full, the runtime waits up to 100 ms before dropping the event.
+- **No leaks** – Cancellable timers ensure there are no stray goroutines or wakeups once the send succeeds or times out.
+
+Tune `pregel.DefaultEventChanBufferSize` or implement client-side sampling if you need deeper buffers.
+
 ## Examples
 
 - [**observability**](https://github.com/hupe1980/agentmesh/tree/main/examples/observability) - Automatic instrumentation setup

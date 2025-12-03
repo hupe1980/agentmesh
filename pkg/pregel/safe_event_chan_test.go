@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func TestSafeEventChan_ConcurrentSendAndClose(t *testing.T) {
 	wg.Add(numSenders)
 
 	// Start many concurrent senders
-	for i := 0; i < numSenders; i++ {
+	for i := range numSenders {
 		go func(workerID int) {
 			defer wg.Done()
 			for j := 0; j < sendsPerWorker; j++ {
@@ -91,7 +92,7 @@ func TestSafeEventChan_NormalUsage(t *testing.T) {
 	ch := newSafeEventChan[any](10)
 
 	// Send some events
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !ch.Send(Event[any]{Superstep: int64(i)}, nil) {
 			t.Fatalf("Send %d failed", i)
 		}
@@ -161,7 +162,7 @@ func TestRuntime_RaceConditionFix_ConcurrentEmit(t *testing.T) {
 	ctx := context.Background()
 
 	// Start many goroutines that will call emitEvent concurrently
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -235,4 +236,100 @@ func TestRuntime_EmitEventAfterClose(t *testing.T) {
 	}
 
 	t.Log("✓ emitEvent handled gracefully after close")
+}
+
+// TestSafeEventChan_FastPathAllocs ensures the fast-path send stays allocation-free.
+func TestSafeEventChan_FastPathAllocs(t *testing.T) {
+	ch := newSafeEventChan[int](1024)
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ch.Chan():
+			}
+		}
+	}()
+
+	t.Cleanup(func() {
+		close(stop)
+		ch.Close()
+	})
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		if !ch.Send(Event[int]{Superstep: 1}, nil) {
+			t.Fatal("expected send to succeed")
+		}
+	})
+
+	if allocs > 0.5 {
+		t.Fatalf("expected ~0 allocations per send, got %.2f", allocs)
+	}
+}
+
+// TestSafeEventChan_BackpressureUnderLoad verifies we still enforce timeouts
+// when the buffer stays full under contention.
+func TestSafeEventChan_BackpressureUnderLoad(t *testing.T) {
+	ch := newSafeEventChan[int](1)
+	if !ch.Send(Event[int]{Vertex: "seed"}, nil) {
+		t.Fatal("failed to seed buffer")
+	}
+
+	const workers = 4
+	var timedOut atomic.Int32
+	var wg sync.WaitGroup
+	start := time.Now()
+
+	for i := range workers {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			if ch.Send(Event[int]{Vertex: "blocked"}, nil) {
+				t.Errorf("worker %d unexpectedly succeeded despite full buffer", id)
+				return
+			}
+			timedOut.Add(1)
+		}(i)
+	}
+
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	if got := timedOut.Load(); got != workers {
+		t.Fatalf("expected %d timeouts, got %d", workers, got)
+	}
+
+	if elapsed < 90*time.Millisecond || elapsed > 250*time.Millisecond {
+		t.Fatalf("expected ~100ms backpressure window, got %v", elapsed)
+	}
+
+	ch.Close()
+}
+
+func BenchmarkSafeEventChanSendBuffered(b *testing.B) {
+	ch := newSafeEventChan[int](2048)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-ch.Chan():
+			}
+		}
+	}()
+
+	defer func() {
+		close(done)
+		ch.Close()
+	}()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		if !ch.Send(Event[int]{Vertex: "bench"}, nil) {
+			b.Fatal("send failed in benchmark")
+		}
+	}
 }
