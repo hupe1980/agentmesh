@@ -315,3 +315,204 @@ func TestBSPStateTwoPhaseCommitFlow(t *testing.T) {
 		t.Error("phase 2: expected no pending writes after barrier")
 	}
 }
+
+// ====================
+// SliceOf and mergeSlices Tests
+// ====================
+
+// Custom type for testing SliceOf with non-primitive types
+type testMessage struct {
+	ID   int
+	Text string
+}
+
+func TestSliceOfMerge(t *testing.T) {
+	t.Run("merge same SliceOf types", func(t *testing.T) {
+		s1 := graph.SliceOf[string]{"a", "b"}
+		s2 := graph.SliceOf[string]{"c", "d"}
+
+		merged := s1.Merge(s2)
+		if merged == nil {
+			t.Fatal("expected merged slice, got nil")
+		}
+
+		result, ok := merged.(graph.SliceOf[string])
+		if !ok {
+			t.Fatalf("expected SliceOf[string], got %T", merged)
+		}
+
+		if len(result) != 4 {
+			t.Errorf("expected 4 elements, got %d", len(result))
+		}
+		if result[0] != "a" || result[1] != "b" || result[2] != "c" || result[3] != "d" {
+			t.Errorf("unexpected result: %v", result)
+		}
+	})
+
+	t.Run("merge incompatible SliceOf types returns nil", func(t *testing.T) {
+		s1 := graph.SliceOf[string]{"a", "b"}
+		s2 := graph.SliceOf[int]{1, 2}
+
+		merged := s1.Merge(s2)
+		if merged != nil {
+			t.Errorf("expected nil for incompatible types, got %v", merged)
+		}
+	})
+
+	t.Run("merge with custom struct type", func(t *testing.T) {
+		s1 := graph.SliceOf[testMessage]{{ID: 1, Text: "hello"}}
+		s2 := graph.SliceOf[testMessage]{{ID: 2, Text: "world"}}
+
+		merged := s1.Merge(s2)
+		if merged == nil {
+			t.Fatal("expected merged slice, got nil")
+		}
+
+		result, ok := merged.(graph.SliceOf[testMessage])
+		if !ok {
+			t.Fatalf("expected SliceOf[testMessage], got %T", merged)
+		}
+
+		if len(result) != 2 {
+			t.Errorf("expected 2 elements, got %d", len(result))
+		}
+		if result[0].ID != 1 || result[1].ID != 2 {
+			t.Errorf("unexpected result: %v", result)
+		}
+	})
+}
+
+func TestSliceOfIter(t *testing.T) {
+	s := graph.SliceOf[int]{1, 2, 3}
+
+	var collected []int
+	s.SliceIter(func(item any) bool {
+		collected = append(collected, item.(int))
+		return true
+	})
+
+	if len(collected) != 3 {
+		t.Errorf("expected 3 items, got %d", len(collected))
+	}
+}
+
+func TestSliceOfIterEarlyStop(t *testing.T) {
+	s := graph.SliceOf[int]{1, 2, 3, 4, 5}
+
+	var collected []int
+	s.SliceIter(func(item any) bool {
+		collected = append(collected, item.(int))
+		return len(collected) < 3 // Stop after 3
+	})
+
+	if len(collected) != 3 {
+		t.Errorf("expected 3 items (early stop), got %d", len(collected))
+	}
+}
+
+func TestBSPStateMergeSliceOfViaWrite(t *testing.T) {
+	t.Run("SliceOf merges without reflection", func(t *testing.T) {
+		bsp := graph.NewBSPState(nil)
+
+		// First write with SliceOf
+		bsp.Write("node1", graph.Updates{
+			"messages": graph.SliceOf[testMessage]{{ID: 1, Text: "first"}},
+		})
+
+		// Second write should merge
+		bsp.Write("node2", graph.Updates{
+			"messages": graph.SliceOf[testMessage]{{ID: 2, Text: "second"}},
+		})
+
+		// Commit
+		bsp.CommitBarrier()
+
+		// Check result
+		val, ok := bsp.GetCommitted("messages")
+		if !ok {
+			t.Fatal("expected messages key to exist")
+		}
+
+		// Should be SliceOf[testMessage] after merge
+		result, ok := val.(graph.SliceOf[testMessage])
+		if !ok {
+			t.Fatalf("expected SliceOf[testMessage], got %T", val)
+		}
+
+		if len(result) != 2 {
+			t.Errorf("expected 2 messages, got %d", len(result))
+		}
+		if result[0].ID != 1 || result[1].ID != 2 {
+			t.Errorf("unexpected messages: %v", result)
+		}
+	})
+
+	t.Run("multiple SliceOf writes accumulate correctly", func(t *testing.T) {
+		bsp := graph.NewBSPState(nil)
+
+		// Multiple writes in same superstep
+		for i := 0; i < 5; i++ {
+			bsp.Write("node", graph.Updates{
+				"items": graph.SliceOf[int]{i},
+			})
+		}
+
+		bsp.CommitBarrier()
+
+		val, _ := bsp.GetCommitted("items")
+		result := val.(graph.SliceOf[int])
+
+		if len(result) != 5 {
+			t.Errorf("expected 5 items, got %d", len(result))
+		}
+		for i := 0; i < 5; i++ {
+			if result[i] != i {
+				t.Errorf("expected result[%d]=%d, got %d", i, i, result[i])
+			}
+		}
+	})
+}
+
+func TestGetListWithSliceOf(t *testing.T) {
+	key := graph.NewListKey[testMessage]("messages")
+
+	// Store as SliceOf (as Command.Append does internally)
+	bsp := graph.NewBSPState(map[string]any{
+		"messages": graph.SliceOf[testMessage]{{ID: 1, Text: "test"}},
+	})
+
+	view := bsp.ReadView()
+	result := graph.GetList(view, key)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(result))
+	}
+	if result[0].ID != 1 || result[0].Text != "test" {
+		t.Errorf("unexpected message: %v", result[0])
+	}
+}
+
+func TestMergeSlicesPrimitiveFallback(t *testing.T) {
+	// Test that primitive slices still work via type switch
+	bsp := graph.NewBSPState(nil)
+
+	// Write plain []string (not SliceOf)
+	bsp.Write("node1", graph.Updates{
+		"tags": []string{"a", "b"},
+	})
+	bsp.Write("node2", graph.Updates{
+		"tags": []string{"c"},
+	})
+
+	bsp.CommitBarrier()
+
+	val, _ := bsp.GetCommitted("tags")
+	result, ok := val.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", val)
+	}
+
+	if len(result) != 3 {
+		t.Errorf("expected 3 tags, got %d", len(result))
+	}
+}

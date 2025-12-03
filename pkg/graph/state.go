@@ -87,7 +87,11 @@ func (k ListKey[T]) Name() string {
 //	    }
 //	}
 type SliceValue interface {
+	// SliceIter iterates over the slice, calling yield for each element.
 	SliceIter(yield func(any) bool)
+	// Merge appends another SliceValue and returns the result.
+	// Returns nil if types are incompatible.
+	Merge(other SliceValue) SliceValue
 }
 
 // SliceOf is a generic helper that wraps any slice type to implement SliceValue.
@@ -106,6 +110,14 @@ func (s SliceOf[T]) SliceIter(yield func(any) bool) {
 			return
 		}
 	}
+}
+
+// Merge appends another SliceValue of the same type and returns the result.
+func (s SliceOf[T]) Merge(other SliceValue) SliceValue {
+	if o, ok := other.(SliceOf[T]); ok {
+		return append(s, o...)
+	}
+	return nil
 }
 
 // View provides read access to state.
@@ -349,6 +361,15 @@ func (s *BSPState) mergeWrite(key string, value any) {
 // Falls back to reflection for unknown slice types.
 // Handles SliceOf[T] and []T interoperability.
 func mergeSlices(existing, value any) any {
+	// Fast path: both implement SliceValue (covers all SliceOf[T] types)
+	if ev, ok := existing.(SliceValue); ok {
+		if vv, ok := value.(SliceValue); ok {
+			if merged := ev.Merge(vv); merged != nil {
+				return merged
+			}
+		}
+	}
+
 	// Try common slice types first (fast path, no reflection)
 	switch v := value.(type) {
 	case []string:
@@ -369,7 +390,13 @@ func mergeSlices(existing, value any) any {
 		}
 	}
 
-	// Fallback to reflection for other slice types (including SliceOf[T])
+	// Reflection fallback (rarely hit)
+	return mergeSlicesReflection(existing, value)
+}
+
+// mergeSlicesReflection merges slices using reflection.
+// This is a fallback for slice types not covered by type switches.
+func mergeSlicesReflection(existing, value any) any {
 	existingVal := reflect.ValueOf(existing)
 	newVal := reflect.ValueOf(value)
 
@@ -377,17 +404,16 @@ func mergeSlices(existing, value any) any {
 		return value
 	}
 
-	// Check if element types are compatible (handles SliceOf[T] + []T)
+	// Check if element types are compatible
 	if existingVal.Type().Elem() != newVal.Type().Elem() {
 		return value
 	}
 
-	// Merge by iterating (works across SliceOf[T] and []T)
+	// Merge slices
 	merged := reflect.MakeSlice(existingVal.Type(), 0, existingVal.Len()+newVal.Len())
 	merged = reflect.AppendSlice(merged, existingVal)
-	for i := 0; i < newVal.Len(); i++ {
-		merged = reflect.Append(merged, newVal.Index(i))
-	}
+	merged = reflect.AppendSlice(merged, newVal)
+
 	return merged.Interface()
 }
 
