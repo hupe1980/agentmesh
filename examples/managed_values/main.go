@@ -48,7 +48,17 @@ func main() {
 		APIKey:     getEnvOrDefault("API_KEY", "sk_demo_key"),
 		Timeout:    30 * time.Second,
 		MaxRetries: 3,
-	})
+	},
+		graph.WithManagedValueRequired(),
+		graph.WithManagedValueRehydrator(func(ctx context.Context) error {
+			cfg, err := runtimeConfigMV.Get(ctx)
+			if err != nil {
+				return err
+			}
+			cfg.APIKey = getEnvOrDefault("API_KEY", cfg.APIKey)
+			return nil
+		}),
+	)
 
 	// 2. Provider without caching - always recomputes (e.g., execution counter)
 	var executionCount int64
@@ -131,4 +141,11 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

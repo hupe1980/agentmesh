@@ -1292,6 +1292,35 @@ for output, err := range compiled.Run(ctx, input,
 }
 ```
 
+### Checkpoint safety
+
+Managed values never ride along in checkpoints, but the **metadata does**. Each checkpoint now stores a list of managed value descriptors (name and required flag) so the executor can validate restores before user code runs.
+
+```go
+var runtimeConfigMV = graph.NewManagedValue(
+    "runtime_config",
+    &RuntimeConfig{APIKey: os.Getenv("API_KEY"), Timeout: 15 * time.Second},
+    graph.WithManagedValueRequired(),          // resume fails if missing
+    graph.WithManagedValueRehydrator(func(ctx context.Context) error {
+        cfg, err := runtimeConfigMV.Get(ctx)
+        if err != nil {
+            return err
+        }
+        cfg.APIKey = os.Getenv("API_KEY")     // refresh secrets after restore
+        return nil
+    }),
+)
+
+compiled.Run(ctx, input,
+    graph.WithManagedValues(runtimeConfigMV),  // must be provided on resume
+)
+```
+
+- **`WithManagedValueRequired`**: Checkpoint restore aborts early if the managed value is missing, which protects nodes from nil pointers or stale config.
+- **`WithManagedValueRehydrator`**: Runs after checkpoint restore and after cached providers refresh, which is ideal for rotating API keys, reopening DB connections, or syncing handles with the environment.
+
+If you rely on `graph.WithCheckpoints`, make sure the same managed value registry is supplied when calling `Resume`. Missing required values will surface as descriptive errors before any graph nodes execute.
+
 ### Comparison with regular state
 
 | Feature | Regular State | Managed Values |

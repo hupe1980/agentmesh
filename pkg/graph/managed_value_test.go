@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -341,4 +342,64 @@ func TestGetManaged(t *testing.T) {
 		assert.Equal(t, int64(2), GetManaged(ctx, view, counter))
 		assert.Equal(t, int64(3), GetManaged(ctx, view, counter))
 	})
+}
+
+func TestManagedValueDescriptorAndRehydrate(t *testing.T) {
+	ctx := context.Background()
+	var rehydrateCalls atomic.Int32
+
+	mv := NewManagedValue("api_key", "secret",
+		WithManagedValueRequired(),
+		WithManagedValueRehydrator(func(context.Context) error {
+			rehydrateCalls.Add(1)
+			return nil
+		}),
+	)
+
+	desc := mv.Descriptor()
+	require.Equal(t, "api_key", desc.Name)
+	require.True(t, desc.Required)
+
+	require.NoError(t, mv.Rehydrate(ctx))
+	require.Equal(t, int32(1), rehydrateCalls.Load())
+}
+
+func TestManagedValueProviderDescriptorOptions(t *testing.T) {
+	provider := NewManagedValueProvider("counter", func(ctx context.Context) (int64, error) {
+		return 0, nil
+	},
+		WithCacheTTL(time.Second),
+		WithProviderManagedValueOptions(
+			WithManagedValueRequired(),
+		),
+	)
+
+	desc := provider.Descriptor()
+	require.Equal(t, "counter", desc.Name)
+	require.True(t, desc.Required)
+}
+
+func TestManagedValueRegistryEnsureAndRehydrate(t *testing.T) {
+	ctx := context.Background()
+	reg := newManagedValueRegistry()
+	var called atomic.Int32
+	mv := NewManagedValue("session", "token",
+		WithManagedValueRequired(),
+		WithManagedValueRehydrator(func(context.Context) error {
+			called.Add(1)
+			return nil
+		}),
+	)
+	reg.register(mv)
+
+	require.NoError(t, reg.ensureAndRehydrate(ctx, []checkpoint.ManagedValueDescriptor{mv.Descriptor()}))
+	require.Equal(t, int32(1), called.Load())
+}
+
+func TestManagedValueRegistryEnsureMissing(t *testing.T) {
+	ctx := context.Background()
+	reg := newManagedValueRegistry()
+	err := reg.ensureAndRehydrate(ctx, []checkpoint.ManagedValueDescriptor{{Name: "api_key", Required: true}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api_key")
 }

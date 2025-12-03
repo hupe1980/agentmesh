@@ -2,9 +2,40 @@ package graph
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
+
+// ManagedValueOption configures metadata or lifecycle hooks for a managed value.
+type ManagedValueOption func(*managedValueConfig)
+
+type managedValueConfig struct {
+	descriptor checkpoint.ManagedValueDescriptor
+	rehydrate  func(context.Context) error
+}
+
+// WithManagedValueRequired marks the managed value as required when resuming from
+// checkpoints. Missing required values during restore will abort execution.
+func WithManagedValueRequired() ManagedValueOption {
+	return func(cfg *managedValueConfig) {
+		cfg.descriptor.Required = true
+	}
+}
+
+// WithManagedValueRehydrator registers a callback that rebuilds the managed
+// value after checkpoint restores. The callback runs before execution resumes
+// whenever the checkpoint lists this managed value. Use it to re-open network
+// connections or refresh credentials.
+func WithManagedValueRehydrator(fn func(context.Context) error) ManagedValueOption {
+	return func(cfg *managedValueConfig) {
+		cfg.rehydrate = fn
+	}
+}
 
 // ManagedValue is the base interface for all managed values.
 // This non-generic interface allows managed values to be passed to WithManagedValues.
@@ -25,6 +56,13 @@ import (
 type ManagedValue interface {
 	// Name returns the unique identifier for this managed value.
 	Name() string
+
+	// Descriptor returns metadata stored in checkpoints for validation.
+	Descriptor() checkpoint.ManagedValueDescriptor
+
+	// Rehydrate refreshes the managed value after checkpoint restore. Default is
+	// no-op. Implementations should be idempotent.
+	Rehydrate(ctx context.Context) error
 }
 
 // ManagedValueAccessor is the generic interface for type-safe access to managed values.
@@ -80,9 +118,11 @@ func GetManaged[T any](ctx context.Context, view View, mv ManagedValueAccessor[T
 // StaticManagedValue provides thread-safe storage for ephemeral values.
 // Values are stored in memory and NOT checkpointed.
 type StaticManagedValue[T any] struct {
-	name  string
-	mu    sync.RWMutex
-	value T
+	name       string
+	mu         sync.RWMutex
+	value      T
+	descriptor checkpoint.ManagedValueDescriptor
+	rehydrate  func(context.Context) error
 }
 
 // NewManagedValue creates a managed value with a static value.
@@ -91,16 +131,32 @@ type StaticManagedValue[T any] struct {
 //
 //	configMV := graph.NewManagedValue("runtime_config", &Config{APIKey: "sk_live_..."})
 //	timeoutMV := graph.NewManagedValue("timeout", 30*time.Second)
-func NewManagedValue[T any](name string, value T) *StaticManagedValue[T] {
+func NewManagedValue[T any](name string, value T, opts ...ManagedValueOption) *StaticManagedValue[T] {
+	cfg := managedValueConfig{
+		descriptor: checkpoint.ManagedValueDescriptor{
+			Name: name,
+		},
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	return &StaticManagedValue[T]{
-		name:  name,
-		value: value,
+		name:       name,
+		value:      value,
+		descriptor: cfg.descriptor,
+		rehydrate:  cfg.rehydrate,
 	}
 }
 
 // Name returns the unique identifier for this managed value.
 func (m *StaticManagedValue[T]) Name() string {
 	return m.name
+}
+
+// Descriptor returns the checkpoint metadata for this managed value.
+func (m *StaticManagedValue[T]) Descriptor() checkpoint.ManagedValueDescriptor {
+	return m.descriptor
 }
 
 // Get retrieves the current value.
@@ -118,12 +174,22 @@ func (m *StaticManagedValue[T]) Set(_ context.Context, value T) error {
 	return nil
 }
 
+// Rehydrate executes the optional rehydration callback registered via options.
+func (m *StaticManagedValue[T]) Rehydrate(ctx context.Context) error {
+	if m.rehydrate == nil {
+		return nil
+	}
+	return m.rehydrate(ctx)
+}
+
 // ManagedValueProvider computes its value dynamically with optional caching.
 // Use this for derived state, expensive computations, or values that need refresh.
 type ManagedValueProvider[T any] struct {
-	name     string
-	provider func(ctx context.Context) (T, error)
-	cacheTTL time.Duration
+	name       string
+	provider   func(ctx context.Context) (T, error)
+	cacheTTL   time.Duration
+	descriptor checkpoint.ManagedValueDescriptor
+	rehydrate  func(context.Context) error
 
 	mu        sync.RWMutex
 	cached    T
@@ -136,6 +202,7 @@ type ManagedValueProviderOption func(*managedValueProviderConfig)
 
 type managedValueProviderConfig struct {
 	cacheTTL time.Duration
+	options  []ManagedValueOption
 }
 
 // WithCacheTTL enables caching with the specified TTL.
@@ -148,6 +215,14 @@ type managedValueProviderConfig struct {
 func WithCacheTTL(ttl time.Duration) ManagedValueProviderOption {
 	return func(cfg *managedValueProviderConfig) {
 		cfg.cacheTTL = ttl
+	}
+}
+
+// WithProviderManagedValueOptions applies generic managed value options when
+// constructing a ManagedValueProvider (e.g., mark as required, register rehydrators).
+func WithProviderManagedValueOptions(opts ...ManagedValueOption) ManagedValueProviderOption {
+	return func(cfg *managedValueProviderConfig) {
+		cfg.options = append(cfg.options, opts...)
 	}
 }
 
@@ -171,17 +246,33 @@ func NewManagedValueProvider[T any](name string, provider func(ctx context.Conte
 		opt(cfg)
 	}
 
+	mvCfg := managedValueConfig{
+		descriptor: checkpoint.ManagedValueDescriptor{
+			Name: name,
+		},
+	}
+	for _, opt := range cfg.options {
+		opt(&mvCfg)
+	}
+
 	return &ManagedValueProvider[T]{
-		name:     name,
-		provider: provider,
-		cacheTTL: cfg.cacheTTL,
-		hasCache: cfg.cacheTTL > 0,
+		name:       name,
+		provider:   provider,
+		cacheTTL:   cfg.cacheTTL,
+		hasCache:   cfg.cacheTTL > 0,
+		descriptor: mvCfg.descriptor,
+		rehydrate:  mvCfg.rehydrate,
 	}
 }
 
 // Name returns the unique identifier for this managed value.
 func (p *ManagedValueProvider[T]) Name() string {
 	return p.name
+}
+
+// Descriptor returns the checkpoint metadata for this managed value.
+func (p *ManagedValueProvider[T]) Descriptor() checkpoint.ManagedValueDescriptor {
+	return p.descriptor
 }
 
 // Get retrieves the value, using cache if enabled and not expired.
@@ -235,6 +326,14 @@ func (p *ManagedValueProvider[T]) Invalidate() {
 	p.expiresAt = time.Time{}
 }
 
+// Rehydrate executes the optional rehydration callback for provider values.
+func (p *ManagedValueProvider[T]) Rehydrate(ctx context.Context) error {
+	if p.rehydrate == nil {
+		return nil
+	}
+	return p.rehydrate(ctx)
+}
+
 // managedValueRegistry holds managed values for a graph execution (internal).
 type managedValueRegistry struct {
 	mu     sync.RWMutex
@@ -260,4 +359,65 @@ func (r *managedValueRegistry) getByName(name string) ManagedValue {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.values[name]
+}
+
+// descriptors returns a sorted slice of managed value descriptors for storing in checkpoints.
+func (r *managedValueRegistry) descriptors() []checkpoint.ManagedValueDescriptor {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if len(r.values) == 0 {
+		return nil
+	}
+	desc := make([]checkpoint.ManagedValueDescriptor, 0, len(r.values))
+	for _, mv := range r.values {
+		d := mv.Descriptor()
+		if d.Name == "" {
+			d.Name = mv.Name()
+		}
+		desc = append(desc, d)
+	}
+	sort.Slice(desc, func(i, j int) bool { return desc[i].Name < desc[j].Name })
+	return desc
+}
+
+// ensureAndRehydrate validates that the registry satisfies the checkpoint descriptors
+// and invokes rehydrators for matching managed values.
+func (r *managedValueRegistry) ensureAndRehydrate(ctx context.Context, descriptors []checkpoint.ManagedValueDescriptor) error {
+	if len(descriptors) == 0 {
+		return nil
+	}
+	if r == nil {
+		return fmt.Errorf("graph: checkpoint requires managed values %s; provide them via graph.WithManagedValues when resuming", descriptorList(descriptors))
+	}
+
+	var missing []string
+	for _, desc := range descriptors {
+		mv := r.getByName(desc.Name)
+		if mv == nil {
+			if desc.Required {
+				missing = append(missing, desc.Name)
+			}
+			continue
+		}
+
+		if err := mv.Rehydrate(ctx); err != nil {
+			return fmt.Errorf("graph: failed to rehydrate managed value %q: %w", desc.Name, err)
+		}
+	}
+
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("graph: missing required managed values: %s. Provide them via graph.WithManagedValues when resuming", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+func descriptorList(descriptors []checkpoint.ManagedValueDescriptor) string {
+	names := make([]string, len(descriptors))
+	for i, d := range descriptors {
+		names[i] = d.Name
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }

@@ -280,6 +280,11 @@ func (m *InMemoryCheckpointer) deepCopy(src *Checkpoint) *Checkpoint {
 		}
 	}
 
+	if src.ManagedValues != nil {
+		dst.ManagedValues = make([]ManagedValueDescriptor, len(src.ManagedValues))
+		copy(dst.ManagedValues, src.ManagedValues)
+	}
+
 	// Deep copy ApprovalMetadata
 	if src.ApprovalMetadata != nil {
 		dst.ApprovalMetadata = &ApprovalMetadata{}

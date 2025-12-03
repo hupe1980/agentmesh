@@ -3,6 +3,7 @@ package graph_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1162,6 +1163,114 @@ func TestTwoPhaseCommitProtocol(t *testing.T) {
 	}
 	if !cp.Committed {
 		t.Error("Expected final checkpoint to be committed")
+	}
+}
+
+func TestResumeRequiresManagedValues(t *testing.T) {
+	resultKey := graph.NewKey("result", "")
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	const runID = "managed-values-resume"
+
+	apiKey := graph.NewManagedValue("api_key", "sk_live", graph.WithManagedValueRequired())
+
+	g := graph.New[any, any](resultKey)
+	g.Node("emit", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(resultKey, "ok").To(graph.END)
+	}, graph.END)
+	g.Start("emit")
+	g.WithCheckpointer(checkpointer, runID)
+
+	compiled, err := g.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	ctx := context.Background()
+	for _, err := range compiled.Run(ctx, nil,
+		graph.WithRunID(runID),
+		graph.WithManagedValues(apiKey),
+	) {
+		if err != nil {
+			t.Fatalf("initial run failed: %v", err)
+		}
+	}
+
+	cp, err := checkpointer.Load(ctx, runID)
+	if err != nil {
+		t.Fatalf("load checkpoint failed: %v", err)
+	}
+	if cp == nil || len(cp.ManagedValues) == 0 {
+		t.Fatalf("expected checkpoint to capture managed value descriptors")
+	}
+
+	var resumeErr error
+	for _, err := range compiled.Run(ctx, nil,
+		graph.WithRunID(runID),
+		graph.WithAutoRestore(true),
+	) {
+		if err != nil {
+			resumeErr = err
+			break
+		}
+	}
+
+	if resumeErr == nil {
+		t.Fatalf("expected resume to fail without managed values")
+	}
+	if !strings.Contains(resumeErr.Error(), "managed value") {
+		t.Fatalf("unexpected resume error: %v", resumeErr)
+	}
+}
+
+func TestResumeManagedValueRehydrate(t *testing.T) {
+	resultKey := graph.NewKey("result", "")
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	const runID = "managed-values-rehydrate"
+
+	var rehydrateCalls atomic.Int32
+	session := graph.NewManagedValue("session", map[string]string{"token": "initial"},
+		graph.WithManagedValueRequired(),
+		graph.WithManagedValueRehydrator(func(context.Context) error {
+			rehydrateCalls.Add(1)
+			return nil
+		}),
+	)
+
+	g := graph.New[any, any](resultKey)
+	g.Node("emit", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		return graph.Set(resultKey, "ok").To(graph.END)
+	}, graph.END)
+	g.Start("emit")
+	g.WithCheckpointer(checkpointer, runID)
+
+	compiled, err := g.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	ctx := context.Background()
+	for _, err := range compiled.Run(ctx, nil,
+		graph.WithRunID(runID),
+		graph.WithManagedValues(session),
+	) {
+		if err != nil {
+			t.Fatalf("initial run failed: %v", err)
+		}
+	}
+
+	rehydrateCalls.Store(0)
+	for _, err := range compiled.Run(ctx, nil,
+		graph.WithRunID(runID),
+		graph.WithAutoRestore(true),
+		graph.WithManagedValues(session),
+	) {
+		if err != nil {
+			t.Fatalf("resume failed: %v", err)
+		}
+	}
+
+	if rehydrateCalls.Load() == 0 {
+		t.Fatalf("expected rehydrate callback to run during resume")
 	}
 }
 

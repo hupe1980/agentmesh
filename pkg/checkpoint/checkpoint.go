@@ -29,6 +29,19 @@ type PendingWrite struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// ManagedValueDescriptor captures metadata about managed values that must be
+// rehydrated before a checkpoint can be resumed. These descriptors allow the
+// graph runtime to verify that required managed values are provided again
+// during restore and to detect mismatched factories/configurations.
+type ManagedValueDescriptor struct {
+	// Name is the unique identifier for the managed value.
+	Name string `json:"name"`
+
+	// Required indicates whether the managed value must be provided when resuming
+	// from the checkpoint. Optional managed values can be omitted during resume.
+	Required bool `json:"required,omitempty"`
+}
+
 // Checkpoint represents a snapshot of graph execution state at a specific point in time.
 // It captures all information needed to resume execution from that point.
 type Checkpoint struct {
@@ -90,6 +103,12 @@ type Checkpoint struct {
 	//   - Querying checkpoints by approval status
 	//   - Implementing approval timeouts and SLAs
 	ApprovalMetadata *ApprovalMetadata `json:"approvalMetadata,omitempty"`
+
+	// ManagedValues captures the managed value descriptors that were registered
+	// when the checkpoint was taken. These descriptors allow the runtime to
+	// verify that all required managed values are reattached and rehydrated before
+	// resuming execution.
+	ManagedValues []ManagedValueDescriptor `json:"managedValues,omitempty"`
 }
 
 // ApprovalMetadata captures approval workflow information in a checkpoint.

@@ -74,6 +74,30 @@ g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, er
 }, graph.END)
 ```
 
+## Checkpoint Resume Behavior
+
+Managed values never live inside checkpoints, so checkpoint resume must explicitly
+reattach them. Use the managed value options to make this safer:
+
+```go
+var runtimeConfigMV = graph.NewManagedValue(
+  "runtime_config",
+  &RuntimeConfig{APIKey: os.Getenv("API_KEY"), Timeout: 30 * time.Second},
+  graph.WithManagedValueRequired(), // resume fails fast if missing
+  graph.WithManagedValueRehydrator(func(ctx context.Context) error {
+    cfg, err := runtimeConfigMV.Get(ctx)
+    if err != nil {
+      return err
+    }
+    cfg.APIKey = os.Getenv("API_KEY") // refresh secret on restore
+    return nil
+  }),
+)
+```
+
+- **Required**: `WithManagedValueRequired` forces `graph.WithManagedValues` during resume, otherwise the executor surfaces a helpful error before any user code runs.
+- **Rehydrator**: `WithManagedValueRehydrator` runs after a checkpoint restore and after providers refresh cached state, ideal for rotating credentials or re-opening connections.
+
 ## Running the Graph
 
 Pass managed values directly when running the graph:

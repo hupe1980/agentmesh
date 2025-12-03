@@ -6,6 +6,8 @@ import (
 	"iter"
 	"maps"
 	"reflect"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
@@ -39,6 +41,7 @@ func isNilOrZero[T any](v T) bool {
 type checkpointRestoreResult struct {
 	State         map[string]any
 	PendingWrites []checkpoint.PendingWrite // Only set if Committed=false
+	ManagedValues []checkpoint.ManagedValueDescriptor
 }
 
 // restoreCheckpoint attempts to restore state from a checkpoint.
@@ -69,6 +72,9 @@ func restoreCheckpoint[O any](
 		// Two-phase commit: apply pending writes if checkpoint was not committed
 		if !runCfg.checkpoint.Committed && len(runCfg.checkpoint.PendingWrites) > 0 {
 			result.PendingWrites = clonePendingWrites(runCfg.checkpoint.PendingWrites)
+		}
+		if len(runCfg.checkpoint.ManagedValues) > 0 {
+			result.ManagedValues = cloneManagedValueDescriptors(runCfg.checkpoint.ManagedValues)
 		}
 	}
 
@@ -111,6 +117,9 @@ func tryAutoRestore(
 		if !chkpt.Committed && len(chkpt.PendingWrites) > 0 {
 			result.PendingWrites = clonePendingWrites(chkpt.PendingWrites)
 		}
+		if len(chkpt.ManagedValues) > 0 {
+			result.ManagedValues = cloneManagedValueDescriptors(chkpt.ManagedValues)
+		}
 	}
 	return nil
 }
@@ -123,6 +132,30 @@ func clonePendingWrites(writes []checkpoint.PendingWrite) []checkpoint.PendingWr
 	cloned := make([]checkpoint.PendingWrite, len(writes))
 	copy(cloned, writes)
 	return cloned
+}
+
+func cloneManagedValueDescriptors(desc []checkpoint.ManagedValueDescriptor) []checkpoint.ManagedValueDescriptor {
+	if len(desc) == 0 {
+		return nil
+	}
+	cloned := make([]checkpoint.ManagedValueDescriptor, len(desc))
+	copy(cloned, desc)
+	return cloned
+}
+
+func listManagedValueNames(desc []checkpoint.ManagedValueDescriptor, requiredOnly bool) []string {
+	if len(desc) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(desc))
+	for _, d := range desc {
+		if requiredOnly && !d.Required {
+			continue
+		}
+		names = append(names, d.Name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // PregelExecutor executes graphs using the Pregel BSP runtime.
@@ -284,6 +317,8 @@ func publishCompletionEvent(ctx context.Context, runID string, runtimeErr error)
 }
 
 // Run executes the graph using the Pregel BSP runtime.
+//
+//nolint:gocyclo,nestif // Coordination of checkpoint restore, BSP plumbing, and streaming yield is centralized here.
 func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		// Create cancellable context for early termination
@@ -318,6 +353,22 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 
 		// Create BSP-compliant state manager
 		bspState := NewBSPState(restoreResult.State)
+
+		if len(restoreResult.ManagedValues) > 0 {
+			if runCfg.managedValues == nil {
+				required := listManagedValueNames(restoreResult.ManagedValues, true)
+				if len(required) > 0 {
+					var zero O
+					err := fmt.Errorf("graph: checkpoint requires managed values (%s); provide them via graph.WithManagedValues when resuming", strings.Join(required, ", "))
+					yield(zero, err)
+					return
+				}
+			} else if err := runCfg.managedValues.ensureAndRehydrate(ctx, restoreResult.ManagedValues); err != nil {
+				var zero O
+				yield(zero, err)
+				return
+			}
+		}
 
 		// Attach managed values to BSP state (accessible via View)
 		if runCfg.managedValues != nil {
@@ -441,6 +492,13 @@ func (a *pregelGraphAdapter[I, O]) VertexByName(name string) pregel.Vertex[*Exec
 // State returns the executor configuration.
 func (a *pregelGraphAdapter[I, O]) State() *ExecutorConfig[I, O] {
 	return a.cfg
+}
+
+func (a *pregelGraphAdapter[I, O]) managedValueDescriptors() []checkpoint.ManagedValueDescriptor {
+	if a.runCfg.managedValues == nil {
+		return nil
+	}
+	return a.runCfg.managedValues.descriptors()
 }
 
 // yieldListItems yields each item in a slice as an output.
@@ -691,6 +749,7 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			PendingWrites: pendingWrites,
 			Committed:     false, // Mark as uncommitted - pending writes not yet applied
 			Timestamp:     time.Now(),
+			ManagedValues: a.managedValueDescriptors(),
 		}
 
 		if err := a.cfg.Checkpointer.Save(ctx, phase1Checkpoint); err != nil {
@@ -716,6 +775,7 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			PendingWrites: nil,                   // No pending writes - all committed
 			Committed:     true,                  // Mark as committed
 			Timestamp:     time.Now(),
+			ManagedValues: a.managedValueDescriptors(),
 		}
 
 		if err := a.cfg.Checkpointer.Save(ctx, phase2Checkpoint); err != nil {
