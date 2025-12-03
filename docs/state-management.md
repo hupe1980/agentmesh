@@ -622,6 +622,8 @@ seq = compiled.Run(ctx, "input",
     graph.WithRunID("workflow-123"),
     graph.WithAutoRestore(true),
 )
+
+> **Performance note:** Restores now reuse the checkpoint map directly and wrap it in a copy-on-write layer. Large checkpoints (10k+ keys) no longer trigger duplicate map allocations during resume—only mutated keys incur copies. See `BenchmarkRestoreCheckpoint10KKeys` in `pkg/graph` for reference numbers.
 ```
 
 ### Checkpoint contents

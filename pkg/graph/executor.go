@@ -40,8 +40,65 @@ func isNilOrZero[T any](v T) bool {
 // checkpointRestoreResult contains restored state and pending writes from checkpoint.
 type checkpointRestoreResult struct {
 	State         map[string]any
+	stateOwned    bool
 	PendingWrites []checkpoint.PendingWrite // Only set if Committed=false
 	ManagedValues []checkpoint.ManagedValueDescriptor
+}
+
+func (r *checkpointRestoreResult) useCheckpoint(cp *checkpoint.Checkpoint) {
+	if cp == nil {
+		return
+	}
+
+	if cp.State != nil {
+		r.State = cp.State
+		r.stateOwned = false
+	} else {
+		r.State = nil
+		r.stateOwned = true
+	}
+
+	if !cp.Committed && len(cp.PendingWrites) > 0 {
+		r.PendingWrites = clonePendingWrites(cp.PendingWrites)
+	} else {
+		r.PendingWrites = nil
+	}
+
+	if len(cp.ManagedValues) > 0 {
+		r.ManagedValues = cloneManagedValueDescriptors(cp.ManagedValues)
+	} else {
+		r.ManagedValues = nil
+	}
+}
+
+func (r *checkpointRestoreResult) ensureStateOwned() {
+	if r.State == nil {
+		r.State = make(map[string]any)
+		r.stateOwned = true
+		return
+	}
+	if r.stateOwned {
+		return
+	}
+	cloned := maps.Clone(r.State)
+	r.State = cloned
+	r.stateOwned = true
+}
+
+func (r *checkpointRestoreResult) applyUpdates(updates map[string]any) {
+	if len(updates) == 0 {
+		return
+	}
+	r.ensureStateOwned()
+	maps.Copy(r.State, updates)
+}
+
+func (r *checkpointRestoreResult) setValue(key string, value any) {
+	if key == "" {
+		return
+	}
+	r.ensureStateOwned()
+	r.State[key] = value
 }
 
 // restoreCheckpoint attempts to restore state from a checkpoint.
@@ -52,37 +109,28 @@ func restoreCheckpoint[O any](
 	runCfg *runConfig,
 	yield func(O, error) bool,
 ) (*checkpointRestoreResult, bool) {
-	result := &checkpointRestoreResult{
-		State: make(map[string]any),
-	}
+	result := &checkpointRestoreResult{}
 
 	// Try to restore from checkpoint if autoRestore is enabled
-	if err := tryAutoRestore(ctx, cfg.Checkpointer, cfg.RunID, runCfg, result); err != nil {
+	if chkpt, err := tryAutoRestore(ctx, cfg.Checkpointer, cfg.RunID, runCfg); err != nil {
 		if runCfg.failOnCheckpointErr {
 			var zero O
 			yield(zero, fmt.Errorf("failed to load checkpoint: %w", err))
 			return nil, false
 		}
 		// Continue without checkpoint restoration
+	} else if chkpt != nil {
+		result.useCheckpoint(chkpt)
 	}
 
 	// If a checkpoint is explicitly provided, use it
 	if runCfg.checkpoint != nil {
-		maps.Copy(result.State, runCfg.checkpoint.State)
-		// Two-phase commit: apply pending writes if checkpoint was not committed
-		if !runCfg.checkpoint.Committed && len(runCfg.checkpoint.PendingWrites) > 0 {
-			result.PendingWrites = clonePendingWrites(runCfg.checkpoint.PendingWrites)
-		}
-		if len(runCfg.checkpoint.ManagedValues) > 0 {
-			result.ManagedValues = cloneManagedValueDescriptors(runCfg.checkpoint.ManagedValues)
-		}
+		result.useCheckpoint(runCfg.checkpoint)
 	}
 
 	// Apply any state updates provided via WithStateUpdates
 	// This enables human-in-the-loop workflows to inject human input
-	if len(runCfg.stateUpdates) > 0 {
-		maps.Copy(result.State, runCfg.stateUpdates)
-	}
+	result.applyUpdates(runCfg.stateUpdates)
 
 	return result, true
 }
@@ -93,10 +141,9 @@ func tryAutoRestore(
 	checkpointer checkpoint.Checkpointer,
 	cfgRunID string,
 	runCfg *runConfig,
-	result *checkpointRestoreResult,
-) error {
+) (*checkpoint.Checkpoint, error) {
 	if !runCfg.autoRestore || checkpointer == nil {
-		return nil
+		return nil, nil
 	}
 
 	runID := runCfg.runID
@@ -104,24 +151,14 @@ func tryAutoRestore(
 		runID = cfgRunID
 	}
 	if runID == "" {
-		return nil
+		return nil, nil
 	}
 
 	chkpt, err := checkpointer.Load(ctx, runID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if chkpt != nil {
-		maps.Copy(result.State, chkpt.State)
-		// Two-phase commit: apply pending writes if checkpoint was not committed
-		if !chkpt.Committed && len(chkpt.PendingWrites) > 0 {
-			result.PendingWrites = clonePendingWrites(chkpt.PendingWrites)
-		}
-		if len(chkpt.ManagedValues) > 0 {
-			result.ManagedValues = cloneManagedValueDescriptors(chkpt.ManagedValues)
-		}
-	}
-	return nil
+	return chkpt, nil
 }
 
 func clonePendingWrites(writes []checkpoint.PendingWrite) []checkpoint.PendingWrite {
@@ -348,7 +385,7 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 		// 2. The input is not nil (to avoid overwriting restored checkpoint state with nil)
 		// This allows checkpoint restoration to preserve state while still accepting new input
 		if cfg.OutputKey != "" && !isNilOrZero(input) {
-			restoreResult.State[cfg.OutputKey] = input
+			restoreResult.setValue(cfg.OutputKey, input)
 		}
 
 		// Create BSP-compliant state manager

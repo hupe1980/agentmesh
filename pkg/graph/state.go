@@ -223,6 +223,8 @@ type BSPState struct {
 	// committed is the authoritative state after all barriers.
 	// Used for checkpointing and final output.
 	committed map[string]any
+	// ownsCommitted indicates whether committed is safe to mutate without cloning.
+	ownsCommitted bool
 
 	// version tracks state changes for copy-on-write optimization.
 	// Incremented on each barrier commit. Accessed atomically.
@@ -246,17 +248,22 @@ type BSPState struct {
 
 // NewBSPState creates a new BSP-compliant state manager.
 func NewBSPState(initial map[string]any) *BSPState {
-	committed := make(map[string]any)
-	if initial != nil {
-		maps.Copy(committed, initial)
+	var committed map[string]any
+	ownedCommitted := false
+	if initial == nil {
+		committed = make(map[string]any)
+		ownedCommitted = true
+	} else {
+		committed = initial
 	}
 
 	// Initial read snapshot shares the committed map (copy-on-write)
-	// This is safe because we'll create a new map on first write
+	// This is safe because we'll clone on first mutation
 	state := &BSPState{
-		readSnapshot: committed, // Share initially (CoW)
-		writeBuffer:  make(map[string]any),
-		committed:    committed,
+		readSnapshot:  committed, // Share initially (CoW)
+		writeBuffer:   make(map[string]any),
+		committed:     committed,
+		ownsCommitted: ownedCommitted,
 	}
 	// version and snapshotVersion start at 0 (zero value)
 	// Set initial cached view
@@ -430,6 +437,8 @@ func (s *BSPState) CommitBarrier() {
 // Optimized: uses type switches for common slice types.
 // Must be called while holding s.mu lock.
 func (s *BSPState) mergeIntoCommitted(key string, value any) {
+	s.ensureCommittedOwnership()
+
 	// Fast path for common scalar types
 	switch value.(type) {
 	case string, int, int64, float64, bool, nil:
@@ -503,6 +512,8 @@ func (s *BSPState) ApplyPendingWrites(pending []checkpoint.PendingWrite) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.ensureCommittedOwnership()
+
 	// Apply pending writes to committed state
 	for _, write := range pending {
 		s.mergeIntoCommitted(write.Channel, write.Value)
@@ -515,4 +526,15 @@ func (s *BSPState) ApplyPendingWrites(pending []checkpoint.PendingWrite) {
 	s.snapshotVersion.Store(newVersion)
 	// Update cached view atomically for lock-free reads
 	s.cachedView.Store(&stateView{data: s.readSnapshot, managed: s.managedValues})
+}
+
+// ensureCommittedOwnership clones the committed state before mutation when needed.
+func (s *BSPState) ensureCommittedOwnership() {
+	if s.ownsCommitted {
+		return
+	}
+	cloned := make(map[string]any, len(s.committed))
+	maps.Copy(cloned, s.committed)
+	s.committed = cloned
+	s.ownsCommitted = true
 }
