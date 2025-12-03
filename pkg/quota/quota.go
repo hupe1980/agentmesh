@@ -51,7 +51,7 @@ func WithMaxMemoryBytes(bytes uint64) Option {
 // When exceeded, blocks new goroutine creation until capacity is available.
 func WithMaxGoroutines(maxGoroutines int) Option {
 	return func(m *Manager) {
-		m.maxGoroutines = int32(maxGoroutines) //nolint:gosec // maxGoroutines is validated to be positive
+		m.maxGoroutines = int32(maxGoroutines)
 	}
 }
 

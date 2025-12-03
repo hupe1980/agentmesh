@@ -41,7 +41,6 @@ func (se *SimpleEmbedder) Embed(ctx context.Context, text string) ([]float64, er
 		// Convert hash to float in range [-1, 1]
 		hash := h.Sum64()
 		// Use modulo to prevent overflow instead of direct conversion
-		//nolint:gosec // Safe conversion after modulo operation
 		normalized := int64(hash % uint64(math.MaxInt64))
 		embedding[i] = float64(normalized) / float64(math.MaxInt64)
 	}
