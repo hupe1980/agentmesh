@@ -130,8 +130,8 @@ executor := tool.NewExecutor(registry,
 
 // Parallel execution (concurrent)
 executor := tool.NewParallelExecutor(registry,
-    tool.WithMaxConcurrency(5),
-    tool.WithContinueOnError(true))
+    tool.WithContinueOnError(true),
+    tool.WithMaxConcurrency(5))
 
 // Execute tools directly (without graph)
 calls := []tool.Call{

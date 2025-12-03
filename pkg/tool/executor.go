@@ -131,25 +131,41 @@ type Executor interface {
 	Execute(ctx context.Context, calls []Call) ([]ExecutionResult, error)
 }
 
-// SequentialExecutor executes tools one by one in order.
-// This is the safest option when tools have dependencies or side effects.
-type SequentialExecutor struct {
+// executorConfig holds common configuration shared by all executor implementations.
+// This struct is embedded in concrete executor types to avoid code duplication
+// and provide consistent configuration options across executor variants.
+type executorConfig struct {
 	registry        map[string]Tool
 	continueOnError bool
 	errorPrefix     string
+}
+
+// defaultExecutorConfig returns an executorConfig with sensible defaults.
+func defaultExecutorConfig(registry map[string]Tool) executorConfig {
+	return executorConfig{
+		registry:        registry,
+		continueOnError: false,
+		errorPrefix:     "tool executor",
+	}
+}
+
+// SequentialExecutor executes tools one by one in order.
+// This is the safest option when tools have dependencies or side effects.
+type SequentialExecutor struct {
+	executorConfig
 }
 
 // ParallelExecutor executes tools concurrently using goroutines.
 // This provides better performance when tools are independent.
 type ParallelExecutor struct {
-	registry        map[string]Tool
-	continueOnError bool
-	errorPrefix     string
-	maxConcurrency  int // 0 = unlimited
+	executorConfig
+	maxConcurrency int // 0 = unlimited
 }
 
 // ExecutorOption configures an executor.
-type ExecutorOption func(any)
+// Options work with executorConfig to provide consistent behavior
+// across SequentialExecutor and ParallelExecutor.
+type ExecutorOption func(*executorConfig)
 
 // WithContinueOnError configures error handling behavior.
 // If true, execution continues even when individual tools fail.
@@ -160,13 +176,8 @@ type ExecutorOption func(any)
 //	executor := tool.NewSequentialExecutor(registry,
 //	    tool.WithContinueOnError(true))
 func WithContinueOnError(continueOnError bool) ExecutorOption {
-	return func(e any) {
-		switch executor := e.(type) {
-		case *SequentialExecutor:
-			executor.continueOnError = continueOnError
-		case *ParallelExecutor:
-			executor.continueOnError = continueOnError
-		}
+	return func(cfg *executorConfig) {
+		cfg.continueOnError = continueOnError
 	}
 }
 
@@ -178,28 +189,25 @@ func WithContinueOnError(continueOnError bool) ExecutorOption {
 //	executor := tool.NewSequentialExecutor(registry,
 //	    tool.WithErrorPrefix("my-agent"))
 func WithErrorPrefix(prefix string) ExecutorOption {
-	return func(e any) {
-		switch executor := e.(type) {
-		case *SequentialExecutor:
-			executor.errorPrefix = prefix
-		case *ParallelExecutor:
-			executor.errorPrefix = prefix
-		}
+	return func(cfg *executorConfig) {
+		cfg.errorPrefix = prefix
 	}
 }
 
-// WithMaxConcurrency limits concurrent tool executions (ParallelExecutor only).
+// ParallelExecutorOption configures a ParallelExecutor.
+// These options are specific to parallel execution and don't apply to sequential executors.
+type ParallelExecutorOption func(*ParallelExecutor)
+
+// WithMaxConcurrency limits concurrent tool executions.
 // A value of 0 means unlimited concurrency (default).
 //
 // Example:
 //
 //	executor := tool.NewParallelExecutor(registry,
 //	    tool.WithMaxConcurrency(5)) // Max 5 concurrent tools
-func WithMaxConcurrency(maxConcurrency int) ExecutorOption {
-	return func(e any) {
-		if executor, ok := e.(*ParallelExecutor); ok {
-			executor.maxConcurrency = maxConcurrency
-		}
+func WithMaxConcurrency(maxConcurrency int) ParallelExecutorOption {
+	return func(e *ParallelExecutor) {
+		e.maxConcurrency = maxConcurrency
 	}
 }
 
@@ -217,17 +225,14 @@ func WithMaxConcurrency(maxConcurrency int) ExecutorOption {
 //	    tool.WithContinueOnError(false),
 //	    tool.WithErrorPrefix("react-agent"))
 func NewSequentialExecutor(registry map[string]Tool, opts ...ExecutorOption) Executor {
-	executor := &SequentialExecutor{
-		registry:        registry,
-		continueOnError: false,
-		errorPrefix:     "tool executor",
-	}
-
+	cfg := defaultExecutorConfig(registry)
 	for _, opt := range opts {
-		opt(executor)
+		opt(&cfg)
 	}
 
-	return executor
+	return &SequentialExecutor{
+		executorConfig: cfg,
+	}
 }
 
 // NewParallelExecutor creates a parallel tool executor.
@@ -241,22 +246,41 @@ func NewSequentialExecutor(registry map[string]Tool, opts ...ExecutorOption) Exe
 // Example:
 //
 //	executor := tool.NewParallelExecutor(registry,
-//	    tool.WithMaxConcurrency(10),
 //	    tool.WithContinueOnError(true),
-//	    tool.WithErrorPrefix("react-agent"))
-func NewParallelExecutor(registry map[string]Tool, opts ...ExecutorOption) Executor {
-	executor := &ParallelExecutor{
-		registry:        registry,
-		continueOnError: false,
-		errorPrefix:     "tool executor",
-		maxConcurrency:  0, // unlimited
+//	    tool.WithMaxConcurrency(10))
+func NewParallelExecutor(registry map[string]Tool, opts ...any) *ParallelExecutor {
+	cfg := defaultExecutorConfig(registry)
+
+	e := &ParallelExecutor{
+		executorConfig: cfg,
+		maxConcurrency: 0, // unlimited
 	}
 
 	for _, opt := range opts {
-		opt(executor)
+		switch o := opt.(type) {
+		case ExecutorOption:
+			o(&e.executorConfig)
+		case ParallelExecutorOption:
+			o(e)
+		}
 	}
 
-	return executor
+	return e
+}
+
+// WithParallelOptions applies ParallelExecutor-specific options.
+// This method is provided for compatibility but is not required -
+// ParallelExecutorOption can be passed directly to NewParallelExecutor.
+//
+// Example:
+//
+//	executor := tool.NewParallelExecutor(registry,
+//	    tool.WithMaxConcurrency(5))
+func (e *ParallelExecutor) WithParallelOptions(opts ...ParallelExecutorOption) *ParallelExecutor {
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // NewExecutor creates a tool executor with the recommended default (sequential).
