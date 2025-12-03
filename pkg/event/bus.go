@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // Handler processes events published to the bus.
@@ -21,19 +22,44 @@ func (f HandlerFunc) HandleEvent(ctx context.Context, event Event) error {
 }
 
 // Bus provides pub/sub event distribution for graph execution.
-// Thread-safe for concurrent publishers and subscribers.
+// Thread-safe for concurrent publishers and subscribers. Handlers execute
+// outside of internal locks so slow subscribers cannot block publishers.
 type Bus struct {
-	mu       sync.RWMutex
+	mu       sync.Mutex
+	snapshot atomic.Pointer[handlerSnapshot]
+}
+
+type handlerSnapshot struct {
 	handlers map[Type][]Handler
-	all      []Handler // Handlers that receive all events
+	all      []Handler
 }
 
 // NewBus creates a new event bus.
 func NewBus() *Bus {
-	return &Bus{
-		handlers: make(map[Type][]Handler),
-		all:      []Handler{},
+	bus := &Bus{}
+	bus.snapshot.Store(&handlerSnapshot{handlers: make(map[Type][]Handler)})
+	return bus
+}
+
+// clone returns a shallow copy of the snapshot so modifications do not race
+// with readers. Individual handler slices remain immutable until replaced.
+func (s *handlerSnapshot) clone() *handlerSnapshot {
+	if s == nil {
+		return &handlerSnapshot{handlers: make(map[Type][]Handler)}
 	}
+	handlers := make(map[Type][]Handler, len(s.handlers))
+	for t, list := range s.handlers {
+		handlers[t] = list
+	}
+	return &handlerSnapshot{
+		handlers: handlers,
+		all:      s.all,
+	}
+}
+
+func copyAndAppend(list []Handler, handler Handler) []Handler {
+	cloned := append([]Handler(nil), list...)
+	return append(cloned, handler)
 }
 
 // Subscribe registers a handler for specific event types.
@@ -47,19 +73,33 @@ func NewBus() *Bus {
 //	// Subscribe to all events
 //	bus.Subscribe(handler)
 func (eb *Bus) Subscribe(handler Handler, types ...Type) {
-	eb.mu.Lock()
-	defer eb.mu.Unlock()
-
-	if len(types) == 0 {
-		// Subscribe to all events
-		eb.all = append(eb.all, handler)
+	if handler == nil {
 		return
 	}
 
-	// Subscribe to specific event types
-	for _, t := range types {
-		eb.handlers[t] = append(eb.handlers[t], handler)
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
+	current := eb.snapshot.Load()
+	next := current.clone()
+
+	if len(types) == 0 {
+		next.all = copyAndAppend(next.all, handler)
+		if next.handlers == nil {
+			next.handlers = make(map[Type][]Handler)
+		}
+		// Store updated snapshot
+		eb.snapshot.Store(next)
+		return
 	}
+
+	if next.handlers == nil {
+		next.handlers = make(map[Type][]Handler, len(types))
+	}
+	for _, t := range types {
+		next.handlers[t] = copyAndAppend(next.handlers[t], handler)
+	}
+	eb.snapshot.Store(next)
 }
 
 // Publish sends an event to all registered handlers.
@@ -74,18 +114,18 @@ func (eb *Bus) Subscribe(handler Handler, types ...Type) {
 //	    Timestamp: time.Now(),
 //	})
 func (eb *Bus) Publish(ctx context.Context, event Event) {
-	eb.mu.RLock()
-	defer eb.mu.RUnlock()
+	snapshot := eb.snapshot.Load()
+	if snapshot == nil {
+		return
+	}
 
-	// Call type-specific handlers
-	if handlers, ok := eb.handlers[event.Type]; ok {
+	if handlers := snapshot.handlers[event.Type]; len(handlers) > 0 {
 		for _, h := range handlers {
 			_ = h.HandleEvent(ctx, event) // Swallow errors
 		}
 	}
 
-	// Call all-event handlers
-	for _, h := range eb.all {
+	for _, h := range snapshot.all {
 		_ = h.HandleEvent(ctx, event)
 	}
 }

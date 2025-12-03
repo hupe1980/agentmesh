@@ -13,7 +13,7 @@
 // # Architecture
 //
 // The event system consists of:
-//   - EventBus: Manages subscriptions and publishes events synchronously
+//   - Bus: Manages subscriptions and publishes events synchronously without holding locks
 //   - Event: Unified event structure with type, component, source, and data
 //   - EventHandler: Interface for processing events
 //   - Context helpers: Attach/retrieve event bus from context
@@ -38,9 +38,9 @@
 //
 // Subscribing to events:
 //
-//	bus := event.NewEventBus()
+//	bus := event.NewBus()
 //	bus.Subscribe(myHandler)
-//	ctx = event.WithEventBus(ctx, bus)
+//	ctx = event.WithBus(ctx, bus)
 //
 //	// Now all Publish() calls will deliver to myHandler
 //
@@ -55,12 +55,12 @@
 //
 // # Synchronous Delivery
 //
-// Events are delivered synchronously to handlers in subscription order.
-// This ensures:
-//   - Events are processed in order
-//   - No timing issues or race conditions
-//   - Simple mental model for debugging
-//   - Minimal performance impact
+// Events are delivered synchronously to handlers in subscription order after the
+// bus snapshots its handler lists. The snapshotting ensures:
+//   - Handlers execute without holding internal locks, so slow subscribers do not block publishers
+//   - Events remain ordered and deterministic
+//   - Subscribers added during a publish do not see in-flight events (consistent snapshot)
+//   - A simple mental model for debugging without goroutine fan-out
 //
 // # Design Decisions
 //

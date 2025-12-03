@@ -163,23 +163,30 @@ The middleware system integrates with a powerful event bus for loose coupling an
 ### Subscribing to Events
 
 ```go
+import "github.com/hupe1980/agentmesh/pkg/event"
+
 // Create event bus
-eventBus := graph.NewEventBus()
-ctx = graph.WithEventBus(ctx, eventBus)
+eventBus := event.NewBus()
+ctx = event.WithBus(ctx, eventBus)
 
 // Subscribe to all events
-eventBus.Subscribe(graph.EventHandlerFunc(func(ctx context.Context, event graph.Event) error {
-    log.Printf("[%s] %s at node %s", event.Type, event.Timestamp, event.Node)
+eventBus.Subscribe(event.HandlerFunc(func(ctx context.Context, evt event.Event) error {
+    log.Printf("[%s] %s at node %s", evt.Type, evt.Timestamp, evt.Node)
     return nil
 }))
 
 // Subscribe to specific event types
-eventBus.Subscribe(handler, 
-    graph.EventNodeStart,
-    graph.EventNodeComplete,
-    graph.EventNodeError,
+eventBus.Subscribe(handler,
+    event.EventNodeStart,
+    event.EventNodeComplete,
+    event.EventNodeError,
 )
 ```
+
+> **Throughput tip:** The bus snapshots handler lists under a short mutex and
+> invokes handlers after releasing it. Slow handlers should spin up their own
+> goroutines or buffering if they need to perform blocking I/O so publishers
+> remain fast.
 
 ### Available Event Types
 

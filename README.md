@@ -25,7 +25,7 @@
 - **💾 Checkpointing** - Persistent state with auto-resume, encryption, and signing
 - **♻️ Zero-Copy Resume** - Copy-on-write checkpoint restores reuse the saved map and only allocate when keys mutate (10k+ key checkpoints resume without GC spikes)
 - **⏸️ Human-in-the-Loop** - Approval workflows with conditional guards and audit trails
-- **📊 Observability** - Built-in OpenTelemetry metrics and distributed tracing
+- **📊 Observability** - Built-in OpenTelemetry metrics, non-blocking event bus fan-out, and distributed tracing
 - **🔁 Resilience** - Configurable retry policies, circuit breakers, and timeouts
 - **🔒 Security** - WASM sandboxing for untrusted code, input validation, and integrity checks
 
