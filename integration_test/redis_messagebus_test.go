@@ -60,7 +60,7 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 	}
 
 	// Test Receive
-	received1, err := bus.Receive("node1")
+	received1, err := bus.Receive(ctx, "node1")
 	if err != nil {
 		t.Fatalf("Failed to receive from node1: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 		t.Errorf("Expected second message to be 'message2', got %q", received1[1].Data)
 	}
 
-	received2, err := bus.Receive("node2")
+	received2, err := bus.Receive(ctx, "node2")
 	if err != nil {
 		t.Fatalf("Failed to receive from node2: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 	}
 
 	// Test Receive on empty mailbox
-	empty, err := bus.Receive("node1")
+	empty, err := bus.Receive(ctx, "node1")
 	if err != nil {
 		t.Fatalf("Failed to receive from empty mailbox: %v", err)
 	}
@@ -101,11 +101,11 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 		t.Fatalf("Failed to send test message: %v", err)
 	}
 
-	if err := bus.Clear("node3"); err != nil {
+	if err := bus.Clear(ctx, "node3"); err != nil {
 		t.Fatalf("Failed to clear node3: %v", err)
 	}
 
-	cleared, err := bus.Receive("node3")
+	cleared, err := bus.Receive(ctx, "node3")
 	if err != nil {
 		t.Fatalf("Failed to receive after clear: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRedisMessageBus_ConcurrentAccess(t *testing.T) {
 	totalReceived := 0
 	for i := 0; i < 5; i++ {
 		node := fmt.Sprintf("node%d", i)
-		msgs, err := bus.Receive(node)
+		msgs, err := bus.Receive(ctx, node)
 		if err != nil {
 			t.Errorf("Failed to receive from %s: %v", node, err)
 			continue
@@ -231,7 +231,7 @@ func TestRedisMessageBus_Persistence(t *testing.T) {
 	defer bus2.Close()
 
 	// Verify messages are still there after reconnect
-	received, err := bus2.Receive("vertex1")
+	received, err := bus2.Receive(ctx, "vertex1")
 	if err != nil {
 		t.Fatalf("Failed to receive: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRedisMessageBus_NamespaceIsolation(t *testing.T) {
 	}
 
 	// Verify bus1 only sees its messages
-	msgs1, err := bus1.Receive("node1")
+	msgs1, err := bus1.Receive(ctx, "node1")
 	if err != nil {
 		t.Fatalf("Failed to receive from bus1: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestRedisMessageBus_NamespaceIsolation(t *testing.T) {
 	}
 
 	// Verify bus2 only sees its messages
-	msgs2, err := bus2.Receive("node1")
+	msgs2, err := bus2.Receive(ctx, "node1")
 	if err != nil {
 		t.Fatalf("Failed to receive from bus2: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestRedisMessageBus_EmptyOperations(t *testing.T) {
 	}
 
 	// Receive from non-existent vertex
-	msgs, err := bus.Receive("nonexistent")
+	msgs, err := bus.Receive(ctx, "nonexistent")
 	if err != nil {
 		t.Errorf("Receive from nonexistent vertex should not error: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestRedisMessageBus_EmptyOperations(t *testing.T) {
 	}
 
 	// Clear non-existent vertex
-	if err := bus.Clear("nonexistent"); err != nil {
+	if err := bus.Clear(ctx, "nonexistent"); err != nil {
 		t.Errorf("Clear nonexistent vertex should not error: %v", err)
 	}
 
@@ -504,11 +504,11 @@ func TestRedisMessageBus_ClosedOperations(t *testing.T) {
 		t.Error("Expected error when sending after close")
 	}
 
-	if _, err := bus.Receive("node"); err == nil {
+	if _, err := bus.Receive(ctx, "node"); err == nil {
 		t.Error("Expected error when receiving after close")
 	}
 
-	if err := bus.Clear("node"); err == nil {
+	if err := bus.Clear(ctx, "node"); err == nil {
 		t.Error("Expected error when clearing after close")
 	}
 

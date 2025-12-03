@@ -33,10 +33,14 @@ func (m *mockSlowMessageBus) Send(ctx context.Context, messages []Message[mockMe
 	return nil
 }
 
-func (m *mockSlowMessageBus) Receive(vertex string) ([]Message[mockMessage], error) {
+func (m *mockSlowMessageBus) Receive(ctx context.Context, vertex string) ([]Message[mockMessage], error) {
 	// Simulate network latency (e.g., Redis roundtrip on cloud: ~50ms)
 	// This is what parallel draining optimizes!
-	time.Sleep(m.latency)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(m.latency):
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -46,7 +50,10 @@ func (m *mockSlowMessageBus) Receive(vertex string) ([]Message[mockMessage], err
 	return msgs, nil
 }
 
-func (m *mockSlowMessageBus) Clear(vertex string) error {
+func (m *mockSlowMessageBus) Clear(ctx context.Context, vertex string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.mailboxes, vertex)

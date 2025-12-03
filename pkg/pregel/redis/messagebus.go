@@ -279,18 +279,19 @@ func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[
 
 // Receive retrieves and removes all messages for the given vertex.
 // Uses RPOP in a loop to drain the mailbox efficiently.
-func (store *MessageBus[M]) Receive(vertex string) ([]pregel.Message[M], error) {
+func (store *MessageBus[M]) Receive(ctx context.Context, vertex string) ([]pregel.Message[M], error) {
 	if store.closed {
 		return nil, fmt.Errorf("message bus is closed")
 	}
-
-	ctx := context.Background()
 	mailboxKey := store.mailboxKey(vertex)
 
 	// Get all messages from the list (drain it)
 	var messages []pregel.Message[M]
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// RPOP removes and returns last element (FIFO with LPUSH)
 		data, err := store.client.RPop(ctx, mailboxKey).Result()
 		if errors.Is(err, redis.Nil) {
@@ -319,12 +320,10 @@ func (store *MessageBus[M]) Receive(vertex string) ([]pregel.Message[M], error) 
 
 // Clear removes all messages for the given vertex without returning them.
 // Deletes the mailbox key.
-func (store *MessageBus[M]) Clear(vertex string) error {
+func (store *MessageBus[M]) Clear(ctx context.Context, vertex string) error {
 	if store.closed {
 		return fmt.Errorf("message bus is closed")
 	}
-
-	ctx := context.Background()
 
 	// Delete mailbox key
 	if err := store.client.Del(ctx, store.mailboxKey(vertex)).Err(); err != nil {

@@ -810,7 +810,7 @@ func (r *Runtime[S, M]) workerLoop(
 			}
 
 			// Drain mailbox in parallel (each worker drains its own)
-			incoming, err := r.drainMailbox(name)
+			incoming, err := r.drainMailbox(ctx, name)
 			if err != nil {
 				recordErr(fmt.Errorf("failed to drain mailbox for %s: %w", name, err))
 				return
@@ -930,8 +930,8 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 	return nil
 }
 
-func (r *Runtime[S, M]) drainMailbox(node string) ([]Message[M], error) {
-	msgs, err := r.messageBus.Receive(node)
+func (r *Runtime[S, M]) drainMailbox(ctx context.Context, node string) ([]Message[M], error) {
+	msgs, err := r.messageBus.Receive(ctx, node)
 	if err != nil {
 		err = fmt.Errorf("message bus receive failed for node %s: %w", node, err)
 		r.emitEvent(Event[M]{}, err)

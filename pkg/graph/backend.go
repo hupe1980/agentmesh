@@ -20,10 +20,10 @@ type DistributedBackend interface {
 
 	// Receive retrieves pending state updates for a specific node.
 	// Returns nil if no updates are pending.
-	Receive(node string) ([]StateUpdate, error)
+	Receive(ctx context.Context, node string) ([]StateUpdate, error)
 
 	// Clear removes all pending updates for a node.
-	Clear(node string) error
+	Clear(ctx context.Context, node string) error
 
 	// Close releases resources held by the backend.
 	Close() error
@@ -63,8 +63,8 @@ func (a *pregelBackendAdapter) Send(ctx context.Context, updates []StateUpdate) 
 	return a.bus.Send(ctx, messages)
 }
 
-func (a *pregelBackendAdapter) Receive(node string) ([]StateUpdate, error) {
-	messages, err := a.bus.Receive(node)
+func (a *pregelBackendAdapter) Receive(ctx context.Context, node string) ([]StateUpdate, error) {
+	messages, err := a.bus.Receive(ctx, node)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +84,8 @@ func (a *pregelBackendAdapter) Receive(node string) ([]StateUpdate, error) {
 	return updates, nil
 }
 
-func (a *pregelBackendAdapter) Clear(node string) error {
-	return a.bus.Clear(node)
+func (a *pregelBackendAdapter) Clear(ctx context.Context, node string) error {
+	return a.bus.Clear(ctx, node)
 }
 
 func (a *pregelBackendAdapter) Close() error {
@@ -112,8 +112,8 @@ func (a *backendToMessageBusAdapter) Send(ctx context.Context, messages []pregel
 	return a.backend.Send(ctx, updates)
 }
 
-func (a *backendToMessageBusAdapter) Receive(vertex string) ([]pregel.Message[Updates], error) {
-	updates, err := a.backend.Receive(vertex)
+func (a *backendToMessageBusAdapter) Receive(ctx context.Context, vertex string) ([]pregel.Message[Updates], error) {
+	updates, err := a.backend.Receive(ctx, vertex)
 	if err != nil {
 		return nil, err
 	}
@@ -133,8 +133,8 @@ func (a *backendToMessageBusAdapter) Receive(vertex string) ([]pregel.Message[Up
 	return messages, nil
 }
 
-func (a *backendToMessageBusAdapter) Clear(vertex string) error {
-	return a.backend.Clear(vertex)
+func (a *backendToMessageBusAdapter) Clear(ctx context.Context, vertex string) error {
+	return a.backend.Clear(ctx, vertex)
 }
 
 func (a *backendToMessageBusAdapter) Close() error {

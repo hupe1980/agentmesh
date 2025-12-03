@@ -23,7 +23,7 @@ func TestInMemoryMessageBus_Basic(t *testing.T) {
 	}
 
 	// Test receiving messages
-	msgsB, err := bus.Receive("b")
+	msgsB, err := bus.Receive(context.Background(), "b")
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestInMemoryMessageBus_Basic(t *testing.T) {
 		t.Errorf("Expected 1 message for b, got %d", len(msgsB))
 	}
 
-	msgsC, err := bus.Receive("c")
+	msgsC, err := bus.Receive(context.Background(), "c")
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestInMemoryMessageBus_Basic(t *testing.T) {
 	}
 
 	// Mailbox should be empty after receive
-	msgsB2, err := bus.Receive("b")
+	msgsB2, err := bus.Receive(context.Background(), "b")
 	if err != nil {
 		t.Fatalf("Second receive failed: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestInMemoryMessageBus_MaxSize(t *testing.T) {
 	}
 
 	// Now receive messages - this drains the channel creating space
-	msgs, _ := bus.Receive("a")
+	msgs, _ := bus.Receive(context.Background(), "a")
 	// After draining, the blocked send completes, so we get all 3 messages
 	if len(msgs) < 2 {
 		t.Errorf("Expected at least 2 messages, got %d", len(msgs))
@@ -99,7 +99,7 @@ func TestInMemoryMessageBus_MaxSize(t *testing.T) {
 
 	// If msg3 wasn't in the first receive, it should be available now
 	if len(msgs) == 2 {
-		msgs, _ = bus.Receive("a")
+		msgs, _ = bus.Receive(context.Background(), "a")
 		if len(msgs) != 1 || msgs[0].Data != "msg3" {
 			t.Errorf("Expected msg3 to be delivered after unblocking, got %d messages", len(msgs))
 		}
@@ -144,7 +144,7 @@ func TestInMemoryMessageBus_Combiner(t *testing.T) {
 	}
 
 	// Should have combined messages (may be 1 or 2 depending on timing)
-	msgs, err := bus.Receive("a")
+	msgs, err := bus.Receive(context.Background(), "a")
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
 	}
@@ -218,13 +218,13 @@ func TestInMemoryMessageBus_Close(t *testing.T) {
 	}
 
 	// Clear mailbox
-	err = bus.Clear("a")
+	err = bus.Clear(context.Background(), "a")
 	if err != nil {
 		t.Fatalf("Clear failed: %v", err)
 	}
 
 	// Mailbox should be empty
-	msgs, err := bus.Receive("a")
+	msgs, err := bus.Receive(context.Background(), "a")
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestInMemoryMessageBus_Sharding(t *testing.T) {
 	wg.Wait()
 
 	// Receive all messages
-	msgs, err := bus.Receive("target")
+	msgs, err := bus.Receive(context.Background(), "target")
 	if err != nil {
 		t.Fatalf("Receive failed: %v", err)
 	}
@@ -312,13 +312,13 @@ func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
 	}
 
 	// Only "a" should have messages (verify by receiving)
-	msgs, _ := bus.Receive("a")
+	msgs, _ := bus.Receive(context.Background(), "a")
 	if len(msgs) != 1 || msgs[0].Data != "msg2" {
 		t.Errorf("Expected only message to 'a', got %v", msgs)
 	}
 
 	// Empty target should have no messages
-	emptyMsgs, _ := bus.Receive("")
+	emptyMsgs, _ := bus.Receive(context.Background(), "")
 	if len(emptyMsgs) != 0 {
 		t.Errorf("Expected no messages for empty target, got %d", len(emptyMsgs))
 	}
@@ -382,7 +382,7 @@ func TestInMemoryMessageBus_BackpressureNoMessageLoss(t *testing.T) {
 	// Now drain mailbox to unblock sends
 	receivedData := make(map[int]bool)
 	for {
-		msgs, err := bus.Receive("vertex1")
+		msgs, err := bus.Receive(context.Background(), "vertex1")
 		if err != nil {
 			t.Fatalf("Receive failed: %v", err)
 		}
@@ -474,7 +474,7 @@ func TestInMemoryMessageBus_ContextCancellationDuringBackpressure(t *testing.T) 
 	}
 
 	// Verify original messages are intact
-	msgs, _ := bus.Receive("vertex1")
+	msgs, _ := bus.Receive(context.Background(), "vertex1")
 	if len(msgs) != mailboxSize {
 		t.Errorf("Expected %d messages (original only), got %d", mailboxSize, len(msgs))
 	}
@@ -535,7 +535,7 @@ func TestInMemoryMessageBus_ConcurrentBackpressure(t *testing.T) {
 			case <-stopReceiving:
 				// Final drain
 				for {
-					msgs, _ := bus.Receive("vertex1")
+					msgs, _ := bus.Receive(context.Background(), "vertex1")
 					if len(msgs) == 0 {
 						return
 					}
@@ -546,7 +546,7 @@ func TestInMemoryMessageBus_ConcurrentBackpressure(t *testing.T) {
 					receiveMu.Unlock()
 				}
 			case <-ticker.C:
-				msgs, _ := bus.Receive("vertex1")
+				msgs, _ := bus.Receive(context.Background(), "vertex1")
 				receiveMu.Lock()
 				for _, msg := range msgs {
 					receivedData[msg.Data] = true

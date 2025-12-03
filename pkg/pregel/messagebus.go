@@ -45,11 +45,11 @@ type MessageBus[M any] interface {
 	// Receive retrieves and removes all messages for the given vertex.
 	// Returns nil if no messages are pending.
 	// Implementations must be thread-safe.
-	Receive(vertex string) ([]Message[M], error)
+	Receive(ctx context.Context, vertex string) ([]Message[M], error)
 
 	// Clear removes all messages for the given vertex without returning them.
 	// Used during cleanup or error recovery.
-	Clear(vertex string) error
+	Clear(ctx context.Context, vertex string) error
 
 	// Close releases resources held by the message store.
 	// After Close is called, Send and Receive operations may fail.
@@ -279,7 +279,10 @@ func (store *InMemoryMessageBus[M]) blockingSend(
 // Receive retrieves and removes all messages for the given vertex.
 // Drains the mailbox channel and returns all pending messages.
 // Uses sharded locks for reduced contention.
-func (store *InMemoryMessageBus[M]) Receive(vertex string) ([]Message[M], error) {
+func (store *InMemoryMessageBus[M]) Receive(ctx context.Context, vertex string) ([]Message[M], error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Get shard for this vertex
 	shardIdx := store.shardIndex(vertex)
 	shard := &store.shards[shardIdx]
@@ -314,7 +317,10 @@ drainLoop:
 
 // Clear removes all messages for the given vertex.
 // Uses sharded locks for reduced contention.
-func (store *InMemoryMessageBus[M]) Clear(vertex string) error {
+func (store *InMemoryMessageBus[M]) Clear(ctx context.Context, vertex string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Get shard for this vertex
 	shardIdx := store.shardIndex(vertex)
 	shard := &store.shards[shardIdx]
