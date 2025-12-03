@@ -269,7 +269,7 @@ import (
 )
 
 llm, _ := openai.New(openai.WithModel("gpt-4"))
-model := langchaingo.NewModel(llm)
+model, _ := langchaingo.NewModel(llm)
 
 compiled, err := agent.NewReActAgent(model, tools)
 ```
