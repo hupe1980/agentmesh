@@ -353,9 +353,130 @@ func publishCompletionEvent(ctx context.Context, runID string, runtimeErr error)
 	}
 }
 
+// initializeBSPState creates and configures the BSP state manager from restore result.
+// Handles managed values rehydration and pending writes recovery.
+func initializeBSPState[O any](
+	ctx context.Context,
+	restoreResult *checkpointRestoreResult,
+	runCfg *runConfig,
+) (*BSPState, error) {
+	// Validate and rehydrate managed values from checkpoint
+	if err := rehydrateManagedValues(ctx, restoreResult.ManagedValues, runCfg); err != nil {
+		return nil, err
+	}
+
+	// Create BSP-compliant state manager
+	bspState := NewBSPState(restoreResult.State)
+
+	// Attach managed values to BSP state (accessible via View)
+	if runCfg.managedValues != nil {
+		bspState.setManagedValues(runCfg.managedValues)
+	}
+
+	// Two-phase commit recovery: apply pending writes from uncommitted checkpoint
+	if len(restoreResult.PendingWrites) > 0 {
+		bspState.ApplyPendingWrites(restoreResult.PendingWrites)
+	}
+
+	return bspState, nil
+}
+
+// rehydrateManagedValues validates checkpoint managed values and rehydrates them into runCfg.
+func rehydrateManagedValues(ctx context.Context, managedValues []checkpoint.ManagedValueDescriptor, runCfg *runConfig) error {
+	if len(managedValues) == 0 {
+		return nil
+	}
+
+	if runCfg.managedValues == nil {
+		required := listManagedValueNames(managedValues, true)
+		if len(required) > 0 {
+			return fmt.Errorf("graph: checkpoint requires managed values (%s); provide them via graph.WithManagedValues when resuming", strings.Join(required, ", "))
+		}
+		return nil
+	}
+
+	return runCfg.managedValues.ensureAndRehydrate(ctx, managedValues)
+}
+
+// executionContext holds runtime context for graph execution.
+type executionContext[I, O any] struct {
+	ctx        context.Context
+	cancel     context.CancelFunc
+	cfg        *ExecutorConfig[I, O]
+	runCfg     *runConfig
+	resultChan chan resultItem[O]
+	yieldDone  <-chan struct{}
+}
+
+// createPregelAdapter creates the graph adapter for the Pregel runtime.
+func createPregelAdapter[I, O any](
+	execCtx *executionContext[I, O],
+	bspState *BSPState,
+) *pregelGraphAdapter[I, O] {
+	// Thread-safe yield function that sends to channel instead of calling yield directly
+	safeYield := func(output O, err error) bool {
+		select {
+		case execCtx.resultChan <- resultItem[O]{output: output, err: err}:
+			return true
+		case <-execCtx.ctx.Done():
+			return false
+		}
+	}
+
+	return &pregelGraphAdapter[I, O]{
+		cfg:                execCtx.cfg,
+		runCfg:             execCtx.runCfg,
+		bspState:           bspState,
+		safeYield:          safeYield,
+		middleware:         execCtx.cfg.Middleware,
+		superstep:          0,
+		checkpointInterval: execCtx.runCfg.checkpointInterval,
+	}
+}
+
+// runPregelRuntime creates and executes the Pregel runtime.
+func runPregelRuntime[I, O any](
+	execCtx *executionContext[I, O],
+	e *PregelExecutor[I, O],
+	adapter *pregelGraphAdapter[I, O],
+) error {
+	// Build runtime options with event publishing callbacks
+	runtimeOpts := buildRuntimeOptions(e, execCtx.runCfg, adapter)
+
+	// Publish graph start event
+	event.Publish(execCtx.ctx, event.Event{
+		Type:      event.EventGraphStart,
+		Timestamp: time.Now(),
+		Data: map[string]any{
+			"run_id":       execCtx.runCfg.runID,
+			"entry_points": execCtx.cfg.EntryPoints,
+		},
+	})
+
+	// Create the Pregel runtime
+	rt, err := pregel.NewRuntime(adapter, runtimeOpts...)
+	if err != nil {
+		return err
+	}
+
+	// Track runtime error for completion event
+	var runtimeErr error
+
+	// Run the runtime - it will call adapter methods
+	for _, err := range rt.Run(execCtx.ctx) {
+		if err != nil {
+			runtimeErr = err
+			select {
+			case execCtx.resultChan <- resultItem[O]{output: *new(O), err: err}:
+			case <-execCtx.ctx.Done():
+			}
+		}
+	}
+
+	return runtimeErr
+}
+
 // Run executes the graph using the Pregel BSP runtime.
-//
-//nolint:gocyclo,nestif // Coordination of checkpoint restore, BSP plumbing, and streaming yield is centralized here.
 func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		// Create cancellable context for early termination
@@ -380,109 +501,36 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 			return
 		}
 
-		// Set the input into state under the output key if:
-		// 1. An output key is defined, AND
-		// 2. The input is not nil (to avoid overwriting restored checkpoint state with nil)
-		// This allows checkpoint restoration to preserve state while still accepting new input
+		// Set input into state if output key is defined and input is non-nil
 		if cfg.OutputKey != "" && !isNilOrZero(input) {
 			restoreResult.setValue(cfg.OutputKey, input)
 		}
 
-		// Create BSP-compliant state manager
-		bspState := NewBSPState(restoreResult.State)
-
-		if len(restoreResult.ManagedValues) > 0 {
-			if runCfg.managedValues == nil {
-				required := listManagedValueNames(restoreResult.ManagedValues, true)
-				if len(required) > 0 {
-					var zero O
-					err := fmt.Errorf("graph: checkpoint requires managed values (%s); provide them via graph.WithManagedValues when resuming", strings.Join(required, ", "))
-					yield(zero, err)
-					return
-				}
-			} else if err := runCfg.managedValues.ensureAndRehydrate(ctx, restoreResult.ManagedValues); err != nil {
-				var zero O
-				yield(zero, err)
-				return
-			}
-		}
-
-		// Attach managed values to BSP state (accessible via View)
-		if runCfg.managedValues != nil {
-			bspState.setManagedValues(runCfg.managedValues)
-		}
-
-		// Two-phase commit recovery: apply pending writes from uncommitted checkpoint
-		if len(restoreResult.PendingWrites) > 0 {
-			bspState.ApplyPendingWrites(restoreResult.PendingWrites)
-		}
-
-		// Create buffered result channel for lock-free output collection
-		resultChan := make(chan resultItem[O], defaultResultChanSize)
-
-		// Start consumer goroutine that yields results sequentially
-		yieldDone := startResultConsumer(ctx, cancel, resultChan, yield)
-
-		// Thread-safe yield function that sends to channel instead of calling yield directly
-		safeYield := func(output O, err error) bool {
-			select {
-			case resultChan <- resultItem[O]{output: output, err: err}:
-				return true
-			case <-ctx.Done():
-				return false
-			}
-		}
-
-		// Create the graph adapter for the Pregel runtime
-		adapter := &pregelGraphAdapter[I, O]{
-			cfg:                cfg,
-			runCfg:             runCfg,
-			bspState:           bspState,
-			safeYield:          safeYield,
-			middleware:         cfg.Middleware,
-			superstep:          0,
-			checkpointInterval: runCfg.checkpointInterval,
-		}
-
-		// Build runtime options with event publishing callbacks
-		runtimeOpts := buildRuntimeOptions(e, runCfg, adapter)
-
-		// Publish graph start event
-		event.Publish(ctx, event.Event{
-			Type:      event.EventGraphStart,
-			Timestamp: time.Now(),
-			Data: map[string]any{
-				"run_id":       runCfg.runID,
-				"entry_points": cfg.EntryPoints,
-			},
-		})
-
-		// Create and run the Pregel runtime
-		rt, err := pregel.NewRuntime(adapter, runtimeOpts...)
+		// Initialize BSP state with managed values and pending writes
+		bspState, err := initializeBSPState[O](ctx, restoreResult, runCfg)
 		if err != nil {
-			event.Publish(ctx, event.Event{
-				Type:      event.EventGraphError,
-				Timestamp: time.Now(),
-				Error:     err.Error(),
-				Data:      map[string]any{"run_id": runCfg.runID},
-			})
-			close(resultChan)
-			<-yieldDone
 			var zero O
 			yield(zero, err)
 			return
 		}
 
-		// Track runtime error for completion event
-		var runtimeErr error
+		// Create buffered result channel for lock-free output collection
+		resultChan := make(chan resultItem[O], defaultResultChanSize)
+		yieldDone := startResultConsumer(ctx, cancel, resultChan, yield)
 
-		// Run the runtime - it will call adapter methods
-		for _, err := range rt.Run(ctx) {
-			if err != nil {
-				runtimeErr = err
-				safeYield(*new(O), err)
-			}
+		// Build execution context
+		execCtx := &executionContext[I, O]{
+			ctx:        ctx,
+			cancel:     cancel,
+			cfg:        cfg,
+			runCfg:     runCfg,
+			resultChan: resultChan,
+			yieldDone:  yieldDone,
 		}
+
+		// Create the Pregel adapter and run the runtime
+		adapter := createPregelAdapter(execCtx, bspState)
+		runtimeErr := runPregelRuntime(execCtx, e, adapter)
 
 		// Close result channel and wait for consumer to finish
 		close(resultChan)

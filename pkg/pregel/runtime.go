@@ -489,12 +489,95 @@ func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 	}
 }
 
-// execute runs the actual computation.
+// executionState tracks mutable state during BSP execution loop.
+type executionState struct {
+	frontier       map[string]struct{}
+	superstep      int64
+	iterationCount int64
+}
+
+// checkExecutionPreconditions validates context, quotas, and iteration limits.
+// Returns an error if any precondition fails.
+func (r *Runtime[S, M]) checkExecutionPreconditions(ctx context.Context, state *executionState, logger logging.Logger) error {
+	// Check context cancellation
+	if err := ctx.Err(); err != nil {
+		logger.Warn("pregel runtime canceled", "superstep", state.superstep, "error", err)
+		return err
+	}
+
+	// Check resource quotas
+	if err := r.checkQuotas(ctx); err != nil {
+		logger.Error("quota exceeded", "superstep", state.superstep, "error", err)
+		return err
+	}
+
+	// Check max iterations limit (if configured)
+	if r.opts.MaxIterations > 0 && state.iterationCount >= int64(r.opts.MaxIterations) {
+		logger.Warn("max iterations exceeded",
+			"max_iterations", r.opts.MaxIterations,
+			"superstep", state.superstep)
+		return ErrMaxIterationsExceeded
+	}
+
+	return nil
+}
+
+// executeSuperstepIteration runs a single superstep and updates execution state.
+// Returns the next frontier or an error if the superstep fails.
+func (r *Runtime[S, M]) executeSuperstepIteration(ctx context.Context, state *executionState, logger logging.Logger) error {
+	state.iterationCount++
+	nextSuperstep := state.superstep + 1
+	r.supersteps.Store(nextSuperstep)
+
+	// Update state.superstep immediately so error handling uses correct value
+	state.superstep = nextSuperstep
+
+	// Observability: Record superstep start
+	mp := metrics.FromContext(ctx)
+	superstepCounter := mp.Counter("superstep.executions")
+	superstepCounter.Add(ctx, 1)
+
+	logger.Info("starting superstep",
+		"superstep", nextSuperstep,
+		"frontier_size", len(state.frontier),
+		"total_messages", r.messages.Load())
+
+	// Execute the superstep
+	if err := r.runSuperstep(ctx, state.frontier, nextSuperstep); err != nil {
+		return fmt.Errorf("superstep execution failed: %w", err)
+	}
+
+	// Call superstep completion callback (useful for checkpointing and applying updates)
+	if r.opts.OnSuperstepComplete != nil {
+		if err := r.opts.OnSuperstepComplete(ctx, state.superstep); err != nil {
+			return fmt.Errorf("superstep completion callback failed: %w", err)
+		}
+	}
+
+	// Get next frontier
+	var err error
+	state.frontier, err = r.consumeNextFrontier(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to consume next frontier: %w", err)
+	}
+
+	logger.Debug("superstep completed",
+		"superstep", state.superstep,
+		"next_frontier_size", len(state.frontier))
+
+	return nil
+}
+
+// execute runs the BSP computation loop until quiescence or error.
 func (r *Runtime[S, M]) execute(ctx context.Context) {
 	logger := logging.FromContext(ctx)
-	frontier := r.initialFrontier()
-	superstep := r.supersteps.Load()
-	iterationCount := int64(0)
+
+	// Initialize execution state
+	state := &executionState{
+		frontier:       r.initialFrontier(),
+		superstep:      r.supersteps.Load(),
+		iterationCount: 0,
+	}
 
 	// Start quota manager if configured
 	if r.quotaManager != nil {
@@ -502,77 +585,28 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 	}
 
 	logger.Info("pregel runtime starting",
-		"initial_frontier_size", len(frontier),
-		"initial_superstep", superstep,
+		"initial_frontier_size", len(state.frontier),
+		"initial_superstep", state.superstep,
 		"max_workers", r.opts.MaxWorkers,
 		"max_iterations", r.opts.MaxIterations)
 
-	var err error
-	for len(frontier) > 0 {
-		// Check context cancellation
-		if err := ctx.Err(); err != nil {
-			logger.Warn("pregel runtime canceled", "superstep", superstep, "error", err)
-			r.emitEvent(Event[M]{Superstep: superstep}, err)
+	// Main execution loop
+	for len(state.frontier) > 0 {
+		// Check preconditions before each superstep
+		if err := r.checkExecutionPreconditions(ctx, state, logger); err != nil {
+			r.emitEvent(Event[M]{Superstep: state.superstep}, err)
 			return
 		}
 
-		// Check resource quotas
-		if err := r.checkQuotas(ctx); err != nil {
-			logger.Error("quota exceeded", "superstep", superstep, "error", err)
-			r.emitEvent(Event[M]{Superstep: superstep}, err)
+		// Execute one superstep iteration
+		if err := r.executeSuperstepIteration(ctx, state, logger); err != nil {
+			_ = r.handleExecutionError(logger, state.superstep, err.Error(), err)
 			return
 		}
-
-		// Check max iterations limit (if configured)
-		if r.opts.MaxIterations > 0 && iterationCount >= int64(r.opts.MaxIterations) {
-			logger.Warn("max iterations exceeded",
-				"max_iterations", r.opts.MaxIterations,
-				"superstep", superstep)
-			r.emitEvent(Event[M]{Superstep: superstep}, ErrMaxIterationsExceeded)
-			return
-		}
-		iterationCount++
-
-		nextSuperstep := superstep + 1
-		r.supersteps.Store(nextSuperstep)
-
-		// Observability: Record superstep start
-		mp := metrics.FromContext(ctx)
-		superstepCounter := mp.Counter("superstep.executions")
-		superstepCounter.Add(ctx, 1)
-
-		logger.Info("starting superstep",
-			"superstep", nextSuperstep,
-			"frontier_size", len(frontier),
-			"total_messages", r.messages.Load())
-
-		if err := r.runSuperstep(ctx, frontier, nextSuperstep); err != nil {
-			_ = r.handleExecutionError(logger, nextSuperstep, "superstep execution failed", err)
-			return
-		}
-		superstep = nextSuperstep
-
-		// Call superstep completion callback (useful for checkpointing and applying updates)
-		if r.opts.OnSuperstepComplete != nil {
-			if err := r.opts.OnSuperstepComplete(ctx, superstep); err != nil {
-				_ = r.handleExecutionError(logger, superstep, "superstep completion callback failed", err)
-				return
-			}
-		}
-
-		frontier, err = r.consumeNextFrontier(ctx)
-		if err != nil {
-			_ = r.handleExecutionError(logger, superstep, "failed to consume next frontier", err)
-			return
-		}
-
-		logger.Debug("superstep completed",
-			"superstep", superstep,
-			"next_frontier_size", len(frontier))
 	}
 
 	logger.Info("pregel runtime completed",
-		"total_supersteps", superstep,
+		"total_supersteps", state.superstep,
 		"total_vertices", r.vertices.Load(),
 		"total_messages", r.messages.Load())
 }
