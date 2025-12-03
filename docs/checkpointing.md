@@ -110,6 +110,15 @@ type Checkpoint struct {
     ApprovalMetadata *ApprovalMetadata    // Pending approvals and history
     Metadata       map[string]any         // Custom execution metadata
 }
+
+type PendingWrite struct {
+    NodeName  string    // Vertex that produced the write
+    Channel   string    // State channel being updated
+    Value     any       // Buffered value
+    Timestamp time.Time // When the write was produced
+}
+
+Each pending write therefore captures **who** made the change, **what** channel it targets, and **when** it was staged. Approval dashboards surface that provenance so reviewers can make per-node decisions before the update is committed.
 ```
 
 ### 3. Superstep Progression

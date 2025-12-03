@@ -12,6 +12,87 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
+// recordingCheckpointer captures every checkpoint saved during a run so tests can
+// inspect intermediate two-phase commits without needing a persistent backend.
+type recordingCheckpointer struct {
+	mu    sync.Mutex
+	saved []*checkpoint.Checkpoint
+}
+
+func newRecordingCheckpointer() *recordingCheckpointer {
+	return &recordingCheckpointer{}
+}
+
+func (r *recordingCheckpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	clone := &checkpoint.Checkpoint{
+		RunID:     cp.RunID,
+		Superstep: cp.Superstep,
+		Version:   cp.Version,
+		Timestamp: cp.Timestamp,
+		Committed: cp.Committed,
+	}
+
+	if len(cp.State) > 0 {
+		clone.State = make(map[string]any, len(cp.State))
+		for k, v := range cp.State {
+			clone.State[k] = v
+		}
+	}
+
+	if len(cp.PendingWrites) > 0 {
+		clone.PendingWrites = append([]checkpoint.PendingWrite(nil), cp.PendingWrites...)
+	}
+
+	if len(cp.CompletedNodes) > 0 {
+		clone.CompletedNodes = append([]string(nil), cp.CompletedNodes...)
+	}
+
+	if len(cp.PausedNodes) > 0 {
+		clone.PausedNodes = append([]string(nil), cp.PausedNodes...)
+	}
+
+	r.saved = append(r.saved, clone)
+	return nil
+}
+
+func (r *recordingCheckpointer) Load(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (r *recordingCheckpointer) List(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (r *recordingCheckpointer) Delete(ctx context.Context, runID string) error {
+	return nil
+}
+
+func (r *recordingCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (r *recordingCheckpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.Checkpoint, error) {
+	return nil, nil
+}
+
+func (r *recordingCheckpointer) GetApprovalHistory(ctx context.Context, runID string) ([]checkpoint.ApprovalRecord, error) {
+	return nil, nil
+}
+
+func (r *recordingCheckpointer) firstUncommitted() *checkpoint.Checkpoint {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, cp := range r.saved {
+		if !cp.Committed {
+			return cp
+		}
+	}
+	return nil
+}
+
 // ====================
 // PregelExecutor Basic Tests
 // ====================
@@ -325,51 +406,98 @@ func TestCheckpointingWithInterval(t *testing.T) {
 }
 
 func TestCheckpointingWithPendingWrites(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
-	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	t.Run("applies pending writes on restore", func(t *testing.T) {
+		counterKey := graph.NewKey("counter", 0)
+		checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	// Create checkpoint with pending writes (simulating crash before commit)
-	pendingCheckpoint := &checkpoint.Checkpoint{
-		RunID:     "pending-test",
-		Superstep: 1,
-		State: map[string]any{
-			"counter": 0,
-		},
-		PendingWrites: []checkpoint.PendingWrite{
-			{Channel: "counter", Value: 50, Timestamp: time.Now()},
-		},
-		Committed: false, // Not committed - should apply pending writes
-		Timestamp: time.Now(),
-	}
-	if err := checkpointer.Save(context.Background(), pendingCheckpoint); err != nil {
-		t.Fatalf("Failed to save pending checkpoint: %v", err)
-	}
-
-	var restoredValue int
-
-	g := graph.New[any, any](counterKey)
-	g.Node("read", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		restoredValue = graph.Get(view, counterKey)
-		return graph.To(graph.END)
-	}, graph.END)
-	g.Start("read")
-	g.WithCheckpointer(checkpointer, "pending-test")
-
-	compiled, err := g.Build()
-	if err != nil {
-		t.Fatalf("Build failed: %v", err)
-	}
-
-	// Run with auto-restore - should apply pending writes
-	for _, err := range compiled.Run(context.Background(), nil, graph.WithAutoRestore(true)) {
-		if err != nil {
-			t.Fatalf("Run failed: %v", err)
+		pendingCheckpoint := &checkpoint.Checkpoint{
+			RunID:     "pending-test",
+			Superstep: 1,
+			State: map[string]any{
+				"counter": 0,
+			},
+			PendingWrites: []checkpoint.PendingWrite{
+				{NodeName: "writer", Channel: "counter", Value: 50, Timestamp: time.Now()},
+			},
+			Committed: false,
+			Timestamp: time.Now(),
 		}
-	}
+		if err := checkpointer.Save(context.Background(), pendingCheckpoint); err != nil {
+			t.Fatalf("Failed to save pending checkpoint: %v", err)
+		}
 
-	if restoredValue != 50 {
-		t.Errorf("Expected pending write value 50 to be applied, got %d", restoredValue)
-	}
+		var restoredValue int
+
+		g := graph.New[any, any](counterKey)
+		g.Node("read", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			restoredValue = graph.Get(view, counterKey)
+			return graph.To(graph.END)
+		}, graph.END)
+		g.Start("read")
+		g.WithCheckpointer(checkpointer, "pending-test")
+
+		compiled, err := g.Build()
+		if err != nil {
+			t.Fatalf("Build failed: %v", err)
+		}
+
+		for _, err := range compiled.Run(context.Background(), nil, graph.WithAutoRestore(true)) {
+			if err != nil {
+				t.Fatalf("Run failed: %v", err)
+			}
+		}
+
+		if restoredValue != 50 {
+			t.Errorf("Expected pending write value 50 to be applied, got %d", restoredValue)
+		}
+	})
+
+	t.Run("records node provenance in pending writes", func(t *testing.T) {
+		counterKey := graph.NewKey("counter", 0)
+		recorder := newRecordingCheckpointer()
+
+		g := graph.New[any, any](counterKey)
+		g.Node("writer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			counter := graph.Get(view, counterKey)
+			return graph.Set(counterKey, counter+1).To(graph.END)
+		}, graph.END)
+		g.Start("writer")
+		g.WithCheckpointer(recorder, "provenance-run")
+
+		compiled, err := g.Build()
+		if err != nil {
+			t.Fatalf("Build failed: %v", err)
+		}
+
+		for _, err := range compiled.Run(
+			context.Background(),
+			nil,
+			graph.WithRunID("provenance-run"),
+			graph.WithCheckpointInterval(1),
+		) {
+			if err != nil {
+				t.Fatalf("Run failed: %v", err)
+			}
+		}
+
+		pending := recorder.firstUncommitted()
+		if pending == nil {
+			t.Fatal("expected an uncommitted checkpoint with pending writes")
+		}
+		if len(pending.PendingWrites) == 0 {
+			t.Fatal("expected pending writes to be captured")
+		}
+		write := pending.PendingWrites[0]
+		if write.NodeName != "writer" {
+			t.Errorf("expected pending write node name 'writer', got %q", write.NodeName)
+		}
+		if write.Channel != "counter" {
+			t.Errorf("expected pending write channel 'counter', got %q", write.Channel)
+		}
+		if write.Timestamp.IsZero() {
+			t.Error("expected pending write timestamp to be set")
+		}
+	})
 }
 
 // ====================

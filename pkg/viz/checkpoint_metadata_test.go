@@ -1,6 +1,7 @@
 package viz
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -203,6 +204,11 @@ func TestPendingWriteConversion(t *testing.T) {
 	assert.Equal(t, "node2", metadata.PendingWrites[1].NodeName)
 	assert.Equal(t, "state", metadata.PendingWrites[1].Channel)
 	assert.Equal(t, now, metadata.PendingWrites[1].Timestamp)
+
+	jsonPayload, err := json.Marshal(metadata.PendingWrites)
+	require.NoError(t, err)
+	assert.Contains(t, string(jsonPayload), "\"node_name\":\"node1\"")
+	assert.Contains(t, string(jsonPayload), "\"channel\":\"messages\"")
 }
 
 func TestStringDiff(t *testing.T) {

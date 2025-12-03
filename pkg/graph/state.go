@@ -6,6 +6,9 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 )
 
 // StateKey is the interface that all state keys must implement.
@@ -235,6 +238,10 @@ type BSPState struct {
 
 	// managedValues holds ephemeral runtime state (not checkpointed).
 	managedValues *managedValueRegistry
+
+	// pendingWrites captures provenance information for two-phase commit checkpoints.
+	// Each entry records which node wrote to which channel along with the raw value.
+	pendingWrites []checkpoint.PendingWrite
 }
 
 // NewBSPState creates a new BSP-compliant state manager.
@@ -286,7 +293,7 @@ func (s *BSPState) ReadView() View {
 // Write buffers a state update for the current superstep.
 // The update will only be visible after CommitBarrier is called.
 // Thread-safe for concurrent writes from parallel nodes.
-func (s *BSPState) Write(updates Updates) {
+func (s *BSPState) Write(nodeName string, updates Updates) {
 	if len(updates) == 0 {
 		return
 	}
@@ -296,6 +303,12 @@ func (s *BSPState) Write(updates Updates) {
 
 	for key, value := range updates {
 		s.mergeWrite(key, value)
+		s.pendingWrites = append(s.pendingWrites, checkpoint.PendingWrite{
+			NodeName:  nodeName,
+			Channel:   key,
+			Value:     value,
+			Timestamp: time.Now(),
+		})
 	}
 }
 
@@ -395,6 +408,15 @@ func (s *BSPState) CommitBarrier() {
 		clear(s.writeBuffer)
 	}
 
+	// Clear pending write metadata now that updates are committed
+	if len(s.pendingWrites) > 0 {
+		if cap(s.pendingWrites) > 32 {
+			s.pendingWrites = nil
+		} else {
+			s.pendingWrites = s.pendingWrites[:0]
+		}
+	}
+
 	// Increment version and create new read snapshot
 	newVersion := s.version.Add(1)
 	s.readSnapshot = make(map[string]any, len(s.committed))
@@ -448,12 +470,16 @@ func (s *BSPState) GetCommitted(key string) (any, bool) {
 
 // PendingWrites returns write buffer contents as checkpoint.PendingWrite slice.
 // Used for two-phase commit checkpointing - captures writes before barrier commit.
-func (s *BSPState) PendingWrites() map[string]any {
+func (s *BSPState) PendingWrites() []checkpoint.PendingWrite {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	pending := make(map[string]any, len(s.writeBuffer))
-	maps.Copy(pending, s.writeBuffer)
+	if len(s.pendingWrites) == 0 {
+		return nil
+	}
+
+	pending := make([]checkpoint.PendingWrite, len(s.pendingWrites))
+	copy(pending, s.pendingWrites)
 	return pending
 }
 
@@ -462,14 +488,14 @@ func (s *BSPState) HasPendingWrites() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return len(s.writeBuffer) > 0
+	return len(s.pendingWrites) > 0
 }
 
 // ApplyPendingWrites applies externally provided pending writes to committed state.
 // Used when restoring from a checkpoint with Committed=false.
 // The writes are applied directly to committed state (since the checkpoint
 // was saved after node execution but before barrier commit).
-func (s *BSPState) ApplyPendingWrites(pending map[string]any) {
+func (s *BSPState) ApplyPendingWrites(pending []checkpoint.PendingWrite) {
 	if len(pending) == 0 {
 		return
 	}
@@ -478,8 +504,8 @@ func (s *BSPState) ApplyPendingWrites(pending map[string]any) {
 	defer s.mu.Unlock()
 
 	// Apply pending writes to committed state
-	for key, value := range pending {
-		s.mergeIntoCommitted(key, value)
+	for _, write := range pending {
+		s.mergeIntoCommitted(write.Channel, write.Value)
 	}
 
 	// Update read snapshot to reflect applied writes

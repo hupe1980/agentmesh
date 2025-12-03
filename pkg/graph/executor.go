@@ -38,7 +38,7 @@ func isNilOrZero[T any](v T) bool {
 // checkpointRestoreResult contains restored state and pending writes from checkpoint.
 type checkpointRestoreResult struct {
 	State         map[string]any
-	PendingWrites map[string]any // Only set if Committed=false
+	PendingWrites []checkpoint.PendingWrite // Only set if Committed=false
 }
 
 // restoreCheckpoint attempts to restore state from a checkpoint.
@@ -68,7 +68,7 @@ func restoreCheckpoint[O any](
 		maps.Copy(result.State, runCfg.checkpoint.State)
 		// Two-phase commit: apply pending writes if checkpoint was not committed
 		if !runCfg.checkpoint.Committed && len(runCfg.checkpoint.PendingWrites) > 0 {
-			result.PendingWrites = convertFromPendingWrites(runCfg.checkpoint.PendingWrites)
+			result.PendingWrites = clonePendingWrites(runCfg.checkpoint.PendingWrites)
 		}
 	}
 
@@ -109,23 +109,20 @@ func tryAutoRestore(
 		maps.Copy(result.State, chkpt.State)
 		// Two-phase commit: apply pending writes if checkpoint was not committed
 		if !chkpt.Committed && len(chkpt.PendingWrites) > 0 {
-			result.PendingWrites = convertFromPendingWrites(chkpt.PendingWrites)
+			result.PendingWrites = clonePendingWrites(chkpt.PendingWrites)
 		}
 	}
 	return nil
 }
 
-// convertFromPendingWrites converts []checkpoint.PendingWrite to a map of updates.
-func convertFromPendingWrites(writes []checkpoint.PendingWrite) map[string]any {
+func clonePendingWrites(writes []checkpoint.PendingWrite) []checkpoint.PendingWrite {
 	if len(writes) == 0 {
 		return nil
 	}
 
-	updates := make(map[string]any, len(writes))
-	for _, pw := range writes {
-		updates[pw.Channel] = pw.Value
-	}
-	return updates
+	cloned := make([]checkpoint.PendingWrite, len(writes))
+	copy(cloned, writes)
+	return cloned
 }
 
 // PregelExecutor executes graphs using the Pregel BSP runtime.
@@ -632,7 +629,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 
 	// Buffer updates for commit at superstep barrier (BSP semantics)
 	// Writes are not visible to other nodes until after barrier
-	v.adapter.bspState.Write(cmd.Updates)
+	v.adapter.bspState.Write(v.name, cmd.Updates)
 
 	// Yield outputs immediately (for streaming)
 	v.adapter.yieldUpdates(cmd.Updates)
@@ -691,7 +688,7 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			RunID:         runID,
 			Superstep:     superstep,
 			State:         a.bspState.Snapshot(), // Committed state BEFORE barrier
-			PendingWrites: convertToPendingWrites(pendingWrites),
+			PendingWrites: pendingWrites,
 			Committed:     false, // Mark as uncommitted - pending writes not yet applied
 			Timestamp:     time.Now(),
 		}
@@ -730,24 +727,4 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 	}
 
 	return nil
-}
-
-// convertToPendingWrites converts a map of updates to []checkpoint.PendingWrite.
-func convertToPendingWrites(updates map[string]any) []checkpoint.PendingWrite {
-	if len(updates) == 0 {
-		return nil
-	}
-
-	writes := make([]checkpoint.PendingWrite, 0, len(updates))
-	now := time.Now()
-
-	for channel, value := range updates {
-		writes = append(writes, checkpoint.PendingWrite{
-			Channel:   channel,
-			Value:     value,
-			Timestamp: now,
-		})
-	}
-
-	return writes
 }

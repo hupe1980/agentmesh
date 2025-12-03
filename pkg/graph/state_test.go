@@ -3,6 +3,7 @@ package graph_test
 import (
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
@@ -100,7 +101,7 @@ func TestBSPStateWriteBuffering(t *testing.T) {
 	bsp := graph.NewBSPState(initial)
 
 	// Write should be buffered, not visible in read view
-	bsp.Write(graph.Updates{"counter": 20, "new_key": "value"})
+	bsp.Write("node-write-buffer", graph.Updates{"counter": 20, "new_key": "value"})
 
 	// Read view should still show old value (BSP semantics)
 	view := bsp.ReadView()
@@ -117,7 +118,7 @@ func TestBSPStateBarrierCommit(t *testing.T) {
 	bsp := graph.NewBSPState(initial)
 
 	// Write and commit
-	bsp.Write(graph.Updates{"counter": 20, "new_key": "value"})
+	bsp.Write("node-barrier", graph.Updates{"counter": 20, "new_key": "value"})
 	bsp.CommitBarrier()
 
 	// After barrier, writes should be visible
@@ -135,8 +136,8 @@ func TestBSPStateListMerging(t *testing.T) {
 	bsp := graph.NewBSPState(initial)
 
 	// Multiple writes to same list key should merge
-	bsp.Write(graph.Updates{"items": []string{"c"}})
-	bsp.Write(graph.Updates{"items": []string{"d", "e"}})
+	bsp.Write("node-list", graph.Updates{"items": []string{"c"}})
+	bsp.Write("node-list", graph.Updates{"items": []string{"d", "e"}})
 	bsp.CommitBarrier()
 
 	view := bsp.ReadView()
@@ -155,7 +156,7 @@ func TestBSPStateSnapshot(t *testing.T) {
 	initial := map[string]any{"counter": 10}
 	bsp := graph.NewBSPState(initial)
 
-	bsp.Write(graph.Updates{"counter": 20})
+	bsp.Write("node-snapshot", graph.Updates{"counter": 20})
 	bsp.CommitBarrier()
 
 	snapshot := bsp.Snapshot()
@@ -178,7 +179,7 @@ func TestBSPStateConcurrentReads(t *testing.T) {
 
 	// Simulate parallel execution: read, then write, then read again
 	view1 := bsp.ReadView()
-	bsp.Write(graph.Updates{"counter": 20}) // Another node wrote
+	bsp.Write("node-concurrent", graph.Updates{"counter": 20}) // Another node wrote
 	view2 := bsp.ReadView()
 
 	// Both reads should see the same value (BSP guarantee)
@@ -202,7 +203,7 @@ func TestBSPStatePendingWrites(t *testing.T) {
 	}
 
 	// Write some updates
-	bsp.Write(graph.Updates{"counter": 20, "new_key": "value"})
+	bsp.Write("node-pending", graph.Updates{"counter": 20, "new_key": "value"})
 
 	// Should have pending writes
 	if !bsp.HasPendingWrites() {
@@ -214,11 +215,18 @@ func TestBSPStatePendingWrites(t *testing.T) {
 	if len(pending) != 2 {
 		t.Errorf("expected 2 pending writes, got %d", len(pending))
 	}
-	if pending["counter"] != 20 {
-		t.Errorf("expected pending counter=20, got %v", pending["counter"])
+	if pending[0].NodeName == "" || pending[0].Channel == "" {
+		t.Error("expected pending writes to include node and channel metadata")
 	}
-	if pending["new_key"] != "value" {
-		t.Errorf("expected pending new_key=value, got %v", pending["new_key"])
+	channels := map[string]any{}
+	for _, pw := range pending {
+		channels[pw.Channel] = pw.Value
+	}
+	if channels["counter"] != 20 {
+		t.Errorf("expected pending counter=20, got %v", channels["counter"])
+	}
+	if channels["new_key"] != "value" {
+		t.Errorf("expected pending new_key=value, got %v", channels["new_key"])
 	}
 
 	// After barrier, no pending writes
@@ -234,10 +242,10 @@ func TestBSPStateApplyPendingWrites(t *testing.T) {
 	bsp := graph.NewBSPState(initial)
 
 	// Simulate recovery: apply pending writes from uncommitted checkpoint
-	pending := map[string]any{
-		"counter": 20,
-		"items":   []string{"b", "c"},
-		"new_key": "recovered",
+	pending := []checkpoint.PendingWrite{
+		{NodeName: "restored", Channel: "counter", Value: 20},
+		{NodeName: "restored", Channel: "items", Value: []string{"b", "c"}},
+		{NodeName: "restored", Channel: "new_key", Value: "recovered"},
 	}
 	bsp.ApplyPendingWrites(pending)
 
@@ -276,7 +284,7 @@ func TestBSPStateTwoPhaseCommitFlow(t *testing.T) {
 	bsp := graph.NewBSPState(initial)
 
 	// Superstep 1: Node writes
-	bsp.Write(graph.Updates{"step": 1, "data": "superstep1"})
+	bsp.Write("node-two-phase", graph.Updates{"step": 1, "data": "superstep1"})
 
 	// Phase 1: Capture pending writes (as would be saved to checkpoint)
 	pending1 := bsp.PendingWrites()
