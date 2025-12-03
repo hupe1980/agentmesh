@@ -203,10 +203,11 @@ type PregelExecutor[I, O any] struct {
 }
 
 // NewPregelExecutor creates a new Pregel executor with default settings.
+// Uses DefaultMaxWorkers (4) and DefaultMaxSteps (100).
 func NewPregelExecutor[I, O any]() *PregelExecutor[I, O] {
 	return &PregelExecutor[I, O]{
-		maxWorkers: 4,
-		maxSteps:   100,
+		maxWorkers: DefaultMaxWorkers,
+		maxSteps:   DefaultMaxSteps,
 	}
 }
 
@@ -242,14 +243,46 @@ type resultItem[O any] struct {
 	err    error
 }
 
-// defaultResultChanSize buffers outputs to prevent backpressure when the yield
-// consumer is slower than the producer. This provides smoother execution flow
-// without blocking nodes. Typical agents produce <10 results/superstep.
-//
-// Why 100? Sized for ~10 supersteps worth of buffering (10 results/step * 10 steps).
-// Large enough to prevent blocking during brief consumer slowdowns, small enough
-// to avoid excessive memory usage (~8KB for typical output types).
-const defaultResultChanSize = 100
+const (
+	// DefaultMaxWorkers is the default number of parallel workers for executing
+	// graph nodes in the Pregel runtime. This controls concurrency of node execution
+	// within each superstep.
+	//
+	// Why 4? Matches typical CPU core count for development machines. Production
+	// deployments should tune this based on workload characteristics:
+	//   - CPU-bound tasks: set to runtime.NumCPU()
+	//   - I/O-bound tasks (API calls): can be 10-100x higher
+	//   - Memory-constrained: reduce based on per-node memory footprint
+	DefaultMaxWorkers = 4
+
+	// DefaultMaxSteps is the default maximum number of supersteps before the
+	// graph execution terminates. This prevents infinite loops in cyclic graphs
+	// or runaway agent behavior.
+	//
+	// Why 100? Sufficient for most agent workflows:
+	//   - Simple ReAct agents: 5-20 steps typical
+	//   - Complex multi-agent: 20-50 steps typical
+	//   - Research/exploration: may need 100+ (use WithMaxSteps to override)
+	// If exceeded, execution stops with ErrMaxIterationsExceeded.
+	DefaultMaxSteps = 100
+
+	// DefaultCheckpointInterval is the default interval for saving checkpoints
+	// during graph execution. Value of 1 means checkpoint after every superstep.
+	//
+	// Why 1? Ensures maximum recoverability at the cost of checkpoint overhead.
+	// For long-running graphs with expensive checkpointing, increase via
+	// graph.WithCheckpointInterval() to reduce I/O overhead.
+	DefaultCheckpointInterval = 1
+
+	// defaultResultChanSize buffers outputs to prevent backpressure when the yield
+	// consumer is slower than the producer. This provides smoother execution flow
+	// without blocking nodes. Typical agents produce <10 results/superstep.
+	//
+	// Why 100? Sized for ~10 supersteps worth of buffering (10 results/step * 10 steps).
+	// Large enough to prevent blocking during brief consumer slowdowns, small enough
+	// to avoid excessive memory usage (~8KB for typical output types).
+	defaultResultChanSize = 100
+)
 
 // startResultConsumer starts a goroutine that consumes results from the channel
 // and yields them sequentially. Returns a done channel that closes when the consumer exits.
@@ -485,7 +518,7 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 
 		// Apply run options
 		runCfg := &runConfig{
-			checkpointInterval: 1, // Default: save every superstep
+			checkpointInterval: DefaultCheckpointInterval,
 		}
 		for _, opt := range opts {
 			opt(runCfg)

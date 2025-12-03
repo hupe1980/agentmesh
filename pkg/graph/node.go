@@ -6,6 +6,34 @@ import (
 	"time"
 )
 
+const (
+	// DefaultRetryMaxAttempts is the default maximum number of retry attempts
+	// for node execution. After this many failures, the error propagates.
+	//
+	// Why 3? Industry standard for transient failures (network timeouts, rate limits).
+	// First attempt + 2 retries = 3 total attempts, sufficient for most transient issues.
+	DefaultRetryMaxAttempts = 3
+
+	// DefaultRetryDelay is the default base delay between retry attempts.
+	// Combined with exponential backoff (2.0 multiplier), delays are:
+	// 100ms -> 200ms -> 400ms -> ... (capped at DefaultRetryMaxDelay)
+	DefaultRetryDelay = 100 * time.Millisecond
+
+	// DefaultRetryMaxDelay is the maximum delay between retry attempts.
+	// Prevents excessive wait times during extended outages.
+	//
+	// Why 5s? Balances patience for recovery with user experience.
+	// Longer delays rarely help—if service is down >5s, manual intervention needed.
+	DefaultRetryMaxDelay = 5 * time.Second
+
+	// DefaultRetryMultiplier is the exponential backoff multiplier.
+	// Each retry delay = previous delay * multiplier (until MaxDelay).
+	//
+	// Why 2.0? Standard exponential backoff. Quickly backs off to reduce
+	// load on failing services while not being overly aggressive.
+	DefaultRetryMultiplier = 2.0
+)
+
 // NodeFunc is the signature for all node logic.
 // Read state via View, return a Command with updates and next targets.
 type NodeFunc func(ctx context.Context, view View) (*Command, error)
@@ -23,12 +51,14 @@ type RetryPolicy struct {
 }
 
 // DefaultRetryPolicy returns a sensible default retry policy.
+// Uses DefaultRetryMaxAttempts (3), DefaultRetryDelay (100ms),
+// DefaultRetryMaxDelay (5s), and DefaultRetryMultiplier (2.0).
 func DefaultRetryPolicy() *RetryPolicy {
 	return &RetryPolicy{
-		MaxAttempts: 3,
-		Delay:       100 * time.Millisecond,
-		MaxDelay:    5 * time.Second,
-		Multiplier:  2.0,
+		MaxAttempts: DefaultRetryMaxAttempts,
+		Delay:       DefaultRetryDelay,
+		MaxDelay:    DefaultRetryMaxDelay,
+		Multiplier:  DefaultRetryMultiplier,
 	}
 }
 
@@ -49,16 +79,16 @@ type RetryPolicyBuilder struct {
 }
 
 // NewRetryPolicyBuilder creates a new retry policy builder with sensible defaults:
-//   - MaxAttempts: 3
-//   - Delay: 100ms (base delay)
-//   - MaxDelay: 5s
-//   - Multiplier: 2.0 (exponential backoff)
+//   - MaxAttempts: DefaultRetryMaxAttempts (3)
+//   - Delay: DefaultRetryDelay (100ms base delay)
+//   - MaxDelay: DefaultRetryMaxDelay (5s)
+//   - Multiplier: DefaultRetryMultiplier (2.0 exponential backoff)
 func NewRetryPolicyBuilder() *RetryPolicyBuilder {
 	return &RetryPolicyBuilder{
-		maxAttempts: 3,
-		delay:       100 * time.Millisecond,
-		maxDelay:    5 * time.Second,
-		multiplier:  2.0,
+		maxAttempts: DefaultRetryMaxAttempts,
+		delay:       DefaultRetryDelay,
+		maxDelay:    DefaultRetryMaxDelay,
+		multiplier:  DefaultRetryMultiplier,
 	}
 }
 
