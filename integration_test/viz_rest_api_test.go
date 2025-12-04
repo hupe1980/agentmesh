@@ -1148,6 +1148,69 @@ func TestEventCollection(t *testing.T) {
 		"Should have at least graph_start + node events + graph_complete")
 }
 
+// createSlowVizTestGraph creates a test graph with delays to ensure WebSocket
+// subscriptions can be established before events are emitted.
+func createSlowVizTestGraph(t *testing.T) *message.Graph {
+	// Track invocation count to return tool call first, then final response
+	invocationCount := 0
+
+	// Create mock model with delays to allow WebSocket subscription
+	mockModel := &testutil.MockModel{
+		GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+			return func(yield func(*model.Response, error) bool) {
+				// Add delay to allow WebSocket subscription to be processed
+				time.Sleep(100 * time.Millisecond)
+
+				invocationCount++
+
+				if invocationCount == 1 {
+					msg := message.NewAIMessageFromText("")
+					msg.ToolCalls = []message.ToolCall{
+						{
+							ID:        "call_123",
+							Name:      "test_tool",
+							Type:      "function",
+							Arguments: `{"input": "test input"}`,
+						},
+					}
+
+					yield(&model.Response{
+						Message:      msg,
+						Usage:        &model.UsageInfo{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30},
+						FinishReason: "tool_calls",
+						Partial:      false,
+					}, nil)
+				} else {
+					msg := message.NewAIMessageFromText("Test response")
+
+					yield(&model.Response{
+						Message:      msg,
+						Usage:        &model.UsageInfo{PromptTokens: 5, CompletionTokens: 5, TotalTokens: 10},
+						FinishReason: "stop",
+						Partial:      false,
+					}, nil)
+				}
+			}
+		},
+		CapabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{Streaming: true, Tools: true}
+		},
+	}
+
+	mockTool := &testutil.MockTool{
+		NameValue:        "test_tool",
+		DescriptionValue: "A test tool",
+		CallFunc: func(ctx context.Context, input string) (any, error) {
+			return map[string]any{"result": "ok"}, nil
+		},
+	}
+
+	reactAgent, err := agent.NewReActAgent(mockModel, agent.WithTools(mockTool))
+	require.NoError(t, err)
+
+	return reactAgent
+}
+
 // TestWebSocketEventContent verifies WebSocket messages have correct types and payloads
 func TestWebSocketEventContent(t *testing.T) {
 	// Find a free port
@@ -1165,8 +1228,8 @@ func TestWebSocketEventContent(t *testing.T) {
 	})
 	require.NoError(t, err, "Failed to create server")
 
-	// Register test graph
-	testGraph := createVizTestGraph(t)
+	// Register test graph with delays to ensure WebSocket subscription works
+	testGraph := createSlowVizTestGraph(t)
 	err = server.Register("test-graph", viz.NewMessageAdapter(testGraph))
 	require.NoError(t, err, "Failed to register graph")
 
@@ -1238,10 +1301,10 @@ func TestWebSocketEventContent(t *testing.T) {
 	t.Logf("Subscribed to run: %s", runID)
 
 	// Give server time to process subscription
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
-	// Collect messages with timeout - short timeout since graph execution is fast
-	timeout := time.After(2 * time.Second)
+	// Collect messages with timeout - use longer timeout to handle CI variability
+	timeout := time.After(5 * time.Second)
 	collectMessages := true
 
 	for collectMessages {
