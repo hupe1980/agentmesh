@@ -27,6 +27,8 @@ sidebar:
         url: "#gemini"
       - title: LangChainGo
         url: "#langchaingo"
+      - title: Amazon Bedrock
+        url: "#amazon-bedrock"
   - title: Tool binding
     url: "#tool-binding"
   - title: Streaming
@@ -278,6 +280,75 @@ This adapter enables:
 - Integration with LangChainGo's 50+ model providers
 - Reuse of existing LangChainGo configurations
 - Gradual migration from LangChainGo to AgentMesh
+
+### Amazon Bedrock {#amazon-bedrock}
+
+The Amazon Bedrock adapter integrates foundation models from multiple providers (Anthropic Claude, Meta Llama, Amazon Nova, Mistral, etc.) via the AWS SDK's Converse API:
+
+```go
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+    "github.com/hupe1980/agentmesh/pkg/model/amazonbedrock"
+)
+
+cfg, _ := config.LoadDefaultConfig(context.Background())
+client := bedrockruntime.NewFromConfig(cfg)
+
+model := amazonbedrock.NewModel(client,
+    amazonbedrock.WithModelID("eu.amazon.nova-pro-v1:0"),
+    amazonbedrock.WithTemperature(0.7),
+    amazonbedrock.WithMaxTokens(1024),
+)
+
+compiled, err := agent.NewReActAgent(model, tools)
+```
+
+Configuration options:
+
+```go
+amazonbedrock.NewModel(client,
+    amazonbedrock.WithModelID("eu.amazon.nova-pro-v1:0"), // Model or inference profile ID
+    amazonbedrock.WithTemperature(0.7),                    // Randomness (0-1)
+    amazonbedrock.WithMaxTokens(2048),                     // Max output tokens
+    amazonbedrock.WithTopP(0.9),                           // Nucleus sampling
+)
+```
+
+**Cross-Region Inference Profiles** (recommended for production):
+
+Bedrock supports inference profiles that provide automatic cross-region load balancing. Use the region prefix (`us.`, `eu.`, etc.) with the model ID:
+
+```go
+// EU region inference profiles
+model := amazonbedrock.NewModel(client,
+    amazonbedrock.WithModelID("eu.amazon.nova-pro-v1:0"),
+)
+
+// US region inference profiles
+model := amazonbedrock.NewModel(client,
+    amazonbedrock.WithModelID("us.anthropic.claude-3-5-sonnet-20240620-v1:0"),
+)
+```
+
+Common inference profile IDs:
+- `eu.amazon.nova-pro-v1:0` / `us.amazon.nova-pro-v1:0` (Nova Pro with tools & vision)
+- `eu.amazon.nova-lite-v1:0` / `us.amazon.nova-lite-v1:0` (Nova Lite with tools & vision)
+- `eu.anthropic.claude-3-5-sonnet-20240620-v1:0` (Claude 3.5 Sonnet)
+- `eu.anthropic.claude-3-haiku-20240307-v1:0` (Claude 3 Haiku)
+- `eu.meta.llama3-2-3b-instruct-v1:0` (Llama 3.2)
+
+To list available inference profiles in your account:
+```bash
+aws bedrock list-inference-profiles --query "inferenceProfileSummaries[].inferenceProfileId"
+```
+
+The adapter supports:
+- ✅ Streaming responses (via ConverseStream API)
+- ✅ Function calling via `BindTools()`
+- ✅ Vision models (Claude, Nova Pro/Lite)
+- ✅ Multiple foundation model providers through unified API
 
 ---
 
