@@ -2,6 +2,7 @@ package message
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 )
 
@@ -191,9 +192,7 @@ func (b messageBase) clone() messageBase {
 		content:  cloneParts(b.content),
 		metadata: make(map[string]any, len(b.metadata)),
 	}
-	for k, v := range b.metadata {
-		cloned.metadata[k] = v
-	}
+	maps.Copy(cloned.metadata, b.metadata)
 	return cloned
 }
 
@@ -207,9 +206,7 @@ func WithMetadata(metadata map[string]any) Option {
 		if base.metadata == nil {
 			base.metadata = make(map[string]any)
 		}
-		for k, v := range metadata {
-			base.metadata[k] = v
-		}
+		maps.Copy(base.metadata, metadata)
 	}
 }
 
@@ -609,9 +606,7 @@ func cloneMap(source map[string]any) map[string]any {
 		return nil
 	}
 	out := make(map[string]any, len(source))
-	for k, v := range source {
-		out[k] = v
-	}
+	maps.Copy(out, source)
 	return out
 }
 
