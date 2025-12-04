@@ -109,7 +109,7 @@ caps := model.Capabilities()
 
 // Discover what the model supports
 if caps.Tools {
-    // Can use BindTools()
+    // Can pass tools in Request.Tools
 }
 if caps.NativeReasoning {
     // Response.Reasoning will be populated
@@ -132,23 +132,21 @@ type Capabilities struct {
 }
 ```
 
-### Optional Interfaces
+### Checking Capabilities
 
-Models may implement additional interfaces for feature configuration:
+**Always check `Capabilities()` before using features** to ensure the model supports them:
 
 ```go
-// ToolAware enables function calling
-type ToolAware interface {
-    BindTools(tools ...tool.Tool) Model
+caps := model.Capabilities()
+
+if caps.Tools {
+    // Safe to pass tools in Request.Tools
 }
 
-// StructuredOutput enables JSON schema validation
-type StructuredOutput interface {
-    WithStructuredOutput(schema map[string]any) Model
+if caps.Vision {
+    // Safe to include image parts in messages
 }
 ```
-
-**Always check `Capabilities()` before using optional interfaces** to ensure the model supports the feature.
 
 ---
 
@@ -185,7 +183,7 @@ openai.NewModel(
 
 The adapter supports:
 - ✅ Streaming responses
-- ✅ Function calling via `BindTools()`
+- ✅ Function calling via `Request.Tools`
 - ✅ Parallel tool calls
 - ✅ Vision models (pass `message.FilePart` with image MIME type)
 
@@ -218,7 +216,7 @@ anthropic.NewModel(
 
 The adapter supports:
 - ✅ Streaming responses  
-- ✅ Function calling via `BindTools()`
+- ✅ Function calling via `Request.Tools`
 - ✅ Vision models
 - ✅ System prompts
 
@@ -256,7 +254,7 @@ gemini.NewModel(ctx,
 
 The adapter supports:
 - ✅ Streaming responses
-- ✅ Function calling via `BindTools()`
+- ✅ Function calling via `Request.Tools`
 - ✅ Vision models (multimodal)
 - ✅ Native reasoning (Gemini 2.0)
 
@@ -346,7 +344,7 @@ aws bedrock list-inference-profiles --query "inferenceProfileSummaries[].inferen
 
 The adapter supports:
 - ✅ Streaming responses (via ConverseStream API)
-- ✅ Function calling via `BindTools()`
+- ✅ Function calling via `Request.Tools`
 - ✅ Vision models (Claude, Nova Pro/Lite)
 - ✅ Multiple foundation model providers through unified API
 
@@ -354,27 +352,31 @@ The adapter supports:
 
 ## Tool binding {#tool-binding}
 
-Models that support function calling implement `model.ToolAware`:
+Tools are passed to models via the `Request.Tools` field:
 
 ```go
 // Create tools
 searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
 calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
 
-// Bind tools to model
-model := openai.NewModel()
-if toolAware, ok := model.(model.ToolAware); ok {
-    model = toolAware.BindTools(searchTool, calcTool)
+// Pass tools in request
+req := &model.Request{
+    Messages: messages,
+    Tools:    []tool.Tool{searchTool, calcTool},
+}
+
+for resp, err := range model.Generate(ctx, req) {
+    // Handle tool calls in response
 }
 ```
 
 Agent constructors handle tool binding automatically:
 
 ```go
-// Tools are bound automatically
+// Tools are passed automatically via agent options
 compiled, err := agent.NewReActAgent(
     openai.NewModel(),
-    []tool.Tool{searchTool, calcTool},
+    agent.WithTools(searchTool, calcTool),
 )
 ```
 
@@ -560,11 +562,12 @@ func (m *CustomModel) Generate(ctx context.Context, messages []message.Message) 
     }
 }
 
-// Optional: Implement ToolAware for function calling
-func (m *CustomModel) BindTools(tools ...tool.Tool) model.Model {
-    return &CustomModel{
-        client: m.client,
-        tools:  tools,
+// Capabilities reports what this model supports
+func (m *CustomModel) Capabilities() model.Capabilities {
+    return model.Capabilities{
+        Streaming: true,
+        Tools:     true, // Set based on provider support
+        Vision:    false,
     }
 }
 ```
