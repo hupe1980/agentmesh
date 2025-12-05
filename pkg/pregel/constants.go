@@ -1,5 +1,7 @@
 package pregel
 
+import "time"
+
 // Package-level constants for default buffer sizes and shard counts.
 // These values are chosen based on performance characteristics and benchmarking:
 //   - EventChanBufferSize: Small buffer for event streaming (10 events)
@@ -46,4 +48,18 @@ const (
 	// to ~1MB, allowing 1000+ vertices before memory concerns (~1GB total).
 	// Users can override this via RuntimeOptions.MaxMailboxSize.
 	DefaultMaxMailboxSize = 10000
+
+	// DefaultSendTimeout is the default timeout for blocking send operations
+	// when the context has no deadline. This prevents indefinite blocking if a
+	// mailbox is full and never drained.
+	//
+	// Why 30 seconds? Provides a reasonable balance:
+	//   - Prevents indefinite hangs in production deployments
+	//   - Allows time for backpressure to resolve naturally
+	//   - Fails fast enough to detect stuck consumers
+	//   - Long enough to handle typical transient congestion
+	//
+	// If a send times out, it indicates the consumer is too slow or stuck.
+	// Users can override this via RuntimeOptions.SendTimeout (0 = no timeout).
+	DefaultSendTimeout = 30 * time.Second
 )

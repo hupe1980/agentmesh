@@ -8,7 +8,7 @@ import (
 )
 
 func TestInMemoryMessageBus_Basic(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](100, nil)
+	bus := NewInMemoryMessageBus[string](100, 0, nil)
 	defer bus.Close()
 
 	// Test sending messages
@@ -50,7 +50,7 @@ func TestInMemoryMessageBus_Basic(t *testing.T) {
 }
 
 func TestInMemoryMessageBus_MaxSize(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](2, nil)
+	bus := NewInMemoryMessageBus[string](2, 0, nil)
 	defer bus.Close()
 
 	ctx := t.Context()
@@ -129,7 +129,7 @@ func TestInMemoryMessageBus_Combiner(t *testing.T) {
 	}
 
 	// Use small mailbox (4) so that 3 messages exceeds 75% threshold and triggers combining
-	bus := NewInMemoryMessageBus[string](4, combiner)
+	bus := NewInMemoryMessageBus[string](4, 0, combiner)
 	defer bus.Close()
 
 	// Send multiple messages to same target
@@ -206,7 +206,7 @@ func splitByComma(s string) []string {
 }
 
 func TestInMemoryMessageBus_Close(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](100, nil)
+	bus := NewInMemoryMessageBus[string](100, 0, nil)
 	defer bus.Close()
 
 	// Send messages
@@ -235,7 +235,7 @@ func TestInMemoryMessageBus_Close(t *testing.T) {
 
 func TestInMemoryMessageBus_Sharding(t *testing.T) {
 	// Increase mailbox size to accommodate all messages to avoid deadlock
-	bus := NewInMemoryMessageBus[int](1000, nil)
+	bus := NewInMemoryMessageBus[int](1000, 0, nil)
 	defer bus.Close()
 
 	var wg sync.WaitGroup
@@ -273,7 +273,7 @@ func TestInMemoryMessageBus_Sharding(t *testing.T) {
 }
 
 func TestInMemoryMessageBus_Stats(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](100, nil)
+	bus := NewInMemoryMessageBus[string](100, 0, nil)
 	defer bus.Close()
 
 	// Send messages to multiple targets
@@ -299,7 +299,7 @@ func TestInMemoryMessageBus_Stats(t *testing.T) {
 }
 
 func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
-	bus := NewInMemoryMessageBus[string](0, nil)
+	bus := NewInMemoryMessageBus[string](0, 0, nil)
 	defer bus.Close()
 
 	// Send message with empty target - should be ignored
@@ -328,7 +328,7 @@ func TestInMemoryMessageBus_EmptyTarget(t *testing.T) {
 // when mailbox is full, they are held until space is available (backpressure).
 func TestInMemoryMessageBus_BackpressureNoMessageLoss(t *testing.T) {
 	const mailboxSize = 5
-	bus := NewInMemoryMessageBus[int](mailboxSize, nil)
+	bus := NewInMemoryMessageBus[int](mailboxSize, 0, nil)
 	defer bus.Close()
 
 	ctx := context.Background()
@@ -431,7 +431,7 @@ verify:
 // an error is returned and the message is not delivered.
 func TestInMemoryMessageBus_ContextCancellationDuringBackpressure(t *testing.T) {
 	const mailboxSize = 2
-	bus := NewInMemoryMessageBus[string](mailboxSize, nil)
+	bus := NewInMemoryMessageBus[string](mailboxSize, 0, nil)
 	defer bus.Close()
 
 	// Fill mailbox to capacity
@@ -495,7 +495,7 @@ func TestInMemoryMessageBus_ConcurrentBackpressure(t *testing.T) {
 		msgsPerSender = 20
 	)
 
-	bus := NewInMemoryMessageBus[int](mailboxSize, nil)
+	bus := NewInMemoryMessageBus[int](mailboxSize, 0, nil)
 	defer bus.Close()
 
 	ctx := context.Background()
@@ -575,5 +575,94 @@ func TestInMemoryMessageBus_ConcurrentBackpressure(t *testing.T) {
 
 	if actualCount != expectedCount {
 		t.Errorf("Expected %d messages delivered, got %d", expectedCount, actualCount)
+	}
+}
+
+// TestInMemoryMessageBus_SendTimeoutNoDeadline verifies that when context has no deadline,
+// the send operation times out after the configured duration if mailbox stays full.
+func TestInMemoryMessageBus_SendTimeoutNoDeadline(t *testing.T) {
+	const mailboxSize = 2
+	sendTimeout := 100 * time.Millisecond
+	bus := NewInMemoryMessageBus[string](mailboxSize, sendTimeout, nil)
+	defer bus.Close()
+
+	// Fill mailbox to capacity
+	ctx := context.Background() // No deadline
+	for i := 0; i < mailboxSize; i++ {
+		err := bus.Send(ctx, []Message[string]{
+			{To: "vertex1", Data: "msg" + string(rune('0'+i))},
+		})
+		if err != nil {
+			t.Fatalf("Send %d failed: %v", i, err)
+		}
+	}
+
+	// Attempt send with no context deadline - should timeout after configured duration
+	start := time.Now()
+	err := bus.Send(ctx, []Message[string]{
+		{To: "vertex1", Data: "should-timeout"},
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("Expected error when send times out due to full mailbox")
+	} else {
+		t.Logf("Got expected timeout error: %v", err)
+	}
+
+	// Verify timeout occurred around configured duration (with some tolerance)
+	if elapsed < sendTimeout {
+		t.Errorf("Timeout occurred too early: %v < %v", elapsed, sendTimeout)
+	}
+	if elapsed > sendTimeout+200*time.Millisecond {
+		t.Errorf("Timeout occurred too late: %v > %v", elapsed, sendTimeout+200*time.Millisecond)
+	}
+
+	// Verify original messages are intact (timeout doesn't corrupt state)
+	msgs, _ := bus.Receive(context.Background(), "vertex1")
+	if len(msgs) != mailboxSize {
+		t.Errorf("Expected %d messages (original only), got %d", mailboxSize, len(msgs))
+	}
+}
+
+// TestInMemoryMessageBus_ContextDeadlineTakesPrecedence verifies that when context has a deadline,
+// it takes precedence over the configured send timeout.
+func TestInMemoryMessageBus_ContextDeadlineTakesPrecedence(t *testing.T) {
+	const mailboxSize = 2
+	sendTimeout := 5 * time.Second // Long timeout
+	bus := NewInMemoryMessageBus[string](mailboxSize, sendTimeout, nil)
+	defer bus.Close()
+
+	// Fill mailbox to capacity
+	ctx := context.Background()
+	for i := 0; i < mailboxSize; i++ {
+		err := bus.Send(ctx, []Message[string]{
+			{To: "vertex1", Data: "msg" + string(rune('0'+i))},
+		})
+		if err != nil {
+			t.Fatalf("Send %d failed: %v", i, err)
+		}
+	}
+
+	// Attempt send with short context deadline - should use context deadline, not send timeout
+	shortTimeout := 100 * time.Millisecond
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+
+	start := time.Now()
+	err := bus.Send(timeoutCtx, []Message[string]{
+		{To: "vertex1", Data: "should-use-context-deadline"},
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("Expected error when context times out")
+	} else {
+		t.Logf("Got expected context timeout error: %v", err)
+	}
+
+	// Verify context deadline was used (not the 5s send timeout)
+	if elapsed > shortTimeout+200*time.Millisecond {
+		t.Errorf("Should have used context deadline (%v), but took %v", shortTimeout, elapsed)
 	}
 }

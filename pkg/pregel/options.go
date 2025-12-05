@@ -53,8 +53,16 @@ type RuntimeOptions[S any, M any] struct {
 	// Recommended: Set this to prevent memory exhaustion in high-throughput scenarios.
 	MaxMailboxSize int
 
+	// SendTimeout sets the maximum time a send operation will block waiting for
+	// space in a full mailbox when the context has no deadline. This prevents
+	// indefinite blocking if a consumer is stuck or too slow. A value <= 0 uses
+	// DefaultSendTimeout (30s). Set to a very large value to effectively disable.
+	// Only applies to InMemoryMessageBus; ignored if MessageBus is provided.
+	// Recommended: 30s-5m for production deployments.
+	SendTimeout time.Duration
+
 	// MessageBus provides pluggable message delivery backend. If nil, defaults
-	// to InMemoryMessageBus with MaxMailboxSize and Combiner settings.
+	// to InMemoryMessageBus with MaxMailboxSize, SendTimeout, and Combiner settings.
 	// Use this to enable distributed execution (Redis, gRPC, etc.)
 	MessageBus MessageBus[M]
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sync"
+	"time"
 )
 
 // MessageBus abstracts message delivery and storage for graph execution.
@@ -77,11 +78,12 @@ type MessageBus[M any] interface {
 // Frontier Tracking: InMemoryMessageBus does NOT maintain frontier state.
 // Runtime uses its own shardedFrontier for lock-free frontier tracking.
 type InMemoryMessageBus[M any] struct {
-	shards   [DefaultShardCount]messageShard[M]
-	maxSize  int
-	combiner Combiner[M]
-	globalMu sync.Mutex // Only for Close() and global operations
-	closed   bool
+	shards      [DefaultShardCount]messageShard[M]
+	maxSize     int
+	sendTimeout time.Duration
+	combiner    Combiner[M]
+	globalMu    sync.Mutex // Only for Close() and global operations
+	closed      bool
 }
 
 // messageShard represents a single shard with its own lock.
@@ -95,6 +97,11 @@ type messageShard[M any] struct {
 //
 // maxSize controls mailbox capacity per vertex. If maxSize <= 0, DefaultMaxMailboxSize
 // (10,000) is used automatically to ensure memory safety and backpressure.
+//
+// sendTimeout controls how long a send operation will block waiting for space in a
+// full mailbox before timing out. If sendTimeout <= 0, DefaultSendTimeout (30s) is used.
+// Set to a very large value (e.g., 24h) to effectively disable timeouts if context-based
+// cancellation is always guaranteed.
 //
 // All mailboxes are bounded to prevent unbounded memory growth and OOM crashes.
 // Send operations block when mailboxes are full, providing natural backpressure
@@ -110,15 +117,21 @@ type messageShard[M any] struct {
 //
 // Implementation: Uses DefaultShardCount shards to reduce lock contention.
 // Frontier tracking is handled separately by Runtime.
-func NewInMemoryMessageBus[M any](maxSize int, combiner Combiner[M]) *InMemoryMessageBus[M] {
+func NewInMemoryMessageBus[M any](maxSize int, sendTimeout time.Duration, combiner Combiner[M]) *InMemoryMessageBus[M] {
 	// Enforce bounded mailboxes for memory safety
 	if maxSize <= 0 {
 		maxSize = DefaultMaxMailboxSize
 	}
 
+	// Enforce send timeout to prevent indefinite blocking
+	if sendTimeout <= 0 {
+		sendTimeout = DefaultSendTimeout
+	}
+
 	store := &InMemoryMessageBus[M]{
-		maxSize:  maxSize,
-		combiner: combiner,
+		maxSize:     maxSize,
+		sendTimeout: sendTimeout,
+		combiner:    combiner,
 	}
 
 	// Initialize all shards
@@ -262,17 +275,39 @@ func (store *InMemoryMessageBus[M]) tryCombineWithLastMessage(
 	}
 }
 
-// blockingSend sends a message to a channel with context cancellation support.
+// blockingSend sends a message to a channel with context cancellation support
+// and timeout fallback. If the context has no deadline, uses the configured
+// sendTimeout to prevent indefinite blocking.
 func (store *InMemoryMessageBus[M]) blockingSend(
 	ctx context.Context,
 	ch chan Message[M],
 	msg Message[M],
 ) error {
+	// Check if context has a deadline
+	_, hasDeadline := ctx.Deadline()
+
+	if hasDeadline {
+		// Context has deadline - rely on it exclusively
+		select {
+		case ch <- msg:
+			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("failed to send message to %q: %w", msg.To, ctx.Err())
+		}
+	}
+
+	// Context has no deadline - use configured timeout to prevent indefinite blocking
+	timer := time.NewTimer(store.sendTimeout)
+	defer timer.Stop()
+
 	select {
 	case ch <- msg:
 		return nil
 	case <-ctx.Done():
 		return fmt.Errorf("failed to send message to %q: %w", msg.To, ctx.Err())
+	case <-timer.C:
+		return fmt.Errorf("failed to send message to %q: timeout after %v (mailbox full, consumer may be stuck)",
+			msg.To, store.sendTimeout)
 	}
 }
 

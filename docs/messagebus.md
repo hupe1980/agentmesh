@@ -118,14 +118,18 @@ Single-process message delivery with bounded mailboxes and backpressure.
 **Behavior:**
 - **All mailboxes are bounded**: If `maxSize <= 0`, defaults to `DefaultMaxMailboxSize` (10000)
 - **Backpressure**: Send blocks when mailbox is full, unblocks when space available
+- **Timeout protection**: If context has no deadline, send times out after `sendTimeout` (default: 30s)
+  - If context has a deadline, it takes precedence over `sendTimeout`
+  - Prevents indefinite blocking when consumers are stuck or too slow
 - **Context cancellation**: Returns error, guarantees no message corruption
 - **Message combiner**: Automatically merges messages for same target when channel ≥75% full
 
 **Configuration:**
 ```go
 bus := pregel.NewInMemoryMessageBus[MyMessage](
-    100,        // Max 100 messages per vertex (0 or negative = defaults to 10000)
-    combiner,   // Optional message combiner (nil = no combining)
+    100,             // Max 100 messages per vertex (0 or negative = defaults to 10000)
+    30*time.Second,  // Send timeout when context has no deadline (0 or negative = defaults to 30s)
+    combiner,        // Optional message combiner (nil = no combining)
 )
 ```
 
@@ -254,13 +258,15 @@ replayRuntime := pregel.NewRuntime(graph, events,
 ```go
 // With bounded mailbox (built-in backpressure)
 bus := pregel.NewInMemoryMessageBus[MyMessage](
-    100,  // When mailbox has 100 messages, sends block
+    100,             // When mailbox has 100 messages, sends block
+    30*time.Second,  // Timeout for blocking sends (when context has no deadline)
     nil,
 )
 
 // With message combiner (reduces pressure automatically)
 bus := pregel.NewInMemoryMessageBus[MyMessage](
     100,
+    30*time.Second,
     func(existing, incoming Message[MyMessage]) Message[MyMessage] {
         // Merge messages for same target (triggered at 75% capacity)
         return Message[MyMessage]{
@@ -318,7 +324,7 @@ runtime := pregel.NewRuntime(graph, events,
 )
 
 // Equivalent new code (explicit)
-bus := pregel.NewInMemoryMessageBus[M](100, nil)
+bus := pregel.NewInMemoryMessageBus[M](100, 0, nil)  // 0 = use default timeout (30s)
 runtime := pregel.NewRuntime(graph, events,
     pregel.WithMessageBus[S, M](bus),
 )

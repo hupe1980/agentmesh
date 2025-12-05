@@ -261,7 +261,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	if opts.MessageBus != nil {
 		messageBus = opts.MessageBus
 	} else {
-		messageBus = NewInMemoryMessageBus(opts.MaxMailboxSize, opts.Combiner)
+		messageBus = NewInMemoryMessageBus(opts.MaxMailboxSize, opts.SendTimeout, opts.Combiner)
 	}
 
 	// Create quota manager if configured
