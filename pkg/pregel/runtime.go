@@ -20,16 +20,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/trace"
 )
 
-const (
-	// contextCheckInterval defines how often to check for context cancellation
-	// during shard iteration. Checking every 32 shards balances responsiveness
-	// (detecting cancellation quickly) with performance overhead (syscall cost).
-	//
-	// Why 32? With 256 shards total, this gives 8 checks per Drain() operation.
-	// Benchmarking showed <1% overhead while keeping cancellation latency under 5ms.
-	contextCheckInterval = 32
-)
-
 // FrontierInfo contains diagnostics about the active frontier in a superstep.
 type FrontierInfo struct {
 	// Size is the number of vertices in the frontier
@@ -38,12 +28,12 @@ type FrontierInfo struct {
 	Nodes []string
 }
 
-// shardedFrontier is a lock-free concurrent map using 256 shards with
-// hash-based distribution. Eliminates the single-mutex bottleneck that
-// limited message passing scalability to ~100K messages/superstep.
+// shardedFrontier is a lock-free concurrent map using DefaultShardCount (256)
+// shards with hash-based distribution. Eliminates the single-mutex bottleneck
+// that limited message passing scalability to ~100K messages/superstep.
 //
 // Design:
-//   - 256 shards (power of 2 for fast modulo via bit-masking)
+//   - DefaultShardCount (256) shards for consistency with InMemoryMessageBus
 //   - FNV-1a hash function for deterministic, uniform distribution
 //   - Per-shard RWMutex for fine-grained locking
 //   - Typical contention: 1/256 = 0.39% probability of shard collision
@@ -53,13 +43,8 @@ type FrontierInfo struct {
 //   - O(n) Drain operation (n = number of vertices in frontier)
 //   - Expected speedup: 50-250x for workloads >100K messages/superstep
 //   - Memory overhead: ~16KB for empty shards (256 * 64 bytes)
-//
-// Why 256? Power of 2 enables fast bit-mask modulo (x & 255), provides sufficient
-// parallelism for up to 256 concurrent workers, and keeps memory overhead minimal.
-const shardCount = 256
-
 type shardedFrontier struct {
-	shards [shardCount]frontierShard
+	shards [DefaultShardCount]frontierShard
 }
 
 type frontierShard struct {
@@ -70,7 +55,7 @@ type frontierShard struct {
 // newShardedFrontier creates a new sharded frontier with pre-allocated shards.
 func newShardedFrontier() *shardedFrontier {
 	sf := &shardedFrontier{}
-	for i := range shardCount {
+	for i := range DefaultShardCount {
 		sf.shards[i].vertices = make(map[string]struct{})
 	}
 	return sf
@@ -80,8 +65,8 @@ func newShardedFrontier() *shardedFrontier {
 // FNV-1a chosen for: fast computation, good distribution, deterministic.
 func (sf *shardedFrontier) getShard(vertexID string) uint32 {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(vertexID))    // hash.Hash.Write never returns an error
-	return h.Sum32() & (shardCount - 1) // Fast modulo via bit-masking
+	_, _ = h.Write([]byte(vertexID))           // hash.Hash.Write never returns an error
+	return h.Sum32() & (DefaultShardCount - 1) // Fast modulo via bit-masking
 }
 
 // Add marks a vertex as having pending messages for the next superstep.
@@ -105,9 +90,9 @@ func (sf *shardedFrontier) Add(vertexID string) {
 func (sf *shardedFrontier) Drain(ctx context.Context) map[string]struct{} {
 	result := make(map[string]struct{})
 
-	for i := range shardCount {
+	for i := range DefaultShardCount {
 		// Check context cancellation periodically
-		if i%contextCheckInterval == 0 {
+		if i%DefaultContextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				// Context cancelled - return partial results for graceful shutdown
 				return result
@@ -131,7 +116,7 @@ func (sf *shardedFrontier) Drain(ctx context.Context) map[string]struct{} {
 // This operation reads all shards (relatively expensive, use sparingly).
 func (sf *shardedFrontier) Len() int {
 	count := 0
-	for i := range shardCount {
+	for i := range DefaultShardCount {
 		shard := &sf.shards[i]
 		shard.mu.RLock()
 		count += len(shard.vertices)

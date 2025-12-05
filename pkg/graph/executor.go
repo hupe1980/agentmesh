@@ -274,14 +274,14 @@ const (
 	// graph.WithCheckpointInterval() to reduce I/O overhead.
 	DefaultCheckpointInterval = 1
 
-	// defaultResultChanSize buffers outputs to prevent backpressure when the yield
+	// DefaultResultChanSize buffers outputs to prevent backpressure when the yield
 	// consumer is slower than the producer. This provides smoother execution flow
 	// without blocking nodes. Typical agents produce <10 results/superstep.
 	//
 	// Why 100? Sized for ~10 supersteps worth of buffering (10 results/step * 10 steps).
 	// Large enough to prevent blocking during brief consumer slowdowns, small enough
 	// to avoid excessive memory usage (~8KB for typical output types).
-	defaultResultChanSize = 100
+	DefaultResultChanSize = 100
 )
 
 // startResultConsumer starts a goroutine that consumes results from the channel
@@ -548,7 +548,7 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 		}
 
 		// Create buffered result channel for lock-free output collection
-		resultChan := make(chan resultItem[O], defaultResultChanSize)
+		resultChan := make(chan resultItem[O], DefaultResultChanSize)
 		yieldDone := startResultConsumer(ctx, cancel, resultChan, yield)
 
 		// Build execution context
