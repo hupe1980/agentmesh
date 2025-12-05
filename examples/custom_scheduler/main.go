@@ -71,7 +71,7 @@ func newMockGraph() *mockGraph {
 }
 
 func main() {
-	fmt.Println("=== Custom Scheduler Example ===\n")
+	fmt.Println("=== Custom Scheduler Example ===")
 
 	graph := newMockGraph()
 
