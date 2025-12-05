@@ -2,6 +2,22 @@ package graph
 
 // Command is what a node returns: state updates and next targets.
 //
+// DESIGN NOTE - High-Level Workflow Control:
+// Command is a graph-layer abstraction that combines state updates
+// (Updates) with routing decisions (Next). It provides workflow control
+// semantics with BSP state management guarantees.
+//
+// KEY CHARACTERISTICS:
+//   - Specifies both state updates AND routing targets
+//   - Graph-specific semantics (not generic like pregel.Message)
+//   - Always uses Updates (map[string]any) for state changes
+//   - Converted to pregel.Message[Updates] by executor adapter
+//
+// RELATIONSHIP TO PREGEL LAYER:
+// The executor adapter (pregelVertexAdapter.Run in executor.go) converts
+// Command into pregel.Message[Updates] for BSP execution. The Command.Updates
+// become Message.Data, and Command.Next becomes the Message.To field.
+//
 // Create with:
 //   - To("next")                     - just routing
 //   - Set(key, val).To("next")       - with updates

@@ -51,7 +51,25 @@ type Vertex[S any, M any] interface {
 	Run(ctx context.Context, vertex VertexContext[S, M], incoming []Message[M]) error
 }
 
-// Message represents a typed, directed message sent between vertices.
+// Message represents a typed, directed message sent between vertices in the BSP execution model.
+//
+// DESIGN NOTE - Low-Level Abstraction:
+// Message is a pure data transfer mechanism in the Pregel (BSP) layer.
+// It carries computation results between supersteps with no inherent
+// state modification semantics. The generic type parameter M allows
+// flexibility - the graph layer uses Message[Updates] where Updates
+// is map[string]any for state changes.
+//
+// KEY CHARACTERISTICS:
+//   - Pure data transfer between vertices
+//   - No state modification semantics at this layer
+//   - Generic over message payload type M
+//   - Converted from graph.Command by executor adapter
+//
+// RELATIONSHIP TO GRAPH LAYER:
+// The graph executor converts high-level graph.Command (which specifies
+// both state updates AND routing) into low-level Message[Updates] for
+// BSP execution. See pregelVertexAdapter.Run() in pkg/graph/executor.go.
 type Message[M any] struct {
 	From string
 	To   string
