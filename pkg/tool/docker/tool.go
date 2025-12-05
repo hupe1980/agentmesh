@@ -228,7 +228,7 @@ func (t *Tool) Call(ctx context.Context, argsJSON string) (any, error) {
 		Command:     cmdParts,
 		Timeout:     t.opts.Timeout,
 		NetworkMode: t.opts.NetworkMode,
-		AutoRemove:  true,
+		AutoRemove:  false, // Must be false - runner handles cleanup after log retrieval
 		MemoryLimit: t.opts.MemoryLimit,
 		CPUQuota:    t.opts.CPUQuota,
 		PullImage:   t.opts.PullImage,

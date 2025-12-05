@@ -122,9 +122,11 @@ func (r *Runner) Run(ctx context.Context, config Config) (*Result, error) {
 	}
 
 	// Create container
+	// IMPORTANT: AutoRemove must be false to avoid race condition where container
+	// is removed before we can retrieve its logs. We manually remove it after getting logs.
 	hostConfig := &container.HostConfig{
 		NetworkMode: container.NetworkMode(config.NetworkMode),
-		AutoRemove:  config.AutoRemove,
+		AutoRemove:  false, // Always false to prevent race condition
 		Privileged:  config.Privileged,
 		Mounts:      config.Mounts,
 		Resources: container.Resources{
@@ -149,14 +151,12 @@ func (r *Runner) Run(ctx context.Context, config Config) (*Result, error) {
 		return nil, fmt.Errorf("docker: failed to create container: %w", err)
 	}
 
-	// Ensure cleanup if AutoRemove is false
-	if !config.AutoRemove {
-		defer func() {
-			_ = r.client.ContainerRemove(context.Background(), resp.ID, container.RemoveOptions{
-				Force: true,
-			})
-		}()
-	}
+	// Always ensure cleanup after getting logs (not before)
+	defer func() {
+		_ = r.client.ContainerRemove(context.Background(), resp.ID, container.RemoveOptions{
+			Force: true,
+		})
+	}()
 
 	// Start container
 	if err := r.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
