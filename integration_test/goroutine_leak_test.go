@@ -217,3 +217,54 @@ func TestNoGoroutineLeaks_MultipleRuns(t *testing.T) {
 	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+10,
 		"Goroutine leak after multiple runs: before=%d, after=%d", initialGoroutines, finalGoroutines)
 }
+
+// TestNoGoroutineLeaks_WorkerPanicRecovery tests that worker pool panics don't leak goroutines.
+// This verifies the safego.Go() wrapper ensures cleanup even when workers panic.
+func TestNoGoroutineLeaks_WorkerPanicRecovery(t *testing.T) {
+	// Note: Do NOT use t.Parallel() - goroutine counts are affected by concurrent tests
+
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+
+	initialGoroutines := runtime.NumGoroutine()
+
+	// Create a graph with a node that panics
+	g := graph.New[string, string](ResultKey)
+
+	panicCount := 0
+	g.Node("panic_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		panicCount++
+		if panicCount <= 3 {
+			// First few executions panic (simulating worker panic)
+			panic("intentional panic for testing")
+		}
+		// After panics, succeed
+		return graph.Set(ResultKey, "success").End()
+	}, graph.END)
+
+	g.Start("panic_node")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	// Run multiple times - some will panic, some will succeed
+	for i := 0; i < 5; i++ {
+		// Panics are recovered and returned as errors
+		for _, err := range compiled.Run(context.Background(), "test") {
+			// Expect errors from panics
+			if i < 3 {
+				assert.Error(t, err, "Expected panic to be recovered as error")
+			}
+		}
+	}
+
+	// Verify no goroutines leaked despite panics
+	runtime.GC()
+	time.Sleep(200 * time.Millisecond)
+	runtime.GC()
+
+	finalGoroutines := runtime.NumGoroutine()
+	assert.LessOrEqual(t, finalGoroutines, initialGoroutines+10,
+		"Goroutine leak after worker panics: before=%d, after=%d (panics should not leak goroutines)",
+		initialGoroutines, finalGoroutines)
+}

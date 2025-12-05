@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
+	"github.com/hupe1980/agentmesh/internal/safego"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/quota"
@@ -769,7 +770,7 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 		})
 	}
 
-	// Start worker pool
+	// Start worker pool with panic-safe goroutines
 	for range workers {
 		// Acquire goroutine quota before spawning
 		if r.quotaManager != nil {
@@ -780,14 +781,8 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 		}
 
 		wg.Add(1)
-		go func() {
-			defer func() {
-				if r.quotaManager != nil {
-					r.quotaManager.ReleaseGoroutine()
-				}
-			}()
-			r.workerLoop(ctx, &wg, tasks, superstep, recordErr)
-		}()
+		// Use safego.Go for panic recovery - ensures cleanup even if recordErr panics
+		r.startWorker(ctx, &wg, tasks, superstep, recordErr)
 	}
 
 	// Schedule tasks
@@ -807,18 +802,46 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 	return runErr
 }
 
-// workerLoop is the main loop for a worker goroutine.
-// Each worker drains the mailbox for its assigned vertex in parallel,
-// then executes the vertex. This eliminates the sequential draining
-// bottleneck for distributed message bus implementations.
-func (r *Runtime[S, M]) workerLoop(
+// startWorker spawns a worker goroutine with panic recovery.
+// Uses safego.Go to ensure proper cleanup even if error handlers panic.
+// This prevents goroutine leaks when recordErr or other error paths panic.
+func (r *Runtime[S, M]) startWorker(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	tasks <-chan string,
 	superstep int64,
 	recordErr func(error),
 ) {
-	defer wg.Done()
+	safego.Go(func() error {
+		// Ensure WaitGroup cleanup and quota release happen even on panic
+		defer func() {
+			wg.Done()
+			if r.quotaManager != nil {
+				r.quotaManager.ReleaseGoroutine()
+			}
+		}()
+
+		// Run worker loop
+		r.workerLoop(ctx, tasks, superstep, recordErr)
+		return nil
+	}, func(err error) {
+		// If worker panics, record the error
+		recordErr(err)
+	})
+}
+
+// workerLoop is the main loop for a worker goroutine.
+// Each worker drains the mailbox for its assigned vertex in parallel,
+// then executes the vertex. This eliminates the sequential draining
+// bottleneck for distributed message bus implementations.
+//
+// Note: Cleanup (wg.Done, quota release) is handled by startWorker wrapper.
+func (r *Runtime[S, M]) workerLoop(
+	ctx context.Context,
+	tasks <-chan string,
+	superstep int64,
+	recordErr func(error),
+) {
 	for {
 		select {
 		case <-ctx.Done():
