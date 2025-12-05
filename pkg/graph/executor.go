@@ -111,28 +111,58 @@ func restoreCheckpoint[O any](
 ) (*checkpointRestoreResult, bool) {
 	result := &checkpointRestoreResult{}
 
-	// Try to restore from checkpoint if autoRestore is enabled
-	if chkpt, err := tryAutoRestore(ctx, cfg.Checkpointer, cfg.RunID, runCfg); err != nil {
+	// Step 1: Try to restore from checkpoint if autoRestore is enabled
+	if !loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield) {
+		return nil, false // Failed with error - abort execution
+	}
+
+	// Step 2: Apply explicit checkpoint if provided
+	applyExplicitCheckpoint(runCfg, result)
+
+	// Step 3: Apply state updates for human-in-the-loop workflows
+	applyStateUpdates(runCfg, result)
+
+	return result, true
+}
+
+// loadAutoRestoredCheckpoint tries to restore from checkpoint if autoRestore is enabled.
+// Returns false if checkpoint loading failed and failOnCheckpointErr is true (abort execution).
+func loadAutoRestoredCheckpoint[O any](
+	ctx context.Context,
+	cfg *ExecutorConfig[any, O],
+	runCfg *runConfig,
+	result *checkpointRestoreResult,
+	yield func(O, error) bool,
+) bool {
+	chkpt, err := tryAutoRestore(ctx, cfg.Checkpointer, cfg.RunID, runCfg)
+	if err != nil {
 		if runCfg.failOnCheckpointErr {
 			var zero O
 			yield(zero, fmt.Errorf("failed to load checkpoint: %w", err))
-			return nil, false
+			return false
 		}
 		// Continue without checkpoint restoration
-	} else if chkpt != nil {
+		return true
+	}
+
+	if chkpt != nil {
 		result.useCheckpoint(chkpt)
 	}
 
-	// If a checkpoint is explicitly provided, use it
+	return true
+}
+
+// applyExplicitCheckpoint applies a checkpoint that was explicitly provided via options.
+func applyExplicitCheckpoint(runCfg *runConfig, result *checkpointRestoreResult) {
 	if runCfg.checkpoint != nil {
 		result.useCheckpoint(runCfg.checkpoint)
 	}
+}
 
-	// Apply any state updates provided via WithStateUpdates
-	// This enables human-in-the-loop workflows to inject human input
+// applyStateUpdates applies state updates provided via WithStateUpdates.
+// This enables human-in-the-loop workflows to inject human input.
+func applyStateUpdates(runCfg *runConfig, result *checkpointRestoreResult) {
 	result.applyUpdates(runCfg.stateUpdates)
-
-	return result, true
 }
 
 // tryAutoRestore attempts to restore from checkpoint if autoRestore is enabled.

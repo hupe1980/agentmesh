@@ -47,9 +47,34 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error)
 		opt(&config)
 	}
 
-	// Build tool registry
-	toolRegistry := make(map[string]tool.Tool, len(config.tools))
-	for _, t := range config.tools {
+	// Build and validate tool registry
+	tools, toolRegistry := buildToolRegistry(config.tools)
+
+	// Validate model capabilities
+	if err := validateModelCapabilities(mdl, tools); err != nil {
+		return nil, err
+	}
+
+	// Create model node function
+	modelFn, err := createModelNode(mdl, config, tools)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create tool node function
+	toolFn, err := createToolNode(toolRegistry, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build and configure graph
+	return buildReActGraph(modelFn, toolFn, config)
+}
+
+// buildToolRegistry constructs a deduplicated tool registry from the provided tools.
+func buildToolRegistry(configTools []tool.Tool) ([]tool.Tool, map[string]tool.Tool) {
+	toolRegistry := make(map[string]tool.Tool, len(configTools))
+	for _, t := range configTools {
 		if t == nil {
 			continue
 		}
@@ -61,14 +86,22 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error)
 		tools = append(tools, t)
 	}
 
-	// Check if model supports tools (via Capabilities)
+	return tools, toolRegistry
+}
+
+// validateModelCapabilities checks if the model supports tools when tools are provided.
+func validateModelCapabilities(mdl model.Model, tools []tool.Tool) error {
 	if len(tools) > 0 {
 		caps := mdl.Capabilities()
 		if !caps.Tools {
-			return nil, fmt.Errorf("agent/react: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
+			return fmt.Errorf("agent/react: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
 		}
 	}
+	return nil
+}
 
+// createModelNode creates and configures the model node function with middleware.
+func createModelNode(mdl model.Model, config reActOptions, tools []tool.Tool) (graph.NodeFunc, error) {
 	// Create model executor - encapsulates model lifecycle management
 	// Apply model middleware if provided
 	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
@@ -86,6 +119,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error)
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
 	}
 
+	return modelFn, nil
+}
+
+// createToolNode creates and configures the tool node function with middleware.
+func createToolNode(toolRegistry map[string]tool.Tool, config reActOptions) (graph.NodeFunc, error) {
 	// Create tool executor - use sequential by default for deterministic behavior
 	// Apply tool middleware if provided
 	toolExecutor := tool.NewSequentialExecutor(toolRegistry,
@@ -101,6 +139,11 @@ func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error)
 		return nil, fmt.Errorf("agent/react: create tool node: %w", err)
 	}
 
+	return toolFn, nil
+}
+
+// buildReActGraph constructs the ReAct agent graph with nodes and middleware.
+func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*message.Graph, error) {
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
 	b := message.NewGraphBuilder()
 	b.Node("model", modelFn, "tool", graph.END)

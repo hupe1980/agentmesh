@@ -845,23 +845,66 @@ func (r *Runtime[S, M]) workerLoop(
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {
-	// Don't check ctx.Err() here - let the vertex handle it and wrap appropriately
-	vertex := r.graph.VertexByName(name)
-	if vertex == nil {
-		err := fmt.Errorf("superstep %d: vertex %q: %w", superstep, name, ErrUnknownVertex)
-		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
+	// Validate vertex exists
+	vertex, err := r.validateVertex(name, superstep)
+	if err != nil {
 		return err
 	}
 
 	// Apply per-vertex timeout if configured
-	vertexCtx := ctx
-	var cancel context.CancelFunc
-	if r.opts.VertexTimeout > 0 {
-		vertexCtx, cancel = context.WithTimeout(ctx, r.opts.VertexTimeout)
+	vertexCtx, cancel := r.createVertexContext(ctx)
+	if cancel != nil {
 		defer cancel()
 	}
 
 	r.vertices.Add(1)
+
+	// Prepare vertex execution context
+	sent, vertexContext := r.prepareVertexExecution()
+
+	// Execute with panic recovery
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = r.handleVertexPanic(rec, name, superstep)
+		}
+	}()
+
+	// Run vertex and handle results
+	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Output: "__vertex_start__"}, nil)
+
+	if err := r.runVertex(vertexCtx, vertex, vertexContext, incoming, name, superstep); err != nil {
+		return err
+	}
+
+	if err := r.deliverMessages(ctx, sent, name, superstep); err != nil {
+		return err
+	}
+
+	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, nil)
+	return nil
+}
+
+// validateVertex checks if the vertex exists in the graph.
+func (r *Runtime[S, M]) validateVertex(name string, superstep int64) (Vertex[S, M], error) {
+	vertex := r.graph.VertexByName(name)
+	if vertex == nil {
+		err := fmt.Errorf("superstep %d: vertex %q: %w", superstep, name, ErrUnknownVertex)
+		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
+		return nil, err
+	}
+	return vertex, nil
+}
+
+// createVertexContext creates a context with timeout if configured.
+func (r *Runtime[S, M]) createVertexContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.opts.VertexTimeout > 0 {
+		return context.WithTimeout(ctx, r.opts.VertexTimeout)
+	}
+	return ctx, nil
+}
+
+// prepareVertexExecution prepares the message buffer and vertex context for execution.
+func (r *Runtime[S, M]) prepareVertexExecution() (*[]Message[M], VertexContext[S, M]) {
 	var sent []Message[M]
 	send := func(msg Message[M]) {
 		sent = append(sent, msg)
@@ -873,43 +916,64 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	if len(r.aggregators) > 0 {
 		aggregateFn = r.recordAggregation
 	}
+
 	vertexContext := VertexContext[S, M]{
 		State:      state,
 		Send:       send,
 		Aggregate:  aggregateFn,
 		Aggregates: aggregates,
 	}
-	defer func() {
-		if rec := recover(); rec != nil {
-			stack := debug.Stack()
-			recovered := fmt.Errorf("superstep %d: vertex %q: %w: %v", superstep, name, ErrVertexPanicked, rec)
-			r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Diagnostics: stack}, recovered)
-			err = recovered
-		}
-	}()
 
-	// Emit start event before vertex execution
-	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Output: "__vertex_start__"}, nil)
+	return &sent, vertexContext
+}
 
-	runErr := vertex.Run(vertexCtx, vertexContext, incoming)
+// handleVertexPanic handles panics during vertex execution.
+func (r *Runtime[S, M]) handleVertexPanic(rec any, name string, superstep int64) error {
+	stack := debug.Stack()
+	err := fmt.Errorf("superstep %d: vertex %q: %w: %v", superstep, name, ErrVertexPanicked, rec)
+	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep, Diagnostics: stack}, err)
+	return err
+}
+
+// runVertex executes the vertex function and handles errors.
+func (r *Runtime[S, M]) runVertex(
+	ctx context.Context,
+	vertex Vertex[S, M],
+	vertexContext VertexContext[S, M],
+	incoming []Message[M],
+	name string,
+	superstep int64,
+) error {
+	runErr := vertex.Run(ctx, vertexContext, incoming)
 	if runErr != nil {
-		err = fmt.Errorf("superstep %d: vertex %q failed: %w", superstep, name, runErr)
+		err := fmt.Errorf("superstep %d: vertex %q failed: %w", superstep, name, runErr)
+		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
+		return err
+	}
+	return nil
+}
+
+// deliverMessages delivers messages produced by vertex execution.
+func (r *Runtime[S, M]) deliverMessages(
+	ctx context.Context,
+	sent *[]Message[M],
+	name string,
+	superstep int64,
+) error {
+	if len(*sent) == 0 {
+		return nil
+	}
+
+	r.messages.Add(int64(len(*sent)))
+
+	// Use context from executeVertex to support backpressure
+	if deliverErr := r.recordDeliveries(ctx, *sent); deliverErr != nil {
+		// If message delivery fails due to backpressure/timeout, treat as error
+		err := fmt.Errorf("superstep %d: vertex %q: failed to deliver messages: %w", superstep, name, deliverErr)
 		r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
 		return err
 	}
 
-	if len(sent) > 0 {
-		r.messages.Add(int64(len(sent)))
-		// Use context from executeVertex to support backpressure
-		if deliverErr := r.recordDeliveries(ctx, sent); deliverErr != nil {
-			// If message delivery fails due to backpressure/timeout, treat as error
-			err = fmt.Errorf("superstep %d: vertex %q: failed to deliver messages: %w", superstep, name, deliverErr)
-			r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, err)
-			return err
-		}
-	}
-
-	r.emitEvent(Event[M]{Vertex: name, Superstep: superstep}, nil)
 	return nil
 }
 
