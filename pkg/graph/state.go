@@ -144,8 +144,9 @@ func Get[T any](view View, key Key[T]) T {
 func GetList[T any](view View, key ListKey[T]) []T {
 	if v, ok := view.GetValue(key.name); ok {
 		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
+		// Direct return without conversion since SliceOf[T] is defined as []T
 		if sliceOf, ok := v.(SliceOf[T]); ok {
-			return []T(sliceOf)
+			return sliceOf
 		}
 		// Handle plain []T (legacy or external sources)
 		if typed, ok := v.([]T); ok {
