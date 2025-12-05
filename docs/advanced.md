@@ -22,6 +22,8 @@ sidebar:
     url: "#circuit-breaker"
   - title: Aggregators
     url: "#aggregators"
+  - title: Custom Schedulers
+    url: "#custom-schedulers"
   - title: Subgraphs
     url: "#subgraphs"
 ---
@@ -564,6 +566,177 @@ Superstep N+1:
 - [Architecture: Pregel BSP Model](architecture.md#pregel-bsp-model)
 - [Examples: Parallel tasks with aggregators](https://github.com/hupe1980/agentmesh/tree/main/examples/parallel_tasks)
 - [API Reference: Aggregator interface](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph#Aggregator)
+
+---
+
+## Custom Schedulers {#custom-schedulers}
+
+Schedulers determine the execution order of vertices within each superstep. AgentMesh provides pluggable schedulers for different optimization strategies.
+
+### Default: TopologicalScheduler
+
+By default, vertices execute in lexicographic order (deterministic, predictable):
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/pregel"
+
+// Default scheduler (automatically used if not specified)
+scheduler := pregel.NewTopologicalScheduler()
+
+runtime, _ := pregel.NewRuntime(graph,
+    pregel.WithScheduler(scheduler),
+)
+```
+
+**Use cases**:
+- ✅ Debugging (reproducible execution order)
+- ✅ Testing (consistent results)
+- ✅ Simple workflows (no priority requirements)
+
+### Priority-Based Scheduling
+
+Execute high-priority vertices first for critical path optimization:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/pregel"
+
+// Define priorities (higher = more important)
+priorities := map[string]int{
+    "critical_llm_call": 100,
+    "validation":        50,
+    "logging":           10,
+}
+
+scheduler := pregel.NewPriorityScheduler(priorities, 50) // default=50
+
+runtime, _ := pregel.NewRuntime(graph,
+    pregel.WithScheduler(scheduler),
+)
+```
+
+**Dynamic priority updates**:
+```go
+// Adjust priorities during execution
+scheduler.SetPriority("urgent_task", 200)
+priority := scheduler.GetPriority("urgent_task") // Returns 200
+```
+
+**Use cases**:
+- ✅ Critical path optimization (blocking operations first)
+- ✅ Cost-based execution (expensive operations early/late)
+- ✅ User-defined importance (VIP requests first)
+
+### Resource-Aware Scheduling
+
+Order by resource consumption to maximize parallelism or reduce tail latency:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/pregel"
+
+// Define resource costs (memory/CPU units)
+costs := map[string]int{
+    "llm_call":      100, // Expensive
+    "validation":    10,  // Cheap
+    "data_fetch":    50,  // Medium
+}
+
+// Low-cost first (maximize parallelism)
+scheduler := pregel.NewResourceAwareScheduler(costs, 25, true)
+
+// High-cost first (reduce tail latency)
+// scheduler := pregel.NewResourceAwareScheduler(costs, 25, false)
+
+runtime, _ := pregel.NewRuntime(graph,
+    pregel.WithScheduler(scheduler),
+)
+```
+
+**Dynamic cost updates**:
+```go
+// Adjust costs based on observed behavior
+scheduler.SetResourceCost("llm_call", 150)
+cost := scheduler.GetResourceCost("llm_call") // Returns 150
+```
+
+**Use cases**:
+- ✅ Memory-constrained environments (small tasks first)
+- ✅ CPU-bound workloads (distribute load evenly)
+- ✅ Mixed workload optimization (I/O vs CPU separation)
+
+### Custom Scheduler Implementation
+
+Implement the `Scheduler` interface for advanced scheduling strategies:
+
+```go
+import (
+    "context"
+    "github.com/hupe1980/agentmesh/pkg/pregel"
+)
+
+type AdaptiveScheduler struct {
+    executionTimes map[string]int64 // Track historical performance
+}
+
+func (s *AdaptiveScheduler) NextBatch(
+    ctx context.Context,
+    info pregel.SchedulerInfo,
+) ([]string, error) {
+    // Custom logic: Schedule fast tasks first
+    batch := make([]string, 0, len(info.Frontier))
+    for vertex := range info.Frontier {
+        batch = append(batch, vertex)
+    }
+    
+    sort.Slice(batch, func(i, j int) bool {
+        return s.executionTimes[batch[i]] < s.executionTimes[batch[j]]
+    })
+    
+    return batch, nil
+}
+
+func (s *AdaptiveScheduler) RecordCompletion(
+    ctx context.Context,
+    vertex string,
+    info pregel.CompletionInfo,
+) {
+    // Learn from execution: update timing estimates
+    s.executionTimes[vertex] = info.Duration
+}
+```
+
+**SchedulerInfo provides**:
+- `Frontier`: Vertices with pending messages
+- `Superstep`: Current superstep number
+- `Graph`: Topology access (outgoing edges, roots)
+- `MessageCounts`: Messages per vertex
+
+**CompletionInfo provides**:
+- `Duration`: Execution time (nanoseconds)
+- `MessagesSent`: Number of messages produced
+- `Error`: Any error that occurred
+
+### Performance Considerations
+
+**Scheduler overhead**:
+- O(n log n) for sorting-based schedulers
+- Negligible for small graphs (< 100 vertices)
+- Consider caching for large graphs (> 1000 vertices)
+
+**When to use custom schedulers**:
+- ✅ Performance-critical workflows
+- ✅ Resource-constrained environments
+- ✅ Dynamic workload patterns
+
+**When to stick with default**:
+- ✅ Simple workflows
+- ✅ Debugging/testing
+- ✅ Deterministic execution required
+
+### See Also
+
+- [Architecture: BSP Execution Model](architecture.md#pregel-bsp-model)
+- [API Reference: Scheduler interface](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/pregel#Scheduler)
+- [Core Concepts: Graph Execution](/core-concepts/#execution-model)
 
 ---
 

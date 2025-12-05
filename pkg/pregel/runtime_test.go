@@ -661,7 +661,7 @@ func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
 
 // Tests for extracted runSuperstep components
 
-func TestRuntime_PrepareFrontierNodes(t *testing.T) {
+func TestRuntime_ScheduleFrontierNodes(t *testing.T) {
 	tests := []struct {
 		name     string
 		frontier map[string]struct{}
@@ -711,14 +711,15 @@ func TestRuntime_PrepareFrontierNodes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
-			got := rt.prepareFrontierNodes(tt.frontier)
+			got, err := rt.scheduleFrontierNodes(context.Background(), tt.frontier, 1)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestRuntime_PrepareFrontierNodes_Determinism(t *testing.T) {
-	// Test that prepareFrontierNodes returns consistent ordering across multiple calls
+func TestRuntime_ScheduleFrontierNodes_Determinism(t *testing.T) {
+	// Test that scheduleFrontierNodes returns consistent ordering across multiple calls
 	frontier := map[string]struct{}{
 		"node_5": {},
 		"node_1": {},
@@ -730,10 +731,12 @@ func TestRuntime_PrepareFrontierNodes_Determinism(t *testing.T) {
 	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
 
 	// Run multiple times and verify consistency
-	first := rt.prepareFrontierNodes(frontier)
+	first, err := rt.scheduleFrontierNodes(context.Background(), frontier, 1)
+	assert.NoError(t, err)
 	for i := 0; i < 10; i++ {
-		got := rt.prepareFrontierNodes(frontier)
-		assert.Equal(t, first, got, "prepareFrontierNodes should return consistent ordering")
+		got, err := rt.scheduleFrontierNodes(context.Background(), frontier, 1)
+		assert.NoError(t, err)
+		assert.Equal(t, first, got, "scheduleFrontierNodes should return consistent ordering")
 	}
 }
 

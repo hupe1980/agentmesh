@@ -7,7 +7,6 @@ import (
 	"iter"
 	"maps"
 	"runtime/debug"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -199,6 +198,9 @@ type Runtime[S any, M any] struct {
 
 	// Resource quota management (optional)
 	quotaManager *quota.Manager
+
+	// Scheduler determines vertex execution order within each superstep
+	scheduler Scheduler
 }
 
 // initializeAggregators creates and initializes aggregator maps from the provided configuration.
@@ -275,6 +277,12 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 		)
 	}
 
+	// Use provided scheduler or default to TopologicalScheduler
+	scheduler := opts.Scheduler
+	if scheduler == nil {
+		scheduler = NewTopologicalScheduler()
+	}
+
 	runtime := &Runtime[S, M]{
 		graph:          graph,
 		opts:           opts,
@@ -284,6 +292,7 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 		nextAggregates: nextAggregates,
 		nextFrontier:   newShardedFrontier(), // 256-shard concurrent map
 		quotaManager:   quotaManager,
+		scheduler:      scheduler,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
 	return runtime, nil
@@ -639,8 +648,11 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 		return nil
 	}
 
-	// Prepare frontier nodes (sorted for determinism)
-	frontierNodes := r.prepareFrontierNodes(frontier)
+	// Schedule frontier nodes using configured scheduler
+	frontierNodes, err := r.scheduleFrontierNodes(ctx, frontier, superstep)
+	if err != nil {
+		return fmt.Errorf("scheduling failed: %w", err)
+	}
 
 	// Setup observability context
 	ctx, cleanup := r.setupSuperstepObservability(ctx, superstep, frontierNodes)
@@ -662,15 +674,24 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 	return ctx.Err()
 }
 
-// prepareFrontierNodes extracts and sorts vertex names from the frontier map.
-// Returns a sorted slice for deterministic execution order.
-func (r *Runtime[S, M]) prepareFrontierNodes(frontier map[string]struct{}) []string {
-	nodes := make([]string, 0, len(frontier))
-	for name := range frontier {
-		nodes = append(nodes, name)
+// scheduleFrontierNodes uses the configured scheduler to determine vertex execution order.
+// Returns an ordered slice of vertex names to execute in the current superstep.
+func (r *Runtime[S, M]) scheduleFrontierNodes(ctx context.Context, frontier map[string]struct{}, superstep int64) ([]string, error) {
+	// Create scheduler info with topology provider
+	info := SchedulerInfo{
+		Frontier:      frontier,
+		Superstep:     superstep,
+		Graph:         r.graph, // Runtime.graph already implements TopologyProvider
+		MessageCounts: make(map[string]int),
 	}
-	sort.Strings(nodes)
-	return nodes
+
+	// Ask scheduler for execution order
+	batch, err := r.scheduler.NextBatch(ctx, info)
+	if err != nil {
+		return nil, fmt.Errorf("scheduler failed: %w", err)
+	}
+
+	return batch, nil
 }
 
 // setupSuperstepObservability initializes tracing, metrics, and logging for a superstep.
@@ -868,6 +889,20 @@ func (r *Runtime[S, M]) workerLoop(
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {
+	// Track execution timing for scheduler feedback
+	startTime := time.Now()
+	var messagesSent int
+
+	// Notify scheduler on completion (success or failure)
+	defer func() {
+		duration := time.Since(startTime)
+		r.scheduler.RecordCompletion(ctx, name, CompletionInfo{
+			Duration:     duration.Nanoseconds(),
+			MessagesSent: messagesSent,
+			Error:        err,
+		})
+	}()
+
 	// Validate vertex exists
 	vertex, err := r.validateVertex(name, superstep)
 	if err != nil {
@@ -898,6 +933,9 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 	if err := r.runVertex(vertexCtx, vertex, vertexContext, incoming, name, superstep); err != nil {
 		return err
 	}
+
+	// Track message count for scheduler
+	messagesSent = len(*sent)
 
 	if err := r.deliverMessages(ctx, sent, name, superstep); err != nil {
 		return err

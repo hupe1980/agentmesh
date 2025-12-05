@@ -148,6 +148,7 @@ The weather in San Francisco is currently sunny with a temperature of 72°F.
 - 🤖 **[Agent Patterns](docs/agents.md)** - ReAct, RAG, and Supervisor agents
 - 📊 **[Observability](docs/observability.md)** - Metrics, tracing, and monitoring
 - 🔌 **[Middleware](docs/middleware.md)** - Caching, rate limiting, circuit breakers
+- 📅 **[Custom Schedulers](docs/advanced.md#custom-schedulers)** - Priority-based and resource-aware vertex execution
 - 🧠 **[Memory & Embeddings](docs/memory.md)** - Semantic search and conversation storage
 - 🤝 **[A2A Protocol](docs/a2a.md)** - Multi-agent collaboration
 - 🔒 **[WASM Sandboxing](docs/wasm-sandboxing.md)** - Secure untrusted code execution
@@ -167,6 +168,7 @@ Explore **31 comprehensive examples** in the [`examples/`](examples/) directory:
 | **[parallel_tasks](examples/parallel_tasks/)** | Concurrent node execution |
 | **[streaming](examples/streaming/)** | Real-time response streaming |
 | **[middleware](examples/middleware/)** | Rate limiting and circuit breakers |
+| **[custom_scheduler](examples/custom_scheduler/)** | Priority and resource-aware scheduling |
 | **[observability](examples/observability/)** | OpenTelemetry integration |
 | **[a2a_integration](examples/a2a_integration/)** | Agent-to-agent communication |
 | **[wasm_tool](examples/wasm_tool/)** | Sandboxed tool execution |

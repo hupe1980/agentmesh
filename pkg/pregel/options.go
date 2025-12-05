@@ -85,6 +85,12 @@ type RuntimeOptions[S any, M any] struct {
 	// resource exhaustion during graph execution. If nil, no quotas are enforced.
 	// Use this to prevent runaway memory usage, goroutine leaks, and time-based DoS.
 	QuotaConfig *QuotaConfig
+
+	// Scheduler determines which vertices to execute and in what order during each
+	// superstep. If nil, defaults to TopologicalScheduler (lexicographic order).
+	// Use custom schedulers for priority-based execution, resource-aware scheduling,
+	// or adaptive optimization based on execution history.
+	Scheduler Scheduler
 }
 
 // RuntimeOption mutates runtime options.
@@ -221,10 +227,31 @@ func WithQuotaConfig[S any, M any](config *QuotaConfig) RuntimeOption[S, M] {
 	}
 }
 
+// WithScheduler sets a custom scheduler for determining vertex execution order.
+// If not provided, defaults to TopologicalScheduler (lexicographic ordering).
+//
+// Custom schedulers enable:
+//   - Priority-based execution (urgent tasks first)
+//   - Resource-aware scheduling (memory/CPU constraints)
+//   - Adaptive optimization (learn from execution history)
+//
+// Example:
+//
+//	scheduler := pregel.NewPriorityScheduler(func(vertex string) int {
+//	    return vertexPriorities[vertex]
+//	})
+//	runtime, _ := pregel.NewRuntime(graph, pregel.WithScheduler(scheduler))
+func WithScheduler[S any, M any](scheduler Scheduler) RuntimeOption[S, M] {
+	return func(o *RuntimeOptions[S, M]) {
+		o.Scheduler = scheduler
+	}
+}
+
 func defaultRuntimeOptions[S any, M any]() RuntimeOptions[S, M] {
 	return RuntimeOptions[S, M]{
 		MaxWorkers:       runtime.NumCPU(),
 		InitialSuperstep: 0,
+		Scheduler:        NewTopologicalScheduler(), // Default scheduler
 	}
 }
 
