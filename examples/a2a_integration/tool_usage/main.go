@@ -31,7 +31,7 @@ func main() {
 	log.Printf("Available skills: %d", len(remoteAgentTool.AgentCard().Skills))
 
 	// Create a local agent that can use the remote A2A agent as a tool
-	localAgent, err := agent.NewReActAgent(
+	localAgent, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(remoteAgentTool),
 	)

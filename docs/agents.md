@@ -57,7 +57,7 @@ searchTool, _ := tool.NewFuncTool("search", "Search the web", searchFunc)
 calcTool, _ := tool.NewFuncTool("calculator", "Perform calculations", calcFunc)
 
 // Create ReAct agent (returns *message.Graph)
-reactAgent, err := agent.NewReActAgent(
+reactAgent, err := agent.NewReAct(
     openai.NewModel(),
     agent.WithTools(searchTool, calcTool),
     agent.WithMaxIterations(5),
@@ -76,9 +76,9 @@ for msg, err := range reactAgent.Run(ctx, messages) {
 ### Configuration options
 
 ```go
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithTools(searchTool, calcTool),    // Add tools
-    agent.WithMaxIterations(10),              // Max reasoning-action cycles
+    agent.WithSupervisorMaxIterations(10),              // Max reasoning-action cycles
     agent.WithSystemPrompt("You are helpful"), // System prompt
     agent.WithReActOutputSchema(schema),      // Structured output
     agent.WithGraphMiddleware(middleware...),  // Graph middleware (retry, etc.)
@@ -136,26 +136,26 @@ import (
 model := openai.NewModel()
 
 // Create specialized worker agents
-mathAgent, _ := agent.NewReActAgent(
+mathAgent, _ := agent.NewReAct(
     model,
     agent.WithSystemPrompt("You are a math expert. Solve problems with clear steps."),
     agent.WithMaxIterations(5),
 )
 
-codeAgent, _ := agent.NewReActAgent(
+codeAgent, _ := agent.NewReAct(
     model,
     agent.WithSystemPrompt("You are a programming expert. Write clean, documented code."),
     agent.WithMaxIterations(5),
 )
 
-historyAgent, _ := agent.NewReActAgent(
+historyAgent, _ := agent.NewReAct(
     model,
     agent.WithSystemPrompt("You are a history expert. Provide factual answers with dates."),
     agent.WithMaxIterations(5),
 )
 
 // Create supervisor that routes to specialists
-supervisor, err := agent.NewSupervisorAgent(
+supervisor, err := agent.NewSupervisor(
     model,
     agent.WithWorker("math", "Expert in mathematics and calculations", mathAgent),
     agent.WithWorker("code", "Expert in programming and software development", codeAgent),
@@ -180,10 +180,10 @@ for msg, err := range supervisor.Run(ctx, []message.Message{
 ### Configuration options
 
 ```go
-agent.NewSupervisorAgent(model,
+agent.NewSupervisor(model,
     agent.WithWorker(name, description, agent),  // Add worker agents
-    agent.WithSupervisorSystemPrompt(prompt),    // Custom routing instructions
-    agent.WithSupervisorMaxIterations(n),        // Max routing iterations
+    agent.WithSystemPrompt(prompt),    // Custom routing instructions
+    agent.WithMaxIterations(n),        // Max routing iterations
     agent.WithWorkerContext(bool),               // Pass conversation history to workers
     agent.WithWorkerRetries(n),                  // Retry failed worker invocations
     agent.WithWorkerValidation(bool),            // Validate worker results
@@ -252,7 +252,7 @@ retriever := langchaingo.NewRetrieverFromVectorStore(vectorStore, func(o *langch
 })
 
 // Create RAG agent
-ragAgent, err := agent.NewRAGAgent(
+ragAgent, err := agent.NewRAG(
     openai.NewModel(),
     retriever,
     agent.WithRAGPromptTemplate(customTemplate),
@@ -270,7 +270,7 @@ for msg, err := range ragAgent.Run(ctx, messages) {
 ### Configuration options
 
 ```go
-agent.NewRAGAgent(model, retriever,
+agent.NewRAG(model, retriever,
     agent.WithRAGPromptTemplate(template),  // Custom prompt template
 )
 ```

@@ -687,7 +687,7 @@ func createVizTestGraph(t *testing.T) *message.Graph {
 	}
 
 	// Create a ReAct agent with mock model and tools
-	reactAgent, err := agent.NewReActAgent(
+	reactAgent, err := agent.NewReAct(
 		mockModel,
 		agent.WithTools(mockTool),
 	)
@@ -1205,7 +1205,7 @@ func createSlowVizTestGraph(t *testing.T) *message.Graph {
 		},
 	}
 
-	reactAgent, err := agent.NewReActAgent(mockModel, agent.WithTools(mockTool))
+	reactAgent, err := agent.NewReAct(mockModel, agent.WithTools(mockTool))
 	require.NoError(t, err)
 
 	return reactAgent

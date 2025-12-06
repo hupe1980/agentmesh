@@ -135,7 +135,7 @@ pm.Register(ctx, &MyCustomPlugin{})
 
 ```go
 // Callbacks are automatically injected via context
-reactAgent, err := agent.NewReActAgent(
+reactAgent, err := agent.NewReAct(
     model,
     agent.WithTools(tools...),
     agent.WithPluginManager(pm),

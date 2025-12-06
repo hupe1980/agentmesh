@@ -17,7 +17,7 @@
 //	)
 //
 //	// Use in your agent
-//	agent, err := agent.NewReActAgent(
+//	agent, err := agent.NewReAct(
 //	    model,
 //	    []tool.Tool{tool},
 //	)

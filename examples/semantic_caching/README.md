@@ -89,7 +89,7 @@ import modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
 cacheMiddleware := modelmw.NewCacheMiddleware()
 
 // Use with agent
-agent, _ := agent.NewReActAgent(model, tools,
+agent, _ := agent.NewReAct(model, tools,
     agent.WithModelMiddleware(cacheMiddleware))
 ```
 

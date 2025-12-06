@@ -1,6 +1,6 @@
 # Supervisor Agent Example
 
-This example demonstrates the **Supervisor Agent Pattern** using the `agent.NewSupervisorAgent()` template for simplified multi-agent coordination.
+This example demonstrates the **Supervisor Agent Pattern** using the `agent.NewSupervisor()` template for simplified multi-agent coordination.
 
 ## Pattern Overview
 
@@ -15,7 +15,7 @@ The supervisor pattern delegates tasks to specialized worker agents based on the
 ### 1. Simple Functional Options API
 
 ```go
-supervisor, err := agent.NewSupervisorAgent(
+supervisor, err := agent.NewSupervisor(
 	model,
 	agent.WithWorker("math", "Math expert", mathAgent),
 	agent.WithWorker("history", "History expert", historyAgent),
@@ -67,7 +67,7 @@ Query 1: What is the derivative of x^2 + 3x + 5?
 ### Using Supervisor Template ✅
 
 ```go
-supervisor, err := agent.NewSupervisorAgent(
+supervisor, err := agent.NewSupervisor(
 	model,
 	agent.WithWorker("math", "Math expert", mathAgent),
 	agent.WithSupervisorMaxIterations(10),
@@ -82,10 +82,10 @@ mathTool, err := tool.HandoffToAgent("math", "Math expert", mathAgent,
 historyTool, err := tool.HandoffToAgent("history", "History expert", historyAgent,
 	tool.WithContext(false), tool.WithRetries(2))
 
-supervisor, err := agent.NewReActAgent(model,
+supervisor, err := agent.NewReAct(model,
 	agent.WithTools(mathTool, historyTool),
-	agent.WithSystemPrompt("Route to specialists"),
-	agent.WithMaxIterations(10))
+	agent.WithSupervisorSystemPrompt("Route to specialists"),
+	agent.WithSupervisorMaxIterations(10))
 ```
 
 ## Benefits

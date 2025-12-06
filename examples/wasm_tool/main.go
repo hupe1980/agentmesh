@@ -96,7 +96,7 @@ func main() {
 	fmt.Println("=== ReAct Agent Testing ===")
 	fmt.Println()
 
-	reactAgent, err := agent.NewReActAgent(
+	reactAgent, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(tool),
 	)

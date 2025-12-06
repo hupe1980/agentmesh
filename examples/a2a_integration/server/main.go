@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// Create an AgentMesh ReAct agent
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(greetingTool),
 	)

@@ -99,7 +99,7 @@ func main() {
 	// 5. Usage Example
 	fmt.Println("5. Integration with Agent:")
 	fmt.Println("```go")
-	fmt.Println("agent.NewReActAgent(model,")
+	fmt.Println("agent.NewReAct(model,")
 	fmt.Println("    agent.WithGraphMiddleware(")
 	fmt.Println("        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),")
 	fmt.Println("        graphmw.NewEventMiddleware[[]message.Message, message.Message](),")

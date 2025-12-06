@@ -114,7 +114,7 @@ if err != nil {
 }
 
 // Use in ReAct agent
-agent, _ := agent.NewReActAgent(model, []tool.Tool{tool})
+agent, _ := agent.NewReAct(model, []tool.Tool{tool})
 ```
 
 ### Execute safely

@@ -67,7 +67,7 @@ import (
 
 func main() {
     // 1. Create your AgentMesh agent
-    compiled, err := agent.NewReActAgent(
+    compiled, err := agent.NewReAct(
         model,
         tools,
     )
@@ -165,7 +165,7 @@ func main() {
     log.Printf("Discovered %d tools from A2A agent", len(tools))
     
     // 4. Use tools in your agent
-    compiled, err := agent.NewReActAgent(
+    compiled, err := agent.NewReAct(
         localModel,
         tools,  // Tools from remote A2A agent
     )
@@ -199,7 +199,7 @@ weatherTools, _ := a2a.NewBridge(weatherClient).GetTools(ctx)
 allTools := append(append(researchTools, dataTools...), weatherTools...)
 
 // Create agent with all remote tools
-compiled, _ := agent.NewReActAgent(model, allTools)
+compiled, _ := agent.NewReAct(model, allTools)
 ```
 
 ### Tool Filtering
@@ -218,7 +218,7 @@ selectedTools := filterTools(allTools, []string{
     "summarize_paper",
 })
 
-compiled, _ := agent.NewReActAgent(model, selectedTools)
+compiled, _ := agent.NewReAct(model, selectedTools)
 ```
 
 ---
@@ -245,7 +245,7 @@ func createCoordinator() (*graph.Compiled, error) {
     ).GetTools(ctx)
     
     // Create coordinator with all specialized tools
-    return agent.NewReActAgent(
+    return agent.NewReAct(
         model,
         append(append(researchTools, dataTools...), writingTools...),
     )
@@ -282,7 +282,7 @@ server.serve()
 client := a2a.NewClient("python-agent:50051")
 tools, _ := a2a.NewBridge(client).GetTools(ctx)
 
-compiled, _ := agent.NewReActAgent(model, tools)
+compiled, _ := agent.NewReAct(model, tools)
 ```
 
 ### 3. Microservices Architecture
@@ -316,7 +316,7 @@ inventoryTools, _ := a2a.NewBridge(a2a.NewClient("inventory-svc:50051")).GetTool
 
 allTools := append(append(customerTools, billingTools...), inventoryTools...)
 
-gateway, _ := agent.NewReActAgent(model, allTools)
+gateway, _ := agent.NewReAct(model, allTools)
 ```
 
 ### 4. Agent Marketplace
@@ -361,7 +361,7 @@ if strings.Contains(task, "translate") {
     tools = append(tools, t...)
 }
 
-compiled, _ := agent.NewReActAgent(model, tools)
+compiled, _ := agent.NewReAct(model, tools)
 ```
 
 ### 5. Testing & Mocking
@@ -382,7 +382,7 @@ func createAgent(useMock bool) (*graph.Compiled, error) {
         tools, _ = a2a.NewBridge(client).GetTools(ctx)
     }
     
-    return agent.NewReActAgent(model, tools)
+    return agent.NewReAct(model, tools)
 }
 
 // Test

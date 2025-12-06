@@ -97,18 +97,18 @@ func createSupervisor() (*message.Graph, error) {
 	}
 
 	// Create supervisor using the template with functional options
-	return agent.NewSupervisorAgent(
+	return agent.NewSupervisor(
 		model,
 		agent.WithWorker("math", "Expert in mathematics: algebra, calculus (derivatives, integrals), and general calculations.", mathAgent),
 		agent.WithWorker("history", "Expert in historical facts, events, timelines, and context.", historyAgent),
 		agent.WithWorker("code", "Expert in programming and software development.", codeAgent),
-		agent.WithSupervisorSystemPrompt(`You are a supervisor that routes questions to specialist agents.
+		agent.WithSystemPrompt(`You are a supervisor that routes questions to specialist agents.
 Analyze the user's question and delegate to the appropriate specialist.
 Use handoff_to_math for mathematical problems.
 Use handoff_to_history for historical questions.
 Use handoff_to_code for programming tasks.
 Always provide the full task context when delegating.`),
-		agent.WithSupervisorMaxIterations(10),
+		agent.WithMaxIterations(10),
 		agent.WithWorkerContext(false), // Fresh context for each task
 		agent.WithWorkerRetries(2),
 	)
@@ -118,7 +118,7 @@ Always provide the full task context when delegating.`),
 func createMathAgent() (*message.Graph, error) {
 	model := openai.NewModel()
 
-	return agent.NewReActAgent(
+	return agent.NewReAct(
 		model,
 		agent.WithSystemPrompt(`You are a math expert.
 - Solve with clear, concise steps and provide a boxed final answer.
@@ -133,7 +133,7 @@ func createMathAgent() (*message.Graph, error) {
 func createHistoryAgent() (*message.Graph, error) {
 	model := openai.NewModel()
 
-	return agent.NewReActAgent(
+	return agent.NewReAct(
 		model,
 		agent.WithSystemPrompt(`You are a history expert.
 - Provide concise, factual answers with dates and key names when available.
@@ -148,7 +148,7 @@ func createHistoryAgent() (*message.Graph, error) {
 func createCodeAgent() (*message.Graph, error) {
 	model := openai.NewModel()
 
-	return agent.NewReActAgent(
+	return agent.NewReAct(
 		model,
 		agent.WithSystemPrompt(`You are a programming expert.
 - Write clean, well-documented code with explanations.

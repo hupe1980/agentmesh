@@ -163,19 +163,50 @@ type ParallelExecutor struct {
 }
 
 // ExecutorOption configures an executor.
-// Options work with executorConfig to provide consistent behavior
-// across SequentialExecutor and ParallelExecutor.
-type ExecutorOption func(*executorConfig)
+//
+// This interface-based design (rather than function types) provides:
+//   - Full compile-time type safety for both SequentialExecutor and ParallelExecutor
+//   - Shared options that work with multiple executor types via sharedExecutorOption
+//   - No runtime type switches or silent failures from invalid option types
+//
+// Options work with executorConfig to provide consistent behavior across executor variants.
+type ExecutorOption interface {
+	applyExecutor(*executorConfig)
+}
+
+// SharedExecutorOption implements both ExecutorOption and ParallelExecutorOption interfaces.
+//
+// This allows common options (like WithContinueOnError, WithErrorPrefix) to work with
+// both sequential and parallel executors without code duplication or type prefixes.
+//
+// The pattern uses embedded executorConfig to achieve this:
+//   - Both SequentialExecutor and ParallelExecutor embed executorConfig
+//   - SharedExecutorOption modifies the embedded executorConfig fields
+//   - Interface methods delegate to the embedded struct
+//
+// Example usage:
+//
+//	// Same option works for both executor types
+//	seq := tool.NewSequentialExecutor(registry, tool.WithErrorPrefix("agent"))
+//	par := tool.NewParallelExecutor(registry, tool.WithErrorPrefix("agent"))
+type SharedExecutorOption func(*executorConfig)
+
+// Implement ExecutorOption interface
+func (s SharedExecutorOption) applyExecutor(cfg *executorConfig) {
+	s(cfg)
+}
 
 // WithContinueOnError configures error handling behavior.
 // If true, execution continues even when individual tools fail.
 // Errors are still returned in ExecutionResult.Error for each failed tool.
 //
+// Works with both SequentialExecutor and ParallelExecutor.
+//
 // Example:
 //
 //	executor := tool.NewSequentialExecutor(registry,
 //	    tool.WithContinueOnError(true))
-func WithContinueOnError(continueOnError bool) ExecutorOption {
+func WithContinueOnError(continueOnError bool) SharedExecutorOption {
 	return func(cfg *executorConfig) {
 		cfg.continueOnError = continueOnError
 	}
@@ -184,11 +215,13 @@ func WithContinueOnError(continueOnError bool) ExecutorOption {
 // WithErrorPrefix sets the error message prefix.
 // This prefix is added to all error messages from the executor.
 //
+// Works with both SequentialExecutor and ParallelExecutor.
+//
 // Example:
 //
 //	executor := tool.NewSequentialExecutor(registry,
 //	    tool.WithErrorPrefix("my-agent"))
-func WithErrorPrefix(prefix string) ExecutorOption {
+func WithErrorPrefix(prefix string) SharedExecutorOption {
 	return func(cfg *executorConfig) {
 		cfg.errorPrefix = prefix
 	}
@@ -196,7 +229,21 @@ func WithErrorPrefix(prefix string) ExecutorOption {
 
 // ParallelExecutorOption configures a ParallelExecutor.
 // These options are specific to parallel execution and don't apply to sequential executors.
-type ParallelExecutorOption func(*ParallelExecutor)
+type ParallelExecutorOption interface {
+	applyParallelExecutor(*ParallelExecutor)
+}
+
+// parallelExecutorOptionFunc wraps a function to implement ParallelExecutorOption.
+type parallelExecutorOptionFunc func(*ParallelExecutor)
+
+func (f parallelExecutorOptionFunc) applyParallelExecutor(e *ParallelExecutor) {
+	f(e)
+}
+
+// Implement ParallelExecutorOption interface for SharedExecutorOption
+func (s SharedExecutorOption) applyParallelExecutor(e *ParallelExecutor) {
+	s(&e.executorConfig)
+}
 
 // WithMaxConcurrency limits concurrent tool executions.
 // A value of 0 means unlimited concurrency (default).
@@ -206,9 +253,9 @@ type ParallelExecutorOption func(*ParallelExecutor)
 //	executor := tool.NewParallelExecutor(registry,
 //	    tool.WithMaxConcurrency(5)) // Max 5 concurrent tools
 func WithMaxConcurrency(maxConcurrency int) ParallelExecutorOption {
-	return func(e *ParallelExecutor) {
+	return parallelExecutorOptionFunc(func(e *ParallelExecutor) {
 		e.maxConcurrency = maxConcurrency
-	}
+	})
 }
 
 // NewSequentialExecutor creates a sequential tool executor.
@@ -227,7 +274,7 @@ func WithMaxConcurrency(maxConcurrency int) ParallelExecutorOption {
 func NewSequentialExecutor(registry map[string]Tool, opts ...ExecutorOption) Executor {
 	cfg := defaultExecutorConfig(registry)
 	for _, opt := range opts {
-		opt(&cfg)
+		opt.applyExecutor(&cfg)
 	}
 
 	return &SequentialExecutor{
@@ -248,7 +295,7 @@ func NewSequentialExecutor(registry map[string]Tool, opts ...ExecutorOption) Exe
 //	executor := tool.NewParallelExecutor(registry,
 //	    tool.WithContinueOnError(true),
 //	    tool.WithMaxConcurrency(10))
-func NewParallelExecutor(registry map[string]Tool, opts ...any) *ParallelExecutor {
+func NewParallelExecutor(registry map[string]Tool, opts ...ParallelExecutorOption) *ParallelExecutor {
 	cfg := defaultExecutorConfig(registry)
 
 	e := &ParallelExecutor{
@@ -257,12 +304,7 @@ func NewParallelExecutor(registry map[string]Tool, opts ...any) *ParallelExecuto
 	}
 
 	for _, opt := range opts {
-		switch o := opt.(type) {
-		case ExecutorOption:
-			o(&e.executorConfig)
-		case ParallelExecutorOption:
-			o(e)
-		}
+		opt.applyParallelExecutor(e)
 	}
 
 	return e
@@ -278,7 +320,7 @@ func NewParallelExecutor(registry map[string]Tool, opts ...any) *ParallelExecuto
 //	    tool.WithMaxConcurrency(5))
 func (e *ParallelExecutor) WithParallelOptions(opts ...ParallelExecutorOption) *ParallelExecutor {
 	for _, opt := range opts {
-		opt(e)
+		opt.applyParallelExecutor(e)
 	}
 	return e
 }

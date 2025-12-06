@@ -53,7 +53,7 @@ func main() {
 	defer curlTool.Close()
 
 	// Build a ReAct agent with the Docker tool
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(curlTool),
 		agent.WithMaxIterations(3),

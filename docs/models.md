@@ -168,7 +168,7 @@ model := openai.NewModel(
     openai.WithMaxCompletionTokens(1000),
 )
 
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 Configuration options:
@@ -200,7 +200,7 @@ model := anthropic.NewModel(
     anthropic.WithTemperature(1.0),
 )
 
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 Configuration options:
@@ -236,7 +236,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 Configuration options:
@@ -271,7 +271,7 @@ import (
 llm, _ := openai.New(openai.WithModel("gpt-4"))
 model, _ := langchaingo.NewModel(llm)
 
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 This adapter enables:
@@ -300,7 +300,7 @@ model := amazonbedrock.NewModel(client,
     amazonbedrock.WithMaxTokens(1024),
 )
 
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 Configuration options:
@@ -374,7 +374,7 @@ Agent constructors handle tool binding automatically:
 
 ```go
 // Tools are passed automatically via agent options
-compiled, err := agent.NewReActAgent(
+compiled, err := agent.NewReAct(
     openai.NewModel(),
     agent.WithTools(searchTool, calcTool),
 )
@@ -576,7 +576,7 @@ Use your custom model like any other:
 
 ```go
 model := &CustomModel{client: myClient}
-compiled, err := agent.NewReActAgent(model, tools)
+compiled, err := agent.NewReAct(model, tools)
 ```
 
 The iterator pattern automatically supports both streaming and blocking modes through `model.Last()` and `model.Collect()` helpers.
@@ -614,7 +614,7 @@ router := model.NewCostBasedRouter(cheapModel, expensiveModel)
 routedModel := model.NewRoutedModel(router)
 
 // Use like any other model
-agent, _ := agent.NewReActAgent(routedModel, tools)
+agent, _ := agent.NewReAct(routedModel, tools)
 ```
 
 ### Cost-Based Routing {#cost-based-routing}
@@ -750,7 +750,7 @@ func main() {
 
     // Use routed model transparently
     routedModel := model.NewRoutedModel(resilientRouter)
-    agent, _ := agent.NewReActAgent(routedModel, tools)
+    agent, _ := agent.NewReAct(routedModel, tools)
 
     // Execute - routing happens automatically
     for result, err := range agent.Run(ctx, messages) {

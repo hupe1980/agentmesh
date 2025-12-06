@@ -184,31 +184,31 @@ func TestGenerateWithModel(t *testing.T) {
 
 // Tests for RAG agent construction
 
-func TestNewRAGAgent_NilModel(t *testing.T) {
+func TestNewRAG_NilModel(t *testing.T) {
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "doc"}},
 	}
 
-	_, err := NewRAGAgent(nil, retriever)
+	_, err := NewRAG(nil, retriever)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "model")
 }
 
-func TestNewRAGAgent_NilRetriever(t *testing.T) {
+func TestNewRAG_NilRetriever(t *testing.T) {
 	mdl := &testutil.MockModel{}
 
-	_, err := NewRAGAgent(mdl, nil)
+	_, err := NewRAG(mdl, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "retriever")
 }
 
-func TestNewRAGAgent_ValidConstruction(t *testing.T) {
+func TestNewRAG_ValidConstruction(t *testing.T) {
 	mdl := &testutil.MockModel{}
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}
 
-	agent, err := NewRAGAgent(mdl, retriever)
+	agent, err := NewRAG(mdl, retriever)
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
@@ -216,7 +216,7 @@ func TestNewRAGAgent_ValidConstruction(t *testing.T) {
 	_ = agent
 }
 
-func TestNewRAGAgent_WithCustomPromptTemplate(t *testing.T) {
+func TestNewRAG_WithCustomPromptTemplate(t *testing.T) {
 	mdl := &testutil.MockModel{}
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
@@ -224,20 +224,20 @@ func TestNewRAGAgent_WithCustomPromptTemplate(t *testing.T) {
 
 	customTemplate := prompt.New("Custom: {{range .Documents}}{{.}}{{end}}")
 
-	agent, err := NewRAGAgent(mdl, retriever, WithPromptTemplate(customTemplate))
+	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(customTemplate))
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
 }
 
-func TestNewRAGAgent_WithNilPromptTemplate(t *testing.T) {
+func TestNewRAG_WithNilPromptTemplate(t *testing.T) {
 	mdl := &testutil.MockModel{}
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}
 
 	// Should use default template when nil passed
-	agent, err := NewRAGAgent(mdl, retriever, WithPromptTemplate(nil))
+	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(nil))
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
@@ -271,7 +271,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 			}),
 		}
 
-		agent, err := NewRAGAgent(mdl, retriever)
+		agent, err := NewRAG(mdl, retriever)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -293,7 +293,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 
 		mdl := &testutil.MockModel{}
 
-		agent, err := NewRAGAgent(mdl, retriever)
+		agent, err := NewRAG(mdl, retriever)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -318,7 +318,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 			}),
 		}
 
-		agent, err := NewRAGAgent(mdl, retriever)
+		agent, err := NewRAG(mdl, retriever)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -343,7 +343,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 			}),
 		}
 
-		agent, err := NewRAGAgent(mdl, retriever)
+		agent, err := NewRAG(mdl, retriever)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -384,7 +384,7 @@ func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
 		}),
 	}
 
-	agent, err := NewRAGAgent(mdl, retriever, WithPromptTemplate(customTemplate))
+	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(customTemplate))
 	require.NoError(t, err)
 
 	ctx := context.Background()

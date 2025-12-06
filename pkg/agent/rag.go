@@ -92,7 +92,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 	}
 }
 
-// NewRAGAgent creates a Retrieval-Augmented Generation agent that:
+// NewRAG creates a Retrieval-Augmented Generation agent that:
 //  1. Retrieves relevant context from a knowledge base
 //  2. Generates a response using both the query and retrieved context
 //
@@ -106,8 +106,8 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 //	retriever := langchaingo.NewRetrieverFromVectorStore(vectorStore, func(o *langchaingo.Options) {
 //	    o.NumDocuments = 5
 //	})
-//	agent, err := agent.NewRAGAgent(model, retriever)
-func NewRAGAgent(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*message.Graph, error) {
+//	agent, err := agent.NewRAG(model, retriever)
+func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*message.Graph, error) {
 	if err := validate.All(
 		validate.NotNil(mdl, "model"),
 		validate.NotNil(retriever, "retriever"),

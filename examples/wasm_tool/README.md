@@ -368,7 +368,7 @@ result, err := tool.Call(ctx, `{"expression": "2 + 2"}`)```# Simple: Use the bui
 
 ```go## How It Works./build.sh  tinygo build -o calculator.wasm -target=wasi calculator.go
 
-reactAgent, err := agent.NewReActAgent(
+reactAgent, err := agent.NewReAct(
 
     openai.NewModel(),
 
@@ -658,7 +658,7 @@ panic = "abort"     # Smaller panic handler```bashExpected output:
 
    // Or with a ReAct agent
 
-   agent, err := agent.NewReActAgent(- ❌ No stdin/stdout/stderr
+   agent, err := agent.NewReAct(- ❌ No stdin/stdout/stderr
 
        openai.NewModel(),
 
@@ -1008,7 +1008,7 @@ The example uses `ComputeOnlyPolicy()`:   wasmBytes, _ := os.ReadFile("your_tool
 
 ```   // Pass it to your agent just like any other tool
 
-┌─────────────────────────────────────────┐   agent := agent.NewReActAgent(model, []tool.Tool{tool})
+┌─────────────────────────────────────────┐   agent := agent.NewReAct(model, []tool.Tool{tool})
 
 │         AgentMesh (Go)                  │   ```
 

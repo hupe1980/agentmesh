@@ -89,7 +89,7 @@ import (
 )
 
 // Agent constructors return *message.Graph (ready to run)
-reactAgent, err := agent.NewReActAgent(model, agent.WithTools(tools...))
+reactAgent, err := agent.NewReAct(model, agent.WithTools(tools...))
 if err != nil {
     return err
 }
@@ -121,9 +121,9 @@ b.Run(ctx, messages)  // Error: Builder has no Run method
 **Easy composition:**
 ```go
 // All agents are *message.Graph - compose freely
-worker1, _ := agent.NewReActAgent(model)
-worker2, _ := agent.NewReActAgent(model)
-supervisor, _ := agent.NewSupervisorAgent(model,
+worker1, _ := agent.NewReAct(model)
+worker2, _ := agent.NewReAct(model)
+supervisor, _ := agent.NewSupervisor(model,
     agent.WithWorker("researcher", "Does research", worker1),
     agent.WithWorker("writer", "Writes content", worker2),
 )

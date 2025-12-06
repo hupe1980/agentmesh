@@ -81,7 +81,7 @@ func main() {
 	)
 
 	// Create ReAct agent with tools
-	reactAgent, err := agent.NewReActAgent(
+	reactAgent, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(weatherTool, timeTool),
 	)

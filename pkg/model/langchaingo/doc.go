@@ -22,5 +22,5 @@
 //	model, _ := langchaingo.NewModel(llm)
 //
 //	// Use with AgentMesh agents
-//	agent, err := agent.NewReActAgent(model, tools)
+//	agent, err := agent.NewReAct(model, tools)
 package langchaingo

@@ -37,7 +37,7 @@
 //	)
 //
 //	// Build the agent
-//	compiled, _ := agent.NewReActAgent(
+//	compiled, _ := agent.NewReAct(
 //	    openai.NewModel(),
 //	    []tool.Tool{weatherTool},
 //	)

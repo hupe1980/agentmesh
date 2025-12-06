@@ -48,7 +48,7 @@ func TestNewToolNodeFunc_ValidExecutor(t *testing.T) {
 
 func TestNew_BasicAgent(t *testing.T) {
 	mdl := &testutil.MockModel{}
-	compiled, err := NewReActAgent(mdl)
+	compiled, err := NewReAct(mdl)
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
@@ -63,7 +63,7 @@ func TestNew_WithTools(t *testing.T) {
 		DescriptionValue: "Get weather",
 	}
 
-	compiled, err := NewReActAgent(mdl, WithTools(weatherTool))
+	compiled, err := NewReAct(mdl, WithTools(weatherTool))
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
@@ -72,7 +72,7 @@ func TestNew_WithTools(t *testing.T) {
 func TestNew_NilToolsIgnored(t *testing.T) {
 	mdl := &testutil.MockModel{}
 
-	compiled, err := NewReActAgent(mdl, WithTools(nil, nil))
+	compiled, err := NewReAct(mdl, WithTools(nil, nil))
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)
@@ -91,7 +91,7 @@ func TestNew_ModelSupportsTools(t *testing.T) {
 	}
 	weatherTool := &testutil.MockTool{NameValue: "weather"}
 
-	agent, err := NewReActAgent(mdl, WithTools(weatherTool))
+	agent, err := NewReAct(mdl, WithTools(weatherTool))
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
@@ -102,7 +102,7 @@ func TestNew_ModelDoesNotSupportTools(t *testing.T) {
 	mdl := &basicModel{}
 	weatherTool := &testutil.MockTool{NameValue: "weather"}
 
-	_, err := NewReActAgent(mdl, WithTools(weatherTool))
+	_, err := NewReAct(mdl, WithTools(weatherTool))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not support tools")
@@ -121,7 +121,7 @@ func TestNew_ModelDoesNotSupportToolsViaCapabilities(t *testing.T) {
 	}
 	weatherTool := &testutil.MockTool{NameValue: "weather"}
 
-	_, err := NewReActAgent(mdl, WithTools(weatherTool))
+	_, err := NewReAct(mdl, WithTools(weatherTool))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not support tools")
@@ -138,7 +138,7 @@ func TestAgent_BasicExecution(t *testing.T) {
 		},
 	}
 
-	compiled, err := NewReActAgent(mdl)
+	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -188,7 +188,7 @@ func TestAgent_ToolCalling(t *testing.T) {
 		},
 	}
 
-	compiled, err := NewReActAgent(mdl, WithTools(weatherTool))
+	compiled, err := NewReAct(mdl, WithTools(weatherTool))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -225,7 +225,7 @@ func TestAgent_UnregisteredTool(t *testing.T) {
 		}),
 	}
 
-	compiled, err := NewReActAgent(mdl)
+	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -258,7 +258,7 @@ func TestAgent_ToolExecutionError(t *testing.T) {
 		},
 	}
 
-	compiled, err := NewReActAgent(mdl, WithTools(failingTool))
+	compiled, err := NewReAct(mdl, WithTools(failingTool))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -305,7 +305,7 @@ func TestAgent_ConditionalRouting(t *testing.T) {
 		},
 	}
 
-	compiled, err := NewReActAgent(mdl, WithTools(testTool))
+	compiled, err := NewReAct(mdl, WithTools(testTool))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -324,7 +324,7 @@ func TestAgent_EmptyMessages(t *testing.T) {
 		}),
 	}
 
-	compiled, err := NewReActAgent(mdl)
+	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -384,7 +384,7 @@ func TestAgent_MultipleToolCalls(t *testing.T) {
 		},
 	}
 
-	compiled, err := NewReActAgent(mdl, WithTools(toolA, toolB))
+	compiled, err := NewReAct(mdl, WithTools(toolA, toolB))
 	require.NoError(t, err)
 
 	ctx := context.Background()

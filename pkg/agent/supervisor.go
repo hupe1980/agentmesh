@@ -11,69 +11,64 @@ import (
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string                        // Unique identifier for the worker
-	Description string                        // Description of the worker's expertise
+	Name        string         // Unique identifier for the worker
+	Description string         // Description of the worker's expertise
 	Agent       *message.Graph // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
 type supervisorOptions struct {
+	commonOptions
 	workers        []WorkerAgent
-	systemPrompt   string
-	maxIterations  int
 	includeContext bool
 	retryAttempts  int
 	validateResult bool
 }
 
 // SupervisorOption configures a supervisor agent.
-type SupervisorOption func(*supervisorOptions)
+// It can be either a function or a sharedOption.
+type SupervisorOption interface {
+	applySupervisor(*supervisorOptions)
+}
+
+// supervisorOptionFunc wraps a function to implement SupervisorOption.
+type supervisorOptionFunc func(*supervisorOptions)
+
+func (f supervisorOptionFunc) applySupervisor(opts *supervisorOptions) {
+	f(opts)
+}
 
 // WithWorker adds a worker agent to the supervisor.
-// The agent must be a *message.Graph (e.g., created via NewReActAgent).
+// The agent must be a *message.Graph (e.g., created via NewReAct).
 func WithWorker(name, description string, agent *message.Graph) SupervisorOption {
-	return func(c *supervisorOptions) {
+	return supervisorOptionFunc(func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
 			Description: description,
 			Agent:       agent,
 		})
-	}
-}
-
-// WithSupervisorSystemPrompt sets the supervisor's system prompt.
-func WithSupervisorSystemPrompt(prompt string) SupervisorOption {
-	return func(c *supervisorOptions) {
-		c.systemPrompt = prompt
-	}
-}
-
-// WithSupervisorMaxIterations sets the maximum iterations for the supervisor.
-func WithSupervisorMaxIterations(n int) SupervisorOption {
-	return func(c *supervisorOptions) {
-		c.maxIterations = n
-	}
+	})
 }
 
 // WithWorkerContext controls whether conversation context is passed to workers.
 func WithWorkerContext(include bool) SupervisorOption {
-	return func(c *supervisorOptions) {
+	return supervisorOptionFunc(func(c *supervisorOptions) {
 		c.includeContext = include
-	}
+	})
 }
 
 // WithWorkerRetries sets retry attempts for worker failures.
 func WithWorkerRetries(attempts int) SupervisorOption {
-	return func(c *supervisorOptions) {
+	return supervisorOptionFunc(func(c *supervisorOptions) {
 		c.retryAttempts = attempts
-	}
+	})
 }
 
 // WithWorkerValidation enables validation of worker results.
 func WithWorkerValidation(validate bool) SupervisorOption {
-	return func(c *supervisorOptions) {
+	return supervisorOptionFunc(func(c *supervisorOptions) {
 		c.validateResult = validate
-	}
+	})
 }
 
 // generateDefaultSupervisorPrompt creates a default system prompt based on available workers.
@@ -94,7 +89,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 	return prompt
 }
 
-// NewSupervisorAgent creates a supervisor agent that delegates work to specialized worker agents.
+// NewSupervisor creates a supervisor agent that delegates work to specialized worker agents.
 // The supervisor uses a model to decide which worker should handle each request.
 //
 // Returns a *message.Graph that enables type-safe composition with other agents.
@@ -102,28 +97,34 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //
 // Example:
 //
-//	supervisor, err := agent.NewSupervisorAgent(
+//	supervisor, err := agent.NewSupervisor(
 //	    model,
 //	    agent.WithWorker("math", "Math expert", mathAgent),
 //	    agent.WithWorker("code", "Programming expert", codeAgent),
-//	    agent.WithSupervisorSystemPrompt("Route to specialists"),
+//	    agent.WithSystemPrompt("Route to specialists"),
 //	    agent.WithWorkerContext(false),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*message.Graph, error) {
+func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
 
 	config := supervisorOptions{
+		commonOptions: commonOptions{
+			systemPrompt:    "",
+			maxIterations:   10,
+			graphMiddleware: nil,
+			modelMiddleware: nil,
+			toolMiddleware:  nil,
+		},
 		workers:        make([]WorkerAgent, 0),
-		maxIterations:  10,
 		includeContext: false,
 		retryAttempts:  2,
 	}
 
 	for _, opt := range opts {
-		opt(&config)
+		opt.applySupervisor(&config)
 	}
 
 	if err := validate.NotEmptySlice(config.workers, "workers"); err != nil {
@@ -169,5 +170,5 @@ func NewSupervisorAgent(mdl model.Model, opts ...SupervisorOption) (*message.Gra
 		reactOpts = append(reactOpts, WithSystemPrompt(defaultPrompt))
 	}
 
-	return NewReActAgent(mdl, reactOpts...)
+	return NewReAct(mdl, reactOpts...)
 }

@@ -70,7 +70,7 @@ outputSchema, _ := schema.NewOutputSchema("agent_response", AgentResponse{},
 )
 
 // Create agent with structured output
-reactAgent, _ := agent.NewReActAgent(mdl,
+reactAgent, _ := agent.NewReAct(mdl,
     agent.WithReActOutputSchema(&outputSchema),
 )
 

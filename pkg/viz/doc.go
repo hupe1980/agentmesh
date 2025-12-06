@@ -26,7 +26,7 @@
 //	})
 //
 //	// Register an agent
-//	agent, _ := agent.NewReActAgent(model)
+//	agent, _ := agent.NewReAct(model)
 //	server.Register("my-agent", viz.NewMessageAdapter(agent))
 //
 //	// Start server

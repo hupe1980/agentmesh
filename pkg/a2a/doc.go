@@ -21,7 +21,7 @@
 //	)
 //
 //	// Create your agent
-//	compiled, _ := agent.NewReActAgent(model, tools)
+//	compiled, _ := agent.NewReAct(model, tools)
 //
 //	// Wrap as A2A executor
 //	executor := a2a.NewExecutor(compiled)
@@ -63,7 +63,7 @@
 //	translatorTool, _ := a2atool.NewTool(ctx, "https://translator.example.com", "translate")
 //
 //	// Use in a ReAct agent
-//	reactAgent, _ := agent.NewReActAgent(model, agent.WithTools(translatorTool))
+//	reactAgent, _ := agent.NewReAct(model, agent.WithTools(translatorTool))
 //
 // # Message Conversion
 //

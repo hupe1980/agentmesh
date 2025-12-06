@@ -23,9 +23,9 @@
 //	toolset := mcp.NewToolset(factory)
 //
 //	// Use the toolset in a ReAct agent
-//	agent, err := agent.NewReActAgent(model,
+//	agent, err := agent.NewReAct(model,
 //	    agent.WithToolset(toolset),
-//	    agent.WithMaxIterations(10))
+//	    agent.WithSupervisorMaxIterations(10))
 //
 // # Transport Options
 //

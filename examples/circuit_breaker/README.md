@@ -82,7 +82,7 @@ pm.Register(cb)
 ### Integration
 ```go
 // Callbacks are automatically injected via context
-reactAgent, _ := agent.NewReActAgent(
+reactAgent, _ := agent.NewReAct(
     model,
     agent.WithTools(tools...),
     agent.WithPluginManager(pm),

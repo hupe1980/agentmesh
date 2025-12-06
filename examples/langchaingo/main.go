@@ -51,7 +51,7 @@ func main() {
 		log.Fatalf("failed to create calculator tool: %v", err)
 	}
 
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		model,
 		agent.WithTools(calcTool),
 	)

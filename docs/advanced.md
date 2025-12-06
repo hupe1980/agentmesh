@@ -60,7 +60,7 @@ retry := modelmw.NewRetryMiddleware(
 )
 
 // Apply to agent
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithModelMiddleware(retry),
 )
 ```
@@ -102,7 +102,7 @@ cb := toolmw.NewCircuitBreakerMiddleware(
 )
 
 // Apply to agent
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithTools(tools...),
     agent.WithToolMiddleware(cb),
 )

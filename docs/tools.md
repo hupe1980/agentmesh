@@ -716,7 +716,7 @@ if err != nil {
 }
 
 // Use in agent
-agent, _ := agent.NewReActAgent(model, []tool.Tool{tool})
+agent, _ := agent.NewReAct(model, []tool.Tool{tool})
 ```
 
 ### Security policies
@@ -982,16 +982,16 @@ apiTool, _ := wasm.NewWASMTool("fetch_data", "Fetch external data", apiWasm,
     wasm.WithPolicy(wasm.NetworkOnlyPolicy()))
 
 // Use in ReAct agent
-agent, _ := agent.NewReActAgent(
+agent, _ := agent.NewReAct(
     model,
     []tool.Tool{mathTool, apiTool},
 )
 
 // Use in supervisor agent
-supervisor, _ := agent.NewSupervisorAgent(
+supervisor, _ := agent.NewSupervisor(
     model,
-    agent.WithWorker("compute", "Computation worker", agent.NewReActAgent(model, []tool.Tool{mathTool})),
-    agent.WithWorker("fetch", "Data fetching worker", agent.NewReActAgent(model, []tool.Tool{apiTool})),
+    agent.WithWorker("compute", "Computation worker", agent.NewReAct(model, []tool.Tool{mathTool})),
+    agent.WithWorker("fetch", "Data fetching worker", agent.NewReAct(model, []tool.Tool{apiTool})),
 )
 ```
 

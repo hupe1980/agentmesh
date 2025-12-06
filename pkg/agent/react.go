@@ -11,7 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-// NewReActAgent creates a Reasoning and Acting (ReAct) agent that iteratively:
+// NewReAct creates a Reasoning and Acting (ReAct) agent that iteratively:
 //  1. Reasons about the task
 //  2. Decides which tool to use
 //  3. Observes the result
@@ -27,24 +27,24 @@ import (
 //
 // Example with static tools:
 //
-//	agent, err := agent.NewReActAgent(model,
+//	agent, err := agent.NewReAct(model,
 //	    agent.WithTools(searchTool, calculatorTool),
 //	    agent.WithMaxIterations(5))
 //
 // Example with dynamic toolset:
 //
 //	mcpToolset := mcp.NewToolset(mcp.NewStdioSessionFactory("mcp-server", []string{}))
-//	agt, err := agent.NewReActAgent(model,
+//	agt, err := agent.NewReAct(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReActAgent(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
+func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
 
 	config := defaultReActOptions()
 	for _, opt := range opts {
-		opt(&config)
+		opt.applyReAct(&config)
 	}
 
 	// Build and validate tool registry
@@ -160,78 +160,48 @@ func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*mess
 
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
-	maxIterations   int
-	tools           []tool.Tool
-	systemPrompt    string
-	outputSchema    *schema.OutputSchema
-	graphMiddleware []graph.Middleware
-	modelMiddleware []model.Middleware
-	toolMiddleware  []tool.Middleware
+	commonOptions
+	tools        []tool.Tool
+	outputSchema *schema.OutputSchema
 }
 
 func defaultReActOptions() reActOptions {
 	return reActOptions{
-		maxIterations:   10,
-		tools:           nil,
-		systemPrompt:    "",
-		outputSchema:    nil,
-		graphMiddleware: nil,
-		modelMiddleware: nil,
-		toolMiddleware:  nil,
+		commonOptions: commonOptions{
+			systemPrompt:    "",
+			maxIterations:   10,
+			graphMiddleware: nil,
+			modelMiddleware: nil,
+			toolMiddleware:  nil,
+		},
+		tools:        nil,
+		outputSchema: nil,
 	}
 }
 
 // ReActOption configures a ReAct agent.
-type ReActOption func(*reActOptions)
+// It can be either a function or a sharedOption.
+type ReActOption interface {
+	applyReAct(*reActOptions)
+}
 
-// WithMaxIterations sets the maximum reasoning iterations for ReAct.
-func WithMaxIterations(n int) ReActOption {
-	return func(c *reActOptions) {
-		if n > 0 {
-			c.maxIterations = n
-		}
-	}
+// reActOptionFunc wraps a function to implement ReActOption.
+type reActOptionFunc func(*reActOptions)
+
+func (f reActOptionFunc) applyReAct(opts *reActOptions) {
+	f(opts)
 }
 
 // WithTools provides static tools to the agent via options.
 func WithTools(tools ...tool.Tool) ReActOption {
-	return func(c *reActOptions) {
+	return reActOptionFunc(func(c *reActOptions) {
 		c.tools = append(c.tools, tools...)
-	}
-}
-
-// WithSystemPrompt sets a system prompt sent with every model invocation.
-// The system prompt provides instructions and context to guide the agent's behavior.
-func WithSystemPrompt(prompt string) ReActOption {
-	return func(c *reActOptions) {
-		c.systemPrompt = prompt
-	}
+	})
 }
 
 // WithReActOutputSchema sets a structured output schema for the ReAct agent.
 func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
-	return func(c *reActOptions) {
+	return reActOptionFunc(func(c *reActOptions) {
 		c.outputSchema = outputSchema
-	}
-}
-
-// WithGraphMiddleware adds middleware to the graph.
-func WithGraphMiddleware(middleware ...graph.Middleware) ReActOption {
-	return func(c *reActOptions) {
-		c.graphMiddleware = append(c.graphMiddleware, middleware...)
-	}
-}
-
-// WithModelMiddleware adds middleware to the model executor.
-func WithModelMiddleware(middleware ...model.Middleware) ReActOption {
-	return func(c *reActOptions) {
-		c.modelMiddleware = append(c.modelMiddleware, middleware...)
-	}
-}
-
-// WithToolMiddleware adds middleware to the tool executor.
-func WithToolMiddleware(middleware ...tool.Middleware) ReActOption {
-	return func(c *reActOptions) {
-		c.toolMiddleware = append(c.toolMiddleware, middleware...)
-	}
+	})
 }

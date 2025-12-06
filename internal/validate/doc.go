@@ -26,7 +26,7 @@
 //
 // Multiple validations:
 //
-//	func NewRAGAgent(model Model, retriever Retriever) (*Agent, error) {
+//	func NewRAG(model Model, retriever Retriever) (*Agent, error) {
 //	   if err := validate.All(
 //	       validate.NotNil(model, "model"),
 //	       validate.NotNil(retriever, "retriever"),

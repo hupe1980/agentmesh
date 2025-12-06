@@ -99,7 +99,7 @@ func main() {
     }
 
     // Create ReAct agent
-    reactAgent, err := agent.NewReActAgent(model,
+    reactAgent, err := agent.NewReAct(model,
         agent.WithTools(weatherTool),
         agent.WithMaxIterations(5),
     )

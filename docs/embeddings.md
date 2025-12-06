@@ -124,7 +124,7 @@ vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("Tools allow agents to 
 retriever := &memoryRetriever{memory: vectorMem, sessionID: "kb"}
 
 // RAG agent automatically finds relevant docs and includes them in context
-ragAgent, _ := agent.NewRAGAgent(model, retriever)
+ragAgent, _ := agent.NewRAG(model, retriever)
 
 // Query uses retrieved context
 msgs := []message.Message{
@@ -352,7 +352,7 @@ vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("My project uses Type
 vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("I prefer functional programming"))
 
 // Create agent
-agent, _ := agent.NewReActAgent(model,
+agent, _ := agent.NewReAct(model,
     agent.WithTools(searchTool, calculatorTool),
 )
 

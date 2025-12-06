@@ -8,7 +8,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-func TestNewSupervisorAgent_Basic(t *testing.T) {
+func TestNewSupervisor_Basic(t *testing.T) {
 	// Create mock workers
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
@@ -19,11 +19,11 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 		}),
 	}
 
-	supervisor, err := NewSupervisorAgent(
+	supervisor, err := NewSupervisor(
 		mockModel,
 		WithWorker("math", "Math expert", worker1),
 		WithWorker("code", "Code expert", worker2),
-		WithSupervisorMaxIterations(5),
+		WithMaxIterations(5),
 	)
 
 	if err != nil {
@@ -48,28 +48,28 @@ func TestNewSupervisorAgent_Basic(t *testing.T) {
 	// This is verified by the successful creation of the supervisor
 }
 
-func TestNewSupervisorAgent_NoWorkers(t *testing.T) {
+func TestNewSupervisor_NoWorkers(t *testing.T) {
 	mockModel := &testutil.MockModel{
 		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
 		}),
 	}
 
-	_, err := NewSupervisorAgent(mockModel)
+	_, err := NewSupervisor(mockModel)
 
 	if err == nil {
 		t.Error("Expected error when creating supervisor with no workers")
 	}
 }
 
-func TestNewSupervisorAgent_NilWorkerAgent(t *testing.T) {
+func TestNewSupervisor_NilWorkerAgent(t *testing.T) {
 	mockModel := &testutil.MockModel{
 		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 			return message.NewAIMessageFromText("response"), nil
 		}),
 	}
 
-	_, err := NewSupervisorAgent(
+	_, err := NewSupervisor(
 		mockModel,
 		WithWorker("math", "Math expert", nil),
 	)
@@ -79,7 +79,7 @@ func TestNewSupervisorAgent_NilWorkerAgent(t *testing.T) {
 	}
 }
 
-func TestNewSupervisorAgent(t *testing.T) {
+func TestNewSupervisor(t *testing.T) {
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
 
@@ -89,14 +89,14 @@ func TestNewSupervisorAgent(t *testing.T) {
 		}),
 	}
 
-	supervisor, err := NewSupervisorAgent(
+	supervisor, err := NewSupervisor(
 		mockModel,
 		WithWorker("math", "Math expert", worker1),
 		WithWorker("code", "Code expert", worker2),
-		WithSupervisorSystemPrompt("Custom supervisor prompt"),
+		WithSystemPrompt("Custom supervisor prompt"),
 		WithWorkerContext(false),
 		WithWorkerRetries(3),
-		WithSupervisorMaxIterations(15),
+		WithMaxIterations(15),
 	)
 
 	if err != nil {
@@ -139,5 +139,5 @@ func createMockWorker(expertise string) (*message.Graph, error) {
 		}),
 	}
 
-	return NewReActAgent(mockModel, WithMaxIterations(1))
+	return NewReAct(mockModel, WithMaxIterations(1))
 }

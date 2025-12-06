@@ -32,7 +32,7 @@ Create an agent with a model and tools:
 	)
 
 	// Create agent
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(weatherTool),
 	)
@@ -99,10 +99,10 @@ Tools can be functions, structs, or interfaces:
 
 Agents can be configured with options:
 
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		model,
 		agent.WithTools(weatherTool),
-		agent.WithMaxIterations(10),
+		agent.WithSupervisorMaxIterations(10),
 	)
 
 # State Management
@@ -143,16 +143,16 @@ Combine multiple agents into larger workflows using message graph:
 Create a supervisor agent that routes tasks to specialized workers:
 
 	// Create specialist agents
-	mathAgent, _ := agent.NewReActAgent(model,
+	mathAgent, _ := agent.NewReAct(model,
 		agent.WithSystemPrompt("You are a math expert"),
 		agent.WithMaxIterations(5))
 
-	codeAgent, _ := agent.NewReActAgent(model,
+	codeAgent, _ := agent.NewReAct(model,
 		agent.WithSystemPrompt("You are a programming expert"),
 		agent.WithMaxIterations(5))
 
 	// Create supervisor with functional options
-	supervisor, err := agent.NewSupervisorAgent(model,
+	supervisor, err := agent.NewSupervisor(model,
 		agent.WithWorker("math", "Math expert", mathAgent),
 		agent.WithWorker("code", "Programming expert", codeAgent),
 		agent.WithSupervisorSystemPrompt("Route to specialists"),

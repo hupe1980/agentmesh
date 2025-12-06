@@ -183,7 +183,7 @@ func reactAgentExample(ctx context.Context, mdl model.Model) error {
 	fmt.Printf("Creating ReActAgent with schema: %s\n", outputSchema.Name)
 
 	// Create ReActAgent with OutputSchema
-	reactAgent, err := agent.NewReActAgent(mdl,
+	reactAgent, err := agent.NewReAct(mdl,
 		agent.WithReActOutputSchema(&outputSchema),
 		agent.WithSystemPrompt("You are a helpful assistant. Think step-by-step and provide structured responses with your reasoning."),
 	)

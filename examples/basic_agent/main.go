@@ -69,7 +69,7 @@ func main() {
 	//   - Uses GPT to reason about tool usage
 	//   - Automatically calls tools when needed
 	//   - Iterates until reaching a final answer
-	compiled, err := agent.NewReActAgent(
+	compiled, err := agent.NewReAct(
 		openai.NewModel(),
 		agent.WithTools(weatherTool),
 	)

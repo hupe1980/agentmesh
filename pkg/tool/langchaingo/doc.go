@@ -29,5 +29,5 @@
 //	)
 //
 //	// Use it in your agent
-//	agent := agent.NewReActAgent(model, []tool.Tool{tool})
+//	agent := agent.NewReAct(model, []tool.Tool{tool})
 package langchaingo

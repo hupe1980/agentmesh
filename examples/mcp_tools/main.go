@@ -93,7 +93,7 @@ func main() {
 		openai.WithTemperature(0),
 	)
 
-	reactAgent, err := agent.NewReActAgent(
+	reactAgent, err := agent.NewReAct(
 		model,
 		agent.WithTools(tools...),
 		agent.WithMaxIterations(5),

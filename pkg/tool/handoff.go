@@ -81,7 +81,7 @@ func WithSystemPrompt(prompt string) HandoffOption {
 //
 // The supervisor agent can then use this tool:
 //
-//	supervisor, err := agent.NewReActAgent(
+//	supervisor, err := agent.NewReAct(
 //	    llm,
 //	    agent.WithTools(researchTool, codeTool),
 //	)

@@ -76,7 +76,7 @@ func main() {
     }
 
     // Create a ReAct agent (returns *message.Graph)
-    reactAgent, err := agent.NewReActAgent(
+    reactAgent, err := agent.NewReAct(
         openai.NewModel(),
         agent.WithTools(weatherTool),
     )

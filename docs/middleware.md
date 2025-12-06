@@ -82,7 +82,7 @@ Graph middleware wraps the entire graph execution, providing observability and l
 ```go
 import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithGraphMiddleware(
         graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
         graphmw.NewEventMiddleware[[]message.Message, message.Message](),
@@ -116,7 +116,7 @@ rateLimit := modelmw.NewRateLimitMiddleware(10, 100*time.Millisecond)
 tokenCounter := modelmw.NewTokenCounterMiddleware()
 
 // Apply to agent
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithModelMiddleware(cache, retry, rateLimit, tokenCounter),
 )
 
@@ -147,7 +147,7 @@ timeout := toolmw.NewTimeoutMiddleware(5*time.Second)
 cb := toolmw.NewCircuitBreakerMiddleware(3, 30*time.Second)
 audit := toolmw.NewAuditMiddleware(logger)
 
-agent.NewReActAgent(model,
+agent.NewReAct(model,
     agent.WithTools(tools...),
     agent.WithToolMiddleware(cache, timeout, cb, audit),
 )
