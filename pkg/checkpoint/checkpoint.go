@@ -174,12 +174,32 @@ type ApprovalRecord struct {
 
 // Checkpointer defines the interface for checkpoint persistence.
 // Implementations can use any storage backend (in-memory, SQLite, PostgreSQL, Redis, etc.)
+//
+// Thread-Safety Requirements:
+//
+// All methods MUST be safe for concurrent access from multiple goroutines.
+// This is critical because:
+//   - Graph execution may checkpoint from multiple parallel nodes
+//   - Background checkpoint savers may run concurrently with execution
+//   - Human-in-the-loop workflows may query checkpoints while execution continues
+//
+// Implementations MUST ensure:
+//   - Save() can be called concurrently with Load(), List(), and other Save() calls
+//   - Load() operations are safe during concurrent Save() operations
+//   - All methods properly synchronize access to shared state (use mutexes, atomic operations, or rely on database transaction isolation)
+//
+// Performance Considerations:
+//   - Prefer RWMutex over Mutex when possible (allow concurrent reads)
+//   - Database implementations inherit thread-safety from database/sql package (sql.DB is thread-safe)
+//   - Deep copy mutable data returned to callers to prevent data races
 type Checkpointer interface {
 	// Save persists a checkpoint for the given run ID.
+	// Must be safe to call concurrently with other Checkpointer methods.
 	// Returns error if save fails.
 	Save(ctx context.Context, checkpoint *Checkpoint) error
 
 	// Load retrieves the most recent checkpoint for the given run ID.
+	// Must be safe to call concurrently with other Checkpointer methods.
 	// Returns nil checkpoint if no checkpoint exists (first run).
 	// Returns error if load fails.
 	Load(ctx context.Context, runID string) (*Checkpoint, error)
