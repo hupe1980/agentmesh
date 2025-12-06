@@ -19,6 +19,8 @@ sidebar:
     url: "#react-agent"
   - title: Supervisor agent
     url: "#supervisor-agent"
+  - title: Reflection agent
+    url: "#reflection-agent"
   - title: RAG agent
     url: "#rag-agent"
   - title: Custom graphs
@@ -228,6 +230,99 @@ flowchart TB
 - ♻️ **Retry logic**: Configurable retries for robust execution
 
 See `examples/supervisor_agent` for a complete demonstration.
+
+---
+
+## Reflection agent {#reflection-agent}
+
+The **Reflection Agent** is a composable wrapper that adds self-critique and iterative refinement to ANY agent type. It wraps another agent and automatically improves its outputs through reflection loops.
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+model := openai.NewModel()
+
+// Create a base agent (ReAct, RAG, Supervisor, or custom)
+reactAgent, _ := agent.NewReAct(
+    model,
+    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithTools(searchTool, calcTool),
+)
+
+// Wrap with reflection capabilities
+wrappedAgent, err := agent.NewReflection(
+    reactAgent,                                   // ANY agent type!
+    model,                                        // Model for critique (can differ)
+    agent.WithReflectionMaxIterations(2),         // Max refinement cycles
+    agent.WithReflectionPromptTemplate(template), // Custom critique prompt
+)
+
+// Execute - answers are automatically refined
+for msg, err := range wrappedAgent.Run(ctx, messages) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
+}
+```
+
+### Configuration options
+
+```go
+agent.NewReflection(baseAgent, reflectionModel,
+    agent.WithReflectionMaxIterations(n),         // Max refinement iterations
+    agent.WithReflectionPromptTemplate(template), // Custom critique prompt
+    agent.WithReflectionModelMiddleware(...),     // Middleware for reflection
+    agent.WithReflectionGraphMiddleware(...),     // Middleware for the graph
+)
+```
+
+### How it works
+
+The reflection agent creates a wrapper graph with a critique loop:
+
+<div class="mermaid">
+flowchart TB
+    User["User Query"] --> Agent
+    
+    subgraph ReflectionLoop["Reflection Loop"]
+        Agent["Wrapped Agent<br/><i>Generate Answer</i>"]
+        Reflection["Reflection Node<br/><i>Critique Answer</i>"]
+        
+        Agent --> Decision{"Max iterations<br/>reached?"}
+        Decision -->|"No"| Reflection
+        Reflection --> Agent
+        Decision -->|"Yes"| Result
+    end
+    
+    Result["Final Answer"] --> User2["User Response"]
+    
+    style User fill:#22c55e,stroke:#16a34a,color:#fff
+    style Agent fill:#3b82f6,stroke:#2563eb,color:#fff
+    style Reflection fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style Decision fill:#f59e0b,stroke:#d97706,color:#fff
+    style Result fill:#22c55e,stroke:#16a34a,color:#fff
+    style User2 fill:#22c55e,stroke:#16a34a,color:#fff
+</div>
+
+**Key benefits**:
+
+- 🔄 **Iterative improvement**: Automatically refines answers through self-critique
+- 🎯 **Composable**: Works with ANY agent type (ReAct, RAG, Supervisor, custom)
+- 🧠 **Meta-reasoning**: Agent reasons about its own reasoning
+- 🔧 **Flexible models**: Use different models for generation and critique
+- 📊 **Transparent**: Critique feedback visible in message stream
+
+**Use cases**:
+- Complex explanations requiring clarity and completeness
+- Technical writing that needs accuracy verification
+- Code generation with quality checks
+- Research tasks requiring thoroughness
+
+See `examples/reflection_agent` for a complete demonstration.
 
 ---
 

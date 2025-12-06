@@ -13,7 +13,7 @@ import (
 
 // NewReAct creates a Reasoning and Acting (ReAct) agent that iteratively:
 //  1. Reasons about the task
-//  2. Decides which tool to use
+//  2. Decides which tool to use (if tools provided)
 //  3. Observes the result
 //  4. Repeats until the answer is found
 //
@@ -29,13 +29,6 @@ import (
 //
 //	agent, err := agent.NewReAct(model,
 //	    agent.WithTools(searchTool, calculatorTool),
-//	    agent.WithMaxIterations(5))
-//
-// Example with dynamic toolset:
-//
-//	mcpToolset := mcp.NewToolset(mcp.NewStdioSessionFactory("mcp-server", []string{}))
-//	agt, err := agent.NewReAct(model,
-//	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
 func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
