@@ -17,6 +17,7 @@ require (
 	github.com/logrusorgru/aurora/v3 v3.0.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/modelcontextprotocol/go-sdk v1.1.0
+	github.com/ollama/ollama v0.13.1
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0

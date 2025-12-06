@@ -15,7 +15,7 @@
 
 ### Core Engine
 - **🔄 Pregel BSP Execution** - Parallel graph processing with optimized concurrency (4-10x faster state access)
-- **🧠 LLM Integration** - Native support for OpenAI, Anthropic, Gemini with streaming and reasoning models
+- **🧠 LLM Integration** - Native support for OpenAI, Anthropic, Gemini, Amazon Bedrock, Ollama with streaming and reasoning models
 - **💾 State Management** - Lock-free channel-based state with checkpointing, managed value descriptors, and resume-time rehydration hooks
 - **🛠️ Tool Orchestration** - Type-safe function calling with automatic schema generation
 - **🔀 Model Routing** - Intelligent model selection based on cost, capabilities, and availability

@@ -5,7 +5,7 @@ description: Connect LLM providers through a unified interface with streaming an
 permalink: /models/
 hero:
   title: Connect language models
-  description: Integrate OpenAI, Anthropic, Gemini, LangChainGo, or custom providers with consistent streaming and tool calling.
+  description: Integrate OpenAI, Anthropic, Gemini, Ollama, LangChainGo, or custom providers with consistent streaming and tool calling.
   primary_cta:
     label: Choose an adapter
     href: "#available-models"
@@ -25,6 +25,8 @@ sidebar:
         url: "#anthropic"
       - title: Gemini
         url: "#gemini"
+      - title: Ollama
+        url: "#ollama"
       - title: LangChainGo
         url: "#langchaingo"
       - title: Amazon Bedrock
@@ -257,6 +259,74 @@ The adapter supports:
 - ✅ Function calling via `Request.Tools`
 - ✅ Vision models (multimodal)
 - ✅ Native reasoning (Gemini 2.0)
+
+### Ollama {#ollama}
+
+The Ollama adapter enables local model execution with no API keys or cloud dependencies:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/model/ollama"
+
+// Connect to local Ollama instance (default: http://localhost:11434)
+model := ollama.NewModel(
+    ollama.WithModel("llama3.2"),
+    ollama.WithTemperature(0.7),
+    ollama.WithNumPredict(1000),
+)
+
+compiled, err := agent.NewReAct(model, tools)
+```
+
+Configuration options:
+
+```go
+ollama.NewModel(
+    ollama.WithModel("llama3.2"),      // Model name (llama3.2, mistral, codellama, etc.)
+    ollama.WithTemperature(0.7),       // Randomness (0-2)
+    ollama.WithNumPredict(1000),       // Max tokens (-1 = unlimited)
+    ollama.WithTopK(40),                // Top-k sampling
+    ollama.WithTopP(0.9),               // Nucleus sampling
+    ollama.WithSeed(42),                // Reproducible output
+)
+```
+
+The adapter supports:
+- ✅ Streaming responses
+- ✅ Function calling via `Request.Tools`
+- ✅ Local execution (no API keys needed)
+- ✅ Any Ollama-compatible model (llama3.2, mistral, codellama, gemma, phi, etc.)
+- ❌ Structured output (JSON schema)
+- ❌ Vision (model-dependent, e.g., llava)
+
+**Prerequisites:**
+
+1. Install Ollama: [https://ollama.ai](https://ollama.ai)
+2. Pull a model: `ollama pull llama3.2`
+3. Start the server: `ollama serve`
+
+**Custom Ollama host:**
+
+```go
+import "github.com/ollama/ollama/api"
+
+client, _ := api.ClientFromEnvironment()
+// Or: client := api.NewClient("http://remote-host:11434", nil)
+
+model, _ := ollama.NewModelFromClient(client,
+    ollama.WithModel("llama3.2"),
+)
+```
+
+**Popular Ollama models:**
+
+- `llama3.2` - Meta's latest LLaMA (default)
+- `mistral` - Mistral AI's efficient 7B model  
+- `codellama` - Specialized for code generation
+- `gemma` - Google's open Gemma model
+- `phi` - Microsoft's compact Phi model
+- `llava` - Multimodal vision model
+
+See [Ollama model library](https://ollama.ai/library) for the full list.
 
 ### LangChainGo {#langchaingo}
 
