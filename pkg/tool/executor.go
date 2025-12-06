@@ -364,7 +364,6 @@ func (e *ParallelExecutor) Execute(ctx context.Context, calls []Call) ([]Executi
 		e.executeUnlimited(ctx, calls, results, errors)
 	}
 
-	// Check for errors if not continuing
 	return e.checkErrors(results, errors)
 }
 
@@ -378,7 +377,6 @@ func (e *ParallelExecutor) executeLimited(ctx context.Context, calls []Call, res
 		go func(idx int, c Call) {
 			defer wg.Done()
 
-			// Check context before acquiring semaphore
 			if ctx.Err() != nil {
 				results[idx] = ExecutionResult{Error: ctx.Err()}
 				return
@@ -402,7 +400,6 @@ func (e *ParallelExecutor) executeLimited(ctx context.Context, calls []Call, res
 func (e *ParallelExecutor) executeUnlimited(ctx context.Context, calls []Call, results []ExecutionResult, errors []error) {
 	var wg sync.WaitGroup
 	for i, call := range calls {
-		// Check context before starting goroutine
 		if ctx.Err() != nil {
 			results[i] = ExecutionResult{Error: ctx.Err()}
 			continue

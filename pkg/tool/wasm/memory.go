@@ -18,7 +18,6 @@ func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string)
 		return 0, 0, nil
 	}
 
-	// Get the allocate function
 	allocateFunc := mod.ExportedFunction("allocate")
 	if allocateFunc == nil {
 		return 0, 0, fmt.Errorf("wasm module does not export 'allocate' function")

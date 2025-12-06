@@ -288,7 +288,6 @@ func (m *SessionManager) CreateSession(
 
 	m.mu.Lock()
 
-	// Check for existing session
 	entry, ok := m.sessions[key]
 	if ok {
 		select {
@@ -316,7 +315,6 @@ func (m *SessionManager) CreateSession(
 
 	// Observe session termination so future calls can recreate as needed.
 	go func(e *sessionEntry) {
-		// Wait for session termination or context cancellation
 		waitDone := make(chan struct{})
 		go func() {
 			// ClientSession.Wait() returns when the session terminates.

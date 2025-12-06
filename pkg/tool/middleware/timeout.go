@@ -23,7 +23,6 @@ func NewTimeoutMiddleware(timeout time.Duration) *TimeoutMiddleware {
 // Wrap wraps the tool executor with timeout enforcement.
 func (m *TimeoutMiddleware) Wrap(next tool.Executor) tool.Executor {
 	return tool.WrapFunc(func(ctx context.Context, calls []tool.Call) ([]tool.ExecutionResult, error) {
-		// Create context with timeout
 		timeoutCtx, cancel := context.WithTimeout(ctx, m.timeout)
 		defer cancel()
 
@@ -48,7 +47,6 @@ func (m *TimeoutMiddleware) Wrap(next tool.Executor) tool.Executor {
 
 			results, err := next.Execute(timeoutCtx, calls)
 
-			// Send results respecting context cancellation
 			select {
 			case resultsChan <- struct {
 				results []tool.ExecutionResult
@@ -63,7 +61,6 @@ func (m *TimeoutMiddleware) Wrap(next tool.Executor) tool.Executor {
 		case <-timeoutCtx.Done():
 			// Timeout or cancellation
 			if timeoutCtx.Err() == context.DeadlineExceeded {
-				// Create error results for all calls
 				results := make([]tool.ExecutionResult, len(calls))
 				for i := range calls {
 					results[i] = tool.ExecutionResult{

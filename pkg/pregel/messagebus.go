@@ -175,7 +175,6 @@ func (store *InMemoryMessageBus[M]) Send(ctx context.Context, messages []Message
 // sendOne delivers a single message with backpressure handling.
 // Uses sharded locks for reduced contention.
 func (store *InMemoryMessageBus[M]) sendOne(ctx context.Context, msg Message[M]) error {
-	// Check if store is closed before attempting delivery
 	if err := store.checkClosed(); err != nil {
 		return err
 	}
@@ -283,7 +282,6 @@ func (store *InMemoryMessageBus[M]) blockingSend(
 	ch chan Message[M],
 	msg Message[M],
 ) error {
-	// Check if context has a deadline
 	_, hasDeadline := ctx.Deadline()
 
 	if hasDeadline {
@@ -431,7 +429,6 @@ func (store *InMemoryMessageBus[M]) Stats(ctx context.Context) MessageStoreStats
 
 	// Aggregate stats from all shards
 	for i := range store.shards {
-		// Check context cancellation periodically
 		if i%DefaultContextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				// Context cancelled - return partial stats

@@ -145,19 +145,16 @@ func executeHandoff(
 	// Build message list for the worker agent
 	messages := []message.Message{}
 
-	// Add system prompt if configured
 	if config.SystemPrompt != "" {
 		messages = append(messages, message.NewSystemMessageFromText(config.SystemPrompt))
 	}
 
-	// Add context as system message if provided
 	if config.IncludeContext && args.Context != "" {
 		messages = append(messages, message.NewSystemMessageFromText(
 			fmt.Sprintf("Context: %s", args.Context),
 		))
 	}
 
-	// Add the actual task
 	messages = append(messages, message.NewHumanMessageFromText(args.Task))
 
 	// Execute the worker agent graph (assumes graph is already built)

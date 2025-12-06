@@ -235,7 +235,6 @@ type namespacedView struct {
 
 // GetValue implements View interface with namespace filtering.
 func (v *namespacedView) GetValue(name string) (any, bool) {
-	// Check if key is in allowed namespace
 	if !v.isAllowed(name) {
 		return nil, false
 	}
@@ -248,7 +247,6 @@ func (v *namespacedView) ManagedValues() *managedValueRegistry {
 }
 
 func (v *namespacedView) isAllowed(key string) bool {
-	// Check if key belongs to the namespace (has namespace prefix)
 	prefix := v.namespace.name + "."
 	if len(key) > len(prefix) && key[:len(prefix)] == prefix {
 		return true

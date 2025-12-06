@@ -46,7 +46,6 @@ func (m *CircuitBreakerMiddleware) Wrap(next tool.Executor) tool.Executor {
 	return tool.WrapFunc(func(ctx context.Context, calls []tool.Call) ([]tool.ExecutionResult, error) {
 		m.mu.Lock()
 
-		// Check if we should transition from Open to HalfOpen
 		if m.state == StateOpen && time.Since(m.lastFailTime) > m.resetTimeout {
 			m.state = StateHalfOpen
 			m.failures = 0
@@ -73,7 +72,6 @@ func (m *CircuitBreakerMiddleware) Wrap(next tool.Executor) tool.Executor {
 			return results, err
 		}
 
-		// Check for errors in results
 		hasErrors := false
 		for _, result := range results {
 			if result.Error != nil {

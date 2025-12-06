@@ -225,7 +225,6 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 		}
 	}()
 
-	// Get the execute function
 	executeFunc := mod.ExportedFunction("execute")
 	if executeFunc == nil {
 		return nil, errors.New("WASM module does not export 'execute' function")

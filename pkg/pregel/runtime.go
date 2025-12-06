@@ -91,7 +91,6 @@ func (sf *shardedFrontier) Drain(ctx context.Context) map[string]struct{} {
 	result := make(map[string]struct{})
 
 	for i := range DefaultShardCount {
-		// Check context cancellation periodically
 		if i%DefaultContextCheckInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				// Context cancelled - return partial results for graceful shutdown
@@ -494,19 +493,16 @@ type executionState struct {
 // checkExecutionPreconditions validates context, quotas, and iteration limits.
 // Returns an error if any precondition fails.
 func (r *Runtime[S, M]) checkExecutionPreconditions(ctx context.Context, state *executionState, logger logging.Logger) error {
-	// Check context cancellation
 	if err := ctx.Err(); err != nil {
 		logger.Warn("pregel runtime canceled", "superstep", state.superstep, "error", err)
 		return err
 	}
 
-	// Check resource quotas
 	if err := r.checkQuotas(ctx); err != nil {
 		logger.Error("quota exceeded", "superstep", state.superstep, "error", err)
 		return err
 	}
 
-	// Check max iterations limit (if configured)
 	if r.opts.MaxIterations > 0 && state.iterationCount >= int64(r.opts.MaxIterations) {
 		logger.Warn("max iterations exceeded",
 			"max_iterations", r.opts.MaxIterations,
@@ -719,7 +715,6 @@ func (r *Runtime[S, M]) setupSuperstepObservability(ctx context.Context, superst
 		"frontier_size", len(frontierNodes),
 		"frontier_nodes", frontierNodes)
 
-	// Return cleanup function that records duration and ends span
 	cleanup := func() {
 		duration := time.Since(superstepStart)
 		superstepDuration := mp.Histogram("superstep.duration_ms")
@@ -818,7 +813,6 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 		}
 	}()
 
-	// Wait for completion
 	wg.Wait()
 	return runErr
 }
@@ -903,7 +897,6 @@ func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming
 		})
 	}()
 
-	// Validate vertex exists
 	vertex, err := r.validateVertex(name, superstep)
 	if err != nil {
 		return err

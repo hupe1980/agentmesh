@@ -21,11 +21,9 @@ import (
 // For slices and maps, empty (len=0) is treated as "no input provided".
 func isNilOrZero[T any](v T) bool {
 	val := reflect.ValueOf(v)
-	// Check if interface is nil
 	if !val.IsValid() {
 		return true
 	}
-	// Check if value is nil or empty (for slices, maps, channels)
 	switch val.Kind() {
 	case reflect.Pointer, reflect.Chan, reflect.Func, reflect.Interface:
 		return val.IsNil()
@@ -33,7 +31,6 @@ func isNilOrZero[T any](v T) bool {
 		// Treat empty slices/maps as "no input" to preserve checkpoint state
 		return val.IsNil() || val.Len() == 0
 	}
-	// Check if value equals zero value
 	return val.IsZero()
 }
 
@@ -542,7 +539,6 @@ func runPregelRuntime[I, O any](
 // Run executes the graph using the Pregel BSP runtime.
 func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
-		// Create cancellable context for early termination
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
@@ -564,7 +560,6 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 			return
 		}
 
-		// Set input into state if output key is defined and input is non-nil
 		if cfg.OutputKey != "" && !isNilOrZero(input) {
 			restoreResult.setValue(cfg.OutputKey, input)
 		}
@@ -577,7 +572,6 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 			return
 		}
 
-		// Create buffered result channel for lock-free output collection
 		resultChan := make(chan resultItem[O], DefaultResultChanSize)
 		yieldDone := startResultConsumer(ctx, cancel, resultChan, yield)
 
