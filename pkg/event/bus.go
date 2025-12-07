@@ -114,6 +114,11 @@ func (eb *Bus) Subscribe(handler Handler, types ...Type) {
 //	    Timestamp: time.Now(),
 //	})
 func (eb *Bus) Publish(ctx context.Context, event Event) {
+	// Early context check to skip publishing if already cancelled
+	if ctx.Err() != nil {
+		return
+	}
+
 	snapshot := eb.snapshot.Load()
 	if snapshot == nil {
 		return

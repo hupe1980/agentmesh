@@ -7,7 +7,6 @@ import (
 	"maps"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
@@ -450,7 +449,7 @@ func rehydrateManagedValues(ctx context.Context, managedValues []checkpoint.Mana
 	if runCfg.managedValues == nil {
 		required := listManagedValueNames(managedValues, true)
 		if len(required) > 0 {
-			return fmt.Errorf("graph: checkpoint requires managed values (%s); provide them via graph.WithManagedValues when resuming", strings.Join(required, ", "))
+			return &ManagedValueError{MissingValues: required, IsRequired: false}
 		}
 		return nil
 	}

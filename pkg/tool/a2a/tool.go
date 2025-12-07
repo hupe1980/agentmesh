@@ -188,7 +188,7 @@ func (t *Tool) Call(ctx context.Context, argsJSON string) (any, error) {
 		return extractTextContent(responseMsg), nil
 	}
 
-	return nil, fmt.Errorf("unexpected response type from a2a agent")
+	return nil, ErrUnexpectedResponse
 }
 
 // extractTextContent extracts all text content from an A2A message.

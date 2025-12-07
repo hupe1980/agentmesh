@@ -57,7 +57,7 @@ func (m *CircuitBreakerMiddleware) Wrap(next tool.Executor) tool.Executor {
 			results := make([]tool.ExecutionResult, len(calls))
 			for i := range calls {
 				results[i] = tool.ExecutionResult{
-					Error: fmt.Errorf("circuit breaker is open"),
+					Error: ErrCircuitBreakerOpen,
 				}
 			}
 			return results, nil

@@ -68,11 +68,11 @@ func WithMountPath(mountPath string) Option {
 //	)
 func NewVaultCheckpointer(base checkpoint.Checkpointer, client Client, keyName string, opts ...Option) (*VaultCheckpointer, error) {
 	if client == nil {
-		return nil, fmt.Errorf("vault client is required")
+		return nil, ErrClientRequired
 	}
 
 	if keyName == "" {
-		return nil, fmt.Errorf("vault key name is required")
+		return nil, ErrKeyNameRequired
 	}
 
 	// Apply default options
@@ -114,7 +114,7 @@ func (vc *VaultCheckpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint
 
 	ciphertext, ok := secret.Data["ciphertext"].(string)
 	if !ok {
-		return fmt.Errorf("vault encryption response missing ciphertext")
+		return fmt.Errorf("vault: %w", ErrMissingCiphertext)
 	}
 
 	// Create wrapper checkpoint with encrypted payload
@@ -153,7 +153,7 @@ func (vc *VaultCheckpointer) Load(ctx context.Context, runID string) (*checkpoin
 	// Get ciphertext
 	ciphertext, ok := encryptedCP.Metadata["ciphertext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("vault encrypted checkpoint missing ciphertext")
+		return nil, ErrMissingCiphertext
 	}
 
 	// Decrypt with Vault transit
@@ -167,7 +167,7 @@ func (vc *VaultCheckpointer) Load(ctx context.Context, runID string) (*checkpoin
 
 	plaintext, ok := secret.Data["plaintext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("vault decryption response missing plaintext")
+		return nil, ErrMissingPlaintext
 	}
 
 	// Decode base64
@@ -214,7 +214,7 @@ func (vc *VaultCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, 
 	// Decrypt (reuse Load logic)
 	ciphertext, ok := cp.Metadata["ciphertext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("vault encrypted checkpoint missing ciphertext")
+		return nil, ErrMissingCiphertext
 	}
 
 	path := fmt.Sprintf("%s/decrypt/%s", vc.mountPath, vc.keyName)
@@ -227,7 +227,7 @@ func (vc *VaultCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, 
 
 	plaintext, ok := secret.Data["plaintext"].(string)
 	if !ok {
-		return nil, fmt.Errorf("vault decryption response missing plaintext")
+		return nil, ErrMissingPlaintext
 	}
 
 	data, err := base64.StdEncoding.DecodeString(plaintext)

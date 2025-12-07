@@ -2,7 +2,6 @@ package viz
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -114,14 +113,14 @@ func (ec *ExecutionController) SendCommand(cmd ExecutionCommand) error {
 
 	// Validate command based on current state
 	if ec.state == StateStopped || ec.state == StateCompleted {
-		return fmt.Errorf("cannot send command %s: execution is %s", cmd, ec.state)
+		return &InvalidCommandError{Command: cmd, State: ec.state}
 	}
 
 	select {
 	case ec.commandQueue <- cmd:
 		return nil
 	default:
-		return fmt.Errorf("command queue is full")
+		return ErrCommandQueueFull
 	}
 }
 
@@ -155,7 +154,7 @@ func (ec *ExecutionController) RemoveBreakpoint(id string) error {
 	defer ec.mu.Unlock()
 
 	if _, exists := ec.breakpoints[id]; !exists {
-		return fmt.Errorf("breakpoint %s not found", id)
+		return &BreakpointNotFoundError{ID: id}
 	}
 
 	delete(ec.breakpoints, id)
@@ -169,7 +168,7 @@ func (ec *ExecutionController) EnableBreakpoint(id string, enabled bool) error {
 
 	bp, exists := ec.breakpoints[id]
 	if !exists {
-		return fmt.Errorf("breakpoint %s not found", id)
+		return &BreakpointNotFoundError{ID: id}
 	}
 
 	bp.Enabled = enabled

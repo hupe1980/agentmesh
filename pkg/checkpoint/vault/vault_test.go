@@ -136,7 +136,7 @@ func TestNewVaultCheckpointer(t *testing.T) {
 			client:  mockVault,
 			keyName: "",
 			wantErr: true,
-			errMsg:  "vault key name is required",
+			errMsg:  "key name is required",
 		},
 		{
 			name:    "nil vault client",
@@ -144,7 +144,7 @@ func TestNewVaultCheckpointer(t *testing.T) {
 			client:  nil,
 			keyName: "test-key",
 			wantErr: true,
-			errMsg:  "vault client is required",
+			errMsg:  "client is required",
 		},
 	}
 

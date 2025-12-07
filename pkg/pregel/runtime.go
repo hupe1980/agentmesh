@@ -316,6 +316,12 @@ func (r *Runtime[S, M]) Deliver(ctx context.Context, messages ...Message[M]) err
 	if len(messages) == 0 {
 		return nil
 	}
+
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	return r.recordDeliveries(ctx, messages)
 }
 

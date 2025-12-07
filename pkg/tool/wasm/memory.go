@@ -20,7 +20,7 @@ func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string)
 
 	allocateFunc := mod.ExportedFunction("allocate")
 	if allocateFunc == nil {
-		return 0, 0, fmt.Errorf("wasm module does not export 'allocate' function")
+		return 0, 0, ErrNoAllocateFunction
 	}
 
 	// Call allocate(size) -> ptr
@@ -30,12 +30,12 @@ func (w *WASMTool) allocateString(ctx context.Context, mod api.Module, s string)
 	}
 
 	if len(results) == 0 {
-		return 0, 0, fmt.Errorf("allocate() did not return a pointer")
+		return 0, 0, ErrAllocateNoPointer
 	}
 
 	ptr = uint32(results[0]) // #nosec G115 - WASM address space is 32-bit
 	if ptr == 0 {
-		return 0, 0, fmt.Errorf("allocate() returned null pointer")
+		return 0, 0, ErrAllocateNullPointer
 	}
 
 	// Write the string bytes to WASM memory

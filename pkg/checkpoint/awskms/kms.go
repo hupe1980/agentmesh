@@ -32,11 +32,11 @@ type KMSCheckpointer struct {
 //   - Alias ARN: "arn:aws:kms:us-east-1:123456789012:alias/my-key"
 func NewKMSCheckpointer(base checkpoint.Checkpointer, kmsClient Client, keyID string) (*KMSCheckpointer, error) {
 	if keyID == "" {
-		return nil, fmt.Errorf("kms key ID is required")
+		return nil, ErrKeyIDRequired
 	}
 
 	if kmsClient == nil {
-		return nil, fmt.Errorf("kms client is required")
+		return nil, ErrClientRequired
 	}
 
 	return &KMSCheckpointer{
@@ -100,7 +100,7 @@ func (kc *KMSCheckpointer) Load(ctx context.Context, runID string) (*checkpoint.
 	// Decode base64 payload
 	payloadStr, ok := encryptedCP.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("kms encrypted checkpoint missing payload")
+		return nil, ErrMissingPayload
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)
@@ -155,7 +155,7 @@ func (kc *KMSCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, su
 	// Decrypt (reuse Load logic)
 	payloadStr, ok := cp.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("kms encrypted checkpoint missing payload")
+		return nil, ErrMissingPayload
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)

@@ -157,13 +157,13 @@ func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) gra
 
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("agent/conversational: no messages"))
+			return graph.Fail(ErrNoMessages)
 		}
 
 		// Get session ID from state (must be provided via WithInitialValue)
 		sessionID := graph.Get(view, SessionIDKey)
 		if sessionID == "" {
-			return graph.Fail(fmt.Errorf("agent/conversational: session_id is required, use graph.WithInitialValue(agent.SessionIDKey, \"your-session-id\")"))
+			return graph.Fail(ErrSessionIDRequired)
 		}
 
 		var combinedMsgs []message.Message
@@ -302,7 +302,7 @@ func createConversationalAgentNode(wrappedAgent *message.Graph) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("agent/conversational: no messages"))
+			return graph.Fail(ErrNoMessages)
 		}
 
 		// Get memory context and prepend to messages

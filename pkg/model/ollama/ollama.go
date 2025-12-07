@@ -248,7 +248,7 @@ func (m *Model) generateStreaming(ctx context.Context, req *api.ChatRequest, yie
 				Partial:      true,
 			}
 			if !yield(response, nil) {
-				return fmt.Errorf("ollama: yield returned false")
+				return ErrYieldFalse
 			}
 			return nil
 		}
@@ -272,7 +272,7 @@ func (m *Model) generateStreaming(ctx context.Context, req *api.ChatRequest, yie
 		}
 
 		if !yield(response, nil) {
-			return fmt.Errorf("ollama: yield returned false")
+			return ErrYieldFalse
 		}
 		return nil
 	})
@@ -411,7 +411,7 @@ func (m *Model) convertMessage(msg message.Message) (api.Message, error) {
 				Content: content.String(),
 			}, nil
 		}
-		return api.Message{}, fmt.Errorf("ollama: invalid tool message")
+		return api.Message{}, ErrInvalidToolMessage
 
 	default:
 		return api.Message{}, fmt.Errorf("ollama: unsupported message type: %s", msg.Type())

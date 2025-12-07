@@ -113,7 +113,7 @@ func (i *ExecutionInterceptor) waitForCommand(controller *ExecutionController) e
 		case CommandStop:
 			controller.Stop()
 			i.broadcastStateChange(controller, "stopped")
-			return fmt.Errorf("execution stopped by user")
+			return ErrExecutionStopped
 
 		case CommandPause:
 			// Already paused, wait for next command

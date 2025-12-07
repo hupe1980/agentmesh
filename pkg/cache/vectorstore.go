@@ -244,7 +244,7 @@ func serializeResponse(resp *model.Response) (string, error) {
 func deserializeResponse(meta vectorstore.Metadata) (*model.Response, error) {
 	respData, ok := meta[metaKeyResponse].(string)
 	if !ok {
-		return nil, fmt.Errorf("missing response data")
+		return nil, ErrMissingResponseData
 	}
 
 	var sr serializableResponse

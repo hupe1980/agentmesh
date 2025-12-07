@@ -220,7 +220,7 @@ func (m *Model) getSupportedModalities(hasVision bool) []string {
 func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		if req == nil || len(req.Messages) == 0 {
-			yield(nil, fmt.Errorf("generate requires at least one message"))
+			yield(nil, ErrNoMessages)
 			return
 		}
 
@@ -269,7 +269,7 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			return
 		}
 		if completion == nil || len(completion.Choices) == 0 {
-			yield(nil, fmt.Errorf("openai chat completion returned no choices"))
+			yield(nil, ErrNoChoices)
 			return
 		}
 
@@ -306,7 +306,7 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 		}
 
 		if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-			yield(nil, fmt.Errorf("openai chat completion returned empty message"))
+			yield(nil, ErrEmptyMessage)
 			return
 		}
 
@@ -450,7 +450,7 @@ func (m *Model) streamGenerate(
 	}
 
 	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-		yield(nil, fmt.Errorf("openai chat completion returned empty message"))
+		yield(nil, ErrEmptyMessage)
 		return
 	}
 

@@ -60,11 +60,16 @@ func NewInMemoryCheckpointer(opts ...InMemoryCheckpointerOption) *InMemoryCheckp
 
 // Save persists a checkpoint to memory
 func (m *InMemoryCheckpointer) Save(ctx context.Context, checkpoint *Checkpoint) error {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if checkpoint == nil {
-		return fmt.Errorf("checkpoint is nil")
+		return ErrNilCheckpoint
 	}
 	if checkpoint.RunID == "" {
-		return fmt.Errorf("checkpoint runID is empty")
+		return ErrEmptyRunID
 	}
 
 	m.mu.Lock()
@@ -120,8 +125,13 @@ func (m *InMemoryCheckpointer) Save(ctx context.Context, checkpoint *Checkpoint)
 
 // Load retrieves the most recent checkpoint for a run ID
 func (m *InMemoryCheckpointer) Load(ctx context.Context, runID string) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	m.mu.RLock()
@@ -147,8 +157,13 @@ func (m *InMemoryCheckpointer) Load(ctx context.Context, runID string) (*Checkpo
 
 // LoadAtSuperstep retrieves a checkpoint at a specific superstep
 func (m *InMemoryCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	m.mu.RLock()
@@ -179,8 +194,13 @@ func (m *InMemoryCheckpointer) LoadAtSuperstep(ctx context.Context, runID string
 
 // List returns all checkpoints for a run ID, ordered by superstep descending
 func (m *InMemoryCheckpointer) List(ctx context.Context, runID string) ([]*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	m.mu.RLock()
@@ -211,15 +231,20 @@ func (m *InMemoryCheckpointer) List(ctx context.Context, runID string) ([]*Check
 
 // Delete removes all checkpoints for a run ID
 func (m *InMemoryCheckpointer) Delete(ctx context.Context, runID string) error {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if runID == "" {
-		return fmt.Errorf("runID is empty")
+		return ErrEmptyRunID
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if _, exists := m.checkpoints[runID]; !exists {
-		return fmt.Errorf("no checkpoints found for runID %q", runID)
+		return &RunNotFoundError{RunID: runID}
 	}
 
 	delete(m.checkpoints, runID)

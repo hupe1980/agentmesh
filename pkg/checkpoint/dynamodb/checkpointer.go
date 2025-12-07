@@ -118,10 +118,10 @@ func (c *Checkpointer) CreateTable(ctx context.Context) error {
 // Save persists a checkpoint to DynamoDB.
 func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) error {
 	if cp == nil {
-		return fmt.Errorf("checkpoint is nil")
+		return ErrNilCheckpoint
 	}
 	if cp.RunID == "" {
-		return fmt.Errorf("checkpoint RunID is empty")
+		return ErrEmptyRunID
 	}
 
 	// Serialize complex fields to JSON
@@ -175,7 +175,7 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 // Load retrieves the most recent checkpoint for a run ID.
 func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	// Query for all checkpoints with this runID, sorted by superstep descending
@@ -203,7 +203,7 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 // List returns all checkpoints for a run ID, ordered by superstep (newest first).
 func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	result, err := c.client.Query(ctx, &dynamodb.QueryInput{
@@ -234,7 +234,7 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 // Delete removes all checkpoints for a run ID.
 func (c *Checkpointer) Delete(ctx context.Context, runID string) error {
 	if runID == "" {
-		return fmt.Errorf("runID is empty")
+		return ErrEmptyRunID
 	}
 
 	// First, query to get all items to delete
@@ -272,7 +272,7 @@ func (c *Checkpointer) Delete(ctx context.Context, runID string) error {
 // LoadAtSuperstep retrieves a checkpoint at a specific superstep.
 func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	result, err := c.client.GetItem(ctx, &dynamodb.GetItemInput{
@@ -346,7 +346,7 @@ func (c *Checkpointer) ListPendingApprovals(ctx context.Context) ([]*checkpoint.
 	// We need to scan and filter in memory
 	// TODO: Consider adding a GSI with approval status as a top-level attribute for better performance
 
-	return nil, fmt.Errorf("ListPendingApprovals not yet implemented for DynamoDB checkpointer - consider using SQL or InMemory checkpointer")
+	return nil, fmt.Errorf("%w: ListPendingApprovals for DynamoDB checkpointer - consider using SQL or InMemory checkpointer", ErrNotImplemented)
 }
 
 // GetApprovalHistory returns the approval history for a specific run.

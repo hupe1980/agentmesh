@@ -283,7 +283,7 @@ func (tr *TestRunner) waitForCompletion(ctx context.Context, runID string) (map[
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-			return nil, fmt.Errorf("execution timeout")
+			return nil, ErrExecutionTimeout
 		case <-ticker.C:
 			// Check if run is complete
 			tr.server.mu.RLock()

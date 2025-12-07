@@ -93,7 +93,7 @@ func (bus *MessageMessageBus) Send(ctx context.Context, messages []pregel.Messag
 	}
 
 	if bus.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	pipe := bus.client.Pipeline()
@@ -140,7 +140,7 @@ func (bus *MessageMessageBus) Send(ctx context.Context, messages []pregel.Messag
 // Receive retrieves and removes all messages for the given vertex.
 func (bus *MessageMessageBus) Receive(vertex string) ([]pregel.Message[message.Message], error) {
 	if bus.closed {
-		return nil, fmt.Errorf("message bus is closed")
+		return nil, pregel.ErrMessageBusClosed
 	}
 
 	ctx := context.Background()
@@ -187,7 +187,7 @@ func (bus *MessageMessageBus) Receive(vertex string) ([]pregel.Message[message.M
 // Clear removes all messages for the given vertex.
 func (bus *MessageMessageBus) Clear(vertex string) error {
 	if bus.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	ctx := context.Background()
@@ -206,7 +206,7 @@ func (bus *MessageMessageBus) Clear(vertex string) error {
 // Pending returns the vertices that have messages waiting.
 func (bus *MessageMessageBus) Pending() ([]string, error) {
 	if bus.closed {
-		return nil, fmt.Errorf("message bus is closed")
+		return nil, pregel.ErrMessageBusClosed
 	}
 
 	ctx := context.Background()
@@ -221,7 +221,7 @@ func (bus *MessageMessageBus) Pending() ([]string, error) {
 // CleanNamespace removes all keys associated with this bus's namespace.
 func (bus *MessageMessageBus) CleanNamespace() error {
 	if bus.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	ctx := context.Background()
@@ -250,7 +250,7 @@ func (bus *MessageMessageBus) CleanNamespace() error {
 // Stats returns statistics about the message bus state.
 func (bus *MessageMessageBus) Stats() (map[string]int, error) {
 	if bus.closed {
-		return nil, fmt.Errorf("message bus is closed")
+		return nil, pregel.ErrMessageBusClosed
 	}
 
 	ctx := context.Background()

@@ -24,10 +24,10 @@ type Client struct {
 // The skillID identifies which skill/capability of the agent to invoke.
 func NewClient(ctx context.Context, agentCardURL string, skillID string, opts ...a2aclient.FactoryOption) (*Client, error) {
 	if agentCardURL == "" {
-		return nil, fmt.Errorf("agentCardURL cannot be empty")
+		return nil, ErrEmptyAgentCardURL
 	}
 	if skillID == "" {
-		return nil, fmt.Errorf("skillID cannot be empty")
+		return nil, ErrEmptySkillID
 	}
 
 	// Resolve the agent card
@@ -46,7 +46,7 @@ func NewClientFromCard(ctx context.Context, card *a2atypes.AgentCard, skillID st
 		return nil, err
 	}
 	if skillID == "" {
-		return nil, fmt.Errorf("skillID cannot be empty")
+		return nil, ErrEmptySkillID
 	}
 
 	// Create A2A client
@@ -91,7 +91,7 @@ func (c *Client) SendMessage(ctx context.Context, msg message.Message) ([]messag
 		// Extract message from Task
 		a2aMsg := extractMessageFromTask(r)
 		if a2aMsg == nil {
-			return nil, fmt.Errorf("task has no message content (no artifacts, status message, or history)")
+			return nil, ErrNoTaskContent
 		}
 		return ConvertFromA2AMessage(a2aMsg)
 	case *a2atypes.Message:
@@ -167,7 +167,7 @@ func (c *Client) SkillID() string {
 // Handles SystemMessage, HumanMessage, AIMessage, ToolMessage, and FunctionMessage types.
 func ConvertToA2AMessage(msg message.Message) (*a2atypes.Message, error) {
 	if msg == nil {
-		return nil, fmt.Errorf("message cannot be nil")
+		return nil, ErrNilMessage
 	}
 
 	switch m := msg.(type) {
@@ -281,7 +281,7 @@ func extractTextFromParts(parts []message.Part) string {
 // Note: A2A only supports 'user' and 'agent' roles.
 func ConvertFromA2AMessage(a2aMsg *a2atypes.Message) ([]message.Message, error) {
 	if a2aMsg == nil {
-		return nil, fmt.Errorf("a2a message cannot be nil")
+		return nil, ErrNilA2AMessage
 	}
 
 	switch a2aMsg.Role {

@@ -129,7 +129,7 @@ func WithDialect(dialect Dialect) Option {
 //	checkpointer, err := sql.NewCheckpointer(ctx, db, sql.WithTableName("my_checkpoints"))
 func NewCheckpointer(ctx context.Context, db *sql.DB, opts ...Option) (*Checkpointer, error) {
 	if db == nil {
-		return nil, fmt.Errorf("database connection is required")
+		return nil, ErrDatabaseRequired
 	}
 
 	c := &Checkpointer{
@@ -191,10 +191,10 @@ func (c *Checkpointer) createTable(ctx context.Context) error {
 // Save persists a checkpoint to the database.
 func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) error {
 	if cp == nil {
-		return fmt.Errorf("checkpoint is nil")
+		return ErrNilCheckpoint
 	}
 	if cp.RunID == "" {
-		return fmt.Errorf("checkpoint RunID is empty")
+		return ErrEmptyRunID
 	}
 
 	// Serialize complex fields to JSON
@@ -257,7 +257,7 @@ func (c *Checkpointer) Save(ctx context.Context, cp *checkpoint.Checkpoint) erro
 // Load retrieves the most recent checkpoint for a run ID.
 func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	//nolint:gosec // Table name is sanitized, placeholders used for values
@@ -317,7 +317,7 @@ func (c *Checkpointer) Load(ctx context.Context, runID string) (*checkpoint.Chec
 // List returns all checkpoints for a run ID, ordered by superstep (newest first).
 func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	//nolint:gosec // Table name is sanitized, placeholders used for values
@@ -389,7 +389,7 @@ func (c *Checkpointer) List(ctx context.Context, runID string) ([]*checkpoint.Ch
 // Delete removes all checkpoints for a run ID.
 func (c *Checkpointer) Delete(ctx context.Context, runID string) error {
 	if runID == "" {
-		return fmt.Errorf("runID is empty")
+		return ErrEmptyRunID
 	}
 
 	//nolint:gosec // Table name is sanitized, placeholders used for values
@@ -417,7 +417,7 @@ func (c *Checkpointer) Delete(ctx context.Context, runID string) error {
 // LoadAtSuperstep retrieves a checkpoint at a specific superstep.
 func (c *Checkpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*checkpoint.Checkpoint, error) {
 	if runID == "" {
-		return nil, fmt.Errorf("runID is empty")
+		return nil, ErrEmptyRunID
 	}
 
 	//nolint:gosec // Table name is sanitized, placeholders used for values

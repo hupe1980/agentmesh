@@ -220,7 +220,7 @@ func (t *Tool) Call(ctx context.Context, argsJSON string) (any, error) {
 	// Parse command into args
 	cmdParts := strings.Fields(args.Command)
 	if len(cmdParts) == 0 {
-		return nil, fmt.Errorf("docker/tool: empty command")
+		return nil, ErrEmptyCommand
 	}
 
 	result, err := t.runner.Run(ctx, Config{

@@ -243,7 +243,7 @@ func (m *Model) getSupportedModalities(hasVision bool) []string {
 func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		if req == nil || len(req.Messages) == 0 {
-			yield(nil, fmt.Errorf("generate requires at least one message"))
+			yield(nil, ErrNoMessages)
 			return
 		}
 
@@ -354,7 +354,7 @@ func (m *Model) streamGenerate(
 	}
 
 	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-		yield(nil, fmt.Errorf("gemini response contained no content"))
+		yield(nil, ErrNoContent)
 		return
 	}
 
@@ -387,7 +387,7 @@ func (m *Model) blockingGenerate(
 	}
 
 	if len(resp.Candidates) == 0 {
-		yield(nil, fmt.Errorf("gemini response contained no candidates"))
+		yield(nil, ErrNoCandidates)
 		return
 	}
 
@@ -400,7 +400,7 @@ func (m *Model) blockingGenerate(
 	}
 
 	if candidate.Content == nil {
-		yield(nil, fmt.Errorf("gemini response contained no content"))
+		yield(nil, ErrNoContent)
 		return
 	}
 
@@ -442,7 +442,7 @@ func (m *Model) blockingGenerate(
 	}
 
 	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-		yield(nil, fmt.Errorf("gemini response contained no content"))
+		yield(nil, ErrNoContent)
 		return
 	}
 

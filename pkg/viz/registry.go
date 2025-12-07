@@ -1,14 +1,13 @@
 package viz
 
 import (
-	"fmt"
 	"sync"
 )
 
 // Registry manages registered graphs for visualization.
 // It provides thread-safe storage and retrieval of viz.Runnable instances.
 type Registry struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	runnables map[string]Runnable
 }
 
@@ -26,7 +25,7 @@ func (r *Registry) Register(id string, runnable Runnable) error {
 	defer r.mu.Unlock()
 
 	if _, exists := r.runnables[id]; exists {
-		return fmt.Errorf("runnable already registered: %s", id)
+		return &RunnableAlreadyRegisteredError{ID: id}
 	}
 
 	r.runnables[id] = runnable
@@ -41,7 +40,7 @@ func (r *Registry) Get(id string) (Runnable, error) {
 
 	runnable, exists := r.runnables[id]
 	if !exists {
-		return nil, fmt.Errorf("runnable not found: %s", id)
+		return nil, &RunnableNotFoundError{ID: id}
 	}
 
 	return runnable, nil
@@ -67,7 +66,7 @@ func (r *Registry) Unregister(id string) error {
 	defer r.mu.Unlock()
 
 	if _, exists := r.runnables[id]; !exists {
-		return fmt.Errorf("runnable not found: %s", id)
+		return &RunnableNotFoundError{ID: id}
 	}
 
 	delete(r.runnables, id)

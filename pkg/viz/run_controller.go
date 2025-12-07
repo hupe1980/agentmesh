@@ -2,7 +2,6 @@ package viz
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -30,9 +29,6 @@ const (
 	StatusFailed    RunStatus = "failed"    // Run failed with an error
 	StatusCanceled  RunStatus = "canceled"  // Run was canceled by user
 )
-
-// ErrInvalidState is returned when an operation is invalid for the current state.
-var ErrInvalidState = fmt.Errorf("invalid state for operation")
 
 // NewRunController creates a new run controller.
 func NewRunController(runID string, runnable Runnable) *RunController {

@@ -69,7 +69,7 @@ func (e *AES256GCMEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
 func (e *AES256GCMEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
 	nonceSize := e.gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+		return nil, ErrCiphertextTooShort
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
@@ -95,7 +95,7 @@ type EncryptedCheckpointer struct {
 // NewEncryptedCheckpointer creates an encrypted checkpointer with the given encryptor
 func NewEncryptedCheckpointer(base Checkpointer, encryptor Encryptor) (*EncryptedCheckpointer, error) {
 	if encryptor == nil {
-		return nil, fmt.Errorf("encryptor is required")
+		return nil, ErrEncryptorRequired
 	}
 
 	return &EncryptedCheckpointer{
@@ -108,6 +108,11 @@ func NewEncryptedCheckpointer(base Checkpointer, encryptor Encryptor) (*Encrypte
 // The checkpoint data is serialized, encrypted using the configured encryptor,
 // and stored with the encryption algorithm metadata.
 func (ec *EncryptedCheckpointer) Save(ctx context.Context, checkpoint *Checkpoint) error {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Serialize checkpoint
 	data, err := json.Marshal(checkpoint)
 	if err != nil {
@@ -139,6 +144,11 @@ func (ec *EncryptedCheckpointer) Save(ctx context.Context, checkpoint *Checkpoin
 // It loads the encrypted checkpoint, verifies the algorithm matches,
 // and decrypts the data using the configured encryptor.
 func (ec *EncryptedCheckpointer) Load(ctx context.Context, runID string) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Load potentially encrypted checkpoint
 	encryptedCP, err := ec.base.Load(ctx, runID)
 	if err != nil {
@@ -161,7 +171,7 @@ func (ec *EncryptedCheckpointer) Load(ctx context.Context, runID string) (*Check
 	// Decode base64 payload
 	payloadStr, ok := encryptedCP.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("encrypted checkpoint missing payload")
+		return nil, ErrMissingPayload
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)
@@ -199,6 +209,11 @@ func (ec *EncryptedCheckpointer) Delete(ctx context.Context, runID string) error
 // It loads the encrypted checkpoint, verifies the algorithm matches,
 // and decrypts the data using the configured encryptor.
 func (ec *EncryptedCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	cp, err := ec.base.LoadAtSuperstep(ctx, runID, superstep)
 	if err != nil {
 		return nil, err
@@ -219,7 +234,7 @@ func (ec *EncryptedCheckpointer) LoadAtSuperstep(ctx context.Context, runID stri
 	// Decrypt if needed (reuse Load logic)
 	payloadStr, ok := cp.Metadata["payload"].(string)
 	if !ok {
-		return nil, fmt.Errorf("encrypted checkpoint missing payload")
+		return nil, ErrMissingPayload
 	}
 
 	encryptedData, err := base64.StdEncoding.DecodeString(payloadStr)
@@ -279,7 +294,7 @@ type MultiKeyCheckpointer struct {
 // NewMultiKeyCheckpointer creates a checkpointer that supports key rotation
 func NewMultiKeyCheckpointer(base Checkpointer, currentKey []byte, oldKeys ...[]byte) (*MultiKeyCheckpointer, error) {
 	if len(currentKey) != 32 {
-		return nil, fmt.Errorf("current key must be 32 bytes for AES-256")
+		return nil, ErrInvalidKeySize
 	}
 
 	for i, key := range oldKeys {
@@ -298,6 +313,11 @@ func NewMultiKeyCheckpointer(base Checkpointer, currentKey []byte, oldKeys ...[]
 // Save encrypts and saves a checkpoint using the primary (current) key.
 // The checkpoint is always encrypted with the first key in the keys list.
 func (mkc *MultiKeyCheckpointer) Save(ctx context.Context, checkpoint *Checkpoint) error {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Always save with current key
 	encryptor, err := NewAES256GCMEncryptor(mkc.currentKey)
 	if err != nil {
@@ -314,6 +334,11 @@ func (mkc *MultiKeyCheckpointer) Save(ctx context.Context, checkpoint *Checkpoin
 // It first tries the current key, then falls back to old keys.
 // Returns the first successfully decrypted checkpoint or an error if all keys fail.
 func (mkc *MultiKeyCheckpointer) Load(ctx context.Context, runID string) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Try current key first
 	cp, err := mkc.tryDecrypt(ctx, runID, mkc.currentKey)
 	if err == nil {
@@ -348,6 +373,11 @@ func (mkc *MultiKeyCheckpointer) Delete(ctx context.Context, runID string) error
 // LoadAtSuperstep attempts to decrypt a checkpoint at a specific superstep by trying each key in order.
 // Returns the first successfully decrypted checkpoint or an error if all keys fail.
 func (mkc *MultiKeyCheckpointer) LoadAtSuperstep(ctx context.Context, runID string, superstep int64) (*Checkpoint, error) {
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Try current key first
 	cp, err := mkc.tryDecryptAtSuperstep(ctx, runID, superstep, mkc.currentKey)
 	if err == nil {

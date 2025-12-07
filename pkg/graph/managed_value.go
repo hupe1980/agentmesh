@@ -2,9 +2,7 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -387,7 +385,12 @@ func (r *managedValueRegistry) ensureAndRehydrate(ctx context.Context, descripto
 		return nil
 	}
 	if r == nil {
-		return fmt.Errorf("graph: checkpoint requires managed values %s; provide them via graph.WithManagedValues when resuming", descriptorList(descriptors))
+		names := make([]string, len(descriptors))
+		for i, d := range descriptors {
+			names[i] = d.Name
+		}
+		sort.Strings(names)
+		return &ManagedValueError{MissingValues: names, IsRequired: false}
 	}
 
 	var missing []string
@@ -401,23 +404,14 @@ func (r *managedValueRegistry) ensureAndRehydrate(ctx context.Context, descripto
 		}
 
 		if err := mv.Rehydrate(ctx); err != nil {
-			return fmt.Errorf("graph: failed to rehydrate managed value %q: %w", desc.Name, err)
+			return &RehydrateError{Name: desc.Name, Cause: err}
 		}
 	}
 
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return fmt.Errorf("graph: missing required managed values: %s. Provide them via graph.WithManagedValues when resuming", strings.Join(missing, ", "))
+		return &ManagedValueError{MissingValues: missing, IsRequired: true}
 	}
 
 	return nil
-}
-
-func descriptorList(descriptors []checkpoint.ManagedValueDescriptor) string {
-	names := make([]string, len(descriptors))
-	for i, d := range descriptors {
-		names[i] = d.Name
-	}
-	sort.Strings(names)
-	return strings.Join(names, ", ")
 }

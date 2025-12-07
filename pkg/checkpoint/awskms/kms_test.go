@@ -115,7 +115,7 @@ func TestNewKMSCheckpointer(t *testing.T) {
 			kmsClient: mockKMS,
 			keyID:     "",
 			wantErr:   true,
-			errMsg:    "kms key ID is required",
+			errMsg:    "key ID is required",
 		},
 		{
 			name:      "nil KMS client",
@@ -123,7 +123,7 @@ func TestNewKMSCheckpointer(t *testing.T) {
 			kmsClient: nil,
 			keyID:     "test-key-id",
 			wantErr:   true,
-			errMsg:    "kms client is required",
+			errMsg:    "client is required",
 		},
 	}
 

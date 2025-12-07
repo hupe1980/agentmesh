@@ -116,13 +116,13 @@ func NewOutputSchema[T any](name string, schema T, optFns ...func(*OutputSchemaO
 
 	// Validate minimal keys
 	if _, ok := finalSchema["type"]; !ok {
-		return OutputSchema{}, fmt.Errorf("output schema missing 'type'")
+		return OutputSchema{}, ErrMissingType
 	}
 	if _, ok := finalSchema["properties"]; !ok {
-		return OutputSchema{}, fmt.Errorf("output schema missing 'properties'")
+		return OutputSchema{}, ErrMissingProperties
 	}
 	if _, ok := finalSchema["required"]; !ok {
-		return OutputSchema{}, fmt.Errorf("output schema missing 'required'")
+		return OutputSchema{}, ErrMissingRequired
 	}
 
 	return OutputSchema{
@@ -178,7 +178,7 @@ func LastStructured[T any](iter iter.Seq2[message.Message, error]) (*T, error) {
 	}
 
 	if lastMsg == nil {
-		return nil, fmt.Errorf("no messages returned")
+		return nil, ErrNoMessages
 	}
 
 	// Use Stringify to extract text content from message parts

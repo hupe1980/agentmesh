@@ -4,7 +4,6 @@ package quota
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -231,17 +230,17 @@ func defaultMemoryCheck() uint64 {
 func defaultMemoryAction(usage, limit any) error {
 	usageBytes := usage.(uint64)
 	limitBytes := limit.(uint64)
-	return fmt.Errorf("memory quota exceeded: using %d bytes, limit %d bytes", usageBytes, limitBytes)
+	return &MemoryQuotaExceededError{UsageBytes: usageBytes, LimitBytes: limitBytes}
 }
 
 func defaultGoroutineAction(usage, limit any) error {
 	usageCount := usage.(int)
 	limitCount := limit.(int)
-	return fmt.Errorf("goroutine quota exceeded: %d active, limit %d", usageCount, limitCount)
+	return &GoroutineQuotaExceededError{ActiveCount: usageCount, LimitCount: limitCount}
 }
 
 func defaultTimeAction(usage, limit any) error {
 	elapsed := usage.(time.Duration)
 	maxTime := limit.(time.Duration)
-	return fmt.Errorf("quota: execution time exceeded: %v (limit: %v)", elapsed, maxTime)
+	return &ExecutionTimeExceededError{Elapsed: elapsed, MaxTime: maxTime}
 }

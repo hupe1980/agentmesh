@@ -27,4 +27,10 @@ var (
 
 	// ErrMailboxFull indicates a vertex's mailbox has reached its maximum size
 	ErrMailboxFull = errors.New("pregel: mailbox full - message limit exceeded")
+
+	// ErrMessageBusClosed indicates that the message bus has been closed
+	ErrMessageBusClosed = errors.New("pregel: message bus is closed")
+
+	// ErrTLSRequired indicates TLS is required for authenticated connections
+	ErrTLSRequired = errors.New("pregel: TLS required when using password authentication")
 )

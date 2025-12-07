@@ -27,7 +27,7 @@ func extractUserQuery(messages []message.Message) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("agent/rag: no user query found")
+	return "", ErrNoUserQuery
 }
 
 // extractDocumentContent converts retrieval documents to string slices.
@@ -44,7 +44,7 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("agent/rag: no query messages"))
+			return graph.Fail(ErrNoQueryMessages)
 		}
 
 		query, err := extractUserQuery(msgs)
@@ -66,7 +66,7 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
-			return graph.Fail(fmt.Errorf("agent/rag: no messages in state"))
+			return graph.Fail(ErrNoMessagesInState)
 		}
 
 		docs := graph.Get(view, DocumentsKey)

@@ -382,7 +382,7 @@ func extractTextFromParts(partsData any) string {
 func deserializeMessage(meta vectorstore.Metadata) (message.Message, error) {
 	msgData, ok := meta[metaKeyMessageData].(string)
 	if !ok {
-		return nil, fmt.Errorf("missing message data")
+		return nil, ErrMissingMessageData
 	}
 
 	var data map[string]any
@@ -392,7 +392,7 @@ func deserializeMessage(meta vectorstore.Metadata) (message.Message, error) {
 
 	msgType, ok := data["type"].(string)
 	if !ok {
-		return nil, fmt.Errorf("missing message type")
+		return nil, ErrMissingMessageType
 	}
 
 	// Extract text from parts

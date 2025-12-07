@@ -131,7 +131,7 @@ func (m *Model) Capabilities() model.Capabilities {
 func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		if req == nil || len(req.Messages) == 0 {
-			yield(nil, fmt.Errorf("langchaingo: generate requires at least one message"))
+			yield(nil, ErrNoMessages)
 			return
 		}
 

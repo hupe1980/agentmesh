@@ -196,7 +196,7 @@ func (m *Model) getSupportedModalities(hasVision bool) []string {
 func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		if req == nil || len(req.Messages) == 0 {
-			yield(nil, fmt.Errorf("generate requires at least one message"))
+			yield(nil, ErrNoMessages)
 			return
 		}
 
@@ -493,7 +493,7 @@ func convertAnthropicResponseToMessage(resp *anthropic.Message) (message.Message
 	}
 
 	if len(textParts) == 0 && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("anthropic response contained no content")
+		return nil, ErrNoContent
 	}
 
 	return aiMsg, nil

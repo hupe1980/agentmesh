@@ -165,7 +165,7 @@ func NewMessageBus[M any](addr, password string, db int, opts *Options) (*Messag
 	// SECURITY: Require TLS when using password authentication
 	// This prevents credential theft and network eavesdropping in production
 	if password != "" && opts.TLSConfig == nil {
-		return nil, fmt.Errorf("pregel/redis: TLS required when using password authentication (set Options.TLSConfig)")
+		return nil, fmt.Errorf("redis: %w (set Options.TLSConfig)", pregel.ErrTLSRequired)
 	}
 
 	// Set defaults
@@ -229,7 +229,7 @@ func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[
 	}
 
 	if store.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	// Group messages by target vertex to minimize Redis operations
@@ -281,7 +281,7 @@ func (store *MessageBus[M]) Send(ctx context.Context, messages []pregel.Message[
 // Uses RPOP in a loop to drain the mailbox efficiently.
 func (store *MessageBus[M]) Receive(ctx context.Context, vertex string) ([]pregel.Message[M], error) {
 	if store.closed {
-		return nil, fmt.Errorf("message bus is closed")
+		return nil, pregel.ErrMessageBusClosed
 	}
 	mailboxKey := store.mailboxKey(vertex)
 
@@ -322,7 +322,7 @@ func (store *MessageBus[M]) Receive(ctx context.Context, vertex string) ([]prege
 // Deletes the mailbox key.
 func (store *MessageBus[M]) Clear(ctx context.Context, vertex string) error {
 	if store.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	// Delete mailbox key
@@ -355,7 +355,7 @@ func (store *MessageBus[M]) Ping(ctx context.Context) error {
 // WARNING: This deletes all data for the namespace!
 func (store *MessageBus[M]) CleanNamespace(ctx context.Context) error {
 	if store.closed {
-		return fmt.Errorf("message bus is closed")
+		return pregel.ErrMessageBusClosed
 	}
 
 	// Find all mailbox keys for this namespace
@@ -393,7 +393,7 @@ func (store *MessageBus[M]) CleanNamespace(ctx context.Context) error {
 // Note: This operation is expensive as it scans all mailbox keys.
 func (store *MessageBus[M]) Stats(ctx context.Context) (pregel.MessageStoreStats, error) {
 	if store.closed {
-		return pregel.MessageStoreStats{}, fmt.Errorf("message bus is closed")
+		return pregel.MessageStoreStats{}, pregel.ErrMessageBusClosed
 	}
 
 	stats := pregel.MessageStoreStats{}

@@ -3,7 +3,6 @@ package viz
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"math"
 	"reflect"
 	"sort"
@@ -58,7 +57,7 @@ func NewStateDiffer() *StateDiffer {
 // This is the primary method for visualizing state changes over time.
 func (sd *StateDiffer) ComputeDiff(from, to *checkpoint.Checkpoint) (*CheckpointDiff, error) {
 	if from == nil || to == nil {
-		return nil, fmt.Errorf("cannot compute diff: nil checkpoint provided")
+		return nil, ErrNilCheckpoint
 	}
 
 	diff := &CheckpointDiff{

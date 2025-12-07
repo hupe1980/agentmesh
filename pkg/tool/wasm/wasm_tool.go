@@ -263,7 +263,7 @@ func (w *WASMTool) Call(ctx context.Context, argsJSON string) (any, error) {
 	resultLen := uint32(lenResults[0]) // #nosec G115 - WASM length values are 32-bit
 
 	if resultLen == 0 {
-		return nil, fmt.Errorf("wasm returned empty result")
+		return nil, ErrEmptyResult
 	}
 
 	resultJSON, err := w.readString(mod, resultPtr, resultLen)

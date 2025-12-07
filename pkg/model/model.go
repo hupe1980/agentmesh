@@ -322,7 +322,7 @@ func LastStructured[T any](seq iter.Seq2[*Response, error]) (*T, error) {
 	}
 
 	if lastResp == nil || lastResp.Message == nil {
-		return nil, fmt.Errorf("no response returned")
+		return nil, ErrNoResponse
 	}
 
 	// Use Stringify to extract text content from message parts

@@ -159,6 +159,11 @@ func (store *InMemoryMessageBus[M]) Send(ctx context.Context, messages []Message
 		return nil
 	}
 
+	// Early context check to fail fast if already cancelled
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	for _, msg := range messages {
 		if msg.To == "" {
 			continue
@@ -193,7 +198,7 @@ func (store *InMemoryMessageBus[M]) checkClosed() error {
 	store.globalMu.Unlock()
 
 	if closed {
-		return fmt.Errorf("message bus is closed")
+		return ErrMessageBusClosed
 	}
 	return nil
 }

@@ -53,14 +53,14 @@ func NewSetModelResponseTool(outputSchema any) (*SetModelResponseTool, error) {
 
 	switch s := outputSchema.(type) {
 	case nil:
-		return nil, fmt.Errorf("tool/set_model_response: nil output schema")
+		return nil, ErrNilOutputSchema
 	case map[string]any:
 		schemaMap = maps.Clone(s)
 	case schema.OutputSchema:
 		schemaMap = maps.Clone(s.Schema)
 	case *schema.OutputSchema:
 		if s == nil {
-			return nil, fmt.Errorf("tool/set_model_response: nil output schema pointer")
+			return nil, ErrNilOutputSchemaPointer
 		}
 		schemaMap = maps.Clone(s.Schema)
 	default:

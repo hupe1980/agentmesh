@@ -120,7 +120,7 @@ func HandoffToAgent(
 			result, err := executeHandoff(ctx, agentGraph, args, config)
 			if err == nil {
 				if config.ValidateResults && !isValidResult(result) {
-					lastErr = fmt.Errorf("tool/handoff: agent returned invalid result")
+					lastErr = ErrInvalidAgentResult
 					continue
 				}
 				return result, nil
@@ -164,7 +164,7 @@ func executeHandoff(
 	}
 
 	if lastMsg == nil {
-		return "", fmt.Errorf("tool/handoff: agent produced no messages")
+		return "", ErrNoAgentMessages
 	}
 
 	// Extract text from the last message

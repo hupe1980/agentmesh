@@ -145,12 +145,12 @@ func (cl *CheckpointLoader) NavigateCheckpoint(ctx context.Context, runID string
 	case "prev", "backward":
 		targetIdx = currentIdx - 1
 		if targetIdx < 0 {
-			return nil, fmt.Errorf("already at first checkpoint")
+			return nil, ErrFirstCheckpoint
 		}
 	case "next", "forward":
 		targetIdx = currentIdx + 1
 		if targetIdx >= len(timeline) {
-			return nil, fmt.Errorf("already at last checkpoint")
+			return nil, ErrLastCheckpoint
 		}
 	default:
 		return nil, fmt.Errorf("invalid direction: %s (use 'prev' or 'next')", direction)
