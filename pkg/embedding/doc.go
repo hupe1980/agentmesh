@@ -61,5 +61,5 @@
 //
 //   - pkg/retrieval: Document retrieval for RAG workflows
 //   - pkg/agent: RAG agent patterns using embeddings
-//   - examples/openai_embedder: Complete embedding examples
+//   - examples/semantic_caching: Complete embedding examples
 package embedding

@@ -38,8 +38,6 @@
 
 - group: Observability
   items:
-    - label: Callbacks
-      href: /callbacks/
     - label: Middleware
       href: /middleware/
     - label: Observability

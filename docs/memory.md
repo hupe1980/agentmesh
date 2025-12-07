@@ -70,7 +70,7 @@ mem := memory.NewVectorMemory(embedder)
 ### Storing Messages
 
 ```go
-import "github.com/hupe/Workspaces/hupe1980/agentmesh/pkg/message"
+import "github.com/hupe1980/agentmesh/pkg/message"
 
 sessionID := "user-123-session-456"
 
@@ -95,7 +95,7 @@ recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
 })
 
 for _, msg := range recalled {
-    fmt.Printf("[%.2f] %s\n", msg.Score, message.Stringify(msg.Message))
+    fmt.Printf("%s\n", message.Stringify(msg))
 }
 ```
 
@@ -109,12 +109,13 @@ for _, msg := range recalled {
 ### Advanced Filtering
 
 ```go
+last24h := time.Now().Add(-24 * time.Hour)
 recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
-    Query: "pricing information",
-    K:     10,
-    MinScore: 0.7,  // Only messages with similarity > 0.7
-    Since: time.Now().Add(-24 * time.Hour),  // Last 24 hours
-    MessageTypes: []string{"ai"},  // Only AI responses
+    Query:    "pricing information",
+    K:        10,
+    MinScore: 0.7,              // Only messages with similarity > 0.7
+    After:    &last24h,         // Only messages after this time
+    Types:    []message.Type{message.TypeAI},  // Only AI responses
 })
 ```
 
@@ -158,8 +159,9 @@ recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
 })
 
 // Recall with time filter
+lastHour := time.Now().Add(-1 * time.Hour)
 recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
-    Since: time.Now().Add(-1 * time.Hour),
+    After: &lastHour,
 })
 ```
 
@@ -287,10 +289,11 @@ func getRecommendations(ctx context.Context, userID string) ([]string, error) {
     sessionID := fmt.Sprintf("user-%s", userID)
     
     // Recall mentions of preferences
+    last30Days := time.Now().Add(-30 * 24 * time.Hour)
     prefs, err := memory.Recall(ctx, sessionID, memory.RecallFilter{
         Query: "I like, I prefer, my favorite",
         K:     10,
-        Since: time.Now().Add(-30 * 24 * time.Hour), // Last 30 days
+        After: &last30Days,
     })
     
     // Extract preferences
@@ -359,8 +362,9 @@ Periodically summarize old messages to save storage:
 ```go
 func summarizeOldMessages(ctx context.Context, sessionID string) error {
     // Get messages older than 7 days
+    sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour)
     old, err := memory.Recall(ctx, sessionID, memory.RecallFilter{
-        Before: time.Now().Add(-7 * 24 * time.Hour),
+        Before: &sevenDaysAgo,
         K:      1000,
     })
     
@@ -527,7 +531,7 @@ Recall() with query:
 
 ## Examples
 
-See the [openai_embedder example](https://github.com/hupe1980/agentmesh/tree/main/examples/openai_embedder) for memory integration.
+See the [conversational_agent example](https://github.com/hupe1980/agentmesh/tree/main/examples/conversational_agent) for memory integration.
 
 ---
 

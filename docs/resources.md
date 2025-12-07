@@ -56,7 +56,7 @@ The repository includes **18 comprehensive examples** demonstrating core feature
 - **`guardrails`** – Content filtering, PII protection with custom middleware
 
 ### Embeddings & RAG
-- **`openai_embedder`** – Text embeddings for semantic search and RAG workflows
+- **`semantic_caching`** – Text embeddings for semantic search and RAG workflows
 
 Browse all examples: [github.com/hupe1980/agentmesh/tree/main/examples](https://github.com/hupe1980/agentmesh/tree/main/examples)
 

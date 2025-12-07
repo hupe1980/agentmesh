@@ -65,12 +65,14 @@ embedder := openai.NewEmbedder(func(o *openai.Options) {
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Store documents
-vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("Python is a programming language"))
-vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("JavaScript runs in browsers"))
-vectorMem.Add(ctx, "session1", message.NewHumanMessageFromText("Dogs are popular pets"))
+vectorMem.Store(ctx, "session1", []message.Message{
+    message.NewHumanMessageFromText("Python is a programming language"),
+    message.NewHumanMessageFromText("JavaScript runs in browsers"),
+    message.NewHumanMessageFromText("Dogs are popular pets"),
+})
 
 // Semantic search - finds Python document even though query uses different words
-results, _ := vectorMem.Recall(ctx, "session1", &memory.RecallFilter{
+results, _ := vectorMem.Recall(ctx, "session1", memory.RecallFilter{
     Query: "coding language",
     K:     2,
 })
@@ -116,9 +118,11 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Load knowledge base
-vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("AgentMesh uses Pregel BSP for graph execution"))
-vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("Checkpointing enables time-travel debugging"))
-vectorMem.Add(ctx, "kb", message.NewHumanMessageFromText("Tools allow agents to call external APIs"))
+vectorMem.Store(ctx, "kb", []message.Message{
+    message.NewHumanMessageFromText("AgentMesh uses Pregel BSP for graph execution"),
+    message.NewHumanMessageFromText("Checkpointing enables time-travel debugging"),
+    message.NewHumanMessageFromText("Tools allow agents to call external APIs"),
+})
 
 // Create retriever
 retriever := &memoryRetriever{memory: vectorMem, sessionID: "kb"}
@@ -207,8 +211,8 @@ func TestVectorMemory(t *testing.T) {
     mem := memory.NewVectorMemory(embedder)
     
     // Test without OpenAI API
-    mem.Add(ctx, "test", message.NewHumanMessageFromText("hello"))
-    results, err := mem.Recall(ctx, "test", &memory.RecallFilter{
+    mem.Store(ctx, "test", []message.Message{message.NewHumanMessageFromText("hello")})
+    results, err := mem.Recall(ctx, "test", memory.RecallFilter{
         Query: "hello",
         K:     1,
     })
@@ -299,12 +303,16 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Store multi-session conversations
-vectorMem.Add(ctx, "user123", message.NewHumanMessageFromText("I love Python"))
-vectorMem.Add(ctx, "user123", message.NewAIMessageFromText("Python is great for data science!"))
-vectorMem.Add(ctx, "user456", message.NewHumanMessageFromText("JavaScript is my favorite"))
+vectorMem.Store(ctx, "user123", []message.Message{
+    message.NewHumanMessageFromText("I love Python"),
+    message.NewAIMessageFromText("Python is great for data science!"),
+})
+vectorMem.Store(ctx, "user456", []message.Message{
+    message.NewHumanMessageFromText("JavaScript is my favorite"),
+})
 
 // Semantic recall across sessions
-results, err := vectorMem.Recall(ctx, "user123", &memory.RecallFilter{
+results, err := vectorMem.Recall(ctx, "user123", memory.RecallFilter{
     Query:    "programming languages",
     K:        5,
     MinScore: 0.7,  // Only high similarity matches
@@ -316,21 +324,21 @@ results, err := vectorMem.Recall(ctx, "user123", &memory.RecallFilter{
 ```go
 // Time-based filtering
 oneDayAgo := time.Now().Add(-24 * time.Hour)
-results, _ := vectorMem.Recall(ctx, "session", &memory.RecallFilter{
+results, _ := vectorMem.Recall(ctx, "session", memory.RecallFilter{
     Query: "recent updates",
     K:     10,
     After: &oneDayAgo,  // Only messages after yesterday
 })
 
 // Message type filtering
-results, _ := vectorMem.Recall(ctx, "session", &memory.RecallFilter{
+results, _ := vectorMem.Recall(ctx, "session", memory.RecallFilter{
     Query: "user questions",
     K:     10,
     Types: []message.Type{message.TypeHuman},  // Only user messages
 })
 
 // Metadata filtering
-results, _ := vectorMem.Recall(ctx, "session", &memory.RecallFilter{
+results, _ := vectorMem.Recall(ctx, "session", memory.RecallFilter{
     Query: "important notes",
     K:     10,
     Metadata: map[string]string{
@@ -348,8 +356,10 @@ embedder := openai.NewEmbedder()
 vectorMem := memory.NewVectorMemory(embedder)
 
 // Load historical context
-vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("My project uses TypeScript"))
-vectorMem.Add(ctx, "user", message.NewHumanMessageFromText("I prefer functional programming"))
+vectorMem.Store(ctx, "user", []message.Message{
+    message.NewHumanMessageFromText("My project uses TypeScript"),
+    message.NewHumanMessageFromText("I prefer functional programming"),
+})
 
 // Create agent
 agent, _ := agent.NewReAct(model,
@@ -357,7 +367,7 @@ agent, _ := agent.NewReAct(model,
 )
 
 // Before each request, recall relevant history
-history, _ := vectorMem.Recall(ctx, "user", &memory.RecallFilter{
+history, _ := vectorMem.Recall(ctx, "user", memory.RecallFilter{
     Query: currentUserMessage,
     K:     3,
 })
@@ -575,8 +585,8 @@ func TestSemanticSearch(t *testing.T) {
     mem := memory.NewVectorMemory(embedder)
     
     // Test logic without OpenAI dependency
-    mem.Add(ctx, "test", message.NewHumanMessageFromText("test message"))
-    results, err := mem.Recall(ctx, "test", &memory.RecallFilter{
+    mem.Store(ctx, "test", []message.Message{message.NewHumanMessageFromText("test message")})
+    results, err := mem.Recall(ctx, "test", memory.RecallFilter{
         Query: "test",
         K:     1,
     })

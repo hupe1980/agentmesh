@@ -100,4 +100,4 @@ result, _ := graph.Last(reactAgent.Run(ctx, []message.Message{
 - [pkg/agent](../../pkg/agent) - Agent implementations
 - [pkg/tool](../../pkg/tool) - Tool creation and integration
 - [examples/mcp_tools](../mcp_tools) - Model Context Protocol integration
-- [examples/callback_integration](../callback_integration) - Advanced callback patterns
+- [examples/custom_observability](../custom_observability) - Advanced callback patterns

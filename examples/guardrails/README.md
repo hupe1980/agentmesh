@@ -153,6 +153,6 @@ fmt.Printf("Hit Rate: %.1f%%\n", cacheStats.HitRate*100)
 ```
 
 ## Related Resources
-- [pkg/callbacks/plugins](../../pkg/callbacks/plugins) - Built-in plugins
-- [examples/circuit_breaker](../circuit_breaker) - Resilience plugins
-- [examples/callback_integration](../callback_integration) - Plugin basics
+- [Middleware Documentation](/middleware/) - Middleware system guide
+- [examples/circuit_breaker](../circuit_breaker) - Resilience middleware
+- [examples/custom_observability](../custom_observability) - Event handling and observability

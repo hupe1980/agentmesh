@@ -60,32 +60,31 @@ Call #7: Success! Circuit closed ✓
 
 ## Implementation
 
-### Plugin Configuration
+### Middleware Configuration
 ```go
 import (
-    "github.com/hupe1980/agentmesh/pkg/callbacks"
-    "github.com/hupe1980/agentmesh/pkg/callbacks/plugins"
+    "github.com/hupe1980/agentmesh/pkg/tool"
+    toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
 )
 
-// Create circuit breaker plugin
-cb := plugin.NewCircuitBreakerPlugin(
-    3,              // maxFailures before opening
-    5*time.Second,  // resetTimeout before half-open
-    1,              // halfOpenLimit (requests in half-open)
-)
+// Create circuit breaker middleware:
+// - Opens after 3 failures
+// - Waits 30 seconds before transitioning to half-open
+cb := toolmw.NewCircuitBreakerMiddleware(3, 30*time.Second)
 
-// Register with plugin manager
-pm := callbacks.NewPluginManager()
-pm.Register(cb)
+// Create tool executor with circuit breaker
+registry := map[string]tool.Tool{"my_tool": myTool}
+baseExecutor := tool.NewSequentialExecutor(registry)
+executor := tool.Chain(baseExecutor, cb)
 ```
 
-### Integration
+### Integration with Agent
 ```go
-// Callbacks are automatically injected via context
+// Create ReAct agent with circuit breaker middleware
 reactAgent, _ := agent.NewReAct(
     model,
     agent.WithTools(tools...),
-    agent.WithPluginManager(pm),
+    agent.WithToolMiddleware(cb),
 )
 ```
 
@@ -105,6 +104,6 @@ cb.Reset()
 - **External Service Failures**: Graceful degradation
 
 ## Related Resources
-- [pkg/callbacks/plugins](../../pkg/callbacks/plugins) - Built-in plugins
-- [examples/guardrails](../guardrails) - Security plugins
-- [examples/callback_integration](../callback_integration) - Plugin composition
+- [Middleware Documentation](/middleware/) - Middleware system guide
+- [examples/guardrails](../guardrails) - Security middleware
+- [examples/custom_observability](../custom_observability) - Event handling and observability
