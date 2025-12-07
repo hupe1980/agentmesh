@@ -4,7 +4,7 @@
 //
 // The embedding package defines the Embedder interface for text-to-vector conversion,
 // enabling semantic search, similarity matching, and RAG (Retrieval-Augmented Generation)
-// workflows in agent systems.
+// workflows in agent systems. It also provides similarity functions for comparing vectors.
 //
 // # Available Implementations
 //
@@ -19,8 +19,40 @@
 //	fmt.Printf("Embedding dimensions: %d\n", len(vector))
 //
 //	// Production with OpenAI embeddings
-//	embedder := openai.NewEmbedder(client, openai.WithModel("text-embedding-3-small"))
+//	embedder := openai.NewEmbedder(func(o *openai.Options) {
+//	    o.Model = "text-embedding-3-small"
+//	})
 //	vector, _ := embedder.Embed(ctx, "semantic search query")
+//
+// # Similarity Functions
+//
+// Compare vectors using various distance metrics:
+//
+//	// Cosine similarity (most common for text embeddings)
+//	sim := embedding.CosineSimilarity(vecA, vecB)  // Returns [-1, 1]
+//
+//	// Euclidean distance
+//	dist := embedding.EuclideanDistance(vecA, vecB)  // Returns [0, ∞)
+//
+//	// Generic similarity with configurable metric
+//	sim := embedding.Similarity(vecA, vecB, embedding.Cosine)
+//
+//	// Normalize vectors for dot product similarity
+//	normalized := embedding.Normalize(vec)
+//
+// # Integration with VectorStore
+//
+// Embeddings are typically used with vector stores:
+//
+//	embedder := openai.NewEmbedder()
+//	store := memory.New()
+//	es := vectorstore.NewEmbeddingStore(store, embedder)
+//
+//	// Add texts (embeddings generated automatically)
+//	es.AddTexts(ctx, []string{"doc1", "doc2"}, nil)
+//
+//	// Search by text query
+//	results, _ := es.SearchText(ctx, "query", vectorstore.SearchOptions{K: 10})
 //
 // # Batch Processing
 //
@@ -28,21 +60,7 @@
 //
 //	texts := []string{"doc1", "doc2", "doc3"}
 //	embeddings, _ := embedder.EmbedBatch(ctx, texts)
-//	// Returns [][]float64 with one vector per input text
-//
-// # Integration with RAG
-//
-// Embeddings are typically used in conjunction with retrieval systems:
-//
-//	// 1. Embed documents for indexing
-//	docs := []string{"The sky is blue", "Grass is green"}
-//	docVectors, _ := embedder.EmbedBatch(ctx, docs)
-//
-//	// 2. Embed query for similarity search
-//	queryVector, _ := embedder.Embed(ctx, "What color is the sky?")
-//
-//	// 3. Compute similarity (cosine, dot product, etc.)
-//	similarity := cosineSimilarity(queryVector, docVectors[0])
+//	// Returns []Vector with one vector per input text
 //
 // # Dimension Consistency
 //
@@ -53,13 +71,11 @@
 //
 // # Thread Safety
 //
-// Embedder implementations must be safe for concurrent use. The interface
-// does not prescribe internal locking strategies, but implementations should
-// handle concurrent Embed/EmbedBatch calls safely.
+// Embedder implementations must be safe for concurrent use.
 //
 // # See Also
 //
+//   - pkg/vectorstore: Vector storage and similarity search
 //   - pkg/retrieval: Document retrieval for RAG workflows
-//   - pkg/agent: RAG agent patterns using embeddings
 //   - examples/semantic_caching: Complete embedding examples
 package embedding

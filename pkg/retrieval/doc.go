@@ -8,40 +8,61 @@
 //
 // # Available Implementations
 //
+//   - VectorStoreRetriever: Adapts any VectorStore to the Retriever interface
 //   - MergerRetriever: Combines results from multiple retrievers in parallel
+//   - RerankedRetriever: Wraps a retriever with reranking for improved relevance
 //   - LangChainRetriever: Adapter for langchaingo retrievers (pkg/retrieval/langchaingo)
 //   - AmazonKendraRetriever: AWS Kendra search (pkg/retrieval/amazonkendra)
 //   - AmazonBedrockRetriever: AWS Bedrock agents (pkg/retrieval/amazonbedrock)
 //
-// # Basic Usage
+// # Basic Usage with VectorStore
 //
-//	// Single retriever
-//	retriever := langchaingo.NewRetriever(vectorStore, langchaingo.WithTopK(5))
+//	// Create embedder and vector store
+//	embedder := openai.NewEmbedder()
+//	store := memory.New()
+//	es := vectorstore.NewEmbeddingStore(store, embedder)
+//
+//	// Add documents
+//	es.AddTexts(ctx, []string{"doc1", "doc2", "doc3"}, nil)
+//
+//	// Create retriever from vector store
+//	retriever := retrieval.NewVectorStoreRetriever(store, embedder,
+//	    retrieval.WithK(5),
+//	    retrieval.WithMinScore(0.7),
+//	)
+//
 //	docs, _ := retriever.Retrieve(ctx, "What is AgentMesh?")
-//
 //	for _, doc := range docs {
-//	    fmt.Printf("Score: %.3f\n", doc.Score)
-//	    fmt.Printf("Content: %s\n", doc.PageContent)
-//	    fmt.Printf("Metadata: %v\n", doc.Metadata)
+//	    fmt.Printf("Score: %.3f Content: %s\n", doc.Score, doc.PageContent)
 //	}
+//
+// # Reranking
+//
+// Improve relevance with reranking:
+//
+//	// Boost documents by priority field
+//	reranker := retrieval.NewBoostReranker("priority", map[any]float64{
+//	    "high": 2.0, "medium": 1.0, "low": 0.5,
+//	}, 1.0)
+//
+//	retriever := retrieval.NewRerankedRetriever(baseRetriever, reranker, 10)
 //
 // # Merging Multiple Sources
 //
 // MergerRetriever combines results from multiple retrieval backends:
 //
 //	retrievers := []retrieval.Retriever{
-//	    langchainRetriever,
+//	    vectorStoreRetriever,
 //	    kendraRetriever,
 //	    bedrockRetriever,
 //	}
 //
 //	merger := retrieval.NewMergerRetriever(
 //	    retrievers,
-//	    retrieval.WithMergerMaxParallel(3),       // Run 3 at a time
-//	    retrieval.WithMergerStopOnFirstError(false), // Continue on errors
+//	    retrieval.WithMergerMaxParallel(3),
+//	    retrieval.WithMergerStopOnFirstError(false),
 //	)
 //
-//	// Fetches from all retrievers in parallel
 //	allDocs, _ := merger.Retrieve(ctx, "query")
 //
 // # RAG Integration

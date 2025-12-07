@@ -13,3 +13,11 @@ type Document struct {
 type Retriever interface {
 	Retrieve(ctx context.Context, query string) ([]Document, error)
 }
+
+// RetrieverFunc is a function adapter for Retriever.
+type RetrieverFunc func(ctx context.Context, query string) ([]Document, error)
+
+// Retrieve implements Retriever.
+func (f RetrieverFunc) Retrieve(ctx context.Context, query string) ([]Document, error) {
+	return f(ctx, query)
+}

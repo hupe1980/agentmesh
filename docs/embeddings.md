@@ -384,6 +384,84 @@ for msg, err := range agent.Run(ctx, messages) {
 
 ---
 
+## VectorStore Integration
+
+For document storage and retrieval beyond conversation history, use the `vectorstore` package:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/embedding/openai"
+    "github.com/hupe1980/agentmesh/pkg/vectorstore"
+    vsmemory "github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
+)
+
+// Create embedder and vector store
+embedder := openai.NewEmbedder()
+store := vsmemory.New()
+
+// EmbeddingStore auto-generates embeddings
+es := vectorstore.NewEmbeddingStore(store, embedder)
+
+// Add documents with automatic embedding
+err := es.AddTexts(ctx, []string{
+    "AgentMesh uses Pregel BSP for graph execution",
+    "Checkpointing enables time-travel debugging",
+    "Tools allow agents to call external APIs",
+}, nil)
+
+// Search by text query
+results, err := es.SearchText(ctx, "graph execution model", vectorstore.SearchOptions{
+    K:        5,
+    MinScore: 0.7,
+})
+
+for _, doc := range results {
+    fmt.Printf("Score: %.3f Content: %s\n", doc.Score, doc.Content)
+}
+```
+
+### With Retrieval Pipeline
+
+Create a retriever for RAG workflows:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/retrieval"
+
+// Create retriever from vector store
+retriever := retrieval.NewVectorStoreRetriever(store, embedder,
+    retrieval.WithK(5),
+    retrieval.WithMinScore(0.7),
+)
+
+// Use with RAG agent
+ragAgent, _ := agent.NewRAG(model, retriever)
+
+for msg, err := range ragAgent.Run(ctx, messages) {
+    // Agent automatically retrieves relevant context
+}
+```
+
+### Metadata Filtering
+
+Filter search results by document metadata:
+
+```go
+// Add documents with metadata
+docs := []vectorstore.Document{
+    {Content: "Python guide", Embedding: pyVec, Metadata: map[string]any{"category": "programming"}},
+    {Content: "Dog training", Embedding: dogVec, Metadata: map[string]any{"category": "pets"}},
+}
+store.Add(ctx, docs)
+
+// Search within a category
+results, _ := store.Search(ctx, queryVec, vectorstore.SearchOptions{
+    K:      10,
+    Filter: vectorstore.Eq("category", "programming"),
+})
+```
+
+---
+
 ## Best Practices
 
 ### 1. Choose Appropriate Dimensions
@@ -416,26 +494,32 @@ embedder := openai.NewEmbedder(func(o *openai.Options) {
 
 ### 2. Normalize Vectors
 
-Always normalize embeddings for cosine similarity:
+Use the built-in similarity functions:
 
 ```go
-func normalize(vec []float64) []float64 {
-    var magnitude float64
-    for _, v := range vec {
-        magnitude += v * v
-    }
-    magnitude = math.Sqrt(magnitude)
-    
-    normalized := make([]float64, len(vec))
-    for i, v := range vec {
-        normalized[i] = v / magnitude
-    }
-    return normalized
-}
+import "github.com/hupe1980/agentmesh/pkg/embedding"
+
+// Cosine similarity (most common for text embeddings)
+sim := embedding.CosineSimilarity(vecA, vecB)  // Returns [-1, 1]
+
+// Euclidean distance
+dist := embedding.EuclideanDistance(vecA, vecB)  // Returns [0, ∞)
+
+// Dot product similarity
+dot := embedding.DotProductSimilarity(vecA, vecB)
+
+// Generic with configurable metric
+sim := embedding.Similarity(vecA, vecB, embedding.Cosine)
+sim := embedding.Similarity(vecA, vecB, embedding.Euclidean)
+sim := embedding.Similarity(vecA, vecB, embedding.DotProduct)
+
+// Normalize vectors for dot product similarity
+normalized := embedding.Normalize(vec)
+magnitude := embedding.Magnitude(vec)
 
 // AgentMesh embedders return normalized vectors by default
 vec, _ := embedder.Embed(ctx, "text")
-// magnitude(vec) == 1.0
+// embedding.Magnitude(vec) ≈ 1.0
 ```
 
 ### 3. Batch for Efficiency
