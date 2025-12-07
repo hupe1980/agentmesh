@@ -65,6 +65,7 @@ ragAgent, _ := agent.NewRAG(model, retriever)
 
 - **memory**: In-memory storage (default, for testing/development)
 - **qdrant**: Qdrant vector database (production-ready with gRPC)
+- **pgvector**: PostgreSQL with pgvector extension (production-ready)
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/vectorstore/qdrant"
@@ -74,6 +75,18 @@ store, err := qdrant.New("localhost:6334",
     qdrant.WithCollectionName("documents"),
     qdrant.WithDimensions(1536),
     qdrant.WithAutoCreateCollection(true),
+)
+```
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/vectorstore/pgvector"
+
+// Create pgvector store
+store, err := pgvector.New(ctx,
+    pgvector.WithConnectionString("postgres://user:pass@localhost:5432/mydb"),
+    pgvector.WithTableName("documents"),
+    pgvector.WithDimensions(1536),
+    pgvector.WithMetric(pgvector.MetricCosine),
 )
 ```
 

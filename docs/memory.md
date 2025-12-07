@@ -82,9 +82,22 @@ import (
 store := memstore.New()
 mem := memory.NewVectorMemory(embedder, memory.WithStore(store))
 
-// Or use an external backend (Pinecone, Qdrant, etc.)
-// externalStore := pinecone.New(...)
-// mem := memory.NewVectorMemory(embedder, memory.WithStore(externalStore))
+// Or use Qdrant for production
+// import "github.com/hupe1980/agentmesh/pkg/vectorstore/qdrant"
+// store, _ := qdrant.New("localhost:6334",
+//     qdrant.WithCollectionName("conversations"),
+//     qdrant.WithDimensions(1536),
+// )
+// mem := memory.NewVectorMemory(embedder, memory.WithStore(store))
+
+// Or use PostgreSQL with pgvector
+// import "github.com/hupe1980/agentmesh/pkg/vectorstore/pgvector"
+// store, _ := pgvector.New(ctx,
+//     pgvector.WithConnectionString("postgres://..."),
+//     pgvector.WithTableName("conversations"),
+//     pgvector.WithDimensions(1536),
+// )
+// mem := memory.NewVectorMemory(embedder, memory.WithStore(store))
 
 // Don't forget to close when done
 defer mem.Close()

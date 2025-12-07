@@ -709,12 +709,27 @@ func BenchmarkEmbedding(b *testing.B) {
 - **Consider**: FAISS, Annoy, or specialized vector databases for large-scale
 
 ```go
-// For large-scale, consider external vector stores
-// - Pinecone
-// - Weaviate  
-// - Qdrant
-// - Milvus
-// Then wrap with memory.Memory interface
+// For large-scale, use built-in external vector stores:
+import (
+    "github.com/hupe1980/agentmesh/pkg/vectorstore/qdrant"
+    "github.com/hupe1980/agentmesh/pkg/vectorstore/pgvector"
+)
+
+// Qdrant (gRPC-based vector database)
+store, _ := qdrant.New("localhost:6334",
+    qdrant.WithCollectionName("documents"),
+    qdrant.WithDimensions(1536),
+)
+
+// PostgreSQL with pgvector extension
+store, _ := pgvector.New(ctx,
+    pgvector.WithConnectionString("postgres://..."),
+    pgvector.WithTableName("documents"),
+    pgvector.WithDimensions(1536),
+)
+
+// Wrap with memory.Memory interface for agents
+vectorMem := memory.NewVectorMemory(embedder, memory.WithStore(store))
 ```
 
 ### API Costs (OpenAI)

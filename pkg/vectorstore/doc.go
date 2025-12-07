@@ -16,9 +16,9 @@
 // # Available Implementations
 //
 //   - memory.Store: In-memory store for testing and development
+//   - qdrant.Store: Qdrant vector database (gRPC-based)
+//   - pgvector.Store: PostgreSQL with pgvector extension
 //   - (future) pinecone.Store: Pinecone vector database
-//   - (future) qdrant.Store: Qdrant vector database
-//   - (future) pgvector.Store: PostgreSQL with pgvector extension
 //
 // # Basic Usage
 //
