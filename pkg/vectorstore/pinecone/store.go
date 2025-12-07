@@ -16,9 +16,18 @@ import (
 
 // Ensure Store implements the interfaces.
 var (
-	_ vectorstore.VectorStore = (*Store)(nil)
-	_ vectorstore.Indexer     = (*Store)(nil)
+	_ vectorstore.VectorStore  = (*Store)(nil)
+	_ vectorstore.Indexer      = (*Store)(nil)
+	_ vectorstore.TextSearcher = (*Store)(nil)
 )
+
+// SparseEncoder generates sparse vector representations from text.
+// Used for hybrid search to create the keyword/BM25 component.
+type SparseEncoder interface {
+	// Encode generates a sparse vector from text.
+	// Returns indices and values representing non-zero dimensions.
+	Encode(text string) (indices []uint32, values []float32, err error)
+}
 
 // IndexConnection defines the interface for Pinecone index data operations.
 // This interface allows for mocking in tests.
@@ -47,6 +56,10 @@ type Options struct {
 
 	// Region specifies the region for serverless indexes.
 	Region string
+
+	// SparseEncoder generates sparse vectors for hybrid search.
+	// If nil, SearchHybrid will perform pure vector search.
+	SparseEncoder SparseEncoder
 }
 
 // Option configures a Store.
@@ -70,6 +83,14 @@ func WithCloud(cloud string) Option {
 func WithRegion(region string) Option {
 	return func(o *Options) {
 		o.Region = region
+	}
+}
+
+// WithSparseEncoder sets the sparse encoder for hybrid search.
+// This is required for true hybrid search functionality.
+func WithSparseEncoder(encoder SparseEncoder) Option {
+	return func(o *Options) {
+		o.SparseEncoder = encoder
 	}
 }
 
@@ -160,17 +181,9 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	opts.Normalize()
 
 	// Build metadata filter
-	var filter *pinecone.MetadataFilter
-	if len(opts.Filter) > 0 {
-		filterMap := make(map[string]any)
-		for k, v := range opts.Filter {
-			filterMap[k] = map[string]any{"$eq": v}
-		}
-		filterStruct, err := structpb.NewStruct(filterMap)
-		if err != nil {
-			return nil, fmt.Errorf("pinecone: failed to create filter: %w", err)
-		}
-		filter = filterStruct
+	filter, err := buildFilter(opts.Filter)
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
@@ -184,42 +197,66 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 		return nil, fmt.Errorf("pinecone: search failed: %w", err)
 	}
 
-	// Convert results
-	results := make([]vectorstore.Document, 0, len(resp.Matches))
-	for _, match := range resp.Matches {
-		score := float64(match.Score)
-		if score < opts.MinScore {
-			continue
-		}
+	return convertMatches(resp.Matches, opts.MinScore, opts.IncludeEmbeddings), nil
+}
 
-		doc := vectorstore.Document{
-			ID:    match.Vector.Id,
-			Score: score,
-		}
+// SearchHybrid performs a hybrid search combining dense vector similarity with sparse (keyword) search.
+// This requires a SparseEncoder to be configured via WithSparseEncoder option.
+// If no sparse encoder is configured, this falls back to regular vector search.
+//
+// The alpha parameter controls the balance:
+//   - 0.0 = pure sparse/keyword search
+//   - 1.0 = pure dense/vector search
+//   - 0.5 = equal weighting (default)
+//
+// Note: Pinecone's hybrid search uses the sparse_vector field, which requires:
+// 1. A sparse encoder (BM25, SPLADE, etc.) to generate sparse vectors
+// 2. Vectors to be indexed with sparse values for hybrid search to work
+func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding embedding.Vector, opts vectorstore.HybridSearchOptions) ([]vectorstore.Document, error) {
+	opts.Normalize()
 
-		// Extract metadata
-		if match.Vector.Metadata != nil {
-			metadata := match.Vector.Metadata.AsMap()
-			if content, ok := metadata["content"].(string); ok {
-				doc.Content = content
-				delete(metadata, "content")
-			}
-			if ts, ok := metadata["timestamp"].(float64); ok {
-				doc.Timestamp = time.Unix(0, int64(ts))
-				delete(metadata, "timestamp")
-			}
-			doc.Metadata = metadata
-		}
-
-		// Include embeddings if requested
-		if opts.IncludeEmbeddings && match.Vector.Values != nil {
-			doc.Embedding = floatconv.ToFloat64(match.Vector.Values)
-		}
-
-		results = append(results, doc)
+	// If no sparse encoder is configured, fall back to regular search
+	if s.opts.SparseEncoder == nil {
+		return s.Search(ctx, queryEmbedding, opts.SearchOptions)
 	}
 
-	return results, nil
+	// If alpha is 1.0, use pure vector search
+	if opts.Alpha >= 1.0 {
+		return s.Search(ctx, queryEmbedding, opts.SearchOptions)
+	}
+
+	// Generate sparse vector from query text
+	indices, values, err := s.opts.SparseEncoder.Encode(query)
+	if err != nil {
+		return nil, fmt.Errorf("pinecone: failed to encode sparse vector: %w", err)
+	}
+
+	// Build metadata filter
+	filter, err := buildFilter(opts.Filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build sparse values
+	sparseValues := &pinecone.SparseValues{
+		Indices: indices,
+		Values:  values,
+	}
+
+	// Execute hybrid query
+	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
+		Vector:          floatconv.ToFloat32(queryEmbedding),
+		SparseValues:    sparseValues,
+		TopK:            uint32(opts.K),
+		MetadataFilter:  filter,
+		IncludeValues:   opts.IncludeEmbeddings,
+		IncludeMetadata: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pinecone: hybrid search failed: %w", err)
+	}
+
+	return convertMatches(resp.Matches, opts.MinScore, opts.IncludeEmbeddings), nil
 }
 
 // Delete removes documents by ID.
@@ -283,6 +320,61 @@ func (s *Store) Close() error {
 		return s.idx.Close()
 	}
 	return nil
+}
+
+// buildFilter creates a Pinecone metadata filter from vectorstore filter options.
+func buildFilter(filter vectorstore.Filter) (*pinecone.MetadataFilter, error) {
+	if len(filter) == 0 {
+		return nil, nil
+	}
+
+	filterMap := make(map[string]any)
+	for k, v := range filter {
+		filterMap[k] = map[string]any{"$eq": v}
+	}
+	filterStruct, err := structpb.NewStruct(filterMap)
+	if err != nil {
+		return nil, fmt.Errorf("pinecone: failed to create filter: %w", err)
+	}
+	return filterStruct, nil
+}
+
+// convertMatches converts Pinecone scored vectors to vectorstore documents.
+func convertMatches(matches []*pinecone.ScoredVector, minScore float64, includeEmbeddings bool) []vectorstore.Document {
+	results := make([]vectorstore.Document, 0, len(matches))
+	for _, match := range matches {
+		score := float64(match.Score)
+		if score < minScore {
+			continue
+		}
+
+		doc := vectorstore.Document{
+			ID:    match.Vector.Id,
+			Score: score,
+		}
+
+		// Extract metadata
+		if match.Vector.Metadata != nil {
+			metadata := match.Vector.Metadata.AsMap()
+			if content, ok := metadata["content"].(string); ok {
+				doc.Content = content
+				delete(metadata, "content")
+			}
+			if ts, ok := metadata["timestamp"].(float64); ok {
+				doc.Timestamp = time.Unix(0, int64(ts))
+				delete(metadata, "timestamp")
+			}
+			doc.Metadata = metadata
+		}
+
+		// Include embeddings if requested
+		if includeEmbeddings && match.Vector.Values != nil {
+			doc.Embedding = floatconv.ToFloat64(match.Vector.Values)
+		}
+
+		results = append(results, doc)
+	}
+	return results
 }
 
 // toPineconeMetric converts embedding metric to Pinecone metric.

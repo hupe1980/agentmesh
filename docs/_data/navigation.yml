@@ -24,6 +24,8 @@
       href: /memory/
     - label: Embeddings
       href: /embeddings/
+    - label: Vector Store
+      href: /vectorstore/
     - label: Checkpointing
       href: /checkpointing/
 

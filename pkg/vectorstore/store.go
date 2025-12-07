@@ -115,7 +115,49 @@ type TextSearcher interface {
 	VectorStore
 
 	// SearchHybrid combines keyword and vector search.
-	SearchHybrid(ctx context.Context, query string, embedding embedding.Vector, opts SearchOptions) ([]Document, error)
+	// The alpha parameter in HybridSearchOptions controls the balance:
+	// 0.0 = pure keyword search, 1.0 = pure vector search.
+	SearchHybrid(ctx context.Context, query string, embedding embedding.Vector, opts HybridSearchOptions) ([]Document, error)
+}
+
+// HybridSearchOptions configures hybrid search behavior.
+type HybridSearchOptions struct {
+	SearchOptions
+
+	// Alpha controls the balance between keyword and vector search.
+	// 0.0 = pure keyword (BM25/sparse), 1.0 = pure vector (dense).
+	// Default: 0.5 (equal weighting)
+	Alpha float64
+
+	// FusionAlgorithm specifies how to combine results.
+	// Default: RRF (Reciprocal Rank Fusion)
+	FusionAlgorithm FusionAlgorithm
+}
+
+// FusionAlgorithm specifies how to combine keyword and vector search results.
+type FusionAlgorithm string
+
+const (
+	// FusionRRF uses Reciprocal Rank Fusion to combine results.
+	// Score = sum(1 / (k + rank)) for each result list.
+	FusionRRF FusionAlgorithm = "rrf"
+
+	// FusionRelativeScore normalizes and combines scores from both searches.
+	FusionRelativeScore FusionAlgorithm = "relativeScore"
+)
+
+// Normalize ensures hybrid options have sensible defaults.
+func (o *HybridSearchOptions) Normalize() {
+	o.SearchOptions.Normalize()
+	if o.Alpha < 0 {
+		o.Alpha = 0
+	}
+	if o.Alpha > 1 {
+		o.Alpha = 1
+	}
+	if o.FusionAlgorithm == "" {
+		o.FusionAlgorithm = FusionRRF
+	}
 }
 
 // Indexer extends VectorStore with index lifecycle management.

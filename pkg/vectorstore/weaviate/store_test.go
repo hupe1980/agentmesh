@@ -16,13 +16,14 @@ import (
 
 // mockClient implements the Client interface for testing.
 type mockClient struct {
-	classExistsFunc  func(ctx context.Context, className string) (bool, error)
-	createClassFunc  func(ctx context.Context, class *models.Class) error
-	deleteClassFunc  func(ctx context.Context, className string) error
-	getSchemaFunc    func(ctx context.Context) (*models.Schema, error)
-	batchObjectsFunc func(ctx context.Context, objects []*models.Object) ([]models.ObjectsGetResponse, error)
-	deleteObjectFunc func(ctx context.Context, className, id string) error
-	graphQLQueryFunc func(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
+	classExistsFunc        func(ctx context.Context, className string) (bool, error)
+	createClassFunc        func(ctx context.Context, class *models.Class) error
+	deleteClassFunc        func(ctx context.Context, className string) error
+	getSchemaFunc          func(ctx context.Context) (*models.Schema, error)
+	batchObjectsFunc       func(ctx context.Context, objects []*models.Object) ([]models.ObjectsGetResponse, error)
+	deleteObjectFunc       func(ctx context.Context, className, id string) error
+	graphQLQueryFunc       func(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
+	graphQLHybridQueryFunc func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
 }
 
 func (m *mockClient) ClassExists(ctx context.Context, className string) (bool, error) {
@@ -74,6 +75,13 @@ func (m *mockClient) DeleteObject(ctx context.Context, className, id string) err
 func (m *mockClient) GraphQLQuery(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
 	if m.graphQLQueryFunc != nil {
 		return m.graphQLQueryFunc(ctx, className, fields, nearVector, limit, where)
+	}
+	return &models.GraphQLResponse{}, nil
+}
+
+func (m *mockClient) GraphQLHybridQuery(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+	if m.graphQLHybridQueryFunc != nil {
+		return m.graphQLHybridQueryFunc(ctx, className, fields, query, vector, alpha, limit, where)
 	}
 	return &models.GraphQLResponse{}, nil
 }
@@ -601,4 +609,158 @@ func TestDecodeMetadata(t *testing.T) {
 
 	result = decodeMetadata("")
 	assert.Nil(t, result)
+}
+
+func TestStore_SearchHybrid(t *testing.T) {
+	client := &mockClient{
+		graphQLHybridQueryFunc: func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+			assert.Equal(t, "Document", className)
+			assert.Equal(t, "test query", query)
+			assert.Equal(t, float32(0.5), alpha)
+			assert.Equal(t, 10, limit)
+
+			return &models.GraphQLResponse{
+				Data: map[string]models.JSONObject{
+					"Get": map[string]any{
+						"Document": []any{
+							map[string]any{
+								"content":   "Test content",
+								"docID":     "doc1",
+								"namespace": "",
+								"timestamp": float64(1234567890),
+								"metadata":  "{}",
+								"_additional": map[string]any{
+									"id":       "uuid1",
+									"distance": 0.1,
+									"score":    0.95,
+								},
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	store := NewFromClient(client)
+
+	results, err := store.SearchHybrid(context.Background(), "test query", []float64{0.1, 0.2, 0.3}, vectorstore.HybridSearchOptions{
+		SearchOptions: vectorstore.SearchOptions{
+			K: 10,
+		},
+		Alpha: 0.5,
+	})
+	require.NoError(t, err)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "doc1", results[0].ID)
+}
+
+func TestStore_SearchHybrid_WithAlpha(t *testing.T) {
+	tests := []struct {
+		name          string
+		alpha         float64
+		expectedAlpha float32
+	}{
+		{"pure keyword", 0.0, 0.0},
+		{"balanced", 0.5, 0.5},
+		{"pure vector", 1.0, 1.0},
+		{"keyword heavy", 0.25, 0.25},
+		{"vector heavy", 0.75, 0.75},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &mockClient{
+				graphQLHybridQueryFunc: func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+					assert.Equal(t, tt.expectedAlpha, alpha)
+					return &models.GraphQLResponse{
+						Data: map[string]models.JSONObject{
+							"Get": map[string]any{
+								"Document": []any{},
+							},
+						},
+					}, nil
+				},
+			}
+
+			store := NewFromClient(client)
+			_, err := store.SearchHybrid(context.Background(), "query", []float64{0.1}, vectorstore.HybridSearchOptions{
+				Alpha: tt.alpha,
+			})
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestStore_SearchHybrid_Error(t *testing.T) {
+	client := &mockClient{
+		graphQLHybridQueryFunc: func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+			return nil, errors.New("hybrid search failed")
+		},
+	}
+
+	store := NewFromClient(client)
+
+	_, err := store.SearchHybrid(context.Background(), "test query", []float64{0.1, 0.2}, vectorstore.HybridSearchOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hybrid search failed")
+}
+
+func TestStore_SearchHybrid_GraphQLError(t *testing.T) {
+	client := &mockClient{
+		graphQLHybridQueryFunc: func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+			return &models.GraphQLResponse{
+				Errors: []*models.GraphQLError{
+					{Message: "GraphQL hybrid error"},
+				},
+			}, nil
+		},
+	}
+
+	store := NewFromClient(client)
+
+	_, err := store.SearchHybrid(context.Background(), "test", []float64{0.1}, vectorstore.HybridSearchOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GraphQL hybrid error")
+}
+
+func TestStore_SearchHybrid_WithNamespace(t *testing.T) {
+	client := &mockClient{
+		graphQLHybridQueryFunc: func(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+			assert.NotNil(t, where)
+			return &models.GraphQLResponse{
+				Data: map[string]models.JSONObject{
+					"Get": map[string]any{
+						"Document": []any{},
+					},
+				},
+			}, nil
+		},
+	}
+
+	store := NewFromClient(client)
+
+	_, err := store.SearchHybrid(context.Background(), "test", []float64{0.1}, vectorstore.HybridSearchOptions{
+		SearchOptions: vectorstore.SearchOptions{
+			Namespace: "test-ns",
+		},
+	})
+	require.NoError(t, err)
+}
+
+func TestHybridSearchOptions_Normalize(t *testing.T) {
+	opts := vectorstore.HybridSearchOptions{}
+	opts.Normalize()
+
+	assert.Equal(t, 10, opts.K) // Default K
+	assert.Equal(t, vectorstore.FusionRRF, opts.FusionAlgorithm)
+
+	// Test clamping
+	opts2 := vectorstore.HybridSearchOptions{Alpha: -0.5}
+	opts2.Normalize()
+	assert.Equal(t, 0.0, opts2.Alpha)
+
+	opts3 := vectorstore.HybridSearchOptions{Alpha: 1.5}
+	opts3.Normalize()
+	assert.Equal(t, 1.0, opts3.Alpha)
 }

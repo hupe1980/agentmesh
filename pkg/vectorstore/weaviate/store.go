@@ -19,8 +19,9 @@ import (
 
 // Ensure Store implements the interfaces.
 var (
-	_ vectorstore.VectorStore = (*Store)(nil)
-	_ vectorstore.Indexer     = (*Store)(nil)
+	_ vectorstore.VectorStore  = (*Store)(nil)
+	_ vectorstore.Indexer      = (*Store)(nil)
+	_ vectorstore.TextSearcher = (*Store)(nil)
 )
 
 // Client defines the interface for Weaviate operations.
@@ -40,6 +41,9 @@ type Client interface {
 
 	// GraphQL operations
 	GraphQLQuery(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
+
+	// GraphQLHybridQuery performs a hybrid search combining keyword (BM25) and vector search.
+	GraphQLHybridQuery(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
 }
 
 // Options configures the Weaviate store.
@@ -158,6 +162,26 @@ func (w *weaviateClientWrapper) GraphQLQuery(ctx context.Context, className stri
 		WithClassName(className).
 		WithFields(fields...).
 		WithNearVector(w.client.GraphQL().NearVectorArgBuilder().WithVector(nearVector)).
+		WithLimit(limit)
+
+	if where != nil {
+		builder = builder.WithWhere(where)
+	}
+
+	return builder.Do(ctx)
+}
+
+// GraphQLHybridQuery performs a hybrid search combining keyword (BM25) and vector search.
+func (w *weaviateClientWrapper) GraphQLHybridQuery(ctx context.Context, className string, fields []graphql.Field, query string, vector []float32, alpha float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+	hybridBuilder := w.client.GraphQL().HybridArgumentBuilder().
+		WithQuery(query).
+		WithVector(vector).
+		WithAlpha(alpha)
+
+	builder := w.client.GraphQL().Get().
+		WithClassName(className).
+		WithFields(fields...).
+		WithHybrid(hybridBuilder).
 		WithLimit(limit)
 
 	if where != nil {
@@ -323,6 +347,53 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 
 	// Parse results
 	return s.parseSearchResults(result, opts)
+}
+
+// SearchHybrid combines keyword (BM25) and vector search.
+func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding embedding.Vector, opts vectorstore.HybridSearchOptions) ([]vectorstore.Document, error) {
+	opts.Normalize()
+
+	// Build fields to return
+	fields := []graphql.Field{
+		{Name: "content"},
+		{Name: "docID"},
+		{Name: "namespace"},
+		{Name: "timestamp"},
+		{Name: "metadata"},
+		{Name: "_additional", Fields: []graphql.Field{
+			{Name: "id"},
+			{Name: "distance"},
+			{Name: "score"},
+			{Name: "vector"},
+		}},
+	}
+
+	// Build where filter if needed
+	var where *filters.WhereBuilder
+	if opts.Namespace != "" || len(opts.Filter) > 0 {
+		where = s.buildWhereFilter(opts.Namespace, opts.Filter)
+	}
+
+	result, err := s.client.GraphQLHybridQuery(
+		ctx,
+		s.opts.ClassName,
+		fields,
+		query,
+		floatconv.ToFloat32(queryEmbedding),
+		float32(opts.Alpha),
+		opts.K,
+		where,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("weaviate: hybrid search failed: %w", err)
+	}
+
+	if len(result.Errors) > 0 {
+		return nil, fmt.Errorf("weaviate: hybrid search error: %v", result.Errors[0].Message)
+	}
+
+	// Parse results
+	return s.parseSearchResults(result, opts.SearchOptions)
 }
 
 // buildWhereFilter constructs a Weaviate where filter.

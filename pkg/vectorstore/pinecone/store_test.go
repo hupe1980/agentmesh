@@ -496,3 +496,219 @@ func TestToPineconeMetric(t *testing.T) {
 		assert.Equal(t, tt.expected, result)
 	}
 }
+
+// mockSparseEncoder implements SparseEncoder for testing.
+type mockSparseEncoder struct {
+	encodeFunc func(text string) ([]uint32, []float32, error)
+}
+
+func (m *mockSparseEncoder) Encode(text string) ([]uint32, []float32, error) {
+	if m.encodeFunc != nil {
+		return m.encodeFunc(text)
+	}
+	// Default: simple mock encoding
+	return []uint32{0, 1, 2}, []float32{0.5, 0.3, 0.2}, nil
+}
+
+func TestStore_SearchHybrid(t *testing.T) {
+	var capturedRequest *pinecone.QueryByVectorValuesRequest
+
+	metadata, _ := structpb.NewStruct(map[string]any{
+		"content":   "Hello world",
+		"timestamp": float64(1234567890),
+	})
+
+	idx := &mockIndexConnection{
+		queryByVectorValuesFunc: func(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error) {
+			capturedRequest = in
+			return &pinecone.QueryVectorsResponse{
+				Matches: []*pinecone.ScoredVector{
+					{
+						Vector: &pinecone.Vector{
+							Id:       "doc1",
+							Values:   []float32{0.1, 0.2, 0.3},
+							Metadata: metadata,
+						},
+						Score: 0.92,
+					},
+				},
+			}, nil
+		},
+	}
+
+	sparseEncoder := &mockSparseEncoder{}
+	store := New(&mockClient{}, idx, "test-index",
+		WithSparseEncoder(sparseEncoder),
+	)
+
+	results, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, results, 1)
+	assert.Equal(t, "doc1", results[0].ID)
+	assert.Equal(t, "Hello world", results[0].Content)
+	assert.InDelta(t, 0.92, results[0].Score, 0.0001)
+
+	// Verify sparse values were included
+	assert.NotNil(t, capturedRequest.SparseValues)
+	assert.Equal(t, []uint32{0, 1, 2}, capturedRequest.SparseValues.Indices)
+	assert.Equal(t, []float32{0.5, 0.3, 0.2}, capturedRequest.SparseValues.Values)
+}
+
+func TestStore_SearchHybrid_NoSparseEncoder(t *testing.T) {
+	// Without sparse encoder, should fall back to regular Search
+	searchCalled := false
+
+	idx := &mockIndexConnection{
+		queryByVectorValuesFunc: func(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error) {
+			searchCalled = true
+			// Verify no sparse values when no encoder
+			assert.Nil(t, in.SparseValues)
+			return &pinecone.QueryVectorsResponse{Matches: []*pinecone.ScoredVector{}}, nil
+		},
+	}
+
+	store := New(&mockClient{}, idx, "test-index")
+	// No sparse encoder configured
+
+	_, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.NoError(t, err)
+	assert.True(t, searchCalled)
+}
+
+func TestStore_SearchHybrid_PureVector(t *testing.T) {
+	// When alpha=1.0, should use regular Search (no sparse values)
+	var capturedRequest *pinecone.QueryByVectorValuesRequest
+
+	idx := &mockIndexConnection{
+		queryByVectorValuesFunc: func(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error) {
+			capturedRequest = in
+			return &pinecone.QueryVectorsResponse{Matches: []*pinecone.ScoredVector{}}, nil
+		},
+	}
+
+	sparseEncoder := &mockSparseEncoder{}
+	store := New(&mockClient{}, idx, "test-index",
+		WithSparseEncoder(sparseEncoder),
+	)
+
+	_, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         1.0, // Pure vector
+		},
+	)
+	require.NoError(t, err)
+
+	// Should fall back to regular search (no sparse values)
+	assert.Nil(t, capturedRequest.SparseValues)
+}
+
+func TestStore_SearchHybrid_EncoderError(t *testing.T) {
+	idx := &mockIndexConnection{}
+
+	sparseEncoder := &mockSparseEncoder{
+		encodeFunc: func(text string) ([]uint32, []float32, error) {
+			return nil, nil, errors.New("encoding failed")
+		},
+	}
+	store := New(&mockClient{}, idx, "test-index",
+		WithSparseEncoder(sparseEncoder),
+	)
+
+	_, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to encode sparse vector")
+}
+
+func TestStore_SearchHybrid_QueryError(t *testing.T) {
+	idx := &mockIndexConnection{
+		queryByVectorValuesFunc: func(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error) {
+			return nil, errors.New("query failed")
+		},
+	}
+
+	sparseEncoder := &mockSparseEncoder{}
+	store := New(&mockClient{}, idx, "test-index",
+		WithSparseEncoder(sparseEncoder),
+	)
+
+	_, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hybrid search failed")
+}
+
+func TestStore_SearchHybrid_WithFilter(t *testing.T) {
+	var capturedRequest *pinecone.QueryByVectorValuesRequest
+
+	idx := &mockIndexConnection{
+		queryByVectorValuesFunc: func(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error) {
+			capturedRequest = in
+			return &pinecone.QueryVectorsResponse{Matches: []*pinecone.ScoredVector{}}, nil
+		},
+	}
+
+	sparseEncoder := &mockSparseEncoder{}
+	store := New(&mockClient{}, idx, "test-index",
+		WithSparseEncoder(sparseEncoder),
+	)
+
+	_, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{
+				K:      10,
+				Filter: map[string]any{"category": "test"},
+			},
+			Alpha: 0.5,
+		},
+	)
+	require.NoError(t, err)
+	assert.NotNil(t, capturedRequest.MetadataFilter)
+}
+
+func TestWithSparseEncoder(t *testing.T) {
+	encoder := &mockSparseEncoder{}
+	opts := &Options{}
+
+	WithSparseEncoder(encoder)(opts)
+
+	assert.Equal(t, encoder, opts.SparseEncoder)
+}

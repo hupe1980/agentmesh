@@ -16,15 +16,18 @@ import (
 
 // Ensure Store implements the interfaces.
 var (
-	_ vectorstore.VectorStore = (*Store)(nil)
-	_ vectorstore.Indexer     = (*Store)(nil)
+	_ vectorstore.VectorStore  = (*Store)(nil)
+	_ vectorstore.Indexer      = (*Store)(nil)
+	_ vectorstore.TextSearcher = (*Store)(nil)
 )
 
 // PointsClient defines the interface for Qdrant points operations.
 type PointsClient interface {
 	Upsert(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
 	Search(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error)
+	Query(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error)
 	Delete(ctx context.Context, in *qdrant.DeletePoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	CreateFieldIndex(ctx context.Context, in *qdrant.CreateFieldIndexCollection, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
 }
 
 // CollectionsClient defines the interface for Qdrant collections operations.
@@ -284,6 +287,104 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
+	}
+
+	// Convert results
+	results := make([]vectorstore.Document, 0, len(resp.Result))
+	for _, point := range resp.Result {
+		doc := extractDocument(point, opts.IncludeEmbeddings)
+		results = append(results, doc)
+	}
+
+	return results, nil
+}
+
+// SearchHybrid performs a hybrid search combining dense vector similarity with sparse (keyword) search.
+// This uses Qdrant's Query API with Reciprocal Rank Fusion (RRF) to combine results from both searches.
+// Note: For keyword search, Qdrant requires a sparse vector field. If no sparse vectors are indexed,
+// this method will perform a pure dense search with the query text used for filtering if a text field exists.
+func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding embedding.Vector, opts vectorstore.HybridSearchOptions) ([]vectorstore.Document, error) {
+	opts.Normalize()
+	collection := s.collectionName(opts.Namespace)
+
+	// Build filter
+	var filter *qdrant.Filter
+	if len(opts.Filter) > 0 {
+		filter = buildFilter(opts.Filter)
+	}
+
+	// Determine fusion type based on options
+	// RRF (0) = Reciprocal Rank Fusion, DBSF (1) = Distribution-Based Score Fusion
+	fusion := qdrant.Fusion_RRF
+	if opts.FusionAlgorithm == vectorstore.FusionRelativeScore {
+		fusion = qdrant.Fusion(1) // DBSF - Distribution-Based Score Fusion
+	}
+
+	// Build prefetch queries for hybrid search
+	// The alpha value determines the weight: 0.0 = pure keyword, 1.0 = pure vector
+	prefetch := make([]*qdrant.PrefetchQuery, 0, 2)
+
+	k := uint64(opts.K)
+	prefetchLimit := k * 2 // Over-fetch for better fusion results
+
+	// Dense vector search prefetch (always included unless alpha is 0)
+	if opts.Alpha > 0 {
+		prefetch = append(prefetch, &qdrant.PrefetchQuery{
+			Query: qdrant.NewQueryDense(floatconv.ToFloat32(queryEmbedding)),
+			Limit: &prefetchLimit,
+		})
+	}
+
+	// Keyword/text search prefetch (if alpha < 1 and query is not empty)
+	// This searches the content field for matching text
+	if opts.Alpha < 1 && query != "" {
+		// Use text match filter as a form of keyword search
+		textFilter := &qdrant.Filter{
+			Must: []*qdrant.Condition{
+				{
+					ConditionOneOf: &qdrant.Condition_Field{
+						Field: &qdrant.FieldCondition{
+							Key:   "content",
+							Match: &qdrant.Match{MatchValue: &qdrant.Match_Text{Text: query}},
+						},
+					},
+				},
+			},
+		}
+
+		// If there's an existing filter, combine them
+		combinedFilter := textFilter
+		if filter != nil {
+			combinedFilter = &qdrant.Filter{
+				Must: append(textFilter.Must, filter.Must...),
+			}
+		}
+
+		prefetch = append(prefetch, &qdrant.PrefetchQuery{
+			Query:  qdrant.NewQueryDense(floatconv.ToFloat32(queryEmbedding)),
+			Filter: combinedFilter,
+			Limit:  &prefetchLimit,
+		})
+	}
+
+	// If we only have one prefetch (either pure keyword or pure vector), just use regular search
+	if len(prefetch) <= 1 {
+		return s.Search(ctx, queryEmbedding, opts.SearchOptions)
+	}
+
+	// Execute hybrid query with fusion
+	resp, err := s.client.Query(ctx, &qdrant.QueryPoints{
+		CollectionName: collection,
+		Prefetch:       prefetch,
+		Query:          qdrant.NewQueryFusion(fusion),
+		Limit:          &k,
+		Filter:         filter,
+		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
+		WithVectors:    &qdrant.WithVectorsSelector{SelectorOptions: &qdrant.WithVectorsSelector_Enable{Enable: opts.IncludeEmbeddings}},
+		ScoreThreshold: floatPtr(float32(opts.MinScore)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("hybrid search failed: %w", err)
 	}
 
 	// Convert results

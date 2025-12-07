@@ -16,9 +16,11 @@ import (
 
 // mockPointsClient is a mock implementation of PointsClient.
 type mockPointsClient struct {
-	UpsertFunc func(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
-	SearchFunc func(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error)
-	DeleteFunc func(ctx context.Context, in *qdrant.DeletePoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	UpsertFunc           func(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	SearchFunc           func(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error)
+	QueryFunc            func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error)
+	DeleteFunc           func(ctx context.Context, in *qdrant.DeletePoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	CreateFieldIndexFunc func(ctx context.Context, in *qdrant.CreateFieldIndexCollection, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
 }
 
 func (m *mockPointsClient) Upsert(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
@@ -35,9 +37,23 @@ func (m *mockPointsClient) Search(ctx context.Context, in *qdrant.SearchPoints, 
 	return &qdrant.SearchResponse{}, nil
 }
 
+func (m *mockPointsClient) Query(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+	if m.QueryFunc != nil {
+		return m.QueryFunc(ctx, in, opts...)
+	}
+	return &qdrant.QueryResponse{}, nil
+}
+
 func (m *mockPointsClient) Delete(ctx context.Context, in *qdrant.DeletePoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
 	if m.DeleteFunc != nil {
 		return m.DeleteFunc(ctx, in, opts...)
+	}
+	return &qdrant.PointsOperationResponse{}, nil
+}
+
+func (m *mockPointsClient) CreateFieldIndex(ctx context.Context, in *qdrant.CreateFieldIndexCollection, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error) {
+	if m.CreateFieldIndexFunc != nil {
+		return m.CreateFieldIndexFunc(ctx, in, opts...)
 	}
 	return &qdrant.PointsOperationResponse{}, nil
 }
@@ -684,6 +700,276 @@ func TestCollectionName(t *testing.T) {
 		t.Run(tt.namespace, func(t *testing.T) {
 			result := store.collectionName(tt.namespace)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStore_SearchHybrid(t *testing.T) {
+	var capturedRequest *qdrant.QueryPoints
+
+	pointsClient := &mockPointsClient{
+		QueryFunc: func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+			capturedRequest = in
+			return &qdrant.QueryResponse{
+				Result: []*qdrant.ScoredPoint{
+					{
+						Id:    &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: "uuid1"}},
+						Score: 0.92,
+						Payload: map[string]*qdrant.Value{
+							"_id":       {Kind: &qdrant.Value_StringValue{StringValue: "doc1"}},
+							"content":   {Kind: &qdrant.Value_StringValue{StringValue: "Hello world"}},
+							"timestamp": {Kind: &qdrant.Value_IntegerValue{IntegerValue: time.Now().UnixNano()}},
+						},
+					},
+					{
+						Id:    &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: "uuid2"}},
+						Score: 0.85,
+						Payload: map[string]*qdrant.Value{
+							"_id":       {Kind: &qdrant.Value_StringValue{StringValue: "doc2"}},
+							"content":   {Kind: &qdrant.Value_StringValue{StringValue: "Hello universe"}},
+							"timestamp": {Kind: &qdrant.Value_IntegerValue{IntegerValue: time.Now().UnixNano()}},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	results, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5, // 50% vector, 50% keyword
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, results, 2)
+	assert.Equal(t, "doc1", results[0].ID)
+	assert.Equal(t, "Hello world", results[0].Content)
+	assert.InDelta(t, 0.92, results[0].Score, 0.0001)
+	assert.Equal(t, "doc2", results[1].ID)
+
+	// Verify the query was constructed correctly
+	assert.NotNil(t, capturedRequest)
+	assert.Equal(t, "documents", capturedRequest.CollectionName)
+	assert.Len(t, capturedRequest.Prefetch, 2) // Dense + keyword prefetch
+}
+
+func TestStore_SearchHybrid_PureVector(t *testing.T) {
+	// When alpha=1.0, should fall back to regular Search
+	searchCalled := false
+	queryCalled := false
+
+	pointsClient := &mockPointsClient{
+		SearchFunc: func(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+			searchCalled = true
+			return &qdrant.SearchResponse{
+				Result: []*qdrant.ScoredPoint{
+					{
+						Id:    &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: "uuid1"}},
+						Score: 0.95,
+						Payload: map[string]*qdrant.Value{
+							"_id":     {Kind: &qdrant.Value_StringValue{StringValue: "doc1"}},
+							"content": {Kind: &qdrant.Value_StringValue{StringValue: "Vector only"}},
+						},
+					},
+				},
+			}, nil
+		},
+		QueryFunc: func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+			queryCalled = true
+			return &qdrant.QueryResponse{}, nil
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	results, err := store.SearchHybrid(
+		context.Background(),
+		"hello",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         1.0, // Pure vector search
+		},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, results, 1)
+	assert.True(t, searchCalled, "Should use regular Search for alpha=1.0")
+	assert.False(t, queryCalled, "Should not use Query for alpha=1.0")
+}
+
+func TestStore_SearchHybrid_EmptyQuery(t *testing.T) {
+	// When query is empty, should fall back to regular Search
+	searchCalled := false
+
+	pointsClient := &mockPointsClient{
+		SearchFunc: func(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error) {
+			searchCalled = true
+			return &qdrant.SearchResponse{
+				Result: []*qdrant.ScoredPoint{},
+			}, nil
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	_, err = store.SearchHybrid(
+		context.Background(),
+		"", // Empty query
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.NoError(t, err)
+	assert.True(t, searchCalled, "Should use regular Search when query is empty")
+}
+
+func TestStore_SearchHybrid_WithFusionAlgorithm(t *testing.T) {
+	var capturedRequest *qdrant.QueryPoints
+
+	pointsClient := &mockPointsClient{
+		QueryFunc: func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+			capturedRequest = in
+			return &qdrant.QueryResponse{
+				Result: []*qdrant.ScoredPoint{},
+			}, nil
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	_, err = store.SearchHybrid(
+		context.Background(),
+		"test query",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions:   vectorstore.SearchOptions{K: 10},
+			Alpha:           0.5,
+			FusionAlgorithm: vectorstore.FusionRelativeScore,
+		},
+	)
+	require.NoError(t, err)
+	assert.NotNil(t, capturedRequest)
+}
+
+func TestStore_SearchHybrid_Error(t *testing.T) {
+	pointsClient := &mockPointsClient{
+		QueryFunc: func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+			return nil, errors.New("query failed")
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	_, err = store.SearchHybrid(
+		context.Background(),
+		"test",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{K: 10},
+			Alpha:         0.5,
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hybrid search failed")
+}
+
+func TestStore_SearchHybrid_WithNamespace(t *testing.T) {
+	var capturedRequest *qdrant.QueryPoints
+
+	pointsClient := &mockPointsClient{
+		QueryFunc: func(ctx context.Context, in *qdrant.QueryPoints, opts ...grpc.CallOption) (*qdrant.QueryResponse, error) {
+			capturedRequest = in
+			return &qdrant.QueryResponse{
+				Result: []*qdrant.ScoredPoint{},
+			}, nil
+		},
+	}
+	collectionsClient := &mockCollectionsClient{}
+
+	store, err := New(nil, pointsClient, collectionsClient)
+	require.NoError(t, err)
+
+	_, err = store.SearchHybrid(
+		context.Background(),
+		"test query",
+		[]float64{0.1, 0.2, 0.3},
+		vectorstore.HybridSearchOptions{
+			SearchOptions: vectorstore.SearchOptions{
+				K:         10,
+				Namespace: "custom-ns",
+			},
+			Alpha: 0.5,
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "documents_custom-ns", capturedRequest.CollectionName)
+}
+
+func TestHybridSearchOptions_Normalize(t *testing.T) {
+	tests := []struct {
+		name          string
+		opts          vectorstore.HybridSearchOptions
+		expectedK     int
+		expectedAlpha float64
+	}{
+		{
+			name:          "zero K defaults to 10",
+			opts:          vectorstore.HybridSearchOptions{},
+			expectedK:     10,
+			expectedAlpha: 0.0, // alpha stays 0 if not set
+		},
+		{
+			name: "alpha clamped to 0",
+			opts: vectorstore.HybridSearchOptions{
+				Alpha: -0.5,
+			},
+			expectedK:     10,
+			expectedAlpha: 0.0,
+		},
+		{
+			name: "alpha clamped to 1",
+			opts: vectorstore.HybridSearchOptions{
+				Alpha: 1.5,
+			},
+			expectedK:     10,
+			expectedAlpha: 1.0,
+		},
+		{
+			name: "valid alpha unchanged",
+			opts: vectorstore.HybridSearchOptions{
+				SearchOptions: vectorstore.SearchOptions{K: 20},
+				Alpha:         0.7,
+			},
+			expectedK:     20,
+			expectedAlpha: 0.7,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.opts.Normalize()
+			assert.Equal(t, tt.expectedK, tt.opts.K)
+			assert.InDelta(t, tt.expectedAlpha, tt.opts.Alpha, 0.0001)
 		})
 	}
 }
