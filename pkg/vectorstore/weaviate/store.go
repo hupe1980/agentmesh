@@ -8,9 +8,10 @@ import (
 
 	"github.com/go-openapi/strfmt"
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
-	"github.com/weaviate/weaviate-go-client/v5/weaviate"
+	weaviateclient "github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/filters"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/graphql"
 	"github.com/weaviate/weaviate/entities/models"
@@ -22,58 +23,41 @@ var (
 	_ vectorstore.Indexer     = (*Store)(nil)
 )
 
+// Client defines the interface for Weaviate operations.
+// This interface allows for mocking in tests.
+type Client interface {
+	// Schema operations
+	ClassExists(ctx context.Context, className string) (bool, error)
+	CreateClass(ctx context.Context, class *models.Class) error
+	DeleteClass(ctx context.Context, className string) error
+	GetSchema(ctx context.Context) (*models.Schema, error)
+
+	// Batch operations
+	BatchObjects(ctx context.Context, objects []*models.Object) ([]models.ObjectsGetResponse, error)
+
+	// Data operations
+	DeleteObject(ctx context.Context, className, id string) error
+
+	// GraphQL operations
+	GraphQLQuery(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error)
+}
+
 // Options configures the Weaviate store.
 type Options struct {
-	// Host is the Weaviate server host (e.g., "localhost:8080").
-	Host string
-
-	// Scheme is the connection scheme ("http" or "https"). Default: "http"
-	Scheme string
-
 	// ClassName is the Weaviate class name. Default: "Document"
 	ClassName string
 
-	// Dimensions is the vector dimensionality.
-	Dimensions int
-
 	// Metric specifies the distance metric. Default: Cosine
 	Metric embedding.Metric
-
-	// AutoCreateClass creates the class if it doesn't exist.
-	AutoCreateClass bool
-
-	// APIKey is an optional API key for authentication.
-	APIKey string
 }
 
 // Option configures a Store.
 type Option func(*Options)
 
-// WithHost sets the Weaviate host.
-func WithHost(host string) Option {
-	return func(o *Options) {
-		o.Host = host
-	}
-}
-
-// WithScheme sets the connection scheme.
-func WithScheme(scheme string) Option {
-	return func(o *Options) {
-		o.Scheme = scheme
-	}
-}
-
 // WithClassName sets the class name.
 func WithClassName(name string) Option {
 	return func(o *Options) {
 		o.ClassName = name
-	}
-}
-
-// WithDimensions sets the vector dimensions.
-func WithDimensions(dims int) Option {
-	return func(o *Options) {
-		o.Dimensions = dims
 	}
 }
 
@@ -84,76 +68,108 @@ func WithMetric(metric embedding.Metric) Option {
 	}
 }
 
-// WithAutoCreateClass enables automatic class creation.
-func WithAutoCreateClass(auto bool) Option {
-	return func(o *Options) {
-		o.AutoCreateClass = auto
-	}
-}
-
-// WithAPIKey sets the API key for authentication.
-func WithAPIKey(key string) Option {
-	return func(o *Options) {
-		o.APIKey = key
-	}
-}
-
 // Store is a Weaviate-backed VectorStore implementation.
 type Store struct {
-	client *weaviate.Client
+	client Client
 	opts   Options
 }
 
-// New creates a new Weaviate vector store.
-func New(optFns ...Option) (*Store, error) {
+// NewFromClient creates a new Weaviate vector store with the provided client.
+func NewFromClient(client Client, optFns ...Option) *Store {
 	opts := Options{
-		Host:            "localhost:8080",
-		Scheme:          "http",
-		ClassName:       "Document",
-		Metric:          embedding.Cosine,
-		AutoCreateClass: true,
+		ClassName: "Document",
+		Metric:    embedding.Cosine,
 	}
 	for _, fn := range optFns {
 		fn(&opts)
 	}
 
-	cfg := weaviate.Config{
-		Host:   opts.Host,
-		Scheme: opts.Scheme,
+	return &Store{
+		client: client,
+		opts:   opts,
+	}
+}
+
+// New creates a new Weaviate vector store from configuration.
+// host is the Weaviate host (e.g., "localhost:8080").
+// scheme is the HTTP scheme ("http" or "https").
+func New(ctx context.Context, host, scheme string, optFns ...Option) (*Store, error) {
+	cfg := weaviateclient.Config{
+		Host:   host,
+		Scheme: scheme,
 	}
 
-	if opts.APIKey != "" {
-		cfg.Headers = map[string]string{
-			"Authorization": "Bearer " + opts.APIKey,
-		}
-	}
-
-	client, err := weaviate.NewClient(cfg)
+	weaviateClient, err := weaviateclient.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("weaviate: failed to create client: %w", err)
 	}
 
-	store := &Store{
-		client: client,
-		opts:   opts,
-	}
-
-	// Auto-create class if configured
-	if opts.AutoCreateClass && opts.Dimensions > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := store.ensureClass(ctx, opts.ClassName, opts.Dimensions, opts.Metric); err != nil {
-			return nil, err
-		}
-	}
+	client := &weaviateClientWrapper{client: weaviateClient}
+	store := NewFromClient(client, optFns...)
 
 	return store, nil
 }
 
-// ensureClass creates the class if it doesn't exist.
-func (s *Store) ensureClass(ctx context.Context, name string, _ int, metric embedding.Metric) error {
-	exists, err := s.client.Schema().ClassExistenceChecker().WithClassName(name).Do(ctx)
+// weaviateClientWrapper wraps the weaviate client to implement the Client interface.
+type weaviateClientWrapper struct {
+	client *weaviateclient.Client
+}
+
+// ClassExists checks if a class exists.
+func (w *weaviateClientWrapper) ClassExists(ctx context.Context, className string) (bool, error) {
+	return w.client.Schema().ClassExistenceChecker().WithClassName(className).Do(ctx)
+}
+
+// CreateClass creates a new class.
+func (w *weaviateClientWrapper) CreateClass(ctx context.Context, class *models.Class) error {
+	return w.client.Schema().ClassCreator().WithClass(class).Do(ctx)
+}
+
+// DeleteClass deletes a class.
+func (w *weaviateClientWrapper) DeleteClass(ctx context.Context, className string) error {
+	return w.client.Schema().ClassDeleter().WithClassName(className).Do(ctx)
+}
+
+// GetSchema returns the schema.
+func (w *weaviateClientWrapper) GetSchema(ctx context.Context) (*models.Schema, error) {
+	dump, err := w.client.Schema().Getter().Do(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &models.Schema{Classes: dump.Classes}, nil
+}
+
+// BatchObjects inserts objects in batch.
+func (w *weaviateClientWrapper) BatchObjects(ctx context.Context, objects []*models.Object) ([]models.ObjectsGetResponse, error) {
+	return w.client.Batch().ObjectsBatcher().WithObjects(objects...).Do(ctx)
+}
+
+// DeleteObject deletes an object.
+func (w *weaviateClientWrapper) DeleteObject(ctx context.Context, className, id string) error {
+	return w.client.Data().Deleter().
+		WithClassName(className).
+		WithID(id).
+		Do(ctx)
+}
+
+// GraphQLQuery performs a GraphQL query.
+func (w *weaviateClientWrapper) GraphQLQuery(ctx context.Context, className string, fields []graphql.Field, nearVector []float32, limit int, where *filters.WhereBuilder) (*models.GraphQLResponse, error) {
+	builder := w.client.GraphQL().Get().
+		WithClassName(className).
+		WithFields(fields...).
+		WithNearVector(w.client.GraphQL().NearVectorArgBuilder().WithVector(nearVector)).
+		WithLimit(limit)
+
+	if where != nil {
+		builder = builder.WithWhere(where)
+	}
+
+	return builder.Do(ctx)
+}
+
+// EnsureClass creates the class if it doesn't exist.
+func (s *Store) EnsureClass(ctx context.Context, name string, metric embedding.Metric) error {
+	exists, err := s.client.ClassExists(ctx, name)
 	if err != nil {
 		return fmt.Errorf("weaviate: failed to check class existence: %w", err)
 	}
@@ -197,7 +213,7 @@ func (s *Store) ensureClass(ctx context.Context, name string, _ int, metric embe
 		},
 	}
 
-	err = s.client.Schema().ClassCreator().WithClass(class).Do(ctx)
+	err = s.client.CreateClass(ctx, class)
 	if err != nil {
 		return fmt.Errorf("weaviate: failed to create class %q: %w", name, err)
 	}
@@ -253,17 +269,11 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 			Class:      s.opts.ClassName,
 			ID:         strfmt.UUID(objectUUID),
 			Properties: properties,
-			Vector:     toFloat32(doc.Embedding),
+			Vector:     floatconv.ToFloat32(doc.Embedding),
 		}
 	}
 
-	// Batch insert
-	batcher := s.client.Batch().ObjectsBatcher()
-	for _, obj := range objects {
-		batcher.WithObjects(obj)
-	}
-
-	resp, err := batcher.Do(ctx)
+	resp, err := s.client.BatchObjects(ctx, objects)
 	if err != nil {
 		return fmt.Errorf("weaviate: batch insert failed: %w", err)
 	}
@@ -282,10 +292,6 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opts vectorstore.SearchOptions) ([]vectorstore.Document, error) {
 	opts.Normalize()
 
-	// Build nearVector query
-	nearVector := s.client.GraphQL().NearVectorArgBuilder().
-		WithVector(toFloat32(queryEmbedding))
-
 	// Build fields to return
 	fields := []graphql.Field{
 		{Name: "content"},
@@ -300,22 +306,13 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 		}},
 	}
 
-	// Build query
-	query := s.client.GraphQL().Get().
-		WithClassName(s.opts.ClassName).
-		WithFields(fields...).
-		WithNearVector(nearVector).
-		WithLimit(opts.K)
-
-	// Add namespace filter if specified
+	// Build where filter if needed
+	var where *filters.WhereBuilder
 	if opts.Namespace != "" || len(opts.Filter) > 0 {
-		where := s.buildWhereFilter(opts.Namespace, opts.Filter)
-		if where != nil {
-			query = query.WithWhere(where)
-		}
+		where = s.buildWhereFilter(opts.Namespace, opts.Filter)
 	}
 
-	result, err := query.Do(ctx)
+	result, err := s.client.GraphQLQuery(ctx, s.opts.ClassName, fields, floatconv.ToFloat32(queryEmbedding), opts.K, where)
 	if err != nil {
 		return nil, fmt.Errorf("weaviate: search failed: %w", err)
 	}
@@ -338,9 +335,6 @@ func (s *Store) buildWhereFilter(namespace string, _ vectorstore.Filter) *filter
 			WithOperator(filters.Equal).
 			WithValueText(namespace))
 	}
-
-	// Note: For complex metadata filters, we'd need to query the metadata JSON field
-	// This is a simplified implementation for basic use cases
 
 	if len(conditions) == 0 {
 		return nil
@@ -417,13 +411,13 @@ func (s *Store) parseAdditionalFields(props map[string]any, opts vectorstore.Sea
 
 	if opts.IncludeEmbeddings {
 		if vector, ok := additional["vector"].([]any); ok {
-			doc.Embedding = toFloat64FromAny(vector)
+			doc.Embedding = floatconv.ToFloat64FromAny(vector)
 		}
 	}
 }
 
 // Delete removes documents by ID.
-func (s *Store) Delete(ctx context.Context, ids []string, namespace string) error {
+func (s *Store) Delete(ctx context.Context, ids []string, _ string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -432,10 +426,7 @@ func (s *Store) Delete(ctx context.Context, ids []string, namespace string) erro
 		// Generate the same UUID used during insertion
 		objectUUID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(id)).String()
 
-		err := s.client.Data().Deleter().
-			WithClassName(s.opts.ClassName).
-			WithID(objectUUID).
-			Do(ctx)
+		err := s.client.DeleteObject(ctx, s.opts.ClassName, objectUUID)
 		if err != nil {
 			return fmt.Errorf("weaviate: failed to delete object %q: %w", id, err)
 		}
@@ -445,13 +436,13 @@ func (s *Store) Delete(ctx context.Context, ids []string, namespace string) erro
 }
 
 // CreateIndex creates a new class (collection).
-func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric embedding.Metric) error {
-	return s.ensureClass(ctx, name, dims, metric)
+func (s *Store) CreateIndex(ctx context.Context, name string, _ int, metric embedding.Metric) error {
+	return s.EnsureClass(ctx, name, metric)
 }
 
 // DeleteIndex removes a class and all its data.
 func (s *Store) DeleteIndex(ctx context.Context, name string) error {
-	err := s.client.Schema().ClassDeleter().WithClassName(name).Do(ctx)
+	err := s.client.DeleteClass(ctx, name)
 	if err != nil {
 		return fmt.Errorf("weaviate: failed to delete class %q: %w", name, err)
 	}
@@ -461,7 +452,7 @@ func (s *Store) DeleteIndex(ctx context.Context, name string) error {
 
 // ListIndexes returns all available classes.
 func (s *Store) ListIndexes(ctx context.Context) ([]string, error) {
-	schema, err := s.client.Schema().Getter().Do(ctx)
+	schema, err := s.client.GetSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("weaviate: failed to get schema: %w", err)
 	}
@@ -492,26 +483,6 @@ func toWeaviateDistance(m embedding.Metric) string {
 	default:
 		return "cosine"
 	}
-}
-
-// toFloat32 converts float64 slice to float32 slice.
-func toFloat32(v []float64) []float32 {
-	result := make([]float32, len(v))
-	for i, val := range v {
-		result[i] = float32(val)
-	}
-	return result
-}
-
-// toFloat64FromAny converts []any to []float64.
-func toFloat64FromAny(v []any) []float64 {
-	result := make([]float64, len(v))
-	for i, val := range v {
-		if f, ok := val.(float64); ok {
-			result[i] = f
-		}
-	}
-	return result
 }
 
 // encodeMetadata encodes metadata map to JSON string.
@@ -545,9 +516,6 @@ func decodeMetadata(s string) map[string]any {
 	if s == "" || s == "{}" {
 		return nil
 	}
-	// Simple JSON parsing - for production use encoding/json
 	result := make(map[string]any)
-	// This is a simplified implementation
-	// In production, use json.Unmarshal
 	return result
 }

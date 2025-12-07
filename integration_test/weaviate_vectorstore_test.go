@@ -1,4 +1,4 @@
-package integration
+package integration_test
 
 import (
 	"context"
@@ -24,14 +24,14 @@ func setupWeaviateContainer(t *testing.T, ctx context.Context) (*weaviate.Store,
 	scheme, host, err := container.HttpHostAddress(ctx)
 	require.NoError(t, err)
 
-	store, err := weaviate.New(
-		weaviate.WithHost(host),
-		weaviate.WithScheme(scheme),
+	store, err := weaviate.New(ctx, host, scheme,
 		weaviate.WithClassName("TestDocuments"),
-		weaviate.WithDimensions(4),
 		weaviate.WithMetric(embedding.Cosine),
-		weaviate.WithAutoCreateClass(true),
 	)
+	require.NoError(t, err)
+
+	// Ensure the class is created with the correct metric
+	err = store.EnsureClass(ctx, "TestDocuments", embedding.Cosine)
 	require.NoError(t, err)
 
 	cleanup := func() {

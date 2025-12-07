@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 )
@@ -20,6 +21,14 @@ var (
 	_ vectorstore.VectorStore = (*Store)(nil)
 	_ vectorstore.Indexer     = (*Store)(nil)
 )
+
+// Pool defines the interface for PostgreSQL pool operations.
+type Pool interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+	Close()
+}
 
 // Options configures the pgvector store.
 type Options struct {
@@ -69,13 +78,12 @@ func WithAutoCreateTable(auto bool) Option {
 
 // Store is a pgvector-backed VectorStore implementation.
 type Store struct {
-	pool *pgxpool.Pool
+	pool Pool
 	opts Options
 }
 
-// New creates a new pgvector vector store.
-// connString should be a PostgreSQL connection string.
-func New(ctx context.Context, connString string, optFns ...Option) (*Store, error) {
+// NewFromPool creates a new pgvector vector store with the provided pool.
+func NewFromPool(ctx context.Context, pool Pool, optFns ...Option) (*Store, error) {
 	opts := Options{
 		TableName:       "documents",
 		Metric:          embedding.Cosine,
@@ -85,15 +93,9 @@ func New(ctx context.Context, connString string, optFns ...Option) (*Store, erro
 		fn(&opts)
 	}
 
-	pool, err := pgxpool.New(ctx, connString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
-	}
-
 	// Enable pgvector extension
-	_, err = pool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
+	_, err := pool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
 	if err != nil {
-		pool.Close()
 		return nil, fmt.Errorf("failed to enable vector extension: %w", err)
 	}
 
@@ -105,9 +107,24 @@ func New(ctx context.Context, connString string, optFns ...Option) (*Store, erro
 	// Auto-create table if configured
 	if opts.AutoCreateTable && opts.Dimensions > 0 {
 		if err := store.ensureTable(ctx, opts.TableName, opts.Dimensions, opts.Metric); err != nil {
-			pool.Close()
 			return nil, err
 		}
+	}
+
+	return store, nil
+}
+
+// New creates a new pgvector vector store by connecting to the given connection string.
+func New(ctx context.Context, connString string, optFns ...Option) (*Store, error) {
+	pool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+
+	store, err := NewFromPool(ctx, pool, optFns...)
+	if err != nil {
+		pool.Close()
+		return nil, err
 	}
 
 	return store, nil

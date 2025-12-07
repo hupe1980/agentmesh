@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/qdrant/go-client/qdrant"
@@ -18,6 +19,21 @@ var (
 	_ vectorstore.VectorStore = (*Store)(nil)
 	_ vectorstore.Indexer     = (*Store)(nil)
 )
+
+// PointsClient defines the interface for Qdrant points operations.
+type PointsClient interface {
+	Upsert(ctx context.Context, in *qdrant.UpsertPoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+	Search(ctx context.Context, in *qdrant.SearchPoints, opts ...grpc.CallOption) (*qdrant.SearchResponse, error)
+	Delete(ctx context.Context, in *qdrant.DeletePoints, opts ...grpc.CallOption) (*qdrant.PointsOperationResponse, error)
+}
+
+// CollectionsClient defines the interface for Qdrant collections operations.
+type CollectionsClient interface {
+	Get(ctx context.Context, in *qdrant.GetCollectionInfoRequest, opts ...grpc.CallOption) (*qdrant.GetCollectionInfoResponse, error)
+	Create(ctx context.Context, in *qdrant.CreateCollection, opts ...grpc.CallOption) (*qdrant.CollectionOperationResponse, error)
+	Delete(ctx context.Context, in *qdrant.DeleteCollection, opts ...grpc.CallOption) (*qdrant.CollectionOperationResponse, error)
+	List(ctx context.Context, in *qdrant.ListCollectionsRequest, opts ...grpc.CallOption) (*qdrant.ListCollectionsResponse, error)
+}
 
 // Options configures the Qdrant store.
 type Options struct {
@@ -70,15 +86,50 @@ func WithAutoCreateCollection(auto bool) Option {
 
 // Store is a Qdrant-backed VectorStore implementation.
 type Store struct {
-	client      qdrant.PointsClient
-	collections qdrant.CollectionsClient
+	client      PointsClient
+	collections CollectionsClient
 	conn        *grpc.ClientConn
 	opts        Options
 }
 
 // New creates a new Qdrant vector store.
+// conn is the gRPC connection (can be nil if Close won't be called).
+// pointsClient and collectionsClient are the gRPC clients for Qdrant operations.
+// Use qdrant.NewPointsClient(conn) and qdrant.NewCollectionsClient(conn) to create them,
+// or pass mock implementations for testing.
+func New(conn *grpc.ClientConn, pointsClient PointsClient, collectionsClient CollectionsClient, optFns ...Option) (*Store, error) {
+	opts := Options{
+		CollectionName:       "documents",
+		Metric:               embedding.Cosine,
+		AutoCreateCollection: true,
+	}
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
+	store := &Store{
+		client:      pointsClient,
+		collections: collectionsClient,
+		conn:        conn,
+		opts:        opts,
+	}
+
+	// Auto-create collection if configured
+	if opts.AutoCreateCollection && opts.Dimensions > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := store.ensureCollection(ctx, opts.CollectionName, opts.Dimensions, opts.Metric); err != nil {
+			return nil, err
+		}
+	}
+
+	return store, nil
+}
+
+// NewFromAddr creates a new Qdrant vector store by connecting to the given address.
 // addr should be the gRPC endpoint (e.g., "localhost:6334").
-func New(addr string, optFns ...Option) (*Store, error) {
+func NewFromAddr(addr string, optFns ...Option) (*Store, error) {
 	opts := Options{
 		CollectionName:       "documents",
 		Metric:               embedding.Cosine,
@@ -100,22 +151,10 @@ func New(addr string, optFns ...Option) (*Store, error) {
 		return nil, fmt.Errorf("failed to connect to Qdrant: %w", err)
 	}
 
-	store := &Store{
-		client:      qdrant.NewPointsClient(conn),
-		collections: qdrant.NewCollectionsClient(conn),
-		conn:        conn,
-		opts:        opts,
-	}
-
-	// Auto-create collection if configured
-	if opts.AutoCreateCollection && opts.Dimensions > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := store.ensureCollection(ctx, opts.CollectionName, opts.Dimensions, opts.Metric); err != nil {
-			_ = conn.Close()
-			return nil, err
-		}
+	store, err := New(conn, qdrant.NewPointsClient(conn), qdrant.NewCollectionsClient(conn), optFns...)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 
 	return store, nil
@@ -204,7 +243,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		points[i] = &qdrant.PointStruct{
 			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: pointUUID}},
-			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: toFloat32(doc.Embedding)}}},
+			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: floatconv.ToFloat32(doc.Embedding)}}},
 			Payload: payload,
 		}
 	}
@@ -236,7 +275,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	// Execute search
 	resp, err := s.client.Search(ctx, &qdrant.SearchPoints{
 		CollectionName: collection,
-		Vector:         toFloat32(queryEmbedding),
+		Vector:         floatconv.ToFloat32(queryEmbedding),
 		Limit:          uint64(opts.K),
 		Filter:         filter,
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
@@ -397,13 +436,13 @@ func extractEmbedding(vectors *qdrant.VectorsOutput) []float64 {
 
 	// Try the new Dense field first
 	if dense := vec.GetDense(); dense != nil && len(dense.GetData()) > 0 {
-		return toFloat64(dense.GetData())
+		return floatconv.ToFloat64(dense.GetData())
 	}
 
 	// Fall back to deprecated Data field for older Qdrant versions
 	//nolint:staticcheck // Support older Qdrant versions
 	if len(vec.GetData()) > 0 {
-		return toFloat64(vec.GetData())
+		return floatconv.ToFloat64(vec.GetData())
 	}
 
 	return nil
@@ -420,22 +459,6 @@ func toQdrantDistance(metric embedding.Metric) qdrant.Distance {
 	default:
 		return qdrant.Distance_Cosine
 	}
-}
-
-func toFloat32(vec []float64) []float32 {
-	result := make([]float32, len(vec))
-	for i, v := range vec {
-		result[i] = float32(v)
-	}
-	return result
-}
-
-func toFloat64(vec []float32) []float64 {
-	result := make([]float64, len(vec))
-	for i, v := range vec {
-		result[i] = float64(v)
-	}
-	return result
 }
 
 func toQdrantValue(v any) *qdrant.Value {

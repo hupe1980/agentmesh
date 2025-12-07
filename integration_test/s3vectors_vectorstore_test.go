@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	awss3vectors "github.com/aws/aws-sdk-go-v2/service/s3vectors"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore/s3vectors"
@@ -37,14 +38,13 @@ func TestS3VectorsStore_BasicOperations(t *testing.T) {
 		t.Skipf("skipping S3 Vectors test: cannot load AWS config: %v", err)
 	}
 
-	store, err := s3vectors.New(ctx,
-		s3vectors.WithAWSConfig(cfg),
-		s3vectors.WithVectorBucketName(bucketName),
-		s3vectors.WithIndexName(indexName),
+	// Create S3 Vectors client
+	client := awss3vectors.NewFromConfig(cfg)
+
+	store := s3vectors.New(client, bucketName, indexName,
 		s3vectors.WithDimensions(4),
 		s3vectors.WithMetric(embedding.Cosine),
 	)
-	require.NoError(t, err)
 	defer store.Close()
 
 	// Test Add
@@ -100,13 +100,12 @@ func TestS3VectorsStore_Namespaces(t *testing.T) {
 		t.Skipf("skipping S3 Vectors test: cannot load AWS config: %v", err)
 	}
 
-	store, err := s3vectors.New(ctx,
-		s3vectors.WithAWSConfig(cfg),
-		s3vectors.WithVectorBucketName(bucketName),
-		s3vectors.WithIndexName(indexName),
+	// Create S3 Vectors client
+	client := awss3vectors.NewFromConfig(cfg)
+
+	store := s3vectors.New(client, bucketName, indexName,
 		s3vectors.WithDimensions(4),
 	)
-	require.NoError(t, err)
 	defer store.Close()
 
 	// Add documents to different namespaces
@@ -163,12 +162,10 @@ func TestS3VectorsStore_IndexOperations(t *testing.T) {
 		t.Skipf("skipping S3 Vectors test: cannot load AWS config: %v", err)
 	}
 
-	store, err := s3vectors.New(ctx,
-		s3vectors.WithAWSConfig(cfg),
-		s3vectors.WithVectorBucketName(bucketName),
-		s3vectors.WithIndexName(indexName),
-	)
-	require.NoError(t, err)
+	// Create S3 Vectors client
+	client := awss3vectors.NewFromConfig(cfg)
+
+	store := s3vectors.New(client, bucketName, indexName)
 	defer store.Close()
 
 	// List indexes

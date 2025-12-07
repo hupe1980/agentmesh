@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors"
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/document"
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/types"
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 )
@@ -21,43 +21,31 @@ var (
 	_ vectorstore.Indexer     = (*Store)(nil)
 )
 
+// Client defines the interface for S3 Vectors operations.
+// This interface allows for mocking in tests.
+type Client interface {
+	PutVectors(ctx context.Context, params *s3vectors.PutVectorsInput, optFns ...func(*s3vectors.Options)) (*s3vectors.PutVectorsOutput, error)
+	QueryVectors(ctx context.Context, params *s3vectors.QueryVectorsInput, optFns ...func(*s3vectors.Options)) (*s3vectors.QueryVectorsOutput, error)
+	DeleteVectors(ctx context.Context, params *s3vectors.DeleteVectorsInput, optFns ...func(*s3vectors.Options)) (*s3vectors.DeleteVectorsOutput, error)
+	CreateIndex(ctx context.Context, params *s3vectors.CreateIndexInput, optFns ...func(*s3vectors.Options)) (*s3vectors.CreateIndexOutput, error)
+	DeleteIndex(ctx context.Context, params *s3vectors.DeleteIndexInput, optFns ...func(*s3vectors.Options)) (*s3vectors.DeleteIndexOutput, error)
+	ListIndexes(ctx context.Context, params *s3vectors.ListIndexesInput, optFns ...func(*s3vectors.Options)) (*s3vectors.ListIndexesOutput, error)
+}
+
+// Ensure the AWS SDK client implements our interface.
+var _ Client = (*s3vectors.Client)(nil)
+
 // Options configures the S3 Vectors store.
 type Options struct {
-	// VectorBucketName is the name of the vector bucket.
-	VectorBucketName string
-
-	// IndexName is the name of the vector index.
-	IndexName string
-
 	// Dimensions is the vector dimensionality. Required for index creation.
 	Dimensions int
 
 	// Metric specifies the distance metric. Default: Cosine
 	Metric embedding.Metric
-
-	// Region is the AWS region. Default: uses AWS_REGION env var.
-	Region string
-
-	// AWSConfig is an optional pre-configured AWS config.
-	AWSConfig *aws.Config
 }
 
 // Option configures a Store.
 type Option func(*Options)
-
-// WithVectorBucketName sets the vector bucket name.
-func WithVectorBucketName(name string) Option {
-	return func(o *Options) {
-		o.VectorBucketName = name
-	}
-}
-
-// WithIndexName sets the index name.
-func WithIndexName(name string) Option {
-	return func(o *Options) {
-		o.IndexName = name
-	}
-}
 
 // WithDimensions sets the vector dimensions.
 func WithDimensions(dims int) Option {
@@ -73,28 +61,19 @@ func WithMetric(metric embedding.Metric) Option {
 	}
 }
 
-// WithRegion sets the AWS region.
-func WithRegion(region string) Option {
-	return func(o *Options) {
-		o.Region = region
-	}
-}
-
-// WithAWSConfig sets a pre-configured AWS config.
-func WithAWSConfig(cfg aws.Config) Option {
-	return func(o *Options) {
-		o.AWSConfig = &cfg
-	}
-}
-
 // Store is an S3 Vectors-backed VectorStore implementation.
 type Store struct {
-	client *s3vectors.Client
-	opts   Options
+	client           Client
+	vectorBucketName string
+	indexName        string
+	opts             Options
 }
 
 // New creates a new S3 Vectors store.
-func New(ctx context.Context, optFns ...Option) (*Store, error) {
+// client is the S3 Vectors client (use s3vectors.NewFromConfig to create one).
+// vectorBucketName is the name of the vector bucket.
+// indexName is the name of the vector index.
+func New(client Client, vectorBucketName, indexName string, optFns ...Option) *Store {
 	opts := Options{
 		Metric: embedding.Cosine,
 	}
@@ -102,36 +81,12 @@ func New(ctx context.Context, optFns ...Option) (*Store, error) {
 		fn(&opts)
 	}
 
-	if opts.VectorBucketName == "" {
-		return nil, fmt.Errorf("s3vectors: vector bucket name is required")
-	}
-
-	if opts.IndexName == "" {
-		return nil, fmt.Errorf("s3vectors: index name is required")
-	}
-
-	var cfg aws.Config
-	var err error
-
-	if opts.AWSConfig != nil {
-		cfg = *opts.AWSConfig
-	} else {
-		loadOpts := []func(*config.LoadOptions) error{}
-		if opts.Region != "" {
-			loadOpts = append(loadOpts, config.WithRegion(opts.Region))
-		}
-		cfg, err = config.LoadDefaultConfig(ctx, loadOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("s3vectors: failed to load AWS config: %w", err)
-		}
-	}
-
-	client := s3vectors.NewFromConfig(cfg)
-
 	return &Store{
-		client: client,
-		opts:   opts,
-	}, nil
+		client:           client,
+		vectorBucketName: vectorBucketName,
+		indexName:        indexName,
+		opts:             opts,
+	}
 }
 
 // Add inserts or updates documents in the store.
@@ -175,14 +130,14 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		vectors[i] = types.PutInputVector{
 			Key:      aws.String(docID),
-			Data:     &types.VectorDataMemberFloat32{Value: toFloat32(doc.Embedding)},
+			Data:     &types.VectorDataMemberFloat32{Value: floatconv.ToFloat32(doc.Embedding)},
 			Metadata: toDocumentInterface(metadata),
 		}
 	}
 
 	_, err := s.client.PutVectors(ctx, &s3vectors.PutVectorsInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
-		IndexName:        aws.String(s.opts.IndexName),
+		VectorBucketName: aws.String(s.vectorBucketName),
+		IndexName:        aws.String(s.indexName),
 		Vectors:          vectors,
 	})
 	if err != nil {
@@ -197,9 +152,9 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	opts.Normalize()
 
 	input := &s3vectors.QueryVectorsInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
-		IndexName:        aws.String(s.opts.IndexName),
-		QueryVector:      &types.VectorDataMemberFloat32{Value: toFloat32(queryEmbedding)},
+		VectorBucketName: aws.String(s.vectorBucketName),
+		IndexName:        aws.String(s.indexName),
+		QueryVector:      &types.VectorDataMemberFloat32{Value: floatconv.ToFloat32(queryEmbedding)},
 		TopK:             aws.Int32(int32(opts.K)),
 		ReturnMetadata:   true,
 		ReturnDistance:   true,
@@ -277,8 +232,8 @@ func (s *Store) Delete(ctx context.Context, ids []string, namespace string) erro
 	copy(keys, ids)
 
 	_, err := s.client.DeleteVectors(ctx, &s3vectors.DeleteVectorsInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
-		IndexName:        aws.String(s.opts.IndexName),
+		VectorBucketName: aws.String(s.vectorBucketName),
+		IndexName:        aws.String(s.indexName),
 		Keys:             keys,
 	})
 	if err != nil {
@@ -291,7 +246,7 @@ func (s *Store) Delete(ctx context.Context, ids []string, namespace string) erro
 // CreateIndex creates a new vector index.
 func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric embedding.Metric) error {
 	_, err := s.client.CreateIndex(ctx, &s3vectors.CreateIndexInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
+		VectorBucketName: aws.String(s.vectorBucketName),
 		IndexName:        aws.String(name),
 		Dimension:        aws.Int32(int32(dims)),
 		DistanceMetric:   toS3VectorsMetric(metric),
@@ -306,7 +261,7 @@ func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric e
 // DeleteIndex removes an index and all its data.
 func (s *Store) DeleteIndex(ctx context.Context, name string) error {
 	_, err := s.client.DeleteIndex(ctx, &s3vectors.DeleteIndexInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
+		VectorBucketName: aws.String(s.vectorBucketName),
 		IndexName:        aws.String(name),
 	})
 	if err != nil {
@@ -319,7 +274,7 @@ func (s *Store) DeleteIndex(ctx context.Context, name string) error {
 // ListIndexes returns all available indexes in the vector bucket.
 func (s *Store) ListIndexes(ctx context.Context) ([]string, error) {
 	resp, err := s.client.ListIndexes(ctx, &s3vectors.ListIndexesInput{
-		VectorBucketName: aws.String(s.opts.VectorBucketName),
+		VectorBucketName: aws.String(s.vectorBucketName),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("s3vectors: failed to list indexes: %w", err)
@@ -349,15 +304,6 @@ func toS3VectorsMetric(m embedding.Metric) types.DistanceMetric {
 	default:
 		return types.DistanceMetricCosine
 	}
-}
-
-// toFloat32 converts float64 slice to float32 slice.
-func toFloat32(v []float64) []float32 {
-	result := make([]float32, len(v))
-	for i, val := range v {
-		result[i] = float32(val)
-	}
-	return result
 }
 
 // toDocumentInterface converts a map to document.Interface for AWS SDK.

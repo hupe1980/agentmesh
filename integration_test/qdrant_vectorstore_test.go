@@ -47,7 +47,7 @@ func TestQdrantVectorStore_BasicOperations(t *testing.T) {
 	embedder := embedding.NewSimpleEmbedder(4)
 
 	// Create store with auto-create enabled
-	store, err := vsqdrant.New(
+	store, err := vsqdrant.NewFromAddr(
 		endpoint,
 		vsqdrant.WithCollectionName("test_collection"),
 		vsqdrant.WithDimensions(4),
@@ -123,7 +123,7 @@ func TestQdrantVectorStore_Namespaces(t *testing.T) {
 
 	embedder := embedding.NewSimpleEmbedder(4)
 
-	store, err := vsqdrant.New(
+	store, err := vsqdrant.NewFromAddr(
 		endpoint,
 		vsqdrant.WithCollectionName("namespace_test"),
 		vsqdrant.WithDimensions(4),
@@ -201,7 +201,7 @@ func TestQdrantVectorStore_IndexOperations(t *testing.T) {
 	endpoint, cleanup := setupQdrantContainer(t, ctx)
 	defer cleanup()
 
-	store, err := vsqdrant.New(
+	store, err := vsqdrant.NewFromAddr(
 		endpoint,
 		vsqdrant.WithDimensions(4),
 		vsqdrant.WithAutoCreateCollection(false), // Don't auto-create
@@ -245,7 +245,7 @@ func TestQdrantVectorStore_Delete(t *testing.T) {
 
 	embedder := embedding.NewSimpleEmbedder(4)
 
-	store, err := vsqdrant.New(
+	store, err := vsqdrant.NewFromAddr(
 		endpoint,
 		vsqdrant.WithCollectionName("delete_test"),
 		vsqdrant.WithDimensions(4),
@@ -296,7 +296,7 @@ func TestQdrantVectorStore_Search(t *testing.T) {
 
 	embedder := embedding.NewSimpleEmbedder(4)
 
-	store, err := vsqdrant.New(
+	store, err := vsqdrant.NewFromAddr(
 		endpoint,
 		vsqdrant.WithCollectionName("search_test"),
 		vsqdrant.WithDimensions(4),

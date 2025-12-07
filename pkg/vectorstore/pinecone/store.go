@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/pinecone-io/go-pinecone/pinecone"
@@ -19,20 +20,25 @@ var (
 	_ vectorstore.Indexer     = (*Store)(nil)
 )
 
+// IndexConnection defines the interface for Pinecone index data operations.
+// This interface allows for mocking in tests.
+type IndexConnection interface {
+	UpsertVectors(ctx context.Context, in []*pinecone.Vector) (uint32, error)
+	QueryByVectorValues(ctx context.Context, in *pinecone.QueryByVectorValuesRequest) (*pinecone.QueryVectorsResponse, error)
+	DeleteVectorsById(ctx context.Context, ids []string) error
+	Close() error
+}
+
+// Client defines the interface for Pinecone control plane operations.
+// This interface allows for mocking in tests.
+type Client interface {
+	CreateServerlessIndex(ctx context.Context, in *pinecone.CreateServerlessIndexRequest) (*pinecone.Index, error)
+	DeleteIndex(ctx context.Context, name string) error
+	ListIndexes(ctx context.Context) ([]*pinecone.Index, error)
+}
+
 // Options configures the Pinecone store.
 type Options struct {
-	// APIKey is the Pinecone API key.
-	APIKey string
-
-	// IndexName is the name of the index to use.
-	IndexName string
-
-	// IndexHost is the host URL of the index (optional, auto-resolved if empty).
-	IndexHost string
-
-	// Dimensions is the vector dimensionality. Required for index creation.
-	Dimensions int
-
 	// Metric specifies the distance metric. Default: Cosine
 	Metric embedding.Metric
 
@@ -45,34 +51,6 @@ type Options struct {
 
 // Option configures a Store.
 type Option func(*Options)
-
-// WithAPIKey sets the Pinecone API key.
-func WithAPIKey(key string) Option {
-	return func(o *Options) {
-		o.APIKey = key
-	}
-}
-
-// WithIndexName sets the index name.
-func WithIndexName(name string) Option {
-	return func(o *Options) {
-		o.IndexName = name
-	}
-}
-
-// WithIndexHost sets the index host URL.
-func WithIndexHost(host string) Option {
-	return func(o *Options) {
-		o.IndexHost = host
-	}
-}
-
-// WithDimensions sets the vector dimensions.
-func WithDimensions(dims int) Option {
-	return func(o *Options) {
-		o.Dimensions = dims
-	}
-}
 
 // WithMetric sets the distance metric.
 func WithMetric(metric embedding.Metric) Option {
@@ -97,13 +75,14 @@ func WithRegion(region string) Option {
 
 // Store is a Pinecone-backed VectorStore implementation.
 type Store struct {
-	client *pinecone.Client
-	idx    *pinecone.IndexConnection
-	opts   Options
+	client    Client
+	idx       IndexConnection
+	indexName string
+	opts      Options
 }
 
 // New creates a new Pinecone vector store.
-func New(ctx context.Context, optFns ...Option) (*Store, error) {
+func New(client Client, idx IndexConnection, indexName string, optFns ...Option) *Store {
 	opts := Options{
 		Metric: embedding.Cosine,
 		Cloud:  "aws",
@@ -113,56 +92,12 @@ func New(ctx context.Context, optFns ...Option) (*Store, error) {
 		fn(&opts)
 	}
 
-	if opts.APIKey == "" {
-		return nil, fmt.Errorf("pinecone: API key is required")
+	return &Store{
+		client:    client,
+		idx:       idx,
+		indexName: indexName,
+		opts:      opts,
 	}
-
-	if opts.IndexName == "" {
-		return nil, fmt.Errorf("pinecone: index name is required")
-	}
-
-	client, err := pinecone.NewClient(pinecone.NewClientParams{
-		ApiKey: opts.APIKey,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pinecone: failed to create client: %w", err)
-	}
-
-	store := &Store{
-		client: client,
-		opts:   opts,
-	}
-
-	// Connect to the index
-	if err := store.connectToIndex(ctx); err != nil {
-		return nil, err
-	}
-
-	return store, nil
-}
-
-// connectToIndex establishes connection to the Pinecone index.
-func (s *Store) connectToIndex(ctx context.Context) error {
-	host := s.opts.IndexHost
-
-	// If no host provided, describe the index to get it
-	if host == "" {
-		idx, err := s.client.DescribeIndex(ctx, s.opts.IndexName)
-		if err != nil {
-			return fmt.Errorf("pinecone: failed to describe index %q: %w", s.opts.IndexName, err)
-		}
-		host = idx.Host
-	}
-
-	idxConn, err := s.client.Index(pinecone.NewIndexConnParams{
-		Host: host,
-	})
-	if err != nil {
-		return fmt.Errorf("pinecone: failed to connect to index: %w", err)
-	}
-
-	s.idx = idxConn
-	return nil
 }
 
 // Add inserts or updates documents in the store.
@@ -207,14 +142,9 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		vectors[i] = &pinecone.Vector{
 			Id:       docID,
-			Values:   toFloat32(doc.Embedding),
+			Values:   floatconv.ToFloat32(doc.Embedding),
 			Metadata: metadataStruct,
 		}
-	}
-
-	// Use namespace if specified
-	if opts.Namespace != "" {
-		s.idx.Namespace = opts.Namespace
 	}
 
 	_, err := s.idx.UpsertVectors(ctx, vectors)
@@ -228,11 +158,6 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 // Search finds documents similar to the query embedding.
 func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opts vectorstore.SearchOptions) ([]vectorstore.Document, error) {
 	opts.Normalize()
-
-	// Set namespace if specified
-	if opts.Namespace != "" {
-		s.idx.Namespace = opts.Namespace
-	}
 
 	// Build metadata filter
 	var filter *pinecone.MetadataFilter
@@ -249,7 +174,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	}
 
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
-		Vector:          toFloat32(queryEmbedding),
+		Vector:          floatconv.ToFloat32(queryEmbedding),
 		TopK:            uint32(opts.K),
 		MetadataFilter:  filter,
 		IncludeValues:   opts.IncludeEmbeddings,
@@ -288,7 +213,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 
 		// Include embeddings if requested
 		if opts.IncludeEmbeddings && match.Vector.Values != nil {
-			doc.Embedding = toFloat64(match.Vector.Values)
+			doc.Embedding = floatconv.ToFloat64(match.Vector.Values)
 		}
 
 		results = append(results, doc)
@@ -298,14 +223,9 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 }
 
 // Delete removes documents by ID.
-func (s *Store) Delete(ctx context.Context, ids []string, namespace string) error {
+func (s *Store) Delete(ctx context.Context, ids []string, _ string) error {
 	if len(ids) == 0 {
 		return nil
-	}
-
-	// Set namespace if specified
-	if namespace != "" {
-		s.idx.Namespace = namespace
 	}
 
 	err := s.idx.DeleteVectorsById(ctx, ids)
@@ -377,22 +297,4 @@ func toPineconeMetric(m embedding.Metric) pinecone.IndexMetric {
 	default:
 		return pinecone.Cosine
 	}
-}
-
-// toFloat32 converts float64 slice to float32 slice.
-func toFloat32(v []float64) []float32 {
-	result := make([]float32, len(v))
-	for i, val := range v {
-		result[i] = float32(val)
-	}
-	return result
-}
-
-// toFloat64 converts float32 slice to float64 slice.
-func toFloat64(v []float32) []float64 {
-	result := make([]float64, len(v))
-	for i, val := range v {
-		result[i] = float64(val)
-	}
-	return result
 }

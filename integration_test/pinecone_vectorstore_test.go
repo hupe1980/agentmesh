@@ -6,12 +6,49 @@ import (
 	"testing"
 	"time"
 
+	gopinecone "github.com/pinecone-io/go-pinecone/pinecone"
+
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore/pinecone"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// createPineconeStore creates a Pinecone store for integration testing.
+// Returns the store or nil if credentials are not available.
+func createPineconeStore(t *testing.T, ctx context.Context) *pinecone.Store {
+	t.Helper()
+
+	apiKey := os.Getenv("PINECONE_API_KEY")
+	indexName := os.Getenv("PINECONE_INDEX_NAME")
+
+	if apiKey == "" || indexName == "" {
+		t.Skip("skipping Pinecone test: PINECONE_API_KEY or PINECONE_INDEX_NAME not set")
+	}
+
+	// Create Pinecone client
+	client, err := gopinecone.NewClient(gopinecone.NewClientParams{
+		ApiKey: apiKey,
+	})
+	require.NoError(t, err)
+
+	// Get index host
+	host := os.Getenv("PINECONE_INDEX_HOST")
+	if host == "" {
+		idx, err := client.DescribeIndex(ctx, indexName)
+		require.NoError(t, err)
+		host = idx.Host
+	}
+
+	// Create index connection
+	idxConn, err := client.Index(gopinecone.NewIndexConnParams{
+		Host: host,
+	})
+	require.NoError(t, err)
+
+	return pinecone.New(client, idxConn, indexName)
+}
 
 // TestPineconeVectorStore_BasicOperations tests basic Pinecone operations.
 // This test requires a Pinecone API key and an existing index.
@@ -21,27 +58,10 @@ func TestPineconeVectorStore_BasicOperations(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	apiKey := os.Getenv("PINECONE_API_KEY")
-	indexName := os.Getenv("PINECONE_INDEX_NAME")
-
-	if apiKey == "" || indexName == "" {
-		t.Skip("skipping Pinecone test: PINECONE_API_KEY or PINECONE_INDEX_NAME not set")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	opts := []pinecone.Option{
-		pinecone.WithAPIKey(apiKey),
-		pinecone.WithIndexName(indexName),
-	}
-
-	if host := os.Getenv("PINECONE_INDEX_HOST"); host != "" {
-		opts = append(opts, pinecone.WithIndexHost(host))
-	}
-
-	store, err := pinecone.New(ctx, opts...)
-	require.NoError(t, err)
+	store := createPineconeStore(t, ctx)
 	defer store.Close()
 
 	// Test Add
@@ -62,7 +82,7 @@ func TestPineconeVectorStore_BasicOperations(t *testing.T) {
 	docs[0].Embedding[0] = 0.1
 	docs[1].Embedding[0] = 0.9
 
-	err = store.Add(ctx, docs)
+	err := store.Add(ctx, docs)
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -84,27 +104,10 @@ func TestPineconeVectorStore_Namespaces(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	apiKey := os.Getenv("PINECONE_API_KEY")
-	indexName := os.Getenv("PINECONE_INDEX_NAME")
-
-	if apiKey == "" || indexName == "" {
-		t.Skip("skipping Pinecone test: PINECONE_API_KEY or PINECONE_INDEX_NAME not set")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	opts := []pinecone.Option{
-		pinecone.WithAPIKey(apiKey),
-		pinecone.WithIndexName(indexName),
-	}
-
-	if host := os.Getenv("PINECONE_INDEX_HOST"); host != "" {
-		opts = append(opts, pinecone.WithIndexHost(host))
-	}
-
-	store, err := pinecone.New(ctx, opts...)
-	require.NoError(t, err)
+	store := createPineconeStore(t, ctx)
 	defer store.Close()
 
 	docs := []vectorstore.Document{
@@ -118,7 +121,7 @@ func TestPineconeVectorStore_Namespaces(t *testing.T) {
 	docs[0].Embedding[0] = 0.5
 
 	// Add to namespace via AddOptions
-	err = store.Add(ctx, docs, func(o *vectorstore.AddOptions) {
+	err := store.Add(ctx, docs, func(o *vectorstore.AddOptions) {
 		o.Namespace = "test-namespace"
 	})
 	require.NoError(t, err)
@@ -145,21 +148,10 @@ func TestPineconeVectorStore_IndexOperations(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	apiKey := os.Getenv("PINECONE_API_KEY")
-	indexName := os.Getenv("PINECONE_INDEX_NAME")
-
-	if apiKey == "" || indexName == "" {
-		t.Skip("skipping Pinecone test: PINECONE_API_KEY or PINECONE_INDEX_NAME not set")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	store, err := pinecone.New(ctx,
-		pinecone.WithAPIKey(apiKey),
-		pinecone.WithIndexName(indexName),
-	)
-	require.NoError(t, err)
+	store := createPineconeStore(t, ctx)
 	defer store.Close()
 
 	indexes, err := store.ListIndexes(ctx)
