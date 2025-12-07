@@ -2,8 +2,8 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -11,20 +11,64 @@ import (
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/vectorstore"
+	memorystore "github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
 )
 
+// Metadata keys for VectorStore documents.
+const (
+	metaKeyMessageType = "_msg_type"
+	metaKeyMessageData = "_msg_data"
+	metaKeyTimestamp   = "_timestamp"
+)
+
+// VectorMemoryOptions configures VectorMemory behavior.
+type VectorMemoryOptions struct {
+	// Store is an optional VectorStore backend.
+	// If nil, an in-memory store will be created automatically.
+	Store vectorstore.VectorStore
+}
+
 // VectorMemory implements semantic search over stored messages using vector embeddings.
+// It uses a VectorStore backend for persistent/scalable storage.
 type VectorMemory struct {
-	embedder embedding.Embedder
-	store    map[string][]*MessageEntry // sessionID -> entries
-	mu       sync.RWMutex
+	embedder    embedding.Embedder
+	store       vectorstore.VectorStore
+	ownsStore   bool // true if we created the store (need to close it)
+	sessionsMu  sync.RWMutex
+	sessionsSet map[string]struct{} // track known sessions
 }
 
 // NewVectorMemory creates a new vector-based memory store.
-func NewVectorMemory(embedder embedding.Embedder) *VectorMemory {
-	return &VectorMemory{
-		embedder: embedder,
-		store:    make(map[string][]*MessageEntry),
+// The embedder is required for generating embeddings.
+// Optional VectorMemoryOptions can provide a custom VectorStore backend.
+func NewVectorMemory(embedder embedding.Embedder, opts ...func(*VectorMemoryOptions)) *VectorMemory {
+	options := &VectorMemoryOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	vm := &VectorMemory{
+		embedder:    embedder,
+		sessionsSet: make(map[string]struct{}),
+	}
+
+	if options.Store != nil {
+		vm.store = options.Store
+		vm.ownsStore = false
+	} else {
+		// Create default in-memory store
+		vm.store = memorystore.New()
+		vm.ownsStore = true
+	}
+
+	return vm
+}
+
+// WithStore sets a custom VectorStore backend.
+func WithStore(store vectorstore.VectorStore) func(*VectorMemoryOptions) {
+	return func(o *VectorMemoryOptions) {
+		o.Store = store
 	}
 }
 
@@ -33,6 +77,11 @@ func (vm *VectorMemory) Store(ctx context.Context, sessionID string, messages []
 	if len(messages) == 0 {
 		return nil
 	}
+
+	// Track session
+	vm.sessionsMu.Lock()
+	vm.sessionsSet[sessionID] = struct{}{}
+	vm.sessionsMu.Unlock()
 
 	// Extract text from messages for embedding
 	texts := make([]string, len(messages))
@@ -46,57 +95,35 @@ func (vm *VectorMemory) Store(ctx context.Context, sessionID string, messages []
 		return fmt.Errorf("failed to generate embeddings: %w", err)
 	}
 
-	// Create entries with incrementing timestamps to preserve order within batch
-	entries := make([]*MessageEntry, len(messages))
+	// Create documents for vector store
 	baseTime := time.Now()
+	docs := make([]vectorstore.Document, len(messages))
+
 	for i, msg := range messages {
-		entries[i] = &MessageEntry{
+		// Serialize message for storage
+		msgData, err := serializeMessage(msg)
+		if err != nil {
+			return fmt.Errorf("failed to serialize message: %w", err)
+		}
+
+		ts := baseTime.Add(time.Duration(i) * time.Nanosecond)
+		docs[i] = vectorstore.Document{
 			ID:        uuid.New().String(),
-			SessionID: sessionID,
-			Message:   msg,
+			Content:   texts[i],
 			Embedding: embeddings[i],
-			Timestamp: baseTime.Add(time.Duration(i) * time.Nanosecond), // Preserve order within batch
-			Metadata:  make(map[string]string),
+			Timestamp: ts,
+			Metadata: vectorstore.Metadata{
+				metaKeyMessageType: string(msg.Type()),
+				metaKeyMessageData: msgData,
+				metaKeyTimestamp:   ts.Format(time.RFC3339Nano),
+			},
 		}
 	}
 
-	// Store entries
-	vm.mu.Lock()
-	vm.store[sessionID] = append(vm.store[sessionID], entries...)
-	vm.mu.Unlock()
-
-	return nil
-}
-
-// applySemanticSearch performs semantic search on candidates using query embedding.
-func (vm *VectorMemory) applySemanticSearch(ctx context.Context, candidates []*MessageEntry, filter RecallFilter) ([]*MessageEntry, error) {
-	queryEmbedding, err := vm.embedder.Embed(ctx, filter.Query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to embed query: %w", err)
-	}
-
-	// Calculate similarity scores
-	for _, entry := range candidates {
-		entry.Score = cosineSimilarity(queryEmbedding, entry.Embedding)
-	}
-
-	// Filter by minimum score
-	if filter.MinScore > 0 {
-		filtered := make([]*MessageEntry, 0, len(candidates))
-		for _, entry := range candidates {
-			if entry.Score >= filter.MinScore {
-				filtered = append(filtered, entry)
-			}
-		}
-		candidates = filtered
-	}
-
-	// Sort by score descending
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Score > candidates[j].Score
+	// Store in vector store with session as namespace
+	return vm.store.Add(ctx, docs, func(o *vectorstore.AddOptions) {
+		o.Namespace = sessionID
 	})
-
-	return candidates, nil
 }
 
 // Recall retrieves messages using semantic search or filters.
@@ -105,84 +132,148 @@ func (vm *VectorMemory) applySemanticSearch(ctx context.Context, candidates []*M
 func (vm *VectorMemory) Recall(ctx context.Context, sessionID string, filter RecallFilter) ([]message.Message, error) {
 	filter.Normalize()
 
-	vm.mu.RLock()
-	entries, exists := vm.store[sessionID]
-	vm.mu.RUnlock()
+	var searchOpts vectorstore.SearchOptions
+	searchOpts.Namespace = sessionID
+	searchOpts.K = filter.K * 3 // Fetch more to allow for post-filtering
+	searchOpts.MinScore = filter.MinScore
 
-	if !exists || len(entries) == 0 {
-		return nil, nil
+	// Build metadata filter for message types
+	if len(filter.Types) > 0 {
+		typeStrs := make([]any, len(filter.Types))
+		for i, t := range filter.Types {
+			typeStrs[i] = string(t)
+		}
+		searchOpts.Filter = vectorstore.In(metaKeyMessageType, typeStrs...)
 	}
 
-	// Make a copy to work with
-	candidates := make([]*MessageEntry, 0, len(entries))
-	for _, entry := range entries {
-		// Apply type filter
-		if len(filter.Types) > 0 && !containsType(filter.Types, entry.Message.Type()) {
-			continue
-		}
+	var docs []vectorstore.Document
+	var err error
 
-		// Apply time filters
-		if filter.After != nil && entry.Timestamp.Before(*filter.After) {
-			continue
-		}
-		if filter.Before != nil && entry.Timestamp.After(*filter.Before) {
-			continue
-		}
-
-		// Apply metadata filters
-		if len(filter.Metadata) > 0 && !matchesMetadata(entry.Metadata, filter.Metadata) {
-			continue
-		}
-
-		candidates = append(candidates, entry)
-	}
-
-	// If query provided, do semantic search
 	if filter.Query != "" {
-		var err error
-		candidates, err = vm.applySemanticSearch(ctx, candidates, filter)
-		if err != nil {
-			return nil, err
+		// Semantic search with query embedding
+		queryEmbedding, embErr := vm.embedder.Embed(ctx, filter.Query)
+		if embErr != nil {
+			return nil, fmt.Errorf("failed to embed query: %w", embErr)
 		}
+		docs, err = vm.store.Search(ctx, queryEmbedding, searchOpts)
 	} else {
-		// No query: sort by timestamp descending (most recent first)
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].Timestamp.After(candidates[j].Timestamp)
+		// No query - fetch all documents and sort by timestamp
+		// Use a zero vector to get all documents (most stores will return by recency)
+		dims := vm.embedder.Dimensions()
+		zeroVec := make(embedding.Vector, dims)
+		searchOpts.MinScore = 0 // Don't filter by score when no query
+		docs, err = vm.store.Search(ctx, zeroVec, searchOpts)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to search vector store: %w", err)
+	}
+
+	// Post-filter and convert documents to messages
+	results := make([]message.Message, 0, len(docs))
+	for _, doc := range docs {
+		// Apply time filters
+		if filter.After != nil && doc.Timestamp.Before(*filter.After) {
+			continue
+		}
+		if filter.Before != nil && doc.Timestamp.After(*filter.Before) {
+			continue
+		}
+
+		// Apply custom metadata filter
+		if len(filter.Metadata) > 0 {
+			docMeta := extractStringMetadata(doc.Metadata)
+			if !matchesMetadata(docMeta, filter.Metadata) {
+				continue
+			}
+		}
+
+		// Deserialize message
+		msg, err := deserializeMessage(doc.Metadata)
+		if err != nil {
+			continue // Skip corrupt entries
+		}
+
+		results = append(results, msg)
+		if len(results) >= filter.K {
+			break
+		}
+	}
+
+	// If no query, sort by timestamp descending
+	if filter.Query == "" && len(results) > 0 {
+		// We need to re-sort since vector store might not preserve order
+		entries := make([]*docWithTimestamp, len(results))
+		for i, msg := range results {
+			entries[i] = &docWithTimestamp{msg: msg, ts: docs[i].Timestamp}
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].ts.After(entries[j].ts)
 		})
-	}
-
-	// Limit to K results
-	if len(candidates) > filter.K {
-		candidates = candidates[:filter.K]
-	}
-
-	// Extract messages
-	results := make([]message.Message, len(candidates))
-	for i, entry := range candidates {
-		results[i] = entry.Message
+		for i, e := range entries {
+			results[i] = e.msg
+		}
 	}
 
 	return results, nil
 }
 
+type docWithTimestamp struct {
+	msg message.Message
+	ts  time.Time
+}
+
 // Clear removes all messages for a session.
 func (vm *VectorMemory) Clear(ctx context.Context, sessionID string) error {
-	vm.mu.Lock()
-	delete(vm.store, sessionID)
-	vm.mu.Unlock()
+	// Search for all documents in namespace and delete them
+	dims := vm.embedder.Dimensions()
+	zeroVec := make(embedding.Vector, dims)
+
+	docs, err := vm.store.Search(ctx, zeroVec, vectorstore.SearchOptions{
+		Namespace: sessionID,
+		K:         10000, // Get all documents
+		MinScore:  0,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to search for documents to clear: %w", err)
+	}
+
+	if len(docs) > 0 {
+		ids := make([]string, len(docs))
+		for i, doc := range docs {
+			ids[i] = doc.ID
+		}
+		if err := vm.store.Delete(ctx, ids, sessionID); err != nil {
+			return fmt.Errorf("failed to delete documents: %w", err)
+		}
+	}
+
+	// Remove from session set
+	vm.sessionsMu.Lock()
+	delete(vm.sessionsSet, sessionID)
+	vm.sessionsMu.Unlock()
+
 	return nil
 }
 
 // Sessions returns all session IDs.
 func (vm *VectorMemory) Sessions(ctx context.Context) ([]string, error) {
-	vm.mu.RLock()
-	defer vm.mu.RUnlock()
+	vm.sessionsMu.RLock()
+	defer vm.sessionsMu.RUnlock()
 
-	sessions := make([]string, 0, len(vm.store))
-	for sessionID := range vm.store {
+	sessions := make([]string, 0, len(vm.sessionsSet))
+	for sessionID := range vm.sessionsSet {
 		sessions = append(sessions, sessionID)
 	}
 	return sessions, nil
+}
+
+// Close releases resources if the store was created internally.
+func (vm *VectorMemory) Close() error {
+	if vm.ownsStore && vm.store != nil {
+		return vm.store.Close()
+	}
+	return nil
 }
 
 // Helper functions
@@ -223,21 +314,100 @@ func matchesMetadata(entryMeta, filterMeta map[string]string) bool {
 	return true
 }
 
-func cosineSimilarity(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return 0
+func extractStringMetadata(meta vectorstore.Metadata) map[string]string {
+	result := make(map[string]string)
+	for k, v := range meta {
+		if s, ok := v.(string); ok {
+			result[k] = s
+		}
+	}
+	return result
+}
+
+// serializeMessage converts a message to JSON for storage.
+func serializeMessage(msg message.Message) (string, error) {
+	data := map[string]any{
+		"type":  msg.Type(),
+		"parts": serializeParts(msg.Parts()),
+	}
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func serializeParts(parts []message.Part) []map[string]any {
+	result := make([]map[string]any, len(parts))
+	for i, part := range parts {
+		switch p := part.(type) {
+		case message.TextPart:
+			result[i] = map[string]any{"type": "text", "text": p.Text}
+		default:
+			result[i] = map[string]any{"type": "unknown"}
+		}
+	}
+	return result
+}
+
+// extractTextFromParts extracts concatenated text from serialized parts.
+func extractTextFromParts(partsData any) string {
+	parts, ok := partsData.([]any)
+	if !ok {
+		return ""
 	}
 
-	var dotProduct, normA, normB float64
-	for i := range a {
-		dotProduct += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
+	var text string
+	for _, p := range parts {
+		pm, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		if pm["type"] != "text" {
+			continue
+		}
+		t, ok := pm["text"].(string)
+		if !ok {
+			continue
+		}
+		if text != "" {
+			text += " "
+		}
+		text += t
+	}
+	return text
+}
+
+// deserializeMessage reconstructs a message from metadata.
+func deserializeMessage(meta vectorstore.Metadata) (message.Message, error) {
+	msgData, ok := meta[metaKeyMessageData].(string)
+	if !ok {
+		return nil, fmt.Errorf("missing message data")
 	}
 
-	if normA == 0 || normB == 0 {
-		return 0
+	var data map[string]any
+	if err := json.Unmarshal([]byte(msgData), &data); err != nil {
+		return nil, err
 	}
 
-	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
+	msgType, ok := data["type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("missing message type")
+	}
+
+	// Extract text from parts
+	text := extractTextFromParts(data["parts"])
+
+	switch message.Type(msgType) {
+	case message.TypeHuman:
+		return message.NewHumanMessageFromText(text), nil
+	case message.TypeAI:
+		return message.NewAIMessageFromText(text), nil
+	case message.TypeSystem:
+		return message.NewSystemMessageFromText(text), nil
+	case message.TypeTool:
+		return message.NewToolMessage("", text), nil
+	default:
+		return message.NewHumanMessageFromText(text), nil
+	}
 }

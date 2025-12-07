@@ -7,6 +7,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	memorystore "github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -320,19 +321,19 @@ func TestCosineSimilarity(t *testing.T) {
 	// Identical vectors should have similarity of 1.0
 	a := []float64{1, 0, 0}
 	b := []float64{1, 0, 0}
-	sim := cosineSimilarity(a, b)
+	sim := embedding.CosineSimilarity(a, b)
 	require.InDelta(t, 1.0, sim, 0.001)
 
 	// Orthogonal vectors should have similarity of 0.0
 	c := []float64{1, 0, 0}
 	d := []float64{0, 1, 0}
-	sim2 := cosineSimilarity(c, d)
+	sim2 := embedding.CosineSimilarity(c, d)
 	require.InDelta(t, 0.0, sim2, 0.001)
 
 	// Opposite vectors should have similarity of -1.0
 	e := []float64{1, 0, 0}
 	f := []float64{-1, 0, 0}
-	sim3 := cosineSimilarity(e, f)
+	sim3 := embedding.CosineSimilarity(e, f)
 	require.InDelta(t, -1.0, sim3, 0.001)
 }
 
@@ -422,4 +423,53 @@ func TestVectorMemory_MultipleBatchesOrderPreserved(t *testing.T) {
 	require.Contains(t, message.Stringify(recalled[1]), "Batch2-Msg1", "batch 2 msg 1 should be second")
 	require.Contains(t, message.Stringify(recalled[2]), "Batch1-Msg2", "batch 1 msg 2 should be third")
 	require.Contains(t, message.Stringify(recalled[3]), "Batch1-Msg1", "batch 1 msg 1 should be last")
+}
+
+func TestVectorMemory_WithCustomStore(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	embedder := embedding.NewSimpleEmbedder(64)
+
+	// Create a custom in-memory store
+	store := memorystore.New()
+	defer store.Close()
+
+	// Create VectorMemory with custom store
+	mem := NewVectorMemory(embedder, WithStore(store))
+
+	// Store messages
+	messages := []message.Message{
+		message.NewHumanMessageFromText("Hello from custom store"),
+		message.NewAIMessageFromText("Hi there!"),
+	}
+	err := mem.Store(ctx, "session-custom", messages)
+	require.NoError(t, err)
+
+	// Recall messages
+	recalled, err := mem.Recall(ctx, "session-custom", RecallFilter{K: 10})
+	require.NoError(t, err)
+	require.Len(t, recalled, 2)
+
+	// Sessions should track the session
+	sessions, err := mem.Sessions(ctx)
+	require.NoError(t, err)
+	require.Contains(t, sessions, "session-custom")
+}
+
+func TestVectorMemory_Close(t *testing.T) {
+	t.Parallel()
+
+	embedder := embedding.NewSimpleEmbedder(64)
+
+	// Test with owned store (should close)
+	mem1 := NewVectorMemory(embedder)
+	require.NoError(t, mem1.Close())
+
+	// Test with external store (should not close)
+	store := memorystore.New()
+	mem2 := NewVectorMemory(embedder, WithStore(store))
+	require.NoError(t, mem2.Close())
+	// Store should still be usable after mem2.Close()
+	require.NoError(t, store.Close())
 }

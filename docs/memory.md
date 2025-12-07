@@ -67,6 +67,34 @@ embedder := openai.NewEmbedder(client,
 mem := memory.NewVectorMemory(embedder)
 ```
 
+### Custom VectorStore Backend
+
+By default, VectorMemory uses an in-memory store. For persistence or scalability, provide a custom `VectorStore`:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/memory"
+    "github.com/hupe1980/agentmesh/pkg/vectorstore"
+    memstore "github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
+)
+
+// Use in-memory store (default behavior)
+store := memstore.New()
+mem := memory.NewVectorMemory(embedder, memory.WithStore(store))
+
+// Or use an external backend (Pinecone, Qdrant, etc.)
+// externalStore := pinecone.New(...)
+// mem := memory.NewVectorMemory(embedder, memory.WithStore(externalStore))
+
+// Don't forget to close when done
+defer mem.Close()
+```
+
+The VectorStore backend handles:
+- **Persistence** - Messages survive application restarts
+- **Scalability** - Support millions of messages
+- **Namespace isolation** - Session IDs map to namespaces
+
 ### Storing Messages
 
 ```go
