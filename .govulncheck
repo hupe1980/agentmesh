@@ -1,0 +1,9 @@
+{
+  "ignore": [
+    {
+      "id": "GO-2025-3824",
+      "reason": "Cross-Domain Token Exposure in Ollama - no fix available yet. AgentMesh uses Ollama only for local model execution (localhost:11434 default), so cross-domain token exposure does not apply to typical deployment scenarios. Monitored monthly for upstream fixes.",
+      "ignore_until": "2026-03-01T00:00:00Z"
+    }
+  ]
+}
