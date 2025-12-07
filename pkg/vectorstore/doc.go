@@ -18,7 +18,9 @@
 //   - memory.Store: In-memory store for testing and development
 //   - qdrant.Store: Qdrant vector database (gRPC-based)
 //   - pgvector.Store: PostgreSQL with pgvector extension
-//   - (future) pinecone.Store: Pinecone vector database
+//   - pinecone.Store: Pinecone managed vector database
+//   - weaviate.Store: Weaviate vector search engine
+//   - s3vectors.Store: Amazon S3 Vectors native storage
 //
 // # Basic Usage
 //
