@@ -61,6 +61,22 @@ retriever := retrieval.NewVectorStoreRetriever(store, embedder,
 ragAgent, _ := agent.NewRAG(model, retriever)
 ```
 
+### Available Backends
+
+- **memory**: In-memory storage (default, for testing/development)
+- **qdrant**: Qdrant vector database (production-ready with gRPC)
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/vectorstore/qdrant"
+
+// Create Qdrant store
+store, err := qdrant.New("localhost:6334",
+    qdrant.WithCollectionName("documents"),
+    qdrant.WithDimensions(1536),
+    qdrant.WithAutoCreateCollection(true),
+)
+```
+
 ## Output
 
 ```
