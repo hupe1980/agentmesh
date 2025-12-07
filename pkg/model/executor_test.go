@@ -35,7 +35,6 @@ func (m *executorMockModel) Capabilities() model.Capabilities {
 	}
 }
 
-
 // TestExecutor_BasicExecution tests basic successful execution
 func TestExecutor_BasicExecution(t *testing.T) {
 	mdl := &executorMockModel{
@@ -155,10 +154,6 @@ func TestExecutor_NoResponse(t *testing.T) {
 	assert.Nil(t, resp)
 	assert.Equal(t, model.ErrNoResponse, err)
 }
-
-
-
-
 
 // TestExecutor_CancelledContext tests context cancellation handling
 func TestExecutor_CancelledContext(t *testing.T) {

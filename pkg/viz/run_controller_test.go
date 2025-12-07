@@ -31,7 +31,7 @@ func TestRunController_Context(t *testing.T) {
 	t.Run("context is not done initially", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
 		ctx := rc.Context()
-		
+
 		select {
 		case <-ctx.Done():
 			t.Fatal("context should not be done initially")
@@ -43,7 +43,7 @@ func TestRunController_Context(t *testing.T) {
 	t.Run("context is done after cancel", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
 		ctx := rc.Context()
-		
+
 		rc.Cancel()
 
 		select {
@@ -60,18 +60,18 @@ func TestRunController_Context(t *testing.T) {
 func TestRunController_Cancel(t *testing.T) {
 	t.Run("cancel updates status", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
-		
+
 		rc.Cancel()
-		
+
 		assert.Equal(t, StatusCanceled, rc.Status())
 	})
 
 	t.Run("cancel propagates to context", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
 		ctx := rc.Context()
-		
+
 		rc.Cancel()
-		
+
 		select {
 		case <-ctx.Done():
 			// Expected
@@ -82,23 +82,23 @@ func TestRunController_Cancel(t *testing.T) {
 
 	t.Run("multiple cancels are safe", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
-		
+
 		rc.Cancel()
 		rc.Cancel()
 		rc.Cancel()
-		
+
 		assert.Equal(t, StatusCanceled, rc.Status())
 	})
 
 	t.Run("cancel from different status", func(t *testing.T) {
 		statuses := []RunStatus{StatusPending, StatusRunning, StatusPaused}
-		
+
 		for _, initialStatus := range statuses {
 			rc := NewRunController("run-1", &mockRunnable{})
 			rc.SetStatus(initialStatus)
-			
+
 			rc.Cancel()
-			
+
 			assert.Equal(t, StatusCanceled, rc.Status())
 		}
 	})
@@ -112,10 +112,10 @@ func TestRunController_Status(t *testing.T) {
 
 	t.Run("status after set", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
-		
+
 		rc.SetStatus(StatusRunning)
 		assert.Equal(t, StatusRunning, rc.Status())
-		
+
 		rc.SetStatus(StatusCompleted)
 		assert.Equal(t, StatusCompleted, rc.Status())
 	})
@@ -131,7 +131,7 @@ func TestRunController_SetStatus(t *testing.T) {
 			StatusFailed,
 			StatusCanceled,
 		}
-		
+
 		for _, status := range statuses {
 			rc := NewRunController("run-1", &mockRunnable{})
 			rc.SetStatus(status)
@@ -141,17 +141,17 @@ func TestRunController_SetStatus(t *testing.T) {
 
 	t.Run("status transitions", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
-		
+
 		// Typical lifecycle
 		rc.SetStatus(StatusRunning)
 		assert.Equal(t, StatusRunning, rc.Status())
-		
+
 		rc.SetStatus(StatusPaused)
 		assert.Equal(t, StatusPaused, rc.Status())
-		
+
 		rc.SetStatus(StatusRunning)
 		assert.Equal(t, StatusRunning, rc.Status())
-		
+
 		rc.SetStatus(StatusCompleted)
 		assert.Equal(t, StatusCompleted, rc.Status())
 	})
@@ -243,17 +243,17 @@ func TestRunStatus_Constants(t *testing.T) {
 func TestRunController_CancelNilSafety(t *testing.T) {
 	t.Run("cancel handles nil cancel function", func(t *testing.T) {
 		rc := NewRunController("run-1", &mockRunnable{})
-		
+
 		// Manually set cancel to nil to test safety
 		rc.mu.Lock()
 		rc.cancel = nil
 		rc.mu.Unlock()
-		
+
 		// Should not panic
 		require.NotPanics(t, func() {
 			rc.Cancel()
 		})
-		
+
 		assert.Equal(t, StatusCanceled, rc.Status())
 	})
 }

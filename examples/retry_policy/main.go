@@ -25,7 +25,7 @@ func main() {
 	flakyNode := func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		attempt := attempts.Add(1)
 		fmt.Printf("  [flaky] Attempt %d\n", attempt)
-		
+
 		if attempt <= 2 {
 			return graph.Fail(errors.New("temporary failure"))
 		}
@@ -39,7 +39,7 @@ func main() {
 	policy := graph.NewRetryPolicyBuilder().
 		WithMaxAttempts(5).
 		WithExponentialBackoff(50*time.Millisecond, 2.0).
-		WithMaxDelay(500*time.Millisecond).
+		WithMaxDelay(500 * time.Millisecond).
 		Build()
 
 	// Wrap node with retry policy
@@ -54,26 +54,26 @@ func main() {
 
 	fmt.Println("\n--- Executing with retry policy ---")
 	start := time.Now()
-	
+
 	for _, err := range compiled.Run(ctx, nil) {
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-	
+
 	elapsed := time.Since(start)
 	fmt.Printf("\n  Total attempts: %d\n", attempts.Load())
 	fmt.Printf("  Elapsed time: %v\n", elapsed)
 
 	// Demonstrate different retry strategies
 	fmt.Println("\n--- Retry Policy Types ---")
-	
+
 	// 1. Constant backoff
 	constantPolicy := graph.NewRetryPolicyBuilder().
 		WithMaxAttempts(3).
 		WithConstantBackoff(100 * time.Millisecond).
 		Build()
-	fmt.Printf("  Constant: %d attempts, delay=%v\n", 
+	fmt.Printf("  Constant: %d attempts, delay=%v\n",
 		constantPolicy.MaxAttempts, constantPolicy.Delay)
 
 	// 2. Linear backoff
@@ -81,16 +81,16 @@ func main() {
 		WithMaxAttempts(5).
 		WithLinearBackoff(50 * time.Millisecond).
 		Build()
-	fmt.Printf("  Linear: %d attempts, delay=%v\n", 
+	fmt.Printf("  Linear: %d attempts, delay=%v\n",
 		linearPolicy.MaxAttempts, linearPolicy.Delay)
 
 	// 3. Exponential backoff
 	exponentialPolicy := graph.NewRetryPolicyBuilder().
 		WithMaxAttempts(10).
 		WithExponentialBackoff(100*time.Millisecond, 2.0).
-		WithMaxDelay(5*time.Second).
+		WithMaxDelay(5 * time.Second).
 		Build()
-	fmt.Printf("  Exponential: %d attempts, delay=%v, max=%v\n", 
+	fmt.Printf("  Exponential: %d attempts, delay=%v, max=%v\n",
 		exponentialPolicy.MaxAttempts, exponentialPolicy.Delay, exponentialPolicy.MaxDelay)
 
 	// 4. Custom retryable function
