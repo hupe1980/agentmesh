@@ -354,3 +354,72 @@ func TestRecallFilter_Normalize(t *testing.T) {
 	filter3.Normalize()
 	require.Equal(t, 1.0, filter3.MinScore)
 }
+
+func TestVectorMemory_MessageOrderPreserved(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	embedder := embedding.NewSimpleEmbedder(64)
+	mem := NewVectorMemory(embedder)
+
+	// Store a conversation as a single batch
+	messages := []message.Message{
+		message.NewHumanMessageFromText("Message 1: Hello"),
+		message.NewAIMessageFromText("Message 2: Hi there"),
+		message.NewHumanMessageFromText("Message 3: How are you?"),
+		message.NewAIMessageFromText("Message 4: I'm fine"),
+	}
+
+	err := mem.Store(ctx, "session-1", messages)
+	require.NoError(t, err)
+
+	// Recall with no query (timestamp-based order, descending)
+	recalled, err := mem.Recall(ctx, "session-1", RecallFilter{K: 10})
+	require.NoError(t, err)
+	require.Len(t, recalled, 4)
+
+	// Should be in reverse chronological order (most recent first)
+	// Message 4 (most recent) should be first, Message 1 (oldest) should be last
+	require.Contains(t, message.Stringify(recalled[0]), "Message 4", "most recent message should be first")
+	require.Contains(t, message.Stringify(recalled[1]), "Message 3")
+	require.Contains(t, message.Stringify(recalled[2]), "Message 2")
+	require.Contains(t, message.Stringify(recalled[3]), "Message 1", "oldest message should be last")
+}
+
+func TestVectorMemory_MultipleBatchesOrderPreserved(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	embedder := embedding.NewSimpleEmbedder(64)
+	mem := NewVectorMemory(embedder)
+
+	// Store first batch
+	batch1 := []message.Message{
+		message.NewHumanMessageFromText("Batch1-Msg1: First question"),
+		message.NewAIMessageFromText("Batch1-Msg2: First answer"),
+	}
+	err := mem.Store(ctx, "session-1", batch1)
+	require.NoError(t, err)
+
+	// Small delay to ensure different base timestamps
+	time.Sleep(time.Millisecond)
+
+	// Store second batch
+	batch2 := []message.Message{
+		message.NewHumanMessageFromText("Batch2-Msg1: Second question"),
+		message.NewAIMessageFromText("Batch2-Msg2: Second answer"),
+	}
+	err = mem.Store(ctx, "session-1", batch2)
+	require.NoError(t, err)
+
+	// Recall all (timestamp descending)
+	recalled, err := mem.Recall(ctx, "session-1", RecallFilter{K: 10})
+	require.NoError(t, err)
+	require.Len(t, recalled, 4)
+
+	// Should be: Batch2-Msg2, Batch2-Msg1, Batch1-Msg2, Batch1-Msg1
+	require.Contains(t, message.Stringify(recalled[0]), "Batch2-Msg2", "batch 2 msg 2 should be first")
+	require.Contains(t, message.Stringify(recalled[1]), "Batch2-Msg1", "batch 2 msg 1 should be second")
+	require.Contains(t, message.Stringify(recalled[2]), "Batch1-Msg2", "batch 1 msg 2 should be third")
+	require.Contains(t, message.Stringify(recalled[3]), "Batch1-Msg1", "batch 1 msg 1 should be last")
+}

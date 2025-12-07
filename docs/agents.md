@@ -413,11 +413,13 @@ reactAgent, _ := agent.NewReAct(
 )
 
 // Wrap with conversational memory
+// Uses dual-memory approach: short-term (recent) + long-term (semantic)
 chatAgent, err := agent.NewConversational(
     reactAgent,  // ANY agent type!
     mem,
-    agent.WithMaxRecallMessages(10),      // Recall up to 10 relevant messages
-    agent.WithMinSimilarityScore(0.7),    // Only recall if similarity > 0.7
+    agent.WithShortTermMessages(5),       // Last 5 messages for immediate context
+    agent.WithLongTermMessages(5),        // 5 semantically similar messages
+    agent.WithMinSimilarityScore(0.5),    // Threshold for long-term recall
     agent.WithFailOnStoreError(false),    // Don't fail if memory store fails
 )
 
@@ -434,13 +436,25 @@ for msg, err := range chatAgent.Run(ctx, messages,
 
 ### Configuration options
 
+The conversational agent uses a **dual-memory approach**:
+- **Short-term memory**: Recent N messages (recency-based) - immediate context
+- **Long-term memory**: Semantically similar messages from history (relevance-based)
+
 ```go
 agent.NewConversational(baseAgent, memory,
-    agent.WithMaxRecallMessages(n),       // Max messages to recall from memory
-    agent.WithMinSimilarityScore(score),  // Min similarity for semantic search (0-1)
-    agent.WithFailOnStoreError(true),     // Fail if memory storage fails
+    agent.WithShortTermMessages(5),       // Recent messages (default: 5)
+    agent.WithLongTermMessages(5),        // Semantic search results (default: 5)
+    agent.WithMinSimilarityScore(0.5),    // Threshold for long-term recall (default: 0.5)
+    agent.WithFailOnStoreError(false),    // Fail if memory storage fails (default: false)
 )
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `WithShortTermMessages(n)` | Number of recent messages to always include | 5 |
+| `WithLongTermMessages(n)` | Number of semantically similar messages | 5 |
+| `WithMinSimilarityScore(s)` | Minimum similarity for long-term recall | 0.5 |
+| `WithFailOnStoreError(b)` | Fail if memory storage fails | false |
 
 ### Session ID
 

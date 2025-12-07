@@ -46,14 +46,27 @@ func TestNewConversational_Validation(t *testing.T) {
 }
 
 func TestNewConversational_Options(t *testing.T) {
-	t.Run("applies WithMaxRecallMessages", func(t *testing.T) {
+	t.Run("applies WithShortTermMessages", func(t *testing.T) {
 		mockModel := &testutil.MockModel{}
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
 		mem := testutil.NewMockMemory()
 		chatAgent, err := NewConversational(wrappedAgent, mem,
-			WithMaxRecallMessages(5),
+			WithShortTermMessages(3),
+		)
+		require.NoError(t, err)
+		assert.NotNil(t, chatAgent)
+	})
+
+	t.Run("applies WithLongTermMessages", func(t *testing.T) {
+		mockModel := &testutil.MockModel{}
+		wrappedAgent, err := NewReAct(mockModel)
+		require.NoError(t, err)
+
+		mem := testutil.NewMockMemory()
+		chatAgent, err := NewConversational(wrappedAgent, mem,
+			WithLongTermMessages(5),
 		)
 		require.NoError(t, err)
 		assert.NotNil(t, chatAgent)
@@ -79,7 +92,8 @@ func TestNewConversational_Options(t *testing.T) {
 
 		mem := testutil.NewMockMemory()
 		chatAgent, err := NewConversational(wrappedAgent, mem,
-			WithMaxRecallMessages(-1),   // Invalid, should be ignored
+			WithShortTermMessages(-1),   // Invalid, should be ignored
+			WithLongTermMessages(-1),    // Invalid, should be ignored
 			WithMinSimilarityScore(1.5), // Invalid, should be ignored
 		)
 		require.NoError(t, err)
@@ -152,9 +166,16 @@ func TestConversational_StoresConversation(t *testing.T) {
 			_ = msg
 		}
 
-		// Check that messages were stored
+		// Check that exactly 2 messages were stored (user + AI)
 		storedMsgs := mem.GetStoredMessages("test-session")
-		require.GreaterOrEqual(t, len(storedMsgs), 1)
+		require.Len(t, storedMsgs, 2, "should store exactly user message and AI response")
+
+		// Verify the content of stored messages
+		assert.Equal(t, message.TypeHuman, storedMsgs[0].Type(), "first stored message should be human")
+		assert.Contains(t, message.Stringify(storedMsgs[0]), "How are you?", "should store user message content")
+
+		assert.Equal(t, message.TypeAI, storedMsgs[1].Type(), "second stored message should be AI")
+		assert.Contains(t, message.Stringify(storedMsgs[1]), "I'm doing well, thanks!", "should store AI response content")
 	})
 }
 
@@ -183,7 +204,7 @@ func TestConversational_RecallsFromMemory(t *testing.T) {
 		require.NoError(t, err)
 
 		chatAgent, err := NewConversational(wrappedAgent, mem,
-			WithMaxRecallMessages(10),
+			WithShortTermMessages(10),
 		)
 		require.NoError(t, err)
 
@@ -429,7 +450,7 @@ func TestConversational_MissingSessionID(t *testing.T) {
 }
 
 func TestConversational_MultipleTurns(t *testing.T) {
-	t.Run("maintains context across multiple conversation turns", func(t *testing.T) {
+	t.Run("stores messages from each turn and accumulates in memory", func(t *testing.T) {
 		ctx := context.Background()
 
 		turnCount := 0
@@ -458,6 +479,12 @@ func TestConversational_MultipleTurns(t *testing.T) {
 			_ = msg
 		}
 
+		// After Turn 1: should have exactly 2 messages stored
+		storedAfterTurn1 := mem.GetStoredMessages("multi-turn-session")
+		require.Len(t, storedAfterTurn1, 2, "after turn 1: should store user + AI")
+		assert.Contains(t, message.Stringify(storedAfterTurn1[0]), "Hello")
+		assert.Contains(t, message.Stringify(storedAfterTurn1[1]), "Response 1")
+
 		// Second turn
 		messages2 := []message.Message{
 			message.NewHumanMessageFromText("How are you?"),
@@ -468,6 +495,12 @@ func TestConversational_MultipleTurns(t *testing.T) {
 			require.NoError(t, err)
 			_ = msg
 		}
+
+		// After Turn 2: should have exactly 4 messages stored
+		storedAfterTurn2 := mem.GetStoredMessages("multi-turn-session")
+		require.Len(t, storedAfterTurn2, 4, "after turn 2: should have 4 messages total")
+		assert.Contains(t, message.Stringify(storedAfterTurn2[2]), "How are you?")
+		assert.Contains(t, message.Stringify(storedAfterTurn2[3]), "Response 2")
 
 		// Third turn
 		messages3 := []message.Message{
@@ -480,16 +513,66 @@ func TestConversational_MultipleTurns(t *testing.T) {
 			_ = msg
 		}
 
-		// Check memory has accumulated messages
-		storedMsgs := mem.GetStoredMessages("multi-turn-session")
-		// Each turn stores user message + AI response = 2 messages per turn
-		// First turn: stores user+AI (2 msgs)
-		// Second turn: recalls 2, stores user+AI (2 more msgs) -> total 4
-		// Third turn: recalls 4, stores user+AI (2 more msgs) -> total 6
-		// However, the memory recall may affect startIdx calculation
-		// We just verify that messages are being accumulated
-		assert.GreaterOrEqual(t, len(storedMsgs), 2, "should have stored at least 2 messages")
+		// After Turn 3: should have exactly 6 messages stored
+		storedAfterTurn3 := mem.GetStoredMessages("multi-turn-session")
+		require.Len(t, storedAfterTurn3, 6, "after turn 3: should have 6 messages total")
+		assert.Contains(t, message.Stringify(storedAfterTurn3[4]), "Goodbye")
+		assert.Contains(t, message.Stringify(storedAfterTurn3[5]), "Response 3")
+
 		assert.Equal(t, 3, turnCount, "should have processed 3 turns")
+	})
+
+	t.Run("recalls previous turn messages in subsequent turns", func(t *testing.T) {
+		ctx := context.Background()
+
+		var turn2ReceivedMessages []message.Message
+		turnCount := 0
+		mockModel := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
+				turnCount++
+				if turnCount == 2 {
+					turn2ReceivedMessages = msgs
+				}
+				return message.NewAIMessageFromText("Response " + string(rune('0'+turnCount))), nil
+			}),
+		}
+
+		wrappedAgent, err := NewReAct(mockModel)
+		require.NoError(t, err)
+
+		mem := testutil.NewMockMemory()
+		chatAgent, err := NewConversational(wrappedAgent, mem,
+			WithShortTermMessages(10),
+		)
+		require.NoError(t, err)
+
+		// First turn: introduce context
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("My name is Bob and I live in Tokyo"),
+		}, graph.WithInitialValue(SessionIDKey, "recall-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		// Second turn: should recall first turn
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("What is my name?"),
+		}, graph.WithInitialValue(SessionIDKey, "recall-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		// Verify turn 2 received the context from turn 1
+		require.NotNil(t, turn2ReceivedMessages, "should have captured turn 2 messages")
+
+		// Check that turn 1 context is present in turn 2 input
+		allText := ""
+		for _, msg := range turn2ReceivedMessages {
+			allText += message.Stringify(msg) + " "
+		}
+		assert.Contains(t, allText, "My name is Bob", "turn 2 should receive turn 1 user message")
+		assert.Contains(t, allText, "Tokyo", "turn 2 should receive turn 1 location")
+		assert.Contains(t, allText, "What is my name", "turn 2 should receive current message")
 	})
 }
 
@@ -520,8 +603,113 @@ func TestNewConversational_WithInitialSessionID(t *testing.T) {
 			_ = msg
 		}
 
-		// Should use runtime session ID
+		// Should use runtime session ID and store exactly 2 messages
 		storedInRuntime := mem.GetStoredMessages("runtime-session-123")
-		assert.GreaterOrEqual(t, len(storedInRuntime), 2, "should store in runtime session")
+		require.Len(t, storedInRuntime, 2, "should store exactly user + AI in runtime session")
+		assert.Contains(t, message.Stringify(storedInRuntime[0]), "Hello")
+		assert.Contains(t, message.Stringify(storedInRuntime[1]), "Response")
+	})
+}
+
+func TestConversational_StoreCalledWithCorrectMessages(t *testing.T) {
+	t.Run("store receives user input and AI response", func(t *testing.T) {
+		ctx := context.Background()
+
+		mockModel := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("AI says hello back"), nil
+			}),
+		}
+
+		wrappedAgent, err := NewReAct(mockModel)
+		require.NoError(t, err)
+
+		// Track what Store was called with
+		var storedCalls [][]message.Message
+		mem := testutil.NewMockMemory()
+		mem.StoreFunc = func(ctx context.Context, sessionID string, messages []message.Message) error {
+			storedCalls = append(storedCalls, messages)
+			return nil
+		}
+
+		chatAgent, err := NewConversational(wrappedAgent, mem)
+		require.NoError(t, err)
+
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("User says hello"),
+		}, graph.WithInitialValue(SessionIDKey, "store-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		// Verify Store was called exactly once with exactly 2 messages
+		require.Len(t, storedCalls, 1, "Store should be called exactly once per turn")
+		require.Len(t, storedCalls[0], 2, "Store should receive exactly 2 messages (user + AI)")
+
+		// Verify message types and content
+		assert.Equal(t, message.TypeHuman, storedCalls[0][0].Type())
+		assert.Contains(t, message.Stringify(storedCalls[0][0]), "User says hello")
+
+		assert.Equal(t, message.TypeAI, storedCalls[0][1].Type())
+		assert.Contains(t, message.Stringify(storedCalls[0][1]), "AI says hello back")
+	})
+
+	t.Run("store is called after each turn in multi-turn conversation", func(t *testing.T) {
+		ctx := context.Background()
+
+		turnCount := 0
+		mockModel := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
+				turnCount++
+				return message.NewAIMessageFromText("Response " + string(rune('A'-1+turnCount))), nil
+			}),
+		}
+
+		wrappedAgent, err := NewReAct(mockModel)
+		require.NoError(t, err)
+
+		// Track Store calls - just track, don't call original (which would recurse)
+		var storedCalls [][]message.Message
+		mem := testutil.NewMockMemory()
+		mem.StoreFunc = func(ctx context.Context, sessionID string, messages []message.Message) error {
+			storedCalls = append(storedCalls, messages)
+			return nil // Just track, don't recurse
+		}
+
+		chatAgent, err := NewConversational(wrappedAgent, mem)
+		require.NoError(t, err)
+
+		// Turn 1
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("First message"),
+		}, graph.WithInitialValue(SessionIDKey, "multi-store-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		require.Len(t, storedCalls, 1, "should have 1 store call after turn 1")
+		assert.Contains(t, message.Stringify(storedCalls[0][0]), "First message")
+
+		// Turn 2
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("Second message"),
+		}, graph.WithInitialValue(SessionIDKey, "multi-store-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		require.Len(t, storedCalls, 2, "should have 2 store calls after turn 2")
+		assert.Contains(t, message.Stringify(storedCalls[1][0]), "Second message")
+
+		// Turn 3
+		for msg, err := range chatAgent.Run(ctx, []message.Message{
+			message.NewHumanMessageFromText("Third message"),
+		}, graph.WithInitialValue(SessionIDKey, "multi-store-test")) {
+			require.NoError(t, err)
+			_ = msg
+		}
+
+		require.Len(t, storedCalls, 3, "should have 3 store calls after turn 3")
+		assert.Contains(t, message.Stringify(storedCalls[2][0]), "Third message")
 	})
 }

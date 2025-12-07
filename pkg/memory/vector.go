@@ -46,16 +46,16 @@ func (vm *VectorMemory) Store(ctx context.Context, sessionID string, messages []
 		return fmt.Errorf("failed to generate embeddings: %w", err)
 	}
 
-	// Create entries
+	// Create entries with incrementing timestamps to preserve order within batch
 	entries := make([]*MessageEntry, len(messages))
-	now := time.Now()
+	baseTime := time.Now()
 	for i, msg := range messages {
 		entries[i] = &MessageEntry{
 			ID:        uuid.New().String(),
 			SessionID: sessionID,
 			Message:   msg,
 			Embedding: embeddings[i],
-			Timestamp: now,
+			Timestamp: baseTime.Add(time.Duration(i) * time.Nanosecond), // Preserve order within batch
 			Metadata:  make(map[string]string),
 		}
 	}

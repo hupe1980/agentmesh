@@ -44,13 +44,25 @@ chatAgent.Run(ctx, messages,
 
 ### Configuration Options
 
+The conversational agent uses a **dual-memory approach** combining:
+- **Short-term memory**: Recent N messages (recency-based)
+- **Long-term memory**: Semantically similar messages from history (relevance-based)
+
 ```go
 agent.NewConversational(reactAgent, mem,
-    agent.WithMaxRecallMessages(10),      // Recall up to N relevant messages
-    agent.WithMinSimilarityScore(0.7),    // Minimum similarity for recall
+    agent.WithShortTermMessages(5),       // Last 5 messages for immediate context
+    agent.WithLongTermMessages(5),        // 5 semantically similar messages
+    agent.WithMinSimilarityScore(0.5),    // Threshold for long-term recall
     agent.WithFailOnStoreError(false),    // Don't fail if storage fails
 )
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `WithShortTermMessages(n)` | Number of recent messages to always include | 5 |
+| `WithLongTermMessages(n)` | Number of semantically similar messages | 5 |
+| `WithMinSimilarityScore(s)` | Minimum similarity for long-term recall | 0.5 |
+| `WithFailOnStoreError(b)` | Fail if memory storage fails | false |
 
 ### Memory Types
 

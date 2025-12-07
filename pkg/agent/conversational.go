@@ -19,8 +19,10 @@ var MemoryContextKey = graph.NewKey("memory_context", []message.Message{})
 
 // conversationalOptions holds configuration for Conversational agents.
 type conversationalOptions struct {
-	// maxRecallMessages limits how many messages to recall from memory
-	maxRecallMessages int
+	// shortTermMessages is the number of recent messages to always include (recency-based)
+	shortTermMessages int
+	// longTermMessages is the number of semantically similar messages to recall
+	longTermMessages int
 	// minSimilarityScore for semantic search in memory
 	minSimilarityScore float64
 	// failOnStoreError causes the agent to fail if memory storage fails
@@ -29,19 +31,33 @@ type conversationalOptions struct {
 
 func defaultConversationalOptions() conversationalOptions {
 	return conversationalOptions{
-		maxRecallMessages:  10,
-		minSimilarityScore: 0.7,
+		shortTermMessages:  5, // Last 5 messages for immediate context
+		longTermMessages:   5, // 5 semantically similar messages from history
+		minSimilarityScore: 0.5,
 	}
 }
 
 // ConversationalOption configures a Conversational agent.
 type ConversationalOption func(*conversationalOptions)
 
-// WithMaxRecallMessages sets the maximum number of messages to recall from memory.
-func WithMaxRecallMessages(n int) ConversationalOption {
+// WithShortTermMessages sets the number of recent messages to always include.
+// These are the last N messages from the conversation, providing immediate context.
+// Default is 5.
+func WithShortTermMessages(n int) ConversationalOption {
 	return func(c *conversationalOptions) {
-		if n > 0 {
-			c.maxRecallMessages = n
+		if n >= 0 {
+			c.shortTermMessages = n
+		}
+	}
+}
+
+// WithLongTermMessages sets the number of semantically similar messages to recall.
+// These are retrieved via semantic search from the conversation history.
+// Default is 5.
+func WithLongTermMessages(n int) ConversationalOption {
+	return func(c *conversationalOptions) {
+		if n >= 0 {
+			c.longTermMessages = n
 		}
 	}
 }
@@ -134,9 +150,11 @@ func buildConversationalGraph(
 }
 
 // createMemoryRecallNode creates a node that recalls relevant context from memory
-// and prepends it to the conversation.
+// using both short-term (recent) and long-term (semantic) retrieval.
 func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		logger := logging.FromContext(ctx)
+
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
 			return graph.Fail(fmt.Errorf("agent/conversational: no messages"))
@@ -148,31 +166,134 @@ func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) gra
 			return graph.Fail(fmt.Errorf("agent/conversational: session_id is required, use graph.WithInitialValue(agent.SessionIDKey, \"your-session-id\")"))
 		}
 
-		// Extract user query for semantic search
-		query, err := extractUserQuery(msgs)
-		if err != nil {
-			// No user query found, skip memory recall
-			return graph.Set(MemoryContextKey, []message.Message{}).
-				With(graph.SetValue(SessionIDKey, sessionID)).
-				To("agent")
+		var combinedMsgs []message.Message
+
+		// 1. Short-term memory: Get most recent messages (no semantic search)
+		if config.shortTermMessages > 0 {
+			recentMsgs, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
+				K: config.shortTermMessages,
+				// No Query = returns most recent by timestamp (descending)
+			})
+
+			switch {
+			case err != nil:
+				logger.Debug("short-term memory recall failed", "error", err)
+			case len(recentMsgs) == 0:
+				logger.Debug("short-term memory empty", "session_id", sessionID)
+			default:
+				logger.Debug("short-term memory recall",
+					"count", len(recentMsgs),
+					"session_id", sessionID,
+				)
+				for i, msg := range recentMsgs {
+					logger.Debug("short-term message",
+						"index", i,
+						"type", msg.Type(),
+						"content", truncateForLog(message.Stringify(msg)),
+					)
+				}
+				// Reverse to chronological order (oldest first) for conversation flow
+				for i := len(recentMsgs) - 1; i >= 0; i-- {
+					combinedMsgs = append(combinedMsgs, recentMsgs[i])
+				}
+			}
 		}
 
-		// Recall relevant messages from memory
-		recalledMsgs, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
-			Query:    query,
-			K:        config.maxRecallMessages,
-			MinScore: config.minSimilarityScore,
-		})
-		if err != nil {
-			// Log but continue without memory context
-			recalledMsgs = []message.Message{}
-		}
+		// 2. Long-term memory: Semantic search for relevant context
+		combinedMsgs = recallLongTermMemory(ctx, logger, mem, sessionID, msgs, config, combinedMsgs)
+
+		logger.Debug("combined memory context",
+			"total_messages", len(combinedMsgs),
+			"session_id", sessionID,
+		)
 
 		// Store recalled context and session ID in state
-		return graph.Set(MemoryContextKey, recalledMsgs).
+		return graph.Set(MemoryContextKey, combinedMsgs).
 			With(graph.SetValue(SessionIDKey, sessionID)).
 			To("agent")
 	}
+}
+
+// logTruncateLen is the maximum length for log message content.
+const logTruncateLen = 100
+
+// truncateForLog truncates a string for logging purposes.
+func truncateForLog(s string) string {
+	if len(s) <= logTruncateLen {
+		return s
+	}
+	return s[:logTruncateLen] + "..."
+}
+
+// recallLongTermMemory performs semantic search for relevant context from long-term memory.
+func recallLongTermMemory(
+	ctx context.Context,
+	logger logging.Logger,
+	mem memory.Memory,
+	sessionID string,
+	msgs []message.Message,
+	config conversationalOptions,
+	combinedMsgs []message.Message,
+) []message.Message {
+	if config.longTermMessages <= 0 {
+		return combinedMsgs
+	}
+
+	query, err := extractUserQuery(msgs)
+	if err != nil {
+		return combinedMsgs
+	}
+
+	logger.Debug("long-term memory query", "query", truncateForLog(query))
+
+	semanticMsgs, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
+		Query:    query,
+		K:        config.longTermMessages,
+		MinScore: config.minSimilarityScore,
+	})
+
+	switch {
+	case err != nil:
+		logger.Debug("long-term memory recall failed", "error", err)
+	case len(semanticMsgs) > 0:
+		logger.Debug("long-term memory recall",
+			"count", len(semanticMsgs),
+			"min_score", config.minSimilarityScore,
+		)
+		for i, msg := range semanticMsgs {
+			logger.Debug("long-term message",
+				"index", i,
+				"type", msg.Type(),
+				"content", truncateForLog(message.Stringify(msg)),
+			)
+		}
+		// Deduplicate: only add messages not already in short-term
+		combinedMsgs = deduplicateMessages(combinedMsgs, semanticMsgs)
+	}
+
+	return combinedMsgs
+}
+
+// deduplicateMessages adds messages from additional to base, skipping duplicates.
+func deduplicateMessages(base, additional []message.Message) []message.Message {
+	seen := make(map[string]bool)
+
+	// Mark existing messages as seen (using content as key)
+	for _, msg := range base {
+		key := message.Stringify(msg)
+		seen[key] = true
+	}
+
+	// Add non-duplicate messages
+	for _, msg := range additional {
+		key := message.Stringify(msg)
+		if !seen[key] {
+			base = append(base, msg)
+			seen[key] = true
+		}
+	}
+
+	return base
 }
 
 // createConversationalAgentNode creates a node that executes the wrapped agent
@@ -204,36 +325,42 @@ func createConversationalAgentNode(wrappedAgent *message.Graph) graph.NodeFunc {
 // createMemoryStoreNode creates a node that stores the conversation in memory.
 func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		logger := logging.FromContext(ctx)
+
 		msgs := GetMessages(view)
 		if len(msgs) < 2 {
 			// Need at least user message + AI response
+			logger.Debug("memory store skipped: not enough messages", "count", len(msgs))
 			return graph.To(graph.END)
 		}
 
 		sessionID := graph.Get(view, SessionIDKey)
 		if sessionID == "" {
 			// Session ID should have been validated in memory_recall
+			logger.Debug("memory store skipped: no session ID")
 			return graph.To(graph.END)
 		}
 
-		// Get the last exchange (user query + AI response)
-		// We store only the current exchange, not the memory context
-		memoryContext := graph.Get(view, MemoryContextKey)
-		startIdx := len(memoryContext) // Skip prepended memory messages
+		// Store only the current exchange (last 2 messages: user input + AI response)
+		// We only want this turn, not messages from previous turns
+		toStore := msgs[len(msgs)-2:]
 
-		if startIdx >= len(msgs) {
-			return graph.To(graph.END)
+		logger.Debug("storing messages in memory",
+			"count", len(toStore),
+			"session_id", sessionID,
+		)
+		for i, msg := range toStore {
+			logger.Debug("storing message",
+				"index", i,
+				"type", msg.Type(),
+				"content", truncateForLog(message.Stringify(msg)),
+			)
 		}
-
-		// Store messages from this conversation turn
-		toStore := msgs[startIdx:]
-		if len(toStore) > 0 {
-			if err := mem.Store(ctx, sessionID, toStore); err != nil {
-				if config.failOnStoreError {
-					return graph.Fail(fmt.Errorf("agent/conversational: memory store failed: %w", err))
-				}
-				logging.FromContext(ctx).Warn("memory store failed", "error", err)
+		if err := mem.Store(ctx, sessionID, toStore); err != nil {
+			if config.failOnStoreError {
+				return graph.Fail(fmt.Errorf("agent/conversational: memory store failed: %w", err))
 			}
+			logger.Warn("memory store failed", "error", err)
 		}
 
 		return graph.To(graph.END)

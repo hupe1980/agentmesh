@@ -188,8 +188,9 @@ mem := memory.NewVectorMemory(embedder)
 chatAgent, _ := agent.NewConversational(
     reactAgent,
     mem,
-    agent.WithMaxRecallMessages(10),
-    agent.WithMinSimilarityScore(0.7),
+    agent.WithShortTermMessages(5),     // Recent messages for context
+    agent.WithLongTermMessages(5),      // Semantic search for relevance
+    agent.WithMinSimilarityScore(0.5),
 )
 
 // Use with a session ID
