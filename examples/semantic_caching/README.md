@@ -126,6 +126,23 @@ semanticCache := redisCache.NewCache(redisClient, embedder,
     redisCache.WithKeyPrefix("myapp:llm:"))
 ```
 
+### VectorStore Backend (Flexible)
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/cache"
+    "github.com/hupe1980/agentmesh/pkg/vectorstore"
+    "github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
+)
+
+// Use any VectorStore implementation (memory, pgvector, qdrant, etc.)
+store := memory.NewVectorStore(embedder)
+
+semanticCache := cache.NewVectorStore(store,
+    cache.WithVectorStoreNamespace("llm-cache"),
+    cache.WithSimilarityThreshold(0.85),
+    cache.WithTTL(time.Hour))
+```
+
 ## Architecture
 
 ```

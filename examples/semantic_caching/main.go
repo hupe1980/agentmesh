@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/cache"
+	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/embedding/openai"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -101,7 +102,7 @@ func demoSemanticCache(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("embedding error: %w", err)
 		}
-		similarity := cache.CosineSimilarity(baseEmbed, queryEmbed)
+		similarity := embedding.CosineSimilarity(baseEmbed, queryEmbed)
 		status := "❌ MISS"
 		if similarity >= 0.90 {
 			status = "✅ HIT"

@@ -76,7 +76,7 @@ func (c *Cache) Get(ctx context.Context, req *model.Request) (*model.Response, e
 	key := c.options.KeyFunc(req)
 
 	// Compute embedding for the request
-	embedding, err := c.embedder.Embed(ctx, key)
+	queryVec, err := c.embedder.Embed(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (c *Cache) Get(ctx context.Context, req *model.Request) (*model.Response, e
 		}
 
 		// Compute similarity
-		score := cache.CosineSimilarity(embedding, entry.Embedding)
+		score := embedding.CosineSimilarity(queryVec, entry.Embedding)
 		if score >= c.options.SimilarityThreshold && score > bestScore {
 			bestEntry = &entry
 			bestScore = score
