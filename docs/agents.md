@@ -23,6 +23,8 @@ sidebar:
     url: "#reflection-agent"
   - title: RAG agent
     url: "#rag-agent"
+  - title: Conversational agent
+    url: "#conversational-agent"
   - title: Custom graphs
     url: "#custom-graphs"
   - title: Conditional routing
@@ -380,6 +382,110 @@ START → retrieve → generate → END
 
 1. **Retrieve node**: Fetches relevant documents based on the user's query
 2. **Generate node**: Creates a prompt with the query and retrieved context, then generates the response
+
+---
+
+## Conversational agent {#conversational-agent}
+
+The **Conversational Agent** is a composable wrapper that adds long-term memory to ANY agent type. It automatically recalls relevant context from memory before the agent runs and stores the conversation after completion.
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/memory"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+model := openai.NewModel()
+
+// Create embedder for semantic memory
+embedder := openai.NewEmbedder(client)
+
+// Create vector memory for semantic search
+mem := memory.NewVectorMemory(embedder)
+
+// Create a base agent (ReAct, RAG, Supervisor, or custom)
+reactAgent, _ := agent.NewReAct(
+    model,
+    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithTools(tools...),
+)
+
+// Wrap with conversational memory
+chatAgent, err := agent.NewConversational(
+    reactAgent,  // ANY agent type!
+    mem,
+    agent.WithMaxRecallMessages(10),      // Recall up to 10 relevant messages
+    agent.WithMinSimilarityScore(0.7),    // Only recall if similarity > 0.7
+    agent.WithFailOnStoreError(false),    // Don't fail if memory store fails
+)
+
+// Execute with a session ID (required)
+for msg, err := range chatAgent.Run(ctx, messages,
+    graph.WithInitialValue(agent.SessionIDKey, "user-123-session"),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(msg.Content())
+}
+```
+
+### Configuration options
+
+```go
+agent.NewConversational(baseAgent, memory,
+    agent.WithMaxRecallMessages(n),       // Max messages to recall from memory
+    agent.WithMinSimilarityScore(score),  // Min similarity for semantic search (0-1)
+    agent.WithFailOnStoreError(true),     // Fail if memory storage fails
+)
+```
+
+### Session ID
+
+A session ID **must** be provided at runtime using `graph.WithInitialValue`:
+
+```go
+// Each user/session gets its own memory context
+chatAgent.Run(ctx, messages,
+    graph.WithInitialValue(agent.SessionIDKey, "user-123-session"),
+)
+```
+
+### How it works
+
+The conversational agent creates a wrapper graph with memory integration:
+
+<div class="mermaid">
+flowchart LR
+    START((START)) --> Recall["Memory Recall<br/><i>Semantic Search</i>"]
+    Recall --> Agent["Wrapped Agent<br/><i>ReAct/RAG/etc.</i>"]
+    Agent --> Store["Memory Store<br/><i>Save Exchange</i>"]
+    Store --> END((END))
+    
+    style START fill:#22c55e,stroke:#16a34a,color:#fff
+    style END fill:#ef4444,stroke:#dc2626,color:#fff
+    style Recall fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style Agent fill:#3b82f6,stroke:#2563eb,color:#fff
+    style Store fill:#8b5cf6,stroke:#7c3aed,color:#fff
+</div>
+
+**Key benefits**:
+
+- 🧠 **Semantic recall**: Finds relevant past messages by meaning, not keywords
+- 🔄 **Composable**: Works with ANY agent type (ReAct, RAG, Supervisor, Reflection)
+- 📝 **Automatic storage**: Stores conversation exchanges after each interaction
+- 🔒 **Session isolation**: Each session has its own memory context
+- ⚡ **Non-blocking**: Memory errors don't fail the agent by default
+
+**Use cases**:
+- Multi-turn conversations requiring context
+- Personalized assistants that remember user preferences
+- Customer support with conversation history
+- Long-running agent sessions
+
+See the [Memory Guide](/memory/) for more on memory types and configuration.
 
 ---
 

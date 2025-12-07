@@ -257,3 +257,46 @@ func TestGraphDuplicateNodeOverwrites(t *testing.T) {
 		t.Errorf("expected second, got %v", capturedResult)
 	}
 }
+
+func TestWithInitialValue(t *testing.T) {
+	sessionKey := graph.NewKey("session_id", "default-session")
+	var capturedSession string
+
+	g := graph.New[any, any](sessionKey)
+	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		capturedSession = graph.Get(view, sessionKey)
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("process")
+
+	compiled, err := g.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	t.Run("uses default when no initial value", func(t *testing.T) {
+		capturedSession = ""
+		for _, err := range compiled.Run(context.Background(), nil) {
+			if err != nil {
+				t.Fatalf("Run failed: %v", err)
+			}
+		}
+		if capturedSession != "default-session" {
+			t.Errorf("expected default-session, got %v", capturedSession)
+		}
+	})
+
+	t.Run("uses provided initial value", func(t *testing.T) {
+		capturedSession = ""
+		for _, err := range compiled.Run(context.Background(), nil,
+			graph.WithInitialValue(sessionKey, "custom-session"),
+		) {
+			if err != nil {
+				t.Fatalf("Run failed: %v", err)
+			}
+		}
+		if capturedSession != "custom-session" {
+			t.Errorf("expected custom-session, got %v", capturedSession)
+		}
+	})
+}

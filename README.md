@@ -162,6 +162,7 @@ Explore **31 comprehensive examples** in the [`examples/`](examples/) directory:
 | Example | Description |
 |---------|-------------|
 | **[basic_agent](examples/basic_agent/)** | Simple ReAct agent with tools |
+| **[conversational_agent](examples/conversational_agent/)** | Agent with long-term memory across turns |
 | **[supervisor_agent](examples/supervisor_agent/)** | Multi-agent coordination with supervisor |
 | **[reflection_agent](examples/reflection_agent/)** | Self-critique and iterative refinement |
 | **[checkpointing](examples/checkpointing/)** | State persistence and resume |

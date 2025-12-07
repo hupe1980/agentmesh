@@ -375,14 +375,13 @@ func WithCheckpoint(cp *checkpoint.Checkpoint) RunOption {
 	}
 }
 
-// WithStateUpdates applies state updates when resuming from a checkpoint.
-// This is a convenience method for human-in-the-loop workflows where you need
-// to inject human input before resuming execution.
+// WithStateUpdates applies state updates to the graph execution.
+// This works for both fresh runs (to set initial values) and checkpoint resumes
+// (for human-in-the-loop workflows where you need to inject human input).
 //
-// The updates are applied to the checkpoint state before execution resumes.
-// Must be used together with WithCheckpoint.
+// For type-safe initial values, prefer [WithInitialValue] instead.
 //
-// Example:
+// Example (checkpoint resume):
 //
 //	compiled.Run(ctx, nil,
 //	    graph.WithCheckpoint(savedCheckpoint),
@@ -437,6 +436,26 @@ func WithApproval(nodeName string, approval *ApprovalResponse) RunOption {
 			cfg.approvals = make(map[string]*ApprovalResponse)
 		}
 		cfg.approvals[nodeName] = approval
+	}
+}
+
+// WithInitialValue sets an initial state value when starting graph execution.
+// This is useful for passing runtime-specific values like session IDs or
+// configuration that varies per execution.
+//
+// Unlike WithStateUpdates, this provides type safety through the Key type.
+//
+// Example:
+//
+//	compiled.Run(ctx, messages,
+//	    graph.WithInitialValue(agent.SessionIDKey, "session-123"),
+//	)
+func WithInitialValue[T any](key Key[T], value T) RunOption {
+	return func(cfg *runConfig) {
+		if cfg.stateUpdates == nil {
+			cfg.stateUpdates = make(map[string]any)
+		}
+		cfg.stateUpdates[key.Name()] = value
 	}
 }
 

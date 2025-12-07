@@ -167,7 +167,42 @@ recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
 
 ## Use Cases {#use-cases}
 
-### 1. Multi-Session Chatbot
+### 1. Conversational Agent Wrapper
+
+The simplest way to add memory to an agent is using the `Conversational` wrapper:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/memory"
+)
+
+// Create any agent (ReAct, RAG, Supervisor, etc.)
+reactAgent, _ := agent.NewReAct(model, agent.WithTools(tools...))
+
+// Create memory
+mem := memory.NewVectorMemory(embedder)
+
+// Wrap with conversational memory
+chatAgent, _ := agent.NewConversational(
+    reactAgent,
+    mem,
+    agent.WithMaxRecallMessages(10),
+    agent.WithMinSimilarityScore(0.7),
+)
+
+// Use with a session ID
+for msg, err := range chatAgent.Run(ctx, messages,
+    graph.WithInitialValue(agent.SessionIDKey, "user-123"),
+) {
+    // Memory is handled automatically
+}
+```
+
+See the [Conversational Agent](/agents/#conversational-agent) documentation for details.
+
+### 2. Multi-Session Chatbot
 
 Maintain separate conversation history per user:
 
@@ -209,7 +244,7 @@ func (c *ChatBot) Chat(ctx context.Context, userID, message string) (string, err
 }
 ```
 
-### 2. RAG with Conversation History
+### 3. RAG with Conversation History
 
 Combine memory with retrieval for context-aware RAG:
 
@@ -242,7 +277,7 @@ Answer:`, formatHistory(history), formatDocs(docs), query)
 }
 ```
 
-### 3. Personalized Recommendations
+### 4. Personalized Recommendations
 
 Use memory to track user preferences:
 
@@ -265,7 +300,7 @@ func getRecommendations(ctx context.Context, userID string) ([]string, error) {
 }
 ```
 
-### 4. Context Window Management
+### 5. Context Window Management
 
 Automatically select most relevant messages when context is limited:
 
@@ -294,7 +329,7 @@ func buildContextualPrompt(ctx context.Context, sessionID, query string, maxToke
 }
 ```
 
-### 5. Topic-Based Retrieval
+### 6. Topic-Based Retrieval
 
 Organize memory by conversation topics:
 
@@ -316,7 +351,7 @@ func recallByTopic(ctx context.Context, sessionID, topic string) ([]message.Mess
 }
 ```
 
-### 6. Conversation Summarization
+### 7. Conversation Summarization
 
 Periodically summarize old messages to save storage:
 
