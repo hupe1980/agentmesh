@@ -69,25 +69,43 @@ The middleware system enables you to:
 
 ### Graph Middleware
 
-Graph middleware wraps the entire graph execution, providing observability and lifecycle hooks.
+Graph middleware wraps node execution, providing observability and lifecycle hooks. These functions are in the `graph` package.
 
 **Available Middleware:**
 
-- **LoggingMiddleware** - Structured logging of graph execution
-- **EventMiddleware** - Publishes events to event bus
-- **VizMiddleware** - Integrates with visualization server
+- **LoggingMiddleware** - Structured logging of node execution
+- **TimingMiddleware** - Tracks execution time with callbacks
+- **RecoveryMiddleware** - Recovers from panics and converts them to errors
+- **ConditionalMiddleware** - Applies middleware only when conditions are met
+- **NodeMiddleware** - Applies middleware only to specific nodes
+- **VizMiddleware** - Integrates with visualization server (in `pkg/viz/middleware`)
 
 **Usage:**
 
 ```go
-import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
-
-agent.NewReAct(model,
-    agent.WithGraphMiddleware(
-        graphmw.NewLoggingMiddleware[[]message.Message, message.Message](logger),
-        graphmw.NewEventMiddleware[[]message.Message, message.Message](),
-    ),
+import (
+    "log/slog"
+    "github.com/hupe1980/agentmesh/pkg/graph"
 )
+
+// Apply logging middleware
+b.WithMiddleware(graph.LoggingMiddleware(slog.Default()))
+
+// Track timing
+b.WithMiddleware(graph.TimingMiddleware(func(node string, d time.Duration) {
+    metrics.RecordLatency(node, d)
+}))
+
+// Recover from panics
+b.WithMiddleware(graph.RecoveryMiddleware(func(node string, r any) {
+    log.Printf("panic in %s: %v", node, r)
+}))
+
+// Apply middleware to specific nodes only
+b.WithMiddleware(graph.NodeMiddleware(
+    []string{"slow_node", "external_api"},
+    graph.LoggingMiddleware(slog.Default()),
+))
 ```
 
 ### Model Middleware
@@ -219,39 +237,43 @@ eventBus.Subscribe(handler,
 - `EventInterrupt` - Execution interrupted
 - `EventResume` - Execution resumed
 
-## Custom Middleware
+## Custom Middleware {#custom-middleware}
 
-You can create custom middleware by implementing the `Middleware` interface:
+You can create custom middleware to extend execution behavior.
 
 ### Custom Graph Middleware
 
+Graph middleware is a function of type `func(next NodeFunc) NodeFunc`:
+
 ```go
-type CustomMiddleware[I, O any] struct {
-    // Your fields
+// Custom middleware function
+func MyCustomMiddleware(logger *slog.Logger) graph.Middleware {
+    return func(next graph.NodeFunc) graph.NodeFunc {
+        return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+            nodeName := graph.NodeNameFromContext(ctx)
+            
+            // Pre-execution logic
+            logger.Info("node starting", "node", nodeName)
+            start := time.Now()
+            
+            // Execute the wrapped node
+            cmd, err := next(ctx, view)
+            
+            // Post-execution logic
+            duration := time.Since(start)
+            if err != nil {
+                logger.Error("node failed", "node", nodeName, "error", err, "duration", duration)
+            } else {
+                logger.Info("node completed", "node", nodeName, "duration", duration)
+            }
+            
+            return cmd, err
+        }
+    }
 }
 
-func (m *CustomMiddleware[I, O]) Wrap(next graph.Executor[I, O]) graph.Executor[I, O] {
-    return graph.WrapFunc(func(ctx context.Context, compiled *graph.Compiled[I, O], input I, opts ...graph.RunOption) iter.Seq2[O, error] {
-        // Pre-execution logic
-        log.Println("Before execution")
-        
-        // Execute
-        results := next.Run(ctx, compiled, input, opts...)
-        
-        // Post-execution logic (wrap iterator)
-        return func(yield func(O, error) bool) {
-            for result, err := range results {
-                if err != nil {
-                    log.Printf("Error: %v", err)
-                }
-                if !yield(result, err) {
-                    return
-                }
-            }
-            log.Println("After execution")
-        }
-    })
-}
+// Usage
+b.WithMiddleware(MyCustomMiddleware(slog.Default()))
 ```
 
 ### Custom Model Middleware
@@ -348,5 +370,5 @@ See the following examples for complete implementations:
 
 - **Basic Usage**: `examples/middleware/` - Demonstrates all middleware types
 - **Observability**: `examples/observability/` - Event bus and monitoring
-- **Visualization**: `examples/viz_server/` - Real-time visualization integration
+- **Visualization**: `examples/viz_ui_demo/` - Real-time visualization integration
 - **Custom Middleware**: `examples/guardrails/` - Building custom middleware for content filtering

@@ -178,10 +178,10 @@ All metrics include relevant labels (`node.name`, `superstep`, etc.):
 
 ### 4. Propagates Context
 
-All providers are automatically attached to context and available in node RunFuncs:
+All providers are automatically attached to context and available in node functions:
 
 ```go
-func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+func(ctx context.Context, view graph.View) (*graph.Command, error) {
     log := logging.FromContext(ctx)
     tp := trace.FromContext(ctx)
     mp := metrics.FromContext(ctx)
@@ -189,6 +189,8 @@ func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Use for custom instrumentation
     log.Info("Processing data", "count", len(data))
     // ... more below
+    
+    return graph.To("next"), nil
 }
 ```
 
@@ -199,21 +201,21 @@ Access providers in your node RunFuncs for custom instrumentation:
 ### Logging
 
 ```go
-func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+func(ctx context.Context, view graph.View) (*graph.Command, error) {
     log := logging.FromContext(ctx)
     
     log.Info("Starting processing", "node", "data_processor")
     log.Debug("Details", "records", len(data))
     log.Warn("Slow operation detected", "duration_ms", elapsed)
     
-    return result, nil
+    return graph.To("next"), nil
 }
 ```
 
 ### Custom Spans
 
 ```go
-func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+func(ctx context.Context, view graph.View) (*graph.Command, error) {
     tp := trace.FromContext(ctx)
     tracer := tp.Tracer("my-service")
     
@@ -226,14 +228,14 @@ func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     // Execute operation
     results := queryDatabase(ctx, sql)
     
-    return &graph.NodeResult{...}, nil
+    return graph.To("next"), nil
 }
 ```
 
 ### Custom Metrics
 
 ```go
-func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
+func(ctx context.Context, view graph.View) (*graph.Command, error) {
     mp := metrics.FromContext(ctx)
     
     // Record counter
@@ -246,7 +248,7 @@ func(ctx context.Context, s state.Writer) (*graph.NodeResult, error) {
     duration := mp.Histogram("operation.duration_ms")
     duration.Record(ctx, float64(elapsed.Milliseconds()))
     
-    return result, nil
+    return graph.To("next"), nil
 }
 ```
 
@@ -299,3 +301,8 @@ Tune `pregel.DefaultEventChanBufferSize` or implement client-side sampling if yo
 
 - [**observability**](https://github.com/hupe1980/agentmesh/tree/main/examples/observability) - Automatic instrumentation setup
 - [**custom_observability**](https://github.com/hupe1980/agentmesh/tree/main/examples/custom_observability) - Custom instrumentation in nodes
+
+## Related
+
+- **[Middleware System](/middleware/)** - Extend execution with caching, retries, rate limiting, circuit breakers, and more
+- **[Streaming](/streaming/)** - Real-time event streaming for responsive UIs

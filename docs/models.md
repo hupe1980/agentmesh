@@ -830,3 +830,11 @@ func main() {
 ```
 
 See the [`examples/model_router`](../examples/model_router/) directory for a complete working example.
+
+---
+
+## Related
+
+- **[Middleware System](/middleware/)** - Extend model execution with caching, retries, rate limiting, and token counting
+- **[Agents](/agents/)** - Build agents using models with tool calling
+- **[Streaming](/streaming/)** - Real-time response streaming

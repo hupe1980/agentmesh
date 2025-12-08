@@ -29,18 +29,16 @@ var StatusKey = graph.NewKey("status", "")
 // Create graph
 g := graph.New[string, string](StatusKey)
 
-g.Node("process", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     // Get the stream writer from context
     streamWriter := graph.GetStreamWriter(ctx)
     
     // Emit intermediate updates
     if streamWriter != nil {
-        streamWriter(&graph.NodeResult{
-            Updates: map[string]any{"progress": 0.5},
-        })
+        streamWriter(graph.Updates{"progress": 0.5})
     }
     
-    return graph.Set(StatusKey, "complete").ToEnd(), nil
+    return graph.Set(StatusKey, "complete").To(graph.END), nil
 }, graph.END)
 
 g.Start("process")
@@ -77,11 +75,10 @@ type ExecutionResult[O any] struct {
 The StreamWriter allows nodes to emit intermediate results during execution:
 
 ```go
-type StreamWriter func(*NodeResult)
+type StreamWriter func(Updates)
 
-type NodeResult struct {
-    Updates map[string]any
-}
+type Updates map[string]any
+```
 ```
 
 ---
@@ -95,7 +92,7 @@ var CounterKey = graph.NewKey("counter", 0)
 
 g := graph.New[int, int](CounterKey)
 
-g.Node("counter", func(ctx context.Context, input graph.NodeInput[int]) (graph.Command, error) {
+g.Node("counter", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     for i := 1; i <= 10; i++ {
@@ -103,16 +100,14 @@ g.Node("counter", func(ctx context.Context, input graph.NodeInput[int]) (graph.C
         
         // Emit progress updates
         if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "progress": i * 10,
-                    "step":     i,
-                },
+            streamWriter(graph.Updates{
+                "progress": i * 10,
+                "step":     i,
             })
         }
     }
     
-    return graph.Set(CounterKey, 10).ToEnd(), nil
+    return graph.Set(CounterKey, 10).To(graph.END), nil
 }, graph.END)
 
 g.Start("counter")
@@ -171,9 +166,9 @@ For conversational AI workflows using `MessageGraph`:
 ```go
 g := message.NewGraphBuilder()
 
-g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
+g.Node("assistant", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    messages := input.State(message.MessagesKey)
+    messages := message.GetMessages(view)
     
     // Stream LLM response tokens
     var fullResponse strings.Builder
@@ -184,17 +179,15 @@ g.Node("assistant", func(ctx context.Context, input graph.NodeInput[[]message.Me
         
         // Stream each token to the client
         if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "type":    "token",
-                    "content": chunk.Content,
-                },
+            streamWriter(graph.Updates{
+                "type":    "token",
+                "content": chunk.Content,
             })
         }
     }
     
     response := message.NewAIMessageFromText(fullResponse.String())
-    return graph.Append(message.MessagesKey, response).ToEnd(), nil
+    return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
 g.Start("assistant")
@@ -228,13 +221,11 @@ var (
 g := graph.New[string, string](DataKey, StatusKey)
 
 // First node: fetch data
-g.Node("fetch", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+g.Node("fetch", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     if streamWriter != nil {
-        streamWriter(&graph.NodeResult{
-            Updates: map[string]any{"stage": "fetching"},
-        })
+        streamWriter(graph.Updates{"stage": "fetching"})
     }
     
     time.Sleep(1 * time.Second) // Simulate fetch
@@ -243,24 +234,22 @@ g.Node("fetch", func(ctx context.Context, input graph.NodeInput[string]) (graph.
 }, "process")
 
 // Second node: process data
-g.Node("process", func(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    data := graph.GetList(input, DataKey)
+    data := graph.GetList(view, DataKey)
     
     for i, item := range data {
         if streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{
-                    "stage":    "processing",
-                    "item":     item,
-                    "progress": float64(i+1) / float64(len(data)),
-                },
+            streamWriter(graph.Updates{
+                "stage":    "processing",
+                "item":     item,
+                "progress": float64(i+1) / float64(len(data)),
             })
         }
         time.Sleep(500 * time.Millisecond)
     }
     
-    return graph.Set(StatusKey, "complete").ToEnd(), nil
+    return graph.Set(StatusKey, "complete").To(graph.END), nil
 }, graph.END)
 
 g.Start("fetch")
@@ -309,17 +298,15 @@ for result, err := range compiled.Run(ctx, input) {
 ### 1. Always Check StreamWriter
 
 ```go
-func processNode(ctx context.Context, input graph.NodeInput[string]) (graph.Command, error) {
+func processNode(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     // Always check if streaming is enabled
     if streamWriter != nil {
-        streamWriter(&graph.NodeResult{
-            Updates: map[string]any{"status": "starting"},
-        })
+        streamWriter(graph.Updates{"status": "starting"})
     }
     
-    return graph.Set(StatusKey, "done").ToEnd(), nil
+    return graph.Set(StatusKey, "done").To(graph.END), nil
 }
 ```
 
@@ -329,16 +316,14 @@ func processNode(ctx context.Context, input graph.NodeInput[string]) (graph.Comm
 // ❌ Bad - too many events
 for i := 0; i < 1000000; i++ {
     if streamWriter != nil {
-        streamWriter(&graph.NodeResult{...})  // Don't do this!
+        streamWriter(graph.Updates{...})  // Don't do this!
     }
 }
 
 // ✅ Good - throttle updates
 for i := 0; i < 1000000; i++ {
     if i % 1000 == 0 && streamWriter != nil {
-        streamWriter(&graph.NodeResult{
-            Updates: map[string]any{"progress": i},
-        })
+        streamWriter(graph.Updates{"progress": i})
     }
 }
 ```
@@ -347,39 +332,29 @@ for i := 0; i < 1000000; i++ {
 
 ```go
 // ✅ Good - structured, predictable updates
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{
-        "stage":    "processing",
-        "progress": 0.5,
-        "message":  "Processing batch 2/4",
-    },
+streamWriter(graph.Updates{
+    "stage":    "processing",
+    "progress": 0.5,
+    "message":  "Processing batch 2/4",
 })
 
 // ❌ Bad - inconsistent structure
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{"status": "working"},
-})
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{"pct": 50},
-})
+streamWriter(graph.Updates{"status": "working"})
+streamWriter(graph.Updates{"pct": 50})
 ```
 
 ### 4. Emit Meaningful Events
 
 ```go
 // ✅ Good - provides useful information
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{
-        "operation":    "database_query",
-        "rows_fetched": 1500,
-        "duration_ms":  234,
-    },
+streamWriter(graph.Updates{
+    "operation":    "database_query",
+    "rows_fetched": 1500,
+    "duration_ms":  234,
 })
 
 // ❌ Bad - not useful
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{"x": 1},
-})
+streamWriter(graph.Updates{"x": 1})
 ```
 
 ---
@@ -513,13 +488,11 @@ for msg, err := range compiled.Run(ctx, messages) {
 You can include custom metadata in intermediate updates:
 
 ```go
-streamWriter(&graph.NodeResult{
-    Updates: map[string]any{
-        "event_type":  "custom_metric",
-        "metric_name": "tokens_per_second",
-        "value":       125.3,
-        "timestamp":   time.Now(),
-    },
+streamWriter(graph.Updates{
+    "event_type":  "custom_metric",
+    "metric_name": "tokens_per_second",
+    "value":       125.3,
+    "timestamp":   time.Now(),
 })
 ```
 
@@ -528,37 +501,33 @@ streamWriter(&graph.NodeResult{
 ```go
 var VerboseKey = graph.NewKey("verbose", false)
 
-g.Node("process", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
+g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
-    verbose := graph.Get(input, VerboseKey)
+    verbose := graph.Get(view, VerboseKey)
     
     for _, item := range items {
         processItem(item)
         
         // Only stream if verbose mode enabled
         if verbose && streamWriter != nil {
-            streamWriter(&graph.NodeResult{
-                Updates: map[string]any{"processed": item},
-            })
+            streamWriter(graph.Updates{"processed": item})
         }
     }
     
-    return graph.Set(StatusKey, "done").ToEnd(), nil
+    return graph.Set(StatusKey, "done").To(graph.END), nil
 }, graph.END)
 ```
 
 ### Error Handling
 
 ```go
-g.Node("processor", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
+g.Node("processor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
     streamWriter := graph.GetStreamWriter(ctx)
     
     // Errors in intermediate updates don't stop execution
     if streamWriter != nil {
-        streamWriter(&graph.NodeResult{
-            Updates: map[string]any{
-                "warning": "Rate limit approaching",
-            },
+        streamWriter(graph.Updates{
+            "warning": "Rate limit approaching",
         })
     }
     
@@ -567,7 +536,7 @@ g.Node("processor", func(ctx context.Context, input graph.NodeInput[any]) (graph
         return nil, fmt.Errorf("critical: %w", criticalError)
     }
     
-    return graph.Set(StatusKey, "done").ToEnd(), nil
+    return graph.Set(StatusKey, "done").To(graph.END), nil
 }, graph.END)
 ```
 

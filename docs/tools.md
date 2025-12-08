@@ -1140,3 +1140,11 @@ planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
 ```
 
 Combine these building blocks to give agents actionable capabilities without sacrificing determinism or observability.
+
+---
+
+## Related
+
+- **[Middleware System](/middleware/)** - Extend tool execution with caching, timeouts, circuit breakers, and audit logging
+- **[Agents](/agents/)** - Build agents that use tools
+- **[WASM Sandboxing](/wasm-sandboxing/)** - Run untrusted tools in secure sandboxes

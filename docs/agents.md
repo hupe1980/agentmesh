@@ -85,10 +85,13 @@ agent.NewReAct(model,
     agent.WithSupervisorMaxIterations(10),              // Max reasoning-action cycles
     agent.WithSystemPrompt("You are helpful"), // System prompt
     agent.WithReActOutputSchema(schema),      // Structured output
-    agent.WithGraphMiddleware(middleware...),  // Graph middleware (retry, etc.)
+    agent.WithGraphMiddleware(middleware...),  // Graph middleware
     agent.WithModelMiddleware(middleware...),  // Model middleware
     agent.WithToolMiddleware(middleware...),   // Tool middleware
 )
+```
+
+> **See also:** [Middleware System](/middleware/) for caching, retries, rate limiting, circuit breakers, and more.
 ```
 
 ### How it works
