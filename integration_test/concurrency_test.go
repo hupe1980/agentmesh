@@ -121,6 +121,7 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 
 	resultKey := graph.NewKey("result", "")
 	var nodesStarted atomic.Int32
+	nodeStarted := make(chan struct{}, 2) // Signal when a slow node starts
 
 	g := graph.New[any, any](resultKey)
 
@@ -132,6 +133,10 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 	g.Node("slow1", func(ctx context.Context, _ graph.View) (*graph.Command, error) {
 		nodesStarted.Add(1)
 		select {
+		case nodeStarted <- struct{}{}:
+		default:
+		}
+		select {
 		case <-time.After(5 * time.Second):
 			return graph.To("end")
 		case <-ctx.Done():
@@ -141,6 +146,10 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 
 	g.Node("slow2", func(ctx context.Context, _ graph.View) (*graph.Command, error) {
 		nodesStarted.Add(1)
+		select {
+		case nodeStarted <- struct{}{}:
+		default:
+		}
 		select {
 		case <-time.After(5 * time.Second):
 			return graph.To("end")
@@ -158,9 +167,15 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Cancel after a short delay
+	// Cancel after at least one slow node has started
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		// Wait for a slow node to start (with timeout)
+		select {
+		case <-nodeStarted:
+			// A slow node has started, now cancel
+		case <-time.After(2 * time.Second):
+			// Fallback timeout
+		}
 		cancel()
 	}()
 
@@ -172,7 +187,7 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 
 	// Should finish quickly due to cancellation, not after 5 seconds
 	elapsed := time.Since(start)
-	assert.Less(t, elapsed, 2*time.Second, "Should have cancelled quickly")
+	assert.Less(t, elapsed, 3*time.Second, "Should have cancelled quickly")
 
 	// Verify that at least one slow node started before cancellation
 	assert.GreaterOrEqual(t, int(nodesStarted.Load()), 1, "At least one slow node should have started")

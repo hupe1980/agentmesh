@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"sync/atomic"
 	"time"
+
+	"github.com/hupe1980/agentmesh/internal/safeconv"
 )
 
 // Manager enforces resource quotas for graph execution to prevent resource exhaustion.
@@ -50,7 +52,7 @@ func WithMaxMemoryBytes(bytes uint64) Option {
 // When exceeded, blocks new goroutine creation until capacity is available.
 func WithMaxGoroutines(maxGoroutines int) Option {
 	return func(m *Manager) {
-		m.maxGoroutines = int32(maxGoroutines)
+		m.maxGoroutines = safeconv.IntToInt32(maxGoroutines)
 	}
 }
 

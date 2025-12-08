@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/internal/floatconv"
+	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/pinecone-io/go-pinecone/pinecone"
@@ -188,7 +189,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
 		Vector:          floatconv.ToFloat32(queryEmbedding),
-		TopK:            uint32(opts.K),
+		TopK:            safeconv.IntToUint32(opts.K),
 		MetadataFilter:  filter,
 		IncludeValues:   opts.IncludeEmbeddings,
 		IncludeMetadata: true,
@@ -247,7 +248,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
 		Vector:          floatconv.ToFloat32(queryEmbedding),
 		SparseValues:    sparseValues,
-		TopK:            uint32(opts.K),
+		TopK:            safeconv.IntToUint32(opts.K),
 		MetadataFilter:  filter,
 		IncludeValues:   opts.IncludeEmbeddings,
 		IncludeMetadata: true,
@@ -277,7 +278,7 @@ func (s *Store) Delete(ctx context.Context, ids []string, _ string) error {
 func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric embedding.Metric) error {
 	_, err := s.client.CreateServerlessIndex(ctx, &pinecone.CreateServerlessIndexRequest{
 		Name:      name,
-		Dimension: int32(dims),
+		Dimension: safeconv.IntToInt32(dims),
 		Metric:    toPineconeMetric(metric),
 		Cloud:     pinecone.Cloud(s.opts.Cloud),
 		Region:    s.opts.Region,

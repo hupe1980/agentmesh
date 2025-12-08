@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/types"
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/internal/floatconv"
+	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 )
@@ -155,7 +156,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 		VectorBucketName: aws.String(s.vectorBucketName),
 		IndexName:        aws.String(s.indexName),
 		QueryVector:      &types.VectorDataMemberFloat32{Value: floatconv.ToFloat32(queryEmbedding)},
-		TopK:             aws.Int32(int32(opts.K)),
+		TopK:             aws.Int32(safeconv.IntToInt32(opts.K)),
 		ReturnMetadata:   true,
 		ReturnDistance:   true,
 	}
@@ -248,7 +249,7 @@ func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric e
 	_, err := s.client.CreateIndex(ctx, &s3vectors.CreateIndexInput{
 		VectorBucketName: aws.String(s.vectorBucketName),
 		IndexName:        aws.String(name),
-		Dimension:        aws.Int32(int32(dims)),
+		Dimension:        aws.Int32(safeconv.IntToInt32(dims)),
 		DistanceMetric:   toS3VectorsMetric(metric),
 	})
 	if err != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"hash/fnv"
 	"math"
+
+	"github.com/hupe1980/agentmesh/internal/safeconv"
 )
 
 // SimpleEmbedder provides a basic deterministic embedder for testing.
@@ -40,8 +42,8 @@ func (se *SimpleEmbedder) Embed(ctx context.Context, text string) ([]float64, er
 
 		// Convert hash to float in range [-1, 1]
 		hash := h.Sum64()
-		// Use modulo to prevent overflow instead of direct conversion
-		normalized := int64(hash % uint64(math.MaxInt64))
+		// Use safe conversion to prevent overflow
+		normalized := safeconv.Uint64ToInt64(hash % uint64(math.MaxInt64))
 		embedding[i] = float64(normalized) / float64(math.MaxInt64)
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hupe1980/agentmesh/internal/floatconv"
+	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/qdrant/go-client/qdrant"
@@ -180,7 +181,7 @@ func (s *Store) ensureCollection(ctx context.Context, name string, dims int, met
 		VectorsConfig: &qdrant.VectorsConfig{
 			Config: &qdrant.VectorsConfig_Params{
 				Params: &qdrant.VectorParams{
-					Size:     uint64(dims),
+					Size:     safeconv.IntToUint64(dims),
 					Distance: distance,
 				},
 			},
@@ -279,7 +280,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	resp, err := s.client.Search(ctx, &qdrant.SearchPoints{
 		CollectionName: collection,
 		Vector:         floatconv.ToFloat32(queryEmbedding),
-		Limit:          uint64(opts.K),
+		Limit:          safeconv.IntToUint64(opts.K),
 		Filter:         filter,
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
 		WithVectors:    &qdrant.WithVectorsSelector{SelectorOptions: &qdrant.WithVectorsSelector_Enable{Enable: opts.IncludeEmbeddings}},
@@ -324,7 +325,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 	// The alpha value determines the weight: 0.0 = pure keyword, 1.0 = pure vector
 	prefetch := make([]*qdrant.PrefetchQuery, 0, 2)
 
-	k := uint64(opts.K)
+	k := safeconv.IntToUint64(opts.K)
 	prefetchLimit := k * 2 // Over-fetch for better fusion results
 
 	// Dense vector search prefetch (always included unless alpha is 0)
@@ -437,7 +438,7 @@ func (s *Store) CreateIndex(ctx context.Context, name string, dims int, metric e
 		VectorsConfig: &qdrant.VectorsConfig{
 			Config: &qdrant.VectorsConfig_Params{
 				Params: &qdrant.VectorParams{
-					Size:     uint64(dims),
+					Size:     safeconv.IntToUint64(dims),
 					Distance: distance,
 				},
 			},
