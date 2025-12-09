@@ -93,22 +93,29 @@ _, _ = mcpClient.Initialize(ctx, mcp.InitializeRequest{
 })
 ```
 
-### 4. Convert MCP Tools to AgentMesh
+### 4. Create MCP Toolset
 ```go
 import mcptool "github.com/hupe1980/agentmesh/pkg/tool/mcp"
 
-toolset, _ := mcptool.NewToolset(mcpClient)
+// Create a Toolset that discovers tools from the MCP server
+mcpToolset := mcptool.NewToolset(mcptool.NewInMemorySessionFactory(clientTransport))
+defer mcpToolset.Close()
 ```
 
-### 5. Build ReAct Agent
+### 5. Build ReAct Agent with Dynamic Toolset
 ```go
-reactAgent := agent.NewReAct(model, toolset)
+// Use WithToolset for dynamic tool discovery - no manual ListTools() call needed!
+// Tools are discovered at runtime with access to the current graph state.
+reactAgent, _ := agent.NewReAct(model,
+    agent.WithToolset(mcpToolset), // Dynamic discovery!
+    agent.WithMaxIterations(5),
+)
 ```
 
 ### 6. Run Agent
 ```go
 result, _ := graph.Last(reactAgent.Run(ctx, []message.Message{
-    message.NewUserMessage("What is 123 + 456?"),
+    message.NewHumanMessageFromText("What is 123 + 456?"),
 }))
 ```
 

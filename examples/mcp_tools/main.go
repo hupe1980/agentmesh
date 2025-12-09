@@ -82,20 +82,16 @@ func main() {
 		}
 	}()
 
-	tools, err := mcpToolset.ListTools(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to list MCP tools: %v", err)
-	}
-
 	// 3. Create a ReAct agent with the MCP toolset
 	//    The toolset will dynamically discover the "sum" tool from the MCP server
+	//    on each model invocation, with access to the current graph state.
 	model := openai.NewModel(
 		openai.WithTemperature(0),
 	)
 
 	reactAgent, err := agent.NewReAct(
 		model,
-		agent.WithTools(tools...),
+		agent.WithToolset(mcpToolset), // Dynamic tool discovery!
 		agent.WithMaxIterations(5),
 	)
 	if err != nil {

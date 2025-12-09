@@ -30,6 +30,12 @@ import (
 //	agent, err := agent.NewReAct(model,
 //	    agent.WithTools(searchTool, calculatorTool),
 //	    agent.WithMaxIterations(5))
+//
+// Example with dynamic toolset:
+//
+//	agent, err := agent.NewReAct(model,
+//	    agent.WithToolset(mcpToolset),
+//	    agent.WithMaxIterations(5))
 func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
@@ -40,99 +46,62 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 		opt.applyReAct(&config)
 	}
 
-	// Build and validate tool registry
-	tools, toolRegistry := buildToolRegistry(config.tools)
+	// Combine static tools with any toolsets into a single toolset
+	combinedToolset := buildCombinedToolset(config.tools, config.toolsets)
 
-	// Validate model capabilities
-	if err := validateModelCapabilities(mdl, tools); err != nil {
-		return nil, err
-	}
-
-	// Create model node function
-	modelFn, err := createModelNode(mdl, config, tools)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create tool node function
-	toolFn, err := createToolNode(toolRegistry, config)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build and configure graph
-	return buildReActGraph(modelFn, toolFn, config)
-}
-
-// buildToolRegistry constructs a deduplicated tool registry from the provided tools.
-func buildToolRegistry(configTools []tool.Tool) ([]tool.Tool, map[string]tool.Tool) {
-	toolRegistry := make(map[string]tool.Tool, len(configTools))
-	for _, t := range configTools {
-		if t == nil {
-			continue
-		}
-		toolRegistry[t.Name()] = t
-	}
-
-	tools := make([]tool.Tool, 0, len(toolRegistry))
-	for _, t := range toolRegistry {
-		tools = append(tools, t)
-	}
-
-	return tools, toolRegistry
-}
-
-// validateModelCapabilities checks if the model supports tools when tools are provided.
-func validateModelCapabilities(mdl model.Model, tools []tool.Tool) error {
-	if len(tools) > 0 {
-		caps := mdl.Capabilities()
-		if !caps.Tools {
-			return fmt.Errorf("agent/react: model does not support tools (%d tools provided but Capabilities().Tools is false)", len(tools))
-		}
-	}
-	return nil
-}
-
-// createModelNode creates and configures the model node function with middleware.
-func createModelNode(mdl model.Model, config reActOptions, tools []tool.Tool) (graph.NodeFunc, error) {
-	// Create model executor - encapsulates model lifecycle management
-	// Apply model middleware if provided
+	// Create model executor
 	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
 	if len(config.modelMiddleware) > 0 {
 		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
 	}
 
-	// Model node function
+	// Create model node function with dynamic tool discovery
 	modelFn, err := NewModelNodeFunc(modelExecutor,
 		WithModelSystemPrompt(config.systemPrompt),
-		WithModelTools(tools...),
+		WithModelToolset(combinedToolset),
 		WithOutputSchema(config.outputSchema),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
 	}
 
-	return modelFn, nil
-}
-
-// createToolNode creates and configures the tool node function with middleware.
-func createToolNode(toolRegistry map[string]tool.Tool, config reActOptions) (graph.NodeFunc, error) {
-	// Create tool executor - use sequential by default for deterministic behavior
-	// Apply tool middleware if provided
-	toolExecutor := tool.NewSequentialExecutor(toolRegistry,
-		tool.WithErrorPrefix("react agent"),
-		tool.WithContinueOnError(false))
-	if len(config.toolMiddleware) > 0 {
-		toolExecutor = tool.Chain(toolExecutor, config.toolMiddleware...)
-	}
-
-	// Tool node function
-	toolFn, err := NewToolNodeFunc(toolExecutor)
+	// Create tool node function with dynamic tool resolution
+	toolFn, err := NewToolNodeFunc(
+		WithToolNodeToolset(combinedToolset),
+		WithToolNodeMiddleware(config.toolMiddleware...),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create tool node: %w", err)
 	}
 
-	return toolFn, nil
+	// Build and configure graph
+	return buildReActGraph(modelFn, toolFn, config)
+}
+
+// buildCombinedToolset creates a single toolset from static tools and dynamic toolsets.
+func buildCombinedToolset(staticTools []tool.Tool, toolsets []tool.Toolset) tool.Toolset {
+	var allToolsets []tool.Toolset
+
+	// Add static tools as a StaticToolset if provided
+	if len(staticTools) > 0 {
+		allToolsets = append(allToolsets, tool.NewStaticToolset(staticTools...))
+	}
+
+	// Add dynamic toolsets
+	allToolsets = append(allToolsets, toolsets...)
+
+	// If only one toolset, return it directly
+	if len(allToolsets) == 1 {
+		return allToolsets[0]
+	}
+
+	// Combine all toolsets
+	if len(allToolsets) > 0 {
+		return tool.Combine(allToolsets...)
+	}
+
+	// Return empty static toolset if no tools/toolsets provided
+	return tool.NewStaticToolset()
 }
 
 // buildReActGraph constructs the ReAct agent graph with nodes and middleware.
@@ -155,6 +124,7 @@ func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*mess
 type reActOptions struct {
 	commonOptions
 	tools        []tool.Tool
+	toolsets     []tool.Toolset
 	outputSchema *schema.OutputSchema
 }
 
@@ -168,6 +138,7 @@ func defaultReActOptions() reActOptions {
 			toolMiddleware:  nil,
 		},
 		tools:        nil,
+		toolsets:     nil,
 		outputSchema: nil,
 	}
 }
@@ -189,6 +160,16 @@ func (f reActOptionFunc) applyReAct(opts *reActOptions) {
 func WithTools(tools ...tool.Tool) ReActOption {
 	return reActOptionFunc(func(c *reActOptions) {
 		c.tools = append(c.tools, tools...)
+	})
+}
+
+// WithToolset adds a dynamic toolset for runtime tool discovery.
+// Tools are discovered from the toolset on each model invocation,
+// with access to the current graph state via the View parameter.
+// Multiple toolsets can be added; they will be combined.
+func WithToolset(ts tool.Toolset) ReActOption {
+	return reActOptionFunc(func(c *reActOptions) {
+		c.toolsets = append(c.toolsets, ts)
 	})
 }
 

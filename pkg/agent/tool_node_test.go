@@ -13,18 +13,26 @@ import (
 )
 
 func TestNewToolNodeFunc(t *testing.T) {
-	t.Run("returns error for nil executor", func(t *testing.T) {
-		fn, err := NewToolNodeFunc(nil)
+	t.Run("returns error when no executor or toolset provided", func(t *testing.T) {
+		fn, err := NewToolNodeFunc()
 		assert.Error(t, err)
 		assert.Nil(t, fn)
-		assert.Contains(t, err.Error(), "executor")
+		assert.Contains(t, err.Error(), "Executor or Toolset")
 	})
 
-	t.Run("creates function successfully", func(t *testing.T) {
+	t.Run("creates function successfully with executor", func(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor)
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
+		require.NoError(t, err)
+		assert.NotNil(t, fn)
+	})
+
+	t.Run("creates function successfully with toolset", func(t *testing.T) {
+		toolset := tool.NewStaticToolset()
+
+		fn, err := NewToolNodeFunc(WithToolNodeToolset(toolset))
 		require.NoError(t, err)
 		assert.NotNil(t, fn)
 	})
@@ -33,7 +41,7 @@ func TestNewToolNodeFunc(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor, WithModelTarget("custom_model"))
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor), WithModelTarget("custom_model"))
 		require.NoError(t, err)
 		assert.NotNil(t, fn)
 	})
@@ -44,7 +52,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor)
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
 		view := createToolNodeTestView(map[string]any{
@@ -61,7 +69,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor)
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
 		view := createToolNodeTestView(map[string]any{
@@ -80,7 +88,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor)
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
 		view := createToolNodeTestView(map[string]any{
@@ -99,7 +107,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		registry := make(map[string]tool.Tool)
 		executor := tool.NewSequentialExecutor(registry)
 
-		fn, err := NewToolNodeFunc(executor, WithModelTarget("custom_node"))
+		fn, err := NewToolNodeFunc(WithToolExecutor(executor), WithModelTarget("custom_node"))
 		require.NoError(t, err)
 
 		view := createToolNodeTestView(map[string]any{

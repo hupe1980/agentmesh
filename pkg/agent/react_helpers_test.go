@@ -9,155 +9,123 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
-// TestBuildToolRegistry_Success tests successful tool registry construction.
-func TestBuildToolRegistry_Success(t *testing.T) {
+// TestBuildCombinedToolset_StaticToolsOnly tests toolset creation with only static tools.
+func TestBuildCombinedToolset_StaticToolsOnly(t *testing.T) {
 	t.Parallel()
 
 	tool1 := &mockTool{name: "calculator"}
 	tool2 := &mockTool{name: "search"}
-	tool3 := &mockTool{name: "search"} // Duplicate - should be deduplicated
 
-	configTools := []tool.Tool{tool1, tool2, tool3}
+	staticTools := []tool.Tool{tool1, tool2}
+	var toolsets []tool.Toolset
 
-	tools, registry := buildToolRegistry(configTools)
+	combinedToolset := buildCombinedToolset(staticTools, toolsets)
 
-	// Should have 2 tools (calculator + search, duplicate removed)
+	// List tools should return both tools
+	tools, err := combinedToolset.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 	if len(tools) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
-	if len(registry) != 2 {
-		t.Errorf("expected 2 tools in registry, got %d", len(registry))
+}
+
+// TestBuildCombinedToolset_ToolsetsOnly tests toolset creation with only dynamic toolsets.
+func TestBuildCombinedToolset_ToolsetsOnly(t *testing.T) {
+	t.Parallel()
+
+	tool1 := &mockTool{name: "dynamic1"}
+	tool2 := &mockTool{name: "dynamic2"}
+	mockToolset := tool.NewStaticToolset(tool1, tool2)
+
+	var staticTools []tool.Tool
+	toolsets := []tool.Toolset{mockToolset}
+
+	combinedToolset := buildCombinedToolset(staticTools, toolsets)
+
+	// List tools should return both tools from the dynamic toolset
+	tools, err := combinedToolset.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify both tools are present
-	if _, ok := registry["calculator"]; !ok {
-		t.Error("expected calculator tool in registry")
-	}
-	if _, ok := registry["search"]; !ok {
-		t.Error("expected search tool in registry")
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
 }
 
-// TestBuildToolRegistry_EmptyTools tests with no tools provided.
-func TestBuildToolRegistry_EmptyTools(t *testing.T) {
+// TestBuildCombinedToolset_Mixed tests toolset creation with both static tools and dynamic toolsets.
+func TestBuildCombinedToolset_Mixed(t *testing.T) {
 	t.Parallel()
 
-	tools, registry := buildToolRegistry([]tool.Tool{})
+	staticTool := &mockTool{name: "static"}
+	dynamicTool := &mockTool{name: "dynamic"}
+	mockToolset := tool.NewStaticToolset(dynamicTool)
+
+	staticTools := []tool.Tool{staticTool}
+	toolsets := []tool.Toolset{mockToolset}
+
+	combinedToolset := buildCombinedToolset(staticTools, toolsets)
+
+	// List tools should return both static and dynamic tools
+	tools, err := combinedToolset.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
+	}
+}
+
+// TestBuildCombinedToolset_Empty tests toolset creation with no tools or toolsets.
+func TestBuildCombinedToolset_Empty(t *testing.T) {
+	t.Parallel()
+
+	var staticTools []tool.Tool
+	var toolsets []tool.Toolset
+
+	combinedToolset := buildCombinedToolset(staticTools, toolsets)
+
+	// List tools should return empty list
+	tools, err := combinedToolset.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(tools) != 0 {
 		t.Errorf("expected 0 tools, got %d", len(tools))
 	}
-	if len(registry) != 0 {
-		t.Errorf("expected 0 tools in registry, got %d", len(registry))
-	}
 }
 
-// TestBuildToolRegistry_NilTools tests with nil tools in the list.
-func TestBuildToolRegistry_NilTools(t *testing.T) {
+// TestBuildCombinedToolset_MultipleToolsets tests combining multiple toolsets.
+func TestBuildCombinedToolset_MultipleToolsets(t *testing.T) {
 	t.Parallel()
 
-	tool1 := &mockTool{name: "valid"}
+	tool1 := &mockTool{name: "toolset1_tool"}
+	tool2 := &mockTool{name: "toolset2_tool"}
+	mockToolset1 := tool.NewStaticToolset(tool1)
+	mockToolset2 := tool.NewStaticToolset(tool2)
 
-	configTools := []tool.Tool{tool1, nil, nil} // nil tools should be skipped
+	var staticTools []tool.Tool
+	toolsets := []tool.Toolset{mockToolset1, mockToolset2}
 
-	tools, registry := buildToolRegistry(configTools)
+	combinedToolset := buildCombinedToolset(staticTools, toolsets)
 
-	// Should have 1 tool (nils skipped)
-	if len(tools) != 1 {
-		t.Errorf("expected 1 tool, got %d", len(tools))
-	}
-	if len(registry) != 1 {
-		t.Errorf("expected 1 tool in registry, got %d", len(registry))
-	}
-}
-
-// TestValidateModelCapabilities_Success tests successful validation when model supports tools.
-func TestValidateModelCapabilities_Success(t *testing.T) {
-	t.Parallel()
-
-	mdl := &mockModel{
-		capabilities: model.Capabilities{
-			Tools: true, // Model supports tools
-		},
-	}
-
-	tools := []tool.Tool{
-		&mockTool{name: "tool1"},
-		&mockTool{name: "tool2"},
-	}
-
-	err := validateModelCapabilities(mdl, tools)
+	// List tools should return tools from both toolsets
+	tools, err := combinedToolset.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-}
 
-// TestValidateModelCapabilities_NoTools tests validation with no tools (should succeed).
-func TestValidateModelCapabilities_NoTools(t *testing.T) {
-	t.Parallel()
-
-	mdl := &mockModel{
-		capabilities: model.Capabilities{
-			Tools: false, // Model doesn't support tools, but that's OK if no tools provided
-		},
-	}
-
-	tools := []tool.Tool{} // No tools
-
-	err := validateModelCapabilities(mdl, tools)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
 }
 
-// TestValidateModelCapabilities_FailsWhenToolsProvidedButNotSupported tests validation failure.
-func TestValidateModelCapabilities_FailsWhenToolsProvidedButNotSupported(t *testing.T) {
-	t.Parallel()
-
-	mdl := &mockModel{
-		capabilities: model.Capabilities{
-			Tools: false, // Model DOES NOT support tools
-		},
-	}
-
-	tools := []tool.Tool{
-		&mockTool{name: "unsupported"},
-	}
-
-	err := validateModelCapabilities(mdl, tools)
-	if err == nil {
-		t.Fatal("expected error when tools provided but model doesn't support them")
-	}
-
-	// Verify error message contains useful info
-	errMsg := err.Error()
-	if !containsHelper(errMsg, "does not support tools") {
-		t.Error("expected error message to mention tools not supported")
-	}
-	if !containsHelper(errMsg, "1 tools provided") {
-		t.Error("expected error message to mention number of tools provided")
-	}
-}
-
-// Note: Additional tests for internal helper functions (createModelNode, createToolNode, buildReActGraph)
-// would require extensive mocking of internal types and are better covered by integration tests.
-
-// Helper function to check if string contains substring
-func containsHelper(s, substr string) bool {
-	return len(s) >= len(substr) && findSubstring(s, substr)
-}
-
-func findSubstring(s, substr string) bool {
-	if s == substr {
-		return true
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
+// Note: Additional tests for internal helper functions are better covered by integration tests.
 
 // Mock implementations for testing
 

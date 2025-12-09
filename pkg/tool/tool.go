@@ -25,9 +25,3 @@ type Tool interface {
 	Definition() *Definition
 	Call(ctx context.Context, args string) (any, error)
 }
-
-// Toolset defines a collection of tools that can be managed together.
-type Toolset interface {
-	ListTools(ctx context.Context) ([]Tool, error)
-	Close() error
-}

@@ -23,10 +23,10 @@ func TestNewModelNodeFunc_NilExecutor(t *testing.T) {
 	assert.Contains(t, err.Error(), "executor must not be nil")
 }
 
-func TestNewToolNodeFunc_NilExecutor(t *testing.T) {
-	_, err := NewToolNodeFunc(nil)
+func TestNewToolNodeFunc_NoExecutorOrToolset(t *testing.T) {
+	_, err := NewToolNodeFunc()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "executor must not be nil")
+	assert.Contains(t, err.Error(), "either Executor or Toolset must be provided")
 }
 
 func TestNewModelNodeFunc_ValidExecutor(t *testing.T) {
@@ -39,7 +39,7 @@ func TestNewModelNodeFunc_ValidExecutor(t *testing.T) {
 func TestNewToolNodeFunc_ValidExecutor(t *testing.T) {
 	registry := make(map[string]tool.Tool)
 	executor := tool.NewSequentialExecutor(registry)
-	node, err := NewToolNodeFunc(executor)
+	node, err := NewToolNodeFunc(WithToolExecutor(executor))
 	require.NoError(t, err)
 	assert.NotNil(t, node)
 }
@@ -97,35 +97,11 @@ func TestNew_ModelSupportsTools(t *testing.T) {
 	require.NotNil(t, agent)
 }
 
-func TestNew_ModelDoesNotSupportTools(t *testing.T) {
-	// Mock model that doesn't support tools (Capabilities().Tools = false)
-	mdl := &basicModel{}
-	weatherTool := &testutil.MockTool{NameValue: "weather"}
-
-	_, err := NewReAct(mdl, WithTools(weatherTool))
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not support tools")
-}
-
-func TestNew_ModelDoesNotSupportToolsViaCapabilities(t *testing.T) {
-	mdl := &testutil.MockModel{
-		CapabilitiesFunc: func() model.Capabilities {
-			return model.Capabilities{
-				Tools:               false, // Model doesn't support tools
-				MaxContextTokens:    4096,
-				MaxOutputTokens:     2048,
-				SupportedModalities: []string{"text"},
-			}
-		},
-	}
-	weatherTool := &testutil.MockTool{NameValue: "weather"}
-
-	_, err := NewReAct(mdl, WithTools(weatherTool))
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not support tools")
-}
+// Note: With dynamic toolset support, tool capability validation now happens at runtime
+// when tools are discovered from toolsets. This allows for more flexible agent composition
+// where toolsets may return different tools based on state.
+// The old tests TestNew_ModelDoesNotSupportTools and TestNew_ModelDoesNotSupportToolsViaCapabilities
+// were removed as they tested compile-time validation that no longer applies.
 
 func TestAgent_BasicExecution(t *testing.T) {
 	mdl := &testutil.MockModel{

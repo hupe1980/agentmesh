@@ -564,51 +564,96 @@ Need richer formatting? Set `ExampleToolOptions.Template` to a Go template that 
 
 ## Toolsets {#toolsets}
 
-Registering dozens of tools up front can overwhelm the prompt. Implement `core.Toolset` to load tools on demand based on the current context, or reuse the built-in adapters (for example, MCP).
+Registering dozens of tools up front can overwhelm the prompt. Implement `tool.Toolset` to load tools on demand based on the current context, or reuse the built-in adapters (for example, MCP).
 
 - **When to use**: dynamic connectors, per-user tool catalogs, or rate-limited APIs.
 - **Behavior**:
-  - Toolsets decide at call time which tools to expose via `ListTools`
-  - Works alongside inline tools; the executor merges duplicates by name
+  - Toolsets decide at call time which tools to expose via `ListTools(ctx, view)`
+  - The `view` parameter provides read access to the current graph state for context-aware tool selection
+  - Works alongside inline tools; use `WithTools()` for static tools and `WithToolset()` for dynamic discovery
   - Often paired with caching or feature flags to keep prompts trim
 
 ```go
-type DocsToolset struct{}
+import (
+    "context"
+    
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/tool"
+)
 
-func (DocsToolset) ListTools(ctx context.Context, ro core.ReadonlyContext) ([]core.Tool, error) {
-  // e.g., only surface tools relevant to the active workspace
-  return []core.Tool{sumTool, searchDocsTool}, nil
+// Custom toolset that filters tools based on user permissions in state
+type PermissionAwareToolset struct {
+    inner      tool.Toolset
+    permKey    graph.Key[[]string]
 }
 
-researcher, _ := am.NewModelAgent("researcher", llm, func(o *am.ModelAgentOptions) {
-  o.Toolsets = []core.Toolset{DocsToolset{}}
-})
+func (t *PermissionAwareToolset) ListTools(ctx context.Context, view graph.View) ([]tool.Tool, error) {
+    allTools, err := t.inner.ListTools(ctx, view)
+    if err != nil {
+        return nil, err
+    }
+    
+    // If no view, return all tools (static discovery)
+    if view == nil {
+        return allTools, nil
+    }
+    
+    // Filter tools based on user permissions from state
+    permissions := graph.Get(view, t.permKey)
+    return filterByPermissions(allTools, permissions), nil
+}
+
+func (t *PermissionAwareToolset) Close() error {
+    return t.inner.Close()
+}
+
+// Use with the agent
+reactAgent, _ := agent.NewReAct(model,
+    agent.WithToolset(&PermissionAwareToolset{
+        inner:   mcpToolset,
+        permKey: UserPermissionsKey,
+    }),
+)
+```
+
+### Combining Toolsets
+
+Use `tool.Combine()` to merge multiple toolsets:
+
+```go
+// Combine static tools with dynamic MCP tools
+combined := tool.Combine(
+    tool.NewStaticToolset(calculatorTool, weatherTool),
+    mcpToolset,
+)
+
+reactAgent, _ := agent.NewReAct(model, agent.WithToolset(combined))
 ```
 
 ---
 
 ## MCP toolset {#mcp-toolset}
 
-The [`tool/mcp`](https://github.com/hupe1980/agentmesh/tree/main/tool/mcp) adapter lets you connect to external MCP servers and expose their declared tools to your agents. It handles session pooling, schema conversion, and remote execution over stdio or HTTP transports.
+The [`tool/mcp`](https://github.com/hupe1980/agentmesh/tree/main/pkg/tool/mcp) adapter lets you connect to external MCP servers and expose their declared tools to your agents. It handles session pooling, schema conversion, and remote execution over stdio or HTTP transports.
 
 - **When to use**: integrate hosted tool providers, share capabilities with other MCP-compliant runtimes, or proxy heavy operations out of process.
 - **Behavior**:
-  - Discovers remote tools at runtime via `ListTools`
+  - Discovers remote tools at runtime via `ListTools(ctx, view)`
   - Reuses pooled sessions keyed by auth headers for efficiency
   - Supports stdio (`command`), streamable HTTP, and SSE transports out of the box
 
 ```go
-import mcptool "github.com/hupe1980/agentmesh/tool/mcp"
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    mcptool "github.com/hupe1980/agentmesh/pkg/tool/mcp"
+)
 
 factory := mcptool.NewStdioSessionFactory("mcp-server", []string{"serve"})
-mcpToolset := mcptool.NewToolset(factory, func(o *mcptool.ToolsetOptions) {
-  o.NamePrefix = "remote"
-})
+mcpToolset := mcptool.NewToolset(factory, mcptool.WithNamePrefix("remote"))
 defer mcpToolset.Close()
 
-planner, _ := am.NewModelAgent("planner", llm, func(o *am.ModelAgentOptions) {
-  o.Toolsets = append(o.Toolsets, mcpToolset)
-})
+// Use WithToolset for dynamic tool discovery - no manual ListTools() call needed!
+reactAgent, _ := agent.NewReAct(model, agent.WithToolset(mcpToolset))
 ```
 
 Need to authenticate over HTTP instead? Swap in `mcptool.NewStreamableSessionFactory` or `mcptool.NewSSESessionFactory` with custom headers. The adapter forwards `ToolContext` metadata so nested tool calls can still access artifacts.
