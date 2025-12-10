@@ -44,6 +44,8 @@ func setupPostgresContainer(t *testing.T, ctx context.Context) (string, func()) 
 }
 
 func TestPgvectorVectorStore_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -115,6 +117,8 @@ func TestPgvectorVectorStore_BasicOperations(t *testing.T) {
 }
 
 func TestPgvectorVectorStore_Namespaces(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -181,6 +185,8 @@ func TestPgvectorVectorStore_Namespaces(t *testing.T) {
 }
 
 func TestPgvectorVectorStore_IndexOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -219,6 +225,8 @@ func TestPgvectorVectorStore_IndexOperations(t *testing.T) {
 }
 
 func TestPgvectorVectorStore_Delete(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -266,6 +274,8 @@ func TestPgvectorVectorStore_Delete(t *testing.T) {
 }
 
 func TestPgvectorVectorStore_Search(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

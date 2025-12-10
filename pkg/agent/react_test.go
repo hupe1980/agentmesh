@@ -6,11 +6,11 @@ import (
 	"iter"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +31,7 @@ func TestNewToolNodeFunc_NoExecutorOrToolset(t *testing.T) {
 }
 
 func TestNewModelNodeFunc_ValidExecutor(t *testing.T) {
-	executor := model.NewExecutor(&testutil.MockModel{})
+	executor := model.NewExecutor(testutil.NewModelBuilder().Build())
 	node, err := NewModelNodeFunc(executor)
 	require.NoError(t, err)
 	assert.NotNil(t, node)
@@ -48,7 +48,7 @@ func TestNewToolNodeFunc_ValidExecutor(t *testing.T) {
 // Tests
 
 func TestNew_BasicAgent(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 	compiled, err := NewReAct(mdl)
 
 	require.NoError(t, err)
@@ -58,11 +58,10 @@ func TestNew_BasicAgent(t *testing.T) {
 }
 
 func TestNew_WithTools(t *testing.T) {
-	mdl := &testutil.MockModel{}
-	weatherTool := &testutil.MockTool{
-		NameValue:        "weather",
-		DescriptionValue: "Get weather",
-	}
+	mdl := testutil.NewModelBuilder().Build()
+	weatherTool := testutil.NewToolBuilder("weather").
+		WithDescription("Get weather").
+		Build()
 
 	compiled, err := NewReAct(mdl, WithTools(weatherTool))
 
@@ -71,7 +70,7 @@ func TestNew_WithTools(t *testing.T) {
 }
 
 func TestNew_NilToolsIgnored(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 
 	compiled, err := NewReAct(mdl, WithTools(nil, nil))
 
@@ -80,17 +79,15 @@ func TestNew_NilToolsIgnored(t *testing.T) {
 }
 
 func TestNew_ModelSupportsTools(t *testing.T) {
-	mdl := &testutil.MockModel{
-		CapabilitiesFunc: func() model.Capabilities {
-			return model.Capabilities{
-				Tools:               true,
-				MaxContextTokens:    4096,
-				MaxOutputTokens:     2048,
-				SupportedModalities: []string{"text"},
-			}
-		},
-	}
-	weatherTool := &testutil.MockTool{NameValue: "weather"}
+	mdl := testutil.NewModelBuilder().
+		WithCapabilities(model.Capabilities{
+			Tools:               true,
+			MaxContextTokens:    4096,
+			MaxOutputTokens:     2048,
+			SupportedModalities: []string{"text"},
+		}).
+		Build()
+	weatherTool := testutil.NewToolBuilder("weather").Build()
 
 	agent, err := NewReAct(mdl, WithTools(weatherTool))
 
@@ -105,15 +102,9 @@ func TestNew_ModelSupportsTools(t *testing.T) {
 // were removed as they tested compile-time validation that no longer applies.
 
 func TestAgent_BasicExecution(t *testing.T) {
-	mdl := &testutil.MockModel{
-		GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-			return func(yield func(*model.Response, error) bool) {
-				yield(&model.Response{
-					Message: message.NewAIMessageFromText("Hello! I'm here to help."),
-				}, nil)
-			}
-		},
-	}
+	mdl := testutil.NewModelBuilder().
+		WithResponse("Hello! I'm here to help.").
+		Build()
 
 	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)
@@ -133,37 +124,18 @@ func TestAgent_BasicExecution(t *testing.T) {
 }
 
 func TestAgent_ToolCalling(t *testing.T) {
-	callCount := 0
-	mdl := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			// First call: model requests tool
-			if callCount == 0 {
-				callCount++
-				aiMsg := message.NewAIMessageFromText("I'll check the weather")
+	mdl := testutil.NewModelBuilder().
+		WithToolCalls(message.ToolCall{
+			ID:        "call_1",
+			Name:      "weather",
+			Arguments: `{"location":"Berlin"}`,
+		}).
+		WithResponse("The weather is sunny!").
+		Build()
 
-				aiMsg.ToolCalls = []message.ToolCall{
-					{
-						ID:        "call_1",
-						Name:      "weather",
-						Arguments: `{"location":"Berlin"}`,
-					},
-				}
-				return aiMsg, nil
-			}
-			// Second call: model responds after tool result
-			return message.NewAIMessageFromText("The weather is sunny!"), nil
-		}),
-	}
-
-	weatherTool := &testutil.MockTool{
-		NameValue: "weather",
-		CallFunc: func(ctx context.Context, args string) (any, error) {
-			return map[string]any{
-				"temperature": 21,
-				"conditions":  "sunny",
-			}, nil
-		},
-	}
+	weatherTool := testutil.NewToolBuilder("weather").
+		WithResult(`{"temperature": 21, "conditions": "sunny"}`).
+		Build()
 
 	compiled, err := NewReAct(mdl, WithTools(weatherTool))
 	require.NoError(t, err)
@@ -181,26 +153,15 @@ func TestAgent_ToolCalling(t *testing.T) {
 	// CollectMessages returns messages from ExecutionResults
 	// Should have: AI (with tool call) + Tool result + AI (final response)
 	assert.GreaterOrEqual(t, len(messages), 2) // At least tool call and response
-
-	// Verify model was called twice (once for tool request, once after tool result)
-	assert.GreaterOrEqual(t, callCount, 1, "Model should be called at least once")
 }
 
 func TestAgent_UnregisteredTool(t *testing.T) {
-	mdl := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			aiMsg := message.NewAIMessageFromText("Calling unknown tool")
-
-			aiMsg.ToolCalls = []message.ToolCall{
-				{
-					ID:   "call_1",
-					Name: "unknown_tool",
-				},
-			}
-
-			return aiMsg, nil
-		}),
-	}
+	mdl := testutil.NewModelBuilder().
+		WithToolCalls(message.ToolCall{
+			ID:   "call_1",
+			Name: "unknown_tool",
+		}).
+		Build()
 
 	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)
@@ -217,23 +178,13 @@ func TestAgent_UnregisteredTool(t *testing.T) {
 }
 
 func TestAgent_ToolExecutionError(t *testing.T) {
-	mdl := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			aiMsg := message.NewAIMessageFromText("")
+	mdl := testutil.NewModelBuilder().
+		WithToolCalls(message.ToolCall{ID: "call_1", Name: "failing_tool"}).
+		Build()
 
-			aiMsg.ToolCalls = []message.ToolCall{
-				{ID: "call_1", Name: "failing_tool"},
-			}
-			return aiMsg, nil
-		}),
-	}
-
-	failingTool := &testutil.MockTool{
-		NameValue: "failing_tool",
-		CallFunc: func(ctx context.Context, args string) (any, error) {
-			return nil, errors.New("tool execution failed")
-		},
-	}
+	failingTool := testutil.NewToolBuilder("failing_tool").
+		WithError(errors.New("tool execution failed")).
+		Build()
 
 	compiled, err := NewReAct(mdl, WithTools(failingTool))
 	require.NoError(t, err)
@@ -295,11 +246,9 @@ func TestAgent_ConditionalRouting(t *testing.T) {
 }
 
 func TestAgent_EmptyMessages(t *testing.T) {
-	mdl := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("Response"), nil
-		}),
-	}
+	mdl := testutil.NewModelBuilder().
+		WithResponse("Response").
+		Build()
 
 	compiled, err := NewReAct(mdl)
 	require.NoError(t, err)

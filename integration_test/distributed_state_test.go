@@ -13,6 +13,8 @@ import (
 // TestDistributedStateSync verifies that state updates propagate correctly
 // through a Redis message bus in a distributed BSP execution.
 func TestDistributedStateSync(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	// Start Redis container
@@ -107,6 +109,8 @@ func TestDistributedStateSync(t *testing.T) {
 
 // TestDistributedStateParallel tests parallel node execution with Redis
 func TestDistributedStateParallel(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	// Start Redis container

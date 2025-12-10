@@ -122,6 +122,8 @@ func drainRuntime(ctx context.Context, rt *pregel.Runtime[cancelState, cancelMes
 }
 
 func TestRuntimeReceiveCancellation(t *testing.T) {
+	t.Parallel()
+
 	graph := newSingleVertexGraph("root")
 	bus := newBlockingMessageBus()
 	rt := pregel.MustNewRuntime[cancelState, cancelMessage](graph, nil,
@@ -158,6 +160,8 @@ func TestRuntimeReceiveCancellation(t *testing.T) {
 }
 
 func TestRuntimeChaosLatencyBounded(t *testing.T) {
+	t.Parallel()
+
 	graph := newSingleVertexGraph("root")
 	delay := 3 * time.Second
 	bus := newChaosMessageBus(delay)

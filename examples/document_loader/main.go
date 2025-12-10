@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/loader"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore/memory"
 )

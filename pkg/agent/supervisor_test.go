@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"context"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 )
 
 func TestNewSupervisor_Basic(t *testing.T) {
@@ -13,11 +12,9 @@ func TestNewSupervisor_Basic(t *testing.T) {
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
 
-	mockModel := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("supervisor response"), nil
-		}),
-	}
+	mockModel := testutil.NewModelBuilder().
+		WithResponse("supervisor response").
+		Build()
 
 	supervisor, err := NewSupervisor(
 		mockModel,
@@ -49,11 +46,9 @@ func TestNewSupervisor_Basic(t *testing.T) {
 }
 
 func TestNewSupervisor_NoWorkers(t *testing.T) {
-	mockModel := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("response"), nil
-		}),
-	}
+	mockModel := testutil.NewModelBuilder().
+		WithResponse("response").
+		Build()
 
 	_, err := NewSupervisor(mockModel)
 
@@ -63,11 +58,9 @@ func TestNewSupervisor_NoWorkers(t *testing.T) {
 }
 
 func TestNewSupervisor_NilWorkerAgent(t *testing.T) {
-	mockModel := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("response"), nil
-		}),
-	}
+	mockModel := testutil.NewModelBuilder().
+		WithResponse("response").
+		Build()
 
 	_, err := NewSupervisor(
 		mockModel,
@@ -83,11 +76,9 @@ func TestNewSupervisor(t *testing.T) {
 	worker1, _ := createMockWorker("math expert")
 	worker2, _ := createMockWorker("code expert")
 
-	mockModel := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("supervisor response"), nil
-		}),
-	}
+	mockModel := testutil.NewModelBuilder().
+		WithResponse("supervisor response").
+		Build()
 
 	supervisor, err := NewSupervisor(
 		mockModel,
@@ -132,11 +123,9 @@ func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
 
 // createMockWorker creates a simple mock worker agent for testing
 func createMockWorker(expertise string) (*message.Graph, error) {
-	mockModel := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			return message.NewAIMessageFromText("worker response: " + expertise), nil
-		}),
-	}
+	mockModel := testutil.NewModelBuilder().
+		WithResponse("worker response: " + expertise).
+		Build()
 
 	return NewReAct(mockModel, WithMaxIterations(1))
 }

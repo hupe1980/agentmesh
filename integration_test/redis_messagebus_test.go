@@ -14,6 +14,8 @@ import (
 
 // TestRedisMessageBus_BasicOperations tests core message bus operations
 func TestRedisMessageBus_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	// Start Redis container
@@ -117,6 +119,8 @@ func TestRedisMessageBus_BasicOperations(t *testing.T) {
 
 // TestRedisMessageBus_ConcurrentAccess tests thread-safety
 func TestRedisMessageBus_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
@@ -186,6 +190,8 @@ func TestRedisMessageBus_ConcurrentAccess(t *testing.T) {
 
 // TestRedisMessageBus_Persistence tests message persistence across connections
 func TestRedisMessageBus_Persistence(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
@@ -243,6 +249,8 @@ func TestRedisMessageBus_Persistence(t *testing.T) {
 
 // TestRedisMessageBus_NamespaceIsolation tests namespace isolation
 func TestRedisMessageBus_NamespaceIsolation(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
@@ -308,6 +316,8 @@ func TestRedisMessageBus_NamespaceIsolation(t *testing.T) {
 
 // TestRedisMessageBus_CleanNamespace tests namespace cleanup
 func TestRedisMessageBus_CleanNamespace(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
@@ -368,6 +378,8 @@ func TestRedisMessageBus_CleanNamespace(t *testing.T) {
 
 // TestRedisMessageBus_Stats tests statistics gathering
 func TestRedisMessageBus_Stats(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -424,6 +436,8 @@ func TestRedisMessageBus_Stats(t *testing.T) {
 
 // TestRedisMessageBus_EmptyOperations tests edge cases with empty data
 func TestRedisMessageBus_EmptyOperations(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")
@@ -476,6 +490,8 @@ func TestRedisMessageBus_EmptyOperations(t *testing.T) {
 
 // TestRedisMessageBus_ClosedOperations tests operations after Close
 func TestRedisMessageBus_ClosedOperations(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	container, err := redis.Run(ctx, "redis:7-alpine")

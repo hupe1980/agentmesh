@@ -6,12 +6,12 @@ import (
 	"iter"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/prompt"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,7 +136,7 @@ func TestNewRAG_NilModel(t *testing.T) {
 }
 
 func TestNewRAG_NilRetriever(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 
 	_, err := NewRAG(mdl, nil)
 	require.Error(t, err)
@@ -144,7 +144,7 @@ func TestNewRAG_NilRetriever(t *testing.T) {
 }
 
 func TestNewRAG_ValidConstruction(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}
@@ -158,7 +158,7 @@ func TestNewRAG_ValidConstruction(t *testing.T) {
 }
 
 func TestNewRAG_WithCustomPromptTemplate(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}
@@ -172,7 +172,7 @@ func TestNewRAG_WithCustomPromptTemplate(t *testing.T) {
 }
 
 func TestNewRAG_WithNilPromptTemplate(t *testing.T) {
-	mdl := &testutil.MockModel{}
+	mdl := testutil.NewModelBuilder().Build()
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}

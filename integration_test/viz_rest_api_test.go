@@ -15,16 +15,18 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/viz"
 )
 
 // TestVizServerRESTEndpoints tests all REST API endpoints end-to-end
 func TestVizServerRESTEndpoints(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -514,6 +516,8 @@ func testTestManagement(t *testing.T, baseURL string) {
 
 // TestVizServerInvalidEndpoints tests error handling for invalid requests
 func TestVizServerInvalidEndpoints(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -675,16 +679,15 @@ func createVizTestGraph(t *testing.T) *message.Graph {
 	}
 
 	// Create mock tool that can be called
-	mockTool := &testutil.MockTool{
-		NameValue:        "test_tool",
-		DescriptionValue: "A test tool for integration testing",
-		CallFunc: func(ctx context.Context, input string) (any, error) {
+	mockTool := testutil.NewToolBuilder("test_tool").
+		WithDescription("A test tool for integration testing").
+		WithCall(func(ctx context.Context, input string) (any, error) {
 			return map[string]any{
 				"result": "tool executed successfully",
 				"input":  input,
 			}, nil
-		},
-	}
+		}).
+		Build()
 
 	// Create a ReAct agent with mock model and tools
 	reactAgent, err := agent.NewReAct(
@@ -763,6 +766,8 @@ func findSubstringIndex(s, substr string) int {
 
 // TestVizServerWebSocket tests WebSocket connectivity and message broadcasting
 func TestVizServerWebSocket(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1024,6 +1029,8 @@ func testWebSocketEventBroadcast(t *testing.T, baseURL, wsURL string) {
 
 // TestEventCollection verifies that events are actually captured during graph execution
 func TestEventCollection(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "Failed to find free port")
@@ -1197,13 +1204,12 @@ func createSlowVizTestGraph(t *testing.T) *message.Graph {
 		},
 	}
 
-	mockTool := &testutil.MockTool{
-		NameValue:        "test_tool",
-		DescriptionValue: "A test tool",
-		CallFunc: func(ctx context.Context, input string) (any, error) {
+	mockTool := testutil.NewToolBuilder("test_tool").
+		WithDescription("A test tool").
+		WithCall(func(ctx context.Context, input string) (any, error) {
 			return map[string]any{"result": "ok"}, nil
-		},
-	}
+		}).
+		Build()
 
 	reactAgent, err := agent.NewReAct(mockModel, agent.WithTools(mockTool))
 	require.NoError(t, err)
@@ -1213,6 +1219,8 @@ func createSlowVizTestGraph(t *testing.T) *message.Graph {
 
 // TestWebSocketEventContent verifies WebSocket messages have correct types and payloads
 func TestWebSocketEventContent(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "Failed to find free port")
@@ -1359,6 +1367,8 @@ func TestWebSocketEventContent(t *testing.T) {
 
 // TestRunStatusTransitions verifies run status changes from created -> running -> completed
 func TestRunStatusTransitions(t *testing.T) {
+	t.Parallel()
+
 	// Find a free port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "Failed to find free port")

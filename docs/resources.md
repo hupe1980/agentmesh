@@ -71,6 +71,7 @@ Complete API reference with examples:
 - **Agent package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/agent](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/agent)
 - **Model package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/model)
 - **Tool package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/tool](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/tool)
+- **Testutil package** – [pkg.go.dev/github.com/hupe1980/agentmesh/pkg/testutil](https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/testutil)
 
 ---
 
@@ -102,6 +103,20 @@ go test ./... -race
 
 # Run with coverage
 go test ./... -cover
+```
+
+### Testing utilities
+
+The `pkg/testutil` package provides mock implementations and builders for testing agents and workflows. See the **[Testing Guide](/testing/)** for comprehensive documentation.
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/testutil"
+
+// Create a mock model with builder pattern
+model := testutil.NewModelBuilder().
+    WithResponse("Hello!").
+    WithToolCalls(message.ToolCall{Name: "search"}).
+    Build()
 ```
 
 ### Benchmarks

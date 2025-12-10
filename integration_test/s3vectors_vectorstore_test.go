@@ -19,6 +19,8 @@ import (
 // This test requires AWS credentials and S3 Vectors access.
 // Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_VECTORS_BUCKET, and S3_VECTORS_INDEX.
 func TestS3VectorsStore_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -81,6 +83,8 @@ func TestS3VectorsStore_BasicOperations(t *testing.T) {
 
 // TestS3VectorsStore_Namespaces tests namespace support.
 func TestS3VectorsStore_Namespaces(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -143,6 +147,8 @@ func TestS3VectorsStore_Namespaces(t *testing.T) {
 
 // TestS3VectorsStore_IndexOperations tests index management.
 func TestS3VectorsStore_IndexOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

@@ -43,6 +43,8 @@ func setupWeaviateContainer(t *testing.T, ctx context.Context) (*weaviate.Store,
 }
 
 func TestWeaviateVectorStore_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -87,6 +89,8 @@ func TestWeaviateVectorStore_BasicOperations(t *testing.T) {
 }
 
 func TestWeaviateVectorStore_Namespaces(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -134,6 +138,8 @@ func TestWeaviateVectorStore_Namespaces(t *testing.T) {
 }
 
 func TestWeaviateVectorStore_IndexOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -164,6 +170,8 @@ func TestWeaviateVectorStore_IndexOperations(t *testing.T) {
 }
 
 func TestWeaviateVectorStore_Search(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -207,6 +215,8 @@ func TestWeaviateVectorStore_Search(t *testing.T) {
 }
 
 func TestWeaviateVectorStore_Delete(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}

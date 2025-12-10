@@ -54,6 +54,8 @@ func createPineconeStore(t *testing.T, ctx context.Context) *pinecone.Store {
 // This test requires a Pinecone API key and an existing index.
 // Set PINECONE_API_KEY, PINECONE_INDEX_NAME, and optionally PINECONE_INDEX_HOST.
 func TestPineconeVectorStore_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -100,6 +102,8 @@ func TestPineconeVectorStore_BasicOperations(t *testing.T) {
 
 // TestPineconeVectorStore_Namespaces tests namespace support.
 func TestPineconeVectorStore_Namespaces(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -144,6 +148,8 @@ func TestPineconeVectorStore_Namespaces(t *testing.T) {
 
 // TestPineconeVectorStore_IndexOperations tests index management.
 func TestPineconeVectorStore_IndexOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

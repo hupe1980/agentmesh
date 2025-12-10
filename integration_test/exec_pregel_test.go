@@ -9,6 +9,8 @@ import (
 )
 
 func TestPregelExecutor(t *testing.T) {
+	t.Parallel()
+
 	// Define typed keys
 	startedKey := graph.NewKey("started", false)
 	task1Key := graph.NewKey("task1", "")

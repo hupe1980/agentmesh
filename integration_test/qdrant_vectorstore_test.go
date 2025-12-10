@@ -33,6 +33,8 @@ func setupQdrantContainer(t *testing.T, ctx context.Context) (string, func()) {
 }
 
 func TestQdrantVectorStore_BasicOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -111,6 +113,8 @@ func TestQdrantVectorStore_BasicOperations(t *testing.T) {
 }
 
 func TestQdrantVectorStore_Namespaces(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -191,6 +195,8 @@ func TestQdrantVectorStore_Namespaces(t *testing.T) {
 }
 
 func TestQdrantVectorStore_IndexOperations(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -233,6 +239,8 @@ func TestQdrantVectorStore_IndexOperations(t *testing.T) {
 }
 
 func TestQdrantVectorStore_Delete(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -284,6 +292,8 @@ func TestQdrantVectorStore_Delete(t *testing.T) {
 }
 
 func TestQdrantVectorStore_Search(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}

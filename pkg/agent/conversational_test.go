@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/memory"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +24,7 @@ func TestNewConversational_Validation(t *testing.T) {
 
 	t.Run("returns error for nil memory", func(t *testing.T) {
 		// Create a simple wrapped agent
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -34,7 +34,7 @@ func TestNewConversational_Validation(t *testing.T) {
 	})
 
 	t.Run("creates agent with valid parameters", func(t *testing.T) {
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -47,7 +47,7 @@ func TestNewConversational_Validation(t *testing.T) {
 
 func TestNewConversational_Options(t *testing.T) {
 	t.Run("applies WithShortTermMessages", func(t *testing.T) {
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -60,7 +60,7 @@ func TestNewConversational_Options(t *testing.T) {
 	})
 
 	t.Run("applies WithLongTermMessages", func(t *testing.T) {
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -73,7 +73,7 @@ func TestNewConversational_Options(t *testing.T) {
 	})
 
 	t.Run("applies WithMinSimilarityScore", func(t *testing.T) {
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -86,7 +86,7 @@ func TestNewConversational_Options(t *testing.T) {
 	})
 
 	t.Run("ignores invalid option values", func(t *testing.T) {
-		mockModel := &testutil.MockModel{}
+		mockModel := testutil.NewModelBuilder().Build()
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
 
@@ -106,11 +106,9 @@ func TestConversational_RunWithoutMemory(t *testing.T) {
 		ctx := context.Background()
 
 		// Create mock model that returns a simple response
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return message.NewAIMessageFromText("Hello! How can I help you?"), nil
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithResponse("Hello! How can I help you?").
+			Build()
 
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
@@ -141,11 +139,9 @@ func TestConversational_StoresConversation(t *testing.T) {
 	t.Run("stores user message and AI response in memory", func(t *testing.T) {
 		ctx := context.Background()
 
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return message.NewAIMessageFromText("I'm doing well, thanks!"), nil
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithResponse("I'm doing well, thanks!").
+			Build()
 
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
@@ -239,11 +235,9 @@ func TestConversational_WithRAGAgent(t *testing.T) {
 	t.Run("wraps RAG agent with conversational memory", func(t *testing.T) {
 		ctx := context.Background()
 
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return message.NewAIMessageFromText("Based on the documents, AgentMesh is a Go framework."), nil
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithResponse("Based on the documents, AgentMesh is a Go framework.").
+			Build()
 
 		mockRetriever := &mockRetriever{
 			docs: []retrieval.Document{
@@ -283,11 +277,9 @@ func TestConversational_MemoryRecallError(t *testing.T) {
 	t.Run("continues execution when memory recall fails", func(t *testing.T) {
 		ctx := context.Background()
 
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return message.NewAIMessageFromText("Response despite memory error"), nil
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithResponse("Response despite memory error").
+			Build()
 
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
@@ -321,11 +313,9 @@ func TestConversational_MemoryStoreError(t *testing.T) {
 	t.Run("completes execution when memory store fails", func(t *testing.T) {
 		ctx := context.Background()
 
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return message.NewAIMessageFromText("Response"), nil
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithResponse("Response").
+			Build()
 
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)
@@ -359,11 +349,9 @@ func TestConversational_WrappedAgentError(t *testing.T) {
 	t.Run("propagates error from wrapped agent", func(t *testing.T) {
 		ctx := context.Background()
 
-		mockModel := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, msgs []message.Message) (message.Message, error) {
-				return nil, errors.New("model generation failed")
-			}),
-		}
+		mockModel := testutil.NewModelBuilder().
+			WithError(errors.New("model generation failed")).
+			Build()
 
 		wrappedAgent, err := NewReAct(mockModel)
 		require.NoError(t, err)

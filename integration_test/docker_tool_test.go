@@ -40,6 +40,8 @@ import (
 // This test is designed to catch the race condition where containers might be removed
 // before their logs are retrieved.
 func TestDockerTool_LogRetrievalAfterContainerCompletion(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping Docker integration test in short mode")
 	}
@@ -169,6 +171,8 @@ func TestDockerTool_LogRetrievalAfterContainerCompletion(t *testing.T) {
 
 // TestDockerTool_ErrorHandling tests log retrieval from containers that exit with errors
 func TestDockerTool_ErrorHandling(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping Docker integration test in short mode")
 	}
@@ -214,6 +218,8 @@ func TestDockerTool_ErrorHandling(t *testing.T) {
 
 // TestDockerRunner_DirectUse tests the runner directly to verify the bug at a lower level
 func TestDockerRunner_DirectUse(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("Skipping Docker integration test in short mode")
 	}

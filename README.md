@@ -242,6 +242,31 @@ go tool cover -html=coverage.out
 go test ./... -bench=. -benchmem
 ```
 
+### Testing Utilities
+
+The `pkg/testutil` package provides mock implementations and builders for testing agents and workflows. See the [Testing Guide](docs/testing.md) for comprehensive documentation.
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/testutil"
+
+// Create a mock model with builder pattern
+model := testutil.NewModelBuilder().
+    WithResponse("Hello!").
+    WithToolCalls(message.ToolCall{Name: "search"}).
+    Build()
+
+// Create a mock tool
+tool := testutil.NewToolBuilder("search").
+    WithResult("search results").
+    Build()
+
+// Record and assert model interactions
+recorder := testutil.NewConversationRecorder()
+// ... run agent ...
+recorder.AssertRequestCount(t, 1)
+recorder.AssertToolCallMade(t, "search")
+```
+
 ---
 
 ## 🤝 Contributing
