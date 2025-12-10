@@ -638,6 +638,8 @@ func (a *pregelGraphAdapter[I, O]) managedValueDescriptors() []checkpoint.Manage
 }
 
 // yieldListItems yields each item in a slice as an output.
+// If the value is not a slice (e.g., streaming single items from a ListKey),
+// it yields the single value directly.
 // Uses SliceValue interface when available to avoid reflection.
 // Lock-free: uses buffered channel for thread-safe parallel node execution.
 func (a *pregelGraphAdapter[I, O]) yieldListItems(items any) {
@@ -652,12 +654,15 @@ func (a *pregelGraphAdapter[I, O]) yieldListItems(items any) {
 		return
 	}
 
-	// Slow path: fall back to reflection for untyped slices
+	// Check if it's actually a slice
 	val := reflect.ValueOf(items)
 	if val.Kind() != reflect.Slice {
+		// Not a slice - yield as single value (supports streaming individual items)
+		a.yieldValue(items)
 		return
 	}
 
+	// Slow path: iterate through slice via reflection
 	for i := 0; i < val.Len(); i++ {
 		item := val.Index(i).Interface()
 		if o, ok := item.(O); ok {

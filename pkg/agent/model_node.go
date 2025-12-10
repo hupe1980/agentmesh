@@ -20,6 +20,7 @@ type ModelNodeConfig struct {
 	Toolset      tool.Toolset  // Dynamic toolset for runtime tool discovery
 	OutputSchema *schema.OutputSchema
 	ToolTarget   string // Target node when tool calls are present (default: "tool")
+	Stream       bool   // Enable streaming mode for real-time output
 }
 
 // ModelNodeOption configures a ModelNodeConfig.
@@ -74,6 +75,15 @@ func WithModelOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
 func WithToolTarget(target string) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
 		c.ToolTarget = target
+	}
+}
+
+// WithModelStreaming enables streaming mode for real-time output.
+// When enabled, partial responses are streamed via the graph's stream writer,
+// allowing real-time display of AI responses as they're generated.
+func WithModelStreaming(enabled bool) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.Stream = enabled
 	}
 }
 
@@ -160,19 +170,42 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 			Instructions: instructions,
 			Tools:        tools,
 			OutputSchema: cfg.OutputSchema,
+			Stream:       cfg.Stream,
 		}
 
-		// Execute via the executor
-		resp, err := model.Last(cfg.Executor.Generate(ctx, req))
-		if err != nil {
-			return graph.Fail(err)
+		// Execute via the executor with streaming support
+		// Partial chunks are streamed immediately via streamWriter
+		// Only the final complete message is added to state
+		streamWriter := graph.GetStreamWriter(ctx)
+
+		var finalResp *model.Response
+		for resp, err := range cfg.Executor.Generate(ctx, req) {
+			if err != nil {
+				return graph.Fail(err)
+			}
+
+			if resp.Partial {
+				// Stream partial chunks immediately for real-time output
+				if streamWriter != nil {
+					streamWriter(graph.Updates{
+						MessagesKey.Name(): resp.Message,
+					})
+				}
+			} else {
+				// Keep final response for state
+				finalResp = resp
+			}
+		}
+
+		if finalResp == nil {
+			return graph.Fail(fmt.Errorf("no response from model"))
 		}
 
 		// Route based on tool calls
-		if message.HasToolCalls(resp.Message) {
-			return graph.Append(MessagesKey, resp.Message).To(cfg.ToolTarget)
+		if message.HasToolCalls(finalResp.Message) {
+			return graph.Append(MessagesKey, finalResp.Message).To(cfg.ToolTarget)
 		}
 
-		return graph.Append(MessagesKey, resp.Message).To(graph.END)
+		return graph.Append(MessagesKey, finalResp.Message).To(graph.END)
 	}, nil
 }
