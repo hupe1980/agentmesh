@@ -115,7 +115,7 @@ func (c *Cache) Get(ctx context.Context, req *model.Request) (*model.Response, e
 		}
 
 		// Compute similarity
-		score := embedding.CosineSimilarity(queryVec, entry.Embedding)
+		score := float64(embedding.CosineSimilarity(queryVec, entry.Embedding))
 		if score >= c.options.SimilarityThreshold && score > bestScore {
 			bestEntry = &entry
 			bestScore = score

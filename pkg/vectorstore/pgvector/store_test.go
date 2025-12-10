@@ -235,13 +235,13 @@ func TestStore_Add(t *testing.T) {
 		{
 			ID:        "doc1",
 			Content:   "Hello world",
-			Embedding: []float64{0.1, 0.2, 0.3},
+			Embedding: []float32{0.1, 0.2, 0.3},
 			Metadata:  map[string]any{"key": "value"},
 		},
 		{
 			ID:        "doc2",
 			Content:   "Test content",
-			Embedding: []float64{0.4, 0.5, 0.6},
+			Embedding: []float32{0.4, 0.5, 0.6},
 		},
 	}
 
@@ -285,7 +285,7 @@ func TestStore_Add_WithNamespace(t *testing.T) {
 	require.NoError(t, err)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Content: "test", Embedding: []float64{0.1}},
+		{ID: "doc1", Content: "test", Embedding: []float32{0.1}},
 	}
 
 	err = store.Add(context.Background(), docs, func(o *vectorstore.AddOptions) {
@@ -314,7 +314,7 @@ func TestStore_Add_BatchError(t *testing.T) {
 	require.NoError(t, err)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Embedding: []float64{0.1}},
+		{ID: "doc1", Embedding: []float32{0.1}},
 	}
 
 	err = store.Add(context.Background(), docs)
@@ -426,7 +426,7 @@ func TestStore_Search(t *testing.T) {
 	store, err := NewFromPool(context.Background(), pool)
 	require.NoError(t, err)
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{K: 10})
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{K: 10})
 	require.NoError(t, err)
 	assert.NotNil(t, results)
 }
@@ -444,7 +444,7 @@ func TestStore_Search_Error(t *testing.T) {
 	store, err := NewFromPool(context.Background(), pool)
 	require.NoError(t, err)
 
-	_, err = store.Search(context.Background(), []float64{0.1}, vectorstore.SearchOptions{K: 10})
+	_, err = store.Search(context.Background(), []float32{0.1}, vectorstore.SearchOptions{K: 10})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "search failed")
 }
@@ -697,24 +697,4 @@ func TestDistanceToScore(t *testing.T) {
 			assert.InDelta(t, tt.expected, result, 0.0001)
 		})
 	}
-}
-
-func TestToFloat32(t *testing.T) {
-	input := []float64{1.1, 2.2, 3.3}
-	result := toFloat32(input)
-
-	assert.Len(t, result, 3)
-	assert.InDelta(t, float32(1.1), result[0], 0.0001)
-	assert.InDelta(t, float32(2.2), result[1], 0.0001)
-	assert.InDelta(t, float32(3.3), result[2], 0.0001)
-}
-
-func TestToFloat64(t *testing.T) {
-	input := []float32{1.1, 2.2, 3.3}
-	result := toFloat64(input)
-
-	assert.Len(t, result, 3)
-	assert.InDelta(t, 1.1, result[0], 0.0001)
-	assert.InDelta(t, 2.2, result[1], 0.0001)
-	assert.InDelta(t, 3.3, result[2], 0.0001)
 }

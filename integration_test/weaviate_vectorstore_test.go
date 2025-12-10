@@ -58,13 +58,13 @@ func TestWeaviateVectorStore_BasicOperations(t *testing.T) {
 		{
 			ID:        "doc1",
 			Content:   "Hello world",
-			Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+			Embedding: []float32{0.1, 0.2, 0.3, 0.4},
 			Metadata:  map[string]any{"category": "greeting"},
 		},
 		{
 			ID:        "doc2",
 			Content:   "Goodbye world",
-			Embedding: []float64{0.4, 0.3, 0.2, 0.1},
+			Embedding: []float32{0.4, 0.3, 0.2, 0.1},
 			Metadata:  map[string]any{"category": "farewell"},
 		},
 	}
@@ -76,7 +76,7 @@ func TestWeaviateVectorStore_BasicOperations(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Test Search
-	results, err := store.Search(ctx, []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
+	results, err := store.Search(ctx, []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(results), 1)
 	assert.Equal(t, "doc1", results[0].ID)
@@ -99,10 +99,10 @@ func TestWeaviateVectorStore_Namespaces(t *testing.T) {
 
 	// Add documents to different namespaces
 	docs1 := []vectorstore.Document{
-		{ID: "ns1-doc1", Content: "Namespace 1 doc", Embedding: []float64{0.1, 0.2, 0.3, 0.4}},
+		{ID: "ns1-doc1", Content: "Namespace 1 doc", Embedding: []float32{0.1, 0.2, 0.3, 0.4}},
 	}
 	docs2 := []vectorstore.Document{
-		{ID: "ns2-doc1", Content: "Namespace 2 doc", Embedding: []float64{0.5, 0.6, 0.7, 0.8}},
+		{ID: "ns2-doc1", Content: "Namespace 2 doc", Embedding: []float32{0.5, 0.6, 0.7, 0.8}},
 	}
 
 	err := store.Add(ctx, docs1, func(o *vectorstore.AddOptions) { o.Namespace = "namespace1" })
@@ -115,7 +115,7 @@ func TestWeaviateVectorStore_Namespaces(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Search in namespace1
-	results, err := store.Search(ctx, []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{
+	results, err := store.Search(ctx, []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{
 		K:         5,
 		Namespace: "namespace1",
 	})
@@ -124,7 +124,7 @@ func TestWeaviateVectorStore_Namespaces(t *testing.T) {
 	assert.Equal(t, "ns1-doc1", results[0].ID)
 
 	// Search in namespace2
-	results, err = store.Search(ctx, []float64{0.5, 0.6, 0.7, 0.8}, vectorstore.SearchOptions{
+	results, err = store.Search(ctx, []float32{0.5, 0.6, 0.7, 0.8}, vectorstore.SearchOptions{
 		K:         5,
 		Namespace: "namespace2",
 	})
@@ -176,9 +176,9 @@ func TestWeaviateVectorStore_Search(t *testing.T) {
 
 	// Add documents
 	docs := []vectorstore.Document{
-		{ID: "d1", Content: "First document", Embedding: []float64{1.0, 0.0, 0.0, 0.0}},
-		{ID: "d2", Content: "Second document", Embedding: []float64{0.9, 0.1, 0.0, 0.0}},
-		{ID: "d3", Content: "Third document", Embedding: []float64{0.0, 1.0, 0.0, 0.0}},
+		{ID: "d1", Content: "First document", Embedding: []float32{1.0, 0.0, 0.0, 0.0}},
+		{ID: "d2", Content: "Second document", Embedding: []float32{0.9, 0.1, 0.0, 0.0}},
+		{ID: "d3", Content: "Third document", Embedding: []float32{0.0, 1.0, 0.0, 0.0}},
 	}
 
 	err := store.Add(ctx, docs)
@@ -188,14 +188,14 @@ func TestWeaviateVectorStore_Search(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Search with K limit
-	results, err := store.Search(ctx, []float64{1.0, 0.0, 0.0, 0.0}, vectorstore.SearchOptions{
+	results, err := store.Search(ctx, []float32{1.0, 0.0, 0.0, 0.0}, vectorstore.SearchOptions{
 		K: 2,
 	})
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
 	// Search with MinScore
-	results, err = store.Search(ctx, []float64{1.0, 0.0, 0.0, 0.0}, vectorstore.SearchOptions{
+	results, err = store.Search(ctx, []float32{1.0, 0.0, 0.0, 0.0}, vectorstore.SearchOptions{
 		K:        5,
 		MinScore: 0.9,
 	})
@@ -219,9 +219,9 @@ func TestWeaviateVectorStore_Delete(t *testing.T) {
 
 	// Add documents
 	docs := []vectorstore.Document{
-		{ID: "del1", Content: "Delete me 1", Embedding: []float64{0.1, 0.2, 0.3, 0.4}},
-		{ID: "del2", Content: "Delete me 2", Embedding: []float64{0.2, 0.3, 0.4, 0.5}},
-		{ID: "del3", Content: "Keep me", Embedding: []float64{0.3, 0.4, 0.5, 0.6}},
+		{ID: "del1", Content: "Delete me 1", Embedding: []float32{0.1, 0.2, 0.3, 0.4}},
+		{ID: "del2", Content: "Delete me 2", Embedding: []float32{0.2, 0.3, 0.4, 0.5}},
+		{ID: "del3", Content: "Keep me", Embedding: []float32{0.3, 0.4, 0.5, 0.6}},
 	}
 
 	err := store.Add(ctx, docs)
@@ -238,7 +238,7 @@ func TestWeaviateVectorStore_Delete(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Verify remaining documents
-	results, err := store.Search(ctx, []float64{0.3, 0.4, 0.5, 0.6}, vectorstore.SearchOptions{K: 10})
+	results, err := store.Search(ctx, []float32{0.3, 0.4, 0.5, 0.6}, vectorstore.SearchOptions{K: 10})
 	require.NoError(t, err)
 
 	// Should only find del3/Keep me

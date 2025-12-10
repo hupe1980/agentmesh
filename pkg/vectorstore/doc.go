@@ -29,8 +29,8 @@
 //
 //	// Add documents with embeddings
 //	docs := []vectorstore.Document{
-//	    {ID: "1", Content: "Hello world", Embedding: []float64{0.1, 0.2, ...}},
-//	    {ID: "2", Content: "Goodbye world", Embedding: []float64{0.3, 0.4, ...}},
+//	    {ID: "1", Content: "Hello world", Embedding: []float32{0.1, 0.2, ...}},
+//	    {ID: "2", Content: "Goodbye world", Embedding: []float32{0.3, 0.4, ...}},
 //	}
 //	store.Add(ctx, docs)
 //

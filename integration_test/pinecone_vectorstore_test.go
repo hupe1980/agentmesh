@@ -69,13 +69,13 @@ func TestPineconeVectorStore_BasicOperations(t *testing.T) {
 		{
 			ID:        "test-doc1",
 			Content:   "Hello world",
-			Embedding: make([]float64, 1536),
+			Embedding: make([]float32, 1536),
 			Metadata:  map[string]any{"category": "test"},
 		},
 		{
 			ID:        "test-doc2",
 			Content:   "Goodbye world",
-			Embedding: make([]float64, 1536),
+			Embedding: make([]float32, 1536),
 			Metadata:  map[string]any{"category": "test"},
 		},
 	}
@@ -87,7 +87,7 @@ func TestPineconeVectorStore_BasicOperations(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	queryVec := make([]float64, 1536)
+	queryVec := make([]float32, 1536)
 	queryVec[0] = 0.1
 
 	results, err := store.Search(ctx, queryVec, vectorstore.SearchOptions{K: 5})
@@ -114,7 +114,7 @@ func TestPineconeVectorStore_Namespaces(t *testing.T) {
 		{
 			ID:        "ns-doc1",
 			Content:   "Namespaced document",
-			Embedding: make([]float64, 1536),
+			Embedding: make([]float32, 1536),
 			Metadata:  map[string]any{"test": true},
 		},
 	}
@@ -128,7 +128,7 @@ func TestPineconeVectorStore_Namespaces(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	queryVec := make([]float64, 1536)
+	queryVec := make([]float32, 1536)
 	queryVec[0] = 0.5
 
 	results, err := store.Search(ctx, queryVec, vectorstore.SearchOptions{

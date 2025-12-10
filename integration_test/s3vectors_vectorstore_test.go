@@ -52,13 +52,13 @@ func TestS3VectorsStore_BasicOperations(t *testing.T) {
 		{
 			ID:        "s3-doc1",
 			Content:   "Hello world from S3 Vectors",
-			Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+			Embedding: []float32{0.1, 0.2, 0.3, 0.4},
 			Metadata:  map[string]any{"source": "test"},
 		},
 		{
 			ID:        "s3-doc2",
 			Content:   "Goodbye world from S3 Vectors",
-			Embedding: []float64{0.4, 0.3, 0.2, 0.1},
+			Embedding: []float32{0.4, 0.3, 0.2, 0.1},
 			Metadata:  map[string]any{"source": "test"},
 		},
 	}
@@ -70,7 +70,7 @@ func TestS3VectorsStore_BasicOperations(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Test Search
-	results, err := store.Search(ctx, []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
+	results, err := store.Search(ctx, []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(results), 1)
 
@@ -110,10 +110,10 @@ func TestS3VectorsStore_Namespaces(t *testing.T) {
 
 	// Add documents to different namespaces
 	docs1 := []vectorstore.Document{
-		{ID: "ns1-doc1", Content: "Namespace 1 doc", Embedding: []float64{0.1, 0.2, 0.3, 0.4}},
+		{ID: "ns1-doc1", Content: "Namespace 1 doc", Embedding: []float32{0.1, 0.2, 0.3, 0.4}},
 	}
 	docs2 := []vectorstore.Document{
-		{ID: "ns2-doc1", Content: "Namespace 2 doc", Embedding: []float64{0.5, 0.6, 0.7, 0.8}},
+		{ID: "ns2-doc1", Content: "Namespace 2 doc", Embedding: []float32{0.5, 0.6, 0.7, 0.8}},
 	}
 
 	err = store.Add(ctx, docs1, func(o *vectorstore.AddOptions) { o.Namespace = "namespace1" })
@@ -126,7 +126,7 @@ func TestS3VectorsStore_Namespaces(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Search in namespace1
-	results, err := store.Search(ctx, []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{
+	results, err := store.Search(ctx, []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{
 		K:         5,
 		Namespace: "namespace1",
 	})

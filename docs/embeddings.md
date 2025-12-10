@@ -84,7 +84,7 @@ results, _ := vectorMem.Recall(ctx, "session1", memory.RecallFilter{
 Find duplicate or related content:
 
 ```go
-func checkSimilarity(embedder embedding.Embedder, text1, text2 string) (float64, error) {
+func checkSimilarity(embedder embedding.Embedder, text1, text2 string) (float32, error) {
     vec1, err := embedder.Embed(ctx, text1)
     if err != nil {
         return 0, err
@@ -95,7 +95,7 @@ func checkSimilarity(embedder embedding.Embedder, text1, text2 string) (float64,
         return 0, err
     }
     
-    return cosineSimilarity(vec1, vec2), nil
+    return embedding.CosineSimilarity(vec1, vec2), nil
 }
 
 // Check if two customer inquiries are similar
@@ -152,17 +152,17 @@ Group similar items or route requests:
 func routeInquiry(embedder embedding.Embedder, inquiry string) string {
     vec, _ := embedder.Embed(ctx, inquiry)
     
-    departments := map[string][]float64{
+    departments := map[string]embedding.Vector{
         "billing":   billingEmbedding,
         "technical": technicalEmbedding,
         "sales":     salesEmbedding,
     }
     
     bestDept := ""
-    bestScore := 0.0
+    var bestScore float32 = 0.0
     
     for dept, deptVec := range departments {
-        score := cosineSimilarity(vec, deptVec)
+        score := embedding.CosineSimilarity(vec, deptVec)
         if score > bestScore {
             bestScore = score
             bestDept = dept
@@ -551,11 +551,11 @@ Embeddings are expensive - cache them:
 ```go
 type CachedEmbedder struct {
     embedder embedding.Embedder
-    cache    map[string][]float64
+    cache    map[string]embedding.Vector
     mu       sync.RWMutex
 }
 
-func (ce *CachedEmbedder) Embed(ctx context.Context, text string) ([]float64, error) {
+func (ce *CachedEmbedder) Embed(ctx context.Context, text string) (embedding.Vector, error) {
     // Check cache first
     ce.mu.RLock()
     if vec, ok := ce.cache[text]; ok {
@@ -611,7 +611,7 @@ func validateEmbeddings(embedder embedding.Embedder) error {
 Implement retry logic for production:
 
 ```go
-func embedWithRetry(embedder embedding.Embedder, text string, maxRetries int) ([]float64, error) {
+func embedWithRetry(embedder embedding.Embedder, text string, maxRetries int) (embedding.Vector, error) {
     backoff := time.Second
     
     for attempt := 0; attempt < maxRetries; attempt++ {

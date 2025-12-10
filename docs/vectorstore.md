@@ -187,13 +187,13 @@ docs := []vectorstore.Document{
     {
         ID:        "doc1",
         Content:   "AgentMesh uses Pregel for graph execution",
-        Embedding: []float64{0.1, 0.2, 0.3, ...},
+        Embedding: []float32{0.1, 0.2, 0.3, ...},
         Metadata:  map[string]any{"category": "architecture"},
     },
     {
         ID:        "doc2", 
         Content:   "Checkpointing enables time-travel debugging",
-        Embedding: []float64{0.4, 0.5, 0.6, ...},
+        Embedding: []float32{0.4, 0.5, 0.6, ...},
         Metadata:  map[string]any{"category": "features"},
     },
 }

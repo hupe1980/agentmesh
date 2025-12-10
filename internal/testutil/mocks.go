@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/memory"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
@@ -708,20 +709,20 @@ func NewMockEmbedder(dims int) *MockEmbedder {
 
 // Embed converts text to a deterministic vector embedding.
 // The embedding is based on text length and first character for reproducibility.
-func (m *MockEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
-	vec := make([]float64, m.dims)
+func (m *MockEmbedder) Embed(_ context.Context, text string) (embedding.Vector, error) {
+	vec := make(embedding.Vector, m.dims)
 	for i := range vec {
-		vec[i] = float64(len(text)+i) / 100.0
+		vec[i] = float32(len(text)+i) / 100.0
 		if text != "" {
-			vec[i] += float64(text[0]) / 1000.0
+			vec[i] += float32(text[0]) / 1000.0
 		}
 	}
 	return vec, nil
 }
 
 // EmbedBatch converts multiple texts to vector embeddings.
-func (m *MockEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
-	result := make([][]float64, len(texts))
+func (m *MockEmbedder) EmbedBatch(ctx context.Context, texts []string) ([]embedding.Vector, error) {
+	result := make([]embedding.Vector, len(texts))
 	for i, text := range texts {
 		vec, err := m.Embed(ctx, text)
 		if err != nil {

@@ -319,20 +319,20 @@ func TestCosineSimilarity(t *testing.T) {
 	t.Parallel()
 
 	// Identical vectors should have similarity of 1.0
-	a := []float64{1, 0, 0}
-	b := []float64{1, 0, 0}
+	a := []float32{1, 0, 0}
+	b := []float32{1, 0, 0}
 	sim := embedding.CosineSimilarity(a, b)
 	require.InDelta(t, 1.0, sim, 0.001)
 
 	// Orthogonal vectors should have similarity of 0.0
-	c := []float64{1, 0, 0}
-	d := []float64{0, 1, 0}
+	c := []float32{1, 0, 0}
+	d := []float32{0, 1, 0}
 	sim2 := embedding.CosineSimilarity(c, d)
 	require.InDelta(t, 0.0, sim2, 0.001)
 
 	// Opposite vectors should have similarity of -1.0
-	e := []float64{1, 0, 0}
-	f := []float64{-1, 0, 0}
+	e := []float32{1, 0, 0}
+	f := []float32{-1, 0, 0}
 	sim3 := embedding.CosineSimilarity(e, f)
 	require.InDelta(t, -1.0, sim3, 0.001)
 }

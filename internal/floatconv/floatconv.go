@@ -2,6 +2,8 @@
 package floatconv
 
 // ToFloat32 converts a float64 slice to a float32 slice.
+// This is commonly used at API boundaries where SDKs return float64
+// but float32 is preferred for storage and computation.
 func ToFloat32(v []float64) []float32 {
 	result := make([]float32, len(v))
 	for i, val := range v {
@@ -10,29 +12,20 @@ func ToFloat32(v []float64) []float32 {
 	return result
 }
 
-// ToFloat64 converts a float32 slice to a float64 slice.
-func ToFloat64(v []float32) []float64 {
-	result := make([]float64, len(v))
-	for i, val := range v {
-		result[i] = float64(val)
-	}
-	return result
-}
-
-// ToFloat64FromAny converts an []any slice (typically from JSON unmarshaling) to []float64.
+// ToFloat32FromAny converts an []any slice (typically from JSON unmarshaling) to []float32.
 // Non-numeric values are converted to 0.
-func ToFloat64FromAny(v []any) []float64 {
-	result := make([]float64, len(v))
+func ToFloat32FromAny(v []any) []float32 {
+	result := make([]float32, len(v))
 	for i, val := range v {
 		switch f := val.(type) {
 		case float64:
-			result[i] = f
+			result[i] = float32(f)
 		case float32:
-			result[i] = float64(f)
+			result[i] = f
 		case int:
-			result[i] = float64(f)
+			result[i] = float32(f)
 		case int64:
-			result[i] = float64(f)
+			result[i] = float32(f)
 		}
 	}
 	return result

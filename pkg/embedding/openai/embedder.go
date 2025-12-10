@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/openai/openai-go/v2"
 	"github.com/openai/openai-go/v2/packages/param"
@@ -93,7 +94,7 @@ func NewEmbedderFromClientWrapper(wrapper *EmbeddingClientWrapper, optFns ...fun
 }
 
 // Embed converts text into a vector embedding using OpenAI's API.
-func (e *Embedder) Embed(ctx context.Context, text string) ([]float64, error) {
+func (e *Embedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	if text == "" {
 		return nil, errors.New("openai embedder: empty text provided")
 	}
@@ -119,11 +120,12 @@ func (e *Embedder) Embed(ctx context.Context, text string) ([]float64, error) {
 		return nil, errors.New("openai embedder: no embeddings returned")
 	}
 
-	return resp.Data[0].Embedding, nil
+	// Convert from float64 (SDK default) to float32 (no precision loss, API data is float32)
+	return floatconv.ToFloat32(resp.Data[0].Embedding), nil
 }
 
 // EmbedBatch converts multiple texts into vector embeddings efficiently using a single API call.
-func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
+func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, errors.New("openai embedder: empty texts slice provided")
 	}
@@ -161,10 +163,10 @@ func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64,
 		return nil, fmt.Errorf("openai embedder: expected %d embeddings, got %d", len(validTexts), len(resp.Data))
 	}
 
-	// Extract embeddings in order
-	embeddings := make([][]float64, len(resp.Data))
+	// Extract embeddings in order, converting to float32
+	embeddings := make([][]float32, len(resp.Data))
 	for i := range resp.Data {
-		embeddings[i] = resp.Data[i].Embedding
+		embeddings[i] = floatconv.ToFloat32(resp.Data[i].Embedding)
 	}
 
 	return embeddings, nil

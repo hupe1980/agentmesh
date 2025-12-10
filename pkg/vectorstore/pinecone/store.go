@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
@@ -164,7 +163,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		vectors[i] = &pinecone.Vector{
 			Id:       docID,
-			Values:   floatconv.ToFloat32(doc.Embedding),
+			Values:   doc.Embedding,
 			Metadata: metadataStruct,
 		}
 	}
@@ -188,7 +187,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	}
 
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
-		Vector:          floatconv.ToFloat32(queryEmbedding),
+		Vector:          queryEmbedding,
 		TopK:            safeconv.IntToUint32(opts.K),
 		MetadataFilter:  filter,
 		IncludeValues:   opts.IncludeEmbeddings,
@@ -246,7 +245,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 
 	// Execute hybrid query
 	resp, err := s.idx.QueryByVectorValues(ctx, &pinecone.QueryByVectorValuesRequest{
-		Vector:          floatconv.ToFloat32(queryEmbedding),
+		Vector:          queryEmbedding,
 		SparseValues:    sparseValues,
 		TopK:            safeconv.IntToUint32(opts.K),
 		MetadataFilter:  filter,
@@ -370,7 +369,7 @@ func convertMatches(matches []*pinecone.ScoredVector, minScore float64, includeE
 
 		// Include embeddings if requested
 		if includeEmbeddings && match.Vector.Values != nil {
-			doc.Embedding = floatconv.ToFloat64(match.Vector.Values)
+			doc.Embedding = match.Vector.Values
 		}
 
 		results = append(results, doc)

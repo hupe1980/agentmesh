@@ -174,13 +174,13 @@ func TestStore_Add(t *testing.T) {
 		{
 			ID:        "doc1",
 			Content:   "Hello world",
-			Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+			Embedding: []float32{0.1, 0.2, 0.3, 0.4},
 			Metadata:  map[string]any{"category": "greeting"},
 		},
 		{
 			ID:        "doc2",
 			Content:   "Goodbye world",
-			Embedding: []float64{0.4, 0.3, 0.2, 0.1},
+			Embedding: []float32{0.4, 0.3, 0.2, 0.1},
 		},
 	}
 
@@ -224,7 +224,7 @@ func TestStore_Add_WithNamespace(t *testing.T) {
 	store := NewFromClient(client)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Content: "Test", Embedding: []float64{0.1, 0.2}},
+		{ID: "doc1", Content: "Test", Embedding: []float32{0.1, 0.2}},
 	}
 
 	err := store.Add(context.Background(), docs, func(o *vectorstore.AddOptions) {
@@ -245,7 +245,7 @@ func TestStore_Add_Error(t *testing.T) {
 	store := NewFromClient(client)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Embedding: []float64{0.1, 0.2}},
+		{ID: "doc1", Embedding: []float32{0.1, 0.2}},
 	}
 
 	err := store.Add(context.Background(), docs)
@@ -274,7 +274,7 @@ func TestStore_Add_BatchError(t *testing.T) {
 	store := NewFromClient(client)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Embedding: []float64{0.1, 0.2}},
+		{ID: "doc1", Embedding: []float32{0.1, 0.2}},
 	}
 
 	err := store.Add(context.Background(), docs)
@@ -310,7 +310,7 @@ func TestStore_Search(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
 	require.NoError(t, err)
 
 	assert.Len(t, results, 1)
@@ -347,7 +347,7 @@ func TestStore_Search_WithMinScore(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{
 		K:        10,
 		MinScore: 0.8,
 	})
@@ -375,7 +375,7 @@ func TestStore_Search_WithNamespace(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{
+	_, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{
 		K:         5,
 		Namespace: "test-namespace",
 	})
@@ -393,7 +393,7 @@ func TestStore_Search_Error(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
+	_, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "search failed")
 }
@@ -411,7 +411,7 @@ func TestStore_Search_GraphQLError(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
+	_, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "search error")
 }
@@ -644,7 +644,7 @@ func TestStore_SearchHybrid(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	results, err := store.SearchHybrid(context.Background(), "test query", []float64{0.1, 0.2, 0.3}, vectorstore.HybridSearchOptions{
+	results, err := store.SearchHybrid(context.Background(), "test query", []float32{0.1, 0.2, 0.3}, vectorstore.HybridSearchOptions{
 		SearchOptions: vectorstore.SearchOptions{
 			K: 10,
 		},
@@ -684,7 +684,7 @@ func TestStore_SearchHybrid_WithAlpha(t *testing.T) {
 			}
 
 			store := NewFromClient(client)
-			_, err := store.SearchHybrid(context.Background(), "query", []float64{0.1}, vectorstore.HybridSearchOptions{
+			_, err := store.SearchHybrid(context.Background(), "query", []float32{0.1}, vectorstore.HybridSearchOptions{
 				Alpha: tt.alpha,
 			})
 			require.NoError(t, err)
@@ -701,7 +701,7 @@ func TestStore_SearchHybrid_Error(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.SearchHybrid(context.Background(), "test query", []float64{0.1, 0.2}, vectorstore.HybridSearchOptions{})
+	_, err := store.SearchHybrid(context.Background(), "test query", []float32{0.1, 0.2}, vectorstore.HybridSearchOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hybrid search failed")
 }
@@ -719,7 +719,7 @@ func TestStore_SearchHybrid_GraphQLError(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.SearchHybrid(context.Background(), "test", []float64{0.1}, vectorstore.HybridSearchOptions{})
+	_, err := store.SearchHybrid(context.Background(), "test", []float32{0.1}, vectorstore.HybridSearchOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "GraphQL hybrid error")
 }
@@ -740,7 +740,7 @@ func TestStore_SearchHybrid_WithNamespace(t *testing.T) {
 
 	store := NewFromClient(client)
 
-	_, err := store.SearchHybrid(context.Background(), "test", []float64{0.1}, vectorstore.HybridSearchOptions{
+	_, err := store.SearchHybrid(context.Background(), "test", []float32{0.1}, vectorstore.HybridSearchOptions{
 		SearchOptions: vectorstore.SearchOptions{
 			Namespace: "test-ns",
 		},

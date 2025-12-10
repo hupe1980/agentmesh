@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/document"
 	"github.com/aws/aws-sdk-go-v2/service/s3vectors/types"
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
@@ -131,7 +130,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		vectors[i] = types.PutInputVector{
 			Key:      aws.String(docID),
-			Data:     &types.VectorDataMemberFloat32{Value: floatconv.ToFloat32(doc.Embedding)},
+			Data:     &types.VectorDataMemberFloat32{Value: doc.Embedding},
 			Metadata: toDocumentInterface(metadata),
 		}
 	}
@@ -155,7 +154,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	input := &s3vectors.QueryVectorsInput{
 		VectorBucketName: aws.String(s.vectorBucketName),
 		IndexName:        aws.String(s.indexName),
-		QueryVector:      &types.VectorDataMemberFloat32{Value: floatconv.ToFloat32(queryEmbedding)},
+		QueryVector:      &types.VectorDataMemberFloat32{Value: queryEmbedding},
 		TopK:             aws.Int32(safeconv.IntToInt32(opts.K)),
 		ReturnMetadata:   true,
 		ReturnDistance:   true,

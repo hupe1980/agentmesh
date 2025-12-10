@@ -12,48 +12,48 @@ func TestCosineSimilarity(t *testing.T) {
 		name     string
 		a        Vector
 		b        Vector
-		expected float64
+		expected float32
 	}{
 		{
 			name:     "identical vectors",
-			a:        []float64{1, 0, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{1, 0, 0},
 			expected: 1.0,
 		},
 		{
 			name:     "orthogonal vectors",
-			a:        []float64{1, 0, 0},
-			b:        []float64{0, 1, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{0, 1, 0},
 			expected: 0.0,
 		},
 		{
 			name:     "opposite vectors",
-			a:        []float64{1, 0, 0},
-			b:        []float64{-1, 0, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{-1, 0, 0},
 			expected: -1.0,
 		},
 		{
 			name:     "similar vectors",
-			a:        Normalize([]float64{1, 1, 0}),
-			b:        Normalize([]float64{1, 0, 0}),
-			expected: 1 / math.Sqrt(2), // cos(45°) ≈ 0.707
+			a:        Normalize([]float32{1, 1, 0}),
+			b:        Normalize([]float32{1, 0, 0}),
+			expected: float32(1 / math.Sqrt(2)), // cos(45°) ≈ 0.707
 		},
 		{
 			name:     "empty vectors",
-			a:        []float64{},
-			b:        []float64{},
+			a:        []float32{},
+			b:        []float32{},
 			expected: 0,
 		},
 		{
 			name:     "different lengths",
-			a:        []float64{1, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{1, 0},
+			b:        []float32{1, 0, 0},
 			expected: 0,
 		},
 		{
 			name:     "zero vector",
-			a:        []float64{0, 0, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{0, 0, 0},
+			b:        []float32{1, 0, 0},
 			expected: 0,
 		},
 	}
@@ -71,31 +71,31 @@ func TestEuclideanDistance(t *testing.T) {
 		name     string
 		a        Vector
 		b        Vector
-		expected float64
+		expected float32
 	}{
 		{
 			name:     "identical vectors",
-			a:        []float64{1, 0, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{1, 0, 0},
 			expected: 0,
 		},
 		{
 			name:     "unit distance",
-			a:        []float64{0, 0, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{0, 0, 0},
+			b:        []float32{1, 0, 0},
 			expected: 1.0,
 		},
 		{
 			name:     "diagonal",
-			a:        []float64{0, 0, 0},
-			b:        []float64{1, 1, 1},
-			expected: math.Sqrt(3),
+			a:        []float32{0, 0, 0},
+			b:        []float32{1, 1, 1},
+			expected: float32(math.Sqrt(3)),
 		},
 		{
 			name:     "empty vectors",
-			a:        []float64{},
-			b:        []float64{},
-			expected: math.MaxFloat64,
+			a:        []float32{},
+			b:        []float32{},
+			expected: math.MaxFloat32,
 		},
 	}
 
@@ -112,24 +112,24 @@ func TestDotProductSimilarity(t *testing.T) {
 		name     string
 		a        Vector
 		b        Vector
-		expected float64
+		expected float32
 	}{
 		{
 			name:     "unit vectors same direction",
-			a:        []float64{1, 0, 0},
-			b:        []float64{1, 0, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{1, 0, 0},
 			expected: 1.0,
 		},
 		{
 			name:     "orthogonal",
-			a:        []float64{1, 0, 0},
-			b:        []float64{0, 1, 0},
+			a:        []float32{1, 0, 0},
+			b:        []float32{0, 1, 0},
 			expected: 0,
 		},
 		{
 			name:     "scaled vectors",
-			a:        []float64{2, 0, 0},
-			b:        []float64{3, 0, 0},
+			a:        []float32{2, 0, 0},
+			b:        []float32{3, 0, 0},
 			expected: 6.0,
 		},
 	}
@@ -144,14 +144,14 @@ func TestDotProductSimilarity(t *testing.T) {
 
 func TestNormalize_Similarity(t *testing.T) {
 	t.Run("normalizes to unit length", func(t *testing.T) {
-		v := []float64{3, 4, 0}
+		v := []float32{3, 4, 0}
 		normalized := Normalize(v)
 		mag := Magnitude(normalized)
 		assert.InDelta(t, 1.0, mag, 0.0001)
 	})
 
 	t.Run("zero vector unchanged", func(t *testing.T) {
-		v := []float64{0, 0, 0}
+		v := []float32{0, 0, 0}
 		normalized := Normalize(v)
 		assert.Equal(t, v, normalized)
 	})
@@ -161,21 +161,21 @@ func TestMagnitude(t *testing.T) {
 	tests := []struct {
 		name     string
 		v        Vector
-		expected float64
+		expected float32
 	}{
 		{
 			name:     "unit vector",
-			v:        []float64{1, 0, 0},
+			v:        []float32{1, 0, 0},
 			expected: 1.0,
 		},
 		{
 			name:     "3-4-5 triangle",
-			v:        []float64{3, 4, 0},
+			v:        []float32{3, 4, 0},
 			expected: 5.0,
 		},
 		{
 			name:     "zero vector",
-			v:        []float64{0, 0, 0},
+			v:        []float32{0, 0, 0},
 			expected: 0,
 		},
 	}
@@ -189,8 +189,8 @@ func TestMagnitude(t *testing.T) {
 }
 
 func TestSimilarity(t *testing.T) {
-	a := Normalize([]float64{1, 0, 0})
-	b := Normalize([]float64{1, 0, 0})
+	a := Normalize([]float32{1, 0, 0})
+	b := Normalize([]float32{1, 0, 0})
 
 	t.Run("cosine metric", func(t *testing.T) {
 		result := Similarity(a, b, Cosine)

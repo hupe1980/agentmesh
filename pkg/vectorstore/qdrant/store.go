@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hupe1980/agentmesh/internal/floatconv"
 	"github.com/hupe1980/agentmesh/internal/safeconv"
 	"github.com/hupe1980/agentmesh/pkg/embedding"
 	"github.com/hupe1980/agentmesh/pkg/vectorstore"
@@ -247,7 +246,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 
 		points[i] = &qdrant.PointStruct{
 			Id:      &qdrant.PointId{PointIdOptions: &qdrant.PointId_Uuid{Uuid: pointUUID}},
-			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: floatconv.ToFloat32(doc.Embedding)}}},
+			Vectors: &qdrant.Vectors{VectorsOptions: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: doc.Embedding}}},
 			Payload: payload,
 		}
 	}
@@ -279,7 +278,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	// Execute search
 	resp, err := s.client.Search(ctx, &qdrant.SearchPoints{
 		CollectionName: collection,
-		Vector:         floatconv.ToFloat32(queryEmbedding),
+		Vector:         queryEmbedding,
 		Limit:          safeconv.IntToUint64(opts.K),
 		Filter:         filter,
 		WithPayload:    &qdrant.WithPayloadSelector{SelectorOptions: &qdrant.WithPayloadSelector_Enable{Enable: true}},
@@ -331,7 +330,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 	// Dense vector search prefetch (always included unless alpha is 0)
 	if opts.Alpha > 0 {
 		prefetch = append(prefetch, &qdrant.PrefetchQuery{
-			Query: qdrant.NewQueryDense(floatconv.ToFloat32(queryEmbedding)),
+			Query: qdrant.NewQueryDense(queryEmbedding),
 			Limit: &prefetchLimit,
 		})
 	}
@@ -362,7 +361,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 		}
 
 		prefetch = append(prefetch, &qdrant.PrefetchQuery{
-			Query:  qdrant.NewQueryDense(floatconv.ToFloat32(queryEmbedding)),
+			Query:  qdrant.NewQueryDense(queryEmbedding),
 			Filter: combinedFilter,
 			Limit:  &prefetchLimit,
 		})
@@ -526,7 +525,7 @@ func extractDocument(point *qdrant.ScoredPoint, includeEmbeddings bool) vectorst
 }
 
 // extractEmbedding extracts the vector data from VectorsOutput.
-func extractEmbedding(vectors *qdrant.VectorsOutput) []float64 {
+func extractEmbedding(vectors *qdrant.VectorsOutput) []float32 {
 	if vectors == nil {
 		return nil
 	}
@@ -538,13 +537,13 @@ func extractEmbedding(vectors *qdrant.VectorsOutput) []float64 {
 
 	// Try the new Dense field first
 	if dense := vec.GetDense(); dense != nil && len(dense.GetData()) > 0 {
-		return floatconv.ToFloat64(dense.GetData())
+		return dense.GetData()
 	}
 
 	// Fall back to deprecated Data field for older Qdrant versions
 	//nolint:staticcheck // Support older Qdrant versions
 	if len(vec.GetData()) > 0 {
-		return floatconv.ToFloat64(vec.GetData())
+		return vec.GetData()
 	}
 
 	return nil

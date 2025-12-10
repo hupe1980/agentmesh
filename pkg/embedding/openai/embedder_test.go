@@ -79,7 +79,7 @@ func TestEmbedderWithMock(t *testing.T) {
 		embedding, err := embedder.Embed(ctx, "Hello, world!")
 		require.NoError(t, err)
 		assert.Len(t, embedding, 5)
-		assert.Equal(t, []float64{0.1, 0.2, 0.3, 0.4, 0.5}, embedding)
+		assert.Equal(t, []float32{0.1, 0.2, 0.3, 0.4, 0.5}, embedding)
 	})
 
 	t.Run("Embed empty text fails", func(t *testing.T) {
@@ -166,9 +166,9 @@ func TestEmbedderWithMock(t *testing.T) {
 		embeddings, err := embedder.EmbedBatch(ctx, []string{"Hello", "World", "Test"})
 		require.NoError(t, err)
 		assert.Len(t, embeddings, 3)
-		assert.Equal(t, []float64{0.1, 0.2, 0.3}, embeddings[0])
-		assert.Equal(t, []float64{0.4, 0.5, 0.6}, embeddings[1])
-		assert.Equal(t, []float64{0.7, 0.8, 0.9}, embeddings[2])
+		assert.Equal(t, []float32{0.1, 0.2, 0.3}, embeddings[0])
+		assert.Equal(t, []float32{0.4, 0.5, 0.6}, embeddings[1])
+		assert.Equal(t, []float32{0.7, 0.8, 0.9}, embeddings[2])
 	})
 
 	t.Run("EmbedBatch filters empty strings", func(t *testing.T) {

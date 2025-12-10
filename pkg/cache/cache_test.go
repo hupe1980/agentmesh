@@ -274,29 +274,29 @@ func TestCosineSimilarity(t *testing.T) {
 	t.Parallel()
 
 	// Identical vectors
-	a := []float64{1, 0, 0}
-	b := []float64{1, 0, 0}
+	a := []float32{1, 0, 0}
+	b := []float32{1, 0, 0}
 	require.InDelta(t, 1.0, embedding.CosineSimilarity(a, b), 0.001)
 
 	// Orthogonal vectors
-	c := []float64{1, 0, 0}
-	d := []float64{0, 1, 0}
+	c := []float32{1, 0, 0}
+	d := []float32{0, 1, 0}
 	require.InDelta(t, 0.0, embedding.CosineSimilarity(c, d), 0.001)
 
 	// Opposite vectors
-	e := []float64{1, 0, 0}
-	f := []float64{-1, 0, 0}
+	e := []float32{1, 0, 0}
+	f := []float32{-1, 0, 0}
 	require.InDelta(t, -1.0, embedding.CosineSimilarity(e, f), 0.001)
 }
 
 func TestFindMostSimilar(t *testing.T) {
 	t.Parallel()
 
-	query := []float64{1, 0, 0}
+	query := []float32{1, 0, 0}
 	entries := []*Entry{
-		{Embedding: []float64{1, 0, 0}},     // Perfect match
-		{Embedding: []float64{0.9, 0.1, 0}}, // Close match
-		{Embedding: []float64{0, 1, 0}},     // Orthogonal
+		{Embedding: []float32{1, 0, 0}},     // Perfect match
+		{Embedding: []float32{0.9, 0.1, 0}}, // Close match
+		{Embedding: []float32{0, 1, 0}},     // Orthogonal
 	}
 
 	// With high threshold, only perfect match
@@ -310,6 +310,6 @@ func TestFindMostSimilar(t *testing.T) {
 	require.GreaterOrEqual(t, score, 0.9)
 
 	// With threshold above all scores
-	best, _ = FindMostSimilar([]float64{0, 0, 1}, entries, 0.99)
+	best, _ = FindMostSimilar([]float32{0, 0, 1}, entries, 0.99)
 	require.Nil(t, best)
 }

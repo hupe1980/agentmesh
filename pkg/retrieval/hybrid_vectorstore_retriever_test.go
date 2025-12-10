@@ -48,7 +48,7 @@ func (m *mockHybridEmbedder) Embed(ctx context.Context, text string) (embedding.
 	if m.embedFunc != nil {
 		return m.embedFunc(ctx, text)
 	}
-	return []float64{0.1, 0.2, 0.3}, nil
+	return []float32{0.1, 0.2, 0.3}, nil
 }
 
 func (m *mockHybridEmbedder) EmbedBatch(ctx context.Context, texts []string) ([]embedding.Vector, error) {
@@ -122,7 +122,7 @@ func TestHybridVectorStoreRetriever_Retrieve(t *testing.T) {
 
 	embedder := &mockHybridEmbedder{
 		embedFunc: func(ctx context.Context, text string) (embedding.Vector, error) {
-			return []float64{0.1, 0.2, 0.3}, nil
+			return []float32{0.1, 0.2, 0.3}, nil
 		},
 	}
 
@@ -135,7 +135,7 @@ func TestHybridVectorStoreRetriever_Retrieve(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "test query", capturedQuery)
-	assert.Equal(t, []float64{0.1, 0.2, 0.3}, capturedEmbedding)
+	assert.Equal(t, []float32{0.1, 0.2, 0.3}, capturedEmbedding)
 	assert.Equal(t, 5, capturedOpts.K)
 	assert.Equal(t, 0.7, capturedOpts.Alpha)
 
@@ -169,7 +169,7 @@ func TestHybridVectorStoreRetriever_Retrieve_SearchError(t *testing.T) {
 	}
 	embedder := &mockHybridEmbedder{
 		embedFunc: func(ctx context.Context, text string) (embedding.Vector, error) {
-			return []float64{0.1, 0.2, 0.3}, nil
+			return []float32{0.1, 0.2, 0.3}, nil
 		},
 	}
 
@@ -188,7 +188,7 @@ func TestHybridVectorStoreRetriever_Retrieve_EmptyResults(t *testing.T) {
 	}
 	embedder := &mockHybridEmbedder{
 		embedFunc: func(ctx context.Context, text string) (embedding.Vector, error) {
-			return []float64{0.1, 0.2, 0.3}, nil
+			return []float32{0.1, 0.2, 0.3}, nil
 		},
 	}
 

@@ -145,7 +145,7 @@ func TestStore_Add(t *testing.T) {
 		{
 			ID:        "doc1",
 			Content:   "Hello world",
-			Embedding: []float64{0.1, 0.2, 0.3},
+			Embedding: []float32{0.1, 0.2, 0.3},
 			Metadata:  map[string]any{"key": "value"},
 		},
 	}
@@ -192,7 +192,7 @@ func TestStore_Add_WithNamespace(t *testing.T) {
 	)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Content: "test", Embedding: []float64{0.1}},
+		{ID: "doc1", Content: "test", Embedding: []float32{0.1}},
 	}
 
 	err = store.Add(context.Background(), docs, func(o *vectorstore.AddOptions) {
@@ -216,7 +216,7 @@ func TestStore_Add_Error(t *testing.T) {
 	)
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Embedding: []float64{0.1}},
+		{ID: "doc1", Embedding: []float32{0.1}},
 	}
 
 	err = store.Add(context.Background(), docs)
@@ -240,7 +240,7 @@ func TestStore_Add_GeneratesID(t *testing.T) {
 	)
 
 	docs := []vectorstore.Document{
-		{Content: "no id", Embedding: []float64{0.1}},
+		{Content: "no id", Embedding: []float32{0.1}},
 	}
 
 	err = store.Add(context.Background(), docs)
@@ -275,7 +275,7 @@ func TestStore_Search(t *testing.T) {
 	store, err := New(nil, pointsClient, collectionsClient)
 	require.NoError(t, err)
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{K: 10})
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{K: 10})
 	require.NoError(t, err)
 
 	assert.Len(t, results, 1)
@@ -299,7 +299,7 @@ func TestStore_Search_WithFilter(t *testing.T) {
 	store, err := New(nil, pointsClient, collectionsClient)
 	require.NoError(t, err)
 
-	_, err = store.Search(context.Background(), []float64{0.1}, vectorstore.SearchOptions{
+	_, err = store.Search(context.Background(), []float32{0.1}, vectorstore.SearchOptions{
 		K:      5,
 		Filter: map[string]any{"category": "test"},
 	})
@@ -320,7 +320,7 @@ func TestStore_Search_Error(t *testing.T) {
 	store, err := New(nil, pointsClient, collectionsClient)
 	require.NoError(t, err)
 
-	_, err = store.Search(context.Background(), []float64{0.1}, vectorstore.SearchOptions{K: 10})
+	_, err = store.Search(context.Background(), []float32{0.1}, vectorstore.SearchOptions{K: 10})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "search failed")
 }
@@ -742,7 +742,7 @@ func TestStore_SearchHybrid(t *testing.T) {
 	results, err := store.SearchHybrid(
 		context.Background(),
 		"hello",
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions: vectorstore.SearchOptions{K: 10},
 			Alpha:         0.5, // 50% vector, 50% keyword
@@ -796,7 +796,7 @@ func TestStore_SearchHybrid_PureVector(t *testing.T) {
 	results, err := store.SearchHybrid(
 		context.Background(),
 		"hello",
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions: vectorstore.SearchOptions{K: 10},
 			Alpha:         1.0, // Pure vector search
@@ -829,7 +829,7 @@ func TestStore_SearchHybrid_EmptyQuery(t *testing.T) {
 	_, err = store.SearchHybrid(
 		context.Background(),
 		"", // Empty query
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions: vectorstore.SearchOptions{K: 10},
 			Alpha:         0.5,
@@ -858,7 +858,7 @@ func TestStore_SearchHybrid_WithFusionAlgorithm(t *testing.T) {
 	_, err = store.SearchHybrid(
 		context.Background(),
 		"test query",
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions:   vectorstore.SearchOptions{K: 10},
 			Alpha:           0.5,
@@ -883,7 +883,7 @@ func TestStore_SearchHybrid_Error(t *testing.T) {
 	_, err = store.SearchHybrid(
 		context.Background(),
 		"test",
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions: vectorstore.SearchOptions{K: 10},
 			Alpha:         0.5,
@@ -912,7 +912,7 @@ func TestStore_SearchHybrid_WithNamespace(t *testing.T) {
 	_, err = store.SearchHybrid(
 		context.Background(),
 		"test query",
-		[]float64{0.1, 0.2, 0.3},
+		[]float32{0.1, 0.2, 0.3},
 		vectorstore.HybridSearchOptions{
 			SearchOptions: vectorstore.SearchOptions{
 				K:         10,

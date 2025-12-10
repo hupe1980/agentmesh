@@ -3,7 +3,10 @@ package embedding
 import "context"
 
 // Vector is a dense vector representation used for embeddings.
-type Vector = []float64
+// Uses float32 for optimal memory efficiency and SIMD performance.
+// Embedding models (OpenAI, Cohere, etc.) internally produce float32 values,
+// so no precision is lost compared to float64.
+type Vector = []float32
 
 // Embedder converts text into vector embeddings for semantic similarity and retrieval.
 type Embedder interface {

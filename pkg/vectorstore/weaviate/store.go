@@ -293,7 +293,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 			Class:      s.opts.ClassName,
 			ID:         strfmt.UUID(objectUUID),
 			Properties: properties,
-			Vector:     floatconv.ToFloat32(doc.Embedding),
+			Vector:     doc.Embedding,
 		}
 	}
 
@@ -336,7 +336,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 		where = s.buildWhereFilter(opts.Namespace, opts.Filter)
 	}
 
-	result, err := s.client.GraphQLQuery(ctx, s.opts.ClassName, fields, floatconv.ToFloat32(queryEmbedding), opts.K, where)
+	result, err := s.client.GraphQLQuery(ctx, s.opts.ClassName, fields, queryEmbedding, opts.K, where)
 	if err != nil {
 		return nil, fmt.Errorf("weaviate: search failed: %w", err)
 	}
@@ -379,7 +379,7 @@ func (s *Store) SearchHybrid(ctx context.Context, query string, queryEmbedding e
 		s.opts.ClassName,
 		fields,
 		query,
-		floatconv.ToFloat32(queryEmbedding),
+		queryEmbedding,
 		float32(opts.Alpha),
 		opts.K,
 		where,
@@ -482,7 +482,7 @@ func (s *Store) parseAdditionalFields(props map[string]any, opts vectorstore.Sea
 
 	if opts.IncludeEmbeddings {
 		if vector, ok := additional["vector"].([]any); ok {
-			doc.Embedding = floatconv.ToFloat64FromAny(vector)
+			doc.Embedding = floatconv.ToFloat32FromAny(vector)
 		}
 	}
 }

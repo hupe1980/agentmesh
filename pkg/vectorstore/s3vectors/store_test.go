@@ -104,13 +104,13 @@ func TestStore_Add(t *testing.T) {
 		{
 			ID:        "doc1",
 			Content:   "Hello world",
-			Embedding: []float64{0.1, 0.2, 0.3, 0.4},
+			Embedding: []float32{0.1, 0.2, 0.3, 0.4},
 			Metadata:  map[string]any{"category": "greeting"},
 		},
 		{
 			ID:        "doc2",
 			Content:   "Goodbye world",
-			Embedding: []float64{0.5, 0.6, 0.7, 0.8},
+			Embedding: []float32{0.5, 0.6, 0.7, 0.8},
 		},
 	}
 
@@ -151,7 +151,7 @@ func TestStore_Add_WithNamespace(t *testing.T) {
 	store := New(client, "test-bucket", "test-index")
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Content: "Hello", Embedding: []float64{0.1, 0.2}},
+		{ID: "doc1", Content: "Hello", Embedding: []float32{0.1, 0.2}},
 	}
 
 	err := store.Add(context.Background(), docs, func(o *vectorstore.AddOptions) {
@@ -172,7 +172,7 @@ func TestStore_Add_Error(t *testing.T) {
 	store := New(client, "test-bucket", "test-index")
 
 	docs := []vectorstore.Document{
-		{ID: "doc1", Content: "Hello", Embedding: []float64{0.1, 0.2}},
+		{ID: "doc1", Content: "Hello", Embedding: []float32{0.1, 0.2}},
 	}
 
 	err := store.Add(context.Background(), docs)
@@ -207,7 +207,7 @@ func TestStore_Search(t *testing.T) {
 
 	store := New(client, "test-bucket", "test-index")
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2, 0.3, 0.4}, vectorstore.SearchOptions{K: 5})
 	require.NoError(t, err)
 
 	assert.Len(t, results, 1)
@@ -232,7 +232,7 @@ func TestStore_Search_WithMinScore(t *testing.T) {
 
 	store := New(client, "test-bucket", "test-index")
 
-	results, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{
+	results, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{
 		K:        10,
 		MinScore: 0.8,
 	})
@@ -254,7 +254,7 @@ func TestStore_Search_WithNamespace(t *testing.T) {
 
 	store := New(client, "test-bucket", "test-index")
 
-	_, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{
+	_, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{
 		K:         5,
 		Namespace: "my-namespace",
 	})
@@ -272,7 +272,7 @@ func TestStore_Search_Error(t *testing.T) {
 
 	store := New(client, "test-bucket", "test-index")
 
-	_, err := store.Search(context.Background(), []float64{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
+	_, err := store.Search(context.Background(), []float32{0.1, 0.2}, vectorstore.SearchOptions{K: 5})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "query failed")
 }

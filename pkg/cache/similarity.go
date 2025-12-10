@@ -6,12 +6,12 @@ import (
 
 // FindMostSimilar finds the entry with highest similarity above the threshold.
 // Returns the entry and its similarity score, or nil if no match found.
-func FindMostSimilar(queryEmbedding []float64, entries []*Entry, threshold float64) (*Entry, float64) {
+func FindMostSimilar(queryEmbedding []float32, entries []*Entry, threshold float64) (*Entry, float64) {
 	var bestEntry *Entry
 	var bestScore float64
 
 	for _, entry := range entries {
-		score := embedding.CosineSimilarity(queryEmbedding, entry.Embedding)
+		score := float64(embedding.CosineSimilarity(queryEmbedding, entry.Embedding))
 		if score >= threshold && score > bestScore {
 			bestEntry = entry
 			bestScore = score

@@ -35,7 +35,7 @@ func (m Metric) String() string {
 
 // Similarity computes similarity between two vectors using the specified metric.
 // Returns a value where higher means more similar.
-func Similarity(a, b Vector, metric Metric) float64 {
+func Similarity(a, b Vector, metric Metric) float32 {
 	switch metric {
 	case Cosine:
 		return CosineSimilarity(a, b)
@@ -50,12 +50,12 @@ func Similarity(a, b Vector, metric Metric) float64 {
 
 // CosineSimilarity computes the cosine similarity between two vectors.
 // Returns a value in [-1, 1] where 1 means identical direction.
-func CosineSimilarity(a, b Vector) float64 {
+func CosineSimilarity(a, b Vector) float32 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
 	}
 
-	var dot, normA, normB float64
+	var dot, normA, normB float32
 	for i := range a {
 		dot += a[i] * b[i]
 		normA += a[i] * a[i]
@@ -66,33 +66,33 @@ func CosineSimilarity(a, b Vector) float64 {
 		return 0
 	}
 
-	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return dot / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
 }
 
 // EuclideanDistance computes the Euclidean (L2) distance between two vectors.
 // Returns 0 for identical vectors, higher values for more distant vectors.
-func EuclideanDistance(a, b Vector) float64 {
+func EuclideanDistance(a, b Vector) float32 {
 	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat64
+		return math.MaxFloat32
 	}
 
-	var sum float64
+	var sum float32
 	for i := range a {
 		diff := a[i] - b[i]
 		sum += diff * diff
 	}
 
-	return math.Sqrt(sum)
+	return float32(math.Sqrt(float64(sum)))
 }
 
 // DotProductSimilarity computes the dot product of two vectors.
 // Best used with normalized vectors for meaningful similarity scores.
-func DotProductSimilarity(a, b Vector) float64 {
+func DotProductSimilarity(a, b Vector) float32 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
 	}
 
-	var sum float64
+	var sum float32
 	for i := range a {
 		sum += a[i] * b[i]
 	}
@@ -103,7 +103,7 @@ func DotProductSimilarity(a, b Vector) float64 {
 // Normalize converts a vector to unit length (L2 normalization).
 // Returns the original vector if it has zero magnitude.
 func Normalize(v Vector) Vector {
-	var sum float64
+	var sum float32
 	for _, val := range v {
 		sum += val * val
 	}
@@ -112,7 +112,7 @@ func Normalize(v Vector) Vector {
 		return v
 	}
 
-	norm := math.Sqrt(sum)
+	norm := float32(math.Sqrt(float64(sum)))
 	result := make(Vector, len(v))
 	for i, val := range v {
 		result[i] = val / norm
@@ -122,10 +122,10 @@ func Normalize(v Vector) Vector {
 }
 
 // Magnitude computes the L2 norm (length) of a vector.
-func Magnitude(v Vector) float64 {
-	var sum float64
+func Magnitude(v Vector) float32 {
+	var sum float32
 	for _, val := range v {
 		sum += val * val
 	}
-	return math.Sqrt(sum)
+	return float32(math.Sqrt(float64(sum)))
 }

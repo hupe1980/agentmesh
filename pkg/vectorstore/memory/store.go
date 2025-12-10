@@ -118,7 +118,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 			continue
 		}
 
-		score := embedding.Similarity(queryEmbedding, doc.Embedding, s.metric)
+		score := float64(embedding.Similarity(queryEmbedding, doc.Embedding, s.metric))
 		if score >= opts.MinScore {
 			candidates = append(candidates, scored{doc: doc, score: score})
 		}

@@ -16,7 +16,7 @@ type Entry struct {
 	Response *model.Response
 
 	// Embedding is the vector representation of the prompt for similarity search
-	Embedding []float64
+	Embedding []float32
 
 	// Timestamp is when this entry was cached
 	Timestamp time.Time

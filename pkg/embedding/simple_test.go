@@ -35,7 +35,7 @@ func TestSimpleEmbedder_Embed(t *testing.T) {
 		assert.Len(t, embedding, 128)
 
 		// Check that embedding is normalized (unit length)
-		var sum float64
+		var sum float32
 		for _, v := range embedding {
 			sum += v * v
 		}
@@ -49,7 +49,7 @@ func TestSimpleEmbedder_Embed(t *testing.T) {
 
 		// All zeros for empty text
 		for _, v := range embedding {
-			assert.Equal(t, 0.0, v)
+			assert.Equal(t, float32(0.0), v)
 		}
 	})
 
@@ -88,7 +88,7 @@ func TestSimpleEmbedder_EmbedBatch(t *testing.T) {
 			assert.Len(t, embedding, 128)
 
 			// Verify each embedding is normalized
-			var sum float64
+			var sum float32
 			for _, v := range embedding {
 				sum += v * v
 			}
@@ -120,13 +120,13 @@ func TestSimpleEmbedder_EmbedBatch(t *testing.T) {
 	})
 }
 
-func TestNormalize(t *testing.T) {
+func TestNormalizeSimple(t *testing.T) {
 	t.Run("Normalize non-zero vector", func(t *testing.T) {
-		vec := []float64{3.0, 4.0}
-		normalized := normalize(vec)
+		vec := []float32{3.0, 4.0}
+		normalized := normalizeSimple(vec)
 
 		// Length should be 1
-		var sum float64
+		var sum float32
 		for _, v := range normalized {
 			sum += v * v
 		}
@@ -138,8 +138,8 @@ func TestNormalize(t *testing.T) {
 	})
 
 	t.Run("Normalize zero vector", func(t *testing.T) {
-		vec := []float64{0.0, 0.0, 0.0}
-		normalized := normalize(vec)
+		vec := []float32{0.0, 0.0, 0.0}
+		normalized := normalizeSimple(vec)
 
 		// Should return the same vector
 		assert.Equal(t, vec, normalized)

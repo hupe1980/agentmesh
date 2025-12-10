@@ -219,7 +219,7 @@ func (s *Store) Add(ctx context.Context, docs []vectorstore.Document, optFns ...
 			return fmt.Errorf("failed to marshal metadata: %w", err)
 		}
 
-		vec := pgvector.NewVector(toFloat32(doc.Embedding))
+		vec := pgvector.NewVector(doc.Embedding)
 
 		sql := fmt.Sprintf(`
 			INSERT INTO %s (id, content, embedding, metadata, namespace, created_at)
@@ -251,7 +251,7 @@ func (s *Store) Search(ctx context.Context, queryEmbedding embedding.Vector, opt
 	opts.Normalize()
 	tableName := s.tableName(opts.Namespace)
 
-	vec := pgvector.NewVector(toFloat32(queryEmbedding))
+	vec := pgvector.NewVector(queryEmbedding)
 	distanceOp := metricToOperator(s.opts.Metric)
 
 	// Build query - pre-allocate for namespace + filter entries
@@ -338,7 +338,7 @@ func (s *Store) scanDocument(rows pgx.Rows, includeEmbedding bool) (vectorstore.
 		if err != nil {
 			return doc, fmt.Errorf("failed to scan row: %w", err)
 		}
-		doc.Embedding = toFloat64(vec.Slice())
+		doc.Embedding = vec.Slice()
 	} else {
 		err := rows.Scan(&doc.ID, &doc.Content, &metadataJSON, &namespace, &createdAt, &distance)
 		if err != nil {
@@ -489,20 +489,4 @@ func distanceToScore(distance float64, metric embedding.Metric) float64 {
 		// Cosine distance: 0 means identical, 2 means opposite
 		return 1.0 - distance
 	}
-}
-
-func toFloat32(vec []float64) []float32 {
-	result := make([]float32, len(vec))
-	for i, v := range vec {
-		result[i] = float32(v)
-	}
-	return result
-}
-
-func toFloat64(vec []float32) []float64 {
-	result := make([]float64, len(vec))
-	for i, v := range vec {
-		result[i] = float64(v)
-	}
-	return result
 }

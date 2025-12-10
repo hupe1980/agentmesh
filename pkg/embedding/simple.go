@@ -26,8 +26,8 @@ func NewSimpleEmbedder(dimensions int) *SimpleEmbedder {
 }
 
 // Embed generates a deterministic embedding based on text content.
-func (se *SimpleEmbedder) Embed(ctx context.Context, text string) ([]float64, error) {
-	embedding := make([]float64, se.dimensions)
+func (se *SimpleEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	embedding := make([]float32, se.dimensions)
 
 	if text == "" {
 		return embedding, nil
@@ -44,16 +44,16 @@ func (se *SimpleEmbedder) Embed(ctx context.Context, text string) ([]float64, er
 		hash := h.Sum64()
 		// Use safe conversion to prevent overflow
 		normalized := safeconv.Uint64ToInt64(hash % uint64(math.MaxInt64))
-		embedding[i] = float64(normalized) / float64(math.MaxInt64)
+		embedding[i] = float32(normalized) / float32(math.MaxInt64)
 	}
 
 	// Normalize the vector
-	return normalize(embedding), nil
+	return normalizeSimple(embedding), nil
 }
 
 // EmbedBatch generates embeddings for multiple texts.
-func (se *SimpleEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
-	result := make([][]float64, len(texts))
+func (se *SimpleEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	result := make([][]float32, len(texts))
 	for i, text := range texts {
 		embedding, err := se.Embed(ctx, text)
 		if err != nil {
@@ -69,9 +69,9 @@ func (se *SimpleEmbedder) Dimensions() int {
 	return se.dimensions
 }
 
-// normalize converts a vector to unit length.
-func normalize(vec []float64) []float64 {
-	var sum float64
+// normalizeSimple converts a vector to unit length.
+func normalizeSimple(vec []float32) []float32 {
+	var sum float32
 	for _, v := range vec {
 		sum += v * v
 	}
@@ -80,8 +80,8 @@ func normalize(vec []float64) []float64 {
 		return vec
 	}
 
-	norm := math.Sqrt(sum)
-	result := make([]float64, len(vec))
+	norm := float32(math.Sqrt(float64(sum)))
+	result := make([]float32, len(vec))
 	for i, v := range vec {
 		result[i] = v / norm
 	}
