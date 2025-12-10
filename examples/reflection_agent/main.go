@@ -82,11 +82,11 @@ func main() {
 		case *message.AIMessage:
 			iteration++
 			fmt.Printf("--- Iteration %d ---\n", iteration)
-			fmt.Printf("%s\n\n", message.Stringify(m))
+			fmt.Printf("%s\n\n", m.String())
 
 		case *message.SystemMessage:
 			// This is the reflection feedback
-			content := message.Stringify(m)
+			content := m.String()
 			if strings.Contains(content, "Reflection on your previous answer") {
 				fmt.Println("🔍 Reflection Critique:")
 				fmt.Println(strings.Repeat("-", 60))
@@ -124,7 +124,7 @@ func main() {
 	}
 
 	fmt.Println("Final Answer:")
-	fmt.Println(message.Stringify(lastMsg))
+	fmt.Println(lastMsg.String())
 	fmt.Println()
 
 	fmt.Println("✅ Reflection example completed!")

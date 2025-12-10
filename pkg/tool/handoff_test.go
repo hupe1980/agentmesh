@@ -133,7 +133,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	assert.Equal(t, "Success after retry", result)
 }
 
-func TestExtractTextFromMessage(t *testing.T) {
+func TestMessageString(t *testing.T) {
 	tests := []struct {
 		name     string
 		msg      message.Message
@@ -154,16 +154,11 @@ func TestExtractTextFromMessage(t *testing.T) {
 			msg:      message.NewSystemMessageFromText("System prompt"),
 			expected: "System prompt",
 		},
-		{
-			name:     "Nil message",
-			msg:      nil,
-			expected: "",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractTextFromMessage(tt.msg)
+			result := tt.msg.String()
 			assert.Equal(t, tt.expected, result)
 		})
 	}

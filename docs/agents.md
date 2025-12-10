@@ -84,7 +84,7 @@ agent.NewReAct(model,
     agent.WithTools(searchTool, calcTool),    // Add tools
     agent.WithSupervisorMaxIterations(10),              // Max reasoning-action cycles
     agent.WithSystemPrompt("You are helpful"), // System prompt
-    agent.WithReActOutputSchema(schema),      // Structured output
+    agent.WithOutputSchema(schema),      // Structured output
     agent.WithGraphMiddleware(middleware...),  // Graph middleware
     agent.WithModelMiddleware(middleware...),  // Model middleware
     agent.WithToolMiddleware(middleware...),   // Tool middleware

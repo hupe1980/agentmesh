@@ -232,7 +232,7 @@ func TestModel_Generate(t *testing.T) {
 		assert.Equal(t, 5, resp.Usage.CompletionTokens)
 		assert.Equal(t, 15, resp.Usage.TotalTokens)
 		assert.False(t, resp.Partial)
-		assert.Equal(t, "Hello, world!", message.Stringify(resp.Message))
+		assert.Equal(t, "Hello, world!", resp.Message.String())
 	})
 
 	t.Run("generation with tool calls", func(t *testing.T) {

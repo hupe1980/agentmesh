@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -28,6 +29,7 @@ import (
 type commonOptions struct {
 	systemPrompt    string
 	maxIterations   int
+	outputSchema    *schema.OutputSchema
 	graphMiddleware []graph.Middleware
 	modelMiddleware []model.Middleware
 	toolMiddleware  []tool.Middleware
@@ -48,6 +50,11 @@ func (s SharedOption) applyReAct(opts *reActOptions) {
 
 // Implement SupervisorOption interface
 func (s SharedOption) applySupervisor(opts *supervisorOptions) {
+	s(&opts.commonOptions)
+}
+
+// Implement RAGOption interface
+func (s SharedOption) applyRAG(opts *ragOptions) {
 	s(&opts.commonOptions)
 }
 
@@ -88,5 +95,13 @@ func WithModelMiddleware(middleware ...model.Middleware) SharedOption {
 func WithToolMiddleware(middleware ...tool.Middleware) SharedOption {
 	return func(c *commonOptions) {
 		c.toolMiddleware = append(c.toolMiddleware, middleware...)
+	}
+}
+
+// WithOutputSchema sets a structured output schema for any agent type.
+// The schema constrains the model to generate valid JSON matching the schema.
+func WithOutputSchema(outputSchema *schema.OutputSchema) SharedOption {
+	return func(c *commonOptions) {
+		c.outputSchema = outputSchema
 	}
 }

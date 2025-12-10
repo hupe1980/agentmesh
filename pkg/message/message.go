@@ -110,26 +110,6 @@ type FunctionResponsePart struct {
 
 func (FunctionResponsePart) isPart() {}
 
-// Stringify converts a message's text parts into a single string.
-func Stringify(m Message) string {
-	if m == nil {
-		return ""
-	}
-
-	var sb strings.Builder
-	for _, part := range m.Parts() {
-		switch p := part.(type) {
-		case TextPart:
-			sb.WriteString(p.Text)
-		case *TextPart:
-			if p != nil {
-				sb.WriteString(p.Text)
-			}
-		}
-	}
-	return sb.String()
-}
-
 // ToolCall mirrors LangChain tool invocation metadata.
 //
 // The Arguments field is a JSON string (not a map) to avoid wasteful
@@ -161,6 +141,8 @@ type ToolCall struct {
 
 // Message represents the minimal shape shared across message variants.
 type Message interface {
+	fmt.Stringer
+
 	Type() Type
 	Parts() Parts
 	Clone() Message
@@ -198,6 +180,58 @@ func (b messageBase) clone() messageBase {
 
 func (b messageBase) contentClone() Parts {
 	return cloneParts(b.content)
+}
+
+func (b messageBase) stringify() string {
+	var sb strings.Builder
+
+	for _, part := range b.content {
+		sb.WriteString(stringifyPart(part))
+	}
+
+	return sb.String()
+}
+
+//nolint:gocyclo // Part stringification requires handling many part types
+func stringifyPart(part Part) string {
+	switch p := part.(type) {
+	case TextPart:
+		return p.Text
+	case *TextPart:
+		if p != nil {
+			return p.Text
+		}
+	case DataPart:
+		return fmt.Sprintf("[data: %v]", p.Data)
+	case *DataPart:
+		if p != nil {
+			return fmt.Sprintf("[data: %v]", p.Data)
+		}
+	case FilePart:
+		return fmt.Sprintf("[file: %s (%s)]", p.Name, p.MimeType)
+	case *FilePart:
+		if p != nil {
+			return fmt.Sprintf("[file: %s (%s)]", p.Name, p.MimeType)
+		}
+	case FunctionCallPart:
+		if p.FunctionCall != nil {
+			return fmt.Sprintf("[call: %s(%s)]", p.FunctionCall.Name, p.FunctionCall.Arguments)
+		}
+	case *FunctionCallPart:
+		if p != nil && p.FunctionCall != nil {
+			return fmt.Sprintf("[call: %s(%s)]", p.FunctionCall.Name, p.FunctionCall.Arguments)
+		}
+	case FunctionResponsePart:
+		if p.FunctionResponse != nil {
+			return fmt.Sprintf("[response: %s -> %v]", p.FunctionResponse.Name, p.FunctionResponse.Response)
+		}
+	case *FunctionResponsePart:
+		if p != nil && p.FunctionResponse != nil {
+			return fmt.Sprintf("[response: %s -> %v]", p.FunctionResponse.Name, p.FunctionResponse.Response)
+		}
+	}
+
+	return ""
 }
 
 // WithMetadata sets metadata key-value pairs on a message.
@@ -240,6 +274,9 @@ func (m *SystemMessage) Clone() Message {
 	return &clone
 }
 
+// String returns the text content of the message.
+func (m *SystemMessage) String() string { return m.base.stringify() }
+
 // HumanMessage models a human/user authored message.
 type HumanMessage struct {
 	base messageBase
@@ -269,6 +306,9 @@ func (m *HumanMessage) Clone() Message {
 	clone.base = m.base.clone()
 	return &clone
 }
+
+// String returns the text content of the message.
+func (m *HumanMessage) String() string { return m.base.stringify() }
 
 // AIMessage models an assistant/AI response.
 type AIMessage struct {
@@ -303,6 +343,9 @@ func (m *AIMessage) Clone() Message {
 	return &clone
 }
 
+// String returns the text content of the message.
+func (m *AIMessage) String() string { return m.base.stringify() }
+
 // ChatMessage models a custom-role chat message.
 type ChatMessage struct {
 	base    messageBase
@@ -334,6 +377,9 @@ func (m *ChatMessage) Clone() Message {
 	return &clone
 }
 
+// String returns the text content of the message.
+func (m *ChatMessage) String() string { return m.base.stringify() }
+
 // FunctionMessage captures serialized tool/function responses.
 type FunctionMessage struct {
 	base messageBase
@@ -360,6 +406,9 @@ func (m *FunctionMessage) Clone() Message {
 	return &clone
 }
 
+// String returns the text content of the message.
+func (m *FunctionMessage) String() string { return m.base.stringify() }
+
 // ToolMessage stores tool output tied to a specific tool call.
 type ToolMessage struct {
 	base       messageBase
@@ -385,6 +434,9 @@ func (m *ToolMessage) Clone() Message {
 	clone.base = m.base.clone()
 	return &clone
 }
+
+// String returns the text content of the message.
+func (m *ToolMessage) String() string { return m.base.stringify() }
 
 // BaseMessageChunk represents a streaming fragment of a message.
 type BaseMessageChunk struct {

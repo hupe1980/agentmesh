@@ -12,7 +12,4 @@ var (
 
 	// ErrMissingRequired is returned when output schema is missing 'required'.
 	ErrMissingRequired = errors.New("schema: output schema missing 'required'")
-
-	// ErrNoMessages is returned when no messages are returned.
-	ErrNoMessages = errors.New("schema: no messages returned")
 )

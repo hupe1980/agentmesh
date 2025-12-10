@@ -189,7 +189,7 @@ func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) gra
 					logger.Debug("short-term message",
 						"index", i,
 						"type", msg.Type(),
-						"content", truncateForLog(message.Stringify(msg)),
+						"content", truncateForLog(msg.String()),
 					)
 				}
 				// Reverse to chronological order (oldest first) for conversation flow
@@ -264,7 +264,7 @@ func recallLongTermMemory(
 			logger.Debug("long-term message",
 				"index", i,
 				"type", msg.Type(),
-				"content", truncateForLog(message.Stringify(msg)),
+				"content", truncateForLog(msg.String()),
 			)
 		}
 		// Deduplicate: only add messages not already in short-term
@@ -280,13 +280,13 @@ func deduplicateMessages(base, additional []message.Message) []message.Message {
 
 	// Mark existing messages as seen (using content as key)
 	for _, msg := range base {
-		key := message.Stringify(msg)
+		key := msg.String()
 		seen[key] = true
 	}
 
 	// Add non-duplicate messages
 	for _, msg := range additional {
-		key := message.Stringify(msg)
+		key := msg.String()
 		if !seen[key] {
 			base = append(base, msg)
 			seen[key] = true
@@ -353,7 +353,7 @@ func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) grap
 			logger.Debug("storing message",
 				"index", i,
 				"type", msg.Type(),
-				"content", truncateForLog(message.Stringify(msg)),
+				"content", truncateForLog(msg.String()),
 			)
 		}
 		if err := mem.Store(ctx, sessionID, toStore); err != nil {

@@ -133,7 +133,7 @@ func TestConversational_RunWithoutMemory(t *testing.T) {
 		}
 
 		require.NotNil(t, lastMsg)
-		assert.Contains(t, message.Stringify(lastMsg), "Hello")
+		assert.Contains(t, lastMsg.String(), "Hello")
 	})
 }
 
@@ -172,10 +172,10 @@ func TestConversational_StoresConversation(t *testing.T) {
 
 		// Verify the content of stored messages
 		assert.Equal(t, message.TypeHuman, storedMsgs[0].Type(), "first stored message should be human")
-		assert.Contains(t, message.Stringify(storedMsgs[0]), "How are you?", "should store user message content")
+		assert.Contains(t, storedMsgs[0].String(), "How are you?", "should store user message content")
 
 		assert.Equal(t, message.TypeAI, storedMsgs[1].Type(), "second stored message should be AI")
-		assert.Contains(t, message.Stringify(storedMsgs[1]), "I'm doing well, thanks!", "should store AI response content")
+		assert.Contains(t, storedMsgs[1].String(), "I'm doing well, thanks!", "should store AI response content")
 	})
 }
 
@@ -227,7 +227,7 @@ func TestConversational_RecallsFromMemory(t *testing.T) {
 		// Check that the recalled messages are present
 		allText := ""
 		for _, msg := range receivedMessages {
-			allText += message.Stringify(msg) + " "
+			allText += msg.String() + " "
 		}
 		assert.Contains(t, allText, "My name is Alice", "should include recalled user message")
 		assert.Contains(t, allText, "Hello Alice", "should include recalled AI response")
@@ -271,7 +271,7 @@ func TestConversational_WithRAGAgent(t *testing.T) {
 		}
 
 		require.NotNil(t, lastMsg)
-		assert.Contains(t, message.Stringify(lastMsg), "AgentMesh")
+		assert.Contains(t, lastMsg.String(), "AgentMesh")
 
 		// Verify conversation was stored
 		storedMsgs := mem.GetStoredMessages("rag-session")
@@ -482,8 +482,8 @@ func TestConversational_MultipleTurns(t *testing.T) {
 		// After Turn 1: should have exactly 2 messages stored
 		storedAfterTurn1 := mem.GetStoredMessages("multi-turn-session")
 		require.Len(t, storedAfterTurn1, 2, "after turn 1: should store user + AI")
-		assert.Contains(t, message.Stringify(storedAfterTurn1[0]), "Hello")
-		assert.Contains(t, message.Stringify(storedAfterTurn1[1]), "Response 1")
+		assert.Contains(t, storedAfterTurn1[0].String(), "Hello")
+		assert.Contains(t, storedAfterTurn1[1].String(), "Response 1")
 
 		// Second turn
 		messages2 := []message.Message{
@@ -499,8 +499,8 @@ func TestConversational_MultipleTurns(t *testing.T) {
 		// After Turn 2: should have exactly 4 messages stored
 		storedAfterTurn2 := mem.GetStoredMessages("multi-turn-session")
 		require.Len(t, storedAfterTurn2, 4, "after turn 2: should have 4 messages total")
-		assert.Contains(t, message.Stringify(storedAfterTurn2[2]), "How are you?")
-		assert.Contains(t, message.Stringify(storedAfterTurn2[3]), "Response 2")
+		assert.Contains(t, storedAfterTurn2[2].String(), "How are you?")
+		assert.Contains(t, storedAfterTurn2[3].String(), "Response 2")
 
 		// Third turn
 		messages3 := []message.Message{
@@ -516,8 +516,8 @@ func TestConversational_MultipleTurns(t *testing.T) {
 		// After Turn 3: should have exactly 6 messages stored
 		storedAfterTurn3 := mem.GetStoredMessages("multi-turn-session")
 		require.Len(t, storedAfterTurn3, 6, "after turn 3: should have 6 messages total")
-		assert.Contains(t, message.Stringify(storedAfterTurn3[4]), "Goodbye")
-		assert.Contains(t, message.Stringify(storedAfterTurn3[5]), "Response 3")
+		assert.Contains(t, storedAfterTurn3[4].String(), "Goodbye")
+		assert.Contains(t, storedAfterTurn3[5].String(), "Response 3")
 
 		assert.Equal(t, 3, turnCount, "should have processed 3 turns")
 	})
@@ -568,7 +568,7 @@ func TestConversational_MultipleTurns(t *testing.T) {
 		// Check that turn 1 context is present in turn 2 input
 		allText := ""
 		for _, msg := range turn2ReceivedMessages {
-			allText += message.Stringify(msg) + " "
+			allText += msg.String() + " "
 		}
 		assert.Contains(t, allText, "My name is Bob", "turn 2 should receive turn 1 user message")
 		assert.Contains(t, allText, "Tokyo", "turn 2 should receive turn 1 location")
@@ -606,8 +606,8 @@ func TestNewConversational_WithInitialSessionID(t *testing.T) {
 		// Should use runtime session ID and store exactly 2 messages
 		storedInRuntime := mem.GetStoredMessages("runtime-session-123")
 		require.Len(t, storedInRuntime, 2, "should store exactly user + AI in runtime session")
-		assert.Contains(t, message.Stringify(storedInRuntime[0]), "Hello")
-		assert.Contains(t, message.Stringify(storedInRuntime[1]), "Response")
+		assert.Contains(t, storedInRuntime[0].String(), "Hello")
+		assert.Contains(t, storedInRuntime[1].String(), "Response")
 	})
 }
 
@@ -648,10 +648,10 @@ func TestConversational_StoreCalledWithCorrectMessages(t *testing.T) {
 
 		// Verify message types and content
 		assert.Equal(t, message.TypeHuman, storedCalls[0][0].Type())
-		assert.Contains(t, message.Stringify(storedCalls[0][0]), "User says hello")
+		assert.Contains(t, storedCalls[0][0].String(), "User says hello")
 
 		assert.Equal(t, message.TypeAI, storedCalls[0][1].Type())
-		assert.Contains(t, message.Stringify(storedCalls[0][1]), "AI says hello back")
+		assert.Contains(t, storedCalls[0][1].String(), "AI says hello back")
 	})
 
 	t.Run("store is called after each turn in multi-turn conversation", func(t *testing.T) {
@@ -688,7 +688,7 @@ func TestConversational_StoreCalledWithCorrectMessages(t *testing.T) {
 		}
 
 		require.Len(t, storedCalls, 1, "should have 1 store call after turn 1")
-		assert.Contains(t, message.Stringify(storedCalls[0][0]), "First message")
+		assert.Contains(t, storedCalls[0][0].String(), "First message")
 
 		// Turn 2
 		for msg, err := range chatAgent.Run(ctx, []message.Message{
@@ -699,7 +699,7 @@ func TestConversational_StoreCalledWithCorrectMessages(t *testing.T) {
 		}
 
 		require.Len(t, storedCalls, 2, "should have 2 store calls after turn 2")
-		assert.Contains(t, message.Stringify(storedCalls[1][0]), "Second message")
+		assert.Contains(t, storedCalls[1][0].String(), "Second message")
 
 		// Turn 3
 		for msg, err := range chatAgent.Run(ctx, []message.Message{
@@ -710,6 +710,6 @@ func TestConversational_StoreCalledWithCorrectMessages(t *testing.T) {
 		}
 
 		require.Len(t, storedCalls, 3, "should have 3 store calls after turn 3")
-		assert.Contains(t, message.Stringify(storedCalls[2][0]), "Third message")
+		assert.Contains(t, storedCalls[2][0].String(), "Third message")
 	})
 }

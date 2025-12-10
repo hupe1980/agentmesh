@@ -143,7 +143,7 @@ func (e *HeuristicEstimator) Estimate(ctx context.Context, req *Request) (float6
 
 	// Analyze the last message (most relevant for complexity)
 	lastMsg := req.Messages[len(req.Messages)-1]
-	text := message.Stringify(lastMsg)
+	text := lastMsg.String()
 	lowerText := strings.ToLower(text)
 
 	// 1. Word count contribution (longer = more complex, up to 100 words)
@@ -218,7 +218,7 @@ func (e *MLComplexityEstimator) Estimate(ctx context.Context, req *Request) (flo
 0.7 = Complex (analysis, code, multi-step reasoning)
 1.0 = Very complex (research, architecture, deep analysis)
 
-Query: ` + message.Stringify(lastMsg) + `
+Query: ` + lastMsg.String() + `
 
 Complexity score:`
 
@@ -231,7 +231,7 @@ Complexity score:`
 		return 0.5, err // Default to medium complexity on error
 	}
 
-	content := strings.TrimSpace(message.Stringify(resp.Message))
+	content := strings.TrimSpace(resp.Message.String())
 
 	// Parse the response as a float
 	var complexity float64

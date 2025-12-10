@@ -1,7 +1,9 @@
 package graph
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"iter"
 )
 
@@ -69,4 +71,39 @@ func Collect[T any](seq iter.Seq2[T, error]) ([]T, error) {
 		results = append(results, val)
 	}
 	return results, nil
+}
+
+// LastStructured extracts the last value from an iterator and unmarshals
+// content into the specified type T. The output type O must implement
+// [fmt.Stringer]. This is useful for extracting structured output from
+// agent execution.
+//
+// Example with agent:
+//
+//	type MovieReview struct {
+//	    Title   string `json:"title"`
+//	    Rating  int    `json:"rating"`
+//	    Summary string `json:"summary"`
+//	}
+//
+//	agent, _ := agent.NewReAct(model, agent.WithOutputSchema(outputSchema))
+//	review, err := graph.LastStructured[MovieReview](agent.Run(ctx, messages))
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Rating: %d/5\n", review.Rating)
+func LastStructured[T any, O fmt.Stringer](seq iter.Seq2[O, error]) (*T, error) {
+	last, err := Last(seq)
+	if err != nil {
+		return nil, err
+	}
+
+	content := last.String()
+
+	var result T
+	if err := json.Unmarshal([]byte(content), &result); err != nil {
+		return nil, fmt.Errorf("graph: failed to parse structured output: %w", err)
+	}
+
+	return &result, nil
 }

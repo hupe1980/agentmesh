@@ -62,7 +62,7 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 }
 
 // createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
+func createGenerateNode(executor model.Executor, config ragOptions) graph.NodeFunc {
 	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := GetMessages(view)
 		if len(msgs) == 0 {
@@ -71,24 +71,33 @@ func createGenerateNode(mdl model.Model, config ragOptions) graph.NodeFunc {
 
 		docs := graph.Get(view, DocumentsKey)
 
-		var newMsg message.Message
-		var err error
-		if len(docs) == 0 {
-			// No documents found, generate without context
-			newMsg, err = generateWithModel(ctx, mdl, msgs, "")
-		} else {
-			// Format context from documents
+		// Build system prompt: combine user's system prompt with document context
+		var systemPrompt string
+		if len(docs) > 0 {
 			contextPrompt := config.promptTemplate.MustRender(map[string]any{
 				"Documents": docs,
 			})
-			newMsg, err = generateWithModel(ctx, mdl, msgs, contextPrompt)
+			if config.systemPrompt != "" {
+				systemPrompt = config.systemPrompt + "\n\n" + contextPrompt
+			} else {
+				systemPrompt = contextPrompt
+			}
+		} else {
+			systemPrompt = config.systemPrompt
 		}
 
+		req := &model.Request{
+			Messages:     msgs,
+			SystemPrompt: systemPrompt,
+			OutputSchema: config.outputSchema,
+		}
+
+		resp, err := model.Last(executor.Generate(ctx, req))
 		if err != nil {
 			return graph.Fail(err)
 		}
 
-		return graph.Append(MessagesKey, newMsg).To(graph.END)
+		return graph.Append(MessagesKey, resp.Message).To(graph.END)
 	}
 }
 
@@ -117,20 +126,32 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 
 	config := defaultRAGOptions()
 	for _, opt := range opts {
-		opt(&config)
+		opt.applyRAG(&config)
+	}
+
+	// Create model executor with middleware
+	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("rag-model"))
+	if len(config.modelMiddleware) > 0 {
+		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
 	}
 
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
 	b := message.NewGraphBuilder(DocumentsKey)
 	b.Node("retrieve", createRetrieveNode(retriever), "generate")
-	b.Node("generate", createGenerateNode(mdl, config), graph.END)
+	b.Node("generate", createGenerateNode(modelExecutor, config), graph.END)
 	b.Start("retrieve")
+
+	// Apply graph middleware if provided
+	if len(config.graphMiddleware) > 0 {
+		b.WithMiddleware(config.graphMiddleware...)
+	}
 
 	return b.Build()
 }
 
 // ragOptions holds configuration for RAG agents.
 type ragOptions struct {
+	commonOptions
 	promptTemplate *prompt.Template
 }
 
@@ -142,40 +163,35 @@ func defaultRAGOptions() ragOptions {
 {{end}}`)
 
 	return ragOptions{
+		commonOptions: commonOptions{
+			systemPrompt:    "",
+			maxIterations:   1, // RAG is typically single-pass
+			outputSchema:    nil,
+			graphMiddleware: nil,
+			modelMiddleware: nil,
+			toolMiddleware:  nil,
+		},
 		promptTemplate: tmpl,
 	}
 }
 
 // RAGOption configures a RAG agent.
-type RAGOption func(*ragOptions)
+type RAGOption interface {
+	applyRAG(*ragOptions)
+}
+
+// ragOptionFunc wraps a function to implement RAGOption.
+type ragOptionFunc func(*ragOptions)
+
+func (f ragOptionFunc) applyRAG(opts *ragOptions) {
+	f(opts)
+}
 
 // WithPromptTemplate sets a custom prompt template for context formatting.
 func WithPromptTemplate(tmpl *prompt.Template) RAGOption {
-	return func(c *ragOptions) {
+	return ragOptionFunc(func(c *ragOptions) {
 		if tmpl != nil {
 			c.promptTemplate = tmpl
 		}
-	}
-}
-
-// generateWithModel generates a response with optional context.
-func generateWithModel(ctx context.Context, mdl model.Model, existingMsgs []message.Message, context string) (message.Message, error) {
-	// Build request messages with optional context prepended
-	requestMsgs := existingMsgs
-	if context != "" {
-		contextMsg := message.NewSystemMessageFromText(context)
-		requestMsgs = append([]message.Message{contextMsg}, existingMsgs...)
-	}
-
-	req := &model.Request{
-		Messages: requestMsgs,
-	}
-
-	resp, err := model.Last(mdl.Generate(ctx, req))
-	if err != nil {
-		return nil, err
-	}
-
-	// Return only the NEW message
-	return resp.Message, nil
+	})
 }

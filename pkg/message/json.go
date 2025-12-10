@@ -254,15 +254,15 @@ func FromSerializable(sm *SerializableMessage) (Message, error) {
 		msg.Name = sm.Name
 		return msg, nil
 	case TypeChat:
-		return NewChatMessage(string(sm.MsgType), Stringify(NewSystemMessage(parts))), nil
+		return NewChatMessage(string(sm.MsgType), NewSystemMessage(parts).String()), nil
 	case TypeFunction:
 		if len(parts) > 0 {
-			return NewFunctionMessage(sm.Name, Stringify(NewSystemMessage(parts))), nil
+			return NewFunctionMessage(sm.Name, NewSystemMessage(parts).String()), nil
 		}
 		return NewFunctionMessage(sm.Name, ""), nil
 	case TypeTool:
 		if len(parts) > 0 {
-			return NewToolMessage(sm.ToolCallID, Stringify(NewSystemMessage(parts))), nil
+			return NewToolMessage(sm.ToolCallID, NewSystemMessage(parts).String()), nil
 		}
 		return NewToolMessage(sm.ToolCallID, ""), nil
 	default:

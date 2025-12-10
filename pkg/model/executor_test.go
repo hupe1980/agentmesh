@@ -64,7 +64,7 @@ func TestExecutor_BasicExecution(t *testing.T) {
 	resp, err := model.Last(executor.Generate(context.Background(), req))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, "Hello, world!", message.Stringify(resp.Message))
+	assert.Equal(t, "Hello, world!", resp.Message.String())
 	assert.Equal(t, 15, resp.Usage.TotalTokens)
 }
 
@@ -107,7 +107,7 @@ func TestExecutor_StreamingExecution(t *testing.T) {
 	// Concatenate all chunks
 	var result string
 	for _, r := range responses {
-		result += message.Stringify(r.Message)
+		result += r.Message.String()
 	}
 	assert.Equal(t, "Hello, world!", result)
 }

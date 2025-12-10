@@ -317,7 +317,7 @@ func FormatMessageHistory(messages []message.Message) string {
 
 	result := fmt.Sprintf("%d messages:\n", len(messages))
 	for i, msg := range messages {
-		content := message.Stringify(msg)
+		content := msg.String()
 		if len(content) > 50 {
 			content = content[:47] + "..."
 		}

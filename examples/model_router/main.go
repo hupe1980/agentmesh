@@ -71,7 +71,7 @@ func costBasedDemo(ctx context.Context) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {
-		fmt.Printf("Response: %s\n\n", message.Stringify(resp.Message))
+		fmt.Printf("Response: %s\n\n", resp.Message.String())
 	}
 
 	// Test with complex query (should route to expensive)
@@ -85,7 +85,7 @@ func costBasedDemo(ctx context.Context) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {
-		text := message.Stringify(resp.Message)
+		text := resp.Message.String()
 		if len(text) > 200 {
 			text = text[:200] + "..."
 		}
@@ -101,7 +101,7 @@ func conditionalDemo(ctx context.Context) {
 	// Use conditional routing - expensive for "important" queries
 	conditionalRouter := model.NewConditionalRouter(
 		func(ctx context.Context, req *model.Request) bool {
-			text := message.Stringify(req.Messages[0])
+			text := req.Messages[0].String()
 			return strings.Contains(strings.ToLower(text), "important")
 		},
 		model.NewStaticRouter(expensiveModel),
@@ -129,7 +129,7 @@ func conditionalDemo(ctx context.Context) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {
-		fmt.Printf("Response: %s\n\n", message.Stringify(resp.Message))
+		fmt.Printf("Response: %s\n\n", resp.Message.String())
 	}
 
 	// Test important query
@@ -143,6 +143,6 @@ func conditionalDemo(ctx context.Context) {
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {
-		fmt.Printf("Response: %s\n", message.Stringify(resp.Message))
+		fmt.Printf("Response: %s\n", resp.Message.String())
 	}
 }

@@ -136,7 +136,7 @@ recalled, err := mem.Recall(ctx, sessionID, memory.RecallFilter{
 })
 
 for _, msg := range recalled {
-    fmt.Printf("%s\n", message.Stringify(msg))
+    fmt.Printf("%s\n", msg.String())
 }
 ```
 

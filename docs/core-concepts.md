@@ -531,7 +531,10 @@ aiMsg := message.NewAIMessage([]message.Part{
     },
 })
 
-// Access parts
+// Quick text extraction using String()
+fmt.Println(aiMsg.String()) // "Here's the weather[file: (image/png)]"
+
+// Access individual parts when you need type-specific handling
 for _, part := range aiMsg.Parts() {
     switch p := part.(type) {
     case message.TextPart:

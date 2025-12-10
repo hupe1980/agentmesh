@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
@@ -107,7 +108,7 @@ func directModelExample(ctx context.Context, mdl model.Model) error {
 
 	// Parse the structured output
 	var review MovieReview
-	if err := json.Unmarshal([]byte(message.Stringify(resp.Message)), &review); err != nil {
+	if err := json.Unmarshal([]byte(resp.Message.String()), &review); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -184,7 +185,7 @@ func reactAgentExample(ctx context.Context, mdl model.Model) error {
 
 	// Create ReActAgent with OutputSchema
 	reactAgent, err := agent.NewReAct(mdl,
-		agent.WithReActOutputSchema(&outputSchema),
+		agent.WithOutputSchema(&outputSchema),
 		agent.WithSystemPrompt("You are a helpful assistant. Think step-by-step and provide structured responses with your reasoning."),
 	)
 	if err != nil {
@@ -198,8 +199,8 @@ func reactAgentExample(ctx context.Context, mdl model.Model) error {
 		message.NewHumanMessageFromText("What is the capital of France and why is it significant?"),
 	}
 
-	// Get the response using schema.LastStructured helper
-	response, err := schema.LastStructured[AgentResponse](reactAgent.Run(ctx, input))
+	// Get the response using graph.LastStructured helper
+	response, err := graph.LastStructured[AgentResponse](reactAgent.Run(ctx, input))
 	if err != nil {
 		return fmt.Errorf("agent execution failed: %w", err)
 	}

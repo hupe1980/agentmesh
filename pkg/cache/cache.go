@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
@@ -109,7 +108,7 @@ func DefaultOptions() Options {
 func defaultKeyFunc(req *model.Request) string {
 	var key string
 	for _, msg := range req.Messages {
-		key += message.Stringify(msg) + "\n"
+		key += msg.String() + "\n"
 	}
 	if req.SystemPrompt != "" {
 		key += "SYSTEM: " + req.SystemPrompt + "\n"

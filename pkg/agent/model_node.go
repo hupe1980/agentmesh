@@ -49,10 +49,11 @@ func WithModelToolset(ts tool.Toolset) ModelNodeOption {
 	}
 }
 
-// WithOutputSchema sets a structured output schema for the model.
+// WithModelOutputSchema sets a structured output schema for the model node.
 // The schema constrains the model to generate valid JSON matching the schema.
 // Only works with models that support structured output (check model.Capabilities().StructuredOutput).
-func WithOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
+// For agent-level configuration, use WithOutputSchema instead.
+func WithModelOutputSchema(outputSchema *schema.OutputSchema) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
 		c.OutputSchema = outputSchema
 	}

@@ -110,10 +110,8 @@ func main() {
 		switch m := evt.(type) {
 		case *message.AIMessage:
 			// Display AI's reasoning and responses
-			for _, part := range m.Parts() {
-				if text, ok := part.(message.TextPart); ok {
-					fmt.Printf("    💭 %s\n", text.Text)
-				}
+			if text := m.String(); text != "" {
+				fmt.Printf("    💭 %s\n", text)
 			}
 			// Show tool calls made by the AI
 			if message.HasToolCalls(evt) {
@@ -122,18 +120,12 @@ func main() {
 
 		case *message.ToolMessage:
 			// Display tool execution results
-			for _, part := range m.Parts() {
-				if text, ok := part.(message.TextPart); ok {
-					fmt.Printf("    ⚙️  Tool result: %s\n", text.Text)
-				}
-			}
+			fmt.Printf("    ⚙️  Tool result: %s\n", m.String())
 
 		default:
 			// Display other message types (system, human)
-			for _, part := range m.Parts() {
-				if text, ok := part.(message.TextPart); ok {
-					fmt.Printf("    📝 %s\n", text.Text)
-				}
+			if text := evt.String(); text != "" {
+				fmt.Printf("    📝 %s\n", text)
 			}
 		}
 		fmt.Println()

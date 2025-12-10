@@ -212,7 +212,7 @@ func createReflectionNodeForWrapper(executor model.Executor, config reflectionOp
 		var draft string
 		for i := len(messages) - 1; i >= 0; i-- {
 			if aiMsg, ok := messages[i].(*message.AIMessage); ok {
-				draft = message.Stringify(aiMsg)
+				draft = aiMsg.String()
 				break
 			}
 		}
@@ -242,7 +242,7 @@ func createReflectionNodeForWrapper(executor model.Executor, config reflectionOp
 		}
 
 		// Add reflection as a system message to guide the next iteration
-		reflectionText := message.Stringify(resp.Message)
+		reflectionText := resp.Message.String()
 		reflectionMsgText := fmt.Sprintf("Reflection on your previous answer:\n%s\n\nPlease provide an improved answer based on this feedback.", reflectionText)
 		var reflectionMsg message.Message = message.NewSystemMessageFromText(reflectionMsgText)
 

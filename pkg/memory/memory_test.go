@@ -381,10 +381,10 @@ func TestVectorMemory_MessageOrderPreserved(t *testing.T) {
 
 	// Should be in reverse chronological order (most recent first)
 	// Message 4 (most recent) should be first, Message 1 (oldest) should be last
-	require.Contains(t, message.Stringify(recalled[0]), "Message 4", "most recent message should be first")
-	require.Contains(t, message.Stringify(recalled[1]), "Message 3")
-	require.Contains(t, message.Stringify(recalled[2]), "Message 2")
-	require.Contains(t, message.Stringify(recalled[3]), "Message 1", "oldest message should be last")
+	require.Contains(t, recalled[0].String(), "Message 4", "most recent message should be first")
+	require.Contains(t, recalled[1].String(), "Message 3")
+	require.Contains(t, recalled[2].String(), "Message 2")
+	require.Contains(t, recalled[3].String(), "Message 1", "oldest message should be last")
 }
 
 func TestVectorMemory_MultipleBatchesOrderPreserved(t *testing.T) {
@@ -419,10 +419,10 @@ func TestVectorMemory_MultipleBatchesOrderPreserved(t *testing.T) {
 	require.Len(t, recalled, 4)
 
 	// Should be: Batch2-Msg2, Batch2-Msg1, Batch1-Msg2, Batch1-Msg1
-	require.Contains(t, message.Stringify(recalled[0]), "Batch2-Msg2", "batch 2 msg 2 should be first")
-	require.Contains(t, message.Stringify(recalled[1]), "Batch2-Msg1", "batch 2 msg 1 should be second")
-	require.Contains(t, message.Stringify(recalled[2]), "Batch1-Msg2", "batch 1 msg 2 should be third")
-	require.Contains(t, message.Stringify(recalled[3]), "Batch1-Msg1", "batch 1 msg 1 should be last")
+	require.Contains(t, recalled[0].String(), "Batch2-Msg2", "batch 2 msg 2 should be first")
+	require.Contains(t, recalled[1].String(), "Batch2-Msg1", "batch 2 msg 1 should be second")
+	require.Contains(t, recalled[2].String(), "Batch1-Msg2", "batch 1 msg 2 should be third")
+	require.Contains(t, recalled[3].String(), "Batch1-Msg1", "batch 1 msg 1 should be last")
 }
 
 func TestVectorMemory_WithCustomStore(t *testing.T) {

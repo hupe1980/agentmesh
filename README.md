@@ -117,7 +117,7 @@ func main() {
         log.Fatal(err)
     }
 
-    fmt.Println(message.Stringify(lastMsg))
+    fmt.Println(lastMsg.String())
 }
 ```
 

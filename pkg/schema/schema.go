@@ -3,14 +3,11 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
-	"iter"
 	"maps"
 	"reflect"
 
 	"github.com/hupe1980/agentmesh/internal/jsonschema"
-	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // OutputSchema represents a structured output schema with metadata.
@@ -150,44 +147,4 @@ func NewOutputSchema[T any](name string, schema T, optFns ...func(*OutputSchemaO
 //	}
 func Validate(schemaMap map[string]any, value any) error {
 	return jsonschema.Validate(schemaMap, value)
-}
-
-// LastStructured extracts the last message from an iterator and unmarshals
-// it into the specified type T. This is useful for extracting structured
-// output from agent or graph runs.
-//
-// Example:
-//
-//	type AnalysisResult struct {
-//	    Category   string  `json:"category"`
-//	    Confidence float64 `json:"confidence"`
-//	}
-//
-//	result, err := schema.LastStructured[AnalysisResult](compiled.Run(ctx, input))
-//	if err != nil {
-//	    return err
-//	}
-//	fmt.Printf("Category: %s, Confidence: %.2f\n", result.Category, result.Confidence)
-func LastStructured[T any](iter iter.Seq2[message.Message, error]) (*T, error) {
-	var lastMsg message.Message
-	for msg, err := range iter {
-		if err != nil {
-			return nil, err
-		}
-		lastMsg = msg
-	}
-
-	if lastMsg == nil {
-		return nil, ErrNoMessages
-	}
-
-	// Use Stringify to extract text content from message parts
-	content := message.Stringify(lastMsg)
-
-	var result T
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse structured output: %w", err)
-	}
-
-	return &result, nil
 }

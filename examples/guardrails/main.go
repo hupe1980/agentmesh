@@ -30,7 +30,7 @@ func (m *GuardrailsMiddleware) Wrap(next model.Executor) model.Executor {
 	return model.WrapFunc(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 		// Pre-execution: check for blocked keywords
 		for _, msg := range req.Messages {
-			text := strings.ToLower(message.Stringify(msg))
+			text := strings.ToLower(msg.String())
 			for _, keyword := range m.blockedKeywords {
 				if strings.Contains(text, keyword) {
 					// Return error iterator
@@ -69,7 +69,7 @@ func (m *GuardrailsMiddleware) Wrap(next model.Executor) model.Executor {
 				}
 
 				// Filter PII from response
-				text := message.Stringify(resp.Message)
+				text := resp.Message.String()
 				filtered := m.redactPII(text)
 
 				if filtered != text {
@@ -99,7 +99,7 @@ func (m *GuardrailsMiddleware) cacheKey(req *model.Request) string {
 	if len(req.Messages) == 0 {
 		return ""
 	}
-	return message.Stringify(req.Messages[len(req.Messages)-1])
+	return req.Messages[len(req.Messages)-1].String()
 }
 
 // redactPII is a simple PII redaction function
@@ -130,7 +130,7 @@ type MockModel struct{}
 func (m *MockModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
 		var responseText string
-		lastMsg := message.Stringify(req.Messages[len(req.Messages)-1])
+		lastMsg := req.Messages[len(req.Messages)-1].String()
 
 		if strings.Contains(strings.ToLower(lastMsg), "weather") {
 			responseText = "The weather is sunny and 72°F."
@@ -177,7 +177,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 		} else {
-			fmt.Printf("✓ Response: %s\n", message.Stringify(resp.Message))
+			fmt.Printf("✓ Response: %s\n", resp.Message.String())
 		}
 	}
 
@@ -216,7 +216,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 		} else {
-			fmt.Printf("✓ Response: %s\n", message.Stringify(resp.Message))
+			fmt.Printf("✓ Response: %s\n", resp.Message.String())
 		}
 	}
 
@@ -228,7 +228,7 @@ func main() {
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 		} else {
-			fmt.Printf("✓ Response: %s\n", message.Stringify(resp.Message))
+			fmt.Printf("✓ Response: %s\n", resp.Message.String())
 		}
 	}
 

@@ -3,11 +3,13 @@ package agent
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/internal/testutil"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/prompt"
 	"github.com/hupe1980/agentmesh/pkg/retrieval"
 	"github.com/stretchr/testify/assert"
@@ -121,67 +123,6 @@ func TestExtractDocumentContent(t *testing.T) {
 	})
 }
 
-func TestGenerateWithModel(t *testing.T) {
-	t.Run("generates without context", func(t *testing.T) {
-		mdl := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-				// Verify no extra system message
-				assert.Len(t, messages, 1)
-				assert.Equal(t, "What's the weather?", message.Stringify(messages[0]))
-				return message.NewAIMessageFromText("Sunny"), nil
-			}),
-		}
-
-		existingMsgs := []message.Message{
-			message.NewHumanMessageFromText("What's the weather?"),
-		}
-
-		msg, err := generateWithModel(context.Background(), mdl, existingMsgs, "")
-
-		require.NoError(t, err)
-		assert.Equal(t, "Sunny", message.Stringify(msg))
-	})
-
-	t.Run("generates with context prepended", func(t *testing.T) {
-		mdl := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-				// Verify context is prepended as system message
-				require.Len(t, messages, 2)
-				assert.Equal(t, message.TypeSystem, messages[0].Type())
-				assert.Equal(t, "Context: Weather is sunny", message.Stringify(messages[0]))
-				assert.Equal(t, "What's the weather?", message.Stringify(messages[1]))
-				return message.NewAIMessageFromText("Based on context: Sunny"), nil
-			}),
-		}
-
-		existingMsgs := []message.Message{
-			message.NewHumanMessageFromText("What's the weather?"),
-		}
-
-		msg, err := generateWithModel(context.Background(), mdl, existingMsgs, "Context: Weather is sunny")
-
-		require.NoError(t, err)
-		assert.Equal(t, "Based on context: Sunny", message.Stringify(msg))
-	})
-
-	t.Run("handles model error", func(t *testing.T) {
-		mdl := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-				return nil, errors.New("model failed")
-			}),
-		}
-
-		existingMsgs := []message.Message{
-			message.NewHumanMessageFromText("Question"),
-		}
-
-		_, err := generateWithModel(context.Background(), mdl, existingMsgs, "")
-
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "model failed")
-	})
-}
-
 // Tests for RAG agent construction
 
 func TestNewRAG_NilModel(t *testing.T) {
@@ -255,20 +196,17 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 		}
 
 		mdl := &testutil.MockModel{
-			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-				// Verify context was added
-				hasContext := false
-				for _, msg := range messages {
-					if msg.Type() == message.TypeSystem {
-						content := message.Stringify(msg)
-						if len(content) > 0 && (contains(content, "France") || contains(content, "Paris")) {
-							hasContext = true
-						}
-					}
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				// Verify context was added via SystemPrompt
+				hasContext := contains(req.SystemPrompt, "France") || contains(req.SystemPrompt, "Paris")
+				assert.True(t, hasContext, "Expected context to be included in SystemPrompt")
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("The capital of France is Paris"),
+						Partial: false,
+					}, nil)
 				}
-				assert.True(t, hasContext, "Expected context to be included in messages")
-				return message.NewAIMessageFromText("The capital of France is Paris"), nil
-			}),
+			},
 		}
 
 		agent, err := NewRAG(mdl, retriever)
@@ -283,7 +221,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "The capital of France is Paris", message.Stringify(result))
+		assert.Equal(t, "The capital of France is Paris", result.String())
 	})
 
 	t.Run("handles retrieval error", func(t *testing.T) {
@@ -329,7 +267,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 		result, err := graph.Last(agent.Run(ctx, input))
 
 		require.NoError(t, err)
-		assert.Equal(t, "No documents available", message.Stringify(result))
+		assert.Equal(t, "No documents available", result.String())
 	})
 
 	t.Run("handles generation error", func(t *testing.T) {
@@ -368,20 +306,17 @@ func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
 	customTemplate := prompt.New("CUSTOM CONTEXT:\n{{range .Documents}}\n> {{.}}{{end}}")
 
 	mdl := &testutil.MockModel{
-		GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
-			// Verify custom template was used
-			hasCustomFormat := false
-			for _, msg := range messages {
-				if msg.Type() == message.TypeSystem {
-					content := message.Stringify(msg)
-					if contains(content, "CUSTOM CONTEXT:") {
-						hasCustomFormat = true
-					}
-				}
+		GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+			// Verify custom template was used in SystemPrompt
+			hasCustomFormat := contains(req.SystemPrompt, "CUSTOM CONTEXT:")
+			assert.True(t, hasCustomFormat, "Expected custom template format in SystemPrompt")
+			return func(yield func(*model.Response, error) bool) {
+				yield(&model.Response{
+					Message: message.NewAIMessageFromText("Response using custom context"),
+					Partial: false,
+				}, nil)
 			}
-			assert.True(t, hasCustomFormat, "Expected custom template format")
-			return message.NewAIMessageFromText("Response using custom context"), nil
-		}),
+		},
 	}
 
 	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(customTemplate))
@@ -395,7 +330,7 @@ func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
 	result, err := graph.Last(agent.Run(ctx, input))
 
 	require.NoError(t, err)
-	assert.Equal(t, "Response using custom context", message.Stringify(result))
+	assert.Equal(t, "Response using custom context", result.String())
 }
 
 // Helper function

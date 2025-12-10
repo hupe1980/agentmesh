@@ -114,7 +114,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Agent: %s\n", message.Stringify(msg))
+		fmt.Printf("Agent: %s\n", msg.String())
 	}
 
 	// Turn 2: Use tool - should recall Turn 1 via SHORT-TERM memory
@@ -131,7 +131,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Agent: %s\n", message.Stringify(msg))
+		fmt.Printf("Agent: %s\n", msg.String())
 	}
 
 	// Turn 3: Ask about programming - should recall from LONG-TERM memory (prefilled history)
@@ -148,7 +148,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Agent: %s\n", message.Stringify(msg))
+		fmt.Printf("Agent: %s\n", msg.String())
 	}
 
 	// Turn 4: Ask about food - also from LONG-TERM memory
@@ -165,7 +165,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Agent: %s\n", message.Stringify(msg))
+		fmt.Printf("Agent: %s\n", msg.String())
 	}
 
 	// Turn 5: Combine both - should use BOTH memory types
@@ -182,7 +182,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Agent: %s\n", message.Stringify(msg))
+		fmt.Printf("Agent: %s\n", msg.String())
 	}
 
 	fmt.Println("\n=== Conversation complete! ===")

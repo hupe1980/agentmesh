@@ -193,7 +193,7 @@ func TestModel_Generate(t *testing.T) {
 		assert.Equal(t, "stop", responses[0].FinishReason)
 		assert.False(t, responses[0].Partial)
 
-		content := message.Stringify(responses[0].Message)
+		content := responses[0].Message.String()
 		assert.Equal(t, "Hello, world!", content)
 	})
 

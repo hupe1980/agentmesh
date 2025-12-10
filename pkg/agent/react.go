@@ -7,7 +7,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
-	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -59,7 +58,7 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	modelFn, err := NewModelNodeFunc(modelExecutor,
 		WithModelSystemPrompt(config.systemPrompt),
 		WithModelToolset(combinedToolset),
-		WithOutputSchema(config.outputSchema),
+		WithModelOutputSchema(config.outputSchema),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
@@ -123,9 +122,8 @@ func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*mess
 // reActOptions holds configuration for ReAct agents.
 type reActOptions struct {
 	commonOptions
-	tools        []tool.Tool
-	toolsets     []tool.Toolset
-	outputSchema *schema.OutputSchema
+	tools    []tool.Tool
+	toolsets []tool.Toolset
 }
 
 func defaultReActOptions() reActOptions {
@@ -133,13 +131,13 @@ func defaultReActOptions() reActOptions {
 		commonOptions: commonOptions{
 			systemPrompt:    "",
 			maxIterations:   10,
+			outputSchema:    nil,
 			graphMiddleware: nil,
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},
-		tools:        nil,
-		toolsets:     nil,
-		outputSchema: nil,
+		tools:    nil,
+		toolsets: nil,
 	}
 }
 
@@ -170,12 +168,5 @@ func WithTools(tools ...tool.Tool) ReActOption {
 func WithToolset(ts tool.Toolset) ReActOption {
 	return reActOptionFunc(func(c *reActOptions) {
 		c.toolsets = append(c.toolsets, ts)
-	})
-}
-
-// WithReActOutputSchema sets a structured output schema for the ReAct agent.
-func WithReActOutputSchema(outputSchema *schema.OutputSchema) ReActOption {
-	return reActOptionFunc(func(c *reActOptions) {
-		c.outputSchema = outputSchema
 	})
 }

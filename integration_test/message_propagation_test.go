@@ -21,7 +21,7 @@ func TestMessagePropagation_SingleNode(t *testing.T) {
 	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
 		msgs := graph.GetList(view, MessagesKey)
 		require.Len(t, msgs, 1)
-		assert.Equal(t, "Hello", message.Stringify(msgs[0]))
+		assert.Equal(t, "Hello", msgs[0].String())
 
 		var response message.Message = message.NewAIMessageFromText("World")
 		return graph.Append(MessagesKey, response).End()
@@ -43,7 +43,7 @@ func TestMessagePropagation_SingleNode(t *testing.T) {
 	}
 
 	require.Len(t, outputs, 1)
-	assert.Equal(t, "World", message.Stringify(outputs[0]))
+	assert.Equal(t, "World", outputs[0].String())
 }
 
 // TestMessagePropagation_Chain tests message flow through a chain of nodes
@@ -180,9 +180,9 @@ func TestMessagePropagation_PreserveOrder(t *testing.T) {
 
 	// Verify order is preserved
 	if len(outputs) >= 3 {
-		assert.Equal(t, "First", message.Stringify(outputs[0]))
-		assert.Equal(t, "Second", message.Stringify(outputs[1]))
-		assert.Equal(t, "Third", message.Stringify(outputs[2]))
+		assert.Equal(t, "First", outputs[0].String())
+		assert.Equal(t, "Second", outputs[1].String())
+		assert.Equal(t, "Third", outputs[2].String())
 	}
 }
 

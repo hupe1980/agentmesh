@@ -160,7 +160,7 @@ func (d *DefaultCapabilityDetector) Detect(ctx context.Context, req *Request) (C
 		}
 
 		// Count words for token estimation
-		text := message.Stringify(msg)
+		text := msg.String()
 		totalWords += len(strings.Fields(text))
 		lowerText := strings.ToLower(text)
 

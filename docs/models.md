@@ -465,11 +465,7 @@ for resp, err := range model.Generate(ctx, messages) {
     }
     
     // Print partial content as it arrives
-    for _, part := range resp.Message.Parts() {
-        if text, ok := part.(message.TextPart); ok {
-            fmt.Print(text.Text)
-        }
-    }
+    fmt.Print(resp.Message.String())
     
     // Access streaming reasoning (if supported)
     if resp.Reasoning != "" {
@@ -488,7 +484,7 @@ if err != nil {
 }
 
 // Access message content
-fmt.Println(message.Stringify(resp.Message))
+fmt.Println(resp.Message.String())
 
 // Access reasoning (for o1/o3, Gemini 2.0, Claude)
 if resp.Reasoning != "" {
@@ -518,7 +514,7 @@ if err != nil {
 }
 
 for i, resp := range responses {
-    fmt.Printf("Chunk %d: %s\n", i, message.Stringify(resp.Message))
+    fmt.Printf("Chunk %d: %s\n", i, resp.Message.String())
 }
 ```
 
@@ -534,7 +530,7 @@ for event, err := range seq {
     
     if event.Node == "model" {
         // Each event contains exactly one message
-        fmt.Print(message.Stringify(event.Message))
+        fmt.Print(event.Message.String())
     }
 }
 ```

@@ -63,7 +63,7 @@ type GuardrailsPlugin struct {
 
 func (p *GuardrailsPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
     for _, msg := range req.Messages {
-        content := message.Stringify(msg)
+        content := msg.String()
         
         // Check for unsafe content
         if containsUnsafeContent(content) {
@@ -75,7 +75,7 @@ func (p *GuardrailsPlugin) BeforeModel(ctx context.Context, req *model.Request) 
 }
 
 func (p *GuardrailsPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
-    content := message.Stringify(resp.Message)
+    content := resp.Message.String()
     
     // Redact PII
     redacted, count := redactPII(content)

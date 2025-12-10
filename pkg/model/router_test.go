@@ -110,7 +110,7 @@ func TestRoutedModel_WithFallback(t *testing.T) {
 
 	resp, err := model.Last(rm.Generate(context.Background(), req))
 	require.NoError(t, err)
-	assert.Contains(t, message.Stringify(resp.Message), "fallback")
+	assert.Contains(t, resp.Message.String(), "fallback")
 }
 
 func TestRoutedModel_WithRouteCallback(t *testing.T) {
@@ -419,7 +419,7 @@ func TestConditionalRouter(t *testing.T) {
 	// Route to primary if message is long, otherwise alternative
 	router := model.NewConditionalRouter(
 		func(ctx context.Context, req *model.Request) bool {
-			text := message.Stringify(req.Messages[0])
+			text := req.Messages[0].String()
 			return len(text) > 20
 		},
 		model.NewStaticRouter(primaryModel),

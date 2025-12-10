@@ -71,11 +71,11 @@ outputSchema, _ := schema.NewOutputSchema("agent_response", AgentResponse{},
 
 // Create agent with structured output
 reactAgent, _ := agent.NewReAct(mdl,
-    agent.WithReActOutputSchema(&outputSchema),
+    agent.WithOutputSchema(&outputSchema),
 )
 
 // Get structured response
-response, err := schema.LastStructured[AgentResponse](
+response, err := graph.LastStructured[AgentResponse](
     reactAgent.Run(ctx, []message.Message{...}),
 )
 ```

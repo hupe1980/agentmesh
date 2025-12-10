@@ -168,32 +168,11 @@ func executeHandoff(
 	}
 
 	// Extract text from the last message
-	return extractTextFromMessage(lastMsg), nil
-}
-
-// extractTextFromMessage extracts text content from a message.
-func extractTextFromMessage(msg message.Message) string {
-	if msg == nil {
-		return ""
+	if lastMsg == nil {
+		return "", nil
 	}
 
-	var texts []string
-	for _, part := range msg.Parts() {
-		if textPart, ok := part.(message.TextPart); ok {
-			texts = append(texts, textPart.Text)
-		}
-	}
-
-	if len(texts) == 0 {
-		return ""
-	}
-
-	// Join multiple text parts with space
-	result := texts[0]
-	for i := 1; i < len(texts); i++ {
-		result += " " + texts[i]
-	}
-	return result
+	return lastMsg.String(), nil
 }
 
 // isValidResult checks if the agent returned a meaningful result.

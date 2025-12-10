@@ -221,7 +221,7 @@ type Model interface {
 	//       if err != nil {
 	//           return fmt.Errorf("generation failed: %w", err)
 	//       }
-	//       fmt.Print(message.Stringify(resp.Message)) // Process each chunk
+	//       fmt.Print(resp.Message.String()) // Process each chunk
 	//   }
 	//
 	// Blocking usage (helper required):
@@ -230,7 +230,7 @@ type Model interface {
 	//   if err != nil {
 	//       return fmt.Errorf("generation failed: %w", err)
 	//   }
-	//   fmt.Println(message.Stringify(resp.Message)) // Process final message
+	//   fmt.Println(resp.Message.String()) // Process final message
 	//   fmt.Println("Reasoning:", resp.Reasoning) // Access native reasoning
 	//   fmt.Println("Finish reason:", resp.FinishReason) // Why generation stopped
 	//   fmt.Printf("Tokens used: %d\n", resp.Usage.TotalTokens)
@@ -270,7 +270,7 @@ type Model interface {
 //	if err != nil {
 //	    return err
 //	}
-//	fmt.Println(message.Stringify(resp.Message))
+//	fmt.Println(resp.Message.String())
 //	if resp.Reasoning != "" {
 //	    fmt.Println("Reasoning:", resp.Reasoning)
 //	}
@@ -325,8 +325,8 @@ func LastStructured[T any](seq iter.Seq2[*Response, error]) (*T, error) {
 		return nil, ErrNoResponse
 	}
 
-	// Use Stringify to extract text content from message parts
-	content := message.Stringify(lastResp.Message)
+	// Use String() to extract text content from message parts
+	content := lastResp.Message.String()
 
 	var result T
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
@@ -347,7 +347,7 @@ func LastStructured[T any](seq iter.Seq2[*Response, error]) (*T, error) {
 //	    return err
 //	}
 //	for _, resp := range responses {
-//	    fmt.Print(message.Stringify(resp.Message))
+//	    fmt.Print(resp.Message.String())
 //	}
 func Collect(seq iter.Seq2[*Response, error]) ([]*Response, error) {
 	responses := make([]*Response, 0)

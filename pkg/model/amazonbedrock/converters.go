@@ -25,7 +25,7 @@ func convertMessagesToBedrock(msgs []message.Message) ([]types.Message, string) 
 		switch msg.Type() {
 		case message.TypeSystem:
 			// Extract system message text
-			systemPrompt = message.Stringify(msg)
+			systemPrompt = msg.String()
 
 		case message.TypeHuman:
 			content := convertPartsToBedrock(msg.Parts())

@@ -61,7 +61,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 		}
 
 		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithOutputSchema(outputSchema))
+		nodeFn, err := NewModelNodeFunc(executor, WithModelOutputSchema(outputSchema))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})

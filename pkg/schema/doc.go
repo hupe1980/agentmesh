@@ -48,11 +48,11 @@
 //   - format: Format validation (email, date-time, uri, etc.)
 //   - default: Default value
 //
-// # Helper Functions
+// # Extracting Structured Output
 //
-// LastStructured extracts and parses the last message from an agent or graph:
+// Use graph.LastStructured to extract and parse the last message from an agent or graph:
 //
-//	result, err := schema.LastStructured[AnalysisResult](compiled.Run(ctx, input))
+//	result, err := graph.LastStructured[AnalysisResult](compiled.Run(ctx, input))
 //
 // For model-level responses, use model.LastStructured:
 //
