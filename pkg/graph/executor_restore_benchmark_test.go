@@ -10,13 +10,13 @@ import (
 
 func BenchmarkRestoreCheckpoint10KKeys(b *testing.B) {
 	chkpt := buildLargeCheckpoint(10_000)
-	cfg := &ExecutorConfig[any, any]{}
+	checkpointCfg := CheckpointConfig{}
 	runCfg := &runConfig{checkpoint: chkpt}
 	ctx := context.Background()
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		res, ok := restoreCheckpoint(ctx, cfg, runCfg, func(_ any, _ error) bool { return true })
+		res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
 		if !ok {
 			b.Fatal("restore aborted unexpectedly")
 		}

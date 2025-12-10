@@ -101,14 +101,14 @@ func (r *checkpointRestoreResult) setValue(key string, value any) {
 // Returns restored state data, pending writes, and any error that should abort execution.
 func restoreCheckpoint[O any](
 	ctx context.Context,
-	cfg *ExecutorConfig[any, O],
+	checkpointCfg CheckpointConfig,
 	runCfg *runConfig,
 	yield func(O, error) bool,
 ) (*checkpointRestoreResult, bool) {
 	result := &checkpointRestoreResult{}
 
 	// Step 1: Try to restore from checkpoint if autoRestore is enabled
-	if !loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield) {
+	if !loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield) {
 		return nil, false // Failed with error - abort execution
 	}
 
@@ -125,12 +125,12 @@ func restoreCheckpoint[O any](
 // Returns false if checkpoint loading failed and failOnCheckpointErr is true (abort execution).
 func loadAutoRestoredCheckpoint[O any](
 	ctx context.Context,
-	cfg *ExecutorConfig[any, O],
+	checkpointCfg CheckpointConfig,
 	runCfg *runConfig,
 	result *checkpointRestoreResult,
 	yield func(O, error) bool,
 ) bool {
-	chkpt, err := tryAutoRestore(ctx, cfg.Checkpointer, cfg.RunID, runCfg)
+	chkpt, err := tryAutoRestore(ctx, checkpointCfg, runCfg)
 	if err != nil {
 		if runCfg.failOnCheckpointErr {
 			var zero O
@@ -164,23 +164,22 @@ func applyStateUpdates(runCfg *runConfig, result *checkpointRestoreResult) {
 // tryAutoRestore attempts to restore from checkpoint if autoRestore is enabled.
 func tryAutoRestore(
 	ctx context.Context,
-	checkpointer checkpoint.Checkpointer,
-	cfgRunID string,
+	checkpointCfg CheckpointConfig,
 	runCfg *runConfig,
 ) (*checkpoint.Checkpoint, error) {
-	if !runCfg.autoRestore || checkpointer == nil {
+	if !runCfg.autoRestore || checkpointCfg.Checkpointer == nil {
 		return nil, nil
 	}
 
 	runID := runCfg.runID
 	if runID == "" {
-		runID = cfgRunID
+		runID = checkpointCfg.RunID
 	}
 	if runID == "" {
 		return nil, nil
 	}
 
-	chkpt, err := checkpointer.Load(ctx, runID)
+	chkpt, err := checkpointCfg.Checkpointer.Load(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +486,7 @@ func createPregelAdapter[I, O any](
 		runCfg:             execCtx.runCfg,
 		bspState:           bspState,
 		safeYield:          safeYield,
-		middleware:         execCtx.cfg.Middleware,
+		middleware:         execCtx.cfg.Execution.Middleware,
 		superstep:          0,
 		checkpointInterval: execCtx.runCfg.checkpointInterval,
 	}
@@ -508,7 +507,7 @@ func runPregelRuntime[I, O any](
 		Timestamp: time.Now(),
 		Data: map[string]any{
 			"run_id":       execCtx.runCfg.runID,
-			"entry_points": execCtx.cfg.EntryPoints,
+			"entry_points": execCtx.cfg.Execution.EntryPoints,
 		},
 	})
 
@@ -550,17 +549,13 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 		}
 
 		// Restore state from checkpoint if configured
-		adaptedCfg := &ExecutorConfig[any, O]{
-			Checkpointer: cfg.Checkpointer,
-			RunID:        cfg.RunID,
-		}
-		restoreResult, ok := restoreCheckpoint(ctx, adaptedCfg, runCfg, yield)
+		restoreResult, ok := restoreCheckpoint(ctx, cfg.Checkpoint, runCfg, yield)
 		if !ok {
 			return
 		}
 
-		if cfg.OutputKey != "" && !isNilOrZero(input) {
-			restoreResult.setValue(cfg.OutputKey, input)
+		if cfg.Execution.OutputKey != "" && !isNilOrZero(input) {
+			restoreResult.setValue(cfg.Execution.OutputKey, input)
 		}
 
 		// Initialize BSP state with managed values and pending writes
@@ -611,12 +606,12 @@ type pregelGraphAdapter[I, O any] struct {
 
 // RootVertices returns the entry points.
 func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
-	return a.cfg.EntryPoints
+	return a.cfg.Execution.EntryPoints
 }
 
 // Outgoing returns the target nodes for a given node.
 func (a *pregelGraphAdapter[I, O]) Outgoing(vertex string) []string {
-	if node, ok := a.cfg.Nodes[vertex]; ok {
+	if node, ok := a.cfg.Execution.Nodes[vertex]; ok {
 		return node.Targets
 	}
 	return nil
@@ -682,17 +677,17 @@ func (a *pregelGraphAdapter[I, O]) yieldValue(val any) {
 // yieldUpdates yields output values from updates if the output key is present.
 // Uses the OutputIsList flag determined at graph build time to avoid runtime reflection.
 func (a *pregelGraphAdapter[I, O]) yieldUpdates(updates Updates) {
-	if a.cfg.OutputKey == "" {
+	if a.cfg.Execution.OutputKey == "" {
 		return
 	}
 
-	val, ok := updates[a.cfg.OutputKey]
+	val, ok := updates[a.cfg.Execution.OutputKey]
 	if !ok {
 		return
 	}
 
 	// Use build-time flag instead of runtime isSlice() check
-	if a.cfg.OutputIsList {
+	if a.cfg.Execution.OutputIsList {
 		a.yieldListItems(val)
 	} else {
 		a.yieldValue(val)
@@ -741,7 +736,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	vctx pregel.VertexContext[*ExecutorConfig[I, O], Updates],
 	incoming []pregel.Message[Updates],
 ) error {
-	node, ok := v.adapter.cfg.Nodes[v.name]
+	node, ok := v.adapter.cfg.Execution.Nodes[v.name]
 	if !ok {
 		return nil
 	}
@@ -784,7 +779,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	// become visible after the superstep barrier commits.
 
 	// Check for interrupt before
-	if icfg, hasInterrupt := v.adapter.cfg.InterruptsBefore[v.name]; hasInterrupt {
+	if icfg, hasInterrupt := v.adapter.cfg.Interrupt.Before[v.name]; hasInterrupt {
 		if err := v.adapter.checkInterrupt(ctx, v.name, icfg, true); err != nil {
 			nodeErr = err
 			return err
@@ -834,7 +829,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	v.adapter.yieldUpdates(cmd.Updates)
 
 	// Check for interrupt after
-	if icfg, hasInterrupt := v.adapter.cfg.InterruptsAfter[v.name]; hasInterrupt {
+	if icfg, hasInterrupt := v.adapter.cfg.Interrupt.After[v.name]; hasInterrupt {
 		if err := v.adapter.checkInterrupt(ctx, v.name, icfg, false); err != nil {
 			nodeErr = err
 			return err
@@ -867,10 +862,10 @@ func (v *pregelVertexAdapter[I, O]) Run(
 //   - Skip writes if crash occurred after barrier (Committed=true)
 func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep int64) error {
 	// Check if checkpointing is configured
-	checkpointerEnabled := a.cfg.Checkpointer != nil
+	checkpointerEnabled := a.cfg.Checkpoint.Checkpointer != nil
 	runID := a.runCfg.runID
 	if runID == "" {
-		runID = a.cfg.RunID
+		runID = a.cfg.Checkpoint.RunID
 	}
 	checkpointerEnabled = checkpointerEnabled && runID != ""
 
@@ -893,7 +888,7 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			ManagedValues: a.managedValueDescriptors(),
 		}
 
-		if err := a.cfg.Checkpointer.Save(ctx, phase1Checkpoint); err != nil {
+		if err := a.cfg.Checkpoint.Checkpointer.Save(ctx, phase1Checkpoint); err != nil {
 			if a.runCfg.failOnCheckpointErr {
 				return fmt.Errorf("two-phase commit phase 1 failed at superstep %d: %w", superstep, err)
 			}
@@ -919,7 +914,7 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			ManagedValues: a.managedValueDescriptors(),
 		}
 
-		if err := a.cfg.Checkpointer.Save(ctx, phase2Checkpoint); err != nil {
+		if err := a.cfg.Checkpoint.Checkpointer.Save(ctx, phase2Checkpoint); err != nil {
 			if a.runCfg.failOnCheckpointErr {
 				return fmt.Errorf("two-phase commit phase 2 failed at superstep %d: %w", superstep, err)
 			}

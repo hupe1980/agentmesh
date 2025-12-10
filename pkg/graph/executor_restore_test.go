@@ -18,8 +18,8 @@ func TestRestoreCheckpointSharesStateMap(t *testing.T) {
 		},
 	}
 
-	cfg := &ExecutorConfig[any, any]{}
-	res, ok := restoreCheckpoint(ctx, cfg, runCfg, func(_ any, _ error) bool { return true })
+	checkpointCfg := CheckpointConfig{}
+	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
 	if !ok {
 		t.Fatal("restore aborted unexpectedly")
 	}
@@ -40,8 +40,8 @@ func TestRestoreCheckpointCopyOnWriteOnMutation(t *testing.T) {
 		stateUpdates: updates,
 	}
 
-	cfg := &ExecutorConfig[any, any]{}
-	res, ok := restoreCheckpoint(ctx, cfg, runCfg, func(_ any, _ error) bool { return true })
+	checkpointCfg := CheckpointConfig{}
+	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
 	if !ok {
 		t.Fatal("restore aborted unexpectedly")
 	}

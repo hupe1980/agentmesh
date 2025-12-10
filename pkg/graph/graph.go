@@ -325,16 +325,22 @@ func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 	}
 
 	return &ExecutorConfig[I, O]{
-		Nodes:            nodes,
-		EntryPoints:      g.entryPoints,
-		InterruptsBefore: interruptsBefore,
-		InterruptsAfter:  interruptsAfter,
-		Middleware:       g.middleware,
-		Store:            g.store,
-		Checkpointer:     g.checkpointer,
-		RunID:            g.runID,
-		OutputKey:        g.outputKey,
-		OutputIsList:     g.outputIsList,
+		Execution: ExecutionConfig{
+			Nodes:        nodes,
+			EntryPoints:  g.entryPoints,
+			Middleware:   g.middleware,
+			Store:        g.store,
+			OutputKey:    g.outputKey,
+			OutputIsList: g.outputIsList,
+		},
+		Checkpoint: CheckpointConfig{
+			Checkpointer: g.checkpointer,
+			RunID:        g.runID,
+		},
+		Interrupt: InterruptConfig{
+			Before: interruptsBefore,
+			After:  interruptsAfter,
+		},
 	}
 }
 

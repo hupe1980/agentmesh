@@ -25,7 +25,7 @@ func TestLoadAutoRestoredCheckpoint_Success(t *testing.T) {
 		},
 	}
 
-	cfg := &ExecutorConfig[any, string]{
+	checkpointCfg := CheckpointConfig{
 		RunID:        "test-run",
 		Checkpointer: mockCheckpointer,
 	}
@@ -37,7 +37,7 @@ func TestLoadAutoRestoredCheckpoint_Success(t *testing.T) {
 	result := &checkpointRestoreResult{}
 	yield := func(_ string, _ error) bool { return true }
 
-	ok := loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield)
+	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 
 	if !ok {
 		t.Fatal("expected loadAutoRestoredCheckpoint to succeed")
@@ -63,7 +63,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorWithFailFast(t *testing.T) {
 		},
 	}
 
-	cfg := &ExecutorConfig[any, string]{
+	checkpointCfg := CheckpointConfig{
 		RunID:        "test-run",
 		Checkpointer: mockCheckpointer,
 	}
@@ -83,7 +83,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorWithFailFast(t *testing.T) {
 		return true
 	}
 
-	ok := loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield)
+	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 
 	if ok {
 		t.Fatal("expected loadAutoRestoredCheckpoint to return false on error with failOnCheckpointErr=true")
@@ -108,7 +108,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorContinueWithoutRestore(t *testing.T) {
 		},
 	}
 
-	cfg := &ExecutorConfig[any, string]{
+	checkpointCfg := CheckpointConfig{
 		RunID:        "test-run",
 		Checkpointer: mockCheckpointer,
 	}
@@ -126,7 +126,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorContinueWithoutRestore(t *testing.T) {
 		return true
 	}
 
-	ok := loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield)
+	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 
 	if !ok {
 		t.Fatal("expected loadAutoRestoredCheckpoint to continue (return true) when failOnCheckpointErr=false")
@@ -152,7 +152,7 @@ func TestLoadAutoRestoredCheckpoint_NoAutoRestore(t *testing.T) {
 		},
 	}
 
-	cfg := &ExecutorConfig[any, string]{
+	checkpointCfg := CheckpointConfig{
 		RunID:        "test-run",
 		Checkpointer: mockCheckpointer,
 	}
@@ -164,7 +164,7 @@ func TestLoadAutoRestoredCheckpoint_NoAutoRestore(t *testing.T) {
 	result := &checkpointRestoreResult{}
 	yield := func(_ string, _ error) bool { return true }
 
-	ok := loadAutoRestoredCheckpoint(ctx, cfg, runCfg, result, yield)
+	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 
 	if !ok {
 		t.Fatal("expected success when autoRestore is disabled")
