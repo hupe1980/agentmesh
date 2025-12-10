@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
-	"github.com/hupe1980/agentmesh/internal/safego"
 	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/metrics"
 	"github.com/hupe1980/agentmesh/pkg/quota"
@@ -777,115 +776,35 @@ func (r *Runtime[S, M]) executeVerticesParallel(
 		workers = len(names)
 	}
 
-	tasks := make(chan string)
-	var wg sync.WaitGroup
-	var once sync.Once
-	var runErr error
-
-	recordErr := func(err error) {
-		if err == nil {
-			return
+	// Create worker function that processes a vertex
+	workerFn := func(ctx context.Context, name string) error {
+		// Drain mailbox in parallel (each worker drains its own)
+		incoming, err := r.drainMailbox(ctx, name)
+		if err != nil {
+			return fmt.Errorf("failed to drain mailbox for %s: %w", name, err)
 		}
-		once.Do(func() {
-			runErr = err
-			cancel()
-		})
+
+		// Execute vertex with drained messages
+		return r.executeVertex(ctx, name, incoming, superstep)
 	}
 
-	// Start worker pool with panic-safe goroutines
-	for range workers {
-		// Acquire goroutine quota before spawning
-		if r.quotaManager != nil {
-			if err := r.quotaManager.AcquireGoroutine(ctx); err != nil {
-				recordErr(fmt.Errorf("goroutine quota exceeded: %w", err))
-				return runErr
-			}
-		}
-
-		wg.Add(1)
-		// Use safego.Go for panic recovery - ensures cleanup even if recordErr panics
-		r.startWorker(ctx, &wg, tasks, superstep, recordErr)
+	// Create and start worker pool
+	pool, err := NewWorkerPool(ctx, WorkerPoolConfig{
+		WorkerCount:  workers,
+		QuotaManager: r.quotaManager,
+		Cancel:       cancel,
+	}, workerFn)
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %w", err)
 	}
 
-	// Schedule tasks
-	go func() {
-		defer close(tasks)
-		for _, name := range names {
-			select {
-			case <-ctx.Done():
-				return
-			case tasks <- name:
-			}
-		}
-	}()
+	// Submit all tasks
+	pool.SubmitAll(ctx, names)
 
-	wg.Wait()
-	return runErr
-}
-
-// startWorker spawns a worker goroutine with panic recovery.
-// Uses safego.Go to ensure proper cleanup even if error handlers panic.
-// This prevents goroutine leaks when recordErr or other error paths panic.
-func (r *Runtime[S, M]) startWorker(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	tasks <-chan string,
-	superstep int64,
-	recordErr func(error),
-) {
-	safego.Go(func() error {
-		// Ensure WaitGroup cleanup and quota release happen even on panic
-		defer func() {
-			wg.Done()
-			if r.quotaManager != nil {
-				r.quotaManager.ReleaseGoroutine()
-			}
-		}()
-
-		// Run worker loop
-		r.workerLoop(ctx, tasks, superstep, recordErr)
-		return nil
-	}, func(err error) {
-		// If worker panics, record the error
-		recordErr(err)
-	})
-}
-
-// workerLoop is the main loop for a worker goroutine.
-// Each worker drains the mailbox for its assigned vertex in parallel,
-// then executes the vertex. This eliminates the sequential draining
-// bottleneck for distributed message bus implementations.
-//
-// Note: Cleanup (wg.Done, quota release) is handled by startWorker wrapper.
-func (r *Runtime[S, M]) workerLoop(
-	ctx context.Context,
-	tasks <-chan string,
-	superstep int64,
-	recordErr func(error),
-) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case name, ok := <-tasks:
-			if !ok {
-				return
-			}
-
-			// Drain mailbox in parallel (each worker drains its own)
-			incoming, err := r.drainMailbox(ctx, name)
-			if err != nil {
-				recordErr(fmt.Errorf("failed to drain mailbox for %s: %w", name, err))
-				return
-			}
-
-			// Execute vertex with drained messages
-			if err := r.executeVertex(ctx, name, incoming, superstep); err != nil {
-				recordErr(err)
-				return
-			}
-		}
-	}
+	// Shutdown pool and wait for completion (with generous timeout for vertex execution)
+	// Use 0 timeout in Shutdown to just close the channel, then Wait() for actual completion
+	close(pool.tasks)
+	return pool.Wait()
 }
 
 func (r *Runtime[S, M]) executeVertex(ctx context.Context, name string, incoming []Message[M], superstep int64) (err error) {

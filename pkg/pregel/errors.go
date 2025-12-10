@@ -33,4 +33,7 @@ var (
 
 	// ErrTLSRequired indicates TLS is required for authenticated connections
 	ErrTLSRequired = errors.New("pregel: TLS required when using password authentication")
+
+	// ErrShutdownTimeout indicates the worker pool did not shut down within the timeout
+	ErrShutdownTimeout = errors.New("pregel: worker pool shutdown timeout")
 )
