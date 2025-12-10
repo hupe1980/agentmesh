@@ -102,14 +102,13 @@ func createSupervisor() (*message.Graph, error) {
 		agent.WithWorker("math", "Expert in mathematics: algebra, calculus (derivatives, integrals), and general calculations.", mathAgent),
 		agent.WithWorker("history", "Expert in historical facts, events, timelines, and context.", historyAgent),
 		agent.WithWorker("code", "Expert in programming and software development.", codeAgent),
-		agent.WithSystemPrompt(`You are a supervisor that routes questions to specialist agents.
+		agent.WithInstructions(`You are a supervisor that routes questions to specialist agents.
 Analyze the user's question and delegate to the appropriate specialist.
 Use handoff_to_math for mathematical problems.
 Use handoff_to_history for historical questions.
 Use handoff_to_code for programming tasks.
 Always provide the full task context when delegating.`),
 		agent.WithMaxIterations(10),
-		agent.WithWorkerContext(false), // Fresh context for each task
 		agent.WithWorkerRetries(2),
 	)
 }
@@ -120,7 +119,7 @@ func createMathAgent() (*message.Graph, error) {
 
 	return agent.NewReAct(
 		model,
-		agent.WithSystemPrompt(`You are a math expert.
+		agent.WithInstructions(`You are a math expert.
 - Solve with clear, concise steps and provide a boxed final answer.
 - For calculus, apply the power rule/product rule/chain rule as appropriate.
 - Keep the explanation short (3-6 lines) unless complexity requires more.
@@ -135,7 +134,7 @@ func createHistoryAgent() (*message.Graph, error) {
 
 	return agent.NewReAct(
 		model,
-		agent.WithSystemPrompt(`You are a history expert.
+		agent.WithInstructions(`You are a history expert.
 - Provide concise, factual answers with dates and key names when available.
 - Avoid speculation; indicate uncertainty if sources conflict.
 - Include relevant historical context when helpful.
@@ -150,7 +149,7 @@ func createCodeAgent() (*message.Graph, error) {
 
 	return agent.NewReAct(
 		model,
-		agent.WithSystemPrompt(`You are a programming expert.
+		agent.WithInstructions(`You are a programming expert.
 - Write clean, well-documented code with explanations.
 - Include docstrings and comments where appropriate.
 - Follow language best practices and conventions.

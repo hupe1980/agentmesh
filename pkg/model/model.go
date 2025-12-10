@@ -57,13 +57,16 @@ type Request struct {
 	// Only relevant if Capabilities().Tools is true.
 	Tools []tool.Tool
 
-	// SystemPrompt is an optional system instruction sent with this request.
+	// Instructions is an optional instruction text sent with this request.
 	// When provided, it will be prepended to the messages (or sent via provider-specific
 	// system parameter). This is sent per-request and not stored in conversation history,
 	// making it more token-efficient than adding a system message to the state.
 	//
+	// Instructions supports dynamic resolution from graph state via template placeholders,
+	// but by the time it reaches the model, it's already resolved to a plain string.
+	//
 	// If empty, only the messages from the Messages field are used.
-	SystemPrompt string
+	Instructions string
 
 	// OutputSchema is an optional structured output schema with metadata.
 	// When provided (and Capabilities().StructuredOutput is true), the model will

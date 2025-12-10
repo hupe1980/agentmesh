@@ -127,6 +127,11 @@ type View interface {
 
 	// ManagedValues returns the managed values registry, or nil if not configured.
 	ManagedValues() *managedValueRegistry
+
+	// ToMap returns regular state values as a map for template rendering.
+	// Only includes checkpointed state values, NOT managed values.
+	// Managed values (ephemeral runtime state) are excluded for safety.
+	ToMap() map[string]any
 }
 
 // Get returns the typed value for a key from the view.
@@ -204,6 +209,16 @@ func (v *stateView) GetValue(name string) (any, bool) {
 
 func (v *stateView) ManagedValues() *managedValueRegistry {
 	return v.managed
+}
+
+// ToMap returns a copy of the state values for template rendering.
+// Does not include managed values.
+func (v *stateView) ToMap() map[string]any {
+	result := make(map[string]any, len(v.data))
+	for k, val := range v.data {
+		result[k] = val
+	}
+	return result
 }
 
 // -----------------------------------------------------------------------------

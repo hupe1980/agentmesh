@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"iter"
 	"testing"
 
 	"github.com/hupe1980/agentmesh/internal/testutil"
@@ -9,6 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
+	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +34,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("with system prompt", func(t *testing.T) {
+	t.Run("with instructions", func(t *testing.T) {
 		mdl := &testutil.MockModel{
 			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
 				return message.NewAIMessageFromText("response"), nil
@@ -40,7 +42,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 		}
 
 		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithModelSystemPrompt("You are helpful"))
+		nodeFn, err := NewModelNodeFunc(executor, WithModelInstructions("You are helpful"))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
@@ -158,4 +160,206 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 // createTestView creates a View for testing using BSPState
 func createTestView(data map[string]any) graph.View {
 	return graph.NewBSPState(data).ReadView()
+}
+
+// mockToolWithInstruction implements tool.Tool and tool.InstructionProvider
+type mockToolWithInstruction struct {
+	name        string
+	instruction string
+}
+
+func (m *mockToolWithInstruction) Name() string {
+	return m.name
+}
+
+func (m *mockToolWithInstruction) Description() string {
+	return "A mock tool with instruction"
+}
+
+func (m *mockToolWithInstruction) Definition() *tool.Definition {
+	return &tool.Definition{
+		Type: "function",
+		Function: tool.FunctionDefinition{
+			Name:        m.name,
+			Description: "A mock tool with instruction",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+		},
+	}
+}
+
+func (m *mockToolWithInstruction) Call(_ context.Context, _ string) (any, error) {
+	return "result", nil
+}
+
+func (m *mockToolWithInstruction) Instruction() string {
+	return m.instruction
+}
+
+func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
+	t.Run("merges tool instructions with system prompt", func(t *testing.T) {
+		var capturedInstructions string
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				capturedInstructions = req.Instructions
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		toolWithInstruction := &mockToolWithInstruction{
+			name:        "special_tool",
+			instruction: "Always use this tool for special tasks.",
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor,
+			WithModelInstructions("You are a helpful assistant."),
+			WithModelTools(toolWithInstruction),
+		)
+		require.NoError(t, err)
+
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		_, err = nodeFn(context.Background(), view)
+		require.NoError(t, err)
+
+		// Verify instructions contains both base prompt and tool instruction
+		assert.Contains(t, capturedInstructions, "You are a helpful assistant.")
+		assert.Contains(t, capturedInstructions, "Always use this tool for special tasks.")
+	})
+
+	t.Run("uses only tool instructions when no base instructions", func(t *testing.T) {
+		var capturedInstructions string
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				capturedInstructions = req.Instructions
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		toolWithInstruction := &mockToolWithInstruction{
+			name:        "special_tool",
+			instruction: "Tool instruction only.",
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor,
+			WithModelTools(toolWithInstruction),
+		)
+		require.NoError(t, err)
+
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		_, err = nodeFn(context.Background(), view)
+		require.NoError(t, err)
+
+		// Verify instructions is the tool instruction
+		assert.Equal(t, "Tool instruction only.", capturedInstructions)
+	})
+
+	t.Run("uses only base instructions when no tool instructions", func(t *testing.T) {
+		var capturedInstructions string
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				capturedInstructions = req.Instructions
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		// MockTool doesn't implement InstructionProvider
+		regularTool := &testutil.MockTool{NameValue: "regular_tool"}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor,
+			WithModelInstructions("Base system prompt."),
+			WithModelTools(regularTool),
+		)
+		require.NoError(t, err)
+
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		_, err = nodeFn(context.Background(), view)
+		require.NoError(t, err)
+
+		// Verify instructions is just the base prompt
+		assert.Equal(t, "Base system prompt.", capturedInstructions)
+	})
+
+	t.Run("merges multiple tool instructions", func(t *testing.T) {
+		var capturedInstructions string
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				capturedInstructions = req.Instructions
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		tool1 := &mockToolWithInstruction{
+			name:        "tool1",
+			instruction: "Instruction for tool 1.",
+		}
+		tool2 := &mockToolWithInstruction{
+			name:        "tool2",
+			instruction: "Instruction for tool 2.",
+		}
+
+		executor := model.NewExecutor(mdl)
+		nodeFn, err := NewModelNodeFunc(executor,
+			WithModelInstructions("Base prompt."),
+			WithModelTools(tool1, tool2),
+		)
+		require.NoError(t, err)
+
+		view := createTestView(map[string]any{
+			MessagesKey.Name(): []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		_, err = nodeFn(context.Background(), view)
+		require.NoError(t, err)
+
+		// Verify instructions contains base prompt and both tool instructions
+		assert.Contains(t, capturedInstructions, "Base prompt.")
+		assert.Contains(t, capturedInstructions, "Instruction for tool 1.")
+		assert.Contains(t, capturedInstructions, "Instruction for tool 2.")
+	})
 }

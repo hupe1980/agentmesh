@@ -124,11 +124,11 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			inferenceConfig.TopP = aws.Float32(m.opts.TopP)
 		}
 
-		// Build system prompt (combine request system prompt + extracted system text)
+		// Build system content (combine request instructions + extracted system text)
 		var systemContent []types.SystemContentBlock
 		var systemParts []string
-		if req.SystemPrompt != "" {
-			systemParts = append(systemParts, req.SystemPrompt)
+		if req.Instructions != "" {
+			systemParts = append(systemParts, req.Instructions)
 		}
 		if systemPrompt != "" {
 			systemParts = append(systemParts, systemPrompt)

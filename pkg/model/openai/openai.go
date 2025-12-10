@@ -226,9 +226,9 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 
 		messages := req.Messages
 
-		// Prepend system prompt if provided (per-request)
-		if req.SystemPrompt != "" {
-			systemMsg := message.NewSystemMessageFromText(req.SystemPrompt)
+		// Prepend instructions as system message if provided (per-request)
+		if req.Instructions != "" {
+			systemMsg := message.NewSystemMessageFromText(req.Instructions)
 			messages = append([]message.Message{systemMsg}, messages...)
 		}
 

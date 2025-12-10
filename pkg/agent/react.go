@@ -7,6 +7,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -45,8 +46,14 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 		opt.applyReAct(&config)
 	}
 
+	// Handle structured output fallback if needed
+	outputSchema, tools, err := prepareStructuredOutputFallback(mdl, config.outputSchema, config.tools)
+	if err != nil {
+		return nil, err
+	}
+
 	// Combine static tools with any toolsets into a single toolset
-	combinedToolset := buildCombinedToolset(config.tools, config.toolsets)
+	combinedToolset := buildCombinedToolset(tools, config.toolsets)
 
 	// Create model executor
 	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
@@ -54,12 +61,25 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
 	}
 
-	// Create model node function with dynamic tool discovery
-	modelFn, err := NewModelNodeFunc(modelExecutor,
-		WithModelSystemPrompt(config.systemPrompt),
+	// Build model node options
+	modelNodeOpts := []ModelNodeOption{
 		WithModelToolset(combinedToolset),
-		WithModelOutputSchema(config.outputSchema),
-	)
+	}
+
+	// Add output schema if configured (nil when using tool fallback)
+	if outputSchema != nil {
+		modelNodeOpts = append(modelNodeOpts, WithModelOutputSchema(outputSchema))
+	}
+
+	// Add instructions if configured
+	if config.instructions != nil {
+		modelNodeOpts = append(modelNodeOpts, func(c *ModelNodeConfig) {
+			c.Instructions = config.instructions
+		})
+	}
+
+	// Create model node function with dynamic tool discovery
+	modelFn, err := NewModelNodeFunc(modelExecutor, modelNodeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
 	}
@@ -103,6 +123,47 @@ func buildCombinedToolset(staticTools []tool.Tool, toolsets []tool.Toolset) tool
 	return tool.NewStaticToolset()
 }
 
+// prepareStructuredOutputFallback checks if structured output needs to use tool-based fallback.
+// If the model doesn't support native structured output but supports tools, it injects
+// SetModelResponseTool to get structured output via tool calling.
+//
+// Returns:
+//   - outputSchema: nil if using tool fallback, original schema if model supports it natively
+//   - tools: original tools, possibly with SetModelResponseTool appended
+//   - error: if creating the fallback tool fails
+func prepareStructuredOutputFallback(
+	mdl model.Model,
+	outputSchema *schema.OutputSchema,
+	tools []tool.Tool,
+) (*schema.OutputSchema, []tool.Tool, error) {
+	if outputSchema == nil {
+		return nil, tools, nil
+	}
+
+	caps := mdl.Capabilities()
+	if caps.StructuredOutput || !caps.Tools {
+		// Model supports native structured output, or doesn't support tools (can't use fallback)
+		return outputSchema, tools, nil
+	}
+
+	// Check if SetModelResponseTool is already provided by the caller
+	for _, t := range tools {
+		if t.Name() == "set_model_response" {
+			// Already has the tool, just clear the schema
+			return nil, tools, nil
+		}
+	}
+
+	// Create SetModelResponseTool with the output schema
+	setResponseTool, err := tool.NewSetModelResponseTool(outputSchema)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create set_model_response tool: %w", err)
+	}
+
+	// Add to tools and clear outputSchema (will be handled via tool)
+	return nil, append(tools, setResponseTool), nil
+}
+
 // buildReActGraph constructs the ReAct agent graph with nodes and middleware.
 func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*message.Graph, error) {
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
@@ -129,7 +190,7 @@ type reActOptions struct {
 func defaultReActOptions() reActOptions {
 	return reActOptions{
 		commonOptions: commonOptions{
-			systemPrompt:    "",
+			instructions:    nil,
 			maxIterations:   10,
 			outputSchema:    nil,
 			graphMiddleware: nil,

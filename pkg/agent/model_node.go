@@ -15,9 +15,9 @@ import (
 // ModelNodeConfig holds configuration for creating a model node function.
 type ModelNodeConfig struct {
 	Executor     model.Executor
-	SystemPrompt string
-	Tools        []tool.Tool  // Static tools for this node
-	Toolset      tool.Toolset // Dynamic toolset for runtime tool discovery
+	Instructions *Instructions // Dynamic instructions (supports templates and providers)
+	Tools        []tool.Tool   // Static tools for this node
+	Toolset      tool.Toolset  // Dynamic toolset for runtime tool discovery
 	OutputSchema *schema.OutputSchema
 	ToolTarget   string // Target node when tool calls are present (default: "tool")
 }
@@ -25,11 +25,21 @@ type ModelNodeConfig struct {
 // ModelNodeOption configures a ModelNodeConfig.
 type ModelNodeOption func(*ModelNodeConfig)
 
-// WithModelSystemPrompt sets a system prompt for this model node.
-// The system prompt is sent per-request and not stored in conversation state.
-func WithModelSystemPrompt(prompt string) ModelNodeOption {
+// WithModelInstructions sets instructions from a template string for this model node.
+// Uses Go text/template syntax - placeholders like {{.userName}} are substituted from state.
+func WithModelInstructions(templateStr string) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
-		c.SystemPrompt = prompt
+		inst := NewInstructions(templateStr)
+		c.Instructions = &inst
+	}
+}
+
+// WithModelInstructionsFunc sets instructions from a dynamic function for this model node.
+// Use when instructions need complex logic or access to graph state beyond template substitution.
+func WithModelInstructionsFunc(f func(context.Context, graph.View) (string, error)) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		inst := NewInstructionsFromFunc(f)
+		c.Instructions = &inst
 	}
 }
 
@@ -72,7 +82,9 @@ func WithToolTarget(target string) ModelNodeOption {
 // The function:
 //   - Extracts messages from state
 //   - Discovers tools from the configured Toolset (or uses static Tools)
-//   - Builds a Request with messages + configuration (system prompt, tools, schema)
+//   - Resolves instructions (supports templates with state placeholders)
+//   - Collects and appends tool instructions from InstructionProvider tools
+//   - Builds a Request with messages + configuration
 //   - Delegates execution to the provided Executor
 //   - Routes based on tool calls in the response
 //
@@ -84,12 +96,13 @@ func WithToolTarget(target string) ModelNodeOption {
 //
 //	executor := model.NewExecutor(myModel, model.WithExecutorName("gpt-4"))
 //	modelFn, err := agent.NewModelNodeFunc(executor,
-//	    agent.WithModelSystemPrompt("You are a helpful assistant"),
+//	    agent.WithModelInstructions("You are a helpful assistant"),
 //	    agent.WithModelTools(searchTool, calculatorTool))
 //
-// Example with dynamic toolset:
+// Example with dynamic instructions:
 //
 //	modelFn, err := agent.NewModelNodeFunc(executor,
+//	    agent.WithModelInstructions("You are helping {{.userName}}"),
 //	    agent.WithModelToolset(mcpToolset))
 func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.NodeFunc, error) {
 	if err := validate.NotNil(executor, "executor"); err != nil {
@@ -118,13 +131,33 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 			tools = cfg.Tools
 		}
 
+		// Resolve base instructions if configured
+		var instructions string
+		if cfg.Instructions != nil {
+			var err error
+			instructions, err = cfg.Instructions.Resolve(ctx, view)
+			if err != nil {
+				return graph.Fail(fmt.Errorf("failed to resolve instructions: %w", err))
+			}
+		}
+
+		// Collect and append tool instructions from InstructionProvider tools
+		// (e.g., SetModelResponseTool adds instructions for structured output)
+		if toolInstructions := tool.CollectInstructions(tools); toolInstructions != "" {
+			if instructions != "" {
+				instructions = instructions + "\n\n" + toolInstructions
+			} else {
+				instructions = toolInstructions
+			}
+		}
+
 		// Get messages from state using type-safe key
 		messages := GetMessages(view)
 
 		// Build request with messages + node configuration
 		req := &model.Request{
 			Messages:     messages,
-			SystemPrompt: cfg.SystemPrompt,
+			Instructions: instructions,
 			Tools:        tools,
 			OutputSchema: cfg.OutputSchema,
 		}

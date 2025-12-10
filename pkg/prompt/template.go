@@ -153,3 +153,10 @@ func (t *Template) RenderOrDefault(data map[string]any, defaults map[string]any)
 func (t *Template) String() string {
 	return t.raw
 }
+
+// HasPlaceholders returns true if the template contains placeholders.
+// Used for fast-path optimization to skip state serialization when
+// no template substitution is needed.
+func (t *Template) HasPlaceholders() bool {
+	return t.tmpl != nil
+}

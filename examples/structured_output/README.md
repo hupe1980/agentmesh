@@ -193,5 +193,5 @@ The example uses OpenAI's GPT-4 with structured output support:
 
 - Structured output requires model support (check `model.Capabilities().StructuredOutput`)
 - OpenAI GPT-4 and later models support structured outputs natively
-- The `SetModelResponseTool` provides a "tool trick" fallback for models without native support
+- **Automatic Tool Fallback**: For models that don't support native structured output but do support tool calling, AgentMesh automatically injects a `SetModelResponseTool` that instructs the model to return structured data via tool calling. This happens transparently when using `agent.WithOutputSchema()`.
 - Use `WithStrict(true)` for OpenAI's strict mode (enforces exact schema adherence)

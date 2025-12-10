@@ -249,18 +249,18 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 
 		contents, systemInstruction := convertMessagesToGemini(req.Messages)
 
-		// Use request system prompt if provided, otherwise use extracted system instruction
-		finalSystemPrompt := systemInstruction
-		if req.SystemPrompt != "" {
-			// Combine: request system prompt + extracted system instruction
+		// Use request instructions if provided, otherwise use extracted system instruction
+		finalInstructions := systemInstruction
+		if req.Instructions != "" {
+			// Combine: request instructions + extracted system instruction
 			if systemInstruction != "" {
-				finalSystemPrompt = req.SystemPrompt + "\n\n" + systemInstruction
+				finalInstructions = req.Instructions + "\n\n" + systemInstruction
 			} else {
-				finalSystemPrompt = req.SystemPrompt
+				finalInstructions = req.Instructions
 			}
 		}
 
-		cfg := m.buildConfig(finalSystemPrompt, req)
+		cfg := m.buildConfig(finalInstructions, req)
 
 		// Choose streaming or non-streaming based on request
 		if req.Stream {

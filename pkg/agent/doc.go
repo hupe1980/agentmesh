@@ -144,20 +144,19 @@ Create a supervisor agent that routes tasks to specialized workers:
 
 	// Create specialist agents
 	mathAgent, _ := agent.NewReAct(model,
-		agent.WithSystemPrompt("You are a math expert"),
+		agent.WithInstructions("You are a math expert"),
 		agent.WithMaxIterations(5))
 
 	codeAgent, _ := agent.NewReAct(model,
-		agent.WithSystemPrompt("You are a programming expert"),
+		agent.WithInstructions("You are a programming expert"),
 		agent.WithMaxIterations(5))
 
 	// Create supervisor with functional options
 	supervisor, err := agent.NewSupervisor(model,
 		agent.WithWorker("math", "Math expert", mathAgent),
 		agent.WithWorker("code", "Programming expert", codeAgent),
-		agent.WithSupervisorSystemPrompt("Route to specialists"),
+		agent.WithSupervisorInstructions("Route to specialists"),
 		agent.WithSupervisorMaxIterations(10),
-		agent.WithWorkerContext(false), // Fresh context for each task
 		agent.WithWorkerRetries(2))
 
 The supervisor automatically creates handoff tools for each worker and routes

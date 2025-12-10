@@ -93,8 +93,7 @@ func TestNewSupervisor(t *testing.T) {
 		mockModel,
 		WithWorker("math", "Math expert", worker1),
 		WithWorker("code", "Code expert", worker2),
-		WithSystemPrompt("Custom supervisor prompt"),
-		WithWorkerContext(false),
+		WithInstructions("Custom supervisor prompt"),
 		WithWorkerRetries(3),
 		WithMaxIterations(15),
 	)

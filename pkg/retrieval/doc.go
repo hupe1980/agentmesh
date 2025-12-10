@@ -75,7 +75,7 @@
 //	// 2. Create RAG agent with retriever
 //	ragAgent := agent.NewRAG(model, retriever,
 //	    agent.WithTopK(5),
-//	    agent.WithSystemPrompt("You are a helpful assistant..."),
+//	    agent.WithInstructions("You are a helpful assistant..."),
 //	)
 //
 //	// 3. Agent automatically retrieves context for queries

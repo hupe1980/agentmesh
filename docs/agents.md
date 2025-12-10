@@ -83,7 +83,7 @@ for msg, err := range reactAgent.Run(ctx, messages) {
 agent.NewReAct(model,
     agent.WithTools(searchTool, calcTool),    // Add tools
     agent.WithSupervisorMaxIterations(10),              // Max reasoning-action cycles
-    agent.WithSystemPrompt("You are helpful"), // System prompt
+    agent.WithInstructions("You are helpful"), // Instructions
     agent.WithOutputSchema(schema),      // Structured output
     agent.WithGraphMiddleware(middleware...),  // Graph middleware
     agent.WithModelMiddleware(middleware...),  // Model middleware
@@ -92,6 +92,47 @@ agent.NewReAct(model,
 ```
 
 > **See also:** [Middleware System](/middleware/) for caching, retries, rate limiting, circuit breakers, and more.
+```
+
+### Dynamic instructions
+
+Instructions support Go `text/template` syntax with automatic state substitution. Placeholders are replaced with values from the graph state at runtime:
+
+```go
+// Define state keys
+var UserNameKey = graph.NewKey[string]("userName", "")
+var TaskKey = graph.NewKey[string]("task", "")
+
+// Use placeholders in instructions - they resolve from graph state
+agent.NewReAct(model,
+    agent.WithInstructions("You are helping {{.userName}}. Current task: {{.task}}"),
+)
+
+// At runtime, set state values before invoking the agent
+state.Set(UserNameKey, "Alice")
+state.Set(TaskKey, "analyze sales data")
+// Instructions resolve to: "You are helping Alice. Current task: analyze sales data"
+```
+
+**Available template features:**
+- `{{.keyName}}` - Substitute value from graph state
+- `{{default "fallback" .value}}` - Use fallback if value is nil/empty
+- `{{.Name | upper}}` - Convert to uppercase
+- `{{.Name | lower}}` - Convert to lowercase
+- `{{if .condition}}...{{end}}` - Conditionals
+
+**Dynamic provider alternative:**
+
+For complex logic, use a provider function:
+
+```go
+agent.WithInstructionsFromFunc(func(ctx context.Context, view graph.View) (string, error) {
+    userName := view.Get(UserNameKey)
+    if userName == "" {
+        return "You are a helpful assistant.", nil
+    }
+    return fmt.Sprintf("You are helping %s.", userName), nil
+})
 ```
 
 ### How it works
@@ -145,19 +186,19 @@ model := openai.NewModel()
 // Create specialized worker agents
 mathAgent, _ := agent.NewReAct(
     model,
-    agent.WithSystemPrompt("You are a math expert. Solve problems with clear steps."),
+    agent.WithInstructions("You are a math expert. Solve problems with clear steps."),
     agent.WithMaxIterations(5),
 )
 
 codeAgent, _ := agent.NewReAct(
     model,
-    agent.WithSystemPrompt("You are a programming expert. Write clean, documented code."),
+    agent.WithInstructions("You are a programming expert. Write clean, documented code."),
     agent.WithMaxIterations(5),
 )
 
 historyAgent, _ := agent.NewReAct(
     model,
-    agent.WithSystemPrompt("You are a history expert. Provide factual answers with dates."),
+    agent.WithInstructions("You are a history expert. Provide factual answers with dates."),
     agent.WithMaxIterations(5),
 )
 
@@ -167,9 +208,8 @@ supervisor, err := agent.NewSupervisor(
     agent.WithWorker("math", "Expert in mathematics and calculations", mathAgent),
     agent.WithWorker("code", "Expert in programming and software development", codeAgent),
     agent.WithWorker("history", "Expert in historical facts and events", historyAgent),
-    agent.WithSupervisorSystemPrompt("Route queries to the appropriate specialist"),
+    agent.WithSupervisorInstructions("Route queries to the appropriate specialist"),
     agent.WithSupervisorMaxIterations(10),
-    agent.WithWorkerContext(false),  // Fresh context for each task
     agent.WithWorkerRetries(2),
 )
 
@@ -189,9 +229,8 @@ for msg, err := range supervisor.Run(ctx, []message.Message{
 ```go
 agent.NewSupervisor(model,
     agent.WithWorker(name, description, agent),  // Add worker agents
-    agent.WithSystemPrompt(prompt),    // Custom routing instructions
+    agent.WithInstructions(prompt),    // Custom routing instructions
     agent.WithMaxIterations(n),        // Max routing iterations
-    agent.WithWorkerContext(bool),               // Pass conversation history to workers
     agent.WithWorkerRetries(n),                  // Retry failed worker invocations
     agent.WithWorkerValidation(bool),            // Validate worker results
 )
@@ -253,7 +292,7 @@ model := openai.NewModel()
 // Create a base agent (ReAct, RAG, Supervisor, or custom)
 reactAgent, _ := agent.NewReAct(
     model,
-    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithInstructions("You are a helpful assistant."),
     agent.WithTools(searchTool, calcTool),
 )
 
@@ -411,7 +450,7 @@ mem := memory.NewVectorMemory(embedder)
 // Create a base agent (ReAct, RAG, Supervisor, or custom)
 reactAgent, _ := agent.NewReAct(
     model,
-    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithInstructions("You are a helpful assistant."),
     agent.WithTools(tools...),
 )
 
@@ -503,6 +542,88 @@ flowchart LR
 - Long-running agent sessions
 
 See the [Memory Guide](/memory/) for more on memory types and configuration.
+
+---
+
+## Structured output {#structured-output}
+
+Agents can return structured JSON responses matching a defined schema. This is useful when you need predictable, type-safe output from your agent.
+
+### Native structured output
+
+If your model supports native structured output (like OpenAI's `response_format`), the agent uses it directly:
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/schema"
+)
+
+// Define your output structure
+type AnalysisResult struct {
+    Sentiment  string   `json:"sentiment" jsonschema:"required,enum=positive,neutral,negative"`
+    Confidence float64  `json:"confidence" jsonschema:"required,minimum=0,maximum=1"`
+    Keywords   []string `json:"keywords" jsonschema:"required"`
+}
+
+// Create output schema
+outputSchema, err := schema.NewOutputSchema("analysis_result", AnalysisResult{})
+if err != nil {
+    log.Fatal(err)
+}
+
+// Create agent with structured output
+reactAgent, err := agent.NewReAct(model,
+    agent.WithOutputSchema(&outputSchema),
+)
+```
+
+### Tool-based fallback
+
+For models that **don't support native structured output** but **do support tool calling**, AgentMesh automatically uses a tool-based fallback. It injects a `set_model_response` tool that instructs the model to return structured data via tool calling:
+
+```go
+// This works even with models that don't have native structured output support
+// as long as they support tool calling
+reactAgent, err := agent.NewReAct(model,
+    agent.WithOutputSchema(&outputSchema),
+    agent.WithTools(searchTool, calcTool), // Your other tools work alongside
+)
+```
+
+**How it works:**
+1. Agent checks model capabilities at creation time
+2. If `StructuredOutput: false` but `Tools: true`, injects `SetModelResponseTool`
+3. The tool instructs the model to call it with the final response matching the schema
+4. The tool validates and returns the structured response
+
+**Behavior matrix:**
+
+| Model Capabilities | Behavior |
+|--------------------|----------|
+| `StructuredOutput: true` | Uses native structured output |
+| `StructuredOutput: false`, `Tools: true` | Uses `set_model_response` tool fallback |
+| `StructuredOutput: false`, `Tools: false` | Schema passed to model (may not work) |
+
+### Custom set_model_response tool
+
+If you need custom behavior, you can provide your own `set_model_response` tool - the agent won't add a duplicate:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/tool"
+
+// Create custom set_model_response tool
+customTool, err := tool.NewSetModelResponseTool(&outputSchema)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Agent uses your tool instead of creating one
+reactAgent, err := agent.NewReAct(model,
+    agent.WithOutputSchema(&outputSchema),
+    agent.WithTools(customTool, searchTool),
+)
+```
 
 ---
 

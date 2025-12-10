@@ -104,14 +104,14 @@ func DefaultOptions() Options {
 	}
 }
 
-// defaultKeyFunc generates a cache key from the request messages and system prompt.
+// defaultKeyFunc generates a cache key from the request messages and instructions.
 func defaultKeyFunc(req *model.Request) string {
 	var key string
 	for _, msg := range req.Messages {
 		key += msg.String() + "\n"
 	}
-	if req.SystemPrompt != "" {
-		key += "SYSTEM: " + req.SystemPrompt + "\n"
+	if req.Instructions != "" {
+		key += "INSTRUCTIONS: " + req.Instructions + "\n"
 	}
 	return key
 }

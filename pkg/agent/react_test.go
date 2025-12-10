@@ -10,6 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -431,4 +432,136 @@ func (m *basicModel) Capabilities() model.Capabilities {
 		MaxOutputTokens:     2048,
 		SupportedModalities: []string{"text"},
 	}
+}
+
+// Tests for prepareStructuredOutputFallback
+
+func TestPrepareStructuredOutputFallback_NilSchema(t *testing.T) {
+	mdl := &testutil.MockModel{}
+	tools := []tool.Tool{}
+
+	resultSchema, resultTools, err := prepareStructuredOutputFallback(mdl, nil, tools)
+
+	require.NoError(t, err)
+	assert.Nil(t, resultSchema, "schema should remain nil")
+	assert.Empty(t, resultTools, "tools should remain empty")
+}
+
+func TestPrepareStructuredOutputFallback_ModelSupportsStructuredOutput(t *testing.T) {
+	mdl := &testutil.MockModel{
+		CapabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				StructuredOutput: true,
+				Tools:            true,
+			}
+		},
+	}
+
+	type TestOutput struct {
+		Result string `json:"result" jsonschema:"required"`
+	}
+	outputSchema, err := schema.NewOutputSchema("test_output", TestOutput{})
+	require.NoError(t, err)
+
+	tools := []tool.Tool{}
+
+	resultSchema, resultTools, err := prepareStructuredOutputFallback(mdl, &outputSchema, tools)
+
+	require.NoError(t, err)
+	assert.Equal(t, &outputSchema, resultSchema, "schema should be returned unchanged")
+	assert.Empty(t, resultTools, "no SetModelResponseTool should be added")
+}
+
+func TestPrepareStructuredOutputFallback_FallbackToToolCalling(t *testing.T) {
+	mdl := &testutil.MockModel{
+		CapabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				StructuredOutput: false,
+				Tools:            true, // Model supports tools but not structured output
+			}
+		},
+	}
+
+	type TestOutput struct {
+		Result string `json:"result" jsonschema:"required"`
+	}
+	outputSchema, err := schema.NewOutputSchema("test_output", TestOutput{})
+	require.NoError(t, err)
+
+	existingTool := &testutil.MockTool{
+		NameValue:        "existing_tool",
+		DescriptionValue: "An existing tool",
+	}
+	tools := []tool.Tool{existingTool}
+
+	resultSchema, resultTools, err := prepareStructuredOutputFallback(mdl, &outputSchema, tools)
+
+	require.NoError(t, err)
+	assert.Nil(t, resultSchema, "schema should be nil when using tool fallback")
+	assert.Len(t, resultTools, 2, "should have original tool + SetModelResponseTool")
+
+	// Verify SetModelResponseTool was added
+	var hasSetModelResponse bool
+	for _, t := range resultTools {
+		if t.Name() == "set_model_response" {
+			hasSetModelResponse = true
+			break
+		}
+	}
+	assert.True(t, hasSetModelResponse, "SetModelResponseTool should be added")
+}
+
+func TestPrepareStructuredOutputFallback_ModelDoesNotSupportTools(t *testing.T) {
+	mdl := &testutil.MockModel{
+		CapabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				StructuredOutput: false,
+				Tools:            false, // Model doesn't support tools, can't use fallback
+			}
+		},
+	}
+
+	type TestOutput struct {
+		Result string `json:"result" jsonschema:"required"`
+	}
+	outputSchema, err := schema.NewOutputSchema("test_output", TestOutput{})
+	require.NoError(t, err)
+
+	tools := []tool.Tool{}
+
+	resultSchema, resultTools, err := prepareStructuredOutputFallback(mdl, &outputSchema, tools)
+
+	require.NoError(t, err)
+	assert.Equal(t, &outputSchema, resultSchema, "schema should be returned unchanged when no fallback possible")
+	assert.Empty(t, resultTools, "no tools should be added")
+}
+
+func TestPrepareStructuredOutputFallback_SetModelResponseToolAlreadyExists(t *testing.T) {
+	mdl := &testutil.MockModel{
+		CapabilitiesFunc: func() model.Capabilities {
+			return model.Capabilities{
+				StructuredOutput: false,
+				Tools:            true,
+			}
+		},
+	}
+
+	type TestOutput struct {
+		Result string `json:"result" jsonschema:"required"`
+	}
+	outputSchema, err := schema.NewOutputSchema("test_output", TestOutput{})
+	require.NoError(t, err)
+
+	// Create SetModelResponseTool manually
+	existingSetModelResponseTool, err := tool.NewSetModelResponseTool(&outputSchema)
+	require.NoError(t, err)
+
+	tools := []tool.Tool{existingSetModelResponseTool}
+
+	resultSchema, resultTools, err := prepareStructuredOutputFallback(mdl, &outputSchema, tools)
+
+	require.NoError(t, err)
+	assert.Nil(t, resultSchema, "schema should be nil when using tool fallback")
+	assert.Len(t, resultTools, 1, "should not add duplicate SetModelResponseTool")
+	assert.Equal(t, "set_model_response", resultTools[0].Name())
 }

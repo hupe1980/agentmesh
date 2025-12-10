@@ -246,6 +246,19 @@ func (v *namespacedView) ManagedValues() *managedValueRegistry {
 	return v.inner.ManagedValues()
 }
 
+// ToMap returns filtered state values for template rendering.
+// Only includes keys that pass namespace filtering.
+func (v *namespacedView) ToMap() map[string]any {
+	innerMap := v.inner.ToMap()
+	result := make(map[string]any)
+	for k, val := range innerMap {
+		if v.isAllowed(k) {
+			result[k] = val
+		}
+	}
+	return result
+}
+
 func (v *namespacedView) isAllowed(key string) bool {
 	prefix := v.namespace.name + "."
 	if len(key) > len(prefix) && key[:len(prefix)] == prefix {

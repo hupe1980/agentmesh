@@ -9,9 +9,49 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/schema"
 )
 
-const setModelResponseInstruction = "IMPORTANT: You have access to other tools, but you must provide your final " +
-	"response using the set_model_response tool with the required structured format. After using any other tools needed " +
-	"to complete the task, always call set_model_response with your final answer in the specified schema format."
+const defaultSetModelResponseName = "set_model_response"
+
+const defaultSetModelResponseDescription = "Set your final response using the required output schema. " +
+	"Use this tool to provide your final structured answer instead of outputting text directly."
+
+// defaultSetModelResponseInstruction returns the default instruction with the tool name.
+func defaultSetModelResponseInstruction(name string) string {
+	return fmt.Sprintf("IMPORTANT: You have access to other tools, but you must provide your final "+
+		"response using the %s tool with the required structured format. After using any other tools needed "+
+		"to complete the task, always call %s with your final answer in the specified schema format.", name, name)
+}
+
+// SetModelResponseToolOptions configures the SetModelResponseTool.
+type SetModelResponseToolOptions struct {
+	// Name overrides the default tool name ("set_model_response").
+	Name string
+	// Description overrides the default tool description.
+	Description string
+	// Instruction overrides the default instruction text added to model requests.
+	Instruction string
+}
+
+// WithSetModelResponseName sets a custom name for the SetModelResponseTool.
+func WithSetModelResponseName(name string) func(*SetModelResponseToolOptions) {
+	return func(o *SetModelResponseToolOptions) {
+		o.Name = name
+	}
+}
+
+// WithSetModelResponseDescription sets a custom description for the SetModelResponseTool.
+func WithSetModelResponseDescription(description string) func(*SetModelResponseToolOptions) {
+	return func(o *SetModelResponseToolOptions) {
+		o.Description = description
+	}
+}
+
+// WithInstruction sets a custom instruction text for the SetModelResponseTool.
+// This overrides the default instruction that tells the model how to use the tool.
+func WithInstruction(instruction string) func(*SetModelResponseToolOptions) {
+	return func(o *SetModelResponseToolOptions) {
+		o.Instruction = instruction
+	}
+}
 
 // SetModelResponseTool is an internal tool used when structured output is configured
 // alongside other tools. It lets the model provide its final structured response
@@ -22,6 +62,7 @@ const setModelResponseInstruction = "IMPORTANT: You have access to other tools, 
 type SetModelResponseTool struct {
 	name         string
 	description  string
+	instruction  string
 	outputSchema map[string]any
 }
 
@@ -44,11 +85,32 @@ type SetModelResponseTool struct {
 //	outputSchema, _ := schema.NewOutputSchema("result", MyStruct{})
 //	tool, err := tool.NewSetModelResponseTool(&outputSchema)
 //
+// Example with custom instruction:
+//
+//	tool, err := tool.NewSetModelResponseTool(&outputSchema,
+//	    tool.WithInstruction("Always use set_model_response for your final answer."),
+//	)
+//
 // The tool automatically:
 //   - Validates the response against the schema
 //   - Adds instructions to the model request
 //   - Returns the validated response for further processing
-func NewSetModelResponseTool(outputSchema any) (*SetModelResponseTool, error) {
+func NewSetModelResponseTool(outputSchema any, optFns ...func(*SetModelResponseToolOptions)) (*SetModelResponseTool, error) {
+	opts := SetModelResponseToolOptions{
+		Name:        defaultSetModelResponseName,
+		Description: defaultSetModelResponseDescription,
+	}
+
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
+	// Use default instruction with the configured name if not overridden
+	instruction := opts.Instruction
+	if instruction == "" {
+		instruction = defaultSetModelResponseInstruction(opts.Name)
+	}
+
 	var schemaMap map[string]any
 
 	switch s := outputSchema.(type) {
@@ -73,9 +135,9 @@ func NewSetModelResponseTool(outputSchema any) (*SetModelResponseTool, error) {
 	}
 
 	return &SetModelResponseTool{
-		name: "set_model_response",
-		description: "Set your final response using the required output schema. " +
-			"Use this tool to provide your final structured answer instead of outputting text directly.",
+		name:         opts.Name,
+		description:  opts.Description,
+		instruction:  instruction,
 		outputSchema: schemaMap,
 	}, nil
 }
@@ -125,6 +187,7 @@ func (t *SetModelResponseTool) Call(ctx context.Context, args string) (any, erro
 
 // Instruction returns the instruction text to be added to model requests.
 // This explains to the model how and when to use the set_model_response tool.
+// Returns the custom instruction if configured, otherwise returns the default.
 func (t *SetModelResponseTool) Instruction() string {
-	return setModelResponseInstruction
+	return t.instruction
 }

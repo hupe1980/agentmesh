@@ -61,13 +61,13 @@ type Model interface {
 }
 ```
 
-The `Request` struct bundles messages, tools, system prompt, and other options:
+The `Request` struct bundles messages, tools, instructions, and other options:
 
 ```go
 type Request struct {
     Messages     []message.Message  // Conversation history
     Tools        []tool.Tool        // Available tools for function calling
-    SystemPrompt string             // Per-request system instruction
+    Instructions string             // Per-request instructions
     OutputSchema *schema.OutputSchema // Structured output schema
     Stream       bool               // Enable streaming mode
     Metadata     map[string]any     // Provider-specific options

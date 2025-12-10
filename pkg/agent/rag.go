@@ -71,24 +71,33 @@ func createGenerateNode(executor model.Executor, config ragOptions) graph.NodeFu
 
 		docs := graph.Get(view, DocumentsKey)
 
-		// Build system prompt: combine user's system prompt with document context
-		var systemPrompt string
+		// Build instructions: combine user's instructions with document context
+		var instructions string
+
+		// First resolve base instructions if configured
+		if config.instructions != nil {
+			var err error
+			instructions, err = config.instructions.Resolve(ctx, view)
+			if err != nil {
+				return graph.Fail(fmt.Errorf("failed to resolve instructions: %w", err))
+			}
+		}
+
+		// Add document context if documents exist
 		if len(docs) > 0 {
 			contextPrompt := config.promptTemplate.MustRender(map[string]any{
 				"Documents": docs,
 			})
-			if config.systemPrompt != "" {
-				systemPrompt = config.systemPrompt + "\n\n" + contextPrompt
+			if instructions != "" {
+				instructions = instructions + "\n\n" + contextPrompt
 			} else {
-				systemPrompt = contextPrompt
+				instructions = contextPrompt
 			}
-		} else {
-			systemPrompt = config.systemPrompt
 		}
 
 		req := &model.Request{
 			Messages:     msgs,
-			SystemPrompt: systemPrompt,
+			Instructions: instructions,
 			OutputSchema: config.outputSchema,
 		}
 
@@ -164,7 +173,7 @@ func defaultRAGOptions() ragOptions {
 
 	return ragOptions{
 		commonOptions: commonOptions{
-			systemPrompt:    "",
+			instructions:    nil,
 			maxIterations:   1, // RAG is typically single-pass
 			outputSchema:    nil,
 			graphMiddleware: nil,

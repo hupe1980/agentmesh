@@ -42,7 +42,6 @@ func TestHandoffToAgent(t *testing.T) {
 		"test_agent",
 		"A test agent for validation",
 		workerGraph,
-		WithContext(true),
 		WithRetries(1),
 	)
 	require.NoError(t, err)
@@ -53,7 +52,7 @@ func TestHandoffToAgent(t *testing.T) {
 	assert.Contains(t, handoffTool.Description(), "test_agent")
 
 	// Test tool invocation
-	argsJSON := `{"task": "Test task", "context": "Test context"}`
+	argsJSON := `{"task": "Test task"}`
 	result, err := handoffTool.Call(ctx, argsJSON)
 	require.NoError(t, err)
 	assert.Equal(t, "Worker response", result)
@@ -67,7 +66,7 @@ func TestHandoffToAgent_MissingTask(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call without task should fail (JSON schema validation)
-	argsJSON := `{"context": "only context"}`
+	argsJSON := `{}`
 	_, err = handoffTool.Call(ctx, argsJSON)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid arguments")
@@ -79,7 +78,7 @@ func TestHandoffToAgent_NilGraph(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot be nil")
 }
 
-func TestHandoffToAgent_WithoutContext(t *testing.T) {
+func TestHandoffToAgent_SimpleCall(t *testing.T) {
 	ctx := context.Background()
 	workerGraph := createMockWorkerGraph(t, "Response")
 
@@ -87,11 +86,10 @@ func TestHandoffToAgent_WithoutContext(t *testing.T) {
 		"test_agent",
 		"Test",
 		workerGraph,
-		WithContext(false), // Disable context passing
 	)
 	require.NoError(t, err)
 
-	argsJSON := `{"task": "Test task", "context": "Should be ignored"}`
+	argsJSON := `{"task": "Test task"}`
 	result, err := handoffTool.Call(ctx, argsJSON)
 	require.NoError(t, err)
 	assert.Equal(t, "Response", result)

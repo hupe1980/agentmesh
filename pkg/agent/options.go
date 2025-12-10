@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"context"
+
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
@@ -12,7 +14,7 @@ import (
 // The key design pattern here is using embedded structs to share common configuration.
 // Both reActOptions and supervisorOptions embed commonOptions, which allows us to:
 //
-//  1. Define option functions once (WithSystemPrompt, WithMaxIterations, etc.)
+//  1. Define option functions once (WithInstructions, WithMaxIterations, etc.)
 //  2. Use the same functions with both ReAct and Supervisor agents
 //  3. Avoid code duplication and naming conflicts
 //
@@ -22,12 +24,12 @@ import (
 // Example usage:
 //
 //	// Same option works for both agent types
-//	reactAgent, _ := agent.NewReAct(model, agent.WithSystemPrompt("..."), agent.WithMaxIterations(10))
-//	supervisor, _ := agent.NewSupervisor(model, agent.WithSystemPrompt("..."), agent.WithMaxIterations(10))
+//	reactAgent, _ := agent.NewReAct(model, agent.WithInstructions("..."), agent.WithMaxIterations(10))
+//	supervisor, _ := agent.NewSupervisor(model, agent.WithInstructions("..."), agent.WithMaxIterations(10))
 
 // commonOptions holds configuration shared across all agent types.
 type commonOptions struct {
-	systemPrompt    string
+	instructions    *Instructions // Dynamic instructions (supports templates and providers)
 	maxIterations   int
 	outputSchema    *schema.OutputSchema
 	graphMiddleware []graph.Middleware
@@ -38,9 +40,9 @@ type commonOptions struct {
 // SharedOption wraps a function that modifies commonOptions and implements
 // both ReActOption and SupervisorOption interfaces.
 //
-// This allows common option functions (like WithSystemPrompt) to work with any agent
+// This allows common option functions (like WithInstructions) to work with any agent
 // type that embeds commonOptions, eliminating the need for type-prefixed functions
-// like "WithSupervisorSystemPrompt" or "WithReActSystemPrompt".
+// like "WithSupervisorInstructions" or "WithReActInstructions".
 type SharedOption func(*commonOptions)
 
 // Implement ReActOption interface
@@ -61,10 +63,35 @@ func (s SharedOption) applyRAG(opts *ragOptions) {
 // Common option functions that work for both ReAct and Supervisor agents.
 // They return sharedOption which can be converted to either option type.
 
-// WithSystemPrompt sets the system prompt for any agent type.
-func WithSystemPrompt(prompt string) SharedOption {
+// WithInstructions sets instructions from a template string.
+// Uses Go text/template syntax - placeholders like {{.userName}} are substituted from state.
+//
+// Example:
+//
+//	WithInstructions("You are helping {{.userName}}. Task: {{default \"general\" .task}}")
+func WithInstructions(templateStr string) SharedOption {
 	return func(c *commonOptions) {
-		c.systemPrompt = prompt
+		inst := NewInstructions(templateStr)
+		c.instructions = &inst
+	}
+}
+
+// WithInstructionsFunc sets instructions from a dynamic function.
+// Use when instructions need complex logic or external data beyond template substitution.
+//
+// Example:
+//
+//	WithInstructionsFunc(func(ctx context.Context, view graph.View) (string, error) {
+//	    user := graph.Get(view, UserKey)
+//	    if user.IsPremium {
+//	        return "You are a premium assistant...", nil
+//	    }
+//	    return "You are a helpful assistant...", nil
+//	})
+func WithInstructionsFunc(f func(context.Context, graph.View) (string, error)) SharedOption {
+	return func(c *commonOptions) {
+		inst := NewInstructionsFromFunc(f)
+		c.instructions = &inst
 	}
 }
 

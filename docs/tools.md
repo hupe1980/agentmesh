@@ -18,6 +18,8 @@ sidebar:
     url: "#function-tools"
   - title: Tool interface
     url: "#tool-interface"
+  - title: Instruction providers
+    url: "#instruction-providers"
   - title: Parameter types
     url: "#parameter-types"
   - title: Error handling
@@ -231,8 +233,8 @@ For more control, implement the `tool.Tool` interface:
 type Tool interface {
     Name() string
     Description() string
-    JSONSchema() (map[string]any, error)
-    Run(ctx context.Context, input string) (any, error)
+    Definition() *Definition
+    Call(ctx context.Context, args string) (any, error)
 }
 ```
 
@@ -251,20 +253,27 @@ func (t *DatabaseTool) Description() string {
     return "Execute SQL queries against the database"
 }
 
-func (t *DatabaseTool) JSONSchema() (map[string]any, error) {
-    return map[string]any{
-        "type": "object",
-        "properties": map[string]any{
-            "query": map[string]string{
-                "type":        "string",
-                "description": "SQL query to execute",
+func (t *DatabaseTool) Definition() *tool.Definition {
+    return &tool.Definition{
+        Type: "function",
+        Function: tool.FunctionDefinition{
+            Name:        t.Name(),
+            Description: t.Description(),
+            Parameters: map[string]any{
+                "type": "object",
+                "properties": map[string]any{
+                    "query": map[string]any{
+                        "type":        "string",
+                        "description": "SQL query to execute",
+                    },
+                },
+                "required": []string{"query"},
             },
         },
-        "required": []string{"query"},
-    }, nil
+    }
 }
 
-func (t *DatabaseTool) Run(ctx context.Context, input string) (any, error) {
+func (t *DatabaseTool) Call(ctx context.Context, input string) (any, error) {
     var params struct {
         Query string `json:"query"`
     }
@@ -281,6 +290,105 @@ func (t *DatabaseTool) Run(ctx context.Context, input string) (any, error) {
     // Process results...
     return results, nil
 }
+```
+
+---
+
+## Instruction providers {#instruction-providers}
+
+Tools can contribute additional instructions to the model's system prompt by implementing the optional `InstructionProvider` interface:
+
+```go
+// InstructionProvider is an optional interface for tools that need to
+// extend the model's system prompt with usage instructions.
+type InstructionProvider interface {
+    Instruction() string
+}
+```
+
+This is useful when a tool requires the model to follow specific usage patterns. For example, the built-in `SetModelResponseTool` (used when models don't support native structured output) implements this interface to instruct the model to always call the tool for final responses.
+
+### Example: Custom tool with instructions
+
+```go
+type SearchTool struct {
+    apiKey string
+}
+
+func (t *SearchTool) Name() string { return "web_search" }
+
+func (t *SearchTool) Description() string {
+    return "Search the web for information"
+}
+
+func (t *SearchTool) Definition() *tool.Definition {
+    return &tool.Definition{
+        Type: "function",
+        Function: tool.FunctionDefinition{
+            Name:        t.Name(),
+            Description: t.Description(),
+            Parameters: map[string]any{
+                "type": "object",
+                "properties": map[string]any{
+                    "query": map[string]any{
+                        "type":        "string",
+                        "description": "Search query",
+                    },
+                },
+                "required": []string{"query"},
+            },
+        },
+    }
+}
+
+func (t *SearchTool) Call(ctx context.Context, args string) (any, error) {
+    // Implementation...
+    return results, nil
+}
+
+// Instruction provides usage guidelines for the model
+func (t *SearchTool) Instruction() string {
+    return `When using web_search:
+- Use specific, targeted queries rather than broad searches
+- Limit searches to 3 per response to avoid rate limits
+- Prefer authoritative sources in your query formulation`
+}
+```
+
+### How instructions are merged
+
+When an agent is configured with tools, the model node automatically:
+
+1. Collects instructions from all tools implementing `InstructionProvider`
+2. Joins them with double newlines for readability
+3. Appends the combined instructions to the base system prompt
+
+```go
+// Example: Instructions are automatically merged
+agent, _ := agent.New(model,
+    agent.WithInstructions("You are a helpful assistant."),
+    agent.WithTools(searchTool, dataTool),
+)
+// If searchTool.Instruction() returns "Search guidelines..."
+// and dataTool.Instruction() returns "Data handling rules..."
+// The model receives:
+// "You are a helpful assistant.
+//
+// Search guidelines...
+//
+// Data handling rules..."
+```
+
+### Collecting instructions manually
+
+If you need to collect tool instructions outside of the agent framework:
+
+```go
+tools := []tool.Tool{searchTool, dataTool, regularTool}
+instructions := tool.CollectInstructions(tools)
+// Returns combined instructions from tools implementing InstructionProvider
+// Tools without Instruction() method are silently skipped
+```
 ```
 
 ---

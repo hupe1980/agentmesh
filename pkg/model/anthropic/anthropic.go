@@ -208,10 +208,10 @@ func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*mod
 			MaxTokens: m.opts.maxTokens,
 		}
 
-		// Build system instruction (combine request system prompt + extracted system text)
+		// Build system instruction (combine request instructions + extracted system text)
 		var systemParts []string
-		if req.SystemPrompt != "" {
-			systemParts = append(systemParts, req.SystemPrompt)
+		if req.Instructions != "" {
+			systemParts = append(systemParts, req.Instructions)
 		}
 		if systemText != "" {
 			systemParts = append(systemParts, systemText)

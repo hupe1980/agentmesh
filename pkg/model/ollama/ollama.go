@@ -177,7 +177,7 @@ func (m *Model) Capabilities() model.Capabilities {
 func (m *Model) Generate(ctx context.Context, req model.Request) iter.Seq2[model.Response, error] {
 	return func(yield func(model.Response, error) bool) {
 		// Convert messages to Ollama format
-		messages, err := m.convertMessages(req.Messages, req.SystemPrompt)
+		messages, err := m.convertMessages(req.Messages, req.Instructions)
 		if err != nil {
 			yield(model.Response{}, fmt.Errorf("ollama: failed to convert messages: %w", err))
 			return
@@ -331,14 +331,14 @@ func (m *Model) generateNonStreaming(ctx context.Context, req *api.ChatRequest, 
 }
 
 // convertMessages converts agentmesh messages to Ollama format.
-func (m *Model) convertMessages(messages []message.Message, systemPrompt string) ([]api.Message, error) {
+func (m *Model) convertMessages(messages []message.Message, instructions string) ([]api.Message, error) {
 	result := make([]api.Message, 0, len(messages)+1)
 
-	// Add system prompt if provided
-	if systemPrompt != "" {
+	// Add instructions as system message if provided
+	if instructions != "" {
 		result = append(result, api.Message{
 			Role:    "system",
-			Content: systemPrompt,
+			Content: instructions,
 		})
 	}
 

@@ -20,7 +20,6 @@ type WorkerAgent struct {
 type supervisorOptions struct {
 	commonOptions
 	workers        []WorkerAgent
-	includeContext bool
 	retryAttempts  int
 	validateResult bool
 }
@@ -47,13 +46,6 @@ func WithWorker(name, description string, agent *message.Graph) SupervisorOption
 			Description: description,
 			Agent:       agent,
 		})
-	})
-}
-
-// WithWorkerContext controls whether conversation context is passed to workers.
-func WithWorkerContext(include bool) SupervisorOption {
-	return supervisorOptionFunc(func(c *supervisorOptions) {
-		c.includeContext = include
 	})
 }
 
@@ -101,8 +93,7 @@ func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
 //	    model,
 //	    agent.WithWorker("math", "Math expert", mathAgent),
 //	    agent.WithWorker("code", "Programming expert", codeAgent),
-//	    agent.WithSystemPrompt("Route to specialists"),
-//	    agent.WithWorkerContext(false),
+//	    agent.WithInstructions("Route to specialists"),
 //	    agent.WithWorkerRetries(2),
 //	)
 func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, error) {
@@ -112,15 +103,14 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 
 	config := supervisorOptions{
 		commonOptions: commonOptions{
-			systemPrompt:    "",
+			instructions:    nil,
 			maxIterations:   10,
 			graphMiddleware: nil,
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},
-		workers:        make([]WorkerAgent, 0),
-		includeContext: false,
-		retryAttempts:  2,
+		workers:       make([]WorkerAgent, 0),
+		retryAttempts: 2,
 	}
 
 	for _, opt := range opts {
@@ -144,7 +134,6 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 			worker.Name,
 			worker.Description,
 			worker.Agent,
-			tool.WithContext(config.includeContext),
 			tool.WithRetries(config.retryAttempts),
 			tool.WithValidation(config.validateResult),
 		)
@@ -161,13 +150,15 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 		WithMaxIterations(config.maxIterations),
 	}
 
-	// Add system prompt if provided
-	if config.systemPrompt != "" {
-		reactOpts = append(reactOpts, WithSystemPrompt(config.systemPrompt))
+	// Add instructions if provided, otherwise generate default
+	if config.instructions != nil {
+		reactOpts = append(reactOpts, reActOptionFunc(func(o *reActOptions) {
+			o.instructions = config.instructions
+		}))
 	} else {
-		// Generate default system prompt
+		// Generate default supervisor instructions
 		defaultPrompt := generateDefaultSupervisorPrompt(config.workers)
-		reactOpts = append(reactOpts, WithSystemPrompt(defaultPrompt))
+		reactOpts = append(reactOpts, WithInstructions(defaultPrompt))
 	}
 
 	return NewReAct(mdl, reactOpts...)

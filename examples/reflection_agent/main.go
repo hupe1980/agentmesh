@@ -37,7 +37,7 @@ func main() {
 
 	// Create a ReAct agent (could be any agent - RAG, Supervisor, etc.)
 	reactAgent, err := agent.NewReAct(mdl,
-		agent.WithSystemPrompt("You are a helpful assistant that provides clear, accurate answers."),
+		agent.WithInstructions("You are a helpful assistant that provides clear, accurate answers."),
 	)
 	if err != nil {
 		log.Fatalf("failed to create base agent: %v", err)

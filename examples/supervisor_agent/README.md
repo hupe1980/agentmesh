@@ -20,9 +20,8 @@ supervisor, err := agent.NewSupervisor(
 	agent.WithWorker("math", "Math expert", mathAgent),
 	agent.WithWorker("history", "History expert", historyAgent),
 	agent.WithWorker("code", "Programming expert", codeAgent),
-	agent.WithSupervisorSystemPrompt("Route to specialists"),
+	agent.WithSupervisorInstructions("Route to specialists"),
 	agent.WithSupervisorMaxIterations(10),
-	agent.WithWorkerContext(false),
 	agent.WithWorkerRetries(2),
 )
 ```
@@ -84,7 +83,7 @@ historyTool, err := tool.HandoffToAgent("history", "History expert", historyAgen
 
 supervisor, err := agent.NewReAct(model,
 	agent.WithTools(mathTool, historyTool),
-	agent.WithSupervisorSystemPrompt("Route to specialists"),
+	agent.WithSupervisorInstructions("Route to specialists"),
 	agent.WithSupervisorMaxIterations(10))
 ```
 

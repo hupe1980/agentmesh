@@ -186,7 +186,7 @@ func reactAgentExample(ctx context.Context, mdl model.Model) error {
 	// Create ReActAgent with OutputSchema
 	reactAgent, err := agent.NewReAct(mdl,
 		agent.WithOutputSchema(&outputSchema),
-		agent.WithSystemPrompt("You are a helpful assistant. Think step-by-step and provide structured responses with your reasoning."),
+		agent.WithInstructions("You are a helpful assistant. Think step-by-step and provide structured responses with your reasoning."),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create agent: %w", err)

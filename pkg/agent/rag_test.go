@@ -197,9 +197,9 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 
 		mdl := &testutil.MockModel{
 			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-				// Verify context was added via SystemPrompt
-				hasContext := contains(req.SystemPrompt, "France") || contains(req.SystemPrompt, "Paris")
-				assert.True(t, hasContext, "Expected context to be included in SystemPrompt")
+				// Verify context was added via Instructions
+				hasContext := contains(req.Instructions, "France") || contains(req.Instructions, "Paris")
+				assert.True(t, hasContext, "Expected context to be included in Instructions")
 				return func(yield func(*model.Response, error) bool) {
 					yield(&model.Response{
 						Message: message.NewAIMessageFromText("The capital of France is Paris"),
@@ -307,9 +307,9 @@ func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
 
 	mdl := &testutil.MockModel{
 		GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-			// Verify custom template was used in SystemPrompt
-			hasCustomFormat := contains(req.SystemPrompt, "CUSTOM CONTEXT:")
-			assert.True(t, hasCustomFormat, "Expected custom template format in SystemPrompt")
+			// Verify custom template was used in Instructions
+			hasCustomFormat := contains(req.Instructions, "CUSTOM CONTEXT:")
+			assert.True(t, hasCustomFormat, "Expected custom template format in Instructions")
 			return func(yield func(*model.Response, error) bool) {
 				yield(&model.Response{
 					Message: message.NewAIMessageFromText("Response using custom context"),

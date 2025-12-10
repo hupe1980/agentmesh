@@ -215,7 +215,7 @@ func TestModel_Generate(t *testing.T) {
 			Messages: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
-			SystemPrompt: "You are a helpful assistant.",
+			Instructions: "You are a helpful assistant.",
 		}
 
 		for _, err := range m.Generate(context.Background(), req) {

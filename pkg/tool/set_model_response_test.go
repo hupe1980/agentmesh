@@ -184,6 +184,20 @@ func TestSetModelResponseTool_Instruction(t *testing.T) {
 	assert.Contains(t, instruction, "IMPORTANT")
 }
 
+func TestSetModelResponseTool_CustomInstruction(t *testing.T) {
+	type TestOutput struct {
+		Result string `json:"result" jsonschema:"required"`
+	}
+
+	customInstruction := "Always use set_model_response for your final answer in JSON format."
+
+	tool, err := NewSetModelResponseTool(TestOutput{}, WithInstruction(customInstruction))
+	require.NoError(t, err)
+
+	instruction := tool.Instruction()
+	assert.Equal(t, customInstruction, instruction)
+}
+
 func TestSetModelResponseTool_Parameters(t *testing.T) {
 	type ComplexOutput struct {
 		Name     string         `json:"name" jsonschema:"required,description=Person name"`
