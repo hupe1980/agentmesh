@@ -215,123 +215,192 @@ func (m *Model) getSupportedModalities(hasVision bool) []string {
 // Returns an iterator that yields ModelResponse as they are received.
 // For streaming, multiple intermediate responses are yielded followed by the final complete response.
 // For non-streaming (blocking), only the final response is yielded.
-//
-//nolint:gocyclo // Generation requires handling many message and response types
 func (m *Model) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
 	return func(yield func(*model.Response, error) bool) {
-		if req == nil || len(req.Messages) == 0 {
-			yield(nil, ErrNoMessages)
-			return
-		}
-
-		messages := req.Messages
-
-		// Prepend instructions as system message if provided (per-request)
-		if req.Instructions != "" {
-			systemMsg := message.NewSystemMessageFromText(req.Instructions)
-			messages = append([]message.Message{systemMsg}, messages...)
-		}
-
-		converted, err := convertMessagesToOpenAI(messages)
+		// Validate and prepare request
+		params, err := m.prepareRequest(req)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 
-		params := openai.ChatCompletionNewParams{
-			Model:    m.model,
-			Messages: converted,
-		}
-
-		if err := m.applyOptions(&params, req); err != nil {
-			yield(nil, err)
-			return
-		}
-
-		// Choose streaming or non-streaming based on request
+		// Handle streaming mode
 		if req.Stream {
-			streamCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
-			if apiStream.Err() == nil {
-				// Streaming successful
-				m.streamGenerate(apiStream, yield, cancel)
+			if m.handleStreamingMode(ctx, params, yield) {
 				return
 			}
-			// If streaming fails, fall through to non-streaming
+			// Fall through to blocking mode if streaming fails
 		}
 
-		// Non-streaming mode
-		completion, err := m.client.ChatCompletions(ctx, params)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
-		if completion == nil || len(completion.Choices) == 0 {
-			yield(nil, ErrNoChoices)
-			return
-		}
-
-		choice := completion.Choices[0]
-		text := strings.TrimSpace(choice.Message.Content)
-		if text == "" {
-			text = strings.TrimSpace(choice.Message.Refusal)
-		}
-
-		var parts message.Parts
-		if text != "" {
-			parts = message.Parts{message.NewTextPart(text)}
-		}
-
-		aiMessage := message.NewAIMessage(parts)
-
-		if len(choice.Message.ToolCalls) > 0 {
-			toolCalls := make([]message.ToolCall, 0, len(choice.Message.ToolCalls))
-			for idx := range choice.Message.ToolCalls {
-				if choice.Message.ToolCalls[idx].Type != "function" {
-					continue
-				}
-				fn := choice.Message.ToolCalls[idx].AsFunction()
-				toolCalls = append(toolCalls, message.ToolCall{
-					ID:        fn.ID,
-					Name:      fn.Function.Name,
-					Type:      string(fn.Type),
-					Arguments: fn.Function.Arguments,
-				})
-			}
-			if len(toolCalls) > 0 {
-				aiMessage.ToolCalls = toolCalls
-			}
-		}
-
-		if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
-			yield(nil, ErrEmptyMessage)
-			return
-		}
-
-		// Build ModelResponse with usage information
-		response := &model.Response{
-			Message:      aiMessage,
-			FinishReason: choice.FinishReason,
-			Usage: &model.UsageInfo{
-				PromptTokens:     int(completion.Usage.PromptTokens),
-				CompletionTokens: int(completion.Usage.CompletionTokens),
-				TotalTokens:      int(completion.Usage.TotalTokens),
-			},
-			Partial: false, // Blocking mode: single complete response
-		}
-
-		// Populate logprobs if available
-		if len(choice.Logprobs.Content) > 0 {
-			response.Logprobs = convertLogprobs(choice.Logprobs)
-		}
-
-		// Note: OpenAI o1/o3 models would expose reasoning_content here
-		// This will be added when implementing o1-specific support
-
-		yield(response, nil)
+		// Handle blocking (non-streaming) mode
+		m.handleBlockingMode(ctx, params, yield)
 	}
+}
+
+// prepareRequest validates the request and builds OpenAI API parameters.
+func (m *Model) prepareRequest(req *model.Request) (openai.ChatCompletionNewParams, error) {
+	var params openai.ChatCompletionNewParams
+
+	if req == nil || len(req.Messages) == 0 {
+		return params, ErrNoMessages
+	}
+
+	// Prepare messages with optional instructions
+	messages := m.prepareMessages(req)
+
+	// Convert to OpenAI format
+	converted, err := convertMessagesToOpenAI(messages)
+	if err != nil {
+		return params, err
+	}
+
+	params = openai.ChatCompletionNewParams{
+		Model:    m.model,
+		Messages: converted,
+	}
+
+	// Apply model options and request-specific settings
+	if err := m.applyOptions(&params, req); err != nil {
+		return params, err
+	}
+
+	return params, nil
+}
+
+// prepareMessages prepends instructions as system message if provided.
+func (m *Model) prepareMessages(req *model.Request) []message.Message {
+	messages := req.Messages
+	if req.Instructions != "" {
+		systemMsg := message.NewSystemMessageFromText(req.Instructions)
+		messages = append([]message.Message{systemMsg}, messages...)
+	}
+	return messages
+}
+
+// handleStreamingMode handles streaming responses from OpenAI API.
+// Returns true if streaming was handled (success or error), false if should fall through to blocking mode.
+func (m *Model) handleStreamingMode(
+	ctx context.Context,
+	params openai.ChatCompletionNewParams,
+	yield func(*model.Response, error) bool,
+) bool {
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	apiStream := m.client.ChatCompletionsStreaming(streamCtx, params)
+	if apiStream.Err() != nil {
+		return false // Fall through to blocking mode
+	}
+
+	m.streamGenerate(apiStream, yield, cancel)
+	return true
+}
+
+// handleBlockingMode handles non-streaming responses from OpenAI API.
+func (m *Model) handleBlockingMode(
+	ctx context.Context,
+	params openai.ChatCompletionNewParams,
+	yield func(*model.Response, error) bool,
+) {
+	completion, err := m.client.ChatCompletions(ctx, params)
+	if err != nil {
+		yield(nil, err)
+		return
+	}
+
+	if completion == nil || len(completion.Choices) == 0 {
+		yield(nil, ErrNoChoices)
+		return
+	}
+
+	response, err := m.buildBlockingResponse(completion)
+	if err != nil {
+		yield(nil, err)
+		return
+	}
+
+	yield(response, nil)
+}
+
+// buildBlockingResponse constructs a model.Response from a completed API response.
+func (m *Model) buildBlockingResponse(completion *openai.ChatCompletion) (*model.Response, error) {
+	choice := completion.Choices[0]
+
+	aiMessage := buildAIMessageFromChoice(&choice.Message)
+
+	if len(aiMessage.Parts()) == 0 && len(aiMessage.ToolCalls) == 0 {
+		return nil, ErrEmptyMessage
+	}
+
+	response := &model.Response{
+		Message:      aiMessage,
+		FinishReason: choice.FinishReason,
+		Usage: &model.UsageInfo{
+			PromptTokens:     int(completion.Usage.PromptTokens),
+			CompletionTokens: int(completion.Usage.CompletionTokens),
+			TotalTokens:      int(completion.Usage.TotalTokens),
+		},
+		Partial: false,
+	}
+
+	// Populate logprobs if available
+	if len(choice.Logprobs.Content) > 0 {
+		response.Logprobs = convertLogprobs(choice.Logprobs)
+	}
+
+	return response, nil
+}
+
+// buildAIMessageFromChoice constructs an AIMessage from an OpenAI chat completion message.
+func buildAIMessageFromChoice(msg *openai.ChatCompletionMessage) *message.AIMessage {
+	text := extractMessageText(msg)
+
+	var parts message.Parts
+	if text != "" {
+		parts = message.Parts{message.NewTextPart(text)}
+	}
+
+	aiMessage := message.NewAIMessage(parts)
+
+	// Extract tool calls if present
+	toolCalls := extractToolCalls(msg.ToolCalls)
+	if len(toolCalls) > 0 {
+		aiMessage.ToolCalls = toolCalls
+	}
+
+	return aiMessage
+}
+
+// extractMessageText extracts text content from an OpenAI message, falling back to refusal.
+func extractMessageText(msg *openai.ChatCompletionMessage) string {
+	text := strings.TrimSpace(msg.Content)
+	if text == "" {
+		text = strings.TrimSpace(msg.Refusal)
+	}
+	return text
+}
+
+// extractToolCalls extracts tool calls from OpenAI message tool calls.
+func extractToolCalls(openaiToolCalls []openai.ChatCompletionMessageToolCallUnion) []message.ToolCall {
+	if len(openaiToolCalls) == 0 {
+		return nil
+	}
+
+	toolCalls := make([]message.ToolCall, 0, len(openaiToolCalls))
+	for idx := range openaiToolCalls {
+		tc := &openaiToolCalls[idx]
+		if tc.Type != "function" {
+			continue
+		}
+		fn := tc.AsFunction()
+		toolCalls = append(toolCalls, message.ToolCall{
+			ID:        fn.ID,
+			Name:      fn.Function.Name,
+			Type:      string(fn.Type),
+			Arguments: fn.Function.Arguments,
+		})
+	}
+	return toolCalls
 }
 
 // streamGenerate handles streaming responses from OpenAI API
