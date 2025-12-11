@@ -13,7 +13,7 @@ import (
 // ====================
 
 func TestGraphBuilder(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -36,7 +36,7 @@ func TestGraphBuilder(t *testing.T) {
 }
 
 func TestGraphLinearFlow(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	executed := make([]string, 0)
 
 	g := graph.New[any, any](counterKey)
@@ -77,8 +77,8 @@ func TestGraphLinearFlow(t *testing.T) {
 }
 
 func TestGraphConditionalRouting(t *testing.T) {
-	routeKey := graph.NewKey("route", "")
-	resultKey := graph.NewKey("result", "")
+	routeKey := graph.NewKey[string]("route")
+	resultKey := graph.NewKey[string]("result")
 	var finalResult string
 
 	g := graph.New[string, any](routeKey, resultKey)
@@ -119,7 +119,7 @@ func TestGraphConditionalRouting(t *testing.T) {
 }
 
 func TestGraphLoop(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	maxIterations := 5
 	iterations := 0
 
@@ -184,7 +184,7 @@ func TestGraphMessageList(t *testing.T) {
 
 	g := graph.New[any, any](messagesKey)
 	g.Node("add_messages", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(messagesKey, "hello", "world").To("check")
+		return graph.Set(messagesKey, []string{"hello", "world"}).To("check")
 	}, "check")
 	g.Node("check", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
@@ -226,7 +226,7 @@ func TestGraphNoEntryPoint(t *testing.T) {
 }
 
 func TestGraphDuplicateNodeOverwrites(t *testing.T) {
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var capturedResult string
 
 	g := graph.New[any, any](resultKey)
@@ -259,7 +259,7 @@ func TestGraphDuplicateNodeOverwrites(t *testing.T) {
 }
 
 func TestWithInitialValue(t *testing.T) {
-	sessionKey := graph.NewKey("session_id", "default-session")
+	sessionKey := graph.NewKey[string]("session_id")
 	var capturedSession string
 
 	g := graph.New[any, any](sessionKey)
@@ -274,15 +274,16 @@ func TestWithInitialValue(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	t.Run("uses default when no initial value", func(t *testing.T) {
+	t.Run("uses zero value when no initial value", func(t *testing.T) {
 		capturedSession = ""
 		for _, err := range compiled.Run(context.Background(), nil) {
 			if err != nil {
 				t.Fatalf("Run failed: %v", err)
 			}
 		}
-		if capturedSession != "default-session" {
-			t.Errorf("expected default-session, got %v", capturedSession)
+		// With reducer-based design, zero value is returned for unset keys
+		if capturedSession != "" {
+			t.Errorf("expected empty string (zero value), got %v", capturedSession)
 		}
 	})
 

@@ -24,7 +24,7 @@ func BenchmarkRestoreCheckpoint10KKeys(b *testing.B) {
 			b.Fatalf("state size mismatch: got %d want %d", len(res.State), len(chkpt.State))
 		}
 
-		state := NewBSPState(res.State)
+		state := NewBSPState(res.State, NewKeyRegistry())
 		state.ApplyPendingWrites(res.PendingWrites)
 
 		// Touch a hot key to ensure pending writes landed.

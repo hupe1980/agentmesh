@@ -17,15 +17,15 @@ import (
 // Convention: namespace.keyname (e.g., "agent1.counter")
 var (
 	// Agent 1's private namespace
-	agent1Data   = graph.NewKey("agent1.data", "")
-	agent1Status = graph.NewKey("agent1.status", "")
+	agent1Data   = graph.NewKey[string]("agent1.data")
+	agent1Status = graph.NewKey[string]("agent1.status")
 
 	// Agent 2's private namespace
-	agent2Data   = graph.NewKey("agent2.data", "")
-	agent2Status = graph.NewKey("agent2.status", "")
+	agent2Data   = graph.NewKey[string]("agent2.data")
+	agent2Status = graph.NewKey[string]("agent2.status")
 
 	// Global key (no namespace prefix - accessible to all)
-	sharedResult = graph.NewKey("result", "")
+	sharedResult = graph.NewKey[string]("result")
 )
 
 func main() {

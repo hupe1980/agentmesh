@@ -561,7 +561,7 @@ g := message.NewGraphBuilder()
 g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     response := processMessages(messages)
-    return graph.Append(message.MessagesKey, response).To(graph.END), nil
+    return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 
 g.Start("agent")

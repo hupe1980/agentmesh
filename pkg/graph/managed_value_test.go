@@ -289,7 +289,7 @@ func TestGetManaged(t *testing.T) {
 		apiKey := NewManagedValue("api_key", "sk_test_123")
 
 		// Create BSP state with managed values
-		bspState := NewBSPState(nil)
+		bspState := NewBSPState(nil, NewKeyRegistry())
 		registry := NewManagedValueRegistry()
 		registry.register(apiKey)
 		bspState.setManagedValues(registry)
@@ -304,7 +304,7 @@ func TestGetManaged(t *testing.T) {
 		apiKey := NewManagedValue("api_key", "")
 
 		// BSP state without managed values
-		bspState := NewBSPState(nil)
+		bspState := NewBSPState(nil, NewKeyRegistry())
 		view := bspState.ReadView()
 
 		val := GetManaged(ctx, view, apiKey)
@@ -315,7 +315,7 @@ func TestGetManaged(t *testing.T) {
 		registry := NewManagedValueRegistry()
 		// Don't register anything
 
-		bspState := NewBSPState(nil)
+		bspState := NewBSPState(nil, NewKeyRegistry())
 		bspState.setManagedValues(registry)
 		view := bspState.ReadView()
 
@@ -333,7 +333,7 @@ func TestGetManaged(t *testing.T) {
 		registry := NewManagedValueRegistry()
 		registry.register(counter)
 
-		bspState := NewBSPState(nil)
+		bspState := NewBSPState(nil, NewKeyRegistry())
 		bspState.setManagedValues(registry)
 		view := bspState.ReadView()
 

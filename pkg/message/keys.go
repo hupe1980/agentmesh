@@ -14,7 +14,7 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 //	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 //	    messages := message.GetMessages(scope)
 //	    // Process messages...
-//	    return graph.Append(message.MessagesKey, newMessage).End()
+//	    return graph.Set(message.MessagesKey, []message.Message{newMessage}).End()
 //	})
 var MessagesKey = graph.NewListKey[Message]("messages")
 

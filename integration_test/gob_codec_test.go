@@ -78,7 +78,7 @@ func TestGobCodec_GraphStateIntegration(t *testing.T) {
 
 	ctx := context.Background()
 
-	stateKey := graph.NewKey[GobSerializableState]("state", GobSerializableState{})
+	stateKey := graph.NewKey[GobSerializableState]("state")
 
 	g := graph.New[GobSerializableState, GobSerializableState](stateKey)
 

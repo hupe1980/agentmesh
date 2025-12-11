@@ -100,7 +100,7 @@ func (r *recordingCheckpointer) firstUncommitted() *checkpoint.Checkpoint {
 // ====================
 
 func TestPregelExecutorBasic(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -123,7 +123,7 @@ func TestPregelExecutorBasic(t *testing.T) {
 }
 
 func TestPregelExecutorWithCustomExecutor(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	var execCount atomic.Int32
 
 	g := graph.New[any, any](counterKey)
@@ -154,7 +154,7 @@ func TestPregelExecutorWithCustomExecutor(t *testing.T) {
 }
 
 func TestPregelExecutorWithMaxSteps(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	var iterations atomic.Int32
 
 	g := graph.New[any, any](counterKey)
@@ -191,7 +191,7 @@ func TestPregelExecutorWithMaxSteps(t *testing.T) {
 
 func TestBSPStateIsolation(t *testing.T) {
 	// Test that parallel nodes see the same state snapshot (BSP semantics)
-	valueKey := graph.NewKey("value", 0)
+	valueKey := graph.NewKey[int]("value")
 	readValues := make([]int, 0)
 	var mu sync.Mutex
 
@@ -243,7 +243,7 @@ func TestBSPStateIsolation(t *testing.T) {
 
 func TestBSPWriteBuffering(t *testing.T) {
 	// Test that writes are buffered until superstep barrier
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	var step1Val, step2Val int
 
 	g := graph.New[any, any](counterKey)
@@ -285,7 +285,7 @@ func TestBSPWriteBuffering(t *testing.T) {
 // ====================
 
 func TestCheckpointingSaveAndRestore(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	g := graph.New[any, any](counterKey)
@@ -322,7 +322,7 @@ func TestCheckpointingSaveAndRestore(t *testing.T) {
 }
 
 func TestCheckpointingAutoRestore(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Pre-save a checkpoint with counter=100
@@ -354,10 +354,10 @@ func TestCheckpointingAutoRestore(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// Run with auto-restore enabled
-	for _, err := range compiled.Run(context.Background(), nil, graph.WithAutoRestore(true)) {
+	// Resume with auto-restore (default behavior)
+	for _, err := range compiled.Resume(context.Background(), "restore-test") {
 		if err != nil {
-			t.Fatalf("Run failed: %v", err)
+			t.Fatalf("Resume failed: %v", err)
 		}
 	}
 
@@ -367,7 +367,7 @@ func TestCheckpointingAutoRestore(t *testing.T) {
 }
 
 func TestCheckpointingWithInterval(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	g := graph.New[any, any](counterKey)
@@ -409,7 +409,7 @@ func TestCheckpointingWithInterval(t *testing.T) {
 
 func TestCheckpointingWithPendingWrites(t *testing.T) {
 	t.Run("applies pending writes on restore", func(t *testing.T) {
-		counterKey := graph.NewKey("counter", 0)
+		counterKey := graph.NewKey[int]("counter")
 		checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 		pendingCheckpoint := &checkpoint.Checkpoint{
@@ -443,9 +443,9 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 			t.Fatalf("Build failed: %v", err)
 		}
 
-		for _, err := range compiled.Run(context.Background(), nil, graph.WithAutoRestore(true)) {
+		for _, err := range compiled.Resume(context.Background(), "pending-test") {
 			if err != nil {
-				t.Fatalf("Run failed: %v", err)
+				t.Fatalf("Resume failed: %v", err)
 			}
 		}
 
@@ -455,7 +455,7 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 	})
 
 	t.Run("records node provenance in pending writes", func(t *testing.T) {
-		counterKey := graph.NewKey("counter", 0)
+		counterKey := graph.NewKey[int]("counter")
 		recorder := newRecordingCheckpointer()
 
 		g := graph.New[any, any](counterKey)
@@ -502,12 +502,12 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 	})
 }
 
-func TestResumeMergesInputLikeLangGraph(t *testing.T) {
-	// Simulate the LangGraph pattern where a resume merges new input into the checkpointed state
+func TestResumeMergesInput(t *testing.T) {
+	// Verify that a resume merges new input into the checkpointed state
 	messagesKey := graph.NewListKey[string]("messages")
-	countKey := graph.NewKey[int]("count", 0)
+	countKey := graph.NewKey[int]("count")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
-	runID := "langgraph-merge"
+	runID := "state-merge"
 
 	var capturedMessages []string
 	var capturedCount int
@@ -517,7 +517,7 @@ func TestResumeMergesInputLikeLangGraph(t *testing.T) {
 	g.Node("A", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		cnt := graph.Get(scope, countKey)
 		return graph.Cmd().
-			With(graph.AppendValue(messagesKey, "A executed")).
+			With(graph.SetValue(messagesKey, []string{"A executed"})).
 			With(graph.SetValue(countKey, cnt+1)).
 			To("B")
 	}, "B")
@@ -525,7 +525,7 @@ func TestResumeMergesInputLikeLangGraph(t *testing.T) {
 	g.Node("B", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		cnt := graph.Get(scope, countKey)
 		return graph.Cmd().
-			With(graph.AppendValue(messagesKey, "B executed")).
+			With(graph.SetValue(messagesKey, []string{"B executed"})).
 			With(graph.SetValue(countKey, cnt+2)).
 			To("collect")
 	}, "collect")
@@ -543,21 +543,20 @@ func TestResumeMergesInputLikeLangGraph(t *testing.T) {
 	require.NoError(t, err)
 
 	// First run: seeds state and checkpoints
-	for _, err := range compiled.Run(context.Background(), []string{"hi"}, graph.WithAutoRestore(true)) {
+	for _, err := range compiled.Run(context.Background(), []string{"hi"}) {
 		require.NoError(t, err)
 	}
 	require.Equal(t, []string{"hi", "A executed", "B executed"}, capturedMessages)
 	require.Equal(t, 3, capturedCount)
 
-	// Second run with same runID and new input should merge, not overwrite
-	for _, err := range compiled.Run(context.Background(), []string{"new message"},
-		graph.WithRunID(runID),
-		graph.WithAutoRestore(true),
+	// Second run with Resume - should merge with checkpoint state
+	for _, err := range compiled.Resume(context.Background(), runID,
+		graph.WithStateUpdates(map[string]any{messagesKey.Name(): []string{"new message"}}),
 	) {
 		require.NoError(t, err)
 	}
 
-	// Expected merged behavior (like LangGraph MemorySaver): old + new input + new execution
+	// Expected merged behavior: old + new input + new execution
 	expectedMessages := []string{"hi", "A executed", "B executed", "new message", "A executed", "B executed"}
 	require.Equal(t, expectedMessages, capturedMessages)
 	require.Equal(t, 6, capturedCount) // 3 (checkpoint) + 3 (A/B increments on resumed run)
@@ -568,7 +567,7 @@ func TestResumeMergesInputLikeLangGraph(t *testing.T) {
 // ====================
 
 func TestInterruptBefore(t *testing.T) {
-	statusKey := graph.NewKey("status", "")
+	statusKey := graph.NewKey[string]("status")
 
 	g := graph.New[any, any](statusKey)
 	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -608,7 +607,7 @@ func TestInterruptBefore(t *testing.T) {
 }
 
 func TestInterruptAfter(t *testing.T) {
-	statusKey := graph.NewKey("status", "")
+	statusKey := graph.NewKey[string]("status")
 	var nodeExecuted bool
 
 	g := graph.New[any, any](statusKey)
@@ -653,35 +652,53 @@ func TestInterruptAfter(t *testing.T) {
 }
 
 func TestInterruptWithApproval(t *testing.T) {
-	statusKey := graph.NewKey("status", "")
-	var nodeExecuted bool
+	statusKey := graph.NewKey[string]("status")
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "approval-test"
 
 	g := graph.New[any, any](statusKey)
 	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		nodeExecuted = true
 		return graph.Set(statusKey, "executed").To(graph.END)
 	}, graph.END)
 	g.InterruptBefore("sensitive")
 	g.Start("sensitive")
+	g.WithCheckpointer(checkpointer, runID)
 
 	compiled, err := g.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// Run WITH approval
+	// First Run should hit the interrupt
+	var gotInterrupt bool
+	for _, err := range compiled.Run(context.Background(), nil) {
+		if err != nil {
+			var interruptErr *graph.InterruptError
+			if errors.As(err, &interruptErr) {
+				gotInterrupt = true
+			}
+		}
+	}
+	if !gotInterrupt {
+		t.Fatal("Expected interrupt before sensitive node")
+	}
+
+	// Resume WITH approval - should proceed past interrupt
 	approval := &graph.ApprovalResponse{
 		Decision:  graph.ApprovalApproved,
 		Timestamp: time.Now(),
 	}
-	for _, err := range compiled.Run(context.Background(), nil, graph.WithApproval("sensitive", approval)) {
+	var nodeExecuted bool
+	for output, err := range compiled.Resume(context.Background(), runID, graph.WithApproval("sensitive", approval)) {
 		if err != nil {
-			t.Fatalf("Run failed: %v", err)
+			t.Fatalf("Resume failed: %v", err)
 		}
+		_ = output
+		nodeExecuted = true
 	}
 
 	if !nodeExecuted {
-		t.Error("Expected node to execute when approval provided")
+		t.Error("Expected node to execute when approval provided via Resume")
 	}
 }
 
@@ -720,7 +737,7 @@ func TestNodeError(t *testing.T) {
 }
 
 func TestContextCancellation(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	var executionCount atomic.Int32
 
 	g := graph.New[any, any](counterKey)
@@ -829,7 +846,7 @@ func TestMiddlewareExecution(t *testing.T) {
 // ====================
 
 func TestWithMaxConcurrency(t *testing.T) {
-	valueKey := graph.NewKey("value", 0)
+	valueKey := graph.NewKey[int]("value")
 	var maxConcurrent atomic.Int32
 	var currentConcurrent atomic.Int32
 
@@ -876,7 +893,7 @@ func TestWithMaxConcurrency(t *testing.T) {
 }
 
 func TestWithMaxIterations(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	var iterations atomic.Int32
 
 	g := graph.New[any, any](counterKey)
@@ -910,7 +927,7 @@ func TestStreamingOutput(t *testing.T) {
 
 	g := graph.New[any, string](messageKey)
 	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Append(messageKey, "hello", "world").To(graph.END)
+		return graph.Set(messageKey, []string{"hello", "world"}).To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -937,7 +954,7 @@ func TestStreamingOutput(t *testing.T) {
 }
 
 func TestStreamingWithSingleOutput(t *testing.T) {
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, string](resultKey)
 	g.Node("compute", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
@@ -976,10 +993,10 @@ func TestListKeyAppend(t *testing.T) {
 
 	g := graph.New[any, any](tagsKey)
 	g.Node("add1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(tagsKey, "tag1", "tag2").To("add2")
+		return graph.Set(tagsKey, []string{"tag1", "tag2"}).To("add2")
 	}, "add2")
 	g.Node("add2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(tagsKey, "tag3").To("read")
+		return graph.Set(tagsKey, []string{"tag3"}).To("read")
 	}, "read")
 	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		capturedTags = graph.GetList(scope, tagsKey)
@@ -1014,7 +1031,7 @@ func TestListKeyAppend(t *testing.T) {
 // ====================
 
 func TestInputKey(t *testing.T) {
-	inputKey := graph.NewKey("input", "")
+	inputKey := graph.NewKey[string]("input")
 	var capturedInput string
 
 	g := graph.New[string, any](inputKey)
@@ -1098,7 +1115,7 @@ func TestParallelNodeExecution(t *testing.T) {
 			mu.Lock()
 			executionOrder = append(executionOrder, name)
 			mu.Unlock()
-			return graph.Append(resultKey, name).To(graph.END)
+			return graph.Set(resultKey, []string{name}).To(graph.END)
 		}
 	}
 
@@ -1141,7 +1158,7 @@ func TestGraphCollect(t *testing.T) {
 
 	g := graph.New[any, string](messageKey)
 	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Append(messageKey, "a", "b", "c").To(graph.END)
+		return graph.Set(messageKey, []string{"a", "b", "c"}).To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -1165,7 +1182,7 @@ func TestGraphLast(t *testing.T) {
 
 	g := graph.New[any, string](messageKey)
 	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Append(messageKey, "first", "middle", "last").To(graph.END)
+		return graph.Set(messageKey, []string{"first", "middle", "last"}).To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -1189,7 +1206,7 @@ func TestGraphLast(t *testing.T) {
 // ====================
 
 func TestTwoPhaseCommitProtocol(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	g := graph.New[any, any](counterKey)
@@ -1229,7 +1246,7 @@ func TestTwoPhaseCommitProtocol(t *testing.T) {
 }
 
 func TestResumeRequiresManagedValues(t *testing.T) {
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 	const runID = "managed-values-resume"
 
@@ -1266,10 +1283,7 @@ func TestResumeRequiresManagedValues(t *testing.T) {
 	}
 
 	var resumeErr error
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
-		graph.WithAutoRestore(true),
-	) {
+	for _, err := range compiled.Resume(ctx, runID) {
 		if err != nil {
 			resumeErr = err
 			break
@@ -1285,7 +1299,7 @@ func TestResumeRequiresManagedValues(t *testing.T) {
 }
 
 func TestResumeManagedValueRehydrate(t *testing.T) {
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 	const runID = "managed-values-rehydrate"
 
@@ -1321,9 +1335,7 @@ func TestResumeManagedValueRehydrate(t *testing.T) {
 	}
 
 	rehydrateCalls.Store(0)
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
-		graph.WithAutoRestore(true),
+	for _, err := range compiled.Resume(ctx, runID,
 		graph.WithManagedValues(session),
 	) {
 		if err != nil {
@@ -1404,10 +1416,10 @@ func TestEmptySliceInputTreatedAsZero(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// Pass empty slice - should NOT overwrite restored checkpoint
-	for _, err := range compiled.Run(context.Background(), []string{}, graph.WithAutoRestore(true)) {
+	// Resume should restore the checkpoint state (not overwrite with empty input)
+	for _, err := range compiled.Resume(context.Background(), "slice-test") {
 		if err != nil {
-			t.Fatalf("Run failed: %v", err)
+			t.Fatalf("Resume failed: %v", err)
 		}
 	}
 
@@ -1429,7 +1441,7 @@ func TestBSPSliceMergingAcrossSupersteps(t *testing.T) {
 	g := graph.New[any, any](tagsKey)
 
 	g.Node("add1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(tagsKey, "a", "b").To("add2")
+		return graph.Set(tagsKey, []string{"a", "b"}).To("add2")
 	}, "add2")
 
 	g.Node("add2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -1438,7 +1450,7 @@ func TestBSPSliceMergingAcrossSupersteps(t *testing.T) {
 		if len(existing) != 2 {
 			return graph.Fail(errors.New("expected 2 tags from previous superstep"))
 		}
-		return graph.Append(tagsKey, "c", "d").To("read")
+		return graph.Set(tagsKey, []string{"c", "d"}).To("read")
 	}, "read")
 
 	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -1485,7 +1497,7 @@ func TestBSPParallelSliceAppends(t *testing.T) {
 
 	createWorker := func(name string) graph.NodeFunc[any] {
 		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-			return graph.Append(resultsKey, name).To("collect")
+			return graph.Set(resultsKey, []string{name}).To("collect")
 		}
 	}
 
@@ -1549,10 +1561,10 @@ func TestTypedSliceAppend(t *testing.T) {
 
 	g := graph.New[any, any](messagesKey)
 	g.Node("add", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(messagesKey,
-			Message{Role: "user", Content: "hello"},
-			Message{Role: "assistant", Content: "hi there"},
-		).To("read")
+		return graph.Set(messagesKey, []Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "hi there"},
+		}).To("read")
 	}, "read")
 	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
@@ -1588,7 +1600,7 @@ func TestIntSliceAppend(t *testing.T) {
 
 	g := graph.New[any, any](numbersKey)
 	g.Node("add", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		return graph.Append(numbersKey, 1, 2, 3).To("read")
+		return graph.Set(numbersKey, []int{1, 2, 3}).To("read")
 	}, "read")
 	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		capturedNumbers = graph.GetList(scope, numbersKey)
@@ -1622,7 +1634,7 @@ func TestIntSliceAppend(t *testing.T) {
 // ====================
 
 func TestMapInputHandling(t *testing.T) {
-	dataKey := graph.NewKey("data", map[string]int{})
+	dataKey := graph.NewKey[map[string]int]("data")
 	var capturedData map[string]int
 
 	g := graph.New[map[string]int, any](dataKey)
@@ -1652,13 +1664,15 @@ func TestMapInputHandling(t *testing.T) {
 	}
 }
 
-func TestNilMapPreservesCheckpoint(t *testing.T) {
-	dataKey := graph.NewKey("data", map[string]int{})
+func TestResumePreservesCheckpointState(t *testing.T) {
+	dataKey := graph.NewKey[map[string]int]("data")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	runID := "map-test"
 
 	// Pre-save a checkpoint with data
 	preCheckpoint := &checkpoint.Checkpoint{
-		RunID:     "map-test",
+		RunID:     runID,
 		Superstep: 1,
 		State: map[string]any{
 			"data": map[string]int{"saved": 100},
@@ -1678,22 +1692,137 @@ func TestNilMapPreservesCheckpoint(t *testing.T) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("read")
-	g.WithCheckpointer(checkpointer, "map-test")
+	g.WithCheckpointer(checkpointer, runID)
 
 	compiled, err := g.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// Pass nil map - should NOT overwrite checkpoint
-	for _, err := range compiled.Run(context.Background(), nil, graph.WithAutoRestore(true)) {
+	// Use Resume() - should NOT overwrite checkpoint state with zero input
+	// Uses auto-restore by default when no WithCheckpoint option is provided
+	for _, err := range compiled.Resume(context.Background(), runID) {
 		if err != nil {
-			t.Fatalf("Run failed: %v", err)
+			t.Fatalf("Resume failed: %v", err)
 		}
 	}
 
 	// Should have restored data
 	if capturedData["saved"] != 100 {
 		t.Errorf("Expected restored data with saved=100, got %v", capturedData)
+	}
+}
+
+func TestRunWithNilInputOverwritesState(t *testing.T) {
+	// This test verifies that Run() with nil input DOES overwrite state
+	// (as opposed to Resume() which preserves it)
+	dataKey := graph.NewKey[map[string]int]("data")
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Pre-save a checkpoint with data
+	preCheckpoint := &checkpoint.Checkpoint{
+		RunID:     "overwrite-test",
+		Superstep: 1,
+		State: map[string]any{
+			"data": map[string]int{"saved": 100},
+		},
+		Committed: true,
+		Timestamp: time.Now(),
+	}
+	if err := checkpointer.Save(context.Background(), preCheckpoint); err != nil {
+		t.Fatalf("Failed to pre-save checkpoint: %v", err)
+	}
+
+	var capturedData map[string]int
+
+	g := graph.New[map[string]int, any](dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		capturedData = graph.Get(scope, dataKey)
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("read")
+	g.WithCheckpointer(checkpointer, "overwrite-test")
+
+	compiled, err := g.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	// Use Run() with nil - SHOULD overwrite checkpoint state with nil
+	for _, err := range compiled.Run(context.Background(), nil) {
+		if err != nil {
+			t.Fatalf("Run failed: %v", err)
+		}
+	}
+
+	// State should be nil (overwritten by nil input via ReplaceReducer)
+	if capturedData != nil {
+		t.Errorf("Expected nil data (overwritten), got %v", capturedData)
+	}
+}
+
+func TestCheckpointStateInjectionPrevented(t *testing.T) {
+	// This test verifies that checkpoints with undeclared keys are rejected
+	// to prevent state injection attacks via corrupted/malicious checkpoints
+
+	dataKey := graph.NewKey[string]("data")
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+
+	// Pre-save a checkpoint with an INJECTED key not declared in the graph
+	maliciousCheckpoint := &checkpoint.Checkpoint{
+		RunID:     "injection-test",
+		Superstep: 1,
+		State: map[string]any{
+			"data":         "legitimate",
+			"injected_key": "malicious_value", // NOT declared in graph!
+		},
+		Committed: true,
+		Timestamp: time.Now(),
+	}
+	if err := checkpointer.Save(context.Background(), maliciousCheckpoint); err != nil {
+		t.Fatalf("Failed to pre-save checkpoint: %v", err)
+	}
+
+	g := graph.New[string, any](dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		return graph.To(graph.END)
+	}, graph.END)
+	g.Start("read")
+	g.WithCheckpointer(checkpointer, "injection-test")
+
+	compiled, err := g.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	// Resume with auto-restore - should fail due to unknown key
+	var runErr error
+	for _, err := range compiled.Resume(context.Background(), "injection-test") {
+		if err != nil {
+			runErr = err
+			break
+		}
+	}
+
+	if runErr == nil {
+		t.Fatal("Expected error due to unknown checkpoint key, got nil")
+	}
+
+	// Verify it's the right error type
+	var stateErr *graph.CheckpointStateError
+	if !errors.As(runErr, &stateErr) {
+		t.Fatalf("Expected CheckpointStateError, got %T: %v", runErr, runErr)
+	}
+
+	// Verify the unknown key is reported
+	found := false
+	for _, key := range stateErr.UnknownKeys {
+		if key == "injected_key" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected 'injected_key' in UnknownKeys, got %v", stateErr.UnknownKeys)
 	}
 }

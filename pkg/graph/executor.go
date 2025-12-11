@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
-	"github.com/hupe1980/agentmesh/internal/reflectutil"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
@@ -22,6 +21,7 @@ type checkpointRestoreResult struct {
 	stateOwned    bool
 	PendingWrites []checkpoint.PendingWrite // Only set if Committed=false
 	ManagedValues []checkpoint.ManagedValueDescriptor
+	PausedNodes   []string // Nodes that were paused (waiting for approval)
 }
 
 func (r *checkpointRestoreResult) useCheckpoint(cp *checkpoint.Checkpoint) {
@@ -48,6 +48,13 @@ func (r *checkpointRestoreResult) useCheckpoint(cp *checkpoint.Checkpoint) {
 	} else {
 		r.ManagedValues = nil
 	}
+
+	// Capture paused nodes for resume
+	if len(cp.PausedNodes) > 0 {
+		r.PausedNodes = append([]string(nil), cp.PausedNodes...)
+	} else {
+		r.PausedNodes = nil
+	}
 }
 
 func (r *checkpointRestoreResult) ensureStateOwned() {
@@ -64,26 +71,9 @@ func (r *checkpointRestoreResult) ensureStateOwned() {
 	r.stateOwned = true
 }
 
-func (r *checkpointRestoreResult) applyUpdates(updates map[string]any) {
-	if len(updates) == 0 {
-		return
-	}
-	r.ensureStateOwned()
-	maps.Copy(r.State, updates)
-}
-
-func (r *checkpointRestoreResult) setValue(key string, value any) {
-	if key == "" {
-		return
-	}
-	r.ensureStateOwned()
-	r.State[key] = value
-}
-
-// appendValue merges a new list value into the existing state for the key.
-// Uses SliceValue when available for zero-reflection merging and falls back to
-// reflection-based slice appends when types are compatible.
-func (r *checkpointRestoreResult) appendValue(key string, value any) {
+// reduceValue merges a new value into the existing state using the provided reducer.
+// This is the unified approach - the reducer determines merge semantics (replace, append, sum, etc.)
+func (r *checkpointRestoreResult) reduceValue(key string, value any, reducer ReducerFunc) {
 	if key == "" || value == nil {
 		return
 	}
@@ -96,54 +86,14 @@ func (r *checkpointRestoreResult) appendValue(key string, value any) {
 		return
 	}
 
-	// Fast path: both values implement SliceValue with compatible types.
-	if curSlice, ok := current.(SliceValue); ok {
-		if newSlice, ok := value.(SliceValue); ok {
-			if merged := curSlice.Merge(newSlice); merged != nil {
-				r.State[key] = merged
-				return
-			}
-		}
-	}
-
-	curVal := reflect.ValueOf(current)
-	newVal := reflect.ValueOf(value)
-
-	if merged, ok := mergeSliceValues(curVal, newVal); ok {
-		r.State[key] = merged
-		return
-	}
-
-	// Fallback: overwrite if types are incompatible with append semantics.
-	r.State[key] = value
-}
-
-// mergeSliceValues tries to append newVal into curVal when curVal is a slice.
-// Returns (mergedValue, true) when append is successful.
-func mergeSliceValues(curVal, newVal reflect.Value) (any, bool) {
-	if curVal.Kind() != reflect.Slice {
-		return nil, false
-	}
-
-	if newVal.Kind() == reflect.Slice {
-		if newVal.Type() != curVal.Type() && newVal.Type().ConvertibleTo(curVal.Type()) {
-			newVal = newVal.Convert(curVal.Type())
-		}
-		if newVal.Type() == curVal.Type() {
-			return reflect.AppendSlice(curVal, newVal).Interface(), true
-		}
-	}
-
-	if newVal.IsValid() && newVal.Type().ConvertibleTo(curVal.Type().Elem()) {
-		appended := reflect.Append(curVal, newVal.Convert(curVal.Type().Elem()))
-		return appended.Interface(), true
-	}
-
-	return nil, false
+	// Use the reducer to merge values
+	r.State[key] = reducer.ReduceFn(current, value)
 }
 
 // restoreCheckpoint attempts to restore state from a checkpoint.
 // Returns restored state data, pending writes, and any error that should abort execution.
+// Note: State updates (WithStateUpdates) are applied later in initializeBSPState
+// so they can use reducers for proper merging.
 func restoreCheckpoint[O any](
 	ctx context.Context,
 	checkpointCfg CheckpointConfig,
@@ -160,8 +110,8 @@ func restoreCheckpoint[O any](
 	// Step 2: Apply explicit checkpoint if provided
 	applyExplicitCheckpoint(runCfg, result)
 
-	// Step 3: Apply state updates for human-in-the-loop workflows
-	applyStateUpdates(runCfg, result)
+	// Note: State updates from WithStateUpdates are applied in initializeBSPState
+	// after BSP state is created, so they use reducers for proper merging.
 
 	return result, true
 }
@@ -198,12 +148,6 @@ func applyExplicitCheckpoint(runCfg *runConfig, result *checkpointRestoreResult)
 	if runCfg.checkpoint != nil {
 		result.useCheckpoint(runCfg.checkpoint)
 	}
-}
-
-// applyStateUpdates applies state updates provided via WithStateUpdates.
-// This enables human-in-the-loop workflows to inject human input.
-func applyStateUpdates(runCfg *runConfig, result *checkpointRestoreResult) {
-	result.applyUpdates(runCfg.stateUpdates)
 }
 
 // tryAutoRestore attempts to restore from checkpoint if autoRestore is enabled.
@@ -266,7 +210,8 @@ func listManagedValueNames(desc []checkpoint.ManagedValueDescriptor, requiredOnl
 }
 
 // applyInputToRestore writes the provided run input into the restored state
-// honoring list-vs-scalar semantics.
+// using the key's registered reducer for proper merge semantics.
+// Only keys with registered reducers are applied - unregistered keys are ignored.
 func applyInputToRestore[I, O any](
 	cfg *ExecutorConfig[I, O],
 	input I,
@@ -277,15 +222,10 @@ func applyInputToRestore[I, O any](
 		return
 	}
 
-	if cfg.Execution.OutputIsList {
-		if !reflectutil.IsNilOrZero(input) {
-			restoreResult.appendValue(key, input)
-		}
-		return
-	}
-
-	if !reflectutil.IsNil(input) {
-		restoreResult.setValue(key, input)
+	// Only apply if the key has a registered reducer
+	// The reducer handles zero values if needed (e.g., SkipZeroReducer)
+	if reducer, ok := cfg.Execution.KeyRegistry[key]; ok {
+		restoreResult.reduceValue(key, input, reducer)
 	}
 }
 
@@ -425,6 +365,8 @@ func buildRuntimeOptions[I, O any](
 		pregel.WithMaxIterations[*ExecutorConfig[I, O], Updates](maxSteps),
 		pregel.WithOnSuperstepStart[*ExecutorConfig[I, O], Updates](
 			func(ctx context.Context, superstep int64, frontier pregel.FrontierInfo) error {
+				// Track current superstep for interrupt checkpoints
+				adapter.superstep = int(superstep)
 				event.Publish(ctx, event.Event{
 					Type:      event.EventSuperstepStart,
 					Superstep: int(superstep),
@@ -481,19 +423,28 @@ func publishCompletionEvent(ctx context.Context, runID string, runtimeErr error)
 }
 
 // initializeBSPState creates and configures the BSP state manager from restore result.
-// Handles managed values rehydration and pending writes recovery.
+// Handles managed values rehydration, state validation, pending writes recovery,
+// and state updates from WithStateUpdates (applied via reducers for proper merging).
 func initializeBSPState[O any](
 	ctx context.Context,
 	restoreResult *checkpointRestoreResult,
 	runCfg *runConfig,
+	keyRegistry KeyRegistry,
 ) (*BSPState, error) {
 	// Validate and rehydrate managed values from checkpoint
 	if err := rehydrateManagedValues(ctx, restoreResult.ManagedValues, runCfg); err != nil {
 		return nil, err
 	}
 
-	// Create BSP-compliant state manager
-	bspState := NewBSPState(restoreResult.State)
+	// Security: Validate checkpoint state contains only declared keys
+	// This prevents state injection attacks via corrupted/malicious checkpoints
+	validatedState, err := validateCheckpointState(restoreResult.State, keyRegistry)
+	if err != nil {
+		return nil, fmt.Errorf("invalid checkpoint state: %w", err)
+	}
+
+	// Create BSP-compliant state manager with reducer registry
+	bspState := NewBSPState(validatedState, keyRegistry)
 
 	// Attach managed values to BSP state (accessible via View)
 	if runCfg.managedValues != nil {
@@ -501,11 +452,175 @@ func initializeBSPState[O any](
 	}
 
 	// Two-phase commit recovery: apply pending writes from uncommitted checkpoint
+	// Also validate pending writes against key registry
 	if len(restoreResult.PendingWrites) > 0 {
-		bspState.ApplyPendingWrites(restoreResult.PendingWrites)
+		validatedWrites, err := validatePendingWrites(restoreResult.PendingWrites, keyRegistry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid checkpoint pending writes: %w", err)
+		}
+		bspState.ApplyPendingWrites(validatedWrites)
+	}
+
+	// Apply state updates from WithStateUpdates using reducers for proper merging
+	// This enables human-in-the-loop workflows where new input is merged with checkpoint state
+	if len(runCfg.stateUpdates) > 0 {
+		bspState.Write("__resume__", Updates(runCfg.stateUpdates))
+		bspState.CommitBarrier() // Make updates visible immediately
 	}
 
 	return bspState, nil
+}
+
+// CheckpointStateError indicates that a checkpoint contains invalid state.
+type CheckpointStateError struct {
+	UnknownKeys []string // Keys in checkpoint that are not registered in the graph
+}
+
+func (e *CheckpointStateError) Error() string {
+	return fmt.Sprintf("checkpoint contains unknown state keys: %v", e.UnknownKeys)
+}
+
+// validateCheckpointState validates that all keys in the checkpoint state are
+// registered in the KeyRegistry. Returns an error if unknown keys are found.
+// This prevents state injection attacks via corrupted/malicious checkpoints.
+func validateCheckpointState(state map[string]any, keyRegistry KeyRegistry) (map[string]any, error) {
+	if state == nil {
+		return nil, nil
+	}
+
+	// If no keys are registered, any state is invalid
+	if len(keyRegistry) == 0 && len(state) > 0 {
+		unknownKeys := make([]string, 0, len(state))
+		for key := range state {
+			unknownKeys = append(unknownKeys, key)
+		}
+		return nil, &CheckpointStateError{UnknownKeys: unknownKeys}
+	}
+
+	var unknownKeys []string
+	validated := make(map[string]any, len(state))
+
+	for key, value := range state {
+		if _, ok := keyRegistry[key]; ok {
+			validated[key] = value
+		} else {
+			unknownKeys = append(unknownKeys, key)
+		}
+	}
+
+	if len(unknownKeys) > 0 {
+		return nil, &CheckpointStateError{UnknownKeys: unknownKeys}
+	}
+
+	if len(validated) == 0 {
+		return nil, nil
+	}
+	return validated, nil
+}
+
+// applyApprovalsAndCheckpoint applies approval state updates and saves a new checkpoint.
+// This implements the approval flow: apply approvals to state → save checkpoint → resume
+func applyApprovalsAndCheckpoint(
+	ctx context.Context,
+	bspState *BSPState,
+	runCfg *runConfig,
+	checkpointCfg CheckpointConfig,
+) error {
+	if len(runCfg.approvals) == 0 {
+		return nil
+	}
+
+	// Get existing approvals from state or create new map
+	var approvals map[string]*ApprovalResponse
+	if existing, ok := bspState.ReadView().GetValue(ApprovalsKey); ok {
+		if existingMap, ok := existing.(map[string]*ApprovalResponse); ok {
+			approvals = existingMap
+		}
+	}
+	if approvals == nil {
+		approvals = make(map[string]*ApprovalResponse)
+	}
+
+	// Merge new approvals
+	for nodeName, approval := range runCfg.approvals {
+		approvals[nodeName] = approval
+	}
+
+	// Write approvals to state (using system node name for provenance)
+	bspState.Write("__system__", Updates{ApprovalsKey: approvals})
+	bspState.CommitBarrier()
+
+	// Save new checkpoint with approvals applied
+	// Keep pausedNodes - they indicate where to resume from
+	if err := saveApprovalCheckpoint(ctx, bspState, runCfg, checkpointCfg); err != nil {
+		return err
+	}
+
+	// DON'T clear pausedNodes - RootVertices needs them to know where to start
+
+	return nil
+}
+
+// saveApprovalCheckpoint saves a checkpoint with approval state applied.
+func saveApprovalCheckpoint(
+	ctx context.Context,
+	bspState *BSPState,
+	runCfg *runConfig,
+	checkpointCfg CheckpointConfig,
+) error {
+	if checkpointCfg.Checkpointer == nil {
+		return nil
+	}
+
+	runID := runCfg.runID
+	if runID == "" {
+		runID = checkpointCfg.RunID
+	}
+
+	if runID == "" {
+		return nil
+	}
+
+	cp := &checkpoint.Checkpoint{
+		RunID:       runID,
+		State:       bspState.Snapshot(),
+		PausedNodes: runCfg.pausedNodes,
+		Committed:   true,
+		Timestamp:   time.Now(),
+	}
+
+	if err := checkpointCfg.Checkpointer.Save(ctx, cp); err != nil {
+		if runCfg.failOnCheckpointErr {
+			return fmt.Errorf("failed to save approval checkpoint: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// validatePendingWrites validates that all pending writes reference keys
+// registered in the KeyRegistry. Returns an error if unknown keys are found.
+func validatePendingWrites(writes []checkpoint.PendingWrite, keyRegistry KeyRegistry) ([]checkpoint.PendingWrite, error) {
+	if len(writes) == 0 {
+		return nil, nil
+	}
+
+	var unknownKeys []string
+	validated := make([]checkpoint.PendingWrite, 0, len(writes))
+
+	for _, write := range writes {
+		if _, ok := keyRegistry[write.Channel]; ok {
+			validated = append(validated, write)
+		} else {
+			unknownKeys = append(unknownKeys, write.Channel)
+		}
+	}
+
+	if len(unknownKeys) > 0 {
+		return nil, &CheckpointStateError{UnknownKeys: unknownKeys}
+	}
+
+	return validated, nil
 }
 
 // rehydrateManagedValues validates checkpoint managed values and rehydrates them into runCfg.
@@ -604,7 +719,7 @@ func runPregelRuntime[I, O any](
 }
 
 // Run executes the graph using the Pregel BSP runtime.
-func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error] {
+func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...runOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -623,11 +738,28 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 			return
 		}
 
-		applyInputToRestore(cfg, input, restoreResult)
+		// Capture paused nodes from checkpoint for resume
+		if len(restoreResult.PausedNodes) > 0 {
+			runCfg.pausedNodes = restoreResult.PausedNodes
+		}
 
-		// Initialize BSP state with managed values and pending writes
-		bspState, err := initializeBSPState[O](ctx, restoreResult, runCfg)
+		// Only merge input if not in resume mode (skipInputMerge = false)
+		// Resume() sets skipInputMerge to prevent zero-value input from overwriting state
+		if !runCfg.skipInputMerge {
+			applyInputToRestore(cfg, input, restoreResult)
+		}
+
+		// Initialize BSP state with managed values, pending writes, and key registry
+		bspState, err := initializeBSPState[O](ctx, restoreResult, runCfg, cfg.Execution.KeyRegistry)
 		if err != nil {
+			var zero O
+			yield(zero, err)
+			return
+		}
+
+		// Apply approvals to state and save new checkpoint
+		// This happens BEFORE running, so the interrupt check sees the approvals in state
+		if err := applyApprovalsAndCheckpoint(ctx, bspState, runCfg, cfg.Checkpoint); err != nil {
 			var zero O
 			yield(zero, err)
 			return
@@ -671,8 +803,12 @@ type pregelGraphAdapter[I, O any] struct {
 	checkpointInterval int
 }
 
-// RootVertices returns the entry points.
+// RootVertices returns the starting vertices for execution.
+// When resuming from an interrupt, returns the paused nodes instead of entry points.
 func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
+	if len(a.runCfg.pausedNodes) > 0 {
+		return a.runCfg.pausedNodes
+	}
 	return a.cfg.Execution.EntryPoints
 }
 
@@ -747,7 +883,7 @@ func (a *pregelGraphAdapter[I, O]) yieldValue(val any) {
 }
 
 // yieldUpdates yields output values from updates if the output key is present.
-// Uses the OutputIsList flag determined at graph build time to avoid runtime reflection.
+// Uses the OutputIsSlice flag determined at graph build time to avoid runtime reflection.
 func (a *pregelGraphAdapter[I, O]) yieldUpdates(updates Updates) {
 	if a.cfg.Execution.OutputKey == "" {
 		return
@@ -759,7 +895,7 @@ func (a *pregelGraphAdapter[I, O]) yieldUpdates(updates Updates) {
 	}
 
 	// Use build-time flag instead of runtime isSlice() check
-	if a.cfg.Execution.OutputIsList {
+	if a.cfg.Execution.OutputIsSlice {
 		a.yieldListItems(val)
 	} else {
 		a.yieldValue(val)
@@ -767,6 +903,7 @@ func (a *pregelGraphAdapter[I, O]) yieldUpdates(updates Updates) {
 }
 
 // checkInterrupt checks if an interrupt is needed and returns an error if so.
+// When an interrupt occurs, a checkpoint is saved with the paused node information.
 func (a *pregelGraphAdapter[I, O]) checkInterrupt(
 	ctx context.Context,
 	nodeName string,
@@ -784,8 +921,52 @@ func (a *pregelGraphAdapter[I, O]) checkInterrupt(
 		}
 	}
 	if needsApproval {
-		if a.runCfg.approvals == nil || a.runCfg.approvals[nodeName] == nil {
+		// Check approvals from state (approvals are persisted as state updates)
+		approvals := a.getApprovalsFromState()
+		if approvals == nil || approvals[nodeName] == nil {
+			// Save interrupt checkpoint before returning error
+			a.saveInterruptCheckpoint(ctx, nodeName)
 			return &InterruptError{NodeName: nodeName, Before: isBefore}
+		}
+	}
+	return nil
+}
+
+// saveInterruptCheckpoint saves a checkpoint when an interrupt occurs.
+// This captures the current state and marks which node is paused.
+func (a *pregelGraphAdapter[I, O]) saveInterruptCheckpoint(ctx context.Context, pausedNode string) {
+	checkpointerEnabled := a.cfg.Checkpoint.Checkpointer != nil
+	runID := a.runCfg.runID
+	if runID == "" {
+		runID = a.cfg.Checkpoint.RunID
+	}
+	if !checkpointerEnabled || runID == "" {
+		return
+	}
+
+	// Commit any pending writes before saving checkpoint
+	a.bspState.CommitBarrier()
+
+	cp := &checkpoint.Checkpoint{
+		RunID:         runID,
+		Superstep:     int64(a.superstep),
+		State:         a.bspState.Snapshot(),
+		PausedNodes:   []string{pausedNode},
+		Committed:     true,
+		Timestamp:     time.Now(),
+		ManagedValues: a.managedValueDescriptors(),
+	}
+
+	// Save checkpoint - ignore errors since we're about to return an interrupt error anyway
+	_ = a.cfg.Checkpoint.Checkpointer.Save(ctx, cp)
+}
+
+// getApprovalsFromState retrieves the approvals map from BSP state.
+func (a *pregelGraphAdapter[I, O]) getApprovalsFromState() map[string]*ApprovalResponse {
+	view := a.bspState.ReadView()
+	if approvals, ok := view.GetValue(ApprovalsKey); ok {
+		if approvalsMap, ok := approvals.(map[string]*ApprovalResponse); ok {
+			return approvalsMap
 		}
 	}
 	return nil
@@ -942,6 +1123,15 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 	shouldCheckpoint := checkpointerEnabled &&
 		(a.checkpointInterval <= 0 || int(superstep)%a.checkpointInterval == 0)
 
+	// Load current PausedNodes to preserve interrupt state across two-phase commit
+	// This is critical: interrupt checkpoints set PausedNodes, and we must not lose them
+	var currentPausedNodes []string
+	if shouldCheckpoint {
+		if existingCp, err := a.cfg.Checkpoint.Checkpointer.Load(ctx, runID); err == nil && existingCp != nil {
+			currentPausedNodes = existingCp.PausedNodes
+		}
+	}
+
 	// Phase 1: Save checkpoint with pending writes (before barrier commit)
 	// This captures the state BEFORE writes are applied, along with the pending writes
 	// If a crash occurs here, we can re-apply the pending writes on recovery
@@ -952,7 +1142,8 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 			Superstep:     superstep,
 			State:         a.bspState.Snapshot(), // Committed state BEFORE barrier
 			PendingWrites: pendingWrites,
-			Committed:     false, // Mark as uncommitted - pending writes not yet applied
+			PausedNodes:   currentPausedNodes, // Preserve interrupt state
+			Committed:     false,              // Mark as uncommitted - pending writes not yet applied
 			Timestamp:     time.Now(),
 			ManagedValues: a.managedValueDescriptors(),
 		}
@@ -987,9 +1178,10 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 		phase2Checkpoint := &checkpoint.Checkpoint{
 			RunID:         runID,
 			Superstep:     superstep,
-			State:         committedState, // Committed state AFTER barrier
-			PendingWrites: nil,            // No pending writes - all committed
-			Committed:     true,           // Mark as committed
+			State:         committedState,     // Committed state AFTER barrier
+			PendingWrites: nil,                // No pending writes - all committed
+			PausedNodes:   currentPausedNodes, // Preserve interrupt state
+			Committed:     true,               // Mark as committed
 			Timestamp:     time.Now(),
 			ManagedValues: a.managedValueDescriptors(),
 		}

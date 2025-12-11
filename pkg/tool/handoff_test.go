@@ -17,7 +17,7 @@ func createMockWorkerGraph(t *testing.T, response string) *message.Graph {
 
 	g.Node("worker", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		msg := message.Message(message.NewAIMessageFromText(response))
-		return graph.Append(message.MessagesKey, msg).End()
+		return graph.Set(message.MessagesKey, []message.Message{msg}).End()
 	}, graph.END)
 
 	g.Start("worker")
@@ -108,7 +108,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 			return graph.Fail(errors.New("temporary error"))
 		}
 		msg := message.Message(message.NewAIMessageFromText("Success after retry"))
-		return graph.Append(message.MessagesKey, msg).End()
+		return graph.Set(message.MessagesKey, []message.Message{msg}).End()
 	}, graph.END)
 
 	g.Start("worker")

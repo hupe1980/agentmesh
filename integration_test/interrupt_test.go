@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ func TestInterrupt_BeforeNode(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
@@ -56,7 +57,7 @@ func TestInterrupt_AfterNode(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
@@ -89,13 +90,15 @@ func TestInterrupt_AfterNode(t *testing.T) {
 	assert.False(t, interruptErr.Before)
 }
 
-// TestInterrupt_WithApproval tests that providing approval allows execution to continue.
+// TestInterrupt_WithApproval tests that providing approval via Resume allows execution to continue.
 func TestInterrupt_WithApproval(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "approval-test"
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
@@ -105,17 +108,30 @@ func TestInterrupt_WithApproval(t *testing.T) {
 	}, graph.END)
 	g.InterruptBefore("sensitive")
 	g.Start("sensitive")
+	g.WithCheckpointer(checkpointer, runID)
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Run WITH approval
+	// First Run - will hit interrupt
+	for _, err := range compiled.Run(ctx, nil, graph.WithRunID(runID)) {
+		var intErr *graph.InterruptError
+		if errors.As(err, &intErr) {
+			// Expected interrupt
+			break
+		}
+		require.NoError(t, err)
+	}
+
+	assert.False(t, nodeExecuted, "Node should not execute before approval")
+
+	// Resume WITH approval
 	approval := &graph.ApprovalResponse{
 		Decision:  graph.ApprovalApproved,
 		Timestamp: time.Now(),
 	}
 
-	for _, err := range compiled.Run(ctx, nil, graph.WithApproval("sensitive", approval)) {
+	for _, err := range compiled.Resume(ctx, runID, graph.WithApproval("sensitive", approval)) {
 		require.NoError(t, err)
 	}
 
@@ -130,7 +146,7 @@ func TestInterrupt_WithRejection(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
@@ -162,13 +178,17 @@ func TestInterrupt_WithRejection(t *testing.T) {
 }
 
 // TestInterrupt_MultipleNodes tests interrupts on multiple nodes in sequence.
+// Each interrupt requires a separate Resume call with the appropriate approval.
 func TestInterrupt_MultipleNodes(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var node1Executed, node2Executed bool
+
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "multi-interrupt-test"
 
 	g := graph.New[any, any](resultKey)
 	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -184,33 +204,60 @@ func TestInterrupt_MultipleNodes(t *testing.T) {
 	g.InterruptBefore("step1")
 	g.InterruptBefore("step2")
 	g.Start("step1")
+	g.WithCheckpointer(checkpointer, runID)
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Provide approval for both nodes
-	approval1 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
-	approval2 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
+	// First run hits step1 interrupt
+	var gotErr error
+	for _, err := range compiled.Run(ctx, nil, graph.WithRunID(runID)) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	require.Error(t, gotErr)
+	var interruptErr *graph.InterruptError
+	require.True(t, errors.As(gotErr, &interruptErr))
+	assert.Equal(t, "step1", interruptErr.NodeName)
+	assert.False(t, node1Executed, "step1 should not execute before approval")
 
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithApproval("step1", approval1),
-		graph.WithApproval("step2", approval2),
-	) {
+	// Resume with step1 approval - step1 executes, hits step2 interrupt
+	approval1 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
+	for _, err := range compiled.Resume(ctx, runID, graph.WithApproval("step1", approval1)) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	require.Error(t, gotErr)
+	require.True(t, errors.As(gotErr, &interruptErr))
+	assert.Equal(t, "step2", interruptErr.NodeName)
+	assert.True(t, node1Executed, "step1 should have executed")
+	assert.False(t, node2Executed, "step2 should not execute before approval")
+
+	// Resume with step2 approval - step2 executes, completes
+	approval2 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
+	for _, err := range compiled.Resume(ctx, runID, graph.WithApproval("step2", approval2)) {
 		require.NoError(t, err)
 	}
 
-	assert.True(t, node1Executed, "step1 should execute")
-	assert.True(t, node2Executed, "step2 should execute")
+	assert.True(t, node1Executed, "step1 should have executed")
+	assert.True(t, node2Executed, "step2 should have executed")
 }
 
-// TestInterrupt_ChainWithPartialApproval tests chain where only some nodes have approval.
+// TestInterrupt_ChainWithPartialApproval tests chain where execution stops at unapproved node.
 func TestInterrupt_ChainWithPartialApproval(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var node1Executed, node2Executed bool
+
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "partial-approval-test"
 
 	g := graph.New[any, any](resultKey)
 	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -226,27 +273,38 @@ func TestInterrupt_ChainWithPartialApproval(t *testing.T) {
 	g.InterruptBefore("step1")
 	g.InterruptBefore("step2")
 	g.Start("step1")
+	g.WithCheckpointer(checkpointer, runID)
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Only provide approval for step1, not step2
-	approval1 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
-
+	// First run hits step1 interrupt
 	var gotErr error
-	for _, err := range compiled.Run(ctx, nil, graph.WithApproval("step1", approval1)) {
+	for _, err := range compiled.Run(ctx, nil, graph.WithRunID(runID)) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	require.Error(t, gotErr)
+	var interruptErr *graph.InterruptError
+	require.True(t, errors.As(gotErr, &interruptErr))
+	assert.Equal(t, "step1", interruptErr.NodeName)
+
+	// Resume with step1 approval only - step1 executes, step2 interrupts
+	approval1 := &graph.ApprovalResponse{Decision: graph.ApprovalApproved, Timestamp: time.Now()}
+	for _, err := range compiled.Resume(ctx, runID, graph.WithApproval("step1", approval1)) {
 		if err != nil {
 			gotErr = err
 			break
 		}
 	}
 
-	// step1 should execute, step2 should interrupt
+	// step1 should execute, step2 should interrupt (no approval provided)
 	assert.True(t, node1Executed, "step1 should execute with approval")
 	assert.False(t, node2Executed, "step2 should not execute without approval")
 
 	require.Error(t, gotErr)
-	var interruptErr *graph.InterruptError
 	require.True(t, errors.As(gotErr, &interruptErr))
 	assert.Equal(t, "step2", interruptErr.NodeName)
 }

@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	questionKey = graph.NewKey("question", "")
-	answerKey   = graph.NewKey("answer", "")
+	questionKey = graph.NewKey[string]("question")
+	answerKey   = graph.NewKey[string]("answer")
 )
 
 func main() {
@@ -96,8 +96,7 @@ func main() {
 	}
 
 	// Resume execution with WithResumeValue - sets state and auto-approves
-	for _, err := range compiled.Run(ctx, nil,
-		graph.WithRunID(runID),
+	for _, err := range compiled.Resume(ctx, runID,
 		graph.WithCheckpoint(savedCheckpoint),
 		graph.WithResumeValue("wait_for_answer", answerKey.Name(), "Paris"),
 	) {
@@ -111,6 +110,7 @@ func main() {
 	fmt.Println("  Human pause pattern:")
 	fmt.Println("    1. InterruptBefore(node) - pause before a node")
 	fmt.Println("    2. Checkpoint saved automatically")
-	fmt.Println("    3. WithResumeValue(node, key, value) - inject input & auto-approve")
-	fmt.Println("    4. WithCheckpoint(cp) - resume from saved state")
+	fmt.Println("    3. Resume(ctx, runID, opts...) - resume with options")
+	fmt.Println("    4. WithResumeValue(node, key, value) - inject input & auto-approve")
+	fmt.Println("    5. WithCheckpoint(cp) - resume from specific checkpoint")
 }

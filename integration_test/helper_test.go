@@ -13,10 +13,10 @@ var MessagesKey = agent.MessagesKey
 
 // Common keys used across integration tests
 var (
-	ResultKey    = graph.NewKey[string]("result", "")
-	CountKey     = graph.NewKey[int]("count", 0)
-	ExecutedKey  = graph.NewKey[bool]("executed", false)
-	CompletedKey = graph.NewKey[bool]("completed", false)
+	ResultKey    = graph.NewKey[string]("result")
+	CountKey     = graph.NewKey[int]("count")
+	ExecutedKey  = graph.NewKey[bool]("executed")
+	CompletedKey = graph.NewKey[bool]("completed")
 )
 
 // buildSimpleGraph creates a simple single-node graph for testing
@@ -34,7 +34,7 @@ func buildMessageGraph() (*message.Graph, error) {
 	g := message.NewGraphBuilder()
 	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("processed")
-		return graph.Append(message.MessagesKey, msg).End()
+		return graph.Set(message.MessagesKey, []message.Message{msg}).End()
 	}, graph.END)
 	g.Start("process")
 	return g.Build()

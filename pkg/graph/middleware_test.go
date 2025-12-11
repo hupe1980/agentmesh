@@ -281,7 +281,7 @@ func TestChainedMiddlewareInGraph(t *testing.T) {
 		}
 	}
 
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {

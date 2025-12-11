@@ -12,6 +12,9 @@ import (
 // END is the terminal node constant.
 const END = "__end__"
 
+// ApprovalsKey is the reserved state key for storing node approvals.
+const ApprovalsKey = "__approvals__"
+
 // Sentinel errors for graph validation.
 var (
 	ErrNoEntryPoint  = errors.New("graph: no entry point defined")
@@ -39,12 +42,12 @@ type interruptPoint struct {
 // Create with New(), add nodes, then Build() to get an executable Graph.
 // I = input type, O = output type.
 type Builder[I, O any] struct {
-	keys         []StateKey
-	outputKey    string // Name of the key that produces outputs
-	outputIsList bool   // True if output key is a ListKey
-	nodes        map[string]*node[O]
-	entryPoints  []string
-	interrupts   []interruptPoint
+	keys          []StateKey
+	outputKey     string // Name of the key that produces outputs
+	outputIsSlice bool   // True if output key is a slice key
+	nodes         map[string]*node[O]
+	entryPoints   []string
+	interrupts    []interruptPoint
 
 	// Configuration (set via With* methods)
 	store        Store
@@ -57,12 +60,12 @@ type Builder[I, O any] struct {
 // Graph is an executable workflow with immutable structure.
 // Created by calling Build() on a Builder.
 type Graph[I, O any] struct {
-	keys         []StateKey
-	outputKey    string
-	outputIsList bool
-	nodes        map[string]*node[O]
-	entryPoints  []string
-	interrupts   []interruptPoint
+	keys          []StateKey
+	outputKey     string
+	outputIsSlice bool
+	nodes         map[string]*node[O]
+	entryPoints   []string
+	interrupts    []interruptPoint
 
 	store        Store
 	checkpointer checkpoint.Checkpointer
@@ -74,22 +77,22 @@ type Graph[I, O any] struct {
 // New creates a graph builder with the given state keys.
 // Keys are automatically registered.
 // The first key (if provided) is used as the output key.
-// For ListKey[O], new items are yielded as outputs.
-// For Key[O], the value is yielded when set.
+// For slice keys (created with NewListKey), new items are yielded as outputs.
+// For scalar keys, the value is yielded when set.
 // Duplicate keys will cause Build() to fail.
 func New[I, O any](keys ...StateKey) *Builder[I, O] {
 	var outputKey string
-	var outputIsList bool
+	var outputIsSlice bool
 	if len(keys) > 0 {
 		outputKey = keys[0].Name()
-		outputIsList = keys[0].IsList()
+		outputIsSlice = keys[0].IsSlice()
 	}
 
 	return &Builder[I, O]{
-		keys:         keys,
-		outputKey:    outputKey,
-		outputIsList: outputIsList,
-		nodes:        make(map[string]*node[O]),
+		keys:          keys,
+		outputKey:     outputKey,
+		outputIsSlice: outputIsSlice,
+		nodes:         make(map[string]*node[O]),
 	}
 }
 
@@ -288,21 +291,22 @@ func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 	}
 
 	return &Graph[I, O]{
-		keys:         b.keys,
-		outputKey:    b.outputKey,
-		outputIsList: b.outputIsList,
-		nodes:        b.nodes,
-		entryPoints:  b.entryPoints,
-		interrupts:   b.interrupts,
-		store:        store,
-		checkpointer: b.checkpointer,
-		runID:        b.runID,
-		middleware:   b.middleware,
-		executor:     b.executor,
+		keys:          b.keys,
+		outputKey:     b.outputKey,
+		outputIsSlice: b.outputIsSlice,
+		nodes:         b.nodes,
+		entryPoints:   b.entryPoints,
+		interrupts:    b.interrupts,
+		store:         store,
+		checkpointer:  b.checkpointer,
+		runID:         b.runID,
+		middleware:    b.middleware,
+		executor:      b.executor,
 	}, nil
 }
 
 // Run executes the compiled graph with input.
+// For resuming from a checkpoint without providing new input, use [Resume] instead.
 func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		// Build executor config
@@ -314,8 +318,77 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 			exec = NewPregelExecutor[I, O]()
 		}
 
+		// Convert RunOptions to internal runOptions via interface method
+		runOpts := make([]runOption, len(opts))
+		for i, opt := range opts {
+			runOpts[i] = func(cfg *runConfig) { opt.applyRun(cfg) }
+		}
+
 		// Delegate to executor
-		for output, err := range exec.Run(ctx, cfg, input, opts...) {
+		for output, err := range exec.Run(ctx, cfg, input, runOpts...) {
+			if !yield(output, err) {
+				return
+			}
+		}
+	}
+}
+
+// Resume continues execution from a checkpoint without providing new input.
+// This is the correct way to resume a paused graph - the checkpoint state is
+// restored without being overwritten by a zero-value input.
+//
+// Parameters:
+//   - cp: The checkpoint to resume from (required)
+//   - runID: The run ID for checkpointing (required)
+//   - opts: Optional resume options for human-in-the-loop workflows
+//
+// Example:
+//
+//	// Resume from the latest checkpoint (auto-restore)
+//	for output, err := range compiled.Resume(ctx, runID) {
+//	    // process output
+//	}
+//
+//	// Resume from a specific checkpoint
+//	savedCp, _ := checkpointer.Load(ctx, runID)
+//	for output, err := range compiled.Resume(ctx, runID, graph.WithCheckpoint(savedCp)) {
+//	    // process output
+//	}
+//
+//	// Resume with human input (human-in-the-loop)
+//	for output, err := range compiled.Resume(ctx, runID,
+//	    graph.WithCheckpoint(savedCp),
+//	    graph.WithResumeValue("wait_node", answerKey.Name(), "user input"),
+//	) {
+//	    // process output
+//	}
+func (g *Graph[I, O]) Resume(ctx context.Context, runID string, opts ...ResumeOption) iter.Seq2[O, error] {
+	return func(yield func(O, error) bool) {
+		// Build executor config
+		cfg := g.buildExecutorConfig()
+
+		// Use configured executor or default Pregel executor
+		exec := g.executor
+		if exec == nil {
+			exec = NewPregelExecutor[I, O]()
+		}
+
+		// Build runOptions: skipInputMerge + runID + autoRestore (default) + user options
+		// User can override autoRestore by providing WithCheckpoint
+		runOpts := make([]runOption, 0, len(opts)+3)
+		runOpts = append(runOpts,
+			func(cfg *runConfig) { cfg.skipInputMerge = true },
+			func(cfg *runConfig) { cfg.runID = runID },
+			func(cfg *runConfig) { cfg.autoRestore = true }, // Default to auto-restore
+		)
+		for _, opt := range opts {
+			opt := opt // Capture loop variable to avoid closure bug
+			runOpts = append(runOpts, func(cfg *runConfig) { opt.applyResume(cfg) })
+		}
+
+		// Delegate to executor with zero input
+		var zero I
+		for output, err := range exec.Run(ctx, cfg, zero, runOpts...) {
 			if !yield(output, err) {
 				return
 			}
@@ -346,14 +419,27 @@ func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 		}
 	}
 
+	// Build key registry for reducers
+	registry := NewKeyRegistry()
+	for _, key := range g.keys {
+		registry.Register(key.Name(), key.ReducerFunc())
+	}
+
+	// Register internal approvals key (replace semantics)
+	registry.Register(ApprovalsKey, ReducerFunc{
+		ZeroFn:   func() any { return nil },
+		ReduceFn: func(_, updated any) any { return updated },
+	})
+
 	return &ExecutorConfig[I, O]{
 		Execution: ExecutionConfig[O]{
-			Nodes:        nodes,
-			EntryPoints:  g.entryPoints,
-			Middleware:   g.middleware,
-			Store:        g.store,
-			OutputKey:    g.outputKey,
-			OutputIsList: g.outputIsList,
+			Nodes:         nodes,
+			EntryPoints:   g.entryPoints,
+			Middleware:    g.middleware,
+			Store:         g.store,
+			OutputKey:     g.outputKey,
+			OutputIsSlice: g.outputIsSlice,
+			KeyRegistry:   registry,
 		},
 		Checkpoint: CheckpointConfig{
 			Checkpointer: g.checkpointer,
@@ -391,55 +477,86 @@ type runConfig struct {
 	checkpointInterval  int
 	autoRestore         bool
 	failOnCheckpointErr bool
+	skipInputMerge      bool     // true when resuming without new input
+	pausedNodes         []string // Nodes to resume from (overrides entry points)
 }
 
-// RunOption configures a Run call.
-type RunOption func(*runConfig)
+// runOption is the internal option type used by all option types.
+type runOption func(*runConfig)
 
-// WithCheckpoint resumes from a checkpoint.
-func WithCheckpoint(cp *checkpoint.Checkpoint) RunOption {
-	return func(cfg *runConfig) {
-		cfg.checkpoint = cp
-	}
+// RunOption is an option that can be passed to Run().
+type RunOption interface {
+	applyRun(*runConfig)
 }
 
-// WithStateUpdates applies state updates to the graph execution.
-// This works for both fresh runs (to set initial values) and checkpoint resumes
-// (for human-in-the-loop workflows where you need to inject human input).
-//
-// For type-safe initial values, prefer [WithInitialValue] instead.
-//
-// Example (checkpoint resume):
-//
-//	compiled.Run(ctx, nil,
-//	    graph.WithCheckpoint(savedCheckpoint),
-//	    graph.WithStateUpdates(map[string]any{
-//	        "answer": "Paris",
-//	        "approved": true,
-//	    }),
-//	    graph.WithApproval("wait_for_input", approval),
-//	)
-func WithStateUpdates(updates map[string]any) RunOption {
-	return func(cfg *runConfig) {
-		cfg.stateUpdates = updates
-	}
+// ResumeOption is an option that can be passed to Resume().
+type ResumeOption interface {
+	applyResume(*runConfig)
 }
 
-// WithResumeValue is a convenience function that combines WithStateUpdates and
-// WithApproval for simple human-input scenarios. It sets a single state value
-// and auto-approves the specified node to bypass its interrupt.
-//
-// This is ideal for "pause for input" workflows where you just need to inject
-// a value and continue execution.
+// runOnlyOption is for options that only work with Run().
+type runOnlyOption struct {
+	fn runOption
+}
+
+func (o runOnlyOption) applyRun(cfg *runConfig) {
+	o.fn(cfg)
+}
+
+// resumeOnlyOption is for options that only work with Resume().
+type resumeOnlyOption struct {
+	fn runOption
+}
+
+func (o resumeOnlyOption) applyResume(cfg *runConfig) {
+	o.fn(cfg)
+}
+
+// SharedOption implements both RunOption and ResumeOption interfaces.
+// This allows common options (like WithMaxConcurrency) to work with both
+// Run() and Resume() without explicit conversion.
+type SharedOption func(*runConfig)
+
+// Implement RunOption interface
+func (s SharedOption) applyRun(cfg *runConfig) {
+	s(cfg)
+}
+
+// Implement ResumeOption interface
+func (s SharedOption) applyResume(cfg *runConfig) {
+	s(cfg)
+}
+
+// -----------------------------------------------------------------------------
+// Resume-only options (can only be used with Resume)
+// -----------------------------------------------------------------------------
+
+// WithCheckpoint resumes from a specific checkpoint instead of auto-restoring
+// from the latest checkpoint.
+// This is a Resume-only option.
 //
 // Example:
 //
-//	compiled.Run(ctx, nil,
-//	    graph.WithCheckpoint(savedCheckpoint),
+//	savedCp, _ := checkpointer.Load(ctx, runID)
+//	compiled.Resume(ctx, runID, graph.WithCheckpoint(savedCp))
+func WithCheckpoint(cp *checkpoint.Checkpoint) ResumeOption {
+	return resumeOnlyOption{fn: func(cfg *runConfig) {
+		cfg.checkpoint = cp
+		cfg.autoRestore = false // Disable auto-restore when explicit checkpoint is provided
+	}}
+}
+
+// WithResumeValue is a convenience function that sets a state value and
+// auto-approves a node for simple human-input scenarios.
+// This is a Resume-only option.
+//
+// Example:
+//
+//	compiled.Resume(ctx, runID,
 //	    graph.WithResumeValue("wait_for_answer", answerKey.Name(), "Paris"),
 //	)
-func WithResumeValue(nodeName string, key string, value any) RunOption {
-	return func(cfg *runConfig) {
+func WithResumeValue(nodeName string, key string, value any) ResumeOption {
+	return resumeOnlyOption{fn: func(cfg *runConfig) {
 		// Apply state update
 		if cfg.stateUpdates == nil {
 			cfg.stateUpdates = make(map[string]any)
@@ -454,24 +571,54 @@ func WithResumeValue(nodeName string, key string, value any) RunOption {
 			Decision: ApprovalApproved,
 			Reason:   "Auto-approved via WithResumeValue",
 		}
-	}
+	}}
 }
 
-// WithApproval provides an approval response for a node.
-func WithApproval(nodeName string, approval *ApprovalResponse) RunOption {
-	return func(cfg *runConfig) {
+// WithApproval provides an approval response for a node interrupt.
+// This is a Resume-only option - approvals are provided when continuing after an interrupt.
+func WithApproval(nodeName string, approval *ApprovalResponse) ResumeOption {
+	return resumeOnlyOption{fn: func(cfg *runConfig) {
 		if cfg.approvals == nil {
 			cfg.approvals = make(map[string]*ApprovalResponse)
 		}
 		cfg.approvals[nodeName] = approval
-	}
+	}}
+}
+
+// WithStateUpdates applies state updates when resuming.
+// This is a Resume-only option for human-in-the-loop workflows.
+//
+// Example:
+//
+//	savedCp, _ := checkpointer.Load(ctx, runID)
+//	compiled.Resume(ctx, savedCp, runID,
+//	    graph.WithStateUpdates(map[string]any{"answer": "Paris"}),
+//	    graph.WithApproval("wait_node", approval),
+//	)
+func WithStateUpdates(updates map[string]any) ResumeOption {
+	return resumeOnlyOption{fn: func(cfg *runConfig) {
+		cfg.stateUpdates = updates
+	}}
+}
+
+// -----------------------------------------------------------------------------
+// Run-only options (can only be used with Run)
+// -----------------------------------------------------------------------------
+
+// WithRunID sets the run ID for checkpointing when starting a new execution.
+// This is a Run-only option.
+//
+// Example:
+//
+//	compiled.Run(ctx, input, graph.WithRunID("workflow-123"))
+func WithRunID(id string) RunOption {
+	return runOnlyOption{fn: func(cfg *runConfig) {
+		cfg.runID = id
+	}}
 }
 
 // WithInitialValue sets an initial state value when starting graph execution.
-// This is useful for passing runtime-specific values like session IDs or
-// configuration that varies per execution.
-//
-// Unlike WithStateUpdates, this provides type safety through the Key type.
+// This is a Run-only option.
 //
 // Example:
 //
@@ -479,30 +626,26 @@ func WithApproval(nodeName string, approval *ApprovalResponse) RunOption {
 //	    graph.WithInitialValue(agent.SessionIDKey, "session-123"),
 //	)
 func WithInitialValue[T any](key Key[T], value T) RunOption {
-	return func(cfg *runConfig) {
+	return runOnlyOption{fn: func(cfg *runConfig) {
 		if cfg.stateUpdates == nil {
 			cfg.stateUpdates = make(map[string]any)
 		}
 		cfg.stateUpdates[key.Name()] = value
-	}
+	}}
 }
 
+// -----------------------------------------------------------------------------
+// Shared options (can be used with both Run and Resume)
+// -----------------------------------------------------------------------------
+
 // WithManagedValues attaches ephemeral runtime values to the graph execution.
-// Managed values are NOT persisted in checkpoints and are ideal for:
-//   - API keys and authentication tokens
-//   - Session state
-//   - Runtime metrics collectors
-//   - Cached computed values
-//
-// Access managed values in nodes using graph.GetManaged(ctx, view, managedValue).
+// This option works with both Run and Resume.
 //
 // Example:
 //
-//	apiKeyMV := graph.NewManagedValueWithDefault("api_key", os.Getenv("API_KEY"))
-//	timeoutMV := graph.NewManagedValueWithDefault("timeout", 30*time.Second)
-//
-//	compiled.Run(ctx, input, graph.WithManagedValues(apiKeyMV, timeoutMV))
-func WithManagedValues(values ...ManagedValue) RunOption {
+//	compiled.Run(ctx, input, graph.WithManagedValues(apiKeyMV))
+//	compiled.Resume(ctx, runID, graph.WithManagedValues(apiKeyMV))
+func WithManagedValues(values ...ManagedValue) SharedOption {
 	return func(cfg *runConfig) {
 		if cfg.managedValues == nil {
 			cfg.managedValues = NewManagedValueRegistry()
@@ -513,45 +656,25 @@ func WithManagedValues(values ...ManagedValue) RunOption {
 	}
 }
 
-// WithRunID sets the run ID for checkpointing.
-func WithRunID(id string) RunOption {
-	return func(cfg *runConfig) {
-		cfg.runID = id
-	}
-}
-
 // WithMaxConcurrency sets the maximum number of nodes that can execute in parallel.
-// Default is 0 (unlimited). Higher values may improve throughput for I/O-bound nodes.
-//
-// Example:
-//
-//	graph.Run(ctx, input, graph.WithMaxConcurrency(8))
-func WithMaxConcurrency(n int) RunOption {
+// This option works with both Run and Resume.
+func WithMaxConcurrency(n int) SharedOption {
 	return func(cfg *runConfig) {
 		cfg.maxConcurrency = n
 	}
 }
 
-// WithMaxIterations sets the maximum number of supersteps before stopping execution.
-// Prevents infinite loops in cyclic graphs. Default is 100.
-//
-// Example:
-//
-//	graph.Run(ctx, input, graph.WithMaxIterations(1000))
-func WithMaxIterations(n int) RunOption {
+// WithMaxIterations sets the maximum number of supersteps before stopping.
+// This option works with both Run and Resume.
+func WithMaxIterations(n int) SharedOption {
 	return func(cfg *runConfig) {
 		cfg.maxIterations = n
 	}
 }
 
-// WithCheckpointInterval sets how often checkpoints are saved (in supersteps).
-// Default is 1 (every superstep). Higher values reduce I/O but increase
-// potential data loss on failure.
-//
-// Example:
-//
-//	graph.Run(ctx, input, graph.WithCheckpointInterval(5))
-func WithCheckpointInterval(interval int) RunOption {
+// WithCheckpointInterval sets how often checkpoints are saved.
+// This option works with both Run and Resume.
+func WithCheckpointInterval(interval int) SharedOption {
 	return func(cfg *runConfig) {
 		if interval > 0 {
 			cfg.checkpointInterval = interval
@@ -559,28 +682,9 @@ func WithCheckpointInterval(interval int) RunOption {
 	}
 }
 
-// WithAutoRestore enables automatic restoration from the latest checkpoint
-// when a checkpointer is configured.
-//
-// Example:
-//
-//	graph.Run(ctx, input, graph.WithAutoRestore(true))
-func WithAutoRestore(enabled bool) RunOption {
-	return func(cfg *runConfig) {
-		cfg.autoRestore = enabled
-	}
-}
-
-// WithFailOnCheckpointError configures whether checkpoint save errors should
-// fail the entire graph execution or just be logged as warnings.
-//
-// By default (false), checkpoint errors are logged but don't stop execution.
-// Set to true for critical workflows where checkpoint integrity is required.
-//
-// Example:
-//
-//	graph.Run(ctx, input, graph.WithFailOnCheckpointError(true))
-func WithFailOnCheckpointError(fail bool) RunOption {
+// WithFailOnCheckpointError configures checkpoint error handling.
+// This option works with both Run and Resume.
+func WithFailOnCheckpointError(fail bool) SharedOption {
 	return func(cfg *runConfig) {
 		cfg.failOnCheckpointErr = fail
 	}

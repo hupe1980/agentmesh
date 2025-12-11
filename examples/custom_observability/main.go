@@ -12,7 +12,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-var taskKey = graph.NewKey("task", "")
+var taskKey = graph.NewKey[string]("task")
 
 // MetricsCollector tracks execution metrics
 type MetricsCollector struct {

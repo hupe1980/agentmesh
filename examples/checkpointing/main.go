@@ -18,9 +18,9 @@ import (
 
 // State keys for tracking workflow progress
 var (
-	stepKey   = graph.NewKey("step", 0)
-	statusKey = graph.NewKey("status", "")
-	dataKey   = graph.NewKey("data", "")
+	stepKey   = graph.NewKey[int]("step")
+	statusKey = graph.NewKey[string]("status")
+	dataKey   = graph.NewKey[string]("data")
 )
 
 func main() {
@@ -172,7 +172,7 @@ func resumeFromCheckpointExample(ctx context.Context) {
 
 	// Resume execution from checkpoint
 	fmt.Println("\n  Resuming from checkpoint...")
-	for _, err := range compiled.Run(ctx, nil, graph.WithCheckpoint(cp)) {
+	for _, err := range compiled.Resume(ctx, "resume-run-001", graph.WithCheckpoint(cp)) {
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}

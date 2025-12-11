@@ -329,16 +329,16 @@ func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, err
     
     // Fluent, type-safe updates
     return graph.Set(CounterKey, counter + 1).
-        Set(StatusKey, "processing").
-        To("next_node"), nil
+        With(graph.SetValue(StatusKey, "processing")).
+        To("next_node")
 }
 
-// For list keys, use Append
+// For list keys, Set with a slice - the reducer handles appending
 func addMessageNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     newMsg := message.NewAIMessage(message.NewTextPart("Hello!"))
     
-    return graph.Append(MessagesKey, newMsg).
-        To("next_node"), nil
+    return graph.Set(MessagesKey, []message.Message{newMsg}).
+        To("next_node")
 }
 ```
 
@@ -354,7 +354,7 @@ g := message.NewGraphBuilder()
 g.Node("chat", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     // ... process messages
-    return graph.Append(message.MessagesKey, response).To(graph.END), nil
+    return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 ```
 
@@ -602,8 +602,8 @@ if errors.As(err, &interruptErr) {
     fmt.Printf("Interrupted at node %s (before=%v)\n", 
         interruptErr.NodeName, interruptErr.Before)
     
-    // Resume with approval
-    for output, err := range compiled.Run(ctx, input,
+    // Resume with approval (WithApproval is a ResumeOption)
+    for output, err := range compiled.Resume(ctx, runID,
         graph.WithApproval(interruptErr.NodeName, &graph.ApprovalResponse{
             Decision: graph.ApprovalApproved,
         }),

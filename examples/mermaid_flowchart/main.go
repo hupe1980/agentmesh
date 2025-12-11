@@ -48,7 +48,7 @@ func simpleWorkflow() {
 }
 
 func conditionalWorkflow() {
-	categoryKey := graph.NewKey("category", "")
+	categoryKey := graph.NewKey[string]("category")
 
 	g := graph.New[any, any](categoryKey)
 
@@ -115,8 +115,8 @@ func parallelWorkflow() {
 }
 
 func complexWorkflow() {
-	validKey := graph.NewKey("valid", false)
-	priorityKey := graph.NewKey("priority", "")
+	validKey := graph.NewKey[bool]("valid")
+	priorityKey := graph.NewKey[string]("priority")
 
 	g := graph.New[any, any](validKey, priorityKey)
 

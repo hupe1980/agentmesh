@@ -27,8 +27,8 @@ import (
 
 // Define typed keys at package level
 var (
-	ChoiceKey        = graph.NewKey("choice", "")
-	NextPathKey      = graph.NewKey("next_path", "")
+	ChoiceKey        = graph.NewKey[string]("choice")
+	NextPathKey      = graph.NewKey[string]("next_path")
 	ActionHistoryKey = graph.NewListKey[string]("action_history")
 )
 
@@ -61,24 +61,24 @@ func runScenario(choice string) {
 		// Route to the chosen path - fluent Set().With().To() API
 		if choiceVal == "path_a" {
 			return graph.Set(NextPathKey, choiceVal).
-				With(graph.AppendValue(ActionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))).
+				With(graph.SetValue(ActionHistoryKey, []string{fmt.Sprintf("Decision: route to %s", choiceVal)})).
 				To("path_a")
 		}
 		return graph.Set(NextPathKey, choiceVal).
-			With(graph.AppendValue(ActionHistoryKey, fmt.Sprintf("Decision: route to %s", choiceVal))).
+			With(graph.SetValue(ActionHistoryKey, []string{fmt.Sprintf("Decision: route to %s", choiceVal)})).
 			To("path_b")
 	}, "path_a", "path_b")
 
 	// Path A: Specialized processing for option A
 	g.Node("path_a", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		fmt.Println("  [path_a] Executing Path A logic...")
-		return graph.Append(ActionHistoryKey, "Completed: Path A").End()
+		return graph.Set(ActionHistoryKey, []string{"Completed: Path A"}).End()
 	}, graph.END)
 
 	// Path B: Alternative processing for option B
 	g.Node("path_b", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		fmt.Println("  [path_b] Executing Path B logic...")
-		return graph.Append(ActionHistoryKey, "Completed: Path B").End()
+		return graph.Set(ActionHistoryKey, []string{"Completed: Path B"}).End()
 	}, graph.END)
 
 	// Initial node that sets the choice from scenario input

@@ -28,9 +28,9 @@ import (
 // Define typed keys at package level
 var (
 	ActionHistoryKey = graph.NewListKey[string]("action_history")
-	ResultAKey       = graph.NewKey("result_a", "")
-	ResultBKey       = graph.NewKey("result_b", "")
-	SummaryKey       = graph.NewKey("summary", map[string]any{})
+	ResultAKey       = graph.NewKey[string]("result_a")
+	ResultBKey       = graph.NewKey[string]("result_b")
+	SummaryKey       = graph.NewKey[map[string]any]("summary")
 )
 
 func main() {
@@ -52,7 +52,7 @@ func main() {
 		time.Sleep(300 * time.Millisecond) // Simulate work
 		fmt.Println("  [task_a] Analysis complete")
 
-		return graph.Append(ActionHistoryKey, "task_a: analysis completed").
+		return graph.Set(ActionHistoryKey, []string{"task_a: analysis completed"}).
 			With(graph.SetValue(ResultAKey, "analysis result")).
 			To("combine")
 	}, "combine")
@@ -63,7 +63,7 @@ func main() {
 		time.Sleep(300 * time.Millisecond) // Simulate work
 		fmt.Println("  [task_b] Simulation complete")
 
-		return graph.Append(ActionHistoryKey, "task_b: simulation completed").
+		return graph.Set(ActionHistoryKey, []string{"task_b: simulation completed"}).
 			With(graph.SetValue(ResultBKey, "simulation result")).
 			To("combine")
 	}, "combine")

@@ -17,10 +17,10 @@ import (
 // Define typed state keys at package level for type-safe access
 // Note: graph2 keys are simpler - no need for separate registration
 var (
-	AnalysisKey = graph.NewKey("analysis", "")
-	ScoreKey    = graph.NewKey("score", 0.0)
-	ValidKey    = graph.NewKey("valid", false)
-	ResultKey   = graph.NewKey("result", "")
+	AnalysisKey = graph.NewKey[string]("analysis")
+	ScoreKey    = graph.NewKey[float64]("score")
+	ValidKey    = graph.NewKey[bool]("valid")
+	ResultKey   = graph.NewKey[string]("result")
 )
 
 func main() {

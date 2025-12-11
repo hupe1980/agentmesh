@@ -56,7 +56,8 @@ g.Node("agent", func(ctx context.Context, input graph.NodeInput[[]message.Messag
     // Process messages...
     response := message.NewAIMessageFromText("Hello!")
     
-    return graph.Append(LimitedKey, response).ToEnd(), nil
+    // Set with slice - the reducer handles appending
+    return graph.Set(LimitedKey, []message.Message{response}).ToEnd(), nil
 }, graph.END)
 
 g.Start("agent")

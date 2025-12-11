@@ -10,7 +10,7 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
-var counterKey = graph.NewKey("counter", 0)
+var counterKey = graph.NewKey[int]("counter")
 
 func main() {
 	ctx := context.Background()

@@ -33,7 +33,7 @@ type Middleware[O any] func(next NodeFunc[O]) NodeFunc[O]
 
 // Executor runs the graph.
 type Executor[I, O any] interface {
-	Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error]
+	Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...runOption) iter.Seq2[O, error]
 }
 
 // ExecutorNode represents a node for the executor.
@@ -63,8 +63,11 @@ type ExecutionConfig[O any] struct {
 	// OutputKey is the name of the key that produces outputs.
 	OutputKey string
 
-	// OutputIsList is true if output key is a ListKey (yield items individually).
-	OutputIsList bool
+	// OutputIsSlice is true if output key is a slice key (yield items individually).
+	OutputIsSlice bool
+
+	// KeyRegistry holds type-erased reducers for state merging.
+	KeyRegistry KeyRegistry
 }
 
 // CheckpointConfig holds checkpointing configuration.

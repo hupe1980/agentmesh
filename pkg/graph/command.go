@@ -35,8 +35,7 @@ package graph
 // Example - with multiple updates:
 //
 //	return graph.Set(Key1, val1).
-//	    Set(Key2, val2).
-//	    Append(ListKey, item).
+//	    With(graph.SetValue(Key2, val2)).
 //	    To("next")
 //
 // Example - conditional:
@@ -103,7 +102,7 @@ type CommandBuilder struct {
 //	}
 //
 //	cmd.With(graph.SetValue(TurnKey, turn+1))
-//	cmd.With(graph.AppendValue(MessagesKey, resp.Message))
+//	cmd.With(graph.SetValue(MessagesKey, []Message{resp.Message})) // Reducer handles append
 //	return cmd.To("next")
 func Cmd() *CommandBuilder {
 	return &CommandBuilder{updates: make(Updates)}
@@ -134,53 +133,19 @@ func SetValue[T any](key Key[T], value T) func(*CommandBuilder) *CommandBuilder 
 	}
 }
 
-// AppendValue returns a type-safe append function for use with With().
-// The generic parameter T is inferred from ListKey[T].
-// The result is wrapped in SliceOf for zero-reflection iteration.
-//
-// Example:
-//
-//	cmd.With(graph.AppendValue(messagesKey, msg1, msg2))
-func AppendValue[T any](key ListKey[T], values ...T) func(*CommandBuilder) *CommandBuilder {
-	return func(b *CommandBuilder) *CommandBuilder {
-		// Get existing list or create new one
-		var list []T
-		if existing, ok := b.updates[key.Name()]; ok {
-			switch v := existing.(type) {
-			case SliceOf[T]:
-				list = []T(v)
-			case []T:
-				list = v
-			}
-		}
-		list = append(list, values...)
-		// Wrap in SliceOf for zero-reflection iteration
-		b.updates[key.Name()] = SliceOf[T](list)
-		return b
-	}
-}
-
 // Set creates a CommandBuilder with a typed value (starter function).
 // The generic parameter T is inferred from Key[T], ensuring type safety.
 //
+// For list keys with AppendReducer, pass a slice containing the new items.
+// The reducer will merge them with the existing list.
+//
 // Example:
 //
-//	graph.Set(statusKey, "done").To("next")       // ✅ Type-safe
+//	graph.Set(statusKey, "done").To("next")           // ✅ Type-safe
+//	graph.Set(messagesKey, []Msg{msg}).To("next")     // ✅ Appends via reducer
 func Set[T any](key Key[T], value T) *CommandBuilder {
 	return &CommandBuilder{
 		updates: Updates{key.Name(): value},
-	}
-}
-
-// Append creates a CommandBuilder that appends values to a list key (starter function).
-// The values are wrapped in SliceOf for zero-reflection iteration.
-//
-// Example:
-//
-//	graph.Append(messagesKey, msg1, msg2).To("next")
-func Append[T any](key ListKey[T], values ...T) *CommandBuilder {
-	return &CommandBuilder{
-		updates: Updates{key.Name(): SliceOf[T](values)},
 	}
 }
 

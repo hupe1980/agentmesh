@@ -205,9 +205,9 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message
 
 		// Route based on tool calls
 		if message.HasToolCalls(finalResp.Message) {
-			return graph.Append(MessagesKey, finalResp.Message).To(cfg.ToolTarget)
+			return graph.Set(MessagesKey, []message.Message{finalResp.Message}).To(cfg.ToolTarget)
 		}
 
-		return graph.Append(MessagesKey, finalResp.Message).To(graph.END)
+		return graph.Set(MessagesKey, []message.Message{finalResp.Message}).To(graph.END)
 	}, nil
 }

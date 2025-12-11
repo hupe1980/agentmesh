@@ -19,7 +19,7 @@ func TestConcurrency_ParallelNodeExecution(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var concurrentCount atomic.Int32
 	var maxConcurrent atomic.Int32
 
@@ -90,7 +90,7 @@ func TestConcurrency_RaceConditionFree(t *testing.T) {
 	for i, name := range []string{"w1", "w2", "w3", "w4", "w5"} {
 		id := i + 1
 		g.Node(name, func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
-			return graph.Append(counterKey, id).To("end")
+			return graph.Set(counterKey, []int{id}).To("end")
 		}, "end")
 	}
 
@@ -119,7 +119,7 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var nodesStarted atomic.Int32
 	nodeStarted := make(chan struct{}, 2) // Signal when a slow node starts
 
@@ -199,7 +199,7 @@ func TestConcurrency_WaitGroupSemantics(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var completedBranches atomic.Int32
 
 	g := graph.New[any, any](resultKey)
@@ -267,7 +267,7 @@ func TestConcurrency_HighFanout(t *testing.T) {
 	for _, name := range workerNames {
 		workerName := name
 		g.Node(workerName, func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
-			return graph.Append(resultKey, workerName).To("collect")
+			return graph.Set(resultKey, []string{workerName}).To("collect")
 		}, "collect")
 	}
 
@@ -297,7 +297,7 @@ func TestConcurrency_MutexNotNeeded(t *testing.T) {
 
 	// Multiple iterations to stress test
 	for iter := 0; iter < 10; iter++ {
-		resultKey := graph.NewKey("result", 0)
+		resultKey := graph.NewKey[int]("result")
 
 		var wg sync.WaitGroup
 		var completed atomic.Int32

@@ -8,17 +8,21 @@ import (
 	"log"
 	"time"
 
+	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 )
 
 var (
-	taskKey   = graph.NewKey("task", "")
-	statusKey = graph.NewKey("status", "pending")
+	taskKey   = graph.NewKey[string]("task")
+	statusKey = graph.NewKey[string]("status")
 )
 
 func main() {
 	ctx := context.Background()
 	fmt.Println("=== Human Approval Example ===")
+
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "approval-workflow-001"
 
 	// Build graph with approval checkpoint
 	g := graph.New[any, any](taskKey, statusKey)
@@ -48,6 +52,9 @@ func main() {
 	// Add interrupt before the approve node
 	g.InterruptBefore("approve")
 
+	// Configure checkpointer for resume support
+	g.WithCheckpointer(checkpointer, runID)
+
 	compiled, err := g.Build()
 	if err != nil {
 		log.Fatal(err)
@@ -55,7 +62,7 @@ func main() {
 
 	// First run - will interrupt at approval
 	fmt.Println("\n--- First Run (will pause for approval) ---")
-	for _, err := range compiled.Run(ctx, nil) {
+	for _, err := range compiled.Run(ctx, nil, graph.WithRunID(runID)) {
 		if err != nil {
 			var intErr *graph.InterruptError
 			if errors.As(err, &intErr) {
@@ -75,7 +82,7 @@ func main() {
 		User:      "admin@example.com",
 		Timestamp: time.Now(),
 	}
-	for _, err := range compiled.Run(ctx, nil, graph.WithApproval("approve", approval)) {
+	for _, err := range compiled.Resume(ctx, runID, graph.WithApproval("approve", approval)) {
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -14,9 +14,9 @@ import (
 // State keys for reflection
 var (
 	// ReflectionCountKey tracks the number of reflections performed
-	ReflectionCountKey = graph.NewKey("reflection_count", 0)
+	ReflectionCountKey = graph.NewKey[int]("reflection_count")
 	// DraftKey stores the current draft answer being refined
-	DraftKey = graph.NewKey("draft", "")
+	DraftKey = graph.NewKey[string]("draft")
 )
 
 // NewReflection creates a reflection agent that wraps another agent and adds
@@ -188,11 +188,11 @@ func createAgentWrapperNode(wrappedAgent *message.Graph) message.NodeFunc {
 		// Check if we should continue reflecting
 		if reflectionCount > 0 {
 			// This is a refinement iteration, route back to reflection
-			return graph.Append(MessagesKey, lastMsg).To("reflection")
+			return graph.Set(MessagesKey, []message.Message{lastMsg}).To("reflection")
 		}
 
 		// First iteration, route to reflection
-		return graph.Append(MessagesKey, lastMsg).To("reflection")
+		return graph.Set(MessagesKey, []message.Message{lastMsg}).To("reflection")
 	}
 }
 
@@ -247,7 +247,7 @@ func createReflectionNodeForWrapper(executor model.Executor, config reflectionOp
 		var reflectionMsg message.Message = message.NewSystemMessageFromText(reflectionMsgText)
 
 		// Increment reflection count and add reflection message
-		return graph.Append(MessagesKey, reflectionMsg).
+		return graph.Set(MessagesKey, []message.Message{reflectionMsg}).
 			With(graph.SetValue(ReflectionCountKey, reflectionCount+1)).
 			With(graph.SetValue(DraftKey, draft)).
 			To("agent")

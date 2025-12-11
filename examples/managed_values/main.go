@@ -24,7 +24,7 @@ import (
 )
 
 // Define a key for storing results
-var resultKey = graph.NewKey("result", "")
+var resultKey = graph.NewKey[string]("result")
 
 // RuntimeConfig holds runtime configuration that shouldn't be checkpointed
 type RuntimeConfig struct {

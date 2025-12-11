@@ -12,12 +12,13 @@ import (
 // ====================
 
 func TestNewKey(t *testing.T) {
-	key := graph.NewKey("counter", 42)
+	key := graph.NewKey[int]("counter")
 	if key.Name() != "counter" {
 		t.Errorf("expected name=counter, got %v", key.Name())
 	}
-	if key.Default() != 42 {
-		t.Errorf("expected default=42, got %v", key.Default())
+	// Zero value comes from the reducer (ReplaceReducer by default)
+	if key.Zero() != 0 {
+		t.Errorf("expected Zero()=0, got %v", key.Zero())
 	}
 }
 
@@ -34,11 +35,11 @@ func TestNewListKey(t *testing.T) {
 
 // createTestView creates a View for testing using BSPState
 func createTestView(data map[string]any) graph.ReadOnlyScope {
-	return graph.NewBSPState(data).ReadView()
+	return graph.NewBSPState(data, graph.NewKeyRegistry()).ReadView()
 }
 
 func TestGet(t *testing.T) {
-	key := graph.NewKey("counter", 0)
+	key := graph.NewKey[int]("counter")
 	view := createTestView(map[string]any{"counter": 42})
 
 	val := graph.Get(view, key)
@@ -48,12 +49,13 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetDefault(t *testing.T) {
-	key := graph.NewKey("counter", 99)
+	key := graph.NewKey[int]("counter")
 	view := createTestView(map[string]any{})
 
 	val := graph.Get(view, key)
-	if val != 99 {
-		t.Errorf("expected default 99, got %v", val)
+	// With reducer-based design, zero value is returned for unset keys
+	if val != 0 {
+		t.Errorf("expected zero value 0, got %v", val)
 	}
 }
 
@@ -84,7 +86,7 @@ func TestGetListEmpty(t *testing.T) {
 func TestBSPStateReadSnapshot(t *testing.T) {
 	// Initial state
 	initial := map[string]any{"counter": 10, "status": "init"}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Reads should see initial values
 	view := bsp.ReadView()
@@ -98,7 +100,7 @@ func TestBSPStateReadSnapshot(t *testing.T) {
 
 func TestBSPStateWriteBuffering(t *testing.T) {
 	initial := map[string]any{"counter": 10}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Write should be buffered, not visible in read view
 	bsp.Write("node-write-buffer", graph.Updates{"counter": 20, "new_key": "value"})
@@ -115,7 +117,7 @@ func TestBSPStateWriteBuffering(t *testing.T) {
 
 func TestBSPStateBarrierCommit(t *testing.T) {
 	initial := map[string]any{"counter": 10}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Write and commit
 	bsp.Write("node-barrier", graph.Updates{"counter": 20, "new_key": "value"})
@@ -133,7 +135,7 @@ func TestBSPStateBarrierCommit(t *testing.T) {
 
 func TestBSPStateListMerging(t *testing.T) {
 	initial := map[string]any{"items": []string{"a", "b"}}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Multiple writes to same list key should merge
 	bsp.Write("node-list", graph.Updates{"items": []string{"c"}})
@@ -154,7 +156,7 @@ func TestBSPStateListMerging(t *testing.T) {
 
 func TestBSPStateSnapshot(t *testing.T) {
 	initial := map[string]any{"counter": 10}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	bsp.Write("node-snapshot", graph.Updates{"counter": 20})
 	bsp.CommitBarrier()
@@ -175,7 +177,7 @@ func TestBSPStateConcurrentReads(t *testing.T) {
 	// All reads within a superstep should see the same values
 	// regardless of when they read (before or after writes from parallel nodes)
 	initial := map[string]any{"counter": 10}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Simulate parallel execution: read, then write, then read again
 	view1 := bsp.ReadView()
@@ -195,7 +197,7 @@ func TestBSPStateConcurrentReads(t *testing.T) {
 
 func TestBSPStatePendingWrites(t *testing.T) {
 	initial := map[string]any{"counter": 10}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Before any writes
 	if bsp.HasPendingWrites() {
@@ -239,7 +241,7 @@ func TestBSPStatePendingWrites(t *testing.T) {
 func TestBSPStateApplyPendingWrites(t *testing.T) {
 	// Simulates two-phase commit recovery: applying pending writes from checkpoint
 	initial := map[string]any{"counter": 10, "items": []string{"a"}}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Simulate recovery: apply pending writes from uncommitted checkpoint
 	pending := []checkpoint.PendingWrite{
@@ -281,7 +283,7 @@ func TestBSPStateTwoPhaseCommitFlow(t *testing.T) {
 	// 4. State is now visible
 
 	initial := map[string]any{"step": 0}
-	bsp := graph.NewBSPState(initial)
+	bsp := graph.NewBSPState(initial, graph.NewKeyRegistry())
 
 	// Superstep 1: Node writes
 	bsp.Write("node-two-phase", graph.Updates{"step": 1, "data": "superstep1"})
@@ -412,7 +414,7 @@ func TestSliceOfIterEarlyStop(t *testing.T) {
 
 func TestBSPStateMergeSliceOfViaWrite(t *testing.T) {
 	t.Run("SliceOf merges without reflection", func(t *testing.T) {
-		bsp := graph.NewBSPState(nil)
+		bsp := graph.NewBSPState(nil, graph.NewKeyRegistry())
 
 		// First write with SliceOf
 		bsp.Write("node1", graph.Updates{
@@ -448,7 +450,7 @@ func TestBSPStateMergeSliceOfViaWrite(t *testing.T) {
 	})
 
 	t.Run("multiple SliceOf writes accumulate correctly", func(t *testing.T) {
-		bsp := graph.NewBSPState(nil)
+		bsp := graph.NewBSPState(nil, graph.NewKeyRegistry())
 
 		// Multiple writes in same superstep
 		for i := 0; i < 5; i++ {
@@ -479,7 +481,7 @@ func TestGetListWithSliceOf(t *testing.T) {
 	// Store as SliceOf (as Command.Append does internally)
 	bsp := graph.NewBSPState(map[string]any{
 		"messages": graph.SliceOf[testMessage]{{ID: 1, Text: "test"}},
-	})
+	}, graph.NewKeyRegistry())
 
 	view := bsp.ReadView()
 	result := graph.GetList(view, key)
@@ -494,7 +496,7 @@ func TestGetListWithSliceOf(t *testing.T) {
 
 func TestMergeSlicesPrimitiveFallback(t *testing.T) {
 	// Test that primitive slices still work via type switch
-	bsp := graph.NewBSPState(nil)
+	bsp := graph.NewBSPState(nil, graph.NewKeyRegistry())
 
 	// Write plain []string (not SliceOf)
 	bsp.Write("node1", graph.Updates{

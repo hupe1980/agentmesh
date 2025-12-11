@@ -12,10 +12,10 @@ func TestPregelExecutor(t *testing.T) {
 	t.Parallel()
 
 	// Define typed keys
-	startedKey := graph.NewKey("started", false)
-	task1Key := graph.NewKey("task1", "")
-	task2Key := graph.NewKey("task2", "")
-	completedKey := graph.NewKey("completed", false)
+	startedKey := graph.NewKey[bool]("started")
+	task1Key := graph.NewKey[string]("task1")
+	task2Key := graph.NewKey[string]("task2")
+	completedKey := graph.NewKey[bool]("completed")
 
 	var counter atomic.Int32
 

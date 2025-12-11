@@ -22,7 +22,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	ctx := context.Background()
 	failureRate := 0.2 // 20% of nodes will fail randomly
 
-	countKey := graph.NewKey("count", 0)
+	countKey := graph.NewKey[int]("count")
 
 	// Counter to track successful executions
 	var successCount atomic.Int32
@@ -88,12 +88,12 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	ctx := context.Background()
 
 	// Define keys for each parallel node's result
-	result0Key := graph.NewKey("result_0", 0)
-	result1Key := graph.NewKey("result_1", 0)
-	result2Key := graph.NewKey("result_2", 0)
-	result3Key := graph.NewKey("result_3", 0)
-	result4Key := graph.NewKey("result_4", 0)
-	totalKey := graph.NewKey("total", 0)
+	result0Key := graph.NewKey[int]("result_0")
+	result1Key := graph.NewKey[int]("result_1")
+	result2Key := graph.NewKey[int]("result_2")
+	result3Key := graph.NewKey[int]("result_3")
+	result4Key := graph.NewKey[int]("result_4")
+	totalKey := graph.NewKey[int]("total")
 
 	g := graph.New[any, any](result0Key, result1Key, result2Key, result3Key, result4Key, totalKey)
 
@@ -167,7 +167,7 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	ctx := context.Background()
 
-	completedKey := graph.NewKey("completed", false)
+	completedKey := graph.NewKey[bool]("completed")
 
 	g := graph.New[any, any](completedKey)
 
@@ -218,7 +218,7 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	ctx := context.Background()
 
-	recoveredKey := graph.NewKey("recovered", false)
+	recoveredKey := graph.NewKey[bool]("recovered")
 
 	g := graph.New[any, any](recoveredKey)
 
@@ -260,7 +260,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	ctx := context.Background()
 
-	largeDataKey := graph.NewKey[[]byte]("large_data", nil)
+	largeDataKey := graph.NewKey[[]byte]("large_data")
 
 	g := graph.New[any, any](largeDataKey)
 
@@ -311,8 +311,8 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	var partition1Active atomic.Bool
 	var partition2Active atomic.Bool
 
-	p1DataKey := graph.NewKey("p1_data", "")
-	resultKey := graph.NewKey("result", "")
+	p1DataKey := graph.NewKey[string]("p1_data")
+	resultKey := graph.NewKey[string]("result")
 
 	buildGraph := func() *graph.Graph[any, any] {
 		g := graph.New[any, any](p1DataKey, resultKey)

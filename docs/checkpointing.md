@@ -67,28 +67,27 @@ g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.C
 
 g.Start("process")
 
-// Create checkpointer
+// Create checkpointer and configure graph
 checkpointer := checkpoint.NewInMemory()
+runID := "workflow-123"
+g.WithCheckpointer(checkpointer, runID)
 
-// Build with checkpointer
-compiled, err := g.Build(graph.WithCheckpointer(checkpointer))
+// Build graph
+compiled, err := g.Build()
 if err != nil {
     log.Fatal(err)
 }
 
 // Execute with automatic checkpointing
-runID := "workflow-123"
 messages := []message.Message{
     message.NewHumanMessageFromText("Start workflow"),
 }
 
-for result := range compiled.Run(ctx, messages,
-    graph.WithRunID(runID),
+for _, err := range compiled.Run(ctx, messages,
     graph.WithCheckpointInterval(1),  // Save every superstep
-    graph.WithAutoRestore(true),
 ) {
-    if result.Error != nil {
-        log.Fatal(result.Error)
+    if err != nil {
+        log.Fatal(err)
     }
 }
 ```
@@ -160,23 +159,24 @@ Continue execution from the last saved state:
 
 ```go
 checkpointer := checkpoint.NewInMemory()
+runID := "workflow-123"
 
-// Build graph with checkpointer
-compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
+// Configure and build graph with checkpointer
+g.WithCheckpointer(checkpointer, runID)
+compiled, _ := g.Build()
 
 // First execution (gets interrupted)
-for result := range compiled.Run(ctx, messages,
-    graph.WithRunID("workflow-123"),
+for _, err := range compiled.Run(ctx, messages,
     graph.WithCheckpointInterval(1),
 ) {
     // Handle results
 }
 
 // Later: Resume from last checkpoint
-for result := range compiled.Run(ctx, messages,
-    graph.WithRunID("workflow-123"),
-    graph.WithAutoRestore(true),
-) {
+for _, err := range compiled.Resume(ctx, runID) {
+    if err != nil {
+        log.Fatal(err)
+    }
     // Continues from where it left off
 }
 ```
@@ -341,13 +341,14 @@ for _, cp := range checkpoints {
 }
 ```
 
-### Resume from Specific Superstep
+### Resume from Specific Checkpoint
 
 ```go
-// Resume from superstep 5
-for result := range compiled.Run(ctx, input,
-    graph.WithRunID("workflow-123"),
-    graph.WithResumeFromSuperstep(5),
+// Load a specific checkpoint and resume from it
+cp, _ := checkpointer.Load(ctx, "workflow-123")
+
+for _, err := range compiled.Resume(ctx, "workflow-123",
+    graph.WithCheckpoint(cp),
 ) {
     // Execution resumes from superstep 5
 }
@@ -364,13 +365,16 @@ for result := range compiled.Run(ctx, input,
 
 ```go
 // Original execution failed at superstep 10
-// Resume from superstep 8 with debug logging enabled
+// Load checkpoint and resume with debug logging enabled
+cp, _ := checkpointer.Load(ctx, runID)
 ctx = context.WithValue(ctx, "debug", true)
 
-for result := range compiled.Run(ctx, input,
-    graph.WithRunID(runID),
-    graph.WithResumeFromSuperstep(8),
+for _, err := range compiled.Resume(ctx, runID,
+    graph.WithCheckpoint(cp),
 ) {
+    if err != nil {
+        log.Fatal(err)
+    }
     // Debug and analyze
 }
 ```

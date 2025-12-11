@@ -32,6 +32,8 @@ func TestRestoreCheckpointSharesStateMap(t *testing.T) {
 }
 
 func TestRestoreCheckpointCopyOnWriteOnMutation(t *testing.T) {
+	// Note: State updates are now applied in initializeBSPState, not restoreCheckpoint.
+	// This test verifies that restoreCheckpoint does NOT apply state updates (they're deferred).
 	ctx := context.Background()
 	shared := map[string]any{"foo": "bar"}
 	updates := map[string]any{"foo": "baz", "new": 1}
@@ -45,16 +47,16 @@ func TestRestoreCheckpointCopyOnWriteOnMutation(t *testing.T) {
 	if !ok {
 		t.Fatal("restore aborted unexpectedly")
 	}
-	if reflect.ValueOf(res.State).Pointer() == reflect.ValueOf(shared).Pointer() {
-		t.Fatal("expected state map to be copied when applying updates")
+
+	// With the new architecture, restoreCheckpoint does NOT apply state updates.
+	// State updates are applied later in initializeBSPState using reducers.
+	// So the state should still be the shared checkpoint state.
+	if reflect.ValueOf(res.State).Pointer() != reflect.ValueOf(shared).Pointer() {
+		t.Fatal("expected checkpoint state to be reused (updates are deferred)")
 	}
-	if got := res.State["foo"]; got != "baz" {
-		t.Fatalf("expected foo=baz, got %v", got)
-	}
-	if _, ok := res.State["new"]; !ok {
-		t.Fatal("expected overlay value to be present")
-	}
-	if shared["foo"] != "bar" {
-		t.Fatal("checkpoint state should remain untouched")
+
+	// State should still have original values (updates not applied yet)
+	if got := res.State["foo"]; got != "bar" {
+		t.Fatalf("expected foo=bar (original), got %v", got)
 	}
 }

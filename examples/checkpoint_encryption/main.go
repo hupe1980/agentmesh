@@ -19,9 +19,9 @@ import (
 
 // State keys for sensitive data
 var (
-	creditCardKey = graph.NewKey("credit_card", "")
-	ssnKey        = graph.NewKey("ssn", "")
-	passwordKey   = graph.NewKey("password", "")
+	creditCardKey = graph.NewKey[string]("credit_card")
+	ssnKey        = graph.NewKey[string]("ssn")
+	passwordKey   = graph.NewKey[string]("password")
 )
 
 func main() {

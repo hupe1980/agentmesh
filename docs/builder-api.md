@@ -98,7 +98,7 @@ g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Com
     // Process messages with model...
     response := message.NewAIMessageFromText("Hello!")
     
-    return graph.Append(message.MessagesKey, response).To(graph.END), nil
+    return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 
 g.Start("agent")
@@ -240,10 +240,10 @@ return graph.Set(StatusKey, "done").
 
 ```go
 // Append single item
-return graph.Append(TagsKey, "new-tag").To("next"), nil
+return graph.Set(TagsKey, []string{"new-tag"}).To("next"), nil
 
 // Append multiple items
-return graph.Append(MessagesKey, msg1, msg2, msg3).To("next"), nil
+return graph.Set(MessagesKey, []Message{msg1, msg2, msg3}).To("next"), nil
 ```
 
 ### Routing
@@ -362,7 +362,7 @@ for result := range compiled.Run(ctx, input,
 
 | Function | Description |
 |----------|-------------|
-| `graph.NewKey[T](name, default)` | Create typed single-value key |
+| `graph.NewKey[T](name)` | Create typed single-value key |
 | `graph.NewListKey[T](name)` | Create typed list key |
 | `graph.Get(scope, key)` | Read value from view |
 | `graph.GetList(scope, key)` | Read list from view |
@@ -371,8 +371,7 @@ for result := range compiled.Run(ctx, input,
 
 | Function | Description |
 |----------|-------------|
-| `graph.Set(key, val)` | Set single value |
-| `graph.Append(key, items...)` | Append to list |
+| `graph.Set(key, val)` | Set value (reducer handles merge semantics) |
 | `graph.To(targets...)` | Route to targets |
 | `graph.Fail(err)` | Signal failure |
 | `cmd.Interrupt()` | Pause for human intervention |

@@ -24,10 +24,10 @@ func repeatString(char string, count int) string {
 
 // Define state keys
 var (
-	validKey     = graph.NewKey("valid", false)
-	priorityKey  = graph.NewKey("priority", "")
-	processedKey = graph.NewKey("processed", false)
-	completeKey  = graph.NewKey("complete", false)
+	validKey     = graph.NewKey[bool]("valid")
+	priorityKey  = graph.NewKey[string]("priority")
+	processedKey = graph.NewKey[bool]("processed")
+	completeKey  = graph.NewKey[bool]("complete")
 )
 
 func main() {

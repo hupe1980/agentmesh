@@ -15,11 +15,11 @@ import (
 )
 
 // DocumentsKey is the state key for storing retrieved documents in RAG workflows.
-var DocumentsKey = graph.NewKey[[]string]("documents", nil)
+var DocumentsKey = graph.NewKey[[]string]("documents")
 
 // RephrasedQueryKey stores the rephrased query for retrieval.
 // This is set by the rephrase node when query rephrasing is enabled.
-var RephrasedQueryKey = graph.NewKey[string]("rephrased_query", "")
+var RephrasedQueryKey = graph.NewKey[string]("rephrased_query")
 
 // extractUserQuery finds the last human message text from messages.
 func extractUserQuery(messages []message.Message) (string, error) {

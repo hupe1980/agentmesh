@@ -37,7 +37,7 @@ func NewTestScopeWithCapture[O any](readOnly graph.ReadOnlyScope) *TestScope[O] 
 // NewTestScopeFromMap creates a test scope from a simple map.
 // This is a convenience function for tests that don't need complex state setup.
 func NewTestScopeFromMap[O any](data map[string]any) *TestScope[O] {
-	return NewTestScopeWithCapture[O](graph.NewBSPState(data).ReadView())
+	return NewTestScopeWithCapture[O](graph.NewBSPState(data, graph.NewKeyRegistry()).ReadView())
 }
 
 // GetValue implements graph.Scope.

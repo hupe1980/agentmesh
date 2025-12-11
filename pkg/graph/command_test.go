@@ -77,7 +77,7 @@ func TestFailNil(t *testing.T) {
 // ====================
 
 func TestSet(t *testing.T) {
-	key := graph.NewKey("counter", 0)
+	key := graph.NewKey[int]("counter")
 	cmd, err := graph.Set(key, 42).To("next")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -91,8 +91,8 @@ func TestSet(t *testing.T) {
 }
 
 func TestSetChain(t *testing.T) {
-	key1 := graph.NewKey("status", "")
-	key2 := graph.NewKey("count", 0)
+	key1 := graph.NewKey[string]("status")
+	key2 := graph.NewKey[int]("count")
 
 	cmd, err := graph.Set(key1, "done").
 		With(graph.SetValue(key2, 42)).
@@ -110,18 +110,18 @@ func TestSetChain(t *testing.T) {
 }
 
 // ====================
-// Append Tests
+// List Key Set Tests
 // ====================
 
-func TestAppend(t *testing.T) {
+func TestSetListKey(t *testing.T) {
 	key := graph.NewListKey[string]("messages")
-	cmd, err := graph.Append(key, "hello", "world").To("next")
+	cmd, err := graph.Set(key, []string{"hello", "world"}).To("next")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	items, ok := cmd.Updates["messages"].(graph.SliceOf[string])
+	items, ok := cmd.Updates["messages"].([]string)
 	if !ok {
-		t.Fatalf("expected graph.SliceOf[string] type, got %T", cmd.Updates["messages"])
+		t.Fatalf("expected []string type, got %T", cmd.Updates["messages"])
 	}
 	if len(items) != 2 || items[0] != "hello" || items[1] != "world" {
 		t.Errorf("expected [hello, world], got %v", items)
@@ -133,7 +133,7 @@ func TestAppend(t *testing.T) {
 // ====================
 
 func TestCmdBuilder(t *testing.T) {
-	key := graph.NewKey("status", "")
+	key := graph.NewKey[string]("status")
 	cmd, err := graph.Cmd().
 		With(graph.SetValue(key, "done")).
 		To("next")
@@ -147,9 +147,9 @@ func TestCmdBuilder(t *testing.T) {
 }
 
 func TestCmdBuilderMultipleWith(t *testing.T) {
-	statusKey := graph.NewKey("status", "")
-	countKey := graph.NewKey("count", 0)
-	enabledKey := graph.NewKey("enabled", false)
+	statusKey := graph.NewKey[string]("status")
+	countKey := graph.NewKey[int]("count")
+	enabledKey := graph.NewKey[bool]("enabled")
 
 	cmd, err := graph.Cmd().
 		With(graph.SetValue(statusKey, "done")).
@@ -181,20 +181,19 @@ func TestCmdEnd(t *testing.T) {
 	}
 }
 
-func TestCmdAppendValue(t *testing.T) {
+func TestCmdSetListValue(t *testing.T) {
 	messagesKey := graph.NewListKey[string]("messages")
 
 	cmd, err := graph.Cmd().
-		With(graph.AppendValue(messagesKey, "hello")).
-		With(graph.AppendValue(messagesKey, "world")).
+		With(graph.SetValue(messagesKey, []string{"hello", "world"})).
 		To("next")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	msgs, ok := cmd.Updates["messages"].(graph.SliceOf[string])
+	msgs, ok := cmd.Updates["messages"].([]string)
 	if !ok {
-		t.Fatalf("expected graph.SliceOf[string], got %T", cmd.Updates["messages"])
+		t.Fatalf("expected []string, got %T", cmd.Updates["messages"])
 	}
 	if len(msgs) != 2 || msgs[0] != "hello" || msgs[1] != "world" {
 		t.Errorf("expected [hello, world], got %v", msgs)
@@ -206,7 +205,7 @@ func TestCmdAppendValue(t *testing.T) {
 // ====================
 
 func TestConditionalPattern(t *testing.T) {
-	statusKey := graph.NewKey("status", "")
+	statusKey := graph.NewKey[string]("status")
 
 	// Pattern: build command incrementally, then decide routing
 	processWithMaxTurns := func(turn, maxTurns int) (*graph.Command, error) {

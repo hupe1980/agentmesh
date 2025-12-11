@@ -10,7 +10,7 @@ import (
 )
 
 func TestGetNodes(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -29,7 +29,7 @@ func TestGetNodes(t *testing.T) {
 }
 
 func TestGetNodeInfo(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("entry", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -85,7 +85,7 @@ func TestGetNodeInfo(t *testing.T) {
 }
 
 func TestGetNodeInfoWithInterrupt(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("step", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -103,7 +103,7 @@ func TestGetNodeInfoWithInterrupt(t *testing.T) {
 }
 
 func TestGetTopology(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -140,7 +140,7 @@ func TestGetTopology(t *testing.T) {
 }
 
 func TestGetMetrics(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -190,7 +190,7 @@ func TestGetMetricsEmptyGraph(t *testing.T) {
 }
 
 func TestMermaidFlowchart(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -228,7 +228,7 @@ func TestMermaidFlowchart(t *testing.T) {
 }
 
 func TestTopologyWithMultipleEntryPoints(t *testing.T) {
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {

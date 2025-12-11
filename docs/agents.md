@@ -783,12 +783,12 @@ g.Node("classify", func(ctx context.Context, scope graph.Scope[string]) (*graph.
 
 g.Node("handle_support", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Support response...")
-    return graph.Append(message.MessagesKey, response).To(graph.END), nil
+    return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 
 g.Node("handle_sales", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Sales response...")
-    return graph.Append(message.MessagesKey, response).To(graph.END), nil
+    return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 
 g.Start("classify")
@@ -905,14 +905,14 @@ parent.Node("research", graph.Subgraph(
     },
     // OutputMapper: merge research results back to parent
     func(ctx context.Context, output message.Message) (graph.Updates, error) {
-        return graph.Append(message.MessagesKey, output), nil
+        return graph.Updates{message.MessagesKey.Name(): []message.Message{output}}, nil
     },
 ), "synthesize")
 
 parent.Node("synthesize", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     // Synthesize research results...
-    return graph.Append(message.MessagesKey, summary).To(graph.END)
+    return graph.Set(message.MessagesKey, []message.Message{summary}).To(graph.END)
 }, graph.END)
 
 parent.Start("research")

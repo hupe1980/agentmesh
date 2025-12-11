@@ -21,7 +21,7 @@ func TestErrorRecovery_RetrySucceeds(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
 	g := graph.New[any, any](resultKey)
@@ -60,7 +60,7 @@ func TestErrorRecovery_RetryExhausted(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
 	g := graph.New[any, any](resultKey)
@@ -100,7 +100,7 @@ func TestErrorRecovery_RecoveryMiddleware(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -132,7 +132,7 @@ func TestErrorRecovery_ErrorPropagation(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	customErr := errors.New("custom application error")
 
@@ -169,7 +169,7 @@ func TestErrorRecovery_ChainedRetry(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
 	g := graph.New[any, any](resultKey)

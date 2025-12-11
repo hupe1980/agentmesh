@@ -157,7 +157,7 @@ The weather in San Francisco is currently sunny with a temperature of 72°F.
 
 ## 🎨 Examples
 
-Explore **32 comprehensive examples** in the [`examples/`](examples/) directory:
+Explore **41 comprehensive examples** in the [`examples/`](examples/) directory:
 
 | Example | Description |
 |---------|-------------|

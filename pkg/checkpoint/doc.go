@@ -31,14 +31,19 @@
 //	// DynamoDB (AWS production - see pkg/checkpoint/dynamodb for details)
 //	checkpointer := dynamodb.NewCheckpointer(dynamoClient, "checkpoints-table")
 //
-//	result, _ := graph.Last(compiled.Run(ctx, messages,
-//	    graph.WithCheckpointer(checkpointer),
-//	    graph.WithRunID("workflow-123"),
-//	    graph.WithCheckpointOptions(
-//	        checkpoint.WithSaveInterval(2),  // Save every 2 supersteps
-//	        checkpoint.WithAutoRestore(true),
-//	    ),
-//	))
+//	// Configure graph with checkpointer
+//	g := graph.New[string, string](keys...)
+//	g.WithCheckpointer(checkpointer, "workflow-123")
+//	compiled, _ := g.Build()
+//
+//	// Run with checkpointing
+//	for _, err := range compiled.Run(ctx, input,
+//	    graph.WithCheckpointInterval(1),  // Save every superstep
+//	) {
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
+//	}
 //
 // # Checkpoint Signing (Security)
 //
@@ -65,29 +70,36 @@
 // # Resume from Checkpoint
 //
 //	// Load and inspect checkpoint
-//	checkpoint, _ := checkpointer.Load(ctx, "workflow-123")
-//	fmt.Printf("Last checkpoint at superstep %d\n", checkpoint.Superstep)
+//	cp, _ := checkpointer.Load(ctx, "workflow-123")
+//	fmt.Printf("Last checkpoint at superstep %d\n", cp.Superstep)
 //
-//	// Resume execution
-//	result, _ := graph.Last(compiled.Run(ctx, nil,
-//	    graph.WithCheckpointer(checkpointer),
-//	    graph.WithRunID("workflow-123"),
-//	    graph.WithCheckpointOptions(
-//	        checkpoint.WithAutoRestore(true),
-//	    ),
-//	))
+//	// Resume execution using the Resume method
+//	for _, err := range compiled.Resume(ctx, "workflow-123") {
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
+//	}
+//
+//	// Or resume with a specific checkpoint
+//	for _, err := range compiled.Resume(ctx, "workflow-123",
+//	    graph.WithCheckpoint(cp),
+//	) {
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
+//	}
 //
 // # Time-Travel Debugging
 //
-//	// Load checkpoint from specific superstep
-//	checkpoint, _ := checkpointer.LoadAtSuperstep(ctx, "workflow-123", 4)
+//	// Load checkpoint
+//	checkpoint, _ := checkpointer.Load(ctx, "workflow-123")
 //
-//	// Resume from that point
-//	result, _ := graph.Last(compiled.Run(ctx, nil,
-//	    graph.WithCheckpointer(checkpointer),
-//	    graph.WithRunID("workflow-123"),
-//	    graph.WithResumeFromSuperstep(4),
-//	))
+//	// Resume from that checkpoint
+//	for _, err := range compiled.Resume(ctx, "workflow-123",
+//	    graph.WithCheckpoint(checkpoint),
+//	) {
+//	    // Handle results
+//	}
 //
 // # Checkpoint Structure
 //

@@ -17,15 +17,15 @@ import (
 
 // Parent graph keys
 var (
-	inputKey  = graph.NewKey("input", "")
-	resultKey = graph.NewKey("result", "")
+	inputKey  = graph.NewKey[string]("input")
+	resultKey = graph.NewKey[string]("result")
 	stepsKey  = graph.NewListKey[string]("steps")
 )
 
 // Subgraph keys (isolated state)
 var (
-	subInputKey  = graph.NewKey("sub_input", "")
-	subOutputKey = graph.NewKey("sub_output", "")
+	subInputKey  = graph.NewKey[string]("sub_input")
+	subOutputKey = graph.NewKey[string]("sub_output")
 )
 
 // createValidationSubgraph creates a reusable validation subgraph
@@ -103,7 +103,7 @@ func main() {
 	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [start] Beginning workflow")
 		return graph.Set(inputKey, "  Raw Data  ").
-			With(graph.AppendValue(stepsKey, "Started main workflow")).
+			With(graph.SetValue(stepsKey, []string{"Started main workflow"})).
 			To("run_validation")
 	}, "run_validation")
 

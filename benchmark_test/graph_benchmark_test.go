@@ -11,9 +11,9 @@ import (
 
 // Common keys for benchmarks
 var (
-	CountKey = graph.NewKey("count", 0)
-	ValueKey = graph.NewKey("value", 0)
-	TextKey  = graph.NewKey("text", "")
+	CountKey = graph.NewKey[int]("count")
+	ValueKey = graph.NewKey[int]("value")
+	TextKey  = graph.NewKey[string]("text")
 )
 
 // Benchmark graph execution
@@ -164,7 +164,7 @@ func BenchmarkGraph_MessageExecution(b *testing.B) {
 
 		builder.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 			var msg message.Message = message.NewAIMessageFromText("Response")
-			return graph.Append(MessagesKey, msg).End()
+			return graph.Set(MessagesKey, []message.Message{msg}).End()
 		}, graph.END)
 
 		builder.Start("process")
@@ -190,17 +190,17 @@ func BenchmarkGraph_MessageChain(b *testing.B) {
 
 			builder.Node("node1", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("From node1")
-				return graph.Append(MessagesKey, msg).To("node2")
+				return graph.Set(MessagesKey, []message.Message{msg}).To("node2")
 			}, "node2")
 
 			builder.Node("node2", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("From node2")
-				return graph.Append(MessagesKey, msg).To("node3")
+				return graph.Set(MessagesKey, []message.Message{msg}).To("node3")
 			}, "node3")
 
 			builder.Node("node3", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("Final")
-				return graph.Append(MessagesKey, msg).End()
+				return graph.Set(MessagesKey, []message.Message{msg}).End()
 			}, graph.END)
 
 			builder.Start("node1")
@@ -245,7 +245,7 @@ func BenchmarkGraph_PrebuiltMessageExecution(b *testing.B) {
 
 	builder.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("Response")
-		return graph.Append(MessagesKey, msg).End()
+		return graph.Set(MessagesKey, []message.Message{msg}).End()
 	}, graph.END)
 
 	builder.Start("process")

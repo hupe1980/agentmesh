@@ -241,7 +241,7 @@ func TestWithRetryInGraph(t *testing.T) {
 		Multiplier:  2.0,
 	})
 
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 	g := graph.New[any, any](counterKey)
 	g.Node("retry", retryingNode, graph.END)
 	g.Start("retry")

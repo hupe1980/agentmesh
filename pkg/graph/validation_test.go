@@ -270,8 +270,8 @@ func TestValidateParallelEntryPoints(t *testing.T) {
 }
 
 func TestValidateDuplicateKey(t *testing.T) {
-	key1 := graph.NewKey[string]("mykey", "")
-	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
+	key1 := graph.NewKey[string]("mykey")
+	key2 := graph.NewKey[int]("mykey") // Same name, different type
 
 	g := graph.New[any, any](key1, key2)
 	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -289,8 +289,8 @@ func TestValidateDuplicateKey(t *testing.T) {
 }
 
 func TestBuildWithDuplicateKey(t *testing.T) {
-	key1 := graph.NewKey[string]("mykey", "")
-	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
+	key1 := graph.NewKey[string]("mykey")
+	key2 := graph.NewKey[int]("mykey") // Same name, different type
 
 	g := graph.New[any, any](key1, key2)
 	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {

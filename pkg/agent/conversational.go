@@ -12,10 +12,10 @@ import (
 )
 
 // SessionIDKey is the state key for the current session identifier.
-var SessionIDKey = graph.NewKey("session_id", "")
+var SessionIDKey = graph.NewKey[string]("session_id")
 
 // MemoryContextKey is the state key for messages retrieved from memory.
-var MemoryContextKey = graph.NewKey("memory_context", []message.Message{})
+var MemoryContextKey = graph.NewListKey[message.Message]("memory_context")
 
 // conversationalOptions holds configuration for Conversational agents.
 type conversationalOptions struct {
@@ -318,7 +318,7 @@ func createConversationalAgentNode(wrappedAgent *message.Graph) message.NodeFunc
 			return graph.Fail(fmt.Errorf("agent/conversational: agent failed: %w", err))
 		}
 
-		return graph.Append(MessagesKey, lastMsg).To("memory_store")
+		return graph.Set(MessagesKey, []message.Message{lastMsg}).To("memory_store")
 	}
 }
 

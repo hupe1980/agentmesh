@@ -83,7 +83,7 @@ return graph.Set(CounterKey, 42).
     To("next"), nil
 
 // Append to list
-return graph.Append(TagsKey, "new-tag").To("next"), nil
+return graph.Set(TagsKey, []string{"new-tag"}).To("next"), nil
 
 // Just route (no state changes)
 return graph.To("next"), nil
@@ -569,24 +569,24 @@ checkpointer := checkpoint.NewInMemory()
 compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
 
 // Execute with run ID for persistence
-seq := compiled.Run(ctx, "input",
+for _, err := range compiled.Run(ctx, "input",
     graph.WithRunID("workflow-123"),
     graph.WithCheckpointInterval(1),
-    graph.WithAutoRestore(true),
-)
-
-for result := range seq {
-    // Process results
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
 }
 
 // Resume from checkpoint after failure
-seq = compiled.Run(ctx, "input",
-    graph.WithRunID("workflow-123"),
-    graph.WithAutoRestore(true),
-)
+for _, err := range compiled.Resume(ctx, "workflow-123") {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
 
 > **Performance note:** Restores now reuse the checkpoint map directly and wrap it in a copy-on-write layer. Large checkpoints (10k+ keys) no longer trigger duplicate map allocations during resume—only mutated keys incur copies. See `BenchmarkRestoreCheckpoint10KKeys` in `pkg/graph` for reference numbers.
-```
 
 ### Checkpoint contents
 
@@ -703,7 +703,7 @@ type Checkpointer interface {
 
 ## Time travel debugging {#time-travel-debugging}
 
-Debug workflows by replaying from any superstep.
+Debug workflows by replaying from any checkpoint.
 
 ### List checkpoints
 
@@ -716,28 +716,31 @@ for _, cp := range checkpoints {
 }
 ```
 
-### Resume from specific superstep
+### Resume from specific checkpoint
 
 ```go
-// Resume from superstep 5
-for result, err := range compiled.Run(ctx, newInput,
-    graph.WithRunID("workflow-123"),
-    graph.WithResumeFromSuperstep(5),
+// Load a specific checkpoint and resume from it
+cp, _ := checkpointer.Load(ctx, "workflow-123")
+
+for output, err := range compiled.Resume(ctx, "workflow-123",
+    graph.WithCheckpoint(cp),
 ) {
     if err != nil {
         log.Fatal(err)
     }
-    fmt.Println(graph.Get(result, StatusKey))
+    fmt.Println(graph.Get(output, StatusKey))
 }
 ```
 
 ### Time Travel Debugging
 
 ```go
-// Resume with modified state
-for result, err := range compiled.Run(ctx, input,
-    graph.WithRunID("workflow-123"),
-    graph.WithResumeFromSuperstep(3),
+// Load checkpoint and resume with state updates
+cp, _ := checkpointer.Load(ctx, "workflow-123")
+
+for output, err := range compiled.Resume(ctx, "workflow-123",
+    graph.WithCheckpoint(cp),
+    graph.WithStateUpdates(map[string]any{"debug": true}),
 ) {
     if err != nil {
         log.Fatal(err)
@@ -756,18 +759,18 @@ for result, err := range compiled.Run(ctx, input,
 **Example:**
 
 ```go
-// Original execution failed at superstep 10
-// Resume from superstep 8 with debug logging enabled
+// Original execution failed - load checkpoint and debug
+cp, _ := checkpointer.Load(ctx, runID)
 ctx = context.WithValue(ctx, "debug", true)
-for result, err := range compiled.Run(ctx, input,
-    graph.WithRunID(runID),
-    graph.WithResumeFromSuperstep(8),
+
+for output, err := range compiled.Resume(ctx, runID,
+    graph.WithCheckpoint(cp),
 ) {
     if err != nil {
         log.Fatal(err)
     }
     // Debug output
-    fmt.Printf("Superstep completed: %v\n", result)
+    fmt.Printf("Output: %v\n", output)
 }
 ```
 
@@ -842,29 +845,36 @@ g.Node("request_approval", func(ctx context.Context, scope graph.Scope[string]) 
 
 ```go
 // Initial execution pauses at approval node
-seq := compiled.Run(ctx, input,
-    graph.WithRunID("approval-flow"),
-)
+runID := "approval-flow"
 
-// Process events until interrupt
-for result := range seq {
-    if result.Interrupted {
-        break
+for output, err := range compiled.Run(ctx, input,
+    graph.WithRunID(runID),
+) {
+    if err != nil {
+        var interruptErr *graph.InterruptError
+        if errors.As(err, &interruptErr) {
+            break  // Paused for approval
+        }
+        log.Fatal(err)
     }
 }
 
 // Human reviews and provides input
 // ...
 
-// Resume execution with updated state
-seq = compiled.Run(ctx, input,
-    graph.WithRunID("approval-flow"),
-    graph.WithAutoRestore(true),
+// Resume execution with approval and updated state
+for _, err := range compiled.Resume(ctx, runID,
+    graph.WithApproval("request_approval", &graph.ApprovalResponse{
+        Decision: graph.ApprovalApproved,
+    }),
     graph.WithStateUpdates(map[string]any{
-        "approved": true,
         "reviewer": "alice@example.com",
     }),
-)
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
 ### Use cases

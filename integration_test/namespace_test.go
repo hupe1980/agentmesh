@@ -18,9 +18,9 @@ func TestNamespaceBasicIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create keys with namespace prefixes (convention: ns.keyname)
-	agent1Counter := graph.NewKey("agent1.counter", 0)
-	agent2Counter := graph.NewKey("agent2.counter", 0)
-	resultKey := graph.NewKey("result", "")
+	agent1Counter := graph.NewKey[int]("agent1.counter")
+	agent2Counter := graph.NewKey[int]("agent2.counter")
+	resultKey := graph.NewKey[string]("result")
 
 	var finalResult string
 
@@ -62,8 +62,8 @@ func TestNamespaceViolation(t *testing.T) {
 
 	ctx := context.Background()
 
-	agent1Key := graph.NewKey("agent1.data", "")
-	agent2Key := graph.NewKey("agent2.data", "")
+	agent1Key := graph.NewKey[string]("agent1.data")
+	agent2Key := graph.NewKey[string]("agent2.data")
 
 	g := graph.New[any, any](agent1Key, agent2Key)
 
@@ -99,9 +99,9 @@ func TestNamespaceWithGlobalAccess(t *testing.T) {
 	ctx := context.Background()
 
 	// Global key (no dots = not namespaced)
-	globalConfig := graph.NewKey("config", "default")
+	globalConfig := graph.NewKey[string]("config")
 	// Namespaced key
-	agent1Data := graph.NewKey("agent1.data", "")
+	agent1Data := graph.NewKey[string]("agent1.data")
 
 	var finalData string
 
@@ -123,7 +123,8 @@ func TestNamespaceWithGlobalAccess(t *testing.T) {
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	for _, err := range compiled.Run(ctx, nil) {
+	// Set initial value for globalConfig
+	for _, err := range compiled.Run(ctx, nil, graph.WithInitialValue(globalConfig, "default")) {
 		require.NoError(t, err)
 	}
 
@@ -137,10 +138,10 @@ func TestNamespaceCannotReadOtherNamespace(t *testing.T) {
 	ctx := context.Background()
 
 	// Use empty string as default so we can detect when the value is NOT available
-	agent1Key := graph.NewKey("agent1.secret", "")
-	agent2Key := graph.NewKey("agent2.secret", "")
+	agent1Key := graph.NewKey[string]("agent1.secret")
+	agent2Key := graph.NewKey[string]("agent2.secret")
 	// Use a namespaced result key for agent1
-	resultKey := graph.NewKey("agent1.result", "")
+	resultKey := graph.NewKey[string]("agent1.result")
 
 	var finalResult string
 
@@ -197,8 +198,8 @@ func TestNamespaceGlobalUpdateAllowed(t *testing.T) {
 
 	ctx := context.Background()
 
-	globalKey := graph.NewKey("shared", "initial")
-	agent1Key := graph.NewKey("agent1.private", "")
+	globalKey := graph.NewKey[string]("shared")
+	agent1Key := graph.NewKey[string]("agent1.private")
 
 	var globalVal, localVal string
 

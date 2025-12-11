@@ -12,34 +12,97 @@ import (
 )
 
 // StateKey is the interface that all state keys must implement.
-// Both Key[T] and ListKey[T] satisfy this interface.
 type StateKey interface {
 	// Name returns the unique name of this key.
 	Name() string
 
-	// IsList returns true if this is a ListKey.
-	IsList() bool
+	// IsSlice returns true if this key uses append semantics (list-like behavior).
+	IsSlice() bool
+
+	// ReducerFunc returns the type-erased reducer for this key.
+	ReducerFunc() ReducerFunc
 
 	// stateKey is a marker method to prevent external implementations.
 	stateKey()
 }
 
-// Key defines a typed state channel.
-// Zero value is used as default.
+// Key defines a typed state channel with an associated reducer.
+// The reducer determines how values are merged during state updates.
 type Key[T any] struct {
-	name string
-	zero T
+	name    string
+	reducer Reducer[T]
+	isSlice bool // true for keys created with NewListKey
 }
 
 // stateKey implements StateKey.
 func (Key[T]) stateKey() {}
 
-// IsList returns false for Key.
-func (Key[T]) IsList() bool { return false }
+// KeyOption configures a Key.
+type KeyOption[T any] func(*Key[T])
 
-// NewKey creates a state key with a default value.
-func NewKey[T any](name string, defaultValue T) Key[T] {
-	return Key[T]{name: name, zero: defaultValue}
+// WithReducer sets a custom reducer for the key.
+func WithReducer[T any](r Reducer[T]) KeyOption[T] {
+	return func(k *Key[T]) {
+		k.reducer = r
+	}
+}
+
+// NewKey creates a state key with Replace (overwrite) semantics by default.
+func NewKey[T any](name string, opts ...KeyOption[T]) Key[T] {
+	k := Key[T]{
+		name:    name,
+		reducer: ReplaceReducer[T]{},
+	}
+
+	for _, opt := range opts {
+		opt(&k)
+	}
+
+	return k
+}
+
+// NewListKey creates a list state key with Append semantics by default.
+// The key stores []T and appends incoming slices.
+func NewListKey[T any](name string, opts ...KeyOption[[]T]) Key[[]T] {
+	k := Key[[]T]{
+		name:    name,
+		reducer: AppendReducer[T]{},
+		isSlice: true,
+	}
+
+	for _, opt := range opts {
+		opt(&k)
+	}
+
+	return k
+}
+
+// NewCounterKey creates a counter key with Sum semantics.
+func NewCounterKey(name string, opts ...KeyOption[int]) Key[int] {
+	k := Key[int]{
+		name:    name,
+		reducer: SumReducer[int]{},
+	}
+
+	for _, opt := range opts {
+		opt(&k)
+	}
+
+	return k
+}
+
+// NewMapKey creates a map key with MergeMap semantics.
+func NewMapKey[K comparable, V any](name string, opts ...KeyOption[map[K]V]) Key[map[K]V] {
+	k := Key[map[K]V]{
+		name:    name,
+		reducer: MergeMapReducer[K, V]{},
+	}
+
+	for _, opt := range opts {
+		opt(&k)
+	}
+
+	return k
 }
 
 // Name returns the key name.
@@ -47,30 +110,54 @@ func (k Key[T]) Name() string {
 	return k.name
 }
 
-// Default returns the default value.
-func (k Key[T]) Default() T {
-	return k.zero
+// IsSlice returns true if this key uses append semantics.
+func (k Key[T]) IsSlice() bool {
+	return k.isSlice
 }
 
-// ListKey defines a list-based state channel with aggregation.
-type ListKey[T any] struct {
-	name string
+// Reducer returns the key's reducer.
+func (k Key[T]) Reducer() Reducer[T] {
+	return k.reducer
 }
 
-// stateKey implements StateKey.
-func (ListKey[T]) stateKey() {}
-
-// IsList returns true for ListKey.
-func (ListKey[T]) IsList() bool { return true }
-
-// NewListKey creates a list state key.
-func NewListKey[T any](name string) ListKey[T] {
-	return ListKey[T]{name: name}
+// ReducerFunc returns the type-erased reducer for runtime use.
+func (k Key[T]) ReducerFunc() ReducerFunc {
+	return WrapReducer(k.reducer)
 }
 
-// Name returns the key name.
-func (k ListKey[T]) Name() string {
-	return k.name
+// Zero returns the zero value from the reducer.
+func (k Key[T]) Zero() T {
+	return k.reducer.Zero()
+}
+
+// Get returns the typed value for a key from the scope.
+// If no value exists, returns the reducer's zero value.
+func Get[T any](scope ReadOnlyScope, key Key[T]) T {
+	if v, ok := scope.GetValue(key.name); ok {
+		if typed, ok := v.(T); ok {
+			return typed
+		}
+	}
+
+	return key.reducer.Zero()
+}
+
+// GetList returns the typed slice for a list key from the scope.
+// Handles both []T and SliceOf[T] storage formats.
+// If no value exists, returns nil.
+func GetList[T any](scope ReadOnlyScope, key Key[[]T]) []T {
+	if v, ok := scope.GetValue(key.name); ok {
+		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
+		if sliceOf, ok := v.(SliceOf[T]); ok {
+			return sliceOf
+		}
+		// Handle plain []T
+		if typed, ok := v.([]T); ok {
+			return typed
+		}
+	}
+
+	return nil
 }
 
 // SliceValue is an interface for values that can be iterated as slices.
@@ -117,33 +204,7 @@ func (s SliceOf[T]) Merge(other SliceValue) SliceValue {
 	if o, ok := other.(SliceOf[T]); ok {
 		return append(s, o...)
 	}
-	return nil
-}
 
-// Get returns the typed value for a key from the scope.
-func Get[T any](scope ReadOnlyScope, key Key[T]) T {
-	if v, ok := scope.GetValue(key.name); ok {
-		if typed, ok := v.(T); ok {
-			return typed
-		}
-	}
-	return key.zero
-}
-
-// GetList returns the typed list for a list key from the scope.
-// Handles both []T and SliceOf[T] storage formats.
-func GetList[T any](scope ReadOnlyScope, key ListKey[T]) []T {
-	if v, ok := scope.GetValue(key.name); ok {
-		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
-		// Direct return without conversion since SliceOf[T] is defined as []T
-		if sliceOf, ok := v.(SliceOf[T]); ok {
-			return sliceOf
-		}
-		// Handle plain []T (legacy or external sources)
-		if typed, ok := v.([]T); ok {
-			return typed
-		}
-	}
 	return nil
 }
 
@@ -186,6 +247,19 @@ func (s *memoryStore) Delete(ctx context.Context, key string) error {
 // BSP State Manager - Optimized Bulk-Synchronous Parallel semantics
 // -----------------------------------------------------------------------------
 
+// KeyRegistry holds type-erased reducers for all registered keys.
+type KeyRegistry map[string]ReducerFunc
+
+// NewKeyRegistry creates a new empty KeyRegistry.
+func NewKeyRegistry() KeyRegistry {
+	return make(KeyRegistry)
+}
+
+// Register adds a reducer for a key name.
+func (r KeyRegistry) Register(name string, reducer ReducerFunc) {
+	r[name] = reducer
+}
+
 // BSPState manages state with proper BSP semantics:
 // - All reads within a superstep see the same snapshot (from previous superstep)
 // - All writes are buffered and only become visible after barrier commit
@@ -194,10 +268,13 @@ func (s *memoryStore) Delete(ctx context.Context, key string) error {
 // Optimizations:
 // - Copy-on-write: readSnapshot only recreated when writes occur
 // - Version tracking: avoid unnecessary snapshot copies
-// - Type switches: avoid reflection for common slice types
+// - Reducer-based merging: uses registered reducers for state updates
 // - Atomic version checking: skip locking in ReadView when possible
 type BSPState struct {
 	mu sync.RWMutex
+
+	// keyRegistry holds type-erased reducers for all registered keys.
+	keyRegistry KeyRegistry
 
 	// readSnapshot is the immutable state visible to all nodes in current superstep.
 	// Created at superstep start from committed state.
@@ -205,7 +282,7 @@ type BSPState struct {
 	readSnapshot map[string]any
 
 	// writeBuffer accumulates all writes during current superstep.
-	// Writes are merged (lists appended, scalars overwritten).
+	// Writes are merged using reducers.
 	// Committed to readSnapshot at superstep barrier.
 	writeBuffer map[string]any
 
@@ -236,9 +313,11 @@ type BSPState struct {
 }
 
 // NewBSPState creates a new BSP-compliant state manager.
-func NewBSPState(initial map[string]any) *BSPState {
+func NewBSPState(initial map[string]any, keyRegistry KeyRegistry) *BSPState {
 	var committed map[string]any
+
 	ownedCommitted := false
+
 	if initial == nil {
 		committed = make(map[string]any)
 		ownedCommitted = true
@@ -249,6 +328,7 @@ func NewBSPState(initial map[string]any) *BSPState {
 	// Initial read snapshot shares the committed map (copy-on-write)
 	// This is safe because we'll clone on first mutation
 	state := &BSPState{
+		keyRegistry:   keyRegistry,
 		readSnapshot:  committed, // Share initially (CoW)
 		writeBuffer:   make(map[string]any),
 		committed:     committed,
@@ -257,6 +337,7 @@ func NewBSPState(initial map[string]any) *BSPState {
 	// version and snapshotVersion start at 0 (zero value)
 	// Set initial cached view
 	state.cachedView.Store(&readOnlyScope{data: committed})
+
 	return state
 }
 
@@ -308,12 +389,25 @@ func (s *BSPState) Write(nodeName string, updates Updates) {
 	}
 }
 
-// mergeWrite merges a value into the write buffer.
-// For slices: appends to existing slice in write buffer (or creates new)
-// For scalars: overwrites (last writer wins within superstep)
-// Optimized: uses type switches for common types to avoid reflection.
+// mergeWrite merges a value into the write buffer using the key's reducer.
+// If a reducer is registered for the key, it is used to merge values.
+// Otherwise, falls back to legacy mergeSlices behavior.
 // Must be called while holding s.mu lock.
 func (s *BSPState) mergeWrite(key string, value any) {
+	existing, exists := s.writeBuffer[key]
+
+	// If reducer is registered, use it
+	if reducer, ok := s.keyRegistry[key]; ok {
+		if !exists {
+			existing = reducer.ZeroFn()
+		}
+
+		s.writeBuffer[key] = reducer.ReduceFn(existing, value)
+
+		return
+	}
+
+	// Legacy fallback: no reducer registered
 	// Fast path: check common non-slice types without reflection
 	switch value.(type) {
 	case string, int, int64, float64, bool, nil:
@@ -321,8 +415,6 @@ func (s *BSPState) mergeWrite(key string, value any) {
 		return
 	}
 
-	// Check if it's a slice using type switches for common types
-	existing, exists := s.writeBuffer[key]
 	if !exists {
 		s.writeBuffer[key] = value
 		return
@@ -437,11 +529,25 @@ func (s *BSPState) CommitBarrier() {
 }
 
 // mergeIntoCommitted merges a value from write buffer into committed state.
-// Optimized: uses type switches for common slice types.
+// Uses the key's reducer if registered, otherwise falls back to legacy behavior.
 // Must be called while holding s.mu lock.
 func (s *BSPState) mergeIntoCommitted(key string, value any) {
 	s.ensureCommittedOwnership()
 
+	existing, exists := s.committed[key]
+
+	// If reducer is registered, use it
+	if reducer, ok := s.keyRegistry[key]; ok {
+		if !exists {
+			existing = reducer.ZeroFn()
+		}
+
+		s.committed[key] = reducer.ReduceFn(existing, value)
+
+		return
+	}
+
+	// Legacy fallback: no reducer registered
 	// Fast path for common scalar types
 	switch value.(type) {
 	case string, int, int64, float64, bool, nil:
@@ -449,7 +555,6 @@ func (s *BSPState) mergeIntoCommitted(key string, value any) {
 		return
 	}
 
-	existing, exists := s.committed[key]
 	if !exists {
 		s.committed[key] = value
 		return

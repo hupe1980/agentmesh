@@ -43,7 +43,7 @@ const (
 //	func myNode(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 //	    messages := graph.ScopeGetList(scope, MessagesKey)
 //	    scope.Stream(partialMessage)  // Stream partial output
-//	    return graph.Append(MessagesKey, finalMessage).End()
+//	    return graph.Set(MessagesKey, []Message{finalMessage}).End()
 //	}
 type NodeFunc[O any] func(ctx context.Context, scope Scope[O]) (*Command, error)
 

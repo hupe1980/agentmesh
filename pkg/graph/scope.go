@@ -86,12 +86,12 @@ func ScopeGet[T any, O any](scope Scope[O], key Key[T]) T {
 			return typed
 		}
 	}
-	return key.zero
+	return key.Zero()
 }
 
-// ScopeGetList returns the typed list for a list key from the scope.
+// ScopeGetList returns the typed list for a slice key from the scope.
 // Handles both []T and SliceOf[T] storage formats.
-func ScopeGetList[T any, O any](scope Scope[O], key ListKey[T]) []T {
+func ScopeGetList[T any, O any](scope Scope[O], key Key[[]T]) []T {
 	if v, ok := scope.GetValue(key.name); ok {
 		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
 		if sliceOf, ok := v.(SliceOf[T]); ok {

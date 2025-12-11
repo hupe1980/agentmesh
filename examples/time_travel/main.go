@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	stepKey   = graph.NewKey("step", 0)
-	valueKey  = graph.NewKey("value", 0)
-	statusKey = graph.NewKey("status", "")
+	stepKey   = graph.NewKey[int]("step")
+	valueKey  = graph.NewKey[int]("value")
+	statusKey = graph.NewKey[string]("status")
 )
 
 func main() {

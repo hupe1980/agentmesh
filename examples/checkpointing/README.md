@@ -77,16 +77,20 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 // checkpointer := sql.NewPostgreSQLCheckpointer(connString)
 ```
 
-### 2. Enable Automatic Checkpointing
+### 2. Configure Graph with Checkpointer
 ```go
-result, _ := graph.Last(compiled.Run(ctx, messages,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID("workflow-123"),
-    graph.WithCheckpointOptions(
-        checkpoint.WithSaveInterval(1),  // Save every superstep
-        checkpoint.WithAutoRestore(true),
-    ),
-))
+g := graph.New[string, string](keys...)
+g.WithCheckpointer(checkpointer, "workflow-123")
+compiled, _ := g.Build()
+
+// Run with checkpoint interval
+for _, err := range compiled.Run(ctx, input,
+    graph.WithCheckpointInterval(1),  // Save every superstep
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
 ### 3. Load Checkpoint
@@ -97,21 +101,22 @@ fmt.Printf("Last checkpoint at superstep %d\n", ckpt.Superstep)
 
 ### 4. Resume from Checkpoint
 ```go
-result, _ := graph.Last(compiled.Run(ctx, nil,
-    graph.WithCheckpointer(checkpointer),
-    graph.WithRunID("workflow-123"),
-    graph.WithCheckpointOptions(
-        AutoRestore: true,  // Resume from last checkpoint
-    ),
-)
-```
+// Resume using the Resume method
+for _, err := range compiled.Resume(ctx, "workflow-123") {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
 
-### 5. Time-Travel to Specific Superstep
-```go
-ckpt, _ := checkpointer.LoadAtSuperstep(ctx, "workflow-123", 2)
-result, _ := graph.Last(compiled.Run(ctx, nil,
-    graph.WithResumeFromSuperstep(2),
-))
+// Or resume with a specific checkpoint
+cp, _ := checkpointer.Load(ctx, "workflow-123")
+for _, err := range compiled.Resume(ctx, "workflow-123",
+    graph.WithCheckpoint(cp),
+) {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
 ```
 
 ## Checkpoint Structure

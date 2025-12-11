@@ -18,7 +18,7 @@ func TestGraphAlgorithms_LinearChain(t *testing.T) {
 	ctx := context.Background()
 	var executionOrder []string
 
-	valueKey := graph.NewKey("value", 0)
+	valueKey := graph.NewKey[int]("value")
 
 	g := graph.New[any, any](valueKey)
 
@@ -58,7 +58,7 @@ func TestGraphAlgorithms_ParallelBranches(t *testing.T) {
 	ctx := context.Background()
 	var counter atomic.Int32
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -102,8 +102,8 @@ func TestGraphAlgorithms_ConditionalRouting(t *testing.T) {
 
 	ctx := context.Background()
 
-	pathKey := graph.NewKey("path", "")
-	conditionKey := graph.NewKey("condition", true)
+	pathKey := graph.NewKey[string]("path")
+	conditionKey := graph.NewKey[bool]("condition")
 
 	g := graph.New[any, any](pathKey, conditionKey)
 
@@ -140,7 +140,7 @@ func TestGraphAlgorithms_Loop(t *testing.T) {
 	ctx := context.Background()
 	maxIterations := 5
 
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 
@@ -171,7 +171,7 @@ func TestGraphAlgorithms_DiamondPattern(t *testing.T) {
 	var mu sync.Mutex
 	var executed []string
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -229,7 +229,7 @@ func TestGraphAlgorithms_StateAccumulation(t *testing.T) {
 
 	ctx := context.Background()
 
-	sumKey := graph.NewKey("sum", 0)
+	sumKey := graph.NewKey[int]("sum")
 
 	g := graph.New[any, any](sumKey)
 

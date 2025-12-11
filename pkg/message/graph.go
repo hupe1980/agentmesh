@@ -10,7 +10,7 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 //	func myNode(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 //	    messages := message.GetMessages(scope)
 //	    scope.Stream(partialMessage)  // Stream partial output
-//	    return graph.Append(message.MessagesKey, finalMessage).End()
+//	    return graph.Set(message.MessagesKey, []message.Message{finalMessage}).End()
 //	}
 type NodeFunc = graph.NodeFunc[Message]
 
@@ -51,7 +51,7 @@ type Middleware = graph.Middleware[Message]
 //	b.Node("agent", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 //	    msgs := message.GetMessages(scope)
 //	    response := processMessages(msgs)
-//	    return graph.Append(message.MessagesKey, response).End()
+//	    return graph.Set(message.MessagesKey, []message.Message{response}).End()
 //	})
 type GraphBuilder = graph.Builder[[]Message, Message]
 

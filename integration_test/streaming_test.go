@@ -19,7 +19,7 @@ func TestStreaming_BasicEmission(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, string](resultKey)
 	g.Node("streamer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
@@ -50,7 +50,7 @@ func TestStreaming_MultipleNodes(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, string](resultKey)
 
@@ -85,7 +85,7 @@ func TestStreaming_OrderPreservation(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, string](resultKey)
 	g.Node("counter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
@@ -115,7 +115,7 @@ func TestStreaming_ScopeStreamAvailable(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 	var streamedValues []string
 	var mu sync.Mutex
 
@@ -145,7 +145,7 @@ func TestStreaming_ScopeStreamAvailable(t *testing.T) {
 func TestStreaming_WithContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, string](resultKey)
 
@@ -195,7 +195,7 @@ func TestStreaming_WithContextCancellation(t *testing.T) {
 func TestStreaming_EventsPublished(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	var events []event.Event
 	var eventMu sync.Mutex

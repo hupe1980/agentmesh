@@ -13,7 +13,7 @@ import (
 func TestGraphValidation_ValidGraph(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -32,7 +32,7 @@ func TestGraphValidation_ValidGraph(t *testing.T) {
 func TestGraphValidation_NoEntryPoint(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -51,7 +51,7 @@ func TestGraphValidation_NoEntryPoint(t *testing.T) {
 func TestGraphValidation_UnreachableNode(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -77,7 +77,7 @@ func TestGraphValidation_UnreachableNode(t *testing.T) {
 func TestGraphValidation_InvalidTarget(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -100,8 +100,8 @@ func TestGraphValidation_MultipleEntryPoints(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	result1Key := graph.NewKey("result1", "")
-	result2Key := graph.NewKey("result2", "")
+	result1Key := graph.NewKey[string]("result1")
+	result2Key := graph.NewKey[string]("result2")
 
 	g := graph.New[any, any](result1Key, result2Key)
 
@@ -133,7 +133,7 @@ func TestGraphValidation_SelfLoop(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	counterKey := graph.NewKey("counter", 0)
+	counterKey := graph.NewKey[int]("counter")
 
 	g := graph.New[any, any](counterKey)
 
@@ -160,7 +160,7 @@ func TestGraphValidation_SelfLoop(t *testing.T) {
 func TestGraphValidation_EmptyGraph(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 
@@ -174,7 +174,7 @@ func TestGraphValidation_EmptyGraph(t *testing.T) {
 func TestGraphValidation_DuplicateNodeNames(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 

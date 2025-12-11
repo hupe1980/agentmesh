@@ -51,8 +51,8 @@ func TestDistributedStateSync(t *testing.T) {
 
 	// Define state keys for testing
 	// Use float64 for counter since JSON unmarshals numbers as float64
-	counterKey := graph.NewKey("counter", 0.0)
-	dataKey := graph.NewKey("data", "")
+	counterKey := graph.NewKey[float64]("counter")
+	dataKey := graph.NewKey[string]("data")
 
 	// Build a graph with nodes that modify state
 	// node1 -> node2 -> node3
@@ -141,9 +141,9 @@ func TestDistributedStateParallel(t *testing.T) {
 	defer bus.Close()
 
 	// Define state keys
-	result1Key := graph.NewKey("result1", "")
-	result2Key := graph.NewKey("result2", "")
-	finalKey := graph.NewKey("final", "")
+	result1Key := graph.NewKey[string]("result1")
+	result2Key := graph.NewKey[string]("result2")
+	finalKey := graph.NewKey[string]("final")
 
 	// Build graph with parallel execution
 	g := graph.New[any, any](result1Key, result2Key, finalKey)

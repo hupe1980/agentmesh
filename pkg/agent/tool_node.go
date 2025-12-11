@@ -115,7 +115,7 @@ func NewToolNodeFunc(opts ...ToolNodeOption) (message.NodeFunc, error) {
 		// Convert results to ToolMessages
 		toolMessages := resultsToMessages(results)
 
-		return graph.Append(MessagesKey, toolMessages...).To(cfg.ModelTarget)
+		return graph.Set(MessagesKey, toolMessages).To(cfg.ModelTarget)
 	}, nil
 }
 

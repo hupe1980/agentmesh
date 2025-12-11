@@ -31,7 +31,7 @@ func TestMiddleware_ChainedExecution(t *testing.T) {
 		}
 	}
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -68,7 +68,7 @@ func TestMiddleware_TimingTracking(t *testing.T) {
 	ctx := context.Background()
 	var recordedDurations []time.Duration
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 	g.Node("slow", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -98,7 +98,7 @@ func TestMiddleware_RecoveryFromPanic(t *testing.T) {
 	ctx := context.Background()
 	var recoveredPanic any
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	g := graph.New[any, any](resultKey)
 	g.Node("panicker", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
@@ -130,7 +130,7 @@ func TestRetry_SuccessAfterFailures(t *testing.T) {
 	ctx := context.Background()
 	var attempts int32
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		count := atomic.AddInt32(&attempts, 1)
@@ -166,7 +166,7 @@ func TestRetry_ExceedsMaxAttempts(t *testing.T) {
 	ctx := context.Background()
 	var attempts int32
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
@@ -206,7 +206,7 @@ func TestRetry_NonRetryableError(t *testing.T) {
 
 	permanentErr := errors.New("permanent error")
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
@@ -248,7 +248,7 @@ func TestRetry_ContextCancellation(t *testing.T) {
 
 	var attempts int32
 
-	resultKey := graph.NewKey("result", "")
+	resultKey := graph.NewKey[string]("result")
 
 	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
