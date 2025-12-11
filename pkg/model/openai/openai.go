@@ -545,12 +545,21 @@ func (m *Model) applyOptions(params *openai.ChatCompletionNewParams, req *model.
 
 	// Apply structured output from request if specified
 	if req != nil && req.OutputSchema != nil {
+		schema := req.OutputSchema.Schema
+		// When strict mode is enabled, transform the schema to meet OpenAI's requirements:
+		// - All properties must be in the required array
+		// - Optional fields (not originally required) get nullable type: ["<type>", "null"]
+		// - additionalProperties must be false (recursively)
+		if req.OutputSchema.Strict {
+			schema = transformSchemaForOpenAIStrict(schema)
+		}
+
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
 				Type: "json_schema",
 				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
 					Name:   req.OutputSchema.Name,
-					Schema: req.OutputSchema.Schema,
+					Schema: schema,
 					Strict: param.NewOpt(req.OutputSchema.Strict),
 				},
 			},
@@ -569,6 +578,264 @@ func (m *Model) applyOptions(params *openai.ChatCompletionNewParams, req *model.
 	}
 
 	return nil
+}
+
+// transformSchemaForOpenAIStrict transforms a JSON schema to meet OpenAI's strict
+// structured output requirements:
+//   - All properties must be listed in the "required" array
+//   - Properties that were originally optional get a nullable type: ["<type>", "null"]
+//   - "additionalProperties" is set to false at all levels (recursively)
+//
+// This is necessary because OpenAI's Structured Output API has non-standard requirements
+// where optional fields must still be in "required" but use a nullable type union.
+// See: https://platform.openai.com/docs/guides/structured-outputs
+func transformSchemaForOpenAIStrict(schema map[string]any) map[string]any {
+	if schema == nil {
+		return nil
+	}
+
+	// Deep clone the schema to avoid mutating the original
+	result := deepCloneMap(schema)
+
+	// Process this schema level
+	transformSchemaLevel(result)
+
+	return result
+}
+
+// jsonNull is the JSON Schema null type constant.
+const jsonNull = "null"
+
+// transformSchemaLevel recursively transforms a schema object in place.
+func transformSchemaLevel(schema map[string]any) {
+	if schema == nil {
+		return
+	}
+
+	// Set additionalProperties to false for objects
+	if schemaType, ok := schema["type"]; ok && schemaType == "object" {
+		schema["additionalProperties"] = false
+	}
+
+	// Get current required fields as a set for O(1) lookup
+	requiredSet := buildRequiredSet(schema["required"])
+
+	// Process properties
+	if props, ok := schema["properties"].(map[string]any); ok {
+		allPropertyNames := make([]string, 0, len(props))
+
+		for propName, propValue := range props {
+			allPropertyNames = append(allPropertyNames, propName)
+
+			propSchema, ok := propValue.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			// If this property was NOT originally required, make it nullable
+			if !requiredSet[propName] {
+				makeNullable(propSchema)
+			}
+
+			// Recursively transform nested schemas
+			transformNestedSchemas(propSchema)
+		}
+
+		// Update required to include ALL property names
+		schema["required"] = allPropertyNames
+	}
+
+	// Handle definitions/defs for schema references
+	transformDefinitions(schema, "$defs")
+	transformDefinitions(schema, "definitions")
+}
+
+// buildRequiredSet extracts required field names into a set for O(1) lookup.
+func buildRequiredSet(required any) map[string]bool {
+	result := make(map[string]bool)
+
+	switch req := required.(type) {
+	case []any:
+		for _, r := range req {
+			if s, ok := r.(string); ok {
+				result[s] = true
+			}
+		}
+	case []string:
+		for _, r := range req {
+			result[r] = true
+		}
+	}
+
+	return result
+}
+
+// transformDefinitions processes $defs or definitions in a schema.
+func transformDefinitions(schema map[string]any, key string) {
+	if defs, ok := schema[key].(map[string]any); ok {
+		for _, defValue := range defs {
+			if defSchema, ok := defValue.(map[string]any); ok {
+				transformSchemaLevel(defSchema)
+			}
+		}
+	}
+}
+
+// transformNestedSchemas handles nested schema structures like items, anyOf, oneOf, allOf.
+func transformNestedSchemas(schema map[string]any) {
+	if schema == nil {
+		return
+	}
+
+	// Handle array items
+	if items, ok := schema["items"].(map[string]any); ok {
+		transformSchemaLevel(items)
+	}
+
+	// Handle anyOf, oneOf, allOf
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		if arr, ok := schema[key].([]any); ok {
+			for _, item := range arr {
+				if itemSchema, ok := item.(map[string]any); ok {
+					transformSchemaLevel(itemSchema)
+				}
+			}
+		}
+	}
+
+	// Handle nested object properties
+	if schema["type"] == "object" {
+		transformSchemaLevel(schema)
+	}
+}
+
+// makeNullable converts a type to a nullable type union ["<type>", "null"].
+// If the type is already nullable or is a union, it adds "null" to the union.
+func makeNullable(schema map[string]any) {
+	if schema == nil {
+		return
+	}
+
+	currentType, hasType := schema["type"]
+	if !hasType {
+		makeNullableComposite(schema)
+		return
+	}
+
+	makeNullableType(schema, currentType)
+}
+
+// makeNullableComposite handles nullable conversion for schemas using anyOf, oneOf, or $ref.
+func makeNullableComposite(schema map[string]any) {
+	if arr, ok := schema["anyOf"].([]any); ok {
+		if !containsNullType(arr) {
+			schema["anyOf"] = append(arr, map[string]any{"type": jsonNull})
+		}
+		return
+	}
+
+	if arr, ok := schema["oneOf"].([]any); ok {
+		delete(schema, "oneOf")
+		schema["anyOf"] = append(arr, map[string]any{"type": jsonNull})
+		return
+	}
+
+	if ref, hasRef := schema["$ref"]; hasRef {
+		delete(schema, "$ref")
+		schema["anyOf"] = []any{
+			map[string]any{"$ref": ref},
+			map[string]any{"type": jsonNull},
+		}
+	}
+}
+
+// makeNullableType handles nullable conversion for schemas with explicit type.
+func makeNullableType(schema map[string]any, currentType any) {
+	switch t := currentType.(type) {
+	case string:
+		if t != jsonNull {
+			schema["type"] = []any{t, jsonNull}
+		}
+	case []any:
+		if !containsNull(t) {
+			schema["type"] = append(t, jsonNull)
+		}
+	case []string:
+		if !containsNullString(t) {
+			newType := make([]any, len(t)+1)
+			for i, item := range t {
+				newType[i] = item
+			}
+			newType[len(t)] = jsonNull
+			schema["type"] = newType
+		}
+	}
+}
+
+// containsNullType checks if an anyOf/oneOf array contains a null type schema.
+func containsNullType(arr []any) bool {
+	for _, item := range arr {
+		if itemMap, ok := item.(map[string]any); ok {
+			if itemMap["type"] == jsonNull {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// containsNull checks if an []any type array contains "null".
+func containsNull(arr []any) bool {
+	for _, item := range arr {
+		if item == jsonNull {
+			return true
+		}
+	}
+	return false
+}
+
+// containsNullString checks if a []string type array contains "null".
+func containsNullString(arr []string) bool {
+	for _, item := range arr {
+		if item == jsonNull {
+			return true
+		}
+	}
+	return false
+}
+
+// deepCloneMap creates a deep copy of a map[string]any.
+func deepCloneMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+
+	result := make(map[string]any, len(m))
+	for k, v := range m {
+		result[k] = deepCloneValue(v)
+	}
+	return result
+}
+
+// deepCloneValue creates a deep copy of any value.
+func deepCloneValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return deepCloneMap(val)
+	case []any:
+		result := make([]any, len(val))
+		for i, item := range val {
+			result[i] = deepCloneValue(item)
+		}
+		return result
+	case []string:
+		result := make([]string, len(val))
+		copy(result, val)
+		return result
+	default:
+		// Primitive types (string, int, float, bool, nil) are immutable
+		return val
+	}
 }
 
 func convertTools(tools []tool.Tool) ([]openai.ChatCompletionToolUnionParam, error) {

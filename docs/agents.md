@@ -653,6 +653,58 @@ reactAgent, err := agent.NewReAct(model,
 )
 ```
 
+### OpenAI strict mode requirements
+
+OpenAI's Structured Output API has non-standard JSON Schema requirements when using strict mode (the default). AgentMesh automatically handles these for you:
+
+**OpenAI's requirements:**
+- **All properties must be in the `required` array** - even optional fields
+- **Optional fields use nullable types** - `type: ["string", "null"]` instead of `type: "string"`
+- **`additionalProperties` must be `false`** - at all nesting levels
+
+**How AgentMesh handles this:**
+
+When you use `schema.NewOutputSchema()` with OpenAI and strict mode is enabled (the default), AgentMesh automatically transforms your schema:
+
+```go
+// Your Go struct with an optional field
+type Person struct {
+    Name string `json:"name" jsonschema:"required"`
+    Age  int    `json:"age,omitempty"` // Optional field
+}
+
+// Create schema - strict mode is enabled by default
+schema, err := schema.NewOutputSchema("person", Person{})
+
+// Standard JSON Schema generated:
+// {
+//   "properties": { "name": {...}, "age": {...} },
+//   "required": ["name"]
+// }
+
+// AgentMesh automatically transforms to OpenAI-compatible:
+// {
+//   "properties": {
+//     "name": {"type": "string"},
+//     "age": {"type": ["integer", "null"]}  // Made nullable
+//   },
+//   "required": ["name", "age"],  // All fields required
+//   "additionalProperties": false
+// }
+```
+
+**Disabling strict mode:**
+
+If you prefer standard JSON Schema behavior (not recommended for OpenAI), disable strict mode:
+
+```go
+schema, err := schema.NewOutputSchema("person", Person{},
+    schema.WithStrict(false),
+)
+```
+
+**Note:** Other providers (Anthropic, Gemini, Ollama, Bedrock) use tool calling for structured output and follow standard JSON Schema - no transformation is applied.
+
 ### Tool-based fallback
 
 For models that **don't support native structured output** but **do support tool calling**, AgentMesh automatically uses a tool-based fallback. It injects a `set_model_response` tool that instructs the model to return structured data via tool calling:

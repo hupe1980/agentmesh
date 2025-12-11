@@ -188,6 +188,9 @@ The adapter supports:
 - ✅ Function calling via `Request.Tools`
 - ✅ Parallel tool calls
 - ✅ Vision models (pass `message.FilePart` with image MIME type)
+- ✅ Native structured output with automatic schema transformation
+
+**Structured Output:** OpenAI's strict mode requires all properties in the `required` array with optional fields using nullable types (`["string", "null"]`). AgentMesh automatically transforms your schema when strict mode is enabled. See [Structured Output](/agents/#structured-output) for details.
 
 ### Anthropic {#anthropic}
 

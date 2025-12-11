@@ -285,3 +285,220 @@ func TestNewClientWrapper(t *testing.T) {
 		assert.Contains(t, err.Error(), "client must not be nil")
 	})
 }
+
+func TestTransformSchemaForOpenAIStrict(t *testing.T) {
+	t.Run("transforms simple schema with optional fields", func(t *testing.T) {
+		// Input schema: name is required, age is optional
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{
+					"type":        "string",
+					"description": "Person's name",
+				},
+				"age": map[string]any{
+					"type":        "integer",
+					"description": "Person's age",
+				},
+			},
+			"required": []string{"name"},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify all properties are now required
+		required, ok := result["required"].([]string)
+		require.True(t, ok, "required should be []string")
+		assert.Len(t, required, 2)
+		assert.Contains(t, required, "name")
+		assert.Contains(t, required, "age")
+
+		// Verify additionalProperties is false
+		assert.Equal(t, false, result["additionalProperties"])
+
+		// Verify name type is unchanged (was already required)
+		props := result["properties"].(map[string]any)
+		nameSchema := props["name"].(map[string]any)
+		assert.Equal(t, "string", nameSchema["type"])
+
+		// Verify age type is now nullable (was optional)
+		ageSchema := props["age"].(map[string]any)
+		ageType, ok := ageSchema["type"].([]any)
+		require.True(t, ok, "age type should be an array")
+		assert.Len(t, ageType, 2)
+		assert.Contains(t, ageType, "integer")
+		assert.Contains(t, ageType, "null")
+	})
+
+	t.Run("handles nested objects", func(t *testing.T) {
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"person": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name": map[string]any{"type": "string"},
+						"age":  map[string]any{"type": "integer"},
+					},
+					"required": []string{"name"},
+				},
+			},
+			"required": []string{"person"},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify top-level additionalProperties is false
+		assert.Equal(t, false, result["additionalProperties"])
+
+		// Verify nested object has additionalProperties false
+		props := result["properties"].(map[string]any)
+		personSchema := props["person"].(map[string]any)
+		assert.Equal(t, false, personSchema["additionalProperties"])
+
+		// Verify nested optional field (age) is nullable
+		personProps := personSchema["properties"].(map[string]any)
+		ageSchema := personProps["age"].(map[string]any)
+		ageType, ok := ageSchema["type"].([]any)
+		require.True(t, ok, "age type should be an array")
+		assert.Contains(t, ageType, "integer")
+		assert.Contains(t, ageType, "null")
+	})
+
+	t.Run("handles array items", func(t *testing.T) {
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"people": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name": map[string]any{"type": "string"},
+						},
+						"required": []string{"name"},
+					},
+				},
+			},
+			"required": []string{"people"},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify array items have additionalProperties false
+		props := result["properties"].(map[string]any)
+		peopleSchema := props["people"].(map[string]any)
+		itemsSchema := peopleSchema["items"].(map[string]any)
+		assert.Equal(t, false, itemsSchema["additionalProperties"])
+	})
+
+	t.Run("preserves already nullable types", func(t *testing.T) {
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"optional_field": map[string]any{
+					"type": []any{"string", "null"},
+				},
+			},
+			"required": []string{},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify the already-nullable type isn't modified
+		props := result["properties"].(map[string]any)
+		fieldSchema := props["optional_field"].(map[string]any)
+		fieldType := fieldSchema["type"].([]any)
+		// Should have exactly 2 elements (no duplicate null)
+		assert.Len(t, fieldType, 2)
+		assert.Contains(t, fieldType, "string")
+		assert.Contains(t, fieldType, "null")
+	})
+
+	t.Run("does not mutate original schema", func(t *testing.T) {
+		original := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+			},
+			"required": []string{"name"},
+		}
+
+		_ = transformSchemaForOpenAIStrict(original)
+
+		// Original should still have the original values
+		props := original["properties"].(map[string]any)
+		nameSchema := props["name"].(map[string]any)
+		assert.Equal(t, "string", nameSchema["type"])
+		_, hasAdditionalProps := original["additionalProperties"]
+		assert.False(t, hasAdditionalProps, "original should not have additionalProperties")
+	})
+
+	t.Run("handles nil schema", func(t *testing.T) {
+		result := transformSchemaForOpenAIStrict(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("handles $ref with optional field", func(t *testing.T) {
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"address": map[string]any{
+					"$ref": "#/$defs/Address",
+				},
+			},
+			"required": []string{},
+			"$defs": map[string]any{
+				"Address": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"street": map[string]any{"type": "string"},
+					},
+					"required": []string{"street"},
+				},
+			},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify $ref is wrapped in anyOf with null for optional field
+		props := result["properties"].(map[string]any)
+		addressSchema := props["address"].(map[string]any)
+		anyOf, ok := addressSchema["anyOf"].([]any)
+		require.True(t, ok, "address should have anyOf")
+		assert.Len(t, anyOf, 2)
+
+		// Verify $defs are also transformed
+		defs := result["$defs"].(map[string]any)
+		addressDef := defs["Address"].(map[string]any)
+		assert.Equal(t, false, addressDef["additionalProperties"])
+	})
+
+	t.Run("handles required as []string", func(t *testing.T) {
+		input := map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"age":  map[string]any{"type": "integer"},
+			},
+			"required": []string{"name"},
+		}
+
+		result := transformSchemaForOpenAIStrict(input)
+
+		// Verify all properties are now required
+		required, ok := result["required"].([]string)
+		require.True(t, ok, "required should be []string")
+		assert.Len(t, required, 2)
+		assert.Contains(t, required, "name")
+		assert.Contains(t, required, "age")
+
+		// Verify age is nullable
+		props := result["properties"].(map[string]any)
+		ageSchema := props["age"].(map[string]any)
+		ageType, ok := ageSchema["type"].([]any)
+		require.True(t, ok, "age type should be an array")
+		assert.Contains(t, ageType, "integer")
+		assert.Contains(t, ageType, "null")
+	})
+}
