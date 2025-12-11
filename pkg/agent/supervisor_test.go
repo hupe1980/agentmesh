@@ -103,21 +103,21 @@ func TestNewSupervisor(t *testing.T) {
 	}
 }
 
-func TestGenerateDefaultSupervisorPrompt(t *testing.T) {
+func TestGenerateDefaultSupervisorInstructions(t *testing.T) {
 	workers := []WorkerAgent{
 		{Name: "math", Description: "Expert in mathematics"},
 		{Name: "history", Description: "Expert in history"},
 	}
 
-	prompt := generateDefaultSupervisorPrompt(workers)
+	instructions := generateDefaultSupervisorInstructions(workers)
 
-	if prompt == "" {
-		t.Error("Generated prompt is empty")
+	if instructions == "" {
+		t.Error("Generated instructions are empty")
 	}
 
-	// Check that prompt mentions both workers
-	if len(prompt) < 50 {
-		t.Error("Generated prompt seems too short")
+	// Check that instructions mention both workers
+	if len(instructions) < 50 {
+		t.Error("Generated instructions seem too short")
 	}
 }
 

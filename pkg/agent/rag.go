@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/logging"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/prompt"
@@ -15,16 +17,15 @@ import (
 // DocumentsKey is the state key for storing retrieved documents in RAG workflows.
 var DocumentsKey = graph.NewKey[[]string]("documents", nil)
 
+// RephrasedQueryKey stores the rephrased query for retrieval.
+// This is set by the rephrase node when query rephrasing is enabled.
+var RephrasedQueryKey = graph.NewKey[string]("rephrased_query", "")
+
 // extractUserQuery finds the last human message text from messages.
 func extractUserQuery(messages []message.Message) (string, error) {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Type() == message.TypeHuman {
-			// Get text from Parts
-			for _, part := range messages[i].Parts() {
-				if textPart, ok := part.(message.TextPart); ok {
-					return textPart.Text, nil
-				}
-			}
+			return messages[i].String(), nil
 		}
 	}
 	return "", ErrNoUserQuery
@@ -39,17 +40,101 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 	return docStrings
 }
 
-// createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) message.NodeFunc {
+// defaultRephrasePrompt is the default prompt template for query rephrasing.
+var defaultRephrasePrompt = prompt.New(`Given the conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that contains all necessary context.
+
+Conversation history:
+{{range .History}}
+{{.Type}}: {{.String}}
+{{end}}
+
+Follow-up question: {{.Query}}
+
+Standalone question:`)
+
+// createRephraseNode creates a node that rephrases queries in conversational contexts.
+// It automatically detects if conversation history exists and skips rephrasing for standalone queries.
+func createRephraseNode(executor model.Executor, rephrasePrompt *prompt.Template) message.NodeFunc {
 	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+		logger := logging.FromContext(ctx)
+
 		msgs := GetMessages(scope)
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoQueryMessages)
 		}
 
+		// Extract current query
 		query, err := extractUserQuery(msgs)
 		if err != nil {
 			return graph.Fail(err)
+		}
+
+		// AUTO-DETECTION: Check if we're in a conversational context
+		if !IsConversationalContext(scope) {
+			// No conversation history - skip rephrasing, use query as-is
+			logger.Debug("skipping query rephrasing - no conversation history")
+			return graph.Set(RephrasedQueryKey, query).To("retrieve")
+		}
+
+		// Get conversation history for context
+		history := GetConversationHistory(msgs)
+		if len(history) == 0 {
+			// No usable history - skip rephrasing
+			logger.Debug("skipping query rephrasing - no usable history")
+			return graph.Set(RephrasedQueryKey, query).To("retrieve")
+		}
+
+		// Build rephrase prompt
+		promptText := rephrasePrompt.MustRender(map[string]any{
+			"History": history,
+			"Query":   query,
+		})
+
+		// Call model to rephrase
+		req := &model.Request{
+			Messages: []message.Message{
+				message.NewHumanMessageFromText(promptText),
+			},
+		}
+
+		resp, err := graph.Last(executor.Generate(ctx, req))
+		if err != nil {
+			// Fall back to original query on error (don't break the pipeline)
+			logger.Warn("query rephrasing failed, using original query",
+				"error", err,
+				"query", query,
+			)
+			return graph.Set(RephrasedQueryKey, query).To("retrieve")
+		}
+
+		rephrased := strings.TrimSpace(resp.Message.String())
+		logger.Debug("query rephrased",
+			"original", query,
+			"rephrased", rephrased,
+		)
+
+		return graph.Set(RephrasedQueryKey, rephrased).To("retrieve")
+	}
+}
+
+// createRetrieveNode creates the retrieval node for fetching relevant documents.
+func createRetrieveNode(retriever retrieval.Retriever) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+		// Check for rephrased query first (set by rephrase node)
+		query := graph.Get(scope, RephrasedQueryKey)
+
+		// Fall back to extracting from messages if no rephrased query
+		if query == "" {
+			msgs := GetMessages(scope)
+			if len(msgs) == 0 {
+				return graph.Fail(ErrNoQueryMessages)
+			}
+
+			var err error
+			query, err = extractUserQuery(msgs)
+			if err != nil {
+				return graph.Fail(err)
+			}
 		}
 
 		docs, err := retriever.Retrieve(ctx, query)
@@ -79,13 +164,13 @@ func createRAGInstructionsFunc(config ragOptions) func(context.Context, message.
 		// Add document context if documents exist
 		docs := graph.Get(scope, DocumentsKey)
 		if len(docs) > 0 {
-			contextPrompt := config.promptTemplate.MustRender(map[string]any{
+			contextText := config.contextPrompt.MustRender(map[string]any{
 				"Documents": docs,
 			})
 			if instructions != "" {
-				instructions = instructions + "\n\n" + contextPrompt
+				instructions = instructions + "\n\n" + contextText
 			} else {
-				instructions = contextPrompt
+				instructions = contextText
 			}
 		}
 
@@ -145,10 +230,21 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 	}
 
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
-	b := message.NewGraphBuilder(DocumentsKey)
-	b.Node("retrieve", createRetrieveNode(retriever), "generate")
-	b.Node("generate", modelFn, graph.END)
-	b.Start("retrieve")
+	b := message.NewGraphBuilder(DocumentsKey, RephrasedQueryKey)
+
+	// Include rephrase node by default - it auto-skips when no conversation history exists
+	// Graph structure with rephrasing: START → rephrase → retrieve → generate → END
+	// Graph structure without rephrasing: START → retrieve → generate → END
+	if config.skipRephrasing {
+		b.Node("retrieve", createRetrieveNode(retriever), "generate")
+		b.Node("generate", modelFn, graph.END)
+		b.Start("retrieve")
+	} else {
+		b.Node("rephrase", createRephraseNode(modelExecutor, config.rephrasePrompt), "retrieve")
+		b.Node("retrieve", createRetrieveNode(retriever), "generate")
+		b.Node("generate", modelFn, graph.END)
+		b.Start("rephrase")
+	}
 
 	// Apply graph middleware if provided
 	if len(config.graphMiddleware) > 0 {
@@ -161,11 +257,13 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 // ragOptions holds configuration for RAG agents.
 type ragOptions struct {
 	commonOptions
-	promptTemplate *prompt.Template
+	contextPrompt  *prompt.Template // Prompt for formatting retrieved documents
+	rephrasePrompt *prompt.Template // Prompt for rephrasing queries in conversations
+	skipRephrasing bool             // Disable automatic query rephrasing
 }
 
 func defaultRAGOptions() ragOptions {
-	tmpl := prompt.New(`Use the following documents to answer the question:
+	contextTmpl := prompt.New(`Use the following documents to answer the question:
 
 {{range .Documents}}
 - {{.}}
@@ -180,7 +278,8 @@ func defaultRAGOptions() ragOptions {
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},
-		promptTemplate: tmpl,
+		contextPrompt:  contextTmpl,
+		rephrasePrompt: defaultRephrasePrompt,
 	}
 }
 
@@ -196,11 +295,41 @@ func (f ragOptionFunc) applyRAG(opts *ragOptions) {
 	f(opts)
 }
 
-// WithPromptTemplate sets a custom prompt template for context formatting.
-func WithPromptTemplate(tmpl *prompt.Template) RAGOption {
+// WithContextPrompt sets a custom prompt template for formatting retrieved documents.
+// This prompt is used to present the retrieved context to the model for generation.
+func WithContextPrompt(tmpl *prompt.Template) RAGOption {
 	return ragOptionFunc(func(c *ragOptions) {
 		if tmpl != nil {
-			c.promptTemplate = tmpl
+			c.contextPrompt = tmpl
+		}
+	})
+}
+
+// WithSkipRephrasing disables automatic query rephrasing.
+//
+// By default, the RAG agent automatically detects conversational context and
+// rephrases follow-up questions to be standalone queries for better retrieval.
+// Use this option to disable this behavior if you want to use queries as-is.
+//
+// Example:
+//
+//	// Disable automatic rephrasing
+//	ragAgent, _ := agent.NewRAG(model, retriever,
+//	    agent.WithSkipRephrasing(),
+//	)
+func WithSkipRephrasing() RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		c.skipRephrasing = true
+	})
+}
+
+// WithRephrasePrompt sets a custom prompt template for query rephrasing.
+// This is used when the RAG agent rephrases queries in conversational contexts.
+// Has no effect if WithSkipRephrasing is also used.
+func WithRephrasePrompt(tmpl *prompt.Template) RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		if tmpl != nil {
+			c.rephrasePrompt = tmpl
 		}
 	})
 }

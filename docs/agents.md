@@ -25,6 +25,8 @@ sidebar:
     url: "#rag-agent"
   - title: Conversational agent
     url: "#conversational-agent"
+  - title: Utility functions
+    url: "#utility-functions"
   - title: Custom graphs
     url: "#custom-graphs"
   - title: Conditional routing
@@ -375,8 +377,9 @@ See `examples/reflection_agent` for a complete demonstration.
 ## RAG agent {#rag-agent}
 
 The **RAG (Retrieval-Augmented Generation)** pattern creates an agent that:
-1. Retrieves relevant context from a knowledge base
-2. Generates a response using both the query and retrieved context
+1. Automatically rephrases follow-up questions in conversations (enabled by default)
+2. Retrieves relevant context from a knowledge base
+3. Generates a response using both the query and retrieved context
 
 This is ideal for question-answering over large document collections.
 
@@ -396,7 +399,6 @@ retriever := langchaingo.NewRetrieverFromVectorStore(vectorStore, func(o *langch
 ragAgent, err := agent.NewRAG(
     openai.NewModel(),
     retriever,
-    agent.WithRAGPromptTemplate(customTemplate),
 )
 
 // Execute with iterator pattern
@@ -412,20 +414,47 @@ for msg, err := range ragAgent.Run(ctx, messages) {
 
 ```go
 agent.NewRAG(model, retriever,
-    agent.WithRAGPromptTemplate(template),  // Custom prompt template
+    agent.WithContextPrompt(template),    // Custom document formatting prompt
+    agent.WithRephrasePrompt(template),   // Custom query rephrasing prompt
+    agent.WithSkipRephrasing(),           // Disable automatic query rephrasing
 )
 ```
 
+| Option | Description | Default |
+|--------|-------------|---------|
+| `WithContextPrompt(t)` | Prompt for formatting retrieved documents | Built-in template |
+| `WithRephrasePrompt(t)` | Prompt for rephrasing follow-up queries | Built-in template |
+| `WithSkipRephrasing()` | Disable automatic query rephrasing | Enabled |
+
 ### How it works
 
-The RAG agent compiles into a graph with three nodes:
+The RAG agent compiles into a graph with automatic conversational context detection:
 
 ```
-START → retrieve → generate → END
+START → rephrase → retrieve → generate → END
 ```
 
-1. **Retrieve node**: Fetches relevant documents based on the user's query
-2. **Generate node**: Creates a prompt with the query and retrieved context, then generates the response
+1. **Rephrase node**: Automatically detects conversational context and rephrases follow-up questions to be standalone queries (e.g., "What about their pricing?" → "What is Acme Corp's pricing?"). Skips rephrasing for standalone queries (zero overhead).
+2. **Retrieve node**: Fetches relevant documents based on the (rephrased) query
+3. **Generate node**: Creates a prompt with the query and retrieved context, then generates the response
+
+### Conversational RAG
+
+When combined with the Conversational wrapper, RAG automatically handles follow-up questions:
+
+```go
+// Create RAG agent (query rephrasing enabled by default)
+ragAgent, _ := agent.NewRAG(model, retriever)
+
+// Wrap with conversational memory
+chatAgent, _ := agent.NewConversational(ragAgent, memory)
+
+// First query: "Tell me about Acme Corp"
+// Follow-up: "What about their pricing?"
+// RAG automatically rephrases to: "What is Acme Corp's pricing?"
+```
+
+**Without rephrasing**, the query "What about their pricing?" would fail to retrieve relevant documents because the vector search has no context that "their" refers to "Acme Corp".
 
 ---
 
@@ -544,6 +573,50 @@ flowchart LR
 - Long-running agent sessions
 
 See the [Memory Guide](/memory/) for more on memory types and configuration.
+
+---
+
+## Utility functions {#utility-functions}
+
+The agent package provides utility functions for working with messages and detecting conversational context:
+
+### Message utilities
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/agent"
+
+// Get all messages from scope
+messages := agent.GetMessages(scope)
+
+// Get the last message (or nil if empty)
+lastMsg := agent.LastMessage(scope)
+```
+
+### Conversational context detection
+
+Detect when an agent is operating in a conversational context (useful for custom agents):
+
+```go
+// Check if conversation history exists
+if agent.IsConversationalContext(scope) {
+    // Handle as follow-up question
+    // - Has AI responses (prior exchange)
+    // - Has multiple human messages
+    // - Has memory context from Conversational wrapper
+} else {
+    // Handle as standalone query
+}
+
+// Get conversation history (excludes current query)
+history := agent.GetConversationHistory(messages)
+// Returns prior messages for context-aware processing
+```
+
+**Use cases**:
+- Custom agents that need context-aware behavior
+- Query rephrasing for retrieval systems
+- Detecting multi-turn conversations
+- Building custom memory integrations
 
 ---
 

@@ -63,22 +63,22 @@ func WithWorkerValidation(validate bool) SupervisorOption {
 	})
 }
 
-// generateDefaultSupervisorPrompt creates a default system prompt based on available workers.
-func generateDefaultSupervisorPrompt(workers []WorkerAgent) string {
-	prompt := "You are a supervisor that routes questions to specialist agents.\n\n"
-	prompt += "Available specialists:\n"
+// generateDefaultSupervisorInstructions creates default instructions based on available workers.
+func generateDefaultSupervisorInstructions(workers []WorkerAgent) string {
+	instructions := "You are a supervisor that routes questions to specialist agents.\n\n"
+	instructions += "Available specialists:\n"
 
 	for _, worker := range workers {
-		prompt += fmt.Sprintf("- handoff_to_%s: %s\n", worker.Name, worker.Description)
+		instructions += fmt.Sprintf("- handoff_to_%s: %s\n", worker.Name, worker.Description)
 	}
 
-	prompt += "\nInstructions:\n"
-	prompt += "- Analyze the user's question carefully\n"
-	prompt += "- Delegate to the most appropriate specialist\n"
-	prompt += "- Provide the full task context when delegating\n"
-	prompt += "- Return the specialist's response directly to the user\n"
+	instructions += "\nInstructions:\n"
+	instructions += "- Analyze the user's question carefully\n"
+	instructions += "- Delegate to the most appropriate specialist\n"
+	instructions += "- Provide the full task context when delegating\n"
+	instructions += "- Return the specialist's response directly to the user\n"
 
-	return prompt
+	return instructions
 }
 
 // NewSupervisor creates a supervisor agent that delegates work to specialized worker agents.
@@ -171,8 +171,8 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 		}))
 	} else {
 		// Generate default supervisor instructions
-		defaultPrompt := generateDefaultSupervisorPrompt(config.workers)
-		reactOpts = append(reactOpts, WithInstructions(defaultPrompt))
+		defaultInstructions := generateDefaultSupervisorInstructions(config.workers)
+		reactOpts = append(reactOpts, WithInstructions(defaultInstructions))
 	}
 
 	return NewReAct(mdl, reactOpts...)

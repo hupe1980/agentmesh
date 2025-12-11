@@ -157,7 +157,7 @@ func TestNewRAG_ValidConstruction(t *testing.T) {
 	_ = agent
 }
 
-func TestNewRAG_WithCustomPromptTemplate(t *testing.T) {
+func TestNewRAG_WithCustomContextPrompt(t *testing.T) {
 	mdl := testutil.NewModelBuilder().Build()
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
@@ -165,20 +165,20 @@ func TestNewRAG_WithCustomPromptTemplate(t *testing.T) {
 
 	customTemplate := prompt.New("Custom: {{range .Documents}}{{.}}{{end}}")
 
-	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(customTemplate))
+	agent, err := NewRAG(mdl, retriever, WithContextPrompt(customTemplate))
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
 }
 
-func TestNewRAG_WithNilPromptTemplate(t *testing.T) {
+func TestNewRAG_WithNilContextPrompt(t *testing.T) {
 	mdl := testutil.NewModelBuilder().Build()
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{{PageContent: "test doc"}},
 	}
 
 	// Should use default template when nil passed
-	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(nil))
+	agent, err := NewRAG(mdl, retriever, WithContextPrompt(nil))
 
 	require.NoError(t, err)
 	require.NotNil(t, agent)
@@ -295,7 +295,7 @@ func TestRAGAgent_RetrieveAndGenerate(t *testing.T) {
 	})
 }
 
-func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
+func TestRAGAgent_CustomContextPrompt(t *testing.T) {
 	retriever := &mockRetriever{
 		docs: []retrieval.Document{
 			{PageContent: "Doc 1 content"},
@@ -319,7 +319,7 @@ func TestRAGAgent_CustomPromptTemplate(t *testing.T) {
 		},
 	}
 
-	agent, err := NewRAG(mdl, retriever, WithPromptTemplate(customTemplate))
+	agent, err := NewRAG(mdl, retriever, WithContextPrompt(customTemplate))
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -345,4 +345,197 @@ func containsLoop(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestRAGAgent_QueryRephrasing(t *testing.T) {
+	t.Run("skips rephrasing for standalone query", func(t *testing.T) {
+		retriever := &mockRetriever{
+			docs: []retrieval.Document{
+				{PageContent: "Acme pricing doc"},
+			},
+		}
+
+		rephraseCalled := false
+		generateCalled := false
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				// Check if this is a rephrase call (contains "Standalone question")
+				if contains(req.Messages[0].String(), "Standalone question") {
+					rephraseCalled = true
+				} else {
+					generateCalled = true
+				}
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("Response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		// Rephrasing is enabled by default, but skips for standalone queries
+		agent, err := NewRAG(mdl, retriever)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		// Single message - no conversation history
+		input := []message.Message{
+			message.NewHumanMessageFromText("What is Acme Corp pricing?"),
+		}
+
+		_, err = graph.Last(agent.Run(ctx, input))
+		require.NoError(t, err)
+
+		// Rephrase should be skipped for standalone query
+		assert.False(t, rephraseCalled, "Rephrase should be skipped for standalone query")
+		assert.True(t, generateCalled, "Generate should be called")
+	})
+
+	t.Run("rephrases query in conversational context", func(t *testing.T) {
+		retriever := &mockRetriever{
+			docs: []retrieval.Document{
+				{PageContent: "Acme pricing: $99/month"},
+			},
+		}
+
+		rephraseCalled := false
+		generateCalled := false
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				// Check if this is a rephrase call
+				if contains(req.Messages[0].String(), "Standalone question") {
+					rephraseCalled = true
+					return func(yield func(*model.Response, error) bool) {
+						// Return rephrased query
+						yield(&model.Response{
+							Message: message.NewAIMessageFromText("What is Acme Corp's pricing?"),
+							Partial: false,
+						}, nil)
+					}
+				}
+				generateCalled = true
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("Acme pricing is $99/month"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		// Rephrasing is enabled by default
+		agent, err := NewRAG(mdl, retriever)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		// Conversation history - should trigger rephrasing
+		input := []message.Message{
+			message.NewHumanMessageFromText("Tell me about Acme Corp"),
+			message.NewAIMessageFromText("Acme Corp is a software company..."),
+			message.NewHumanMessageFromText("What about their pricing?"),
+		}
+
+		result, err := graph.Last(agent.Run(ctx, input))
+		require.NoError(t, err)
+
+		assert.True(t, rephraseCalled, "Rephrase should be called for conversational context")
+		assert.True(t, generateCalled, "Generate should be called")
+		assert.Equal(t, "Acme pricing is $99/month", result.String())
+	})
+
+	t.Run("falls back to original query on rephrase error", func(t *testing.T) {
+		retriever := &mockRetriever{
+			docs: []retrieval.Document{
+				{PageContent: "Some doc"},
+			},
+		}
+
+		rephraseAttempted := false
+		generateCalled := false
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				if contains(req.Messages[0].String(), "Standalone question") {
+					rephraseAttempted = true
+					// Return error for rephrase
+					return func(yield func(*model.Response, error) bool) {
+						yield(nil, errors.New("rephrase failed"))
+					}
+				}
+				generateCalled = true
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("Response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		// Rephrasing is enabled by default
+		agent, err := NewRAG(mdl, retriever)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		input := []message.Message{
+			message.NewHumanMessageFromText("First question"),
+			message.NewAIMessageFromText("First answer"),
+			message.NewHumanMessageFromText("Follow-up question"),
+		}
+
+		result, err := graph.Last(agent.Run(ctx, input))
+		require.NoError(t, err)
+
+		assert.True(t, rephraseAttempted, "Rephrase should be attempted")
+		assert.True(t, generateCalled, "Generate should be called even after rephrase error")
+		assert.Equal(t, "Response", result.String())
+	})
+
+	t.Run("skips rephrasing when WithSkipRephrasing is set", func(t *testing.T) {
+		retriever := &mockRetriever{
+			docs: []retrieval.Document{
+				{PageContent: "Acme pricing: $99/month"},
+			},
+		}
+
+		rephraseCalled := false
+		generateCalled := false
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+				// Check if this is a rephrase call
+				if contains(req.Messages[0].String(), "Standalone question") {
+					rephraseCalled = true
+				}
+				generateCalled = true
+				return func(yield func(*model.Response, error) bool) {
+					yield(&model.Response{
+						Message: message.NewAIMessageFromText("Response"),
+						Partial: false,
+					}, nil)
+				}
+			},
+		}
+
+		// Explicitly disable rephrasing
+		agent, err := NewRAG(mdl, retriever, WithSkipRephrasing())
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		// Even with conversation history, rephrasing should be skipped
+		input := []message.Message{
+			message.NewHumanMessageFromText("Tell me about Acme Corp"),
+			message.NewAIMessageFromText("Acme Corp is a software company..."),
+			message.NewHumanMessageFromText("What about their pricing?"),
+		}
+
+		_, err = graph.Last(agent.Run(ctx, input))
+		require.NoError(t, err)
+
+		assert.False(t, rephraseCalled, "Rephrase should be skipped when WithSkipRephrasing is set")
+		assert.True(t, generateCalled, "Generate should be called")
+	})
 }

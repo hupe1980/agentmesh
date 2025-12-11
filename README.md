@@ -31,7 +31,7 @@
 
 ### AI/ML Features
 - **🔢 Embeddings & Memory** - Semantic search and long-term conversation storage
-- **🔍 RAG Integration** - AWS Bedrock Knowledge Bases and Kendra support
+- **🔍 RAG Integration** - Vector stores (pgvector, Qdrant, Pinecone, Weaviate), AWS Bedrock Knowledge Bases, Kendra, and automatic query rephrasing
 - **🧠 Native Reasoning** - First-class support for o1, o3, Gemini 2.0, Claude reasoning models
 - **📝 Prompt Templates** - Variable substitution with reusable patterns
 
