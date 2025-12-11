@@ -151,6 +151,19 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 		WithStreaming(config.streaming),
 	}
 
+	// Forward middleware from commonOptions
+	if len(config.graphMiddleware) > 0 {
+		reactOpts = append(reactOpts, WithGraphMiddleware(config.graphMiddleware...))
+	}
+
+	if len(config.modelMiddleware) > 0 {
+		reactOpts = append(reactOpts, WithModelMiddleware(config.modelMiddleware...))
+	}
+
+	if len(config.toolMiddleware) > 0 {
+		reactOpts = append(reactOpts, WithToolMiddleware(config.toolMiddleware...))
+	}
+
 	// Add instructions if provided, otherwise generate default
 	if config.instructions != nil {
 		reactOpts = append(reactOpts, reActOptionFunc(func(o *reActOptions) {

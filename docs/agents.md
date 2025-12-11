@@ -273,7 +273,9 @@ flowchart TB
 - 🔄 **Fresh context**: Workers can receive only the task, not full conversation (configurable)
 - ♻️ **Retry logic**: Configurable retries for robust execution
 
-See `examples/supervisor_agent` for a complete demonstration.
+> **Tip:** Add progress middleware to see which workers are invoked during execution. See [Middleware](/middleware/#custom-middleware) for examples.
+
+See `examples/supervisor_agent` for a basic demonstration and `examples/blogwriter` for a complete multi-agent workflow with progress tracking.
 
 ---
 

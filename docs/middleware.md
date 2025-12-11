@@ -288,6 +288,71 @@ func MyCustomMiddleware(logger *slog.Logger) graph.Middleware[string] {
 b.WithMiddleware(MyCustomMiddleware(slog.Default()))
 ```
 
+### Progress Middleware Example
+
+For multi-agent systems like supervisors, you can create middleware that shows which agent is being invoked:
+
+```go
+// progressMiddleware shows which tools/agents are being called
+func progressMiddleware() graph.Middleware[message.Message] {
+    return func(next graph.NodeFunc[message.Message]) graph.NodeFunc[message.Message] {
+        return func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+            nodeName := scope.NodeName()
+            start := time.Now()
+            messages := message.GetMessages(scope)
+
+            switch nodeName {
+            case "model":
+                fmt.Printf("🤖 Thinking...\n")
+            case "tool":
+                // Find the last AI message to see which tools are being called
+                for i := len(messages) - 1; i >= 0; i-- {
+                    if aiMsg, ok := messages[i].(*message.AIMessage); ok && len(aiMsg.ToolCalls) > 0 {
+                        for _, tc := range aiMsg.ToolCalls {
+                            fmt.Printf("🔧 Calling: %s\n", tc.Name)
+                        }
+                        break
+                    }
+                }
+            }
+
+            result, err := next(ctx, scope)
+
+            if nodeName == "tool" {
+                duration := time.Since(start)
+                if err != nil {
+                    fmt.Printf("   ❌ Failed after %s\n", duration.Round(time.Millisecond))
+                } else {
+                    fmt.Printf("   ✅ Done (%s)\n", duration.Round(time.Millisecond))
+                }
+            }
+
+            return result, err
+        }
+    }
+}
+
+// Apply to a supervisor
+supervisor, _ := agent.NewSupervisor(
+    model,
+    agent.WithWorker("researcher", "Research expert", researchAgent),
+    agent.WithWorker("writer", "Content writer", writerAgent),
+    agent.WithGraphMiddleware(progressMiddleware()),
+)
+```
+
+Output:
+```
+🤖 Thinking...
+🔧 Calling: handoff_to_researcher
+   ✅ Done (5.734s)
+🤖 Thinking...
+🔧 Calling: handoff_to_writer
+   ✅ Done (8.123s)
+```
+
+See the `examples/blogwriter/` example for a complete implementation.
+
 ### Custom Model Middleware
 
 ```go
@@ -384,3 +449,4 @@ See the following examples for complete implementations:
 - **Observability**: `examples/observability/` - Event bus and monitoring
 - **Visualization**: `examples/viz_ui_demo/` - Real-time visualization integration
 - **Custom Middleware**: `examples/guardrails/` - Building custom middleware for content filtering
+- **Progress Middleware**: `examples/blogwriter/` - Shows progress during multi-agent workflows

@@ -157,11 +157,12 @@ The weather in San Francisco is currently sunny with a temperature of 72°F.
 
 ## 🎨 Examples
 
-Explore **31 comprehensive examples** in the [`examples/`](examples/) directory:
+Explore **32 comprehensive examples** in the [`examples/`](examples/) directory:
 
 | Example | Description |
 |---------|-------------|
 | **[basic_agent](examples/basic_agent/)** | Simple ReAct agent with tools |
+| **[blogwriter](examples/blogwriter/)** | Multi-agent blog writing with progress tracking |
 | **[conversational_agent](examples/conversational_agent/)** | Agent with long-term memory across turns |
 | **[document_loader](examples/document_loader/)** | Document loading and ingestion pipeline |
 | **[supervisor_agent](examples/supervisor_agent/)** | Multi-agent coordination with supervisor |
