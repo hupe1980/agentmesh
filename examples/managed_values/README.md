@@ -59,15 +59,15 @@ var cachedTimeMV = graph.NewManagedValueProvider("cached_time", func(ctx context
 
 ## Usage in Nodes
 
-Access managed values via View - same pattern as regular state:
+Access managed values via scope - same pattern as regular state:
 
 ```go
 // Define managed values at package level for type-safe access
 var configMV = graph.NewManagedValue("config", &Config{...})
 
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    // Access managed value via view - same pattern as graph.Get(view, key)
-    config := graph.GetManaged(ctx, view, configMV)
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    // Access managed value via scope - same pattern as graph.Get(scope, key)
+    config := graph.GetManaged(ctx, scope, configMV)
 
     // Use config.APIKey, config.Timeout, etc.
     return graph.Set(resultKey, result).End()

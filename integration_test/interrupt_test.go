@@ -21,7 +21,7 @@ func TestInterrupt_BeforeNode(t *testing.T) {
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("sensitive", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		nodeExecuted = true
 		return graph.Set(resultKey, "executed").End()
 	}, graph.END)
@@ -60,7 +60,7 @@ func TestInterrupt_AfterNode(t *testing.T) {
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("action", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("action", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		nodeExecuted = true
 		return graph.Set(resultKey, "completed").End()
 	}, graph.END)
@@ -99,7 +99,7 @@ func TestInterrupt_WithApproval(t *testing.T) {
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("sensitive", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		nodeExecuted = true
 		return graph.Set(resultKey, "executed").End()
 	}, graph.END)
@@ -134,7 +134,7 @@ func TestInterrupt_WithRejection(t *testing.T) {
 	var nodeExecuted bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("sensitive", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		nodeExecuted = true
 		return graph.Set(resultKey, "executed").End()
 	}, graph.END)
@@ -171,12 +171,12 @@ func TestInterrupt_MultipleNodes(t *testing.T) {
 	var node1Executed, node2Executed bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("step1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		node1Executed = true
 		return graph.Set(resultKey, "step1").To("step2")
 	}, "step2")
 
-	g.Node("step2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		node2Executed = true
 		return graph.Set(resultKey, "step2").End()
 	}, graph.END)
@@ -213,12 +213,12 @@ func TestInterrupt_ChainWithPartialApproval(t *testing.T) {
 	var node1Executed, node2Executed bool
 
 	g := graph.New[any, any](resultKey)
-	g.Node("step1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		node1Executed = true
 		return graph.Set(resultKey, "step1").To("step2")
 	}, "step2")
 
-	g.Node("step2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		node2Executed = true
 		return graph.Set(resultKey, "step2").End()
 	}, graph.END)

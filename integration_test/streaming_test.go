@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestStreaming_BasicEmission tests that stream writers can emit intermediate values.
+// TestStreaming_BasicEmission tests that scope.Stream() can emit intermediate values.
 func TestStreaming_BasicEmission(t *testing.T) {
 	t.Parallel()
 
@@ -22,13 +22,10 @@ func TestStreaming_BasicEmission(t *testing.T) {
 	resultKey := graph.NewKey("result", "")
 
 	g := graph.New[any, string](resultKey)
-	g.Node("streamer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			writer(graph.Updates{"result": "chunk1"})
-			writer(graph.Updates{"result": "chunk2"})
-			writer(graph.Updates{"result": "chunk3"})
-		}
+	g.Node("streamer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("chunk1")
+		scope.Stream("chunk2")
+		scope.Stream("chunk3")
 		return graph.Set(resultKey, "final").End()
 	}, graph.END)
 	g.Start("streamer")
@@ -57,19 +54,13 @@ func TestStreaming_MultipleNodes(t *testing.T) {
 
 	g := graph.New[any, string](resultKey)
 
-	g.Node("node1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			writer(graph.Updates{"result": "from-node1"})
-		}
+	g.Node("node1", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("from-node1")
 		return graph.Set(resultKey, "n1").To("node2")
 	}, "node2")
 
-	g.Node("node2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			writer(graph.Updates{"result": "from-node2"})
-		}
+	g.Node("node2", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("from-node2")
 		return graph.Set(resultKey, "n2").End()
 	}, graph.END)
 
@@ -97,12 +88,9 @@ func TestStreaming_OrderPreservation(t *testing.T) {
 	resultKey := graph.NewKey("result", "")
 
 	g := graph.New[any, string](resultKey)
-	g.Node("counter", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			for i := 1; i <= 5; i++ {
-				writer(graph.Updates{"result": string(rune('0' + i))})
-			}
+	g.Node("counter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		for i := 1; i <= 5; i++ {
+			scope.Stream(string(rune('0' + i)))
 		}
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
@@ -121,21 +109,21 @@ func TestStreaming_OrderPreservation(t *testing.T) {
 	assert.Contains(t, outputs, "done")
 }
 
-// TestStreaming_GetStreamWriterReturnsWriter tests that GetStreamWriter returns non-nil during execution.
-func TestStreaming_GetStreamWriterReturnsWriter(t *testing.T) {
+// TestStreaming_ScopeStreamAvailable tests that Scope.Stream() is available during execution.
+func TestStreaming_ScopeStreamAvailable(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
 	resultKey := graph.NewKey("result", "")
-	writerAvailable := false
+	var streamedValues []string
 	var mu sync.Mutex
 
 	g := graph.New[any, string](resultKey)
-	g.Node("checker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
+	g.Node("checker", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("test-value")
 		mu.Lock()
-		writerAvailable = writer != nil
+		streamedValues = append(streamedValues, "test-value")
 		mu.Unlock()
 		return graph.Set(resultKey, "checked").End()
 	}, graph.END)
@@ -150,7 +138,7 @@ func TestStreaming_GetStreamWriterReturnsWriter(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	assert.True(t, writerAvailable, "GetStreamWriter should return non-nil during graph execution")
+	assert.Len(t, streamedValues, 1, "Scope.Stream() should be callable during graph execution")
 }
 
 // TestStreaming_WithContextCancellation tests that streaming handles context cancellation gracefully.
@@ -161,11 +149,8 @@ func TestStreaming_WithContextCancellation(t *testing.T) {
 
 	g := graph.New[any, string](resultKey)
 
-	g.Node("slow", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			writer(graph.Updates{"result": "before-block"})
-		}
+	g.Node("slow", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("before-block")
 
 		// Wait a bit so we can cancel before completion
 		select {
@@ -227,11 +212,8 @@ func TestStreaming_EventsPublished(t *testing.T) {
 	ctx := event.WithBus(context.Background(), bus)
 
 	g := graph.New[any, string](resultKey)
-	g.Node("emitter", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		writer := graph.GetStreamWriter(ctx)
-		if writer != nil {
-			writer(graph.Updates{"result": "streamed"})
-		}
+	g.Node("emitter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		scope.Stream("streamed")
 		return graph.Set(resultKey, "final").End()
 	}, graph.END)
 	g.Start("emitter")

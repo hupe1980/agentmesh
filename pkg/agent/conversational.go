@@ -151,17 +151,17 @@ func buildConversationalGraph(
 
 // createMemoryRecallNode creates a node that recalls relevant context from memory
 // using both short-term (recent) and long-term (semantic) retrieval.
-func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		logger := logging.FromContext(ctx)
 
-		msgs := GetMessages(view)
+		msgs := GetMessages(scope)
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoMessages)
 		}
 
 		// Get session ID from state (must be provided via WithInitialValue)
-		sessionID := graph.Get(view, SessionIDKey)
+		sessionID := graph.Get(scope, SessionIDKey)
 		if sessionID == "" {
 			return graph.Fail(ErrSessionIDRequired)
 		}
@@ -298,15 +298,15 @@ func deduplicateMessages(base, additional []message.Message) []message.Message {
 
 // createConversationalAgentNode creates a node that executes the wrapped agent
 // as a subgraph, prepending memory context to the messages.
-func createConversationalAgentNode(wrappedAgent *message.Graph) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		msgs := GetMessages(view)
+func createConversationalAgentNode(wrappedAgent *message.Graph) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+		msgs := GetMessages(scope)
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoMessages)
 		}
 
 		// Get memory context and prepend to messages
-		memoryContext := graph.Get(view, MemoryContextKey)
+		memoryContext := graph.Get(scope, MemoryContextKey)
 		if len(memoryContext) > 0 {
 			// Prepend memory context before current messages
 			msgs = append(memoryContext, msgs...)
@@ -323,18 +323,18 @@ func createConversationalAgentNode(wrappedAgent *message.Graph) graph.NodeFunc {
 }
 
 // createMemoryStoreNode creates a node that stores the conversation in memory.
-func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		logger := logging.FromContext(ctx)
 
-		msgs := GetMessages(view)
+		msgs := GetMessages(scope)
 		if len(msgs) < 2 {
 			// Need at least user message + AI response
 			logger.Debug("memory store skipped: not enough messages", "count", len(msgs))
 			return graph.To(graph.END)
 		}
 
-		sessionID := graph.Get(view, SessionIDKey)
+		sessionID := graph.Get(scope, SessionIDKey)
 		if sessionID == "" {
 			// Session ID should have been validated in memory_recall
 			logger.Debug("memory store skipped: no session ID")

@@ -33,19 +33,19 @@ func main() {
 	// Build graph
 	g := graph.New[any, any](counterKey)
 
-	g.Node("step1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [step1] Processing")
 		return graph.Set(counterKey, 1).To("step2")
 	}, "step2")
 
-	g.Node("step2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		counter := graph.Get(view, counterKey)
+	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		counter := graph.Get(scope, counterKey)
 		fmt.Printf("  [step2] Counter: %d\n", counter)
 		return graph.Set(counterKey, counter+1).To("step3")
 	}, "step3")
 
-	g.Node("step3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		counter := graph.Get(view, counterKey)
+	g.Node("step3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		counter := graph.Get(scope, counterKey)
 		fmt.Printf("  [step3] Final counter: %d\n", counter)
 		return graph.To(graph.END)
 	}, graph.END)

@@ -598,7 +598,7 @@ type pregelGraphAdapter[I, O any] struct {
 	runCfg     *runConfig
 	bspState   *BSPState           // BSP-compliant state with read snapshots and write buffering
 	safeYield  func(O, error) bool // Thread-safe yield via channel
-	middleware []Middleware
+	middleware []Middleware[O]
 
 	superstep          int
 	checkpointInterval int
@@ -792,26 +792,23 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	}
 
 	// Create BSP read view for node execution (reads from previous superstep snapshot)
-	view := v.adapter.bspState.ReadView()
+	// Wrap with node context so NodeName() is available
+	roScope := withNodeName(v.adapter.bspState.ReadView(), v.name)
 
-	// Add node name to context for middleware
-	ctx = WithNodeName(ctx, v.name)
-
-	// Add stream writer to context for intermediate streaming
-	// This allows nodes to emit updates before they complete
-	// Updates are published as events AND yielded as outputs (if they match output key)
-	streamWriter := func(updates Updates) {
-		// Publish state update event
+	// Create scope with typed streaming capability
+	// Stream function yields partial values directly to output (e.g., LLM chunks, tool progress)
+	streamFn := func(value O) {
+		// Publish node stream event for observability
 		event.Publish(ctx, event.Event{
-			Type:      event.EventStateUpdate,
+			Type:      event.EventNodeStream,
 			Node:      v.name,
 			Timestamp: time.Now(),
-			Data:      map[string]any{"updates": updates},
+			Data:      map[string]any{},
 		})
-		// Also yield to output stream (will only emit if output key is present)
-		v.adapter.yieldUpdates(updates)
+		// Yield directly to output stream (no state update - BSP handles state)
+		v.adapter.safeYield(value, nil)
 	}
-	ctx = WithStreamWriter(ctx, streamWriter)
+	scope := newScope(roScope, streamFn)
 
 	// Apply middleware
 	fn := node.Fn
@@ -820,7 +817,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	}
 
 	// Execute node
-	cmd, err := fn(ctx, view)
+	cmd, err := fn(ctx, scope)
 	if err != nil {
 		nodeErr = err
 		return err
@@ -905,6 +902,17 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 	// After this, all writes from this superstep become visible to the next
 	a.bspState.CommitBarrier()
 
+	// Take a single snapshot of the committed state (used for both event and checkpoint)
+	committedState := a.bspState.Snapshot()
+
+	// Publish state update event after barrier commit with the new state
+	event.Publish(ctx, event.Event{
+		Type:      event.EventStateUpdate,
+		Superstep: int(superstep),
+		Timestamp: time.Now(),
+		Data:      committedState,
+	})
+
 	// Phase 2: Save checkpoint with Committed=true (after barrier commit)
 	// This marks the transaction as complete - all pending writes have been applied
 	// If a crash occurs after this, we skip re-applying writes on recovery
@@ -912,9 +920,9 @@ func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep
 		phase2Checkpoint := &checkpoint.Checkpoint{
 			RunID:         runID,
 			Superstep:     superstep,
-			State:         a.bspState.Snapshot(), // Committed state AFTER barrier
-			PendingWrites: nil,                   // No pending writes - all committed
-			Committed:     true,                  // Mark as committed
+			State:         committedState, // Committed state AFTER barrier
+			PendingWrites: nil,            // No pending writes - all committed
+			Committed:     true,           // Mark as committed
 			Timestamp:     time.Now(),
 			ManagedValues: a.managedValueDescriptors(),
 		}

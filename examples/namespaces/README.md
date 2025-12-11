@@ -38,10 +38,10 @@ ns2 := graph.NewNamespace("agent2")
 ```go
 // Node can only access "agent1.*" keys
 g.Node("agent1_process", graph.WithNamespace(
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
         // Can read: agent1.data, agent1.status
         // Cannot read: agent2.data, agent2.status (returns zero value)
-        data := graph.Get(view, agent1Data)
+        data := graph.Get(scope, agent1Data)
         return graph.Set(agent1Status, "done").To("next")
     },
     ns1,           // namespace to restrict to

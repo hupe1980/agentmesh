@@ -284,8 +284,8 @@ func TestCheckpointResume_GraphWithCheckpointer(t *testing.T) {
 
 	g := graph.New[string, string](ResultKey)
 
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		input := graph.Get(view, ResultKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		input := graph.Get(scope, ResultKey)
 		return graph.Set(ResultKey, input+"_processed").End()
 	}, graph.END)
 

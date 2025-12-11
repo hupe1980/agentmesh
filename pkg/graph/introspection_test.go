@@ -13,10 +13,10 @@ func TestGetNodes(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -32,13 +32,13 @@ func TestGetNodeInfo(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("entry", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("entry", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("middle")
 	}, "middle")
-	g.Node("middle", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("middle", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("exit")
 	}, "exit")
-	g.Node("exit", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("exit", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("entry")
@@ -88,7 +88,7 @@ func TestGetNodeInfoWithInterrupt(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("step", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("step", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("step")
@@ -106,10 +106,10 @@ func TestGetTopology(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -143,16 +143,16 @@ func TestGetMetrics(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b", "c")
 	}, "b", "c")
-	g.Node("b", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("d")
 	}, "d")
-	g.Node("c", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("c", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("d")
 	}, "d")
-	g.Node("d", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("d", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -193,13 +193,13 @@ func TestMermaidFlowchart(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b", "c")
 	}, "b", "c")
-	g.Node("b", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("c", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("c", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -231,10 +231,10 @@ func TestTopologyWithMultipleEntryPoints(t *testing.T) {
 	counterKey := graph.NewKey("counter", 0)
 
 	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("b", func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a", "b")

@@ -83,13 +83,13 @@ type ManagedValueAccessor[T any] interface {
 //
 //	var configMV = graph.NewManagedValue("config", defaultConfig)
 //
-//	func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
+//	func myNode(ctx context.Context, view graph.ReadOnlyScope) (*graph.Command, error) {
 //	    config := graph.GetManaged(ctx, view, configMV)
 //	    // use config...
 //	    return graph.Set(resultKey, result).End()
 //	}
-func GetManaged[T any](ctx context.Context, view View, mv ManagedValueAccessor[T]) T {
-	registry := view.ManagedValues()
+func GetManaged[T any](ctx context.Context, scope ReadOnlyScope, mv ManagedValueAccessor[T]) T {
+	registry := scope.ManagedValues()
 	if registry == nil {
 		var zero T
 		return zero
@@ -332,35 +332,35 @@ func (p *ManagedValueProvider[T]) Rehydrate(ctx context.Context) error {
 	return p.rehydrate(ctx)
 }
 
-// managedValueRegistry holds managed values for a graph execution (internal).
-type managedValueRegistry struct {
+// ManagedValueRegistry holds managed values for a graph execution (internal).
+type ManagedValueRegistry struct {
 	mu     sync.RWMutex
 	values map[string]ManagedValue
 }
 
-// newManagedValueRegistry creates a new registry for managed values.
-func newManagedValueRegistry() *managedValueRegistry {
-	return &managedValueRegistry{
+// NewManagedValueRegistry creates a new registry for managed values.
+func NewManagedValueRegistry() *ManagedValueRegistry {
+	return &ManagedValueRegistry{
 		values: make(map[string]ManagedValue),
 	}
 }
 
 // register adds a managed value to the registry.
-func (r *managedValueRegistry) register(mv ManagedValue) {
+func (r *ManagedValueRegistry) register(mv ManagedValue) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.values[mv.Name()] = mv
 }
 
 // getByName retrieves a managed value by name.
-func (r *managedValueRegistry) getByName(name string) ManagedValue {
+func (r *ManagedValueRegistry) getByName(name string) ManagedValue {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.values[name]
 }
 
 // descriptors returns a sorted slice of managed value descriptors for storing in checkpoints.
-func (r *managedValueRegistry) descriptors() []checkpoint.ManagedValueDescriptor {
+func (r *ManagedValueRegistry) descriptors() []checkpoint.ManagedValueDescriptor {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.values) == 0 {
@@ -380,7 +380,7 @@ func (r *managedValueRegistry) descriptors() []checkpoint.ManagedValueDescriptor
 
 // ensureAndRehydrate validates that the registry satisfies the checkpoint descriptors
 // and invokes rehydrators for matching managed values.
-func (r *managedValueRegistry) ensureAndRehydrate(ctx context.Context, descriptors []checkpoint.ManagedValueDescriptor) error {
+func (r *ManagedValueRegistry) ensureAndRehydrate(ctx context.Context, descriptors []checkpoint.ManagedValueDescriptor) error {
 	if len(descriptors) == 0 {
 		return nil
 	}

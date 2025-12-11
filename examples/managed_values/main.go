@@ -74,12 +74,12 @@ func main() {
 	// Create a simple graph
 	g := graph.New[string, string](resultKey)
 
-	// Process node - uses managed values via View (same pattern as regular state)
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		// Access managed values via view - same pattern as graph.Get(view, key)
-		config := graph.GetManaged(ctx, view, runtimeConfigMV)
-		execCount := graph.GetManaged(ctx, view, executionCountMV)
-		cachedTs := graph.GetManaged(ctx, view, cachedTimeMV)
+	// Process node - uses managed values via Scope (same pattern as regular state)
+	g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		// Access managed values via scope - same pattern as graph.Get(scope, key)
+		config := graph.GetManaged(ctx, scope, runtimeConfigMV)
+		execCount := graph.GetManaged(ctx, scope, executionCountMV)
+		cachedTs := graph.GetManaged(ctx, scope, cachedTimeMV)
 
 		result := fmt.Sprintf(
 			"Execution #%d | API Key: %s... | Timeout: %s | Cached Time: %s",

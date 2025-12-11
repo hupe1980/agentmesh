@@ -34,9 +34,18 @@ const (
 	DefaultRetryMultiplier = 2.0
 )
 
-// NodeFunc is the signature for all node logic.
-// Read state via View, return a Command with updates and next targets.
-type NodeFunc func(ctx context.Context, view View) (*Command, error)
+// NodeFunc is the typed signature for node logic.
+// The type parameter O must match the graph's output type.
+// Read state via Scope, optionally stream partial outputs, return a Command.
+//
+// Example:
+//
+//	func myNode(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+//	    messages := graph.ScopeGetList(scope, MessagesKey)
+//	    scope.Stream(partialMessage)  // Stream partial output
+//	    return graph.Append(MessagesKey, finalMessage).End()
+//	}
+type NodeFunc[O any] func(ctx context.Context, scope Scope[O]) (*Command, error)
 
 // ErrNamespaceViolation is returned when a node attempts to access or update keys outside its namespace.
 var ErrNamespaceViolation = fmt.Errorf("graph: namespace violation")
@@ -164,17 +173,17 @@ func (b *RetryPolicyBuilder) Build() *RetryPolicy {
 // Example:
 //
 //	g.Node("fetch", graph.WithRetry(fetchNode, graph.DefaultRetryPolicy()), "process")
-func WithRetry(fn NodeFunc, policy *RetryPolicy) NodeFunc {
+func WithRetry[O any](fn NodeFunc[O], policy *RetryPolicy) NodeFunc[O] {
 	if policy == nil {
 		return fn
 	}
 
-	return func(ctx context.Context, view View) (*Command, error) {
+	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
 		var lastErr error
 		delay := policy.Delay
 
 		for attempt := 0; attempt < policy.MaxAttempts; attempt++ {
-			cmd, err := fn(ctx, view)
+			cmd, err := fn(ctx, scope)
 			if err == nil {
 				return cmd, nil
 			}
@@ -226,52 +235,55 @@ func (ns Namespace) Prefix(key string) string {
 	return ns.name + "." + key
 }
 
-// namespacedView wraps a View to filter keys by namespace.
-type namespacedView struct {
-	inner         View
+// namespacedScope wraps a Scope to filter keys by namespace.
+type namespacedScope[O any] struct {
+	inner         Scope[O]
 	namespace     Namespace
 	includeGlobal bool
 }
 
-// GetValue implements View interface with namespace filtering.
-func (v *namespacedView) GetValue(name string) (any, bool) {
-	if !v.isAllowed(name) {
+func (s *namespacedScope[O]) GetValue(name string) (any, bool) {
+	if !s.isAllowed(name) {
 		return nil, false
 	}
-	return v.inner.GetValue(name)
+	return s.inner.GetValue(name)
 }
 
-// ManagedValues returns the managed values registry from the inner view.
-func (v *namespacedView) ManagedValues() *managedValueRegistry {
-	return v.inner.ManagedValues()
+func (s *namespacedScope[O]) ManagedValues() *ManagedValueRegistry {
+	return s.inner.ManagedValues()
 }
 
-// ToMap returns filtered state values for template rendering.
-// Only includes keys that pass namespace filtering.
-func (v *namespacedView) ToMap() map[string]any {
-	innerMap := v.inner.ToMap()
+func (s *namespacedScope[O]) ToMap() map[string]any {
+	innerMap := s.inner.ToMap()
 	result := make(map[string]any)
 	for k, val := range innerMap {
-		if v.isAllowed(k) {
+		if s.isAllowed(k) {
 			result[k] = val
 		}
 	}
 	return result
 }
 
-func (v *namespacedView) isAllowed(key string) bool {
-	prefix := v.namespace.name + "."
+func (s *namespacedScope[O]) Stream(value O) {
+	s.inner.Stream(value)
+}
+
+func (s *namespacedScope[O]) NodeName() string {
+	return s.inner.NodeName()
+}
+
+func (s *namespacedScope[O]) isAllowed(key string) bool {
+	prefix := s.namespace.name + "."
 	if len(key) > len(prefix) && key[:len(prefix)] == prefix {
 		return true
 	}
-	// Allow global keys (no dots) if includeGlobal is true
-	if v.includeGlobal {
+	if s.includeGlobal {
 		for i := 0; i < len(key); i++ {
 			if key[i] == '.' {
-				return false // Has a dot, so it's namespaced (but not our namespace)
+				return false
 			}
 		}
-		return true // No dots = global key
+		return true
 	}
 	return false
 }
@@ -284,16 +296,16 @@ func (v *namespacedView) isAllowed(key string) bool {
 //
 //	agentNS := graph.NewNamespace("agent1")
 //	g.Node("agent1", graph.WithNamespace(agentNode, agentNS, false), "next")
-func WithNamespace(fn NodeFunc, ns Namespace, includeGlobal bool) NodeFunc {
-	return func(ctx context.Context, view View) (*Command, error) {
-		// Wrap view to filter by namespace
-		filteredView := &namespacedView{
-			inner:         view,
+func WithNamespace[O any](fn NodeFunc[O], ns Namespace, includeGlobal bool) NodeFunc[O] {
+	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+		// Wrap scope to filter by namespace
+		filteredScope := &namespacedScope[O]{
+			inner:         scope,
 			namespace:     ns,
 			includeGlobal: includeGlobal,
 		}
 
-		cmd, err := fn(ctx, filteredView)
+		cmd, err := fn(ctx, filteredScope)
 		if err != nil {
 			return cmd, err
 		}
@@ -301,7 +313,7 @@ func WithNamespace(fn NodeFunc, ns Namespace, includeGlobal bool) NodeFunc {
 		// Validate that updates only contain allowed keys
 		if cmd != nil && cmd.Updates != nil {
 			for key := range cmd.Updates {
-				if !filteredView.isAllowed(key) {
+				if !filteredScope.isAllowed(key) {
 					if includeGlobal {
 						return nil, fmt.Errorf("%w: attempted to update key %q (only %s.* and global keys are allowed)",
 							ErrNamespaceViolation, key, ns.name)
@@ -323,12 +335,12 @@ func WithNamespace(fn NodeFunc, ns Namespace, includeGlobal bool) NodeFunc {
 //
 //	g.Node("fetch", graph.Compose(
 //	    fetchNode,
-//	    graph.WithRetry(nil, graph.DefaultRetryPolicy()),  // outer: retry
-//	    graph.WithNamespace(nil, ns, false),                // inner: namespace
+//	    graph.WithRetry[O](nil, graph.DefaultRetryPolicy()),  // outer: retry
+//	    graph.WithNamespace[O](nil, ns, false),               // inner: namespace
 //	), "next")
 //
 // This is equivalent to: WithRetry(WithNamespace(fetchNode, ns, false), policy)
-func Compose(fn NodeFunc, wrappers ...func(NodeFunc) NodeFunc) NodeFunc {
+func Compose[O any](fn NodeFunc[O], wrappers ...func(NodeFunc[O]) NodeFunc[O]) NodeFunc[O] {
 	wrapped := fn
 	// Apply in reverse order so first wrapper is outermost
 	for i := len(wrappers) - 1; i >= 0; i-- {

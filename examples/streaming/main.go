@@ -77,11 +77,15 @@ func main() {
 			log.Fatalf("Execution error: %v", err)
 		}
 
-		// Handle AI messages (both partial and complete)
-		if aiMsg, ok := msg.(*message.AIMessage); ok {
-			// Print each chunk as it arrives
-			fmt.Print(aurora.Green(aiMsg.String()))
+		// Handle streaming chunks vs final messages
+		switch m := msg.(type) {
+		case *message.AIMessageChunk:
+			// Streaming partial output - print immediately
+			fmt.Print(aurora.Green(m.String()))
 			chunkCount++
+		case *message.AIMessage:
+			// Final complete message (already in state)
+			// Skip printing to avoid duplication
 		}
 	}
 

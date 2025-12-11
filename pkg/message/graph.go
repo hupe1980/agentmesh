@@ -2,6 +2,41 @@ package message
 
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
+// NodeFunc is the typed signature for message-processing node logic.
+// Read state via Scope, optionally stream partial messages, return a Command.
+//
+// Example:
+//
+//	func myNode(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+//	    messages := message.GetMessages(scope)
+//	    scope.Stream(partialMessage)  // Stream partial output
+//	    return graph.Append(message.MessagesKey, finalMessage).End()
+//	}
+type NodeFunc = graph.NodeFunc[Message]
+
+// Scope provides the execution context for a message-processing node.
+// It combines state access (read) with typed message streaming (write).
+//
+// Scope embeds graph.Scope[Message], providing:
+//   - GetValue(name string) (any, bool) - Access raw state values
+//   - ManagedValues() - Access managed values registry
+//   - ToMap() map[string]any - Get state as map for templates
+//   - Stream(value Message) - Emit partial messages immediately
+type Scope = graph.Scope[Message]
+
+// Middleware wraps a message-processing node function with additional behavior.
+// Middleware is applied in reverse order: the last middleware added runs first.
+//
+// Example:
+//
+//	loggingMiddleware := func(next message.NodeFunc) message.NodeFunc {
+//	    return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+//	        log.Printf("entering node")
+//	        return next(ctx, scope)
+//	    }
+//	}
+type Middleware = graph.Middleware[Message]
+
 // GraphBuilder is a fluent builder for message-processing workflows.
 // This is the standard builder type for conversational agents.
 //
@@ -13,8 +48,8 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 // Example:
 //
 //	b := message.NewGraphBuilder()
-//	b.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-//	    msgs := message.GetMessages(view)
+//	b.Node("agent", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+//	    msgs := message.GetMessages(scope)
 //	    response := processMessages(msgs)
 //	    return graph.Append(message.MessagesKey, response).End()
 //	})
@@ -65,9 +100,9 @@ type Graph = graph.Graph[[]Message, Message]
 //
 //	CategoryKey := graph.NewKey("category", "")
 //	b := message.NewGraphBuilder(CategoryKey)
-//	b.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-//	    category := graph.Get(view, CategoryKey)
-//	    messages := message.GetMessages(view)
+//	b.Node("classify", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+//	    category := graph.Get(scope, CategoryKey)
+//	    messages := message.GetMessages(scope)
 //	    // Classify messages by category...
 //	})
 func NewGraphBuilder(additionalKeys ...graph.StateKey) *GraphBuilder {

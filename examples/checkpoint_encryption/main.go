@@ -69,7 +69,7 @@ func basicEncryptionExample(ctx context.Context) {
 	// Build graph with sensitive data
 	g := graph.New[any, any](creditCardKey, ssnKey, passwordKey)
 
-	g.Node("secure_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("secure_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  Processing sensitive data...")
 		return graph.Set(creditCardKey, "4111-1111-1111-1111").
 			With(graph.SetValue(ssnKey, "123-45-6789")).

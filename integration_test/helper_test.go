@@ -22,7 +22,7 @@ var (
 // buildSimpleGraph creates a simple single-node graph for testing
 func buildSimpleGraph() (*graph.Graph[any, any], error) {
 	g := graph.New[any, any](ResultKey)
-	g.Node("test", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("test", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.Set(ResultKey, "done").End()
 	}, graph.END)
 	g.Start("test")
@@ -32,7 +32,7 @@ func buildSimpleGraph() (*graph.Graph[any, any], error) {
 // buildMessageGraph creates a graph that works with messages
 func buildMessageGraph() (*message.Graph, error) {
 	g := message.NewGraphBuilder()
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("processed")
 		return graph.Append(message.MessagesKey, msg).End()
 	}, graph.END)

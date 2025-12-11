@@ -24,8 +24,8 @@ func TestNoGoroutineLeaks_SimpleGraph(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		g := graph.New[string, string](ResultKey)
 
-		g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-			input := graph.Get(view, ResultKey)
+		g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+			input := graph.Get(scope, ResultKey)
 			return graph.Set(ResultKey, input+"_processed").End()
 		}, graph.END)
 
@@ -65,7 +65,7 @@ func TestNoGoroutineLeaks_CancelledContext(t *testing.T) {
 
 		g := graph.New[string, string](ResultKey)
 
-		g.Node("slow", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		g.Node("slow", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 			// Check for cancellation
 			select {
 			case <-ctx.Done():
@@ -111,18 +111,18 @@ func TestNoGoroutineLeaks_ParallelExecution(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		g := graph.New[string, string](ResultKey)
 
-		g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 			return graph.Cmd().To("worker1", "worker2", "worker3")
 		}, "worker1", "worker2", "worker3")
 
 		for _, name := range []string{"worker1", "worker2", "worker3"} {
 			workerName := name
-			g.Node(workerName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			g.Node(workerName, func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 				return graph.Cmd().To("merge")
 			}, "merge")
 		}
 
-		g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		g.Node("merge", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 			return graph.Set(ResultKey, "merged").End()
 		}, graph.END)
 
@@ -157,7 +157,7 @@ func TestNoGoroutineLeaks_ErrorScenarios(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		g := graph.New[string, string](ResultKey)
 
-		g.Node("failing", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		g.Node("failing", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 			return nil, assert.AnError
 		}, graph.END)
 
@@ -192,8 +192,8 @@ func TestNoGoroutineLeaks_MultipleRuns(t *testing.T) {
 
 	g := graph.New[string, string](ResultKey)
 
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		input := graph.Get(view, ResultKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		input := graph.Get(scope, ResultKey)
 		return graph.Set(ResultKey, input+"_done").End()
 	}, graph.END)
 
@@ -232,7 +232,7 @@ func TestNoGoroutineLeaks_WorkerPanicRecovery(t *testing.T) {
 	g := graph.New[string, string](ResultKey)
 
 	panicCount := 0
-	g.Node("panic_node", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("panic_node", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		panicCount++
 		if panicCount <= 3 {
 			// First few executions panic (simulating worker panic)

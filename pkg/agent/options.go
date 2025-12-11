@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -32,7 +32,8 @@ type commonOptions struct {
 	instructions    *Instructions // Dynamic instructions (supports templates and providers)
 	maxIterations   int
 	outputSchema    *schema.OutputSchema
-	graphMiddleware []graph.Middleware
+	streaming       bool // Enable streaming mode for real-time output
+	graphMiddleware []message.Middleware
 	modelMiddleware []model.Middleware
 	toolMiddleware  []tool.Middleware
 }
@@ -81,14 +82,14 @@ func WithInstructions(templateStr string) SharedOption {
 //
 // Example:
 //
-//	WithInstructionsFunc(func(ctx context.Context, view graph.View) (string, error) {
-//	    user := graph.Get(view, UserKey)
+//	WithInstructionsFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+//	    user := graph.Get(scope, UserKey)
 //	    if user.IsPremium {
 //	        return "You are a premium assistant...", nil
 //	    }
 //	    return "You are a helpful assistant...", nil
 //	})
-func WithInstructionsFunc(f func(context.Context, graph.View) (string, error)) SharedOption {
+func WithInstructionsFunc(f func(context.Context, message.Scope) (string, error)) SharedOption {
 	return func(c *commonOptions) {
 		inst := NewInstructionsFromFunc(f)
 		c.instructions = &inst
@@ -105,7 +106,7 @@ func WithMaxIterations(n int) SharedOption {
 }
 
 // WithGraphMiddleware adds middleware to the graph for any agent type.
-func WithGraphMiddleware(middleware ...graph.Middleware) SharedOption {
+func WithGraphMiddleware(middleware ...message.Middleware) SharedOption {
 	return func(c *commonOptions) {
 		c.graphMiddleware = append(c.graphMiddleware, middleware...)
 	}
@@ -130,5 +131,20 @@ func WithToolMiddleware(middleware ...tool.Middleware) SharedOption {
 func WithOutputSchema(outputSchema *schema.OutputSchema) SharedOption {
 	return func(c *commonOptions) {
 		c.outputSchema = outputSchema
+	}
+}
+
+// WithStreaming enables streaming mode for real-time output.
+// When enabled, partial responses are streamed via the graph's stream writer,
+// allowing real-time display of AI responses as they're generated.
+//
+// To receive streamed values, provide a stream handler when running the graph:
+//
+//	graph.WithStreamHandler(func(msg message.Message) {
+//	    fmt.Print(msg.Text())
+//	})
+func WithStreaming(enabled bool) SharedOption {
+	return func(c *commonOptions) {
+		c.streaming = enabled
 	}
 }

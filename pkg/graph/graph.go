@@ -22,9 +22,9 @@ var (
 )
 
 // node represents an internal node in the graph.
-type node struct {
+type node[O any] struct {
 	name    string
-	fn      NodeFunc
+	fn      NodeFunc[O]
 	targets []string
 }
 
@@ -42,7 +42,7 @@ type Builder[I, O any] struct {
 	keys         []StateKey
 	outputKey    string // Name of the key that produces outputs
 	outputIsList bool   // True if output key is a ListKey
-	nodes        map[string]*node
+	nodes        map[string]*node[O]
 	entryPoints  []string
 	interrupts   []interruptPoint
 
@@ -50,7 +50,7 @@ type Builder[I, O any] struct {
 	store        Store
 	checkpointer checkpoint.Checkpointer
 	runID        string
-	middleware   []Middleware
+	middleware   []Middleware[O]
 	executor     Executor[I, O]
 }
 
@@ -60,14 +60,14 @@ type Graph[I, O any] struct {
 	keys         []StateKey
 	outputKey    string
 	outputIsList bool
-	nodes        map[string]*node
+	nodes        map[string]*node[O]
 	entryPoints  []string
 	interrupts   []interruptPoint
 
 	store        Store
 	checkpointer checkpoint.Checkpointer
 	runID        string
-	middleware   []Middleware
+	middleware   []Middleware[O]
 	executor     Executor[I, O]
 }
 
@@ -89,14 +89,14 @@ func New[I, O any](keys ...StateKey) *Builder[I, O] {
 		keys:         keys,
 		outputKey:    outputKey,
 		outputIsList: outputIsList,
-		nodes:        make(map[string]*node),
+		nodes:        make(map[string]*node[O]),
 	}
 }
 
 // Node adds a node to the graph.
 // Targets are the possible next nodes (use END for terminal).
-func (b *Builder[I, O]) Node(name string, fn NodeFunc, targets ...string) *Builder[I, O] {
-	b.nodes[name] = &node{name: name, fn: fn, targets: targets}
+func (b *Builder[I, O]) Node(name string, fn NodeFunc[O], targets ...string) *Builder[I, O] {
+	b.nodes[name] = &node[O]{name: name, fn: fn, targets: targets}
 	return b
 }
 
@@ -105,8 +105,8 @@ func (b *Builder[I, O]) Node(name string, fn NodeFunc, targets ...string) *Build
 //
 //	child, _ := graph.New[ChildIn, ChildOut](...).Build()
 //
-//	parent.Node("validate", graph.Subgraph(child,
-//	    func(ctx context.Context, view graph.View) (ChildIn, error) {
+//	parent.Node("validate", graph.Subgraph[ParentOut](child,
+//	    func(ctx context.Context, view graph.ReadOnlyScope) (ChildIn, error) {
 //	        return ChildIn{Data: graph.Get(view, dataKey)}, nil
 //	    },
 //	    func(ctx context.Context, out ChildOut) (graph.Updates, error) {
@@ -114,16 +114,17 @@ func (b *Builder[I, O]) Node(name string, fn NodeFunc, targets ...string) *Build
 //	    },
 //	), "next")
 //
+// The type parameter O must match the parent graph's output type.
 // The InputMapper transforms parent state into subgraph input.
 // The OutputMapper transforms subgraph output into parent state updates.
-func Subgraph[SI, SO any](
+func Subgraph[O, SI, SO any](
 	sub *Graph[SI, SO],
 	inputMapper InputMapper[SI],
 	outputMapper OutputMapper[SO],
-) NodeFunc {
-	return func(ctx context.Context, view View) (*Command, error) {
-		// Map parent state to subgraph input
-		input, err := inputMapper(ctx, view)
+) NodeFunc[O] {
+	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+		// Map parent state to subgraph input (use scope as view)
+		input, err := inputMapper(ctx, scopeAsView[O]{scope})
 		if err != nil {
 			return Fail(err)
 		}
@@ -145,6 +146,27 @@ func Subgraph[SI, SO any](
 
 		return &Command{Updates: updates}, nil
 	}
+}
+
+// scopeAsView adapts a Scope to the View interface for read-only operations.
+type scopeAsView[O any] struct {
+	scope Scope[O]
+}
+
+func (s scopeAsView[O]) NodeName() string {
+	return s.scope.NodeName()
+}
+
+func (s scopeAsView[O]) GetValue(name string) (any, bool) {
+	return s.scope.GetValue(name)
+}
+
+func (s scopeAsView[O]) ManagedValues() *ManagedValueRegistry {
+	return s.scope.ManagedValues()
+}
+
+func (s scopeAsView[O]) ToMap() map[string]any {
+	return s.scope.ToMap()
 }
 
 // Start sets the entry point node(s).
@@ -198,7 +220,7 @@ func (b *Builder[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID strin
 }
 
 // WithMiddleware adds middleware to the builder.
-func (b *Builder[I, O]) WithMiddleware(mw ...Middleware) *Builder[I, O] {
+func (b *Builder[I, O]) WithMiddleware(mw ...Middleware[O]) *Builder[I, O] {
 	b.middleware = append(b.middleware, mw...)
 	return b
 }
@@ -303,10 +325,10 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 
 // buildExecutorConfig creates the executor configuration from the compiled graph.
 func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
-	// Build nodes map
-	nodes := make(map[string]ExecutorNode, len(g.nodes))
+	// Build nodes map - types are already correct
+	nodes := make(map[string]ExecutorNode[O], len(g.nodes))
 	for name, n := range g.nodes {
-		nodes[name] = ExecutorNode{
+		nodes[name] = ExecutorNode[O]{
 			Name:    n.name,
 			Fn:      n.fn,
 			Targets: n.targets,
@@ -325,7 +347,7 @@ func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 	}
 
 	return &ExecutorConfig[I, O]{
-		Execution: ExecutionConfig{
+		Execution: ExecutionConfig[O]{
 			Nodes:        nodes,
 			EntryPoints:  g.entryPoints,
 			Middleware:   g.middleware,
@@ -362,7 +384,7 @@ type runConfig struct {
 	checkpoint          *checkpoint.Checkpoint
 	approvals           map[string]*ApprovalResponse
 	stateUpdates        map[string]any
-	managedValues       *managedValueRegistry
+	managedValues       *ManagedValueRegistry
 	runID               string
 	maxConcurrency      int
 	maxIterations       int
@@ -483,7 +505,7 @@ func WithInitialValue[T any](key Key[T], value T) RunOption {
 func WithManagedValues(values ...ManagedValue) RunOption {
 	return func(cfg *runConfig) {
 		if cfg.managedValues == nil {
-			cfg.managedValues = newManagedValueRegistry()
+			cfg.managedValues = NewManagedValueRegistry()
 		}
 		for _, v := range values {
 			cfg.managedValues.register(v)

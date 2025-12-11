@@ -111,13 +111,13 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a view with messages
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		cmd, err := nodeFn(context.Background(), view)
+		cmd, err := nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 
@@ -142,13 +142,13 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 		nodeFn, err := NewModelNodeFunc(executor)
 		require.NoError(t, err)
 
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Use a tool"),
 			},
 		})
 
-		cmd, err := nodeFn(context.Background(), view)
+		cmd, err := nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 
@@ -157,9 +157,9 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 	})
 }
 
-// createTestView creates a View for testing using BSPState
-func createTestView(data map[string]any) graph.View {
-	return graph.NewBSPState(data).ReadView()
+// createTestScope creates a Scope for testing using BSPState
+func createTestScope(data map[string]any) graph.Scope[message.Message] {
+	return testutil.NewTestScopeFromMap[message.Message](data)
 }
 
 // mockToolWithInstruction implements tool.Tool and tool.InstructionProvider
@@ -226,13 +226,13 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		_, err = nodeFn(context.Background(), view)
+		_, err = nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 
 		// Verify instructions contains both base prompt and tool instruction
@@ -266,13 +266,13 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		_, err = nodeFn(context.Background(), view)
+		_, err = nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 
 		// Verify instructions is the tool instruction
@@ -304,13 +304,13 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		_, err = nodeFn(context.Background(), view)
+		_, err = nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 
 		// Verify instructions is just the base prompt
@@ -348,13 +348,13 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		view := createTestView(map[string]any{
+		scope := createTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		_, err = nodeFn(context.Background(), view)
+		_, err = nodeFn(context.Background(), scope)
 		require.NoError(t, err)
 
 		// Verify instructions contains base prompt and both tool instructions

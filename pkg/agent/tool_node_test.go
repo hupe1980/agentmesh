@@ -7,6 +7,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,11 +56,11 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
-		view := createToolNodeTestView(map[string]any{
+		scope := createToolNodeTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{},
 		})
 
-		cmd, err := fn(context.Background(), view)
+		cmd, err := fn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 		assert.Contains(t, cmd.Next, "model")
@@ -72,13 +73,13 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
-		view := createToolNodeTestView(map[string]any{
+		scope := createToolNodeTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		cmd, err := fn(context.Background(), view)
+		cmd, err := fn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 		assert.Contains(t, cmd.Next, "model")
@@ -91,13 +92,13 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		fn, err := NewToolNodeFunc(WithToolExecutor(executor))
 		require.NoError(t, err)
 
-		view := createToolNodeTestView(map[string]any{
+		scope := createToolNodeTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewAIMessageFromText("No tools needed"),
 			},
 		})
 
-		cmd, err := fn(context.Background(), view)
+		cmd, err := fn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 		assert.Contains(t, cmd.Next, "model")
@@ -110,13 +111,13 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		fn, err := NewToolNodeFunc(WithToolExecutor(executor), WithModelTarget("custom_node"))
 		require.NoError(t, err)
 
-		view := createToolNodeTestView(map[string]any{
+		scope := createToolNodeTestScope(map[string]any{
 			MessagesKey.Name(): []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
 
-		cmd, err := fn(context.Background(), view)
+		cmd, err := fn(context.Background(), scope)
 		require.NoError(t, err)
 		require.NotNil(t, cmd)
 		assert.Contains(t, cmd.Next, "custom_node")
@@ -201,7 +202,7 @@ func (cs customStringer) String() string {
 	return fmt.Sprintf("CustomStringer[%s]", cs.value)
 }
 
-// createToolNodeTestView creates a View for testing using BSPState
-func createToolNodeTestView(data map[string]any) graph.View {
-	return graph.NewBSPState(data).ReadView()
+// createToolNodeTestScope creates a Scope for testing using BSPState
+func createToolNodeTestScope(data map[string]any) graph.Scope[message.Message] {
+	return testutil.NewTestScopeFromMap[message.Message](data)
 }

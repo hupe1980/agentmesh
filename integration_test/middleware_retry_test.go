@@ -20,11 +20,11 @@ func TestMiddleware_ChainedExecution(t *testing.T) {
 	var order []string
 
 	// Create middleware that records execution order
-	recordMiddleware := func(name string) graph.Middleware {
-		return func(next graph.NodeFunc) graph.NodeFunc {
-			return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	recordMiddleware := func(name string) graph.Middleware[any] {
+		return func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
+			return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 				order = append(order, name+"-before")
-				cmd, err := next(ctx, view)
+				cmd, err := next(ctx, scope)
 				order = append(order, name+"-after")
 				return cmd, err
 			}
@@ -34,7 +34,7 @@ func TestMiddleware_ChainedExecution(t *testing.T) {
 	resultKey := graph.NewKey("result", "")
 
 	g := graph.New[any, any](resultKey)
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		order = append(order, "node")
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
@@ -71,12 +71,12 @@ func TestMiddleware_TimingTracking(t *testing.T) {
 	resultKey := graph.NewKey("result", "")
 
 	g := graph.New[any, any](resultKey)
-	g.Node("slow", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("slow", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		time.Sleep(50 * time.Millisecond)
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 	g.Start("slow")
-	g.WithMiddleware(graph.TimingMiddleware(func(nodeName string, d time.Duration) {
+	g.WithMiddleware(graph.TimingMiddleware[any](func(nodeName string, d time.Duration) {
 		recordedDurations = append(recordedDurations, d)
 	}))
 
@@ -101,11 +101,11 @@ func TestMiddleware_RecoveryFromPanic(t *testing.T) {
 	resultKey := graph.NewKey("result", "")
 
 	g := graph.New[any, any](resultKey)
-	g.Node("panicker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("panicker", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		panic("intentional panic for testing")
 	}, graph.END)
 	g.Start("panicker")
-	g.WithMiddleware(graph.RecoveryMiddleware(func(nodeName string, recovered any) {
+	g.WithMiddleware(graph.RecoveryMiddleware[any](func(nodeName string, recovered any) {
 		recoveredPanic = recovered
 	}))
 
@@ -132,7 +132,7 @@ func TestRetry_SuccessAfterFailures(t *testing.T) {
 
 	resultKey := graph.NewKey("result", "")
 
-	retryNode := graph.WithRetry(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		count := atomic.AddInt32(&attempts, 1)
 		if count < 3 {
 			return nil, errors.New("transient failure")
@@ -168,7 +168,7 @@ func TestRetry_ExceedsMaxAttempts(t *testing.T) {
 
 	resultKey := graph.NewKey("result", "")
 
-	retryNode := graph.WithRetry(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
 		return nil, errors.New("persistent failure")
 	}, &graph.RetryPolicy{
@@ -208,7 +208,7 @@ func TestRetry_NonRetryableError(t *testing.T) {
 
 	resultKey := graph.NewKey("result", "")
 
-	retryNode := graph.WithRetry(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
 		return nil, permanentErr
 	}, &graph.RetryPolicy{
@@ -250,7 +250,7 @@ func TestRetry_ContextCancellation(t *testing.T) {
 
 	resultKey := graph.NewKey("result", "")
 
-	retryNode := graph.WithRetry(func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	retryNode := graph.WithRetry(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		atomic.AddInt32(&attempts, 1)
 		return nil, errors.New("keep failing")
 	}, &graph.RetryPolicy{

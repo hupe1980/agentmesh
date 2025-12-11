@@ -217,15 +217,15 @@ var DoneKey = graph.NewKey[bool]("done", false)
 g := graph.New[string, string](DraftKey, FeedbackKey, DoneKey)
 
 // Writer node generates drafts
-g.Node("writer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    feedback := graph.Get(view, FeedbackKey)
+g.Node("writer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    feedback := graph.Get(scope, FeedbackKey)
     draft := generateDraft(feedback)
     return graph.Set(DraftKey, draft).To("evaluator"), nil
 }, "evaluator")
 
 // Evaluator checks quality and creates a cycle!
-g.Node("evaluator", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    draft := graph.Get(view, DraftKey)
+g.Node("evaluator", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    draft := graph.Get(scope, DraftKey)
     if isGoodEnough(draft) {
         return graph.Set(DoneKey, true).To(graph.END), nil
     }
@@ -373,8 +373,8 @@ The **ConditionalEvaluator** handles conditional edges that determine routing at
 **Example**:
 
 ```go
-g.Node("classifier", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := message.GetMessages(view)
+g.Node("classifier", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    messages := message.GetMessages(scope)
     category := analyzeInput(messages)
     
     // Return different paths based on runtime data
@@ -537,8 +537,8 @@ var CountKey = graph.NewKey[int]("count", 0)
 g := graph.New[string, string](StatusKey, CountKey)
 
 // Add nodes with fluent API
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    count := graph.Get(view, CountKey)
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    count := graph.Get(scope, CountKey)
     return graph.Set(StatusKey, "done").
         Set(CountKey, count+1).
         To(graph.END), nil
@@ -558,8 +558,8 @@ For agent workflows with message handling:
 ```go
 g := message.NewGraphBuilder()
 
-g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := message.GetMessages(view)
+g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    messages := message.GetMessages(scope)
     response := processMessages(messages)
     return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
@@ -573,8 +573,8 @@ compiled, _ := g.Build()
 Routes are determined dynamically using commands:
 
 ```go
-g.Node("classifier", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    category := graph.Get(view, CategoryKey)
+g.Node("classifier", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    category := graph.Get(scope, CategoryKey)
     
     switch category {
     case "urgent":
@@ -595,7 +595,7 @@ Independent nodes automatically execute in parallel based on topology:
 // START fans out to three parallel workers
 g.Start("start")
 
-g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.To("analyst_a", "analyst_b", "analyst_c"), nil
 }, "analyst_a", "analyst_b", "analyst_c")
 
@@ -631,11 +631,11 @@ var MessagesKey = message.MessagesKey  // Built-in message list key
 Nodes receive immutable state views:
 
 ```go
-g.Node("reader", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("reader", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // Type-safe reads (no type assertions)
-    status := graph.Get(view, StatusKey)      // string
-    counter := graph.Get(view, CounterKey)    // int
-    tags := graph.GetList(view, TagsKey)      // []string
+    status := graph.Get(scope, StatusKey)      // string
+    counter := graph.Get(scope, CounterKey)    // int
+    tags := graph.GetList(scope, TagsKey)      // []string
     
     return graph.To("next"), nil
 }, "next")
@@ -646,7 +646,7 @@ g.Node("reader", func(ctx context.Context, view graph.View) (*graph.Command, err
 Nodes return commands with state updates:
 
 ```go
-g.Node("updater", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("updater", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(StatusKey, "complete").
         Set(CounterKey, 42).
         Append(TagsKey, "new-tag").
@@ -704,14 +704,14 @@ Final output is returned from the graph:
 
 ```go
 // Get last result using iterator
-var lastResult graph.View
+var lastResult graph.ReadOnlyScope
 for result, err := range compiled.Run(ctx, input) {
     if err != nil {
         log.Fatal(err)
     }
     lastResult = result
 }
-// lastResult contains the final state view
+// lastResult contains the final state (read-only scope)
 ```
 
 ---

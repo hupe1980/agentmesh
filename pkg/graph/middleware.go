@@ -7,40 +7,22 @@ import (
 	"time"
 )
 
-// nodeNameKey is the context key for node name.
-type nodeNameKey struct{}
-
-// WithNodeName attaches the current node name to the context.
-// This is called automatically by the executor before running each node.
-func WithNodeName(ctx context.Context, name string) context.Context {
-	return context.WithValue(ctx, nodeNameKey{}, name)
-}
-
-// NodeNameFromContext retrieves the current node name from context.
-// Returns empty string if not in a node execution context.
-func NodeNameFromContext(ctx context.Context) string {
-	if name, ok := ctx.Value(nodeNameKey{}).(string); ok {
-		return name
-	}
-	return ""
-}
-
 // Chain combines multiple middleware into one.
 // Middleware are applied in order, so the first middleware is the outermost layer.
 //
 // Example:
 //
 //	combined := graph.Chain(
-//	    LoggingMiddleware(logger),
-//	    TracingMiddleware(),
-//	    MetricsMiddleware(),
+//	    LoggingMiddleware[message.Message](logger),
+//	    TracingMiddleware[message.Message](),
+//	    MetricsMiddleware[message.Message](),
 //	)
 //	graph.WithMiddleware(combined)
 //
 // This produces: logging(tracing(metrics(node)))
 // Execution flows: logging → tracing → metrics → node
-func Chain(middleware ...Middleware) Middleware {
-	return func(next NodeFunc) NodeFunc {
+func Chain[O any](middleware ...Middleware[O]) Middleware[O] {
+	return func(next NodeFunc[O]) NodeFunc[O] {
 		// Apply in reverse order so first middleware is outermost
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i](next)
@@ -53,15 +35,15 @@ func Chain(middleware ...Middleware) Middleware {
 //
 // Example:
 //
-//	graph.WithMiddleware(graph.LoggingMiddleware(slog.Default()))
-func LoggingMiddleware(logger *slog.Logger) Middleware {
-	return func(next NodeFunc) NodeFunc {
-		return func(ctx context.Context, view View) (*Command, error) {
-			nodeName := NodeNameFromContext(ctx)
+//	graph.WithMiddleware(graph.LoggingMiddleware[message.Message](slog.Default()))
+func LoggingMiddleware[O any](logger *slog.Logger) Middleware[O] {
+	return func(next NodeFunc[O]) NodeFunc[O] {
+		return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+			nodeName := scope.NodeName()
 			logger.DebugContext(ctx, "node started", "node", nodeName)
 
 			start := time.Now()
-			cmd, err := next(ctx, view)
+			cmd, err := next(ctx, scope)
 			duration := time.Since(start)
 
 			if err != nil {
@@ -87,16 +69,16 @@ func LoggingMiddleware(logger *slog.Logger) Middleware {
 //
 // Example:
 //
-//	graph.WithMiddleware(graph.TimingMiddleware(func(node string, d time.Duration) {
+//	graph.WithMiddleware(graph.TimingMiddleware[message.Message](func(node string, d time.Duration) {
 //	    metrics.RecordLatency(node, d)
 //	}))
-func TimingMiddleware(onComplete func(nodeName string, duration time.Duration)) Middleware {
-	return func(next NodeFunc) NodeFunc {
-		return func(ctx context.Context, view View) (*Command, error) {
+func TimingMiddleware[O any](onComplete func(nodeName string, duration time.Duration)) Middleware[O] {
+	return func(next NodeFunc[O]) NodeFunc[O] {
+		return func(ctx context.Context, scope Scope[O]) (*Command, error) {
 			start := time.Now()
-			cmd, err := next(ctx, view)
+			cmd, err := next(ctx, scope)
 			if onComplete != nil {
-				onComplete(NodeNameFromContext(ctx), time.Since(start))
+				onComplete(scope.NodeName(), time.Since(start))
 			}
 			return cmd, err
 		}
@@ -108,26 +90,27 @@ func TimingMiddleware(onComplete func(nodeName string, duration time.Duration)) 
 //
 // Example:
 //
-//	graph.WithMiddleware(graph.RecoveryMiddleware(func(node string, recovered any) {
+//	graph.WithMiddleware(graph.RecoveryMiddleware[message.Message](func(node string, recovered any) {
 //	    logger.Error("panic recovered", "node", node, "panic", recovered)
 //	}))
-func RecoveryMiddleware(onPanic func(nodeName string, recovered any)) Middleware {
-	return func(next NodeFunc) NodeFunc {
-		return func(ctx context.Context, view View) (cmd *Command, err error) {
+func RecoveryMiddleware[O any](onPanic func(nodeName string, recovered any)) Middleware[O] {
+	return func(next NodeFunc[O]) NodeFunc[O] {
+		return func(ctx context.Context, scope Scope[O]) (cmd *Command, err error) {
+			nodeName := scope.NodeName()
 			defer func() {
 				if r := recover(); r != nil {
 					if onPanic != nil {
-						onPanic(NodeNameFromContext(ctx), r)
+						onPanic(nodeName, r)
 					}
 					// Convert panic to error
 					if e, ok := r.(error); ok {
 						err = e
 					} else {
-						err = fmt.Errorf("panic in node %s: %v", NodeNameFromContext(ctx), r)
+						err = fmt.Errorf("panic in node %s: %v", nodeName, r)
 					}
 				}
 			}()
-			return next(ctx, view)
+			return next(ctx, scope)
 		}
 	}
 }
@@ -138,19 +121,19 @@ func RecoveryMiddleware(onPanic func(nodeName string, recovered any)) Middleware
 //
 //	// Only log expensive nodes
 //	graph.WithMiddleware(graph.ConditionalMiddleware(
-//	    func(ctx context.Context) bool {
-//	        return NodeNameFromContext(ctx) == "expensive_node"
+//	    func(scope graph.Scope[message.Message]) bool {
+//	        return scope.NodeName() == "expensive_node"
 //	    },
-//	    graph.LoggingMiddleware(logger),
+//	    graph.LoggingMiddleware[message.Message](logger),
 //	))
-func ConditionalMiddleware(condition func(ctx context.Context) bool, mw Middleware) Middleware {
-	return func(next NodeFunc) NodeFunc {
+func ConditionalMiddleware[O any](condition func(scope Scope[O]) bool, mw Middleware[O]) Middleware[O] {
+	return func(next NodeFunc[O]) NodeFunc[O] {
 		wrapped := mw(next)
-		return func(ctx context.Context, view View) (*Command, error) {
-			if condition(ctx) {
-				return wrapped(ctx, view)
+		return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+			if condition(scope) {
+				return wrapped(ctx, scope)
 			}
-			return next(ctx, view)
+			return next(ctx, scope)
 		}
 	}
 }
@@ -161,17 +144,17 @@ func ConditionalMiddleware(condition func(ctx context.Context) bool, mw Middlewa
 //
 //	graph.WithMiddleware(graph.NodeMiddleware(
 //	    []string{"slow_node", "external_api"},
-//	    graph.TimingMiddleware(recordTiming),
+//	    graph.TimingMiddleware[message.Message](recordTiming),
 //	))
-func NodeMiddleware(nodeNames []string, mw Middleware) Middleware {
+func NodeMiddleware[O any](nodeNames []string, mw Middleware[O]) Middleware[O] {
 	nodeSet := make(map[string]bool, len(nodeNames))
 	for _, name := range nodeNames {
 		nodeSet[name] = true
 	}
 
 	return ConditionalMiddleware(
-		func(ctx context.Context) bool {
-			return nodeSet[NodeNameFromContext(ctx)]
+		func(scope Scope[O]) bool {
+			return nodeSet[scope.NodeName()]
 		},
 		mw,
 	)

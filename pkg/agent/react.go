@@ -64,6 +64,7 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	// Build model node options
 	modelNodeOpts := []ModelNodeOption{
 		WithModelToolset(combinedToolset),
+		WithModelStreaming(config.streaming),
 	}
 
 	// Add output schema if configured (nil when using tool fallback)
@@ -165,7 +166,7 @@ func prepareStructuredOutputFallback(
 }
 
 // buildReActGraph constructs the ReAct agent graph with nodes and middleware.
-func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*message.Graph, error) {
+func buildReActGraph(modelFn, toolFn message.NodeFunc, config reActOptions) (*message.Graph, error) {
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
 	b := message.NewGraphBuilder()
 	b.Node("model", modelFn, "tool", graph.END)

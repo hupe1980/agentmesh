@@ -32,8 +32,8 @@ var (
 func createValidationSubgraph() *graph.Graph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
-	g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		input := graph.Get(view, subInputKey)
+	g.Node("validate_format", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		input := graph.Get(scope, subInputKey)
 		fmt.Printf("    [validate] Checking format of: %s\n", input)
 		if strings.TrimSpace(input) == "" {
 			return graph.Fail(fmt.Errorf("empty input"))
@@ -41,8 +41,8 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 		return graph.To("validate_content")
 	}, "validate_content")
 
-	g.Node("validate_content", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		input := graph.Get(view, subInputKey)
+	g.Node("validate_content", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		input := graph.Get(scope, subInputKey)
 		fmt.Printf("    [validate] Checking content of: %s\n", input)
 		// Validation passed - set output
 		return graph.Set(subOutputKey, "validated:"+input).End()
@@ -62,15 +62,15 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 func createTransformSubgraph() *graph.Graph[string, string] {
 	g := graph.New[string, string](subInputKey, subOutputKey)
 
-	g.Node("normalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		input := graph.Get(view, subInputKey)
+	g.Node("normalize", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		input := graph.Get(scope, subInputKey)
 		normalized := strings.ToLower(strings.TrimSpace(input))
 		fmt.Printf("    [transform] Normalized: %s\n", normalized)
 		return graph.Set(subOutputKey, normalized).To("enrich")
 	}, "enrich")
 
-	g.Node("enrich", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		output := graph.Get(view, subOutputKey)
+	g.Node("enrich", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+		output := graph.Get(scope, subOutputKey)
 		enriched := fmt.Sprintf("enriched(%s)", output)
 		fmt.Printf("    [transform] Enriched: %s\n", enriched)
 		return graph.Set(subOutputKey, enriched).End()
@@ -100,7 +100,7 @@ func main() {
 	g := graph.New[any, any](inputKey, resultKey, stepsKey)
 
 	// Entry point
-	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [start] Beginning workflow")
 		return graph.Set(inputKey, "  Raw Data  ").
 			With(graph.AppendValue(stepsKey, "Started main workflow")).
@@ -108,10 +108,10 @@ func main() {
 	}, "run_validation")
 
 	// Use graph.Subgraph() to embed the validation subgraph
-	g.Node("run_validation", graph.Subgraph(
+	g.Node("run_validation", graph.Subgraph[any, string, string](
 		validationSubgraph,
 		// Input mapper: parent state -> subgraph input
-		func(ctx context.Context, view graph.View) (string, error) {
+		func(ctx context.Context, view graph.ReadOnlyScope) (string, error) {
 			input := graph.Get(view, inputKey)
 			fmt.Printf("  [parent] Mapping input to validation subgraph: %s\n", input)
 			return input, nil
@@ -127,10 +127,10 @@ func main() {
 	), "run_transform")
 
 	// Use graph.Subgraph() to embed the transformation subgraph
-	g.Node("run_transform", graph.Subgraph(
+	g.Node("run_transform", graph.Subgraph[any, string, string](
 		transformSubgraph,
 		// Input mapper
-		func(ctx context.Context, view graph.View) (string, error) {
+		func(ctx context.Context, view graph.ReadOnlyScope) (string, error) {
 			input := graph.Get(view, inputKey)
 			fmt.Printf("  [parent] Mapping input to transform subgraph: %s\n", input)
 			return input, nil
@@ -146,9 +146,9 @@ func main() {
 	), "finalize")
 
 	// Finalize and show results
-	g.Node("finalize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		result := graph.Get(view, resultKey)
-		steps := graph.GetList(view, stepsKey)
+	g.Node("finalize", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		result := graph.Get(scope, resultKey)
+		steps := graph.GetList(scope, stepsKey)
 
 		fmt.Println("\n  Workflow Summary:")
 		fmt.Printf("    Final result: %s\n", result)

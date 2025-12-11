@@ -40,6 +40,7 @@ const (
 	EventNodeStart    Type = "node.start"
 	EventNodeComplete Type = "node.complete"
 	EventNodeError    Type = "node.error"
+	EventNodeStream   Type = "node.stream" // Partial output streamed (e.g., LLM chunks, tool progress)
 )
 
 // Model lifecycle events
@@ -47,7 +48,6 @@ const (
 	EventModelStart    Type = "model.start"
 	EventModelComplete Type = "model.complete"
 	EventModelError    Type = "model.error"
-	EventModelStream   Type = "model.stream"
 )
 
 // Tool lifecycle events

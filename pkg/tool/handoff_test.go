@@ -15,7 +15,7 @@ import (
 func createMockWorkerGraph(t *testing.T, response string) *message.Graph {
 	g := message.NewGraphBuilder()
 
-	g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("worker", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		msg := message.Message(message.NewAIMessageFromText(response))
 		return graph.Append(message.MessagesKey, msg).End()
 	}, graph.END)
@@ -102,7 +102,7 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 	failOnce := true
 	g := message.NewGraphBuilder()
 
-	g.Node("worker", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("worker", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		if failOnce {
 			failOnce = false
 			return graph.Fail(errors.New("temporary error"))

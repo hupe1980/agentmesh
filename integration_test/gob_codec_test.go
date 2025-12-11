@@ -82,8 +82,8 @@ func TestGobCodec_GraphStateIntegration(t *testing.T) {
 
 	g := graph.New[GobSerializableState, GobSerializableState](stateKey)
 
-	g.Node("increment", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		state := graph.Get(view, stateKey)
+	g.Node("increment", func(ctx context.Context, scope graph.Scope[GobSerializableState]) (*graph.Command, error) {
+		state := graph.Get(scope, stateKey)
 		state.Counter++
 		state.Items = append(state.Items, "step")
 		return graph.Set(stateKey, state).End()

@@ -11,10 +11,10 @@ import (
 // The interface supports both static and dynamic tool discovery.
 type Toolset interface {
 	// ListTools returns available tools.
-	// The view parameter provides read access to the current graph state,
+	// The scope parameter provides read access to the current graph state,
 	// enabling context-aware tool selection.
-	// If view is nil, returns all available tools (static discovery).
-	ListTools(ctx context.Context, view graph.View) ([]Tool, error)
+	// If scope is nil, returns all available tools (static discovery).
+	ListTools(ctx context.Context, scope graph.ReadOnlyScope) ([]Tool, error)
 
 	// Close releases any resources held by the toolset.
 	Close() error
@@ -31,8 +31,8 @@ func NewStaticToolset(tools ...Tool) *StaticToolset {
 }
 
 // ListTools returns the static list of tools.
-// The view parameter is ignored for static toolsets.
-func (s *StaticToolset) ListTools(_ context.Context, _ graph.View) ([]Tool, error) {
+// The scope parameter is ignored for static toolsets.
+func (s *StaticToolset) ListTools(_ context.Context, _ graph.ReadOnlyScope) ([]Tool, error) {
 	return s.tools, nil
 }
 
@@ -52,11 +52,11 @@ func Combine(toolsets ...Toolset) *CompositeToolset {
 }
 
 // ListTools returns tools from all contained toolsets.
-func (c *CompositeToolset) ListTools(ctx context.Context, view graph.View) ([]Tool, error) {
+func (c *CompositeToolset) ListTools(ctx context.Context, scope graph.ReadOnlyScope) ([]Tool, error) {
 	var allTools []Tool
 
 	for _, ts := range c.toolsets {
-		tools, err := ts.ListTools(ctx, view)
+		tools, err := ts.ListTools(ctx, scope)
 		if err != nil {
 			return nil, err
 		}

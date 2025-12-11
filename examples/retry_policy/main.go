@@ -22,7 +22,7 @@ func main() {
 	var attempts atomic.Int32
 
 	// Create a flaky node that fails twice then succeeds
-	flakyNode := func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	flakyNode := func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		attempt := attempts.Add(1)
 		fmt.Printf("  [flaky] Attempt %d\n", attempt)
 

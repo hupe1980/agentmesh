@@ -75,7 +75,7 @@ func NewReflection(
 }
 
 // buildReflectionGraph constructs the reflection agent graph.
-func buildReflectionGraph(agentNode, reflectionNode graph.NodeFunc, config reflectionOptions) (*message.Graph, error) {
+func buildReflectionGraph(agentNode, reflectionNode message.NodeFunc, config reflectionOptions) (*message.Graph, error) {
 	b := message.NewGraphBuilder()
 
 	// Graph structure:
@@ -99,7 +99,7 @@ type reflectionOptions struct {
 	maxReflections      int
 	reflectionPrompt    string
 	reflectionThreshold float64
-	graphMiddleware     []graph.Middleware
+	graphMiddleware     []message.Middleware
 	modelMiddleware     []model.Middleware
 }
 
@@ -158,7 +158,7 @@ func WithReflectionPromptTemplate(prompt string) ReflectionOption {
 }
 
 // WithReflectionGraphMiddleware adds middleware to the reflection graph.
-func WithReflectionGraphMiddleware(middleware ...graph.Middleware) ReflectionOption {
+func WithReflectionGraphMiddleware(middleware ...message.Middleware) ReflectionOption {
 	return reflectionOptionFunc(func(c *reflectionOptions) {
 		c.graphMiddleware = append(c.graphMiddleware, middleware...)
 	})
@@ -172,11 +172,11 @@ func WithReflectionModelMiddleware(middleware ...model.Middleware) ReflectionOpt
 }
 
 // createAgentWrapperNode wraps an agent graph as a node function.
-func createAgentWrapperNode(wrappedAgent *message.Graph) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+func createAgentWrapperNode(wrappedAgent *message.Graph) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		// Get current messages from state
-		messages := GetMessages(view)
-		reflectionCount := graph.Get(view, ReflectionCountKey)
+		messages := GetMessages(scope)
+		reflectionCount := graph.Get(scope, ReflectionCountKey)
 
 		// Run the wrapped agent with current messages
 		lastMsg, err := graph.Last(wrappedAgent.Run(ctx, messages))
@@ -197,10 +197,10 @@ func createAgentWrapperNode(wrappedAgent *message.Graph) graph.NodeFunc {
 }
 
 // createReflectionNodeForWrapper creates reflection node for the wrapper pattern.
-func createReflectionNodeForWrapper(executor model.Executor, config reflectionOptions) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		messages := GetMessages(view)
-		reflectionCount := graph.Get(view, ReflectionCountKey)
+func createReflectionNodeForWrapper(executor model.Executor, config reflectionOptions) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+		messages := GetMessages(scope)
+		reflectionCount := graph.Get(scope, ReflectionCountKey)
 
 		// Check if we've exceeded max reflections
 		if reflectionCount >= config.maxReflections {

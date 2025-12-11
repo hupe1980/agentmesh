@@ -23,6 +23,10 @@ const (
 	TypeHuman Type = "human"
 	// TypeAI represents AI-generated responses.
 	TypeAI Type = "ai"
+	// TypeAIChunk represents a streaming chunk of an AI response.
+	// Used for real-time output during streaming mode.
+	// Unlike TypeAI, chunks are not added to conversation state.
+	TypeAIChunk Type = "ai_chunk"
 	// TypeChat represents generic chat messages.
 	TypeChat Type = "chat"
 	// TypeFunction represents function call results.
@@ -466,6 +470,9 @@ func (c *BaseMessageChunk) Clone() *BaseMessageChunk {
 	return &clone
 }
 
+// String returns the text content of the chunk.
+func (c *BaseMessageChunk) String() string { return c.base.stringify() }
+
 // Merge combines this chunk with another chunk.
 func (c *BaseMessageChunk) Merge(other *BaseMessageChunk) (*BaseMessageChunk, error) {
 	if other == nil {
@@ -479,7 +486,23 @@ func (c *BaseMessageChunk) Merge(other *BaseMessageChunk) (*BaseMessageChunk, er
 	return merged, nil
 }
 
-// AIMessageChunk is a streaming fragment emitted by an AIMessage.
+// AIMessageChunk is a streaming fragment of an AI response.
+// Unlike AIMessage, chunks are yielded in real-time during streaming
+// but are NOT added to the conversation state. The final complete
+// AIMessage is added to state after streaming completes.
+//
+// AIMessageChunk implements the Message interface, allowing it to be
+// yielded from agent.Run() alongside regular messages. Use type assertion
+// to distinguish chunks from complete messages:
+//
+//	for msg, err := range agent.Run(ctx, messages) {
+//	    switch m := msg.(type) {
+//	    case *message.AIMessageChunk:
+//	        fmt.Print(m.String()) // Stream partial output
+//	    case *message.AIMessage:
+//	        // Final complete message (already in state)
+//	    }
+//	}
 type AIMessageChunk struct {
 	BaseMessageChunk
 	ToolCalls []ToolCall
@@ -487,11 +510,21 @@ type AIMessageChunk struct {
 
 // NewAIMessageChunk creates a new AI message chunk.
 func NewAIMessageChunk(text string, opts ...Option) *AIMessageChunk {
-	return &AIMessageChunk{BaseMessageChunk: *NewBaseMessageChunk(TypeAI, text, opts...)}
+	return &AIMessageChunk{BaseMessageChunk: *NewBaseMessageChunk(TypeAIChunk, text, opts...)}
 }
 
 // Clone creates a deep copy of the AI message chunk.
-func (c *AIMessageChunk) Clone() *AIMessageChunk {
+// Implements the Message interface.
+func (c *AIMessageChunk) Clone() Message {
+	clone := *c
+	clone.BaseMessageChunk = *c.BaseMessageChunk.Clone()
+	clone.ToolCalls = cloneToolCalls(c.ToolCalls)
+	return &clone
+}
+
+// CloneChunk creates a deep copy returning the concrete type.
+// Use this when you need to preserve the *AIMessageChunk type.
+func (c *AIMessageChunk) CloneChunk() *AIMessageChunk {
 	clone := *c
 	clone.BaseMessageChunk = *c.BaseMessageChunk.Clone()
 	clone.ToolCalls = cloneToolCalls(c.ToolCalls)
@@ -501,7 +534,7 @@ func (c *AIMessageChunk) Clone() *AIMessageChunk {
 // Merge combines this AI message chunk with another.
 func (c *AIMessageChunk) Merge(other *AIMessageChunk) (*AIMessageChunk, error) {
 	if other == nil {
-		return c.Clone(), nil
+		return c.CloneChunk(), nil
 	}
 	base, err := c.BaseMessageChunk.Merge(&other.BaseMessageChunk)
 	if err != nil {

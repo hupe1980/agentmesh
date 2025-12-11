@@ -11,36 +11,36 @@ import "github.com/hupe1980/agentmesh/pkg/graph"
 // Example:
 //
 //	g := graph.New[[]message.Message, message.Message](message.MessagesKey)
-//	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-//	    messages := message.GetMessages(view)
+//	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+//	    messages := message.GetMessages(scope)
 //	    // Process messages...
 //	    return graph.Append(message.MessagesKey, newMessage).End()
 //	})
 var MessagesKey = graph.NewListKey[Message]("messages")
 
-// GetMessages retrieves the message history from a View.
+// GetMessages retrieves the message history from a ReadOnlyScope.
 // Returns an empty slice if no messages exist.
 //
 // Example:
 //
-//	messages := message.GetMessages(view)
+//	messages := message.GetMessages(scope)
 //	for _, msg := range messages {
 //	    fmt.Println(msg.Content())
 //	}
-func GetMessages(view graph.View) []Message {
-	return graph.GetList(view, MessagesKey)
+func GetMessages(scope graph.ReadOnlyScope) []Message {
+	return graph.GetList(scope, MessagesKey)
 }
 
 // LastMessage returns the last message from the history, or nil if empty.
 //
 // Example:
 //
-//	lastMsg := message.LastMessage(view)
+//	lastMsg := message.LastMessage(scope)
 //	if lastMsg != nil {
 //	    fmt.Println("Last:", lastMsg.Content())
 //	}
-func LastMessage(view graph.View) Message {
-	msgs := GetMessages(view)
+func LastMessage(scope graph.ReadOnlyScope) Message {
+	msgs := GetMessages(scope)
 	if len(msgs) == 0 {
 		return nil
 	}

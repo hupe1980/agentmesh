@@ -6,37 +6,38 @@ import "context"
 type streamWriterKey struct{}
 
 // StreamWriter is a function that emits intermediate updates during node execution.
-// Nodes can use this to stream progress updates before they complete.
-// The updates are published as events and yielded to the graph output iterator.
+// This remains for backward compatibility with tools that need context-based streaming.
+//
+// Deprecated: Use Scope.Stream() instead for typed streaming.
 type StreamWriter func(Updates)
 
 // WithStreamWriter attaches a stream writer to the context.
-// This is called automatically by the executor to enable intermediate streaming.
+// This is kept for tools that need to access streaming via context.
+//
+// Deprecated: Node functions now receive Scope[O] with typed Stream() method.
 func WithStreamWriter(ctx context.Context, writer StreamWriter) context.Context {
 	return context.WithValue(ctx, streamWriterKey{}, writer)
 }
 
 // GetStreamWriter retrieves the stream writer from context.
-// Returns nil if streaming is not available (e.g., outside of graph execution).
+// This is kept for tools that need to access streaming via context.
 //
-// Example usage in a node:
+// Deprecated: Use GetScope[O](ctx).Stream() instead for typed streaming.
 //
-//	func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
-//	    streamWriter := graph.GetStreamWriter(ctx)
+// For typed streaming in nodes, use Scope.Stream() directly:
 //
-//	    for i, chunk := range chunks {
-//	        // Process chunk...
+//	func myNode(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+//	    scope.Stream(partialMessage) // Type-safe!
+//	    return graph.Append(key, finalMessage).End()
+//	}
 //
-//	        // Stream intermediate progress
-//	        if streamWriter != nil {
-//	            streamWriter(graph.Updates{
-//	                "progress": fmt.Sprintf("%d/%d", i+1, len(chunks)),
-//	                "current_chunk": chunk,
-//	            })
-//	        }
+// For tools that need context-based streaming (non-typed):
+//
+//	func (t *MyTool) Run(ctx context.Context, input string) (string, error) {
+//	    if sw := graph.GetStreamWriter(ctx); sw != nil {
+//	        sw(graph.Updates{"progress": "50%"})
 //	    }
-//
-//	    return graph.Set(statusKey, "done").End()
+//	    return result, nil
 //	}
 func GetStreamWriter(ctx context.Context) StreamWriter {
 	if writer, ok := ctx.Value(streamWriterKey{}).(StreamWriter); ok {

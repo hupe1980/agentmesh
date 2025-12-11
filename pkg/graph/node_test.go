@@ -90,7 +90,7 @@ func TestRetryPolicyBuilder(t *testing.T) {
 func TestWithRetry(t *testing.T) {
 	t.Run("no retry on success", func(t *testing.T) {
 		attempts := 0
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			attempts++
 			return graph.To(graph.END)
 		}
@@ -104,7 +104,7 @@ func TestWithRetry(t *testing.T) {
 
 	t.Run("retry on failure", func(t *testing.T) {
 		attempts := 0
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			attempts++
 			if attempts < 3 {
 				return nil, errors.New("transient error")
@@ -128,7 +128,7 @@ func TestWithRetry(t *testing.T) {
 
 	t.Run("max retries exceeded", func(t *testing.T) {
 		attempts := 0
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			attempts++
 			return nil, errors.New("persistent error")
 		}
@@ -151,7 +151,7 @@ func TestWithRetry(t *testing.T) {
 	t.Run("non-retryable error", func(t *testing.T) {
 		attempts := 0
 		permanentErr := errors.New("permanent error")
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			attempts++
 			return nil, permanentErr
 		}
@@ -175,7 +175,7 @@ func TestWithRetry(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		attempts := 0
 
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			attempts++
 			if attempts == 1 {
 				cancel() // Cancel after first attempt
@@ -198,7 +198,7 @@ func TestWithRetry(t *testing.T) {
 
 	t.Run("nil policy passes through", func(t *testing.T) {
 		called := false
-		fn := func(_ context.Context, _ graph.View) (*graph.Command, error) {
+		fn := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 			called = true
 			return graph.To(graph.END)
 		}
@@ -228,7 +228,7 @@ func TestNamespace(t *testing.T) {
 func TestWithRetryInGraph(t *testing.T) {
 	attempts := 0
 
-	retryingNode := graph.WithRetry(func(_ context.Context, _ graph.View) (*graph.Command, error) {
+	retryingNode := graph.WithRetry(func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		attempts++
 		if attempts < 2 {
 			return nil, errors.New("transient")

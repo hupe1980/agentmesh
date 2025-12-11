@@ -126,8 +126,8 @@ state.Set(TaskKey, "analyze sales data")
 For complex logic, use a provider function:
 
 ```go
-agent.WithInstructionsFromFunc(func(ctx context.Context, view graph.View) (string, error) {
-    userName := view.Get(UserNameKey)
+agent.WithInstructionsFromFunc(func(ctx context.Context, scope graph.ReadOnlyScope) (string, error) {
+    userName := graph.Get(scope, UserNameKey)
     if userName == "" {
         return "You are a helpful assistant.", nil
     }
@@ -644,8 +644,8 @@ var CategoryKey = graph.NewKey[string]("category", "")
 g := message.NewGraphBuilder(CategoryKey)
 
 // Add nodes using fluent API
-g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := message.GetMessages(view)
+g.Node("classify", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    messages := message.GetMessages(scope)
     category := classifyIntent(messages)
     
     if category == "support" {
@@ -654,12 +654,12 @@ g.Node("classify", func(ctx context.Context, view graph.View) (*graph.Command, e
     return graph.Set(CategoryKey, category).To("handle_sales"), nil
 }, "handle_support", "handle_sales")
 
-g.Node("handle_support", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("handle_support", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Support response...")
     return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
 
-g.Node("handle_sales", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("handle_sales", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Sales response...")
     return graph.Append(message.MessagesKey, response).To(graph.END), nil
 }, graph.END)
@@ -680,13 +680,13 @@ for result, err := range compiled.Run(ctx, messages) {
 
 ### Node functions
 
-Nodes receive a `View` and return a `Command`:
+Nodes receive a `Scope[O]` (which embeds `ReadOnlyScope`) and return a `Command`:
 
 ```go
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // Read state with typed keys
-    previousValue := graph.Get(view, MyKey)
-    messages := message.GetMessages(view)
+    previousValue := graph.Get(scope, MyKey)
+    messages := message.GetMessages(scope)
     
     // Process...
     
@@ -704,8 +704,8 @@ g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, er
 Direct execution flow dynamically using commands:
 
 ```go
-g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    action := graph.Get(view, ActionKey)
+g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    action := graph.Get(scope, ActionKey)
     
     switch action {
     case "approve":
@@ -723,7 +723,7 @@ g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, err
 Nodes can route to multiple targets for parallel execution:
 
 ```go
-g.Node("fanout", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("fanout", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // Route to all three analysts in parallel
     return graph.To("analyst_a", "analyst_b", "analyst_c"), nil
 }, "analyst_a", "analyst_b", "analyst_c")
@@ -737,7 +737,7 @@ Nodes can fan out to parallel execution by routing to multiple targets:
 
 ```go
 // Entry node fans out to three concurrent tasks
-g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.To("fetch_data_a", "fetch_data_b", "fetch_data_c"), nil
 }, "fetch_data_a", "fetch_data_b", "fetch_data_c")
 
@@ -771,8 +771,8 @@ parent := message.NewGraphBuilder()
 parent.Node("research", graph.Subgraph(
     compiledResearch,
     // InputMapper: transform parent messages to subgraph input
-    func(ctx context.Context, view graph.View) ([]message.Message, error) {
-        messages := message.GetMessages(view)
+    func(ctx context.Context, scope graph.Scope[string]) ([]message.Message, error) {
+        messages := message.GetMessages(scope)
         // Filter or transform messages for research subgraph
         return messages, nil
     },
@@ -782,8 +782,8 @@ parent.Node("research", graph.Subgraph(
     },
 ), "synthesize")
 
-parent.Node("synthesize", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := message.GetMessages(view)
+parent.Node("synthesize", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    messages := message.GetMessages(scope)
     // Synthesize research results...
     return graph.Append(message.MessagesKey, summary).To(graph.END)
 }, graph.END)

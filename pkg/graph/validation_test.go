@@ -13,7 +13,7 @@ import (
 
 func TestValidateNoEntryPoint(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	// No Start() call
@@ -29,7 +29,7 @@ func TestValidateNoEntryPoint(t *testing.T) {
 
 func TestValidateInvalidEntryPoint(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("nonexistent")
@@ -45,7 +45,7 @@ func TestValidateInvalidEntryPoint(t *testing.T) {
 
 func TestValidateInvalidEdge(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("nonexistent")
 	}, "nonexistent") // Target doesn't exist
 	g.Start("a")
@@ -61,10 +61,10 @@ func TestValidateInvalidEdge(t *testing.T) {
 
 func TestValidateValidGraph(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -81,10 +81,10 @@ func TestValidateValidGraph(t *testing.T) {
 
 func TestValidateCycleDetection(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("a") // Cycle back to a
 	}, "a")
 	g.Start("a")
@@ -107,10 +107,10 @@ func TestValidateCycleDetection(t *testing.T) {
 
 func TestValidateDisconnectedNode(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END) // Not reachable from "a"
 	}, graph.END)
 	g.Start("a")
@@ -142,10 +142,10 @@ func TestValidateDisconnectedNode(t *testing.T) {
 
 func TestValidateAllowDisconnected(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END) // Not reachable from "a"
 	}, graph.END)
 	g.Start("a")
@@ -168,10 +168,10 @@ func TestValidateAllowDisconnected(t *testing.T) {
 
 func TestBuildWithStrictValidation(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("a") // Cycle
 	}, "a")
 	g.Start("a")
@@ -185,10 +185,10 @@ func TestBuildWithStrictValidation(t *testing.T) {
 
 func TestBuildWithStrictValidationRejectsCycle(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("a") // Cycle
 	}, "a")
 	g.Start("a")
@@ -202,7 +202,7 @@ func TestBuildWithStrictValidationRejectsCycle(t *testing.T) {
 
 func TestBuildWithoutValidation(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("nonexistent") // Invalid edge
 	}, "nonexistent")
 	g.Start("a")
@@ -230,16 +230,16 @@ func TestValidateNoNodes(t *testing.T) {
 
 func TestValidateComplexGraph(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("a", "b") // Fan-out
 	}, "a", "b")
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("merge")
 	}, "merge")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("merge")
 	}, "merge")
-	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("merge", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END) // Fan-in
 	}, graph.END)
 	g.Start("start")
@@ -252,13 +252,13 @@ func TestValidateComplexGraph(t *testing.T) {
 
 func TestValidateParallelEntryPoints(t *testing.T) {
 	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("merge")
 	}, "merge")
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To("merge")
 	}, "merge")
-	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("merge", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a", "b") // Multiple entry points
@@ -274,7 +274,7 @@ func TestValidateDuplicateKey(t *testing.T) {
 	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
 
 	g := graph.New[any, any](key1, key2)
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -293,7 +293,7 @@ func TestBuildWithDuplicateKey(t *testing.T) {
 	key2 := graph.NewKey[int]("mykey", 0) // Same name, different type
 
 	g := graph.New[any, any](key1, key2)
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")

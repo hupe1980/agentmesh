@@ -55,7 +55,7 @@ func TestInterruptOptions(t *testing.T) {
 }
 
 func TestExecutorNode(t *testing.T) {
-	node := graph.ExecutorNode{
+	node := graph.ExecutorNode[any]{
 		Name:    "processor",
 		Fn:      nil, // NodeFunc would be set in real usage
 		Targets: []string{"next", "error"},

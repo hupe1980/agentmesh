@@ -33,7 +33,7 @@ func TestNewListKey(t *testing.T) {
 // ====================
 
 // createTestView creates a View for testing using BSPState
-func createTestView(data map[string]any) graph.View {
+func createTestView(data map[string]any) graph.ReadOnlyScope {
 	return graph.NewBSPState(data).ReadView()
 }
 

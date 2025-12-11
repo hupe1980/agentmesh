@@ -34,19 +34,19 @@ func main() {
 	// Build graph that pauses for human input
 	g := graph.New[any, any](questionKey, answerKey)
 
-	g.Node("ask", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("ask", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [ask] Preparing question for human...")
 		return graph.Set(questionKey, "What is the capital of France?").To("wait_for_answer")
 	}, "wait_for_answer")
 
-	g.Node("wait_for_answer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		answer := graph.Get(view, answerKey)
+	g.Node("wait_for_answer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		answer := graph.Get(scope, answerKey)
 		fmt.Printf("  [wait_for_answer] Answer received: %s\n", answer)
 		return graph.Cmd().To("process_answer")
 	}, "process_answer")
 
-	g.Node("process_answer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		answer := graph.Get(view, answerKey)
+	g.Node("process_answer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		answer := graph.Get(scope, answerKey)
 		fmt.Printf("  [process_answer] Processing answer: %s\n", answer)
 		if answer == "Paris" {
 			fmt.Println("  [process_answer] ✓ Correct!")

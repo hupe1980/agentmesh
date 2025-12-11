@@ -22,20 +22,20 @@ func TestGraphAlgorithms_LinearChain(t *testing.T) {
 
 	g := graph.New[any, any](valueKey)
 
-	g.Node("a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		executionOrder = append(executionOrder, "a")
 		return graph.Set(valueKey, 1).To("b")
 	}, "b")
 
-	g.Node("b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("b", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		executionOrder = append(executionOrder, "b")
-		v := graph.Get(view, valueKey)
+		v := graph.Get(scope, valueKey)
 		return graph.Set(valueKey, v+1).To("c")
 	}, "c")
 
-	g.Node("c", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("c", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		executionOrder = append(executionOrder, "c")
-		v := graph.Get(view, valueKey)
+		v := graph.Get(scope, valueKey)
 		return graph.Set(valueKey, v+1).End()
 	}, graph.END)
 
@@ -63,22 +63,22 @@ func TestGraphAlgorithms_ParallelBranches(t *testing.T) {
 	g := graph.New[any, any](resultKey)
 
 	// Start node splits to two parallel branches
-	g.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.To("branch1", "branch2")
 	}, "branch1", "branch2")
 
-	g.Node("branch1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("branch1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.To("merge")
 	}, "merge")
 
-	g.Node("branch2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("branch2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.To("merge")
 	}, "merge")
 
-	g.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("merge", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
@@ -107,19 +107,19 @@ func TestGraphAlgorithms_ConditionalRouting(t *testing.T) {
 
 	g := graph.New[any, any](pathKey, conditionKey)
 
-	g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		cond := graph.Get(view, conditionKey)
+	g.Node("router", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		cond := graph.Get(scope, conditionKey)
 		if cond {
 			return graph.Set(pathKey, "left").To("left")
 		}
 		return graph.Set(pathKey, "right").To("right")
 	}, "left", "right")
 
-	g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("left", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.Set(pathKey, "went_left").End()
 	}, graph.END)
 
-	g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("right", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		return graph.Set(pathKey, "went_right").End()
 	}, graph.END)
 
@@ -144,8 +144,8 @@ func TestGraphAlgorithms_Loop(t *testing.T) {
 
 	g := graph.New[any, any](counterKey)
 
-	g.Node("loop", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		counter := graph.Get(view, counterKey)
+	g.Node("loop", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		counter := graph.Get(scope, counterKey)
 		counter++
 		if counter >= maxIterations {
 			return graph.Set(counterKey, counter).End()
@@ -176,28 +176,28 @@ func TestGraphAlgorithms_DiamondPattern(t *testing.T) {
 	g := graph.New[any, any](resultKey)
 
 	// Diamond: top -> (left, right) -> bottom
-	g.Node("top", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("top", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		mu.Lock()
 		executed = append(executed, "top")
 		mu.Unlock()
 		return graph.To("left", "right")
 	}, "left", "right")
 
-	g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("left", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		mu.Lock()
 		executed = append(executed, "left")
 		mu.Unlock()
 		return graph.To("bottom")
 	}, "bottom")
 
-	g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("right", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		mu.Lock()
 		executed = append(executed, "right")
 		mu.Unlock()
 		return graph.To("bottom")
 	}, "bottom")
 
-	g.Node("bottom", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("bottom", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		mu.Lock()
 		executed = append(executed, "bottom")
 		mu.Unlock()
@@ -233,18 +233,18 @@ func TestGraphAlgorithms_StateAccumulation(t *testing.T) {
 
 	g := graph.New[any, any](sumKey)
 
-	g.Node("add1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		sum := graph.Get(view, sumKey)
+	g.Node("add1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		sum := graph.Get(scope, sumKey)
 		return graph.Set(sumKey, sum+1).To("add2")
 	}, "add2")
 
-	g.Node("add2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		sum := graph.Get(view, sumKey)
+	g.Node("add2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		sum := graph.Get(scope, sumKey)
 		return graph.Set(sumKey, sum+2).To("add3")
 	}, "add3")
 
-	g.Node("add3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		sum := graph.Get(view, sumKey)
+	g.Node("add3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		sum := graph.Get(scope, sumKey)
 		return graph.Set(sumKey, sum+3).End()
 	}, graph.END)
 

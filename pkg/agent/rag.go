@@ -40,9 +40,9 @@ func extractDocumentContent(docs []retrieval.Document) []string {
 }
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		msgs := GetMessages(view)
+func createRetrieveNode(retriever retrieval.Retriever) message.NodeFunc {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+		msgs := GetMessages(scope)
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoQueryMessages)
 		}
@@ -61,29 +61,23 @@ func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
 	}
 }
 
-// createGenerateNode creates the generation node for producing responses with context.
-func createGenerateNode(executor model.Executor, config ragOptions) graph.NodeFunc {
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		msgs := GetMessages(view)
-		if len(msgs) == 0 {
-			return graph.Fail(ErrNoMessagesInState)
-		}
-
-		docs := graph.Get(view, DocumentsKey)
-
-		// Build instructions: combine user's instructions with document context
+// createRAGInstructionsFunc creates a dynamic instructions function that combines
+// user instructions with document context retrieved from state.
+func createRAGInstructionsFunc(config ragOptions) func(context.Context, message.Scope) (string, error) {
+	return func(ctx context.Context, scope message.Scope) (string, error) {
 		var instructions string
 
 		// First resolve base instructions if configured
 		if config.instructions != nil {
 			var err error
-			instructions, err = config.instructions.Resolve(ctx, view)
+			instructions, err = config.instructions.Resolve(ctx, scope)
 			if err != nil {
-				return graph.Fail(fmt.Errorf("failed to resolve instructions: %w", err))
+				return "", fmt.Errorf("failed to resolve instructions: %w", err)
 			}
 		}
 
 		// Add document context if documents exist
+		docs := graph.Get(scope, DocumentsKey)
 		if len(docs) > 0 {
 			contextPrompt := config.promptTemplate.MustRender(map[string]any{
 				"Documents": docs,
@@ -95,18 +89,7 @@ func createGenerateNode(executor model.Executor, config ragOptions) graph.NodeFu
 			}
 		}
 
-		req := &model.Request{
-			Messages:     msgs,
-			Instructions: instructions,
-			OutputSchema: config.outputSchema,
-		}
-
-		resp, err := model.Last(executor.Generate(ctx, req))
-		if err != nil {
-			return graph.Fail(err)
-		}
-
-		return graph.Append(MessagesKey, resp.Message).To(graph.END)
+		return instructions, nil
 	}
 }
 
@@ -144,10 +127,27 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
 	}
 
+	// Build model node options
+	modelNodeOpts := []ModelNodeOption{
+		WithModelInstructionsFunc(createRAGInstructionsFunc(config)),
+		WithModelStreaming(config.streaming),
+	}
+
+	// Add output schema if configured
+	if config.outputSchema != nil {
+		modelNodeOpts = append(modelNodeOpts, WithModelOutputSchema(config.outputSchema))
+	}
+
+	// Create model node function using the shared ModelNodeFunc
+	modelFn, err := NewModelNodeFunc(modelExecutor, modelNodeOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("agent/rag: create model node: %w", err)
+	}
+
 	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
 	b := message.NewGraphBuilder(DocumentsKey)
 	b.Node("retrieve", createRetrieveNode(retriever), "generate")
-	b.Node("generate", createGenerateNode(modelExecutor, config), graph.END)
+	b.Node("generate", modelFn, graph.END)
 	b.Start("retrieve")
 
 	// Apply graph middleware if provided

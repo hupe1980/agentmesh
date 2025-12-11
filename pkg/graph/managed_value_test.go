@@ -290,7 +290,7 @@ func TestGetManaged(t *testing.T) {
 
 		// Create BSP state with managed values
 		bspState := NewBSPState(nil)
-		registry := newManagedValueRegistry()
+		registry := NewManagedValueRegistry()
 		registry.register(apiKey)
 		bspState.setManagedValues(registry)
 		view := bspState.ReadView()
@@ -312,7 +312,7 @@ func TestGetManaged(t *testing.T) {
 	})
 
 	t.Run("GetManaged with unregistered value returns zero", func(t *testing.T) {
-		registry := newManagedValueRegistry()
+		registry := NewManagedValueRegistry()
 		// Don't register anything
 
 		bspState := NewBSPState(nil)
@@ -330,7 +330,7 @@ func TestGetManaged(t *testing.T) {
 			return atomic.AddInt64(&count, 1), nil
 		})
 
-		registry := newManagedValueRegistry()
+		registry := NewManagedValueRegistry()
 		registry.register(counter)
 
 		bspState := NewBSPState(nil)
@@ -381,7 +381,7 @@ func TestManagedValueProviderDescriptorOptions(t *testing.T) {
 
 func TestManagedValueRegistryEnsureAndRehydrate(t *testing.T) {
 	ctx := context.Background()
-	reg := newManagedValueRegistry()
+	reg := NewManagedValueRegistry()
 	var called atomic.Int32
 	mv := NewManagedValue("session", "token",
 		WithManagedValueRequired(),
@@ -398,7 +398,7 @@ func TestManagedValueRegistryEnsureAndRehydrate(t *testing.T) {
 
 func TestManagedValueRegistryEnsureMissing(t *testing.T) {
 	ctx := context.Background()
-	reg := newManagedValueRegistry()
+	reg := NewManagedValueRegistry()
 	err := reg.ensureAndRehydrate(ctx, []checkpoint.ManagedValueDescriptor{{Name: "api_key", Required: true}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "api_key")

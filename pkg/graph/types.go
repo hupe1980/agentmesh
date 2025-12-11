@@ -28,24 +28,34 @@ const (
 )
 
 // Middleware wraps node execution.
-type Middleware func(next NodeFunc) NodeFunc
+// The type parameter O matches the graph's output type.
+type Middleware[O any] func(next NodeFunc[O]) NodeFunc[O]
 
 // Executor runs the graph.
 type Executor[I, O any] interface {
 	Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...RunOption) iter.Seq2[O, error]
 }
 
+// ExecutorNode represents a node for the executor.
+// The type parameter O matches the graph's output type.
+type ExecutorNode[O any] struct {
+	Name    string
+	Fn      NodeFunc[O]
+	Targets []string
+}
+
 // ExecutionConfig holds node execution configuration.
 // This includes the graph structure, entry points, middleware, and output settings.
-type ExecutionConfig struct {
+// The type parameter O matches the graph's output type.
+type ExecutionConfig[O any] struct {
 	// Nodes contains all graph nodes indexed by name.
-	Nodes map[string]ExecutorNode
+	Nodes map[string]ExecutorNode[O]
 
 	// EntryPoints are the starting nodes for execution.
 	EntryPoints []string
 
 	// Middleware wraps node execution.
-	Middleware []Middleware
+	Middleware []Middleware[O]
 
 	// Store provides state storage.
 	Store Store
@@ -81,20 +91,13 @@ type InterruptConfig struct {
 // It composes focused configuration structs for better separation of concerns.
 type ExecutorConfig[I, O any] struct {
 	// Execution contains node and execution settings.
-	Execution ExecutionConfig
+	Execution ExecutionConfig[O]
 
 	// Checkpoint contains checkpointing settings.
 	Checkpoint CheckpointConfig
 
 	// Interrupt contains interrupt settings for human-in-the-loop workflows.
 	Interrupt InterruptConfig
-}
-
-// ExecutorNode represents a node for the executor.
-type ExecutorNode struct {
-	Name    string
-	Fn      NodeFunc
-	Targets []string
 }
 
 // InterruptOption configures an interrupt.
@@ -106,11 +109,13 @@ type interruptConfig struct {
 }
 
 // ApprovalGuard determines if approval is needed.
-type ApprovalGuard func(ctx context.Context, view View) (needsApproval bool, reason string, err error)
+// Uses ReadOnlyScope (not Scope) since it doesn't need streaming access.
+type ApprovalGuard func(ctx context.Context, scope ReadOnlyScope) (needsApproval bool, reason string, err error)
 
 // InputMapper maps parent graph state to subgraph input.
 // Used with Subgraph to transform parent state into the input type expected by the child graph.
-type InputMapper[SI any] func(ctx context.Context, view View) (SI, error)
+// Uses ReadOnlyScope (not Scope) since it's a read-only operation.
+type InputMapper[SI any] func(ctx context.Context, scope ReadOnlyScope) (SI, error)
 
 // OutputMapper maps subgraph output to parent graph state updates.
 // Used with Subgraph to transform child graph output into state updates for the parent.

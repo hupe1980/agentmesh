@@ -214,9 +214,11 @@ eventBus.Subscribe(handler,
 - `EventGraphError` - Graph execution failed
 
 **Node Events:**
+- `EventNodeQueued` - Node queued for execution
 - `EventNodeStart` - Node started executing
 - `EventNodeComplete` - Node completed successfully
 - `EventNodeError` - Node execution failed
+- `EventNodeStream` - Partial output streamed (e.g., LLM chunks during streaming)
 
 **Model Events:**
 - `EventModelStart` - Model call started
@@ -227,6 +229,16 @@ eventBus.Subscribe(handler,
 - `EventToolStart` - Tool execution started
 - `EventToolComplete` - Tool execution completed
 - `EventToolError` - Tool execution failed
+
+**State & Execution Events:**
+- `EventStateUpdate` - State updated after BSP barrier commit
+- `EventSuperstepStart` - Superstep started
+- `EventSuperstepComplete` - Superstep completed
+- `EventCheckpointSave` - Checkpoint saved
+- `EventCheckpointLoad` - Checkpoint loaded
+- `EventCheckpointError` - Checkpoint operation failed
+- `EventInterrupt` - Execution interrupted (human-in-the-loop)
+- `EventResume` - Execution resumed after interrupt
 
 **Checkpoint Events:**
 - `EventCheckpointSave` - Checkpoint saved
@@ -243,21 +255,21 @@ You can create custom middleware to extend execution behavior.
 
 ### Custom Graph Middleware
 
-Graph middleware is a function of type `func(next NodeFunc) NodeFunc`:
+Graph middleware is a function of type `func(next NodeFunc[O]) NodeFunc[O]`:
 
 ```go
 // Custom middleware function
-func MyCustomMiddleware(logger *slog.Logger) graph.Middleware {
-    return func(next graph.NodeFunc) graph.NodeFunc {
-        return func(ctx context.Context, view graph.View) (*graph.Command, error) {
-            nodeName := graph.NodeNameFromContext(ctx)
+func MyCustomMiddleware(logger *slog.Logger) graph.Middleware[string] {
+    return func(next graph.NodeFunc[string]) graph.NodeFunc[string] {
+        return func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+            nodeName := scope.NodeName()
             
             // Pre-execution logic
             logger.Info("node starting", "node", nodeName)
             start := time.Now()
             
             // Execute the wrapped node
-            cmd, err := next(ctx, view)
+            cmd, err := next(ctx, scope)
             
             // Post-execution logic
             duration := time.Since(start)

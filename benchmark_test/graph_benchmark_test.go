@@ -25,8 +25,8 @@ func BenchmarkGraph_SimpleExecution(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		builder := graph.New[int, int](CountKey)
 
-		builder.Node("increment", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-			count := graph.Get(view, CountKey)
+		builder.Node("increment", func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
+			count := graph.Get(scope, CountKey)
 			return graph.Set(CountKey, count+1).End()
 		}, graph.END)
 
@@ -53,8 +53,8 @@ func BenchmarkGraph_LinearChain(b *testing.B) {
 			nodeName := name
 			next := nextNode
 
-			builder.Node(nodeName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
-				val := graph.Get(view, ValueKey)
+			builder.Node(nodeName, func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
+				val := graph.Get(scope, ValueKey)
 				return graph.Set(ValueKey, val+1).To(next)
 			}, next)
 		}
@@ -111,7 +111,7 @@ func BenchmarkGraph_Build(b *testing.B) {
 			nodeName := name
 			next := nextNode
 
-			builder.Node(nodeName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			builder.Node(nodeName, func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
 				return graph.Cmd().To(next)
 			}, next)
 		}
@@ -127,20 +127,20 @@ func BenchmarkGraph_ParallelNodes(b *testing.B) {
 	for b.Loop() {
 		builder := graph.New[int, int](ValueKey)
 
-		builder.Node("start", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		builder.Node("start", func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
 			return graph.Cmd().To("worker1", "worker2", "worker3")
 		}, "worker1", "worker2", "worker3")
 
 		for _, name := range []string{"worker1", "worker2", "worker3"} {
 			workerName := name
-			builder.Node(workerName, func(ctx context.Context, view graph.View) (*graph.Command, error) {
-				val := graph.Get(view, ValueKey)
+			builder.Node(workerName, func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
+				val := graph.Get(scope, ValueKey)
 				return graph.Set(ValueKey, val+1).To("merge")
 			}, "merge")
 		}
 
-		builder.Node("merge", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-			val := graph.Get(view, ValueKey)
+		builder.Node("merge", func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
+			val := graph.Get(scope, ValueKey)
 			return graph.Set(ValueKey, val).End()
 		}, graph.END)
 
@@ -162,7 +162,7 @@ func BenchmarkGraph_MessageExecution(b *testing.B) {
 	for b.Loop() {
 		builder := graph.New[[]message.Message, message.Message](MessagesKey)
 
-		builder.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+		builder.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 			var msg message.Message = message.NewAIMessageFromText("Response")
 			return graph.Append(MessagesKey, msg).End()
 		}, graph.END)
@@ -188,17 +188,17 @@ func BenchmarkGraph_MessageChain(b *testing.B) {
 		for b.Loop() {
 			builder := graph.New[[]message.Message, message.Message](MessagesKey)
 
-			builder.Node("node1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			builder.Node("node1", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("From node1")
 				return graph.Append(MessagesKey, msg).To("node2")
 			}, "node2")
 
-			builder.Node("node2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			builder.Node("node2", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("From node2")
 				return graph.Append(MessagesKey, msg).To("node3")
 			}, "node3")
 
-			builder.Node("node3", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+			builder.Node("node3", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 				var msg message.Message = message.NewAIMessageFromText("Final")
 				return graph.Append(MessagesKey, msg).End()
 			}, graph.END)
@@ -221,8 +221,8 @@ func BenchmarkGraph_PrebuiltExecution(b *testing.B) {
 	// Build graph once outside the benchmark loop
 	builder := graph.New[int, int](ValueKey)
 
-	builder.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		val := graph.Get(view, ValueKey)
+	builder.Node("process", func(ctx context.Context, scope graph.Scope[int]) (*graph.Command, error) {
+		val := graph.Get(scope, ValueKey)
 		return graph.Set(ValueKey, val+1).End()
 	}, graph.END)
 
@@ -243,7 +243,7 @@ func BenchmarkGraph_PrebuiltMessageExecution(b *testing.B) {
 	// Build graph once outside the benchmark loop
 	builder := graph.New[[]message.Message, message.Message](MessagesKey)
 
-	builder.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	builder.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("Response")
 		return graph.Append(MessagesKey, msg).End()
 	}, graph.END)

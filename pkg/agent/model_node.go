@@ -37,7 +37,7 @@ func WithModelInstructions(templateStr string) ModelNodeOption {
 
 // WithModelInstructionsFunc sets instructions from a dynamic function for this model node.
 // Use when instructions need complex logic or access to graph state beyond template substitution.
-func WithModelInstructionsFunc(f func(context.Context, graph.View) (string, error)) ModelNodeOption {
+func WithModelInstructionsFunc(f func(context.Context, message.Scope) (string, error)) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
 		inst := NewInstructionsFromFunc(f)
 		c.Instructions = &inst
@@ -114,7 +114,7 @@ func WithModelStreaming(enabled bool) ModelNodeOption {
 //	modelFn, err := agent.NewModelNodeFunc(executor,
 //	    agent.WithModelInstructions("You are helping {{.userName}}"),
 //	    agent.WithModelToolset(mcpToolset))
-func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.NodeFunc, error) {
+func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message.NodeFunc, error) {
 	if err := validate.NotNil(executor, "executor"); err != nil {
 		return nil, err
 	}
@@ -128,12 +128,12 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 		opt(cfg)
 	}
 
-	return func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
 		// Resolve tools: use Toolset if provided, otherwise fall back to static Tools
 		var tools []tool.Tool
 		if cfg.Toolset != nil {
 			var err error
-			tools, err = cfg.Toolset.ListTools(ctx, view)
+			tools, err = cfg.Toolset.ListTools(ctx, scope)
 			if err != nil {
 				return graph.Fail(fmt.Errorf("failed to list tools: %w", err))
 			}
@@ -145,7 +145,7 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 		var instructions string
 		if cfg.Instructions != nil {
 			var err error
-			instructions, err = cfg.Instructions.Resolve(ctx, view)
+			instructions, err = cfg.Instructions.Resolve(ctx, scope)
 			if err != nil {
 				return graph.Fail(fmt.Errorf("failed to resolve instructions: %w", err))
 			}
@@ -162,7 +162,7 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 		}
 
 		// Get messages from state using type-safe key
-		messages := GetMessages(view)
+		messages := GetMessages(scope)
 
 		// Build request with messages + node configuration
 		req := &model.Request{
@@ -174,10 +174,8 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 		}
 
 		// Execute via the executor with streaming support
-		// Partial chunks are streamed immediately via streamWriter
+		// Partial chunks are streamed immediately via scope.Stream()
 		// Only the final complete message is added to state
-		streamWriter := graph.GetStreamWriter(ctx)
-
 		var finalResp *model.Response
 		for resp, err := range cfg.Executor.Generate(ctx, req) {
 			if err != nil {
@@ -186,10 +184,14 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (graph.N
 
 			if resp.Partial {
 				// Stream partial chunks immediately for real-time output
-				if streamWriter != nil {
-					streamWriter(graph.Updates{
-						MessagesKey.Name(): resp.Message,
-					})
+				// Convert AIMessage to AIMessageChunk so consumers can distinguish
+				// streaming chunks from the final complete message
+				// EventNodeStream is published by the graph executor
+				if aiMsg, ok := resp.Message.(*message.AIMessage); ok {
+					chunk := message.NewAIMessageChunk(aiMsg.String())
+					scope.Stream(chunk)
+				} else {
+					scope.Stream(resp.Message)
 				}
 			} else {
 				// Keep final response for state

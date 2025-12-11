@@ -47,15 +47,15 @@ func basicCheckpointingExample(ctx context.Context) {
 	// Build workflow graph
 	g := graph.New[any, any](stepKey, statusKey, dataKey)
 
-	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("init", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [init] Starting workflow...")
 		return graph.Set(stepKey, 1).
 			With(graph.SetValue(statusKey, "initialized")).
 			To("process")
 	}, "process")
 
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		step := graph.Get(view, stepKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		step := graph.Get(scope, stepKey)
 		fmt.Printf("  [process] Processing step %d...\n", step)
 		return graph.Set(stepKey, step+1).
 			With(graph.SetValue(statusKey, "processing")).
@@ -63,17 +63,17 @@ func basicCheckpointingExample(ctx context.Context) {
 			To("validate")
 	}, "validate")
 
-	g.Node("validate", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		step := graph.Get(view, stepKey)
-		data := graph.Get(view, dataKey)
+	g.Node("validate", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		step := graph.Get(scope, stepKey)
+		data := graph.Get(scope, dataKey)
 		fmt.Printf("  [validate] Validating step %d, data=%s\n", step, data)
 		return graph.Set(stepKey, step+1).
 			With(graph.SetValue(statusKey, "validated")).
 			To("complete")
 	}, "complete")
 
-	g.Node("complete", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		step := graph.Get(view, stepKey)
+	g.Node("complete", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		step := graph.Get(scope, stepKey)
 		fmt.Printf("  [complete] Completing at step %d\n", step)
 		return graph.Set(statusKey, "completed").End()
 	}, graph.END)
@@ -129,26 +129,26 @@ func resumeFromCheckpointExample(ctx context.Context) {
 	// Build graph that can resume
 	g := graph.New[any, any](stepKey, statusKey, dataKey)
 
-	g.Node("init", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("init", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [init] Would run if starting fresh")
 		return graph.Set(stepKey, 1).To("process")
 	}, "process")
 
-	g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 		fmt.Println("  [process] Would run if starting fresh")
 		return graph.Set(stepKey, 2).To("validate")
 	}, "validate")
 
-	g.Node("validate", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		step := graph.Get(view, stepKey)
+	g.Node("validate", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		step := graph.Get(scope, stepKey)
 		fmt.Printf("  [validate] Resuming! step=%d\n", step)
 		return graph.Set(stepKey, step+1).
 			With(graph.SetValue(statusKey, "validated")).
 			To("complete")
 	}, "complete")
 
-	g.Node("complete", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-		step := graph.Get(view, stepKey)
+	g.Node("complete", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		step := graph.Get(scope, stepKey)
 		fmt.Printf("  [complete] Finishing resumed run, step=%d\n", step)
 		return graph.Set(statusKey, "completed").End()
 	}, graph.END)

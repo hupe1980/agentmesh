@@ -96,9 +96,14 @@ func main() {
         if err != nil {
             log.Fatal(err)
         }
-        // Print AI response content
-        if aiMsg, ok := msg.(*message.AIMessage); ok {
-            fmt.Println(aiMsg.Content())
+        // Handle streaming chunks vs final messages
+        switch m := msg.(type) {
+        case *message.AIMessageChunk:
+            // Streaming: print partial output as it arrives
+            fmt.Print(m.String())
+        case *message.AIMessage:
+            // Final complete message (already in state)
+            // Only print if not streaming, to avoid duplication
         }
     }
 }

@@ -120,23 +120,9 @@ func (s SliceOf[T]) Merge(other SliceValue) SliceValue {
 	return nil
 }
 
-// View provides read access to state.
-type View interface {
-	// GetValue returns the raw value for a key name.
-	GetValue(name string) (any, bool)
-
-	// ManagedValues returns the managed values registry, or nil if not configured.
-	ManagedValues() *managedValueRegistry
-
-	// ToMap returns regular state values as a map for template rendering.
-	// Only includes checkpointed state values, NOT managed values.
-	// Managed values (ephemeral runtime state) are excluded for safety.
-	ToMap() map[string]any
-}
-
-// Get returns the typed value for a key from the view.
-func Get[T any](view View, key Key[T]) T {
-	if v, ok := view.GetValue(key.name); ok {
+// Get returns the typed value for a key from the scope.
+func Get[T any](scope ReadOnlyScope, key Key[T]) T {
+	if v, ok := scope.GetValue(key.name); ok {
 		if typed, ok := v.(T); ok {
 			return typed
 		}
@@ -144,10 +130,10 @@ func Get[T any](view View, key Key[T]) T {
 	return key.zero
 }
 
-// GetList returns the typed list for a list key from the view.
+// GetList returns the typed list for a list key from the scope.
 // Handles both []T and SliceOf[T] storage formats.
-func GetList[T any](view View, key ListKey[T]) []T {
-	if v, ok := view.GetValue(key.name); ok {
+func GetList[T any](scope ReadOnlyScope, key ListKey[T]) []T {
+	if v, ok := scope.GetValue(key.name); ok {
 		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
 		// Direct return without conversion since SliceOf[T] is defined as []T
 		if sliceOf, ok := v.(SliceOf[T]); ok {
@@ -196,31 +182,6 @@ func (s *memoryStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// stateView implements View for reading state.
-type stateView struct {
-	data    map[string]any
-	managed *managedValueRegistry
-}
-
-func (v *stateView) GetValue(name string) (any, bool) {
-	val, ok := v.data[name]
-	return val, ok
-}
-
-func (v *stateView) ManagedValues() *managedValueRegistry {
-	return v.managed
-}
-
-// ToMap returns a copy of the state values for template rendering.
-// Does not include managed values.
-func (v *stateView) ToMap() map[string]any {
-	result := make(map[string]any, len(v.data))
-	for k, val := range v.data {
-		result[k] = val
-	}
-	return result
-}
-
 // -----------------------------------------------------------------------------
 // BSP State Manager - Optimized Bulk-Synchronous Parallel semantics
 // -----------------------------------------------------------------------------
@@ -264,10 +225,10 @@ type BSPState struct {
 
 	// cachedView is an atomically-swapped cached view for lock-free reads.
 	// Updated when readSnapshot changes.
-	cachedView atomic.Pointer[stateView]
+	cachedView atomic.Pointer[readOnlyScope]
 
 	// managedValues holds ephemeral runtime state (not checkpointed).
-	managedValues *managedValueRegistry
+	managedValues *ManagedValueRegistry
 
 	// pendingWrites captures provenance information for two-phase commit checkpoints.
 	// Each entry records which node wrote to which channel along with the raw value.
@@ -295,24 +256,24 @@ func NewBSPState(initial map[string]any) *BSPState {
 	}
 	// version and snapshotVersion start at 0 (zero value)
 	// Set initial cached view
-	state.cachedView.Store(&stateView{data: committed})
+	state.cachedView.Store(&readOnlyScope{data: committed})
 	return state
 }
 
 // setManagedValues attaches a managed values registry to the state (internal).
-func (s *BSPState) setManagedValues(registry *managedValueRegistry) {
+func (s *BSPState) setManagedValues(registry *ManagedValueRegistry) {
 	s.managedValues = registry
 	// Update cached view to include managed values
 	s.mu.RLock()
-	s.cachedView.Store(&stateView{data: s.readSnapshot, managed: registry})
+	s.cachedView.Store(&readOnlyScope{data: s.readSnapshot, managed: registry})
 	s.mu.RUnlock()
 }
 
-// ReadView returns a View that reads from the current superstep's snapshot.
-// This view is safe for concurrent reads - it reads from immutable snapshot.
+// ReadView returns a ReadOnlyScope that reads from the current superstep's snapshot.
+// This scope is safe for concurrent reads - it reads from immutable snapshot.
 // Optimized: uses atomic pointer to cached view, avoiding lock acquisition
 // when snapshot hasn't changed.
-func (s *BSPState) ReadView() View {
+func (s *BSPState) ReadView() ReadOnlyScope {
 	// Fast path: return cached view without locking
 	// The cached view is atomically updated whenever readSnapshot changes
 	if cached := s.cachedView.Load(); cached != nil {
@@ -322,7 +283,7 @@ func (s *BSPState) ReadView() View {
 	// Fallback: create view under lock (should rarely happen)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return &stateView{data: s.readSnapshot, managed: s.managedValues}
+	return &readOnlyScope{data: s.readSnapshot, managed: s.managedValues}
 }
 
 // Write buffers a state update for the current superstep.
@@ -472,7 +433,7 @@ func (s *BSPState) CommitBarrier() {
 	maps.Copy(s.readSnapshot, s.committed)
 	s.snapshotVersion.Store(newVersion)
 	// Update cached view atomically for lock-free reads
-	s.cachedView.Store(&stateView{data: s.readSnapshot, managed: s.managedValues})
+	s.cachedView.Store(&readOnlyScope{data: s.readSnapshot, managed: s.managedValues})
 }
 
 // mergeIntoCommitted merges a value from write buffer into committed state.
@@ -567,7 +528,7 @@ func (s *BSPState) ApplyPendingWrites(pending []checkpoint.PendingWrite) {
 	maps.Copy(s.readSnapshot, s.committed)
 	s.snapshotVersion.Store(newVersion)
 	// Update cached view atomically for lock-free reads
-	s.cachedView.Store(&stateView{data: s.readSnapshot, managed: s.managedValues})
+	s.cachedView.Store(&readOnlyScope{data: s.readSnapshot, managed: s.managedValues})
 }
 
 // ensureCommittedOwnership clones the committed state before mutation when needed.

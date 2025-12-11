@@ -47,7 +47,7 @@ func main() {
 	)
 
 	// Task A: Simulates data analysis (runs in parallel with Task B)
-	g.Node("task_a", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("task_a", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		fmt.Println("  [task_a] Starting analysis...")
 		time.Sleep(300 * time.Millisecond) // Simulate work
 		fmt.Println("  [task_a] Analysis complete")
@@ -58,7 +58,7 @@ func main() {
 	}, "combine")
 
 	// Task B: Simulates simulation work (runs in parallel with Task A)
-	g.Node("task_b", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("task_b", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		fmt.Println("  [task_b] Starting simulation...")
 		time.Sleep(300 * time.Millisecond) // Simulate work
 		fmt.Println("  [task_b] Simulation complete")
@@ -70,12 +70,12 @@ func main() {
 
 	// Combine node: Aggregates results after all parallel tasks complete
 	// This demonstrates the fan-in pattern (many -> one)
-	g.Node("combine", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+	g.Node("combine", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 		fmt.Println("  [combine] Aggregating parallel task results...")
 
 		// Read results from both parallel tasks - type-safe access
-		resultA := graph.Get(view, ResultAKey)
-		resultB := graph.Get(view, ResultBKey)
+		resultA := graph.Get(scope, ResultAKey)
+		resultB := graph.Get(scope, ResultBKey)
 
 		// Combine into summary map
 		summary := map[string]any{

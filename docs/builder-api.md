@@ -54,8 +54,8 @@ var (
 g := graph.New[string, string](StatusKey, CountKey)
 
 // Add nodes with fluent API
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    count := graph.Get(view, CountKey)
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    count := graph.Get(scope, CountKey)
     return graph.Set(StatusKey, "done").
         Set(CountKey, count+1).
         To(graph.END), nil
@@ -92,8 +92,8 @@ import (
 g := message.NewGraphBuilder()
 
 // Add agent node
-g.Node("agent", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    messages := message.GetMessages(view)
+g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    messages := message.GetMessages(scope)
     
     // Process messages with model...
     response := message.NewAIMessageFromText("Hello!")
@@ -122,19 +122,19 @@ var RouteKey = graph.NewKey[string]("route", "")
 
 g := graph.New[string, string](RouteKey)
 
-g.Node("router", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    route := graph.Get(view, RouteKey)
+g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    route := graph.Get(scope, RouteKey)
     if route == "left" {
         return graph.To("left"), nil
     }
     return graph.To("right"), nil
 }, "left", "right")
 
-g.Node("left", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("left", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(RouteKey, "went-left").To(graph.END), nil
 }, graph.END)
 
-g.Node("right", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("right", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(RouteKey, "went-right").To(graph.END), nil
 }, graph.END)
 
@@ -148,7 +148,7 @@ g.Start("router")
 Add nodes with the `Node()` method:
 
 ```go
-g.Node("name", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("name", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // Node logic here
     return graph.To("next"), nil
 }, "next")
@@ -162,7 +162,7 @@ Add automatic retry behavior with `NodeWithRetry()`:
 
 ```go
 g.NodeWithRetry("api_call",
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
         result, err := callExternalAPI()
         if err != nil {
             return graph.Fail(err) // Will be retried
@@ -183,16 +183,20 @@ g.NodeWithRetry("api_call",
 Add namespace-scoped nodes for state isolation:
 
 ```go
-var agentNS = state.MustNamespace("agent")
-var AgentStatusKey = state.TypedKey[string](agentNS, "status", "")
+var (
+    AgentStatusKey = graph.NewKey("agent.status", "")
+)
 
-g.NamespacedNode("agent", agentNS,
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
-        // Can only access keys in "agent" namespace
+agentNS := graph.NewNamespace("agent")
+
+g.Node("agent", graph.WithNamespace(
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+        // Can only access keys in "agent.*" namespace
         return graph.Set(AgentStatusKey, "active").To(graph.END), nil
     },
-    graph.END,
-)
+    agentNS,
+    false, // includeGlobal
+), graph.END)
 ```
 
 ### Subgraphs
@@ -202,8 +206,8 @@ Embed compiled graphs as nodes:
 ```go
 // Create and compile subgraph
 sub := graph.New[string, string](ValueKey)
-sub.Node("double", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    val := graph.Get(view, ValueKey)
+sub.Node("double", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    val := graph.Get(scope, ValueKey)
     return graph.Set(ValueKey, val*2).To(graph.END), nil
 }, graph.END)
 sub.Start("double")
@@ -360,8 +364,8 @@ for result := range compiled.Run(ctx, input,
 |----------|-------------|
 | `graph.NewKey[T](name, default)` | Create typed single-value key |
 | `graph.NewListKey[T](name)` | Create typed list key |
-| `graph.Get(view, key)` | Read value from view |
-| `graph.GetList(view, key)` | Read list from view |
+| `graph.Get(scope, key)` | Read value from view |
+| `graph.GetList(scope, key)` | Read list from view |
 
 ### Commands
 
@@ -377,7 +381,7 @@ for result := range compiled.Run(ctx, input,
 
 | Function | Description |
 |----------|-------------|
-| `compiled.Run(ctx, input, opts...)` | Returns `iter.Seq2[View, error]` for streaming results |
+| `compiled.Run(ctx, input, opts...)` | Returns `iter.Seq2[ReadOnlyScope, error]` for streaming results |
 
 ## Examples
 
@@ -399,7 +403,7 @@ graph.New[I, O](keys...)
             │
             └── *Compiled[I, O]
                     │
-                    └── Run(ctx, input, opts...) → iter.Seq2[View, error]
+                    └── Run(ctx, input, opts...) → iter.Seq2[ReadOnlyScope, error]
 ```
 
 The graph handles the full lifecycle from construction to compilation to execution.

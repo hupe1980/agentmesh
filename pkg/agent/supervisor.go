@@ -148,6 +148,7 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 	reactOpts := []ReActOption{
 		WithTools(handoffTools...),
 		WithMaxIterations(config.maxIterations),
+		WithStreaming(config.streaming),
 	}
 
 	// Add instructions if provided, otherwise generate default

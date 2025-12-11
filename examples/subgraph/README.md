@@ -68,16 +68,16 @@ var (
 func createValidationSubgraph() *graph.Graph[string, string] {
     g := graph.New[string, string](subInputKey, subOutputKey)
 
-    g.Node("validate_format", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-        input := graph.Get(view, subInputKey)
+    g.Node("validate_format", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+        input := graph.Get(scope, subInputKey)
         if strings.TrimSpace(input) == "" {
             return graph.Fail(fmt.Errorf("empty input"))
         }
         return graph.To("validate_content")
     }, "validate_content")
 
-    g.Node("validate_content", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-        input := graph.Get(view, subInputKey)
+    g.Node("validate_content", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+        input := graph.Get(scope, subInputKey)
         return graph.Set(subOutputKey, "validated:"+input).End()
     }, graph.END)
 
@@ -92,8 +92,8 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 g.Node("run_validation", graph.Subgraph(
     validationSubgraph,
     // Input mapper: parent state -> subgraph input
-    func(ctx context.Context, view graph.View) (string, error) {
-        input := graph.Get(view, inputKey)
+    func(ctx context.Context, scope graph.ReadOnlyScope) (string, error) {
+        input := graph.Get(scope, inputKey)
         return input, nil
     },
     // Output mapper: subgraph output -> parent state updates
@@ -121,9 +121,9 @@ g.Node("finalize", finalizeFn, graph.END)
 ### graph.Subgraph()
 ```go
 func Subgraph[I, O any](
-    sub *Graph[I, O],                                    // The subgraph to embed
-    inputMapper func(ctx, view) (I, error),              // Maps parent state to subgraph input
-    outputMapper func(ctx, output O) (Updates, error),   // Maps subgraph output to parent updates
+    sub *Graph[I, O],                                         // The subgraph to embed
+    inputMapper func(ctx, scope) (I, error),                  // Maps parent state to subgraph input
+    outputMapper func(ctx, output O) (Updates, error),        // Maps subgraph output to parent updates
 ) NodeFunc
 ```
 

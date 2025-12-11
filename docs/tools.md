@@ -676,8 +676,8 @@ Registering dozens of tools up front can overwhelm the prompt. Implement `tool.T
 
 - **When to use**: dynamic connectors, per-user tool catalogs, or rate-limited APIs.
 - **Behavior**:
-  - Toolsets decide at call time which tools to expose via `ListTools(ctx, view)`
-  - The `view` parameter provides read access to the current graph state for context-aware tool selection
+  - Toolsets decide at call time which tools to expose via `ListTools(ctx, scope)`
+  - The `scope` parameter provides read access to the current graph state for context-aware tool selection
   - Works alongside inline tools; use `WithTools()` for static tools and `WithToolset()` for dynamic discovery
   - Often paired with caching or feature flags to keep prompts trim
 
@@ -695,19 +695,19 @@ type PermissionAwareToolset struct {
     permKey    graph.Key[[]string]
 }
 
-func (t *PermissionAwareToolset) ListTools(ctx context.Context, view graph.View) ([]tool.Tool, error) {
-    allTools, err := t.inner.ListTools(ctx, view)
+func (t *PermissionAwareToolset) ListTools(ctx context.Context, scope graph.ReadOnlyScope) ([]tool.Tool, error) {
+    allTools, err := t.inner.ListTools(ctx, scope)
     if err != nil {
         return nil, err
     }
     
-    // If no view, return all tools (static discovery)
-    if view == nil {
+    // If no scope, return all tools (static discovery)
+    if scope == nil {
         return allTools, nil
     }
     
     // Filter tools based on user permissions from state
-    permissions := graph.Get(view, t.permKey)
+    permissions := graph.Get(scope, t.permKey)
     return filterByPermissions(allTools, permissions), nil
 }
 

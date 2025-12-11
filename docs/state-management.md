@@ -55,9 +55,9 @@ var (
 g := graph.New[string, string](CounterKey, StatusKey)
 
 // Node function using commands
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // Read current state
-    counter := graph.Get(view, CounterKey)
+    counter := graph.Get(scope, CounterKey)
     
     // Return update + routing in one expression
     return graph.Set(CounterKey, counter+1).
@@ -99,14 +99,14 @@ return graph.Fail(err)
 
 **Pattern 1: Single target with updates**
 ```go
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(ResultKey, "processed").To("next"), nil
 }, "next")
 ```
 
 **Pattern 2: Multiple targets (parallel execution)**
 ```go
-g.Node("split", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("split", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(StatusKey, "splitting").
         To("worker1", "worker2", "worker3"), nil
 }, "worker1", "worker2", "worker3")
@@ -114,8 +114,8 @@ g.Node("split", func(ctx context.Context, view graph.View) (*graph.Command, erro
 
 **Pattern 3: Conditional routing**
 ```go
-g.Node("decide", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    score := graph.Get(view, ScoreKey)
+g.Node("decide", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    score := graph.Get(scope, ScoreKey)
     
     cmd := graph.Set(ScoreKey, score+10)
     
@@ -128,15 +128,15 @@ g.Node("decide", func(ctx context.Context, view graph.View) (*graph.Command, err
 
 **Pattern 4: End node**
 ```go
-g.Node("final", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("final", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(StatusKey, "complete").To(graph.END), nil
 }, graph.END)
 ```
 
 **Pattern 5: Read-only node**
 ```go
-g.Node("log", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    data := graph.Get(view, DataKey)
+g.Node("log", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    data := graph.Get(scope, DataKey)
     fmt.Printf("Data: %v\n", data)
     return graph.To("next"), nil
 }, "next")
@@ -147,7 +147,7 @@ g.Node("log", func(ctx context.Context, view graph.View) (*graph.Command, error)
 **Compile-time guarantees:**
 - Type mismatches caught during compilation
 - Typed key definitions with `graph.NewKey[T]()`
-- Type-safe reads with `graph.Get(view, TypedKey)`
+- Type-safe reads with `graph.Get(scope, TypedKey)`
 - Zero runtime overhead for type checking
 
 **Using typed keys:**
@@ -162,12 +162,12 @@ var (
 )
 
 // Use in node function
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     // ✅ Type-safe reads
-    counter := graph.Get(view, CounterKey)   // int
-    status := graph.Get(view, StatusKey)     // string
-    valid := graph.Get(view, ValidKey)       // bool
-    tags := graph.GetList(view, TagsKey)     // []string
+    counter := graph.Get(scope, CounterKey)   // int
+    status := graph.Get(scope, StatusKey)     // string
+    valid := graph.Get(scope, ValidKey)       // bool
+    tags := graph.GetList(scope, TagsKey)     // []string
     
     // ✅ Type-safe updates
     return graph.Set(CounterKey, counter+1).
@@ -226,11 +226,11 @@ g := graph.New[string, string](
 )
 
 // Each agent updates its own namespaced key
-g.Node("agent1", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("agent1", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(Agent1Status, "processing").To("next"), nil
 }, "next")
 
-g.Node("agent2", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("agent2", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(Agent2Status, "waiting").To("next"), nil
 }, "next")
 ```
@@ -257,112 +257,52 @@ var AgentStatus = graph.NewKey[string](ns.Prefix("status"), "idle")
 
 ### Creating namespaced keys
 
+Namespaces are implemented via key naming conventions using dot notation:
+
 ```go
-// Regular keys
-modelNS := state.MustNamespace("model")
-counterKey := state.TypedKey[int](modelNS, "counter", 0)        // "model.counter"
-statusKey := state.TypedKey[string](modelNS, "status", "idle")  // "model.status"
-
-// List keys
-toolNS := state.MustNamespace("tool")
-resultsKey := state.TypedListKey[string](toolNS, "results", 100, nil)  // "tool.results"
-
 // Global keys (no prefix)
-configKey := state.TypedKey[string](state.Global, "config", "")  // "config"
-```
+var ConfigKey = graph.NewKey("config", "")
+var CounterKey = graph.NewKey("counter", 0)
 
-### Namespace operations
+// Namespaced keys - use dot notation for logical grouping
+var Agent1Status = graph.NewKey("agent1.status", "idle")
+var Agent1Progress = graph.NewKey("agent1.progress", 0)
 
-**Get namespace view** - Filter state by namespace:
+var Agent2Status = graph.NewKey("agent2.status", "idle")
+var Agent2Progress = graph.NewKey("agent2.progress", 0)
 
-```go
-g.Node("reader", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    // Get all keys in a namespace
-    agent1NS := state.MustNamespace("agent1")
-    agent1View := state.GetNamespaceView(view, agent1NS)
-    // Returns: map[string]any{"status": "processing", "progress": 50}
-    // Note: Keys are returned WITHOUT namespace prefix
-
-    // Get global keys
-    globalView := state.GetNamespaceView(view, state.Global)
-    // Returns: map[string]any{"config": "production", "counter": 100}
-    
-    return graph.To("next"), nil
-}, "next")
-```
-
-**List namespaces** - Discover active namespaces:
-
-```go
-g.Node("discover", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    namespaces := state.ListNamespaces(view)
-
-    for _, ns := range namespaces {
-        if ns.IsGlobal() {
-            fmt.Println("(global)")
-        } else {
-            fmt.Printf("%s\n", ns.Name())
-        }
-    }
-    // Output:
-    // agent1
-    // agent2
-    // tool
-    
-    return graph.To("next"), nil
-}, "next")
-```
-
-### Key introspection
-
-```go
-// Check if key is namespaced
-isNS := state.IsNamespaced("agent1.status")  // true
-isNS = state.IsNamespaced("config")          // false
-
-// Parse namespaced key
-ns, local := state.ParseNamespacedKey("agent1.status")
-// ns = "agent1", local = "status"
-
-ns, local = state.ParseNamespacedKey("config")
-// ns = "", local = "config" (global)
-
-// Extract namespace object
-ns := state.ExtractNamespace("agent1.status")
-// Returns: Namespace{name: "agent1"}
+// List keys with namespace prefix
+var Agent1Results = graph.NewListKey[string]("agent1.results")
 ```
 
 ### Multi-agent example
 
 ```go
-// Define namespaces for each agent
-researcherNS := state.MustNamespace("researcher")
-writerNS := state.MustNamespace("writer")
-editorNS := state.MustNamespace("editor")
-
-// Each agent has its own "status" key
-researcherStatus := state.TypedKey[string](researcherNS, "status", "")
-writerStatus := state.TypedKey[string](writerNS, "status", "")
-editorStatus := state.TypedKey[string](editorNS, "status", "")
+// Define namespaced keys for each agent
+var (
+    ResearcherStatus = graph.NewKey("researcher.status", "")
+    WriterStatus     = graph.NewKey("writer.status", "")
+    EditorStatus     = graph.NewKey("editor.status", "")
+)
 
 // Create graph with all keys
 g := graph.New[string, string](
-    researcherStatus,
-    writerStatus,
-    editorStatus,
+    ResearcherStatus,
+    WriterStatus,
+    EditorStatus,
 )
 
 // Each agent updates its own state independently
-g.Node("researcher", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    return graph.Set(researcherStatus, "researching").To("writer"), nil
+g.Node("researcher", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    return graph.Set(ResearcherStatus, "researching").To("writer"), nil
 }, "writer")
 
-g.Node("writer", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    return graph.Set(writerStatus, "writing").To("editor"), nil
+g.Node("writer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    return graph.Set(WriterStatus, "writing").To("editor"), nil
 }, "editor")
 
-g.Node("editor", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    return graph.Set(editorStatus, "editing").To(graph.END), nil
+g.Node("editor", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    return graph.Set(EditorStatus, "editing").To(graph.END), nil
 }, graph.END)
 
 g.Start("researcher")
@@ -371,15 +311,14 @@ compiled, _ := g.Build()
 
 ### Best practices
 
-**1. Package-level namespace constants:**
+**1. Package-level key constants:**
 ```go
 // pkg/agent/researcher/keys.go
 package researcher
 
 var (
-    NS = state.MustNamespace("researcher")
-    StatusKey = state.TypedKey[string](NS, "status", "idle")
-    ResultsKey = state.TypedListKey[string](NS, "results", 100, nil)
+    StatusKey  = graph.NewKey("researcher.status", "idle")
+    ResultsKey = graph.NewListKey[string]("researcher.results")
 )
 ```
 
@@ -391,31 +330,22 @@ var (
 **3. Documentation:**
 ```go
 // Keys for the model execution subsystem
-// Namespace: "model"
+// Namespace prefix: "model."
 // Keys:
-//   - counter: int - Number of API calls
-//   - status: string - Current execution status
+//   - model.counter: int - Number of API calls
+//   - model.status: string - Current execution status
 var (
-    ModelNS = state.MustNamespace("model")
-    CounterKey = state.TypedKey[int](ModelNS, "counter", 0)
-    StatusKey = state.TypedKey[string](ModelNS, "status", "idle")
+    CounterKey = graph.NewKey("model.counter", 0)
+    StatusKey  = graph.NewKey("model.status", "idle")
 )
 ```
 
-**4. Avoid deeply nested namespaces:**
+**4. Keep namespaces simple:**
 ```go
-// ❌ Too complex
-ns := state.MustNamespace("agent.researcher.team1")
-
-// ✅ Keep it simple
-researcherNS := state.MustNamespace("researcher_team1")
+// ✅ Simple prefixes work well
+var ResearcherStatus = graph.NewKey("researcher.status", "")
+var WriterStatus = graph.NewKey("writer.status", "")
 ```
-
-### Limitations
-
-- **No key deletion:** `DeleteNamespace()` is not implemented (channels cannot be deleted)
-- **Copy requires registration:** Target keys must be registered before `CopyNamespace()`
-- **No nested namespaces:** Only one level of hierarchy (single dot)
 
 See [examples/namespaces](https://github.com/hupe1980/agentmesh/tree/main/examples/namespaces) for a complete working example.
 
@@ -425,39 +355,43 @@ For guaranteed state isolation, nodes can be scoped to operate within a specific
 
 #### Creating namespaced nodes
 
-Use `g.NamespacedNode()` for namespace-scoped nodes:
+Use `graph.WithNamespace()` to wrap node functions:
 
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Define namespaces
-validationNS := state.MustNamespace("validation")
-enrichmentNS := state.MustNamespace("enrichment")
+// Define keys with namespace prefixes (convention: "namespace.keyname")
+var (
+    validKey    = graph.NewKey("validation.is_valid", false)
+    enrichedKey = graph.NewKey("enrichment.data", map[string]any(nil))
+)
 
-// Define keys per namespace
-validKey := state.TypedKey[bool](validationNS, "is_valid", false)
-enrichedKey := state.TypedKey[map[string]any](enrichmentNS, "data", nil)
+// Create namespaces
+validationNS := graph.NewNamespace("validation")
+enrichmentNS := graph.NewNamespace("enrichment")
 
 // Create graph with all keys
 g := graph.New[string, string](validKey, enrichedKey)
 
-// Create namespaced nodes using fluent API
-g.NamespacedNode("validation", validationNS, 
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
-        // This node only works with "validation.*" keys
+// Wrap node functions with WithNamespace for isolation
+g.Node("validation", graph.WithNamespace(
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+        // This node only sees "validation.*" keys
         return graph.Set(validKey, true).To("enrichment"), nil
     }, 
-    "enrichment",
-)
+    validationNS, 
+    false, // includeGlobal=false
+), "enrichment")
 
-g.NamespacedNode("enrichment", enrichmentNS,
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
-        // This node only works with "enrichment.*" keys
+g.Node("enrichment", graph.WithNamespace(
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+        // This node only sees "enrichment.*" keys
         enrichedData := map[string]any{"status": "enriched"}
         return graph.Set(enrichedKey, enrichedData).To(graph.END), nil
     },
-    graph.END,
-)
+    enrichmentNS,
+    false,
+), graph.END)
 
 g.Start("validation")
 compiled, _ := g.Build()
@@ -465,7 +399,7 @@ compiled, _ := g.Build()
 
 #### With retry policies
 
-Namespace-scoped nodes also support retry policies:
+Combine namespacing with retry policies using `graph.Compose`:
 
 ```go
 retryPolicy := graph.RetryPolicy{
@@ -475,22 +409,26 @@ retryPolicy := graph.RetryPolicy{
     BackoffFactor:  2.0,
 }
 
-g.NamespacedNodeWithRetry("processor", processorNS,
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("processor", graph.Compose(
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
         // Processing logic
         return graph.Set(resultKey, "processed").To(graph.END), nil
     },
-    retryPolicy,
-    graph.END,
-)
+    func(fn graph.NodeFunc[string]) graph.NodeFunc[string] {
+        return graph.WithRetry(fn, retryPolicy)
+    },
+    func(fn graph.NodeFunc[string]) graph.NodeFunc[string] {
+        return graph.WithNamespace(fn, processorNS, false)
+    },
+), graph.END)
 ```
 
-#### When to use namespaced nodes
+#### When to use WithNamespace
 
-**Use `NamespacedNode` when:**
+**Use `WithNamespace` when:**
 - Building multi-agent systems with strict state isolation
 - Creating reusable pipeline stages with clear boundaries
-- You want compile-time safety that nodes can't access each other's state
+- You want runtime validation that nodes can't access each other's state
 - Documentation should clearly show which namespace each node uses
 
 **Use regular nodes when:**
@@ -500,41 +438,63 @@ g.NamespacedNodeWithRetry("processor", processorNS,
 
 #### How enforcement works
 
-State isolation is enforced through **runtime view filtering and update validation**:
+State isolation is enforced through **runtime scope filtering and update validation**:
 
-1. When a `NamespacedNode` executes, it receives a filtered view
-2. The filtered view only exposes keys from the node's namespace
-3. Calling `view.Keys()` returns only keys from that namespace
+1. When a `WithNamespace`-wrapped node executes, it receives a filtered scope
+2. The filtered scope only exposes keys from the node's namespace prefix
+3. Reading keys outside the namespace returns zero values
 4. **Returned updates are validated** - attempting to update keys outside the namespace causes an error
 
 ```go
 // Keys are created with namespace prefixes
-agent1Status := state.TypedKey[string](agent1NS, "status", "")  // "agent1.status"
-agent2Status := state.TypedKey[string](agent2NS, "status", "")  // "agent2.status"
+var (
+    agent1Status = graph.NewKey("agent1.status", "")  // "agent1.*" namespace
+    agent2Status = graph.NewKey("agent2.status", "")  // "agent2.*" namespace
+)
 
 // When agent1 node executes:
-// - view.Keys() returns ["status"] (only agent1's keys, without prefix)
-// - Cannot access agent2's state at all
+// - Can read/write agent1.* keys
+// - Cannot read agent2.* keys (returns zero value)
+// - Cannot write agent2.* keys (returns ErrNamespaceViolation)
 ```
 
 #### Update validation
 
-`NamespacedNode` validates all returned updates:
+`WithNamespace` validates all returned updates:
 
 ```go
-g.NamespacedNode("validator", agent1NS,
-    func(ctx context.Context, view graph.View) (*graph.Command, error) {
+ns1 := graph.NewNamespace("agent1")
+
+g.Node("validator", graph.WithNamespace(
+    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
         // ❌ This will cause a validation error:
         return graph.Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
-            Set(agent2StatusKey, "failed").           // ❌ ERROR: wrong namespace
+            With(graph.SetValue(agent2StatusKey, "failed")).  // ❌ ERROR: wrong namespace
             To(graph.END), nil
     },
-    graph.END,
-)
+    ns1,
+    false,
+), graph.END)
 
 // Execution will fail with:
-// "node 'validator' in namespace 'agent1' attempted to update key 
-//  'agent2.status' which belongs to a different namespace"
+// "graph: namespace violation: attempted to update key "agent2.status" 
+//  (only agent1.* keys are allowed)"
+```
+
+#### Including global keys
+
+Set `includeGlobal=true` to allow access to non-namespaced keys:
+
+```go
+var (
+    agentData  = graph.NewKey("agent.data", "")   // Namespaced
+    sharedKey  = graph.NewKey("shared", "")       // Global (no dot prefix)
+)
+
+agentNS := graph.NewNamespace("agent")
+
+// This node can access both agent.* keys AND global keys
+g.Node("agent", graph.WithNamespace(agentFunc, agentNS, true), graph.END)
 ```
 
 #### Best practices
@@ -542,22 +502,24 @@ g.NamespacedNode("validator", agent1NS,
 **1. One namespace per agent/stage:**
 ```go
 // ✅ Clear separation
-researcherNS := state.MustNamespace("researcher")
-writerNS := state.MustNamespace("writer")
+researcherNS := graph.NewNamespace("researcher")
+writerNS := graph.NewNamespace("writer")
 
-g.NamespacedNode("researcher", researcherNS, researcherFunc, "writer")
-g.NamespacedNode("writer", writerNS, writerFunc, graph.END)
+g.Node("researcher", graph.WithNamespace(researcherFunc, researcherNS, false), "writer")
+g.Node("writer", graph.WithNamespace(writerFunc, writerNS, false), graph.END)
 ```
 
 **2. Use package-level namespace and keys:**
 ```go
-// pkg/pipeline/validation/node.go
+// pkg/pipeline/validation/keys.go
 package validation
 
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
 var (
-    NS = state.MustNamespace("validation")
-    IsValidKey = state.TypedKey[bool](NS, "is_valid", false)
-    ScoreKey = state.TypedKey[int](NS, "score", 0)
+    NS         = graph.NewNamespace("validation")
+    IsValidKey = graph.NewKey("validation.is_valid", false)
+    ScoreKey   = graph.NewKey("validation.score", 0)
 )
 ```
 
@@ -565,11 +527,11 @@ var (
 ```go
 // ValidationNode checks input data quality
 // Namespace: "validation"
-// Keys: is_valid (bool), score (int)
-g.NamespacedNode("validation", validation.NS, validateFunc, targets...)
+// Keys: validation.is_valid (bool), validation.score (int)
+g.Node("validation", graph.WithNamespace(validateFunc, validation.NS, false), targets...)
 ```
 
-See [examples/subgraph](https://github.com/hupe1980/agentmesh/tree/main/examples/subgraph) for a complete working example with namespaced pipeline stages.
+See [examples/namespaces](https://github.com/hupe1980/agentmesh/tree/main/examples/namespaces) for a complete working example with namespace-scoped nodes.
 
 ---
 
@@ -596,7 +558,7 @@ var StatusKey = graph.NewKey[string]("status", "")
 // Create graph
 g := graph.New[string, string](StatusKey)
 
-g.Node("process", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(StatusKey, "done").To(graph.END), nil
 }, graph.END)
 
@@ -869,7 +831,7 @@ Pause execution for human approval or input.
 ### Interrupt execution
 
 ```go
-g.Node("request_approval", func(ctx context.Context, view graph.View) (*graph.Command, error) {
+g.Node("request_approval", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     return graph.Set(StatusKey, "awaiting_approval").
         Set(DataKey, sensitiveData).
         Interrupt(), nil  // Pause here
@@ -945,8 +907,8 @@ var SentKey = graph.NewKey[bool]("sent", false)
 g := graph.New[string, bool](ContentKey, SentKey)
 
 // Define approval guard function
-approvalGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
-    content := graph.Get(view, ContentKey)
+approvalGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+    content := graph.Get(scope, ContentKey)
     if containsSensitiveData(content) {
         return true, "Contains sensitive information", nil
     }
@@ -954,8 +916,8 @@ approvalGuard := func(ctx context.Context, view graph.View) (bool, string, error
 }
 
 // Add node with approval guard
-g.Node("send_email", func(ctx context.Context, view graph.View) (*graph.Command, error) {
-    content := graph.Get(view, ContentKey)
+g.Node("send_email", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    content := graph.Get(scope, ContentKey)
     sendEmail(content)
     return graph.Set(SentKey, true).To(graph.END), nil
 }, graph.END)
@@ -1060,8 +1022,8 @@ Guards control when approval is needed:
 
 ```go
 // Example: Sensitive keyword detection
-sensitiveGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
-    content := graph.Get(view, ContentKey)
+sensitiveGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+    content := graph.Get(scope, ContentKey)
     keywords := []string{"confidential", "secret", "classified"}
     
     for _, kw := range keywords {
@@ -1073,8 +1035,8 @@ sensitiveGuard := func(ctx context.Context, view graph.View) (bool, string, erro
 }
 
 // Example: Amount threshold
-amountGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
-    amount := graph.Get(view, AmountKey)
+amountGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+    amount := graph.Get(scope, AmountKey)
     if amount > 10000 {
         return true, fmt.Sprintf("Amount exceeds $10k: $%.2f", amount), nil
     }
@@ -1082,7 +1044,7 @@ amountGuard := func(ctx context.Context, view graph.View) (bool, string, error) 
 }
 
 // Example: Always require approval
-alwaysGuard := func(ctx context.Context, view graph.View) (bool, string, error) {
+alwaysGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
     return true, "Manual approval required", nil
 }
 ```
@@ -1177,8 +1139,8 @@ if graph.IsApprovalRequired(err) {
 
 **1. Use conditional guards to avoid unnecessary approvals:**
 ```go
-guard := func(ctx context.Context, view graph.View) (bool, string, error) {
-    if !needsReview(view) {
+guard := func(ctx context.Context, scope graph.ReadOnlyScope) (bool, string, error) {
+    if !needsReview(scope) {
         return false, "", nil  // Auto-continue
     }
     return true, "Manual review required", nil
@@ -1246,9 +1208,9 @@ var configMV = graph.NewManagedValue("config", &Config{
     Timeout: 30 * time.Second,
 })
 
-// Access in node
-func myNode(ctx context.Context, view graph.View) (*graph.Command, error) {
-    config := graph.GetManaged(ctx, view, configMV)
+// Access in node - use scope which embeds ReadOnlyScope
+func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    config := graph.GetManaged(ctx, scope, configMV)
     // Use config.APIKey, config.Timeout, etc.
     return graph.Set(resultKey, result).End()
 }
@@ -1327,7 +1289,7 @@ If you rely on `graph.WithCheckpoints`, make sure the same managed value registr
 
 | Feature | Regular State | Managed Values |
 |---------|--------------|----------------|
-| Access | `graph.Get(view, key)` | `graph.GetManaged(ctx, view, mv)` |
+| Access | `graph.Get(scope, key)` | `graph.GetManaged(ctx, scope, mv)` |
 | Checkpointed | ✅ Yes | ❌ No |
 | Survives restart | ✅ Yes | ❌ No |
 | Type-safe | ✅ Yes | ✅ Yes |
