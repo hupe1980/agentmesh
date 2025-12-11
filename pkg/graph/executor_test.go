@@ -11,6 +11,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/stretchr/testify/require"
 )
 
 // recordingCheckpointer captures every checkpoint saved during a run so tests can
@@ -499,6 +500,67 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 			t.Error("expected pending write timestamp to be set")
 		}
 	})
+}
+
+func TestResumeMergesInputLikeLangGraph(t *testing.T) {
+	// Simulate the LangGraph pattern where a resume merges new input into the checkpointed state
+	messagesKey := graph.NewListKey[string]("messages")
+	countKey := graph.NewKey[int]("count", 0)
+	checkpointer := checkpoint.NewInMemoryCheckpointer()
+	runID := "langgraph-merge"
+
+	var capturedMessages []string
+	var capturedCount int
+
+	g := graph.New[[]string, any](messagesKey, countKey)
+
+	g.Node("A", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		cnt := graph.Get(scope, countKey)
+		return graph.Cmd().
+			With(graph.AppendValue(messagesKey, "A executed")).
+			With(graph.SetValue(countKey, cnt+1)).
+			To("B")
+	}, "B")
+
+	g.Node("B", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		cnt := graph.Get(scope, countKey)
+		return graph.Cmd().
+			With(graph.AppendValue(messagesKey, "B executed")).
+			With(graph.SetValue(countKey, cnt+2)).
+			To("collect")
+	}, "collect")
+
+	g.Node("collect", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		capturedMessages = graph.GetList(scope, messagesKey)
+		capturedCount = graph.Get(scope, countKey)
+		return graph.To(graph.END)
+	}, graph.END)
+
+	g.Start("A")
+	g.WithCheckpointer(checkpointer, runID)
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	// First run: seeds state and checkpoints
+	for _, err := range compiled.Run(context.Background(), []string{"hi"}, graph.WithAutoRestore(true)) {
+		require.NoError(t, err)
+	}
+	require.Equal(t, []string{"hi", "A executed", "B executed"}, capturedMessages)
+	require.Equal(t, 3, capturedCount)
+
+	// Second run with same runID and new input should merge, not overwrite
+	for _, err := range compiled.Run(context.Background(), []string{"new message"},
+		graph.WithRunID(runID),
+		graph.WithAutoRestore(true),
+	) {
+		require.NoError(t, err)
+	}
+
+	// Expected merged behavior (like LangGraph MemorySaver): old + new input + new execution
+	expectedMessages := []string{"hi", "A executed", "B executed", "new message", "A executed", "B executed"}
+	require.Equal(t, expectedMessages, capturedMessages)
+	require.Equal(t, 6, capturedCount) // 3 (checkpoint) + 3 (A/B increments on resumed run)
 }
 
 // ====================
@@ -1352,57 +1414,6 @@ func TestEmptySliceInputTreatedAsZero(t *testing.T) {
 	// Should have restored messages, not empty
 	if len(capturedMessages) != 2 {
 		t.Errorf("Expected 2 restored messages, got %d: %v", len(capturedMessages), capturedMessages)
-	}
-}
-
-func TestNonEmptySliceOverwritesCheckpoint(t *testing.T) {
-	// Non-empty slice input should overwrite checkpoint state
-	messagesKey := graph.NewListKey[string]("messages")
-	checkpointer := checkpoint.NewInMemoryCheckpointer()
-
-	// Pre-save a checkpoint with messages
-	preCheckpoint := &checkpoint.Checkpoint{
-		RunID:     "overwrite-test",
-		Superstep: 1,
-		State: map[string]any{
-			"messages": []string{"old1", "old2"},
-		},
-		Committed: true,
-		Timestamp: time.Now(),
-	}
-	if err := checkpointer.Save(context.Background(), preCheckpoint); err != nil {
-		t.Fatalf("Failed to pre-save checkpoint: %v", err)
-	}
-
-	var capturedMessages []string
-
-	g := graph.New[[]string, any](messagesKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		capturedMessages = graph.GetList(scope, messagesKey)
-		return graph.To(graph.END)
-	}, graph.END)
-	g.Start("read")
-	g.WithCheckpointer(checkpointer, "overwrite-test")
-
-	compiled, err := g.Build()
-	if err != nil {
-		t.Fatalf("Build failed: %v", err)
-	}
-
-	// Pass new slice - should overwrite checkpoint
-	newInput := []string{"new1", "new2", "new3"}
-	for _, err := range compiled.Run(context.Background(), newInput, graph.WithAutoRestore(true)) {
-		if err != nil {
-			t.Fatalf("Run failed: %v", err)
-		}
-	}
-
-	// Should have new messages
-	if len(capturedMessages) != 3 {
-		t.Errorf("Expected 3 new messages, got %d: %v", len(capturedMessages), capturedMessages)
-	}
-	if capturedMessages[0] != "new1" {
-		t.Errorf("Expected first message 'new1', got '%s'", capturedMessages[0])
 	}
 }
 

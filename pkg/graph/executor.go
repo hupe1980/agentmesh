@@ -10,28 +10,11 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/internal/chanutil"
+	"github.com/hupe1980/agentmesh/internal/reflectutil"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 )
-
-// isNilOrZero checks if a value is nil, zero, or empty for its type.
-// Used to determine if an input should overwrite restored checkpoint state.
-// For slices and maps, empty (len=0) is treated as "no input provided".
-func isNilOrZero[T any](v T) bool {
-	val := reflect.ValueOf(v)
-	if !val.IsValid() {
-		return true
-	}
-	switch val.Kind() {
-	case reflect.Pointer, reflect.Chan, reflect.Func, reflect.Interface:
-		return val.IsNil()
-	case reflect.Slice, reflect.Map:
-		// Treat empty slices/maps as "no input" to preserve checkpoint state
-		return val.IsNil() || val.Len() == 0
-	}
-	return val.IsZero()
-}
 
 // checkpointRestoreResult contains restored state and pending writes from checkpoint.
 type checkpointRestoreResult struct {
@@ -95,6 +78,68 @@ func (r *checkpointRestoreResult) setValue(key string, value any) {
 	}
 	r.ensureStateOwned()
 	r.State[key] = value
+}
+
+// appendValue merges a new list value into the existing state for the key.
+// Uses SliceValue when available for zero-reflection merging and falls back to
+// reflection-based slice appends when types are compatible.
+func (r *checkpointRestoreResult) appendValue(key string, value any) {
+	if key == "" || value == nil {
+		return
+	}
+
+	r.ensureStateOwned()
+
+	current, exists := r.State[key]
+	if !exists || current == nil {
+		r.State[key] = value
+		return
+	}
+
+	// Fast path: both values implement SliceValue with compatible types.
+	if curSlice, ok := current.(SliceValue); ok {
+		if newSlice, ok := value.(SliceValue); ok {
+			if merged := curSlice.Merge(newSlice); merged != nil {
+				r.State[key] = merged
+				return
+			}
+		}
+	}
+
+	curVal := reflect.ValueOf(current)
+	newVal := reflect.ValueOf(value)
+
+	if merged, ok := mergeSliceValues(curVal, newVal); ok {
+		r.State[key] = merged
+		return
+	}
+
+	// Fallback: overwrite if types are incompatible with append semantics.
+	r.State[key] = value
+}
+
+// mergeSliceValues tries to append newVal into curVal when curVal is a slice.
+// Returns (mergedValue, true) when append is successful.
+func mergeSliceValues(curVal, newVal reflect.Value) (any, bool) {
+	if curVal.Kind() != reflect.Slice {
+		return nil, false
+	}
+
+	if newVal.Kind() == reflect.Slice {
+		if newVal.Type() != curVal.Type() && newVal.Type().ConvertibleTo(curVal.Type()) {
+			newVal = newVal.Convert(curVal.Type())
+		}
+		if newVal.Type() == curVal.Type() {
+			return reflect.AppendSlice(curVal, newVal).Interface(), true
+		}
+	}
+
+	if newVal.IsValid() && newVal.Type().ConvertibleTo(curVal.Type().Elem()) {
+		appended := reflect.Append(curVal, newVal.Convert(curVal.Type().Elem()))
+		return appended.Interface(), true
+	}
+
+	return nil, false
 }
 
 // restoreCheckpoint attempts to restore state from a checkpoint.
@@ -218,6 +263,30 @@ func listManagedValueNames(desc []checkpoint.ManagedValueDescriptor, requiredOnl
 	}
 	sort.Strings(names)
 	return names
+}
+
+// applyInputToRestore writes the provided run input into the restored state
+// honoring list-vs-scalar semantics.
+func applyInputToRestore[I, O any](
+	cfg *ExecutorConfig[I, O],
+	input I,
+	restoreResult *checkpointRestoreResult,
+) {
+	key := cfg.Execution.OutputKey
+	if key == "" {
+		return
+	}
+
+	if cfg.Execution.OutputIsList {
+		if !reflectutil.IsNilOrZero(input) {
+			restoreResult.appendValue(key, input)
+		}
+		return
+	}
+
+	if !reflectutil.IsNil(input) {
+		restoreResult.setValue(key, input)
+	}
 }
 
 // PregelExecutor executes graphs using the Pregel BSP runtime.
@@ -554,9 +623,7 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 			return
 		}
 
-		if cfg.Execution.OutputKey != "" && !isNilOrZero(input) {
-			restoreResult.setValue(cfg.Execution.OutputKey, input)
-		}
+		applyInputToRestore(cfg, input, restoreResult)
 
 		// Initialize BSP state with managed values and pending writes
 		bspState, err := initializeBSPState[O](ctx, restoreResult, runCfg)
