@@ -51,6 +51,17 @@ type frontierShard struct {
 	vertices map[string]struct{}
 }
 
+// shardedCounter tracks integer counts per vertex using sharded locking to reduce contention.
+// This is used to surface per-vertex pending message counts to schedulers.
+type shardedCounter struct {
+	shards [DefaultShardCount]counterShard
+}
+
+type counterShard struct {
+	mu     sync.RWMutex
+	counts map[string]int
+}
+
 // newShardedFrontier creates a new sharded frontier with pre-allocated shards.
 func newShardedFrontier() *shardedFrontier {
 	sf := &shardedFrontier{}
@@ -58,6 +69,14 @@ func newShardedFrontier() *shardedFrontier {
 		sf.shards[i].vertices = make(map[string]struct{})
 	}
 	return sf
+}
+
+func newShardedCounter() *shardedCounter {
+	sc := &shardedCounter{}
+	for i := range DefaultShardCount {
+		sc.shards[i].counts = make(map[string]int)
+	}
+	return sc
 }
 
 // getShard returns the shard index for a given vertex ID using FNV-1a hash.
@@ -123,6 +142,47 @@ func (sf *shardedFrontier) Len() int {
 	return count
 }
 
+// Add increments the counter for a vertex.
+func (sc *shardedCounter) Add(vertexID string, delta int) {
+	if vertexID == "" || delta == 0 {
+		return
+	}
+
+	shard := &sc.shards[sc.getShard(vertexID)]
+	shard.mu.Lock()
+	shard.counts[vertexID] += delta
+	shard.mu.Unlock()
+}
+
+// Drain returns the counts and resets the map.
+func (sc *shardedCounter) Drain(ctx context.Context) map[string]int {
+	result := make(map[string]int)
+
+	for i := range DefaultShardCount {
+		if i%DefaultContextCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return result
+			}
+		}
+
+		shard := &sc.shards[i]
+		shard.mu.Lock()
+		for v, c := range shard.counts {
+			result[v] = c
+		}
+		shard.counts = make(map[string]int)
+		shard.mu.Unlock()
+	}
+
+	return result
+}
+
+func (sc *shardedCounter) getShard(vertexID string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(vertexID))
+	return h.Sum32() & (DefaultShardCount - 1)
+}
+
 // Runtime orchestrates Pregel-style bulk-synchronous parallel (BSP) execution
 // of a graph. It maintains the mailbox, aggregators, and superstep counter.
 //
@@ -184,7 +244,8 @@ type Runtime[S any, M any] struct {
 	// Incremental frontier tracking with sharded concurrent map
 	// REMOVED: frontierMu + single map (caused serialization bottleneck)
 	// ADDED: 256-shard concurrent map for 50-250x better scalability
-	nextFrontier *shardedFrontier // Vertices with pending messages for next superstep
+	nextFrontier      *shardedFrontier // Vertices with pending messages for next superstep
+	nextMessageCounts *shardedCounter  // Pending message counts per vertex for scheduler insight
 
 	supersteps atomic.Int64
 	vertices   atomic.Int64
@@ -282,15 +343,16 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	}
 
 	runtime := &Runtime[S, M]{
-		graph:          graph,
-		opts:           opts,
-		messageBus:     messageBus,
-		aggregators:    aggregators,
-		aggregates:     aggregates,
-		nextAggregates: nextAggregates,
-		nextFrontier:   newShardedFrontier(), // 256-shard concurrent map
-		quotaManager:   quotaManager,
-		scheduler:      scheduler,
+		graph:             graph,
+		opts:              opts,
+		messageBus:        messageBus,
+		aggregators:       aggregators,
+		aggregates:        aggregates,
+		nextAggregates:    nextAggregates,
+		nextFrontier:      newShardedFrontier(), // 256-shard concurrent map
+		nextMessageCounts: newShardedCounter(),
+		quotaManager:      quotaManager,
+		scheduler:         scheduler,
 	}
 	runtime.SetSuperstep(opts.InitialSuperstep)
 	return runtime, nil
@@ -491,6 +553,7 @@ func (r *Runtime[S, M]) Run(ctx context.Context) iter.Seq2[Event[M], error] {
 // executionState tracks mutable state during BSP execution loop.
 type executionState struct {
 	frontier       map[string]struct{}
+	messageCounts  map[string]int
 	superstep      int64
 	iterationCount int64
 }
@@ -539,7 +602,7 @@ func (r *Runtime[S, M]) executeSuperstepIteration(ctx context.Context, state *ex
 		"total_messages", r.messages.Load())
 
 	// Execute the superstep
-	if err := r.runSuperstep(ctx, state.frontier, nextSuperstep); err != nil {
+	if err := r.runSuperstep(ctx, state.frontier, state.messageCounts, nextSuperstep); err != nil {
 		return fmt.Errorf("superstep execution failed: %w", err)
 	}
 
@@ -552,7 +615,7 @@ func (r *Runtime[S, M]) executeSuperstepIteration(ctx context.Context, state *ex
 
 	// Get next frontier
 	var err error
-	state.frontier, err = r.consumeNextFrontier(ctx)
+	state.frontier, state.messageCounts, err = r.consumeNextFrontier(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to consume next frontier: %w", err)
 	}
@@ -569,8 +632,10 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 	logger := logging.FromContext(ctx)
 
 	// Initialize execution state
+	initialFrontier, initialCounts := r.initialFrontier()
 	state := &executionState{
-		frontier:       r.initialFrontier(),
+		frontier:       initialFrontier,
+		messageCounts:  initialCounts,
 		superstep:      r.supersteps.Load(),
 		iterationCount: 0,
 	}
@@ -607,8 +672,9 @@ func (r *Runtime[S, M]) execute(ctx context.Context) {
 		"total_messages", r.messages.Load())
 }
 
-func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
+func (r *Runtime[S, M]) initialFrontier() (map[string]struct{}, map[string]int) {
 	frontier := make(map[string]struct{})
+	counts := make(map[string]int)
 
 	// Add root vertices
 	rootVerts := r.graph.RootVertices()
@@ -616,41 +682,46 @@ func (r *Runtime[S, M]) initialFrontier() map[string]struct{} {
 		frontier[name] = struct{}{}
 	}
 
-	// Drain nextFrontier to include any vertices that received messages via Deliver()
+	// Drain nextFrontier and message counts to include any vertices that received messages via Deliver()
 	// before Run() was called. This handles pre-seeded messages.
 	// Use background context since this is called before execution starts
 	predelivered := r.nextFrontier.Drain(context.Background())
 	for name := range predelivered {
 		frontier[name] = struct{}{}
 	}
+	preCounts := r.nextMessageCounts.Drain(context.Background())
+	for name, c := range preCounts {
+		counts[name] = c
+	}
 
-	return frontier
+	return frontier, counts
 }
 
-func (r *Runtime[S, M]) consumeNextFrontier(ctx context.Context) (map[string]struct{}, error) {
+func (r *Runtime[S, M]) consumeNextFrontier(ctx context.Context) (map[string]struct{}, map[string]int, error) {
 	// Drain all shards and reset for next superstep
 	// This is lock-free from the perspective of message senders (each shard locks independently)
 	// Respects context cancellation for graceful shutdown
 	frontier := r.nextFrontier.Drain(ctx)
+	counts := r.nextMessageCounts.Drain(ctx)
 
 	if len(frontier) == 0 {
-		return nil, nil // No error, just no work
+		return nil, nil, nil // No error, just no work
 	}
 
-	return frontier, nil
+	return frontier, counts, nil
 }
 
 // runSuperstep executes a single superstep for all vertices in the frontier.
 // The function orchestrates parallel execution with configurable worker pool size.
 // Mailbox draining now happens in parallel within the worker pool for optimal
 // performance in distributed deployments.
-func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]struct{}, superstep int64) error {
+func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]struct{}, counts map[string]int, superstep int64) error {
 	if len(frontier) == 0 {
 		return nil
 	}
 
 	// Schedule frontier nodes using configured scheduler
-	frontierNodes, err := r.scheduleFrontierNodes(ctx, frontier, superstep)
+	frontierNodes, err := r.scheduleFrontierNodes(ctx, frontier, counts, superstep)
 	if err != nil {
 		return fmt.Errorf("scheduling failed: %w", err)
 	}
@@ -677,13 +748,16 @@ func (r *Runtime[S, M]) runSuperstep(ctx context.Context, frontier map[string]st
 
 // scheduleFrontierNodes uses the configured scheduler to determine vertex execution order.
 // Returns an ordered slice of vertex names to execute in the current superstep.
-func (r *Runtime[S, M]) scheduleFrontierNodes(ctx context.Context, frontier map[string]struct{}, superstep int64) ([]string, error) {
+func (r *Runtime[S, M]) scheduleFrontierNodes(ctx context.Context, frontier map[string]struct{}, counts map[string]int, superstep int64) ([]string, error) {
+	if counts == nil {
+		counts = make(map[string]int)
+	}
 	// Create scheduler info with topology provider
 	info := SchedulerInfo{
 		Frontier:      frontier,
 		Superstep:     superstep,
 		Graph:         r.graph, // Runtime.graph already implements TopologyProvider
-		MessageCounts: make(map[string]int),
+		MessageCounts: counts,
 	}
 
 	// Ask scheduler for execution order
@@ -976,6 +1050,7 @@ func (r *Runtime[S, M]) recordDeliveries(ctx context.Context, msgs []Message[M])
 	for _, msg := range msgs {
 		if msg.To != "" {
 			r.nextFrontier.Add(msg.To) // Lock-free add with per-shard locking
+			r.nextMessageCounts.Add(msg.To, 1)
 		}
 	}
 

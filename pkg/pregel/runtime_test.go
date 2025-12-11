@@ -3,6 +3,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -86,6 +87,23 @@ func (g *mockGraph) State() mockState {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.state
+}
+
+type recordingScheduler struct {
+	infos []SchedulerInfo
+}
+
+func (s *recordingScheduler) NextBatch(ctx context.Context, info SchedulerInfo) ([]string, error) {
+	s.infos = append(s.infos, info)
+	batch := make([]string, 0, len(info.Frontier))
+	for v := range info.Frontier {
+		batch = append(batch, v)
+	}
+	sort.Strings(batch)
+	return batch, nil
+}
+
+func (s *recordingScheduler) RecordCompletion(ctx context.Context, vertex string, info CompletionInfo) {
 }
 
 func TestRuntime_Run_SequentialGraph(t *testing.T) {
@@ -178,6 +196,54 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 
 	assert.Equal(t, 3, callCount)
 	assert.Len(t, sent, 2)
+}
+
+func TestRuntime_SchedulerReceivesMessageCounts(t *testing.T) {
+	var callCount int
+	var sent []Message[mockMessage]
+	mu1, mu2 := &sync.Mutex{}, &sync.Mutex{}
+
+	graph := &mockGraph{
+		rootNodes: []string{"A"},
+		nodes: map[string]*mockNode{
+			"A": {
+				name:       "A",
+				next:       "B",
+				called:     &callCount,
+				callMu:     mu1,
+				messagesMu: mu2,
+				messages:   &sent,
+				delay:      0,
+			},
+			"B": {
+				name:       "B",
+				next:       "",
+				called:     &callCount,
+				callMu:     mu1,
+				messagesMu: mu2,
+				messages:   &sent,
+				delay:      0,
+			},
+		},
+	}
+
+	scheduler := &recordingScheduler{}
+	rt := MustNewRuntime[mockState, mockMessage](graph, WithScheduler[mockState, mockMessage](scheduler))
+	require.NoError(t, runToCompletion(context.Background(), rt))
+
+	var superstepTwo SchedulerInfo
+	found := false
+	for _, info := range scheduler.infos {
+		if info.Superstep == 2 { // frontier containing B
+			superstepTwo = info
+			found = true
+			break
+		}
+	}
+
+	require.True(t, found, "expected scheduler to be called for second superstep")
+	require.NotNil(t, superstepTwo.MessageCounts)
+	assert.Equal(t, 1, superstepTwo.MessageCounts["B"])
 }
 
 func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
@@ -711,7 +777,7 @@ func TestRuntime_ScheduleFrontierNodes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
-			got, err := rt.scheduleFrontierNodes(context.Background(), tt.frontier, 1)
+			got, err := rt.scheduleFrontierNodes(context.Background(), tt.frontier, nil, 1)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
@@ -731,10 +797,10 @@ func TestRuntime_ScheduleFrontierNodes_Determinism(t *testing.T) {
 	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
 
 	// Run multiple times and verify consistency
-	first, err := rt.scheduleFrontierNodes(context.Background(), frontier, 1)
+	first, err := rt.scheduleFrontierNodes(context.Background(), frontier, nil, 1)
 	assert.NoError(t, err)
 	for i := 0; i < 10; i++ {
-		got, err := rt.scheduleFrontierNodes(context.Background(), frontier, 1)
+		got, err := rt.scheduleFrontierNodes(context.Background(), frontier, nil, 1)
 		assert.NoError(t, err)
 		assert.Equal(t, first, got, "scheduleFrontierNodes should return consistent ordering")
 	}
@@ -1060,7 +1126,7 @@ func TestRuntime_RunSuperstep_Integration(t *testing.T) {
 		ctx := context.Background()
 		frontier := map[string]struct{}{"A": {}}
 
-		err := rt.runSuperstep(ctx, frontier, 1)
+		err := rt.runSuperstep(ctx, frontier, nil, 1)
 		assert.NoError(t, err)
 		assert.True(t, callbackCalled, "callback should be invoked")
 		assert.Equal(t, 1, callCount, "vertex A should be executed")
@@ -1072,7 +1138,7 @@ func TestRuntime_RunSuperstep_Integration(t *testing.T) {
 		ctx := context.Background()
 		frontier := map[string]struct{}{}
 
-		err := rt.runSuperstep(ctx, frontier, 1)
+		err := rt.runSuperstep(ctx, frontier, nil, 1)
 		assert.NoError(t, err)
 	})
 }
