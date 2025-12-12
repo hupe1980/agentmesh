@@ -246,9 +246,14 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 		b.Start("rephrase")
 	}
 
-	// Apply graph middleware if provided
-	if len(config.graphMiddleware) > 0 {
-		b.WithMiddleware(config.graphMiddleware...)
+	// Apply node middleware if provided
+	if len(config.nodeMiddleware) > 0 {
+		b.WithNodeMiddleware(config.nodeMiddleware...)
+	}
+
+	// Apply run middleware if provided (wraps Run/Resume)
+	if len(config.runMiddleware) > 0 {
+		b.WithRunMiddleware(config.runMiddleware...)
 	}
 
 	return b.Build()
@@ -274,7 +279,8 @@ func defaultRAGOptions() ragOptions {
 			instructions:    nil,
 			maxIterations:   1, // RAG is typically single-pass
 			outputSchema:    nil,
-			graphMiddleware: nil,
+			nodeMiddleware:  nil,
+			runMiddleware:   nil,
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},

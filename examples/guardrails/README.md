@@ -1,13 +1,14 @@
 # Example: Guardrails
 
 ## Overview
-Demonstrates content filtering and PII redaction using plugins. Shows how to implement security guardrails for production LLM applications with the type-safe plugin system.
+Demonstrates content validation using the `pkg/guardrail` package. Shows how to implement guardrails for LLM applications using built-in guardrail types and middleware.
 
 ## Key Concepts
-- **Security Plugins**: Content validation and PII protection
-- **Response Caching**: Performance optimization with CachePlugin
-- **Plugin Composition**: Multiple plugins working together
-- **Short-Circuit Returns**: Block unsafe content before model invocation
+- **Guardrail Package**: Type-safe content validation with `Guardrail[T]` interface
+- **Built-in Guardrails**: ContentFilter, Length, Regex
+- **Guardrail Actions**: Allow, Reject (soft), and Raise (hard tripwire)
+- **Middleware Integration**: Apply guardrails at model layer via middleware
+- **Guardrail Chaining**: Combine multiple guardrails with `guardrail.Chain()`
 
 ## Running
 ```bash
@@ -17,142 +18,123 @@ go run main.go
 
 ## Expected Output
 ```
-=== Guardrails Example ===
+=== AgentMesh Guardrails Demo ===
 
-Plugin manager configured with:
-- GuardrailsPlugin (content filtering + PII redaction)
-- CachePlugin (response caching)
+✓ Model executor configured with middleware:
+  - ContentFilterGuardrail (keyword blocking)
+  - LengthGuardrail (min/max content length)
+  - RegexGuardrail (custom pattern matching)
 
-Test 1: Normal Request
-Input: "What is the capital of France?"
-Output: "The capital of France is Paris."
-✓ Passed validation
+Test 1: Normal message
+-----------------------
+✓ Response: The weather is sunny and 72°F.
 
-Test 2: Blocked Content
-Input: "How to hack a system?"
-❌ Blocked: Content violates safety policy
+Test 2: Blocked content (should be rejected)
+--------------------------------------------
+✓ Rejected by guardrail: Content contains blocked keyword (hack)
 
-Test 3: PII Redaction
-Input: "My email is john@example.com and phone is 555-1234"
-Output: "My email is [EMAIL_REDACTED] and phone is [PHONE_REDACTED]"
-✓ PII redacted
+Test 3: Too short input (should be rejected)
+--------------------------------------------
+✓ Rejected: Content too short: 2 < 5
 
-Test 4: Cache Hit
-Input: "What is the capital of France?"  # Same as Test 1
-Output: "The capital of France is Paris." (from cache)
-⚡ Cache hit! (0ms)
+Test 4: Response too long (output guardrail)
+--------------------------------------------
+✓ Output rejected: Content too long: 1500 > 500
 
-Statistics:
-- Total requests: 4
-- Blocked: 1
-- PII redactions: 2
-- Cache hits: 1
-- Cache hit rate: 25%
+Test 5: Direct guardrail chain usage
+-------------------------------------
+Action: allow
+Message: (allowed)
+
+=== Demo Complete ===
 ```
 
 ## Implementation
 
-### GuardrailsPlugin
+### Creating Guardrails
 ```go
-type GuardrailsPlugin struct {
-    callbacks.NoopPlugin
-    
-    stats GuardrailStats
-    mu    sync.Mutex
-}
+import "github.com/hupe1980/agentmesh/pkg/guardrail"
 
-func (p *GuardrailsPlugin) BeforeModel(ctx context.Context, req *model.Request) (*model.Response, error) {
-    for _, msg := range req.Messages {
-        content := msg.String()
-        
-        // Check for unsafe content
-        if containsUnsafeContent(content) {
-            p.recordBlocked()
-            return nil, fmt.Errorf("blocked: unsafe content detected")
-        }
-    }
-    return nil, nil  // Continue to model
-}
+// Content filtering with blocked keywords
+contentFilter := guardrail.NewContentFilterGuardrail(
+    []string{"hack", "exploit", "bypass"},
+    guardrail.WithContentFilterAction(guardrail.ActionReject),
+)
 
-func (p *GuardrailsPlugin) AfterModel(ctx context.Context, req *model.Request, resp *model.Response) (*model.Response, error) {
-    content := resp.Message.String()
-    
-    // Redact PII
-    redacted, count := redactPII(content)
-    p.recordPIIRedactions(count)
-    
-    return &model.Response{
-        Message: message.NewAIMessage(message.NewTextPart(redacted)),
-        Usage:   resp.Usage,
-    }, nil
-}
-```
+// Length validation
+lengthGuardrail := guardrail.NewLengthGuardrail(
+    guardrail.WithMinLength(5),
+    guardrail.WithMaxLength(500),
+)
 
-### CachePlugin
-```go
-cache := plugin.NewCachePlugin(100)  // max 100 entries
-
-pm := callbacks.NewPluginManager()
-pm.Register(&GuardrailsPlugin{})
-pm.Register(cache)
-```
-
-### Integration
-```go
-// Callbacks are automatically injected via context
-reactAgent, _ := agent.NewReAct(
-    model,
-    agent.WithTools(tools...),
-    agent.WithPluginManager(pm),
+// Custom regex pattern
+profanityFilter := guardrail.NewRegexGuardrail(
+    "profanity_filter",
+    regexp.MustCompile(`(?i)\b(badword)\b`),
+    guardrail.WithRegexAction(guardrail.ActionRaise),
+    guardrail.WithDescription("Profanity detected"),
 )
 ```
 
-## Security Patterns
-
-### Content Filtering (BeforeModel)
-- Block unsafe prompts
-- Enforce content policies
-- Validate input constraints
-
-### PII Redaction (AfterModel)
-- Email addresses → `[EMAIL_REDACTED]`
-- Phone numbers → `[PHONE_REDACTED]`
-- SSN/Credit cards → `[SENSITIVE_REDACTED]`
-
-### Combined with Caching
-- Cache safe responses
-- Skip blocked requests
-- Performance + Security
-
-## Use Cases
-- ✅ Input validation with BeforeModel plugins
-- ✅ Output filtering with AfterModel plugins
-- ✅ PII protection for compliance (GDPR, HIPAA)
-- ✅ Content moderation for user-facing apps
-- ✅ Rate limiting and quota enforcement
-- ✅ Audit logging for security
-
-## Plugin Composition
-
-Plugins execute in registration order:
-1. **GuardrailsPlugin** - Security first
-2. **CachePlugin** - Performance optimization
-
-Both plugins share the same PluginManager and can maintain independent state.
-
-## Statistics
-
+### Using Middleware
 ```go
-stats := guardrailsPlugin.GetStats()
-fmt.Printf("Blocked: %d\n", stats.Blocked)
-fmt.Printf("PII Redactions: %d\n", stats.PIIRedactions)
+import modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
 
-cacheStats := cachePlugin.GetStats()
-fmt.Printf("Cache Hits: %d\n", cacheStats.Hits)
-fmt.Printf("Hit Rate: %.1f%%\n", cacheStats.HitRate*100)
+// Create guardrail middleware
+guardrailMw := modelmw.NewGuardrailMiddleware(
+    modelmw.WithInputGuardrails(contentFilter, lengthGuardrail),
+    modelmw.WithOutputGuardrails(lengthGuardrail),
+)
+
+// Chain with model
+executor := model.Chain(myModel, guardrailMw)
 ```
 
-## Related Resources
-- [Middleware Documentation](/middleware/) - Middleware system guide
-- [examples/circuit_breaker](../circuit_breaker) - Resilience middleware
-- [examples/custom_observability](../custom_observability) - Event handling and observability
+### Direct Guardrail Chaining
+```go
+// Check content directly
+result, err := guardrail.Chain(ctx, "test message", contentFilter, lengthGuardrail)
+if result.Action == guardrail.ActionReject {
+    // Handle rejection
+}
+```
+
+### Error Handling
+```go
+for resp, err := range executor.Generate(ctx, req) {
+    if err != nil {
+        if rejection, ok := err.(*guardrail.Rejection); ok {
+            // Soft rejection - can retry with modifications
+            log.Printf("Rejected: %s", rejection.Message)
+        } else if tripwire, ok := err.(*guardrail.TripwireError); ok {
+            // Hard tripwire - escalate
+            log.Printf("Tripwire: %s", tripwire.Message)
+        }
+    }
+}
+```
+
+## Guardrail Actions
+
+| Action | Description | Error Type |
+|--------|-------------|------------|
+| `ActionAllow` | Content is safe, continue processing | None |
+| `ActionReject` | Soft rejection, can retry with modifications | `*guardrail.Rejection` |
+| `ActionRaise` | Hard tripwire, escalate | `*guardrail.TripwireError` |
+
+## Built-in Guardrails
+
+| Guardrail | Purpose | Default Action |
+|-----------|---------|----------------|
+| `ContentFilterGuardrail` | Block keywords/phrases | `ActionReject` |
+| `LengthGuardrail` | Validate content length | `ActionReject` |
+| `RegexGuardrail` | Custom pattern matching | `ActionReject` |
+
+## Production Security: External Service Integrations
+
+For production security use cases (PII detection, content moderation, etc.), use specialized external services that provide robust, battle-tested detection:
+
+- `pkg/guardrail/openai` - OpenAI Moderation API
+- `pkg/guardrail/amazoncomprehend` - AWS Comprehend (sentiment, PII)
+
+> **Note**: Simple regex-based patterns for security-sensitive detection (SQL injection, PII, etc.) are easily bypassed and should not be used in production. Always use specialized services for security-critical content validation.

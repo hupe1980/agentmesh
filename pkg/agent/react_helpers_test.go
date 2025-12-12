@@ -2,10 +2,9 @@ package agent
 
 import (
 	"context"
-	"iter"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/model"
+	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
@@ -13,8 +12,8 @@ import (
 func TestBuildCombinedToolset_StaticToolsOnly(t *testing.T) {
 	t.Parallel()
 
-	tool1 := &mockTool{name: "calculator"}
-	tool2 := &mockTool{name: "search"}
+	tool1 := testutil.NewToolBuilder("calculator").Build()
+	tool2 := testutil.NewToolBuilder("search").Build()
 
 	staticTools := []tool.Tool{tool1, tool2}
 	var toolsets []tool.Toolset
@@ -36,8 +35,8 @@ func TestBuildCombinedToolset_StaticToolsOnly(t *testing.T) {
 func TestBuildCombinedToolset_ToolsetsOnly(t *testing.T) {
 	t.Parallel()
 
-	tool1 := &mockTool{name: "dynamic1"}
-	tool2 := &mockTool{name: "dynamic2"}
+	tool1 := testutil.NewToolBuilder("dynamic1").Build()
+	tool2 := testutil.NewToolBuilder("dynamic2").Build()
 	mockToolset := tool.NewStaticToolset(tool1, tool2)
 
 	var staticTools []tool.Tool
@@ -60,8 +59,8 @@ func TestBuildCombinedToolset_ToolsetsOnly(t *testing.T) {
 func TestBuildCombinedToolset_Mixed(t *testing.T) {
 	t.Parallel()
 
-	staticTool := &mockTool{name: "static"}
-	dynamicTool := &mockTool{name: "dynamic"}
+	staticTool := testutil.NewToolBuilder("static").Build()
+	dynamicTool := testutil.NewToolBuilder("dynamic").Build()
 	mockToolset := tool.NewStaticToolset(dynamicTool)
 
 	staticTools := []tool.Tool{staticTool}
@@ -104,8 +103,8 @@ func TestBuildCombinedToolset_Empty(t *testing.T) {
 func TestBuildCombinedToolset_MultipleToolsets(t *testing.T) {
 	t.Parallel()
 
-	tool1 := &mockTool{name: "toolset1_tool"}
-	tool2 := &mockTool{name: "toolset2_tool"}
+	tool1 := testutil.NewToolBuilder("toolset1_tool").Build()
+	tool2 := testutil.NewToolBuilder("toolset2_tool").Build()
 	mockToolset1 := tool.NewStaticToolset(tool1)
 	mockToolset2 := tool.NewStaticToolset(tool2)
 
@@ -122,55 +121,5 @@ func TestBuildCombinedToolset_MultipleToolsets(t *testing.T) {
 
 	if len(tools) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(tools))
-	}
-}
-
-// Note: Additional tests for internal helper functions are better covered by integration tests.
-
-// Mock implementations for testing
-
-type mockTool struct {
-	name string
-}
-
-func (m *mockTool) Name() string {
-	return m.name
-}
-
-func (m *mockTool) Description() string {
-	return "mock tool"
-}
-
-func (m *mockTool) Definition() *tool.Definition {
-	return &tool.Definition{
-		Type: "function",
-		Function: tool.FunctionDefinition{
-			Name:        m.name,
-			Description: "mock tool",
-			Parameters:  map[string]any{},
-		},
-	}
-}
-
-func (m *mockTool) Call(ctx context.Context, args string) (any, error) {
-	return nil, nil
-}
-
-type mockModel struct {
-	capabilities model.Capabilities
-}
-
-func (m *mockModel) Name() string {
-	return "mock-model"
-}
-
-func (m *mockModel) Capabilities() model.Capabilities {
-	return m.capabilities
-}
-
-func (m *mockModel) Generate(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
-	return func(yield func(*model.Response, error) bool) {
-		// Mock implementation - just return empty response
-		yield(&model.Response{}, nil)
 	}
 }

@@ -27,6 +27,8 @@ sidebar:
     url: "#conversational-agent"
   - title: Utility functions
     url: "#utility-functions"
+  - title: Guardrails
+    url: "#guardrails"
   - title: Custom graphs
     url: "#custom-graphs"
   - title: Conditional routing
@@ -87,7 +89,7 @@ agent.NewReAct(model,
     agent.WithSupervisorMaxIterations(10),              // Max reasoning-action cycles
     agent.WithInstructions("You are helpful"), // Instructions
     agent.WithOutputSchema(schema),      // Structured output
-    agent.WithGraphMiddleware(middleware...),  // Graph middleware
+    agent.WithRunMiddleware(middleware...),    // Run middleware
     agent.WithModelMiddleware(middleware...),  // Model middleware
     agent.WithToolMiddleware(middleware...),   // Tool middleware
 )
@@ -751,6 +753,98 @@ reactAgent, err := agent.NewReAct(model,
     agent.WithTools(customTool, searchTool),
 )
 ```
+
+---
+
+## Guardrails {#guardrails}
+
+Guardrails validate user input and agent output for content safety and policy compliance. Agent-level guardrails run at the workflow boundary:
+
+- **Input guardrails** - Check the **first user message** before the agent starts
+- **Output guardrails** - Check the **final response** before returning to user
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/guardrail"
+)
+
+// Create guardrails
+contentFilter := guardrail.NewContentFilterGuardrail(
+    []string{"hack", "exploit", "bypass"},
+)
+lengthGuard := guardrail.NewLengthGuardrail(
+    guardrail.WithMaxLength(5000),
+)
+
+// Apply to agent
+myAgent, err := agent.NewReAct(model,
+    agent.WithTools(tools...),
+    agent.WithGraphInputGuardrails(contentFilter),   // Validates user query
+    agent.WithGraphOutputGuardrails(lengthGuard),    // Validates final response
+)
+```
+
+### Agent-Powered Guardrails
+
+For complex policy enforcement, use an LLM to evaluate content:
+
+```go
+// Create an LLM-powered guardrail
+policyGuard, _ := agent.NewModerationGuardrail(model,
+    agent.WithModerationGuardrailName("policy-checker"),
+    agent.WithModerationGuardrailInstructions("Check if content violates company policies..."),
+    agent.WithModerationGuardrailAction(guardrail.ActionReject),
+)
+
+myAgent, err := agent.NewReAct(model,
+    agent.WithGraphInputGuardrails(contentFilter, policyGuard),
+)
+```
+
+### Guardrail Actions
+
+| Action | Description | Error Type |
+|--------|-------------|------------|
+| `ActionAllow` | Safe to continue | None |
+| `ActionReject` | Soft rejection (retry allowed) | `*guardrail.Rejection` |
+| `ActionRaise` | Hard tripwire (security concern) | `*guardrail.TripwireError` |
+
+### Built-in Guardrails
+
+| Guardrail | Description |
+|-----------|-------------|
+| `ContentFilterGuardrail` | Blocks specified keywords |
+| `LengthGuardrail` | Validates content length (min/max) |
+| `RegexGuardrail` | Custom pattern matching |
+
+### External Service Integrations
+
+For production security use cases, use external moderation services:
+
+| Package | Service |
+|---------|--------|
+| `pkg/guardrail/openai` | OpenAI Moderation API |
+| `pkg/guardrail/amazoncomprehend` | AWS Comprehend (sentiment, PII) |
+
+```go
+import (
+    "github.com/hupe1980/agentmesh/pkg/guardrail/openai"
+    oai "github.com/openai/openai-go"
+)
+
+// Use OpenAI moderation
+client := oai.NewClient()
+modGuard := openai.NewModerationGuardrail(client,
+    openai.WithCategories("hate", "violence"),
+)
+
+myAgent, err := agent.NewReAct(model,
+    agent.WithGraphInputGuardrails(modGuard),
+)
+```
+
+> **Note**: For guardrails at the model or tool level (every call, not just first/last), see [Guardrails Middleware](/middleware/#guardrails-middleware).
 
 ---
 

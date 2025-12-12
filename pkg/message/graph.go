@@ -24,8 +24,8 @@ type NodeFunc = graph.NodeFunc[Message]
 //   - Stream(value Message) - Emit partial messages immediately
 type Scope = graph.Scope[Message]
 
-// Middleware wraps a message-processing node function with additional behavior.
-// Middleware is applied in reverse order: the last middleware added runs first.
+// NodeMiddleware wraps a message-processing node function with additional behavior.
+// Node middleware is applied in reverse order: the last middleware added runs first.
 //
 // Example:
 //
@@ -35,7 +35,22 @@ type Scope = graph.Scope[Message]
 //	        return next(ctx, scope)
 //	    }
 //	}
-type Middleware = graph.Middleware[Message]
+type NodeMiddleware = graph.NodeMiddleware[Message]
+
+// RunFunc is the function signature for message graph execution.
+// It takes a context and input messages, and returns an iterator of output messages.
+type RunFunc = graph.RunFunc[[]Message, Message]
+
+// RunMiddleware wraps the entire graph execution (Run/Resume).
+// Unlike node middleware which runs for every node, run middleware
+// intercepts the input before execution starts and the final output after.
+//
+// This is useful for:
+//   - Input validation/guardrails (check user input once at start)
+//   - Output validation/guardrails (check final output once at end)
+//   - Logging/observability at the run level
+//   - Request/response transformation
+type RunMiddleware = graph.RunMiddleware[[]Message, Message]
 
 // GraphBuilder is a fluent builder for message-processing workflows.
 // This is the standard builder type for conversational agents.

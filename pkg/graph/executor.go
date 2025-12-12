@@ -669,7 +669,7 @@ func createPregelAdapter[I, O any](
 		runCfg:             execCtx.runCfg,
 		bspState:           bspState,
 		safeYield:          safeYield,
-		middleware:         execCtx.cfg.Execution.Middleware,
+		nodeMiddleware:     execCtx.cfg.Execution.NodeMiddleware,
 		superstep:          0,
 		checkpointInterval: execCtx.runCfg.checkpointInterval,
 	}
@@ -792,11 +792,11 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 
 // pregelGraphAdapter adapts ExecutorConfig to the pregel.Graph interface.
 type pregelGraphAdapter[I, O any] struct {
-	cfg        *ExecutorConfig[I, O]
-	runCfg     *runConfig
-	bspState   *BSPState           // BSP-compliant state with read snapshots and write buffering
-	safeYield  func(O, error) bool // Thread-safe yield via channel
-	middleware []Middleware[O]
+	cfg            *ExecutorConfig[I, O]
+	runCfg         *runConfig
+	bspState       *BSPState           // BSP-compliant state with read snapshots and write buffering
+	safeYield      func(O, error) bool // Thread-safe yield via channel
+	nodeMiddleware []NodeMiddleware[O]
 
 	superstep          int
 	checkpointInterval int
@@ -1047,10 +1047,10 @@ func (v *pregelVertexAdapter[I, O]) Run(
 	}
 	scope := newScope(roScope, streamFn)
 
-	// Apply middleware
+	// Apply node middleware
 	fn := node.Fn
-	for i := len(v.adapter.middleware) - 1; i >= 0; i-- {
-		fn = v.adapter.middleware[i](fn)
+	for i := len(v.adapter.nodeMiddleware) - 1; i >= 0; i-- {
+		fn = v.adapter.nodeMiddleware[i](fn)
 	}
 
 	// Execute node

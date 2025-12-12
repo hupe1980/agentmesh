@@ -5,14 +5,14 @@
 //   - TimingMiddleware: Tracks execution time for performance monitoring
 //   - RecoveryMiddleware: Recovers from panics during node execution
 //   - ConditionalMiddleware: Applies middleware conditionally based on scope
-//   - NodeMiddleware: Applies middleware only to specific nodes
+//   - NodeNameMiddleware: Applies middleware only to specific nodes by name
 //
-// The Chain function from the parent graph package can be used to combine
+// The ChainNodeMiddleware function from the parent graph package can be used to combine
 // multiple middleware into a single middleware:
 //
 //	import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 //
-//	graph.Chain(
+//	graph.ChainNodeMiddleware(
 //	    graphmw.LoggingMiddleware[message.Message](logger),
 //	    graphmw.TimingMiddleware[message.Message](timingCallback),
 //	    graphmw.RecoveryMiddleware[message.Message](panicHandler),

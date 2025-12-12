@@ -50,11 +50,12 @@ type Builder[I, O any] struct {
 	interrupts    []interruptPoint
 
 	// Configuration (set via With* methods)
-	store        Store
-	checkpointer checkpoint.Checkpointer
-	runID        string
-	middleware   []Middleware[O]
-	executor     Executor[I, O]
+	store          Store
+	checkpointer   checkpoint.Checkpointer
+	runID          string
+	nodeMiddleware []NodeMiddleware[O]   // Node-level middleware (wraps each node)
+	runMiddleware  []RunMiddleware[I, O] // Run-level middleware (wraps Run/Resume)
+	executor       Executor[I, O]
 }
 
 // Graph is an executable workflow with immutable structure.
@@ -67,11 +68,12 @@ type Graph[I, O any] struct {
 	entryPoints   []string
 	interrupts    []interruptPoint
 
-	store        Store
-	checkpointer checkpoint.Checkpointer
-	runID        string
-	middleware   []Middleware[O]
-	executor     Executor[I, O]
+	store          Store
+	checkpointer   checkpoint.Checkpointer
+	runID          string
+	nodeMiddleware []NodeMiddleware[O]   // Node-level middleware (wraps each node)
+	runMiddleware  []RunMiddleware[I, O] // Run-level middleware (wraps Run/Resume)
+	executor       Executor[I, O]
 }
 
 // New creates a graph builder with the given state keys.
@@ -222,9 +224,28 @@ func (b *Builder[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID strin
 	return b
 }
 
-// WithMiddleware adds middleware to the builder.
-func (b *Builder[I, O]) WithMiddleware(mw ...Middleware[O]) *Builder[I, O] {
-	b.middleware = append(b.middleware, mw...)
+// WithNodeMiddleware adds node-level middleware to the builder.
+// Node middleware wraps each node execution and runs for every node.
+// For middleware that should wrap the entire Run/Resume operation, use WithRunMiddleware.
+func (b *Builder[I, O]) WithNodeMiddleware(mw ...NodeMiddleware[O]) *Builder[I, O] {
+	b.nodeMiddleware = append(b.nodeMiddleware, mw...)
+	return b
+}
+
+// WithRunMiddleware adds run-level middleware to the builder.
+// Run middleware wraps the entire Run/Resume operation, intercepting:
+//   - Input before execution starts
+//   - Output after execution completes
+//
+// This is useful for:
+//   - Input validation/guardrails (check user input once at start)
+//   - Output validation/guardrails (check final output once at end)
+//   - Logging/observability at the run level
+//   - Request/response transformation
+//
+// Middleware is applied in order: first added = outermost wrapper.
+func (b *Builder[I, O]) WithRunMiddleware(mw ...RunMiddleware[I, O]) *Builder[I, O] {
+	b.runMiddleware = append(b.runMiddleware, mw...)
 	return b
 }
 
@@ -291,23 +312,34 @@ func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 	}
 
 	return &Graph[I, O]{
-		keys:          b.keys,
-		outputKey:     b.outputKey,
-		outputIsSlice: b.outputIsSlice,
-		nodes:         b.nodes,
-		entryPoints:   b.entryPoints,
-		interrupts:    b.interrupts,
-		store:         store,
-		checkpointer:  b.checkpointer,
-		runID:         b.runID,
-		middleware:    b.middleware,
-		executor:      b.executor,
+		keys:           b.keys,
+		outputKey:      b.outputKey,
+		outputIsSlice:  b.outputIsSlice,
+		nodes:          b.nodes,
+		entryPoints:    b.entryPoints,
+		interrupts:     b.interrupts,
+		store:          store,
+		checkpointer:   b.checkpointer,
+		runID:          b.runID,
+		nodeMiddleware: b.nodeMiddleware,
+		runMiddleware:  b.runMiddleware,
+		executor:       b.executor,
 	}, nil
 }
 
-// Run executes the compiled graph with input.
-// For resuming from a checkpoint without providing new input, use [Resume] instead.
-func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
+// applyRunMiddleware wraps a core run function with the configured run middleware.
+// Middleware is applied in reverse order so first added = outermost wrapper.
+func (g *Graph[I, O]) applyRunMiddleware(coreRun RunFunc[I, O]) RunFunc[I, O] {
+	wrapped := coreRun
+	for i := len(g.runMiddleware) - 1; i >= 0; i-- {
+		wrapped = g.runMiddleware[i](wrapped)
+	}
+	return wrapped
+}
+
+// executeWithOptions runs the executor with the given input and options.
+// This is the shared execution logic for both Run and Resume.
+func (g *Graph[I, O]) executeWithOptions(ctx context.Context, input I, runOpts []runOption) iter.Seq2[O, error] {
 	return func(yield func(O, error) bool) {
 		// Build executor config
 		cfg := g.buildExecutorConfig()
@@ -318,12 +350,6 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 			exec = NewPregelExecutor[I, O]()
 		}
 
-		// Convert RunOptions to internal runOptions via interface method
-		runOpts := make([]runOption, len(opts))
-		for i, opt := range opts {
-			runOpts[i] = func(cfg *runConfig) { opt.applyRun(cfg) }
-		}
-
 		// Delegate to executor
 		for output, err := range exec.Run(ctx, cfg, input, runOpts...) {
 			if !yield(output, err) {
@@ -331,6 +357,23 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 			}
 		}
 	}
+}
+
+// Run executes the compiled graph with input.
+// For resuming from a checkpoint without providing new input, use [Resume] instead.
+func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
+	// Build the core run function
+	coreRun := func(ctx context.Context, input I) iter.Seq2[O, error] {
+		// Convert RunOptions to internal runOptions
+		runOpts := make([]runOption, len(opts))
+		for i, opt := range opts {
+			opt := opt // Capture loop variable
+			runOpts[i] = func(cfg *runConfig) { opt.applyRun(cfg) }
+		}
+		return g.executeWithOptions(ctx, input, runOpts)
+	}
+
+	return g.applyRunMiddleware(coreRun)(ctx, input)
 }
 
 // Resume continues execution from a checkpoint without providing new input.
@@ -363,18 +406,9 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 //	    // process output
 //	}
 func (g *Graph[I, O]) Resume(ctx context.Context, runID string, opts ...ResumeOption) iter.Seq2[O, error] {
-	return func(yield func(O, error) bool) {
-		// Build executor config
-		cfg := g.buildExecutorConfig()
-
-		// Use configured executor or default Pregel executor
-		exec := g.executor
-		if exec == nil {
-			exec = NewPregelExecutor[I, O]()
-		}
-
+	// Build the core run function (Resume uses zero input)
+	coreRun := func(ctx context.Context, _ I) iter.Seq2[O, error] {
 		// Build runOptions: skipInputMerge + runID + autoRestore (default) + user options
-		// User can override autoRestore by providing WithCheckpoint
 		runOpts := make([]runOption, 0, len(opts)+3)
 		runOpts = append(runOpts,
 			func(cfg *runConfig) { cfg.skipInputMerge = true },
@@ -382,18 +416,17 @@ func (g *Graph[I, O]) Resume(ctx context.Context, runID string, opts ...ResumeOp
 			func(cfg *runConfig) { cfg.autoRestore = true }, // Default to auto-restore
 		)
 		for _, opt := range opts {
-			opt := opt // Capture loop variable to avoid closure bug
+			opt := opt // Capture loop variable
 			runOpts = append(runOpts, func(cfg *runConfig) { opt.applyResume(cfg) })
 		}
 
-		// Delegate to executor with zero input
 		var zero I
-		for output, err := range exec.Run(ctx, cfg, zero, runOpts...) {
-			if !yield(output, err) {
-				return
-			}
-		}
+		return g.executeWithOptions(ctx, zero, runOpts)
 	}
+
+	// Resume always uses zero input
+	var zero I
+	return g.applyRunMiddleware(coreRun)(ctx, zero)
 }
 
 // buildExecutorConfig creates the executor configuration from the compiled graph.
@@ -433,13 +466,13 @@ func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 
 	return &ExecutorConfig[I, O]{
 		Execution: ExecutionConfig[O]{
-			Nodes:         nodes,
-			EntryPoints:   g.entryPoints,
-			Middleware:    g.middleware,
-			Store:         g.store,
-			OutputKey:     g.outputKey,
-			OutputIsSlice: g.outputIsSlice,
-			KeyRegistry:   registry,
+			Nodes:          nodes,
+			EntryPoints:    g.entryPoints,
+			NodeMiddleware: g.nodeMiddleware,
+			Store:          g.store,
+			OutputKey:      g.outputKey,
+			OutputIsSlice:  g.outputIsSlice,
+			KeyRegistry:    registry,
 		},
 		Checkpoint: CheckpointConfig{
 			Checkpointer: g.checkpointer,

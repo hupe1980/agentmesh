@@ -12,10 +12,10 @@ import (
 //
 // Example:
 //
-//	graph.WithMiddleware(graphmw.TimingMiddleware[message.Message](func(node string, d time.Duration) {
+//	graph.WithNodeMiddleware(graphmw.TimingMiddleware[message.Message](func(node string, d time.Duration) {
 //	    metrics.RecordLatency(node, d)
 //	}))
-func TimingMiddleware[O any](onComplete func(nodeName string, duration time.Duration)) graph.Middleware[O] {
+func TimingMiddleware[O any](onComplete func(nodeName string, duration time.Duration)) graph.NodeMiddleware[O] {
 	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
 		return func(ctx context.Context, scope graph.Scope[O]) (*graph.Command, error) {
 			start := time.Now()

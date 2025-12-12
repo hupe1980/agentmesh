@@ -173,9 +173,14 @@ func buildReActGraph(modelFn, toolFn message.NodeFunc, config reActOptions) (*me
 	b.Node("tool", toolFn, "model")
 	b.Start("model")
 
-	// Apply graph middleware if provided
-	if len(config.graphMiddleware) > 0 {
-		b.WithMiddleware(config.graphMiddleware...)
+	// Apply node middleware if provided
+	if len(config.nodeMiddleware) > 0 {
+		b.WithNodeMiddleware(config.nodeMiddleware...)
+	}
+
+	// Apply run middleware if provided (wraps Run/Resume)
+	if len(config.runMiddleware) > 0 {
+		b.WithRunMiddleware(config.runMiddleware...)
 	}
 
 	return b.Build()
@@ -194,7 +199,8 @@ func defaultReActOptions() reActOptions {
 			instructions:    nil,
 			maxIterations:   10,
 			outputSchema:    nil,
-			graphMiddleware: nil,
+			nodeMiddleware:  nil,
+			runMiddleware:   nil,
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},

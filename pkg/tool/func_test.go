@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/guardrail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -268,4 +269,86 @@ func TestFuncTool_SchemaGeneration(t *testing.T) {
 	if ok {
 		assert.Equal(t, "A required field", requiredProp["description"])
 	}
+}
+
+func TestFuncTool_WithInputGuardrails(t *testing.T) {
+	type searchArgs struct {
+		Query string `json:"query"`
+	}
+
+	searchFunc := func(_ context.Context, args searchArgs) (string, error) {
+		return "result for " + args.Query, nil
+	}
+
+	// Create a content filter guardrail that blocks "hack"
+	contentFilter := guardrail.NewContentFilterGuardrail([]string{"hack", "exploit"})
+
+	tool, err := NewFuncTool("search", "Search", searchFunc,
+		WithInputGuardrails(contentFilter),
+	)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Test allowed input
+	result, err := tool.Call(ctx, `{"query": "hello world"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, "result for hello world", result)
+
+	// Test blocked input
+	_, err = tool.Call(ctx, `{"query": "how to hack systems"}`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "rejected")
+}
+
+func TestFuncTool_WithOutputGuardrails(t *testing.T) {
+	type noArgs struct{}
+
+	outputFunc := func(_ context.Context, _ noArgs) (string, error) {
+		return "this contains secret data", nil
+	}
+
+	// Create a content filter guardrail that blocks "secret"
+	contentFilter := guardrail.NewContentFilterGuardrail([]string{"secret", "password"})
+
+	tool, err := NewFuncTool("output_test", "Output test", outputFunc,
+		WithOutputGuardrails(contentFilter),
+	)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Test blocked output
+	_, err = tool.Call(ctx, `{}`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "rejected")
+}
+
+func TestFuncTool_WithGuardrailTripwire(t *testing.T) {
+	type noArgs struct{}
+
+	outputFunc := func(_ context.Context, _ noArgs) (string, error) {
+		return "normal output", nil
+	}
+
+	// Create a content filter guardrail that raises (tripwire) on "normal"
+	contentFilter := guardrail.NewContentFilterGuardrail(
+		[]string{"normal"},
+		guardrail.WithContentFilterAction(guardrail.ActionRaise),
+	)
+
+	tool, err := NewFuncTool("tripwire_test", "Tripwire test", outputFunc,
+		WithOutputGuardrails(contentFilter),
+	)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Test tripwire
+	_, err = tool.Call(ctx, `{}`)
+	assert.Error(t, err)
+
+	// Verify it's a TripwireError
+	var tripwireErr *guardrail.TripwireError
+	assert.ErrorAs(t, err, &tripwireErr)
 }

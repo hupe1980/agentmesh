@@ -11,13 +11,13 @@ import (
 // Example:
 //
 //	// Only log expensive nodes
-//	graph.WithMiddleware(graphmw.ConditionalMiddleware(
+//	graph.WithNodeMiddleware(graphmw.ConditionalMiddleware(
 //	    func(scope graph.Scope[message.Message]) bool {
 //	        return scope.NodeName() == "expensive_node"
 //	    },
 //	    graphmw.LoggingMiddleware[message.Message](logger),
 //	))
-func ConditionalMiddleware[O any](condition func(scope graph.Scope[O]) bool, mw graph.Middleware[O]) graph.Middleware[O] {
+func ConditionalMiddleware[O any](condition func(scope graph.Scope[O]) bool, mw graph.NodeMiddleware[O]) graph.NodeMiddleware[O] {
 	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
 		wrapped := mw(next)
 		return func(ctx context.Context, scope graph.Scope[O]) (*graph.Command, error) {
@@ -29,15 +29,15 @@ func ConditionalMiddleware[O any](condition func(scope graph.Scope[O]) bool, mw 
 	}
 }
 
-// NodeMiddleware applies middleware only to specific nodes.
+// NodeNameMiddleware applies middleware only to specific nodes.
 //
 // Example:
 //
-//	graph.WithMiddleware(graphmw.NodeMiddleware(
+//	graph.WithNodeMiddleware(graphmw.NodeNameMiddleware(
 //	    []string{"slow_node", "external_api"},
 //	    graphmw.TimingMiddleware[message.Message](recordTiming),
 //	))
-func NodeMiddleware[O any](nodeNames []string, mw graph.Middleware[O]) graph.Middleware[O] {
+func NodeNameMiddleware[O any](nodeNames []string, mw graph.NodeMiddleware[O]) graph.NodeMiddleware[O] {
 	nodeSet := make(map[string]bool, len(nodeNames))
 	for _, name := range nodeNames {
 		nodeSet[name] = true

@@ -82,7 +82,7 @@ go run main.go
 This example includes a custom progress middleware that shows which agent is currently working:
 
 ```go
-func progressMiddleware() graph.Middleware[message.Message] {
+func progressMiddleware() graph.NodeMiddleware[message.Message] {
     return func(next graph.NodeFunc[message.Message]) graph.NodeFunc[message.Message] {
         return func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
             nodeName := scope.NodeName()
@@ -110,7 +110,7 @@ func progressMiddleware() graph.Middleware[message.Message] {
 }
 ```
 
-The middleware is applied via `agent.WithGraphMiddleware(progressMiddleware())`.
+The middleware is applied via `agent.WithNodeMiddleware(progressMiddleware())`.
 
 ## Expected Output
 

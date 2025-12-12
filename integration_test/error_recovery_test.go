@@ -111,7 +111,7 @@ func TestErrorRecovery_RecoveryMiddleware(t *testing.T) {
 	}, graph.END)
 
 	g.Start("panicky")
-	g.WithMiddleware(graphmw.RecoveryMiddleware[any](nil))
+	g.WithNodeMiddleware(graphmw.RecoveryMiddleware[any](nil))
 
 	compiled, err := g.Build()
 	require.NoError(t, err)

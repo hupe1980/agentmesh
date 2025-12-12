@@ -108,7 +108,7 @@ func main() {
 	fmt.Println(")")
 	fmt.Println("")
 	fmt.Println("agent.NewReAct(model,")
-	fmt.Println("    agent.WithGraphMiddleware(")
+	fmt.Println("    agent.WithNodeMiddleware(")
 	fmt.Println("        graphmw.LoggingMiddleware(slog.Default()),")
 	fmt.Println("        graphmw.RecoveryMiddleware(nil),")
 	fmt.Println("    ),")

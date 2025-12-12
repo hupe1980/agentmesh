@@ -56,7 +56,7 @@ func TestChain(t *testing.T) {
 		return graph.To(graph.END)
 	}
 
-	chained := graph.Chain(mw1, mw2, mw3)(inner)
+	chained := graph.ChainNodeMiddleware(mw1, mw2, mw3)(inner)
 	_, err := chained(context.Background(), nil)
 	require.NoError(t, err)
 
@@ -228,7 +228,7 @@ func TestConditionalMiddleware(t *testing.T) {
 	assert.Equal(t, int32(1), atomic.LoadInt32(&innerCalled)) // Not incremented
 }
 
-func TestNodeMiddleware(t *testing.T) {
+func TestNodeNameMiddleware(t *testing.T) {
 	var appliedNodes []string
 
 	mw := func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
@@ -238,7 +238,7 @@ func TestNodeMiddleware(t *testing.T) {
 		}
 	}
 
-	nodeMW := graphmw.NodeMiddleware([]string{"nodeA", "nodeB"}, mw)
+	nodeMW := graphmw.NodeNameMiddleware([]string{"nodeA", "nodeB"}, mw)
 
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
@@ -290,7 +290,7 @@ func TestChainedMiddlewareInGraph(t *testing.T) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
-	g.WithMiddleware(graph.Chain(mw1, mw2))
+	g.WithNodeMiddleware(graph.ChainNodeMiddleware(mw1, mw2))
 
 	compiled, err := g.Build()
 	require.NoError(t, err)

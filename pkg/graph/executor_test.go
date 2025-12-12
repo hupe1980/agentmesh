@@ -815,7 +815,7 @@ func TestMiddlewareExecution(t *testing.T) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("process")
-	g.WithMiddleware(middleware1, middleware2)
+	g.WithNodeMiddleware(middleware1, middleware2)
 
 	compiled, err := g.Build()
 	if err != nil {
@@ -1076,7 +1076,7 @@ func TestNodeNameInScope(t *testing.T) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("mynode")
-	g.WithMiddleware(middleware)
+	g.WithNodeMiddleware(middleware)
 
 	compiled, err := g.Build()
 	if err != nil {

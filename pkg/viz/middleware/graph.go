@@ -23,15 +23,15 @@ func NewVizMiddleware(server *viz.Server, runID string) *VizMiddleware {
 	}
 }
 
-// Middleware returns a generic node middleware that integrates with the visualization server.
+// NodeMiddleware returns a generic node middleware that integrates with the visualization server.
 // Apply this to nodes that should report their execution to the viz server.
 // The type parameter O must match the graph's output type.
 //
 // Example:
 //
 //	g := graph.New[[]message.Message, message.Message](...)
-//	g.WithMiddleware(middleware.Middleware[message.Message](server, runID))
-func Middleware[O any](server *viz.Server, runID string) graph.Middleware[O] {
+//	g.WithNodeMiddleware(middleware.NodeMiddleware[message.Message](server, runID))
+func NodeMiddleware[O any](server *viz.Server, runID string) graph.NodeMiddleware[O] {
 	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
 		return func(ctx context.Context, scope graph.Scope[O]) (*graph.Command, error) {
 			// Create and subscribe viz event handler

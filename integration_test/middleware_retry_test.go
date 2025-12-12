@@ -21,7 +21,7 @@ func TestMiddleware_ChainedExecution(t *testing.T) {
 	var order []string
 
 	// Create middleware that records execution order
-	recordMiddleware := func(name string) graph.Middleware[any] {
+	recordMiddleware := func(name string) graph.NodeMiddleware[any] {
 		return func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
 			return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
 				order = append(order, name+"-before")
@@ -40,7 +40,7 @@ func TestMiddleware_ChainedExecution(t *testing.T) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 	g.Start("process")
-	g.WithMiddleware(graph.Chain(
+	g.WithNodeMiddleware(graph.ChainNodeMiddleware(
 		recordMiddleware("mw1"),
 		recordMiddleware("mw2"),
 		recordMiddleware("mw3"),
@@ -77,7 +77,7 @@ func TestMiddleware_TimingTracking(t *testing.T) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 	g.Start("slow")
-	g.WithMiddleware(graphmw.TimingMiddleware[any](func(nodeName string, d time.Duration) {
+	g.WithNodeMiddleware(graphmw.TimingMiddleware[any](func(nodeName string, d time.Duration) {
 		recordedDurations = append(recordedDurations, d)
 	}))
 
@@ -106,7 +106,7 @@ func TestMiddleware_RecoveryFromPanic(t *testing.T) {
 		panic("intentional panic for testing")
 	}, graph.END)
 	g.Start("panicker")
-	g.WithMiddleware(graphmw.RecoveryMiddleware[any](func(nodeName string, recovered any) {
+	g.WithNodeMiddleware(graphmw.RecoveryMiddleware[any](func(nodeName string, recovered any) {
 		recoveredPanic = recovered
 	}))
 

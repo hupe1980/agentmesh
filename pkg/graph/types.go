@@ -27,9 +27,24 @@ const (
 	ApprovalRejected ApprovalDecision = "rejected"
 )
 
-// Middleware wraps node execution.
+// NodeMiddleware wraps node execution.
+// This runs for every node during graph execution.
 // The type parameter O matches the graph's output type.
-type Middleware[O any] func(next NodeFunc[O]) NodeFunc[O]
+type NodeMiddleware[O any] func(next NodeFunc[O]) NodeFunc[O]
+
+// RunFunc is the function signature for graph execution.
+// It takes a context and input, and returns an iterator of outputs and errors.
+type RunFunc[I, O any] func(ctx context.Context, input I) iter.Seq2[O, error]
+
+// RunMiddleware wraps the entire graph execution (Run/Resume).
+// Unlike node middleware which runs for every node, run middleware
+// intercepts the input before execution starts and the final output after.
+// This is useful for:
+//   - Input validation/guardrails (check user input once at start)
+//   - Output validation/guardrails (check final output once at end)
+//   - Logging/observability at the run level
+//   - Request/response transformation
+type RunMiddleware[I, O any] func(next RunFunc[I, O]) RunFunc[I, O]
 
 // Executor runs the graph.
 type Executor[I, O any] interface {
@@ -54,8 +69,9 @@ type ExecutionConfig[O any] struct {
 	// EntryPoints are the starting nodes for execution.
 	EntryPoints []string
 
-	// Middleware wraps node execution.
-	Middleware []Middleware[O]
+	// NodeMiddleware wraps node execution.
+	// This runs for every node during graph execution.
+	NodeMiddleware []NodeMiddleware[O]
 
 	// Store provides state storage.
 	Store Store

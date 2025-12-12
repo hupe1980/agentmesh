@@ -105,7 +105,8 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 		commonOptions: commonOptions{
 			instructions:    nil,
 			maxIterations:   10,
-			graphMiddleware: nil,
+			nodeMiddleware:  nil,
+			runMiddleware:   nil,
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},
@@ -152,8 +153,12 @@ func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, e
 	}
 
 	// Forward middleware from commonOptions
-	if len(config.graphMiddleware) > 0 {
-		reactOpts = append(reactOpts, WithGraphMiddleware(config.graphMiddleware...))
+	if len(config.nodeMiddleware) > 0 {
+		reactOpts = append(reactOpts, WithNodeMiddleware(config.nodeMiddleware...))
+	}
+
+	if len(config.runMiddleware) > 0 {
+		reactOpts = append(reactOpts, WithRunMiddleware(config.runMiddleware...))
 	}
 
 	if len(config.modelMiddleware) > 0 {

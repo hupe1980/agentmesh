@@ -88,7 +88,7 @@ func buildReflectionGraph(agentNode, reflectionNode message.NodeFunc, config ref
 
 	// Apply graph middleware if provided
 	if len(config.graphMiddleware) > 0 {
-		b.WithMiddleware(config.graphMiddleware...)
+		b.WithNodeMiddleware(config.graphMiddleware...)
 	}
 
 	return b.Build()
@@ -99,7 +99,7 @@ type reflectionOptions struct {
 	maxReflections      int
 	reflectionPrompt    string
 	reflectionThreshold float64
-	graphMiddleware     []message.Middleware
+	graphMiddleware     []message.NodeMiddleware
 	modelMiddleware     []model.Middleware
 }
 
@@ -157,8 +157,8 @@ func WithReflectionPromptTemplate(prompt string) ReflectionOption {
 	})
 }
 
-// WithReflectionGraphMiddleware adds middleware to the reflection graph.
-func WithReflectionGraphMiddleware(middleware ...message.Middleware) ReflectionOption {
+// WithReflectionGraphMiddleware adds node middleware to the reflection graph.
+func WithReflectionGraphMiddleware(middleware ...message.NodeMiddleware) ReflectionOption {
 	return reflectionOptionFunc(func(c *reflectionOptions) {
 		c.graphMiddleware = append(c.graphMiddleware, middleware...)
 	})

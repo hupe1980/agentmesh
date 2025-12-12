@@ -122,7 +122,7 @@ func createBlogWriter() (*message.Graph, error) {
 		agent.WithInstructions(supervisorPrompt),
 		agent.WithMaxIterations(15),
 		agent.WithWorkerRetries(2),
-		agent.WithGraphMiddleware(progressMiddleware()),
+		agent.WithNodeMiddleware(progressMiddleware()),
 	)
 }
 
@@ -144,7 +144,7 @@ Always provide clear instructions when delegating to each worker.`
 
 // progressMiddleware creates middleware that displays progress during blog generation.
 // It shows which node is being executed, which tools are called, and timing info.
-func progressMiddleware() graph.Middleware[message.Message] {
+func progressMiddleware() graph.NodeMiddleware[message.Message] {
 	return func(next graph.NodeFunc[message.Message]) graph.NodeFunc[message.Message] {
 		return func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
 			nodeName := scope.NodeName()

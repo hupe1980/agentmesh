@@ -12,8 +12,8 @@ import (
 //
 // Example:
 //
-//	graph.WithMiddleware(graphmw.LoggingMiddleware[message.Message](slog.Default()))
-func LoggingMiddleware[O any](logger *slog.Logger) graph.Middleware[O] {
+//	graph.WithNodeMiddleware(graphmw.LoggingMiddleware[message.Message](slog.Default()))
+func LoggingMiddleware[O any](logger *slog.Logger) graph.NodeMiddleware[O] {
 	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
 		return func(ctx context.Context, scope graph.Scope[O]) (*graph.Command, error) {
 			nodeName := scope.NodeName()

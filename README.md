@@ -27,7 +27,7 @@
 - **⏸️ Human-in-the-Loop** - Approval workflows with conditional guards and audit trails
 - **📊 Observability** - Built-in OpenTelemetry metrics, non-blocking event bus fan-out, and distributed tracing
 - **🔁 Resilience** - Configurable retry policies, circuit breakers, and timeouts
-- **🔒 Security** - WASM sandboxing for untrusted code, input validation, and integrity checks
+- **🔒 Security** - WASM sandboxing, content guardrails, PII detection, and integrity checks
 
 ### AI/ML Features
 - **🔢 Embeddings & Memory** - Semantic search and long-term conversation storage
