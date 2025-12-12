@@ -187,6 +187,11 @@ type ReducerFunc struct {
 
 	// ReduceFn merges incoming into existing and returns the result.
 	ReduceFn func(existing, incoming any) any
+
+	// IterFn iterates over slice elements without reflection.
+	// Only set for slice-type keys (created with NewListKey).
+	// For non-slice keys, this is nil.
+	IterFn func(value any, yield func(any) bool)
 }
 
 // WrapReducer creates a type-erased ReducerFunc from a generic Reducer[T].
@@ -208,6 +213,38 @@ func WrapReducer[T any](r Reducer[T]) ReducerFunc {
 			return r.Reduce(ex, inc)
 		},
 	}
+}
+
+// WrapSliceReducer creates a type-erased ReducerFunc for slice types with an iterator.
+// This is used for list keys to enable reflection-free iteration over elements.
+func WrapSliceReducer[E any](r Reducer[[]E]) ReducerFunc {
+	rf := WrapReducer(r)
+	rf.IterFn = func(value any, yield func(any) bool) {
+		// Fast path: direct type assertion
+		if slice, ok := value.([]E); ok {
+			for _, item := range slice {
+				if !yield(item) {
+					return
+				}
+			}
+			return
+		}
+		// Handle SliceOf[E] which has underlying type []E
+		if sv, ok := value.(SliceValue); ok {
+			sv.SliceIter(yield)
+			return
+		}
+		// Fallback: try reflection for compatible slice types
+		val := reflect.ValueOf(value)
+		if val.Kind() == reflect.Slice {
+			for i := 0; i < val.Len(); i++ {
+				if !yield(val.Index(i).Interface()) {
+					return
+				}
+			}
+		}
+	}
+	return rf
 }
 
 // coerceToType converts a value to type T, handling SliceOf[E] → []E conversion.

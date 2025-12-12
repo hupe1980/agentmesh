@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"reflect"
 	"sort"
 	"time"
 
@@ -843,35 +842,25 @@ func (a *pregelGraphAdapter[I, O]) managedValueDescriptors() []checkpoint.Manage
 // yieldListItems yields each item in a slice as an output.
 // If the value is not a slice (e.g., streaming single items from a ListKey),
 // it yields the single value directly.
-// Uses SliceValue interface when available to avoid reflection.
+// Uses IterFn from KeyRegistry when available to avoid reflection.
 // Lock-free: uses buffered channel for thread-safe parallel node execution.
 func (a *pregelGraphAdapter[I, O]) yieldListItems(items any) {
-	// Fast path: use SliceValue interface (no reflection)
-	if sv, ok := items.(SliceValue); ok {
-		sv.SliceIter(func(item any) bool {
-			if o, ok := item.(O); ok {
-				return a.safeYield(o, nil)
-			}
-			return true
-		})
-		return
-	}
-
-	// Check if it's actually a slice
-	val := reflect.ValueOf(items)
-	if val.Kind() != reflect.Slice {
-		// Not a slice - yield as single value (supports streaming individual items)
-		a.yieldValue(items)
-		return
-	}
-
-	// Slow path: iterate through slice via reflection
-	for i := 0; i < val.Len(); i++ {
-		item := val.Index(i).Interface()
-		if o, ok := item.(O); ok {
-			a.safeYield(o, nil)
+	// Use IterFn from KeyRegistry (generated at build time with full type info)
+	// This handles: direct type assertion, SliceValue interface, and reflection fallback
+	if a.cfg.Execution.OutputKey != "" {
+		if rf, ok := a.cfg.Execution.KeyRegistry[a.cfg.Execution.OutputKey]; ok && rf.IterFn != nil {
+			rf.IterFn(items, func(item any) bool {
+				if o, ok := item.(O); ok {
+					return a.safeYield(o, nil)
+				}
+				return true
+			})
+			return
 		}
 	}
+
+	// Fallback for keys without IterFn: yield as single value
+	a.yieldValue(items)
 }
 
 // yieldValue yields a single value as output.

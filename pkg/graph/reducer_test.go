@@ -165,3 +165,56 @@ func TestWrapReducer(t *testing.T) {
 		assert.Equal(t, 5, result)
 	})
 }
+
+func TestWrapSliceReducer(t *testing.T) {
+	r := WrapSliceReducer(AppendReducer[int]{})
+
+	t.Run("ZeroFn returns nil slice", func(t *testing.T) {
+		assert.Nil(t, r.ZeroFn())
+	})
+
+	t.Run("ReduceFn appends slices", func(t *testing.T) {
+		result := r.ReduceFn([]int{1, 2}, []int{3, 4})
+		assert.Equal(t, []int{1, 2, 3, 4}, result)
+	})
+
+	t.Run("IterFn iterates over slice directly", func(t *testing.T) {
+		items := []int{10, 20, 30}
+		var collected []int
+		r.IterFn(items, func(item any) bool {
+			collected = append(collected, item.(int))
+			return true
+		})
+		assert.Equal(t, []int{10, 20, 30}, collected)
+	})
+
+	t.Run("IterFn supports early termination", func(t *testing.T) {
+		items := []int{1, 2, 3, 4, 5}
+		var collected []int
+		r.IterFn(items, func(item any) bool {
+			collected = append(collected, item.(int))
+			return len(collected) < 3 // Stop after 3 items
+		})
+		assert.Equal(t, []int{1, 2, 3}, collected)
+	})
+
+	t.Run("IterFn handles empty slice", func(t *testing.T) {
+		items := []int{}
+		var collected []int
+		r.IterFn(items, func(item any) bool {
+			collected = append(collected, item.(int))
+			return true
+		})
+		assert.Empty(t, collected)
+	})
+
+	t.Run("IterFn handles nil slice", func(t *testing.T) {
+		var items []int
+		var collected []int
+		r.IterFn(items, func(item any) bool {
+			collected = append(collected, item.(int))
+			return true
+		})
+		assert.Empty(t, collected)
+	})
+}

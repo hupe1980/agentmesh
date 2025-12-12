@@ -29,9 +29,10 @@ type StateKey interface {
 // Key defines a typed state channel with an associated reducer.
 // The reducer determines how values are merged during state updates.
 type Key[T any] struct {
-	name    string
-	reducer Reducer[T]
-	isSlice bool // true for keys created with NewListKey
+	name      string
+	reducer   Reducer[T]
+	isSlice   bool        // true for keys created with NewListKey
+	reducerFn ReducerFunc // cached type-erased reducer (set at construction)
 }
 
 // stateKey implements StateKey.
@@ -58,11 +59,15 @@ func NewKey[T any](name string, opts ...KeyOption[T]) Key[T] {
 		opt(&k)
 	}
 
+	// Cache the type-erased reducer
+	k.reducerFn = WrapReducer(k.reducer)
+
 	return k
 }
 
 // NewListKey creates a list state key with Append semantics by default.
 // The key stores []T and appends incoming slices.
+// Uses WrapSliceReducer to enable reflection-free iteration.
 func NewListKey[T any](name string, opts ...KeyOption[[]T]) Key[[]T] {
 	k := Key[[]T]{
 		name:    name,
@@ -73,6 +78,9 @@ func NewListKey[T any](name string, opts ...KeyOption[[]T]) Key[[]T] {
 	for _, opt := range opts {
 		opt(&k)
 	}
+
+	// Cache the type-erased reducer with slice iterator
+	k.reducerFn = WrapSliceReducer(k.reducer)
 
 	return k
 }
@@ -88,6 +96,9 @@ func NewCounterKey(name string, opts ...KeyOption[int]) Key[int] {
 		opt(&k)
 	}
 
+	// Cache the type-erased reducer
+	k.reducerFn = WrapReducer(k.reducer)
+
 	return k
 }
 
@@ -101,6 +112,9 @@ func NewMapKey[K comparable, V any](name string, opts ...KeyOption[map[K]V]) Key
 	for _, opt := range opts {
 		opt(&k)
 	}
+
+	// Cache the type-erased reducer
+	k.reducerFn = WrapReducer(k.reducer)
 
 	return k
 }
@@ -121,7 +135,13 @@ func (k Key[T]) Reducer() Reducer[T] {
 }
 
 // ReducerFunc returns the type-erased reducer for runtime use.
+// Returns the cached ReducerFunc that was created at key construction time.
 func (k Key[T]) ReducerFunc() ReducerFunc {
+	// Return cached reducer if available (preferred - avoids recreation)
+	if k.reducerFn.ZeroFn != nil {
+		return k.reducerFn
+	}
+	// Fallback for keys created without caching (e.g., via struct literal)
 	return WrapReducer(k.reducer)
 }
 
