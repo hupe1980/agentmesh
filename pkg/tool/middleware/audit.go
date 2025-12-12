@@ -28,9 +28,9 @@ func (m *AuditMiddleware) Wrap(next tool.Executor) tool.Executor {
 
 		// Log execution start
 		if m.logger != nil {
-			callSummary := make([]map[string]interface{}, len(calls))
+			callSummary := make([]map[string]any, len(calls))
 			for i, call := range calls {
-				callSummary[i] = map[string]interface{}{
+				callSummary[i] = map[string]any{
 					"id":   call.ID,
 					"name": call.Name,
 				}
@@ -85,7 +85,7 @@ func (m *AuditMiddleware) Wrap(next tool.Executor) tool.Executor {
 }
 
 // toJSON safely converts a value to JSON string, returning empty string on error.
-func toJSON(v interface{}) string {
+func toJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return ""

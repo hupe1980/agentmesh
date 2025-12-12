@@ -95,7 +95,7 @@ func (m *CacheMiddleware) Clear() {
 // Size returns the approximate number of cached entries.
 func (m *CacheMiddleware) Size() int {
 	count := 0
-	m.cache.Range(func(_, _ interface{}) bool {
+	m.cache.Range(func(_, _ any) bool {
 		count++
 		return true
 	})
