@@ -173,11 +173,11 @@ flowchart TD
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Define typed state keys
+// Define typed state keys (zero value is automatic)
 var (
-    RawDataKey       = graph.NewKey[string]("raw_data", "")
-    ProcessedDataKey = graph.NewKey[string]("processed_data", "")
-    StatusKey        = graph.NewKey[string]("status", "pending")
+    RawDataKey       = graph.NewKey[string]("raw_data")
+    ProcessedDataKey = graph.NewKey[string]("processed_data")
+    StatusKey        = graph.NewKey[string]("status")
 )
 
 // Create graph with state keys
@@ -237,7 +237,7 @@ func processDataFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Com
 Dynamically route to different nodes based on state:
 
 ```go
-var CategoryKey = graph.NewKey[string]("category", "")
+var CategoryKey = graph.NewKey[string]("category")
 
 func classifierFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
     category := graph.Get(scope, CategoryKey)
@@ -294,14 +294,20 @@ flowchart LR
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Key[T] - single value, overwrites on update
+// Key[T] - single value with ReplaceReducer (last write wins)
 var (
-    CounterKey = graph.NewKey[int]("counter", 0)           // with default
-    StatusKey  = graph.NewKey[string]("status", "pending")
+    CounterKey = graph.NewKey[int]("counter")
+    StatusKey  = graph.NewKey[string]("status")
 )
 
-// ListKey[T] - append-only list
+// ListKey[T] - append-only list with AppendReducer
 var MessagesKey = graph.NewListKey[message.Message]("messages")
+
+// CounterKey - sum reducer for numeric accumulation
+var TotalKey = graph.NewCounterKey("total")
+
+// MapKey - merge reducer for map values
+var MetadataKey = graph.NewMapKey[string, any]("metadata")
 ```
 
 ### Reading state
@@ -341,6 +347,28 @@ func addMessageNode(ctx context.Context, scope graph.Scope[string]) (*graph.Comm
         To("next_node")
 }
 ```
+
+### Reducers
+
+Reducers define how state values merge when updated. Each key type has a default reducer:
+
+| Key Type | Default Reducer | Behavior |
+|----------|-----------------|----------|
+| `NewKey[T]()` | `ReplaceReducer` | Overwrites (last write wins) |
+| `NewListKey[T]()` | `AppendReducer` | Appends to existing slice |
+| `NewCounterKey()` | `SumReducer` | Adds values together |
+| `NewMapKey[K,V]()` | `MergeMapReducer` | Merges maps |
+
+```go
+// Custom reducer example
+var HighScoreKey = graph.NewKey[int]("high_score", 
+    graph.WithReducer(graph.MaxReducer[int]{}))  // Keep maximum value
+
+var LogsKey = graph.NewListKey[string]("logs",
+    graph.WithReducer(graph.PrependReducer[string]{}))  // Insert at front
+```
+
+See [State Management: Reducers](/state-management/#reducers) for the complete reducer reference.
 
 ### MessageGraph convenience
 
@@ -434,8 +462,8 @@ Unlike DAG-based systems, AgentMesh supports **cycles** for iterative workflows:
 
 ```go
 var (
-    DraftKey    = graph.NewKey[string]("draft", "")
-    IterationKey = graph.NewKey[int]("iteration", 0)
+    DraftKey     = graph.NewKey[string]("draft")
+    IterationKey = graph.NewCounterKey("iteration")  // Sum reducer for incrementing
 )
 
 func writerFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {

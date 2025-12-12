@@ -46,8 +46,8 @@ import (
 
 // Define typed state keys
 var (
-    StatusKey = graph.NewKey[string]("status", "")
-    CountKey  = graph.NewKey[int]("count", 0)
+    StatusKey = graph.NewKey[string]("status")
+    CountKey  = graph.NewKey[int]("count")
 )
 
 // Create a graph with typed input/output and keys
@@ -118,7 +118,7 @@ for msg, err := range compiled.Run(context.Background(), input) {
 ### Conditional Routing
 
 ```go
-var RouteKey = graph.NewKey[string]("route", "")
+var RouteKey = graph.NewKey[string]("route")
 
 g := graph.New[string, string](RouteKey)
 

@@ -102,8 +102,8 @@ Instructions support Go `text/template` syntax with automatic state substitution
 
 ```go
 // Define state keys
-var UserNameKey = graph.NewKey[string]("userName", "")
-var TaskKey = graph.NewKey[string]("task", "")
+var UserNameKey = graph.NewKey[string]("userName")
+var TaskKey = graph.NewKey[string]("task")
 
 // Use placeholders in instructions - they resolve from graph state
 agent.NewReAct(model,
@@ -765,7 +765,7 @@ import (
 )
 
 // Define typed keys
-var CategoryKey = graph.NewKey[string]("category", "")
+var CategoryKey = graph.NewKey[string]("category")
 
 // Create message graph for agent workflows
 g := message.NewGraphBuilder(CategoryKey)

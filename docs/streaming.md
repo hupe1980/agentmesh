@@ -1,27 +1,46 @@
 ---
-layout: default
+layout: doc
 title: Streaming
-nav_order: 9
+description: Real-time token-by-token output and progressive result delivery in AgentMesh.
+permalink: /streaming/
+example: streaming
+hero:
+  title: Streaming
+  description: First-class support for streaming values from node execution, enabling real-time token-by-token output for LLM responses and progressive result delivery.
+  primary_cta:
+    label: View examples
+    href: "https://github.com/hupe1980/agentmesh/tree/main/examples/streaming"
+    external: true
+  secondary_cta:
+    label: API reference →
+    href: "https://pkg.go.dev/github.com/hupe1980/agentmesh/pkg/graph"
+    external: true
+sidebar:
+  - title: Overview
+    url: "#overview"
+  - title: Basic Streaming
+    url: "#basic-streaming"
+  - title: Streaming with LLMs
+    url: "#streaming-with-llm-responses"
+  - title: Multiple Consumers
+    url: "#multiple-stream-consumers"
+  - title: Streaming in Agents
+    url: "#streaming-in-agents"
+  - title: Subgraph Streaming
+    url: "#streaming-with-subgraphs"
+  - title: Best Practices
+    url: "#streaming-best-practices"
+  - title: Testing
+    url: "#testing-streamed-output"
+  - title: Context Cancellation
+    url: "#context-cancellation"
 ---
 
-# Streaming
-{: .no_toc }
-
-AgentMesh provides first-class support for streaming values from node execution, enabling real-time token-by-token output for LLM responses and progressive result delivery.
-
-## Table of contents
-{: .no_toc .text-delta }
-
-1. TOC
-{:toc}
-
----
-
-## Overview
+## Overview {#overview}
 
 Streaming in AgentMesh is built into the `Scope[O]` interface that every node receives. The `Scope` provides a `Stream(value O)` method that allows nodes to emit values during execution, which are delivered to subscribers in real-time.
 
-**Key insight:** Streamed values bypass the BSP state management entirely. They flow directly from nodes to subscribers without going through the Pregel barrier synchronization. This enables real-time delivery while state updates follow the standard superstep-based commit cycle.
+**Key insight:** Streamed values bypass the BSP state management entirely. They flow directly from nodes to the iterator without going through the Pregel barrier synchronization. This enables real-time delivery while state updates follow the standard superstep-based commit cycle.
 
 <div class="mermaid">
 flowchart TB
@@ -34,7 +53,7 @@ flowchart TB
     subgraph Streaming["Direct Streaming Path"]
         direction TB
         CH["Stream Channel"]
-        SH["Stream Handlers"]
+        IT["Iterator (iter.Seq2)"]
         OUT["Real-time Output"]
     end
     
@@ -49,8 +68,8 @@ flowchart TB
     NF --> CMD
     
     SC -.->|"immediate"| CH
-    CH -.->|"fan-out"| SH
-    SH -.->|"real-time"| OUT
+    CH -.->|"yields"| IT
+    IT -.->|"real-time"| OUT
     
     CMD -->|"updates"| WB
     WB -->|"superstep end"| BAR
@@ -79,11 +98,11 @@ type ReadOnlyScope interface {
 }
 ```
 
-## Basic Streaming
+## Basic Streaming {#basic-streaming}
 
-### Setting Up Stream Handling
+### Iterator-Based Streaming
 
-When running a graph, you can subscribe to streamed values using `WithStreamHandler`:
+AgentMesh uses Go's iterator pattern for streaming. When you run a graph, you receive values as they are streamed via the iterator:
 
 ```go
 package main
@@ -91,6 +110,7 @@ package main
 import (
     "context"
     "fmt"
+    "log"
 
     "github.com/hupe1980/agentmesh/pkg/graph"
 )
@@ -101,26 +121,34 @@ type Output struct {
     Content string
 }
 
+// Define state key
+var ContentKey = graph.NewKey[string]("content")
+
 func main() {
-    // Create a graph with Output type
-    g := graph.New[Output](
-        graph.NewNode("generate", generateNode),
-    )
+    // Create a graph with Input=any, Output=Output
+    g := graph.New[any, Output](ContentKey)
+    
+    // Add node
+    g.Node("generate", generateNode, graph.END)
+    g.Start("generate")
+
+    compiled, err := g.Build()
+    if err != nil {
+        log.Fatal(err)
+    }
 
     ctx := context.Background()
     
-    // Run with stream handler
-    output, err := g.Run(ctx, nil,
-        graph.WithStreamHandler(func(value Output) {
-            // Handle each streamed value
-            fmt.Print(value.Token)
-        }),
-    )
-    if err != nil {
-        panic(err)
+    // Iterate over streamed values
+    for output, err := range compiled.Run(ctx, nil) {
+        if err != nil {
+            log.Fatal(err)
+        }
+        // Handle each streamed value as it arrives
+        fmt.Print(output.Token)
     }
     
-    fmt.Printf("\n\nFinal: %s\n", output.Content)
+    fmt.Println("\nDone!")
 }
 
 func generateNode(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
@@ -129,85 +157,100 @@ func generateNode(ctx context.Context, scope graph.Scope[Output]) (*graph.Comman
     
     for _, token := range tokens {
         content += token
-        // Stream each token
+        // Stream each token - immediately available to the iterator
         scope.Stream(Output{Token: token, Content: content})
     }
     
-    return graph.NewCommand(
-        graph.WithUpdate("content", content),
-    ), nil
+    return graph.Set(ContentKey, content).To(graph.END)
 }
 ```
 
-## Streaming with LLM Responses
+## Streaming with LLM Responses {#streaming-with-llm-responses}
 
-A common use case is streaming LLM responses token by token:
+A common use case is streaming LLM responses token by token. The built-in model nodes handle this automatically:
 
 ```go
-type ChatOutput struct {
-    Chunk   string
-    Message Message
-}
+package main
 
-func chatNode(ctx context.Context, scope graph.Scope[ChatOutput]) (*graph.Command, error) {
-    messages, _ := graph.ScopeGetList[Message](scope, "messages")
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/hupe1980/agentmesh/pkg/agent"
+    "github.com/hupe1980/agentmesh/pkg/graph"
+    "github.com/hupe1980/agentmesh/pkg/message"
+    "github.com/hupe1980/agentmesh/pkg/model"
+    "github.com/hupe1980/agentmesh/pkg/model/openai"
+)
+
+func main() {
+    // Create model with streaming enabled
+    openaiModel := openai.NewModel()
+    executor := model.NewExecutor(openaiModel)
     
-    // Call LLM with streaming
-    stream, err := llm.StreamChat(ctx, messages)
-    if err != nil {
-        return nil, err
+    // Create graph
+    g := graph.New[[]message.Message, message.Message](agent.MessagesKey)
+    
+    // Model node with streaming
+    modelFn, _ := agent.NewModelNodeFunc(executor,
+        agent.WithModelStreaming(true), // Enable streaming
+    )
+    
+    g.Node("model", modelFn, graph.END)
+    g.Start("model")
+    
+    compiled, _ := g.Build()
+    
+    messages := []message.Message{
+        message.NewHumanMessageFromText("Hello!"),
     }
     
-    var fullResponse strings.Builder
-    
-    for chunk := range stream.Chunks() {
-        fullResponse.WriteString(chunk.Content)
+    // Stream execution - chunks arrive as they're generated
+    for msg, err := range compiled.Run(context.Background(), messages) {
+        if err != nil {
+            log.Fatal(err)
+        }
         
-        // Stream each chunk to subscribers
-        scope.Stream(ChatOutput{
-            Chunk: chunk.Content,
-            Message: Message{
-                Role:    "assistant",
-                Content: fullResponse.String(),
-            },
-        })
+        switch m := msg.(type) {
+        case *message.AIMessageChunk:
+            // Partial streaming output - print immediately
+            fmt.Print(m.String())
+        case *message.AIMessage:
+            // Final complete message - skip to avoid duplication
+        }
     }
-    
-    return graph.NewCommand(
-        graph.WithAppendToList("messages", Message{
-            Role:    "assistant",
-            Content: fullResponse.String(),
-        }),
-    ), nil
 }
 ```
 
-## Multiple Stream Consumers
+## Multiple Stream Consumers {#multiple-stream-consumers}
 
-You can have multiple consumers process the same stream:
+Since streaming uses iterators, you process all values in a single loop. To fan out to multiple consumers, process in the loop body:
 
 ```go
-// Create consumers
+// Track multiple metrics in the same loop
 var allTokens []string
 var tokenCount int
 
-output, err := g.Run(ctx, nil,
-    graph.WithStreamHandler(func(value Output) {
-        // Consumer 1: Collect tokens
-        allTokens = append(allTokens, value.Token)
-    }),
-    graph.WithStreamHandler(func(value Output) {
-        // Consumer 2: Count tokens
-        tokenCount++
-    }),
-    graph.WithStreamHandler(func(value Output) {
-        // Consumer 3: Display to user
-        fmt.Print(value.Token)
-    }),
-)
+for output, err := range compiled.Run(ctx, nil) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Consumer 1: Collect tokens
+    allTokens = append(allTokens, output.Token)
+    
+    // Consumer 2: Count tokens
+    tokenCount++
+    
+    // Consumer 3: Display to user
+    fmt.Print(output.Token)
+}
+
+fmt.Printf("\nReceived %d tokens\n", tokenCount)
 ```
 
-## Streaming in Agents
+## Streaming in Agents {#streaming-in-agents}
 
 ### Using WithStreaming Option
 
@@ -245,56 +288,59 @@ for msg, err := range reactAgent.Run(ctx, messages) {
 
 ### Custom Agent Streaming
 
-For custom agent implementations:
+For custom agent implementations, use `scope.Stream()` to emit values:
 
 ```go
+var MessagesKey = graph.NewListKey[message.Message]("messages")
+
 func agentNode(ctx context.Context, scope graph.Scope[StreamChunk]) (*graph.Command, error) {
     // Get current state
-    messages, _ := graph.ScopeGetList[Message](scope, "messages")
+    messages, _ := graph.ScopeGetList[message.Message](scope, MessagesKey.Name())
     
-    // Stream LLM response
+    // Stream LLM response chunks as they arrive
     response, err := streamLLMResponse(ctx, messages, func(chunk string) {
         scope.Stream(StreamChunk{Content: chunk})
     })
     if err != nil {
-        return nil, err
+        return graph.Fail(err)
     }
     
-    return graph.NewCommand(
-        graph.WithAppendToList("messages", response),
-    ), nil
+    return graph.Set(MessagesKey, []message.Message{response}).To(graph.END)
 }
 ```
 
-## Streaming with Subgraphs
+## Streaming with Subgraphs {#streaming-with-subgraphs}
 
-Subgraphs can stream values that propagate to the parent graph:
+Subgraphs can stream values that propagate to the parent graph's iterator:
 
 ```go
 // Child graph streams its output
-childGraph := graph.New[Output](
-    graph.NewNode("process", func(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
-        scope.Stream(Output{Token: "from child"})
-        return graph.End(), nil
-    }),
-)
+childGraph := graph.New[any, Output](ContentKey)
+childGraph.Node("process", func(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
+    scope.Stream(Output{Token: "from child"})
+    return graph.To(graph.END)
+}, graph.END)
+childGraph.Start("process")
 
 // Parent graph includes child as subgraph
-parentGraph := graph.New[Output](
-    graph.NewNode("start", startNode),
-    graph.NewSubgraph("child", childGraph, mapState),
-    graph.NewNode("finish", finishNode),
-)
+parentGraph := graph.New[any, Output](ContentKey)
+parentGraph.Node("start", startNode, "child")
+parentGraph.Subgraph("child", childGraph.MustBuild(), mapState, "finish")
+parentGraph.Node("finish", finishNode, graph.END)
+parentGraph.Start("start")
 
-// Stream handler receives values from both parent and child nodes
-output, err := parentGraph.Run(ctx, nil,
-    graph.WithStreamHandler(func(value Output) {
-        fmt.Println("Received:", value.Token)
-    }),
-)
+compiled, _ := parentGraph.Build()
+
+// Iterator receives values from both parent and child nodes
+for output, err := range compiled.Run(ctx, nil) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println("Received:", output.Token)
+}
 ```
 
-## Streaming Best Practices
+## Streaming Best Practices {#streaming-best-practices}
 
 ### 1. Type-Safe Streaming
 
@@ -308,10 +354,12 @@ type TokenOutput struct {
     Timestamp time.Time
 }
 
+var IndexKey = graph.NewKey[int]("index")
+
 // The type parameter ensures type safety
 func node(ctx context.Context, scope graph.Scope[TokenOutput]) (*graph.Command, error) {
     scope.Stream(TokenOutput{Token: "hello", Index: 0, Timestamp: time.Now()})
-    return graph.End(), nil
+    return graph.To(graph.END)
 }
 ```
 
@@ -325,6 +373,8 @@ type Progress struct {
     Total   int
     Status  string
 }
+
+var ProcessedKey = graph.NewKey[int]("processed")
 
 func processNode(ctx context.Context, scope graph.Scope[Progress]) (*graph.Command, error) {
     items := getItems()
@@ -340,9 +390,7 @@ func processNode(ctx context.Context, scope graph.Scope[Progress]) (*graph.Comma
         processItem(item)
     }
     
-    return graph.NewCommand(
-        graph.WithUpdate("processed", total),
-    ), nil
+    return graph.Set(ProcessedKey, total).To(graph.END)
 }
 ```
 
@@ -365,11 +413,11 @@ func node(ctx context.Context, scope graph.Scope[Result]) (*graph.Command, error
         }
         scope.Stream(Result{Data: result})
     }
-    return graph.End(), nil
+    return graph.To(graph.END)
 }
 ```
 
-## Testing Streamed Output
+## Testing Streamed Output {#testing-streamed-output}
 
 Use `testutil.NewTestScopeFromMap` for testing nodes that stream:
 
@@ -390,7 +438,7 @@ func TestStreamingNode(t *testing.T) {
 }
 ```
 
-## Context Cancellation
+## Context Cancellation {#context-cancellation}
 
 Streaming respects context cancellation:
 
@@ -400,26 +448,31 @@ func streamingNode(ctx context.Context, scope graph.Scope[Output]) (*graph.Comma
         select {
         case <-ctx.Done():
             // Context cancelled, stop streaming
-            return nil, ctx.Err()
+            return graph.Fail(ctx.Err())
         default:
             scope.Stream(Output{Index: i})
         }
     }
-    return graph.End(), nil
+    return graph.To(graph.END)
 }
 
 // Usage with timeout
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-output, err := g.Run(ctx, nil,
-    graph.WithStreamHandler(func(value Output) {
-        fmt.Println(value.Index)
-    }),
-)
+for output, err := range compiled.Run(ctx, nil) {
+    if err != nil {
+        if errors.Is(err, context.DeadlineExceeded) {
+            fmt.Println("Timeout reached")
+            break
+        }
+        log.Fatal(err)
+    }
+    fmt.Println(output.Index)
+}
 ```
 
-## Related Topics
+## Related Topics {#related-topics}
 
 - [State Management](state-management.md) - Managing state with Scope
 - [Agents](agents.md) - Building agents with streaming support

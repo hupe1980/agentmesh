@@ -16,6 +16,10 @@ hero:
 sidebar:
   - title: Type-safe updates
     url: "#type-safe-updates"
+  - title: Reducers
+    url: "#reducers"
+  - title: Initial state
+    url: "#initial-state"
   - title: Namespaces
     url: "#namespaces"
   - title: Node-level namespaces
@@ -45,10 +49,10 @@ All nodes use the `NodeFunc` signature with typed state keys for compile-time ty
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-// Define typed keys
+// Define typed keys (zero value is used by default reducer)
 var (
-    CounterKey = graph.NewKey[int]("counter", 0)
-    StatusKey  = graph.NewKey[string]("status", "")
+    CounterKey = graph.NewKey[int]("counter")
+    StatusKey  = graph.NewKey[string]("status")
 )
 
 // Create graph with keys
@@ -152,11 +156,11 @@ g.Node("log", func(ctx context.Context, scope graph.Scope[string]) (*graph.Comma
 
 **Using typed keys:**
 ```go
-// Define typed keys upfront
+// Define typed keys upfront (zero value is automatic)
 var (
-    CounterKey  = graph.NewKey[int]("counter", 0)
-    StatusKey   = graph.NewKey[string]("status", "")
-    ValidKey    = graph.NewKey[bool]("valid", false)
+    CounterKey  = graph.NewKey[int]("counter")
+    StatusKey   = graph.NewKey[string]("status")
+    ValidKey    = graph.NewKey[bool]("valid")
     TagsKey     = graph.NewListKey[string]("tags")
     MessagesKey = message.MessagesKey  // Built-in message list key
 )
@@ -179,6 +183,236 @@ g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.C
 ```
 
 See [examples/typed_updates](https://github.com/hupe1980/agentmesh/tree/main/examples/typed_updates) for a complete working example.
+
+---
+
+## Reducers {#reducers}
+
+Reducers define how state values are combined when multiple updates occur. Each key type has a default reducer, but you can customize the merge behavior.
+
+### How reducers work
+
+When a node updates a key, the reducer determines how the new value combines with the existing value:
+
+```go
+// Reducer interface
+type Reducer[T any] interface {
+    Zero() T                         // Identity element (initial value)
+    Reduce(existing, incoming T) T   // Merge logic
+}
+```
+
+### Built-in key types and their default reducers
+
+| Key Constructor | Default Reducer | Behavior |
+|-----------------|-----------------|----------|
+| `NewKey[T]()` | `ReplaceReducer` | Last write wins (overwrites) |
+| `NewListKey[T]()` | `AppendReducer` | Appends incoming slice to existing |
+| `NewCounterKey()` | `SumReducer` | Adds values together |
+| `NewMapKey[K,V]()` | `MergeMapReducer` | Merges maps (later keys overwrite) |
+
+### Built-in reducers
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// ReplaceReducer - last write wins (default for NewKey)
+var StatusKey = graph.NewKey[string]("status")
+
+// AppendReducer - concatenates slices (default for NewListKey)
+var MessagesKey = graph.NewListKey[message.Message]("messages")
+
+// PrependReducer - inserts at front
+var LogsKey = graph.NewListKey[string]("logs", graph.WithReducer(graph.PrependReducer[string]{}))
+
+// SumReducer - adds numeric values (default for NewCounterKey)
+var CounterKey = graph.NewCounterKey("counter")
+
+// MaxReducer - keeps the larger value
+var HighScoreKey = graph.NewKey[int]("high_score", graph.WithReducer(graph.MaxReducer[int]{}))
+
+// MinReducer - keeps the smaller value
+var LowScoreKey = graph.NewKey[int]("low_score", graph.WithReducer(graph.MinReducer[int]{}))
+
+// FirstReducer - keeps the earliest non-zero value
+var FirstErrorKey = graph.NewKey[string]("first_error", graph.WithReducer(graph.FirstReducer[string]{}))
+
+// MergeMapReducer - unions maps (default for NewMapKey)
+var MetadataKey = graph.NewMapKey[string, any]("metadata")
+```
+
+### Custom reducers
+
+Implement the `Reducer[T]` interface for custom merge logic:
+
+```go
+// Custom reducer that keeps unique values
+type UniqueAppendReducer[T comparable] struct{}
+
+func (UniqueAppendReducer[T]) Zero() []T {
+    return nil
+}
+
+func (UniqueAppendReducer[T]) Reduce(existing, incoming []T) []T {
+    seen := make(map[T]struct{})
+    for _, v := range existing {
+        seen[v] = struct{}{}
+    }
+    result := existing
+    for _, v := range incoming {
+        if _, ok := seen[v]; !ok {
+            result = append(result, v)
+            seen[v] = struct{}{}
+        }
+    }
+    return result
+}
+
+// Use custom reducer
+var UniqueTagsKey = graph.NewListKey[string]("unique_tags", 
+    graph.WithReducer(UniqueAppendReducer[string]{}))
+```
+
+### Reducer wrappers
+
+**SkipZeroReducer** - Ignores zero-value updates:
+
+```go
+// Only update if incoming value is non-zero
+var OptionalStatusKey = graph.NewKey[string]("optional_status",
+    graph.WithReducer(graph.NewSkipZeroReducer(graph.ReplaceReducer[string]{})))
+```
+
+### Why reducers matter
+
+Reducers enable:
+- **Parallel safety**: Multiple nodes can update the same key concurrently
+- **Deterministic merging**: Same inputs always produce same output
+- **Semantic updates**: Express intent (append, sum, max) not just assignment
+- **BSP compatibility**: Clean merge at superstep barriers
+
+---
+
+## Initial state {#initial-state}
+
+You can set initial state values before graph execution starts. This is useful for configuration, session context, or pre-computed values.
+
+### Using WithInitialValue (type-safe)
+
+The recommended approach uses `WithInitialValue` for compile-time type safety:
+
+```go
+import "github.com/hupe1980/agentmesh/pkg/graph"
+
+// Define typed keys
+var (
+    SessionIDKey = graph.NewKey[string]("session_id")
+    UserNameKey  = graph.NewKey[string]("user_name")
+    MaxRetriesKey = graph.NewKey[int]("max_retries")
+)
+
+// Create and build graph
+g := graph.New[string, string](SessionIDKey, UserNameKey, MaxRetriesKey)
+// ... add nodes ...
+compiled, _ := g.Build()
+
+// Run with initial values - type-safe!
+for output, err := range compiled.Run(ctx, input,
+    graph.WithInitialValue(SessionIDKey, "sess-12345"),
+    graph.WithInitialValue(UserNameKey, "Alice"),
+    graph.WithInitialValue(MaxRetriesKey, 3),
+) {
+    // Process outputs...
+}
+```
+
+### Multiple initial values
+
+Chain multiple `WithInitialValue` calls:
+
+```go
+compiled.Run(ctx, input,
+    graph.WithInitialValue(ConfigKey, config),
+    graph.WithInitialValue(UserKey, user),
+    graph.WithInitialValue(ContextKey, contextData),
+)
+```
+
+### Initial values with reducers
+
+Initial values are merged using the key's reducer. For list keys with `AppendReducer`, initial values are appended:
+
+```go
+var TagsKey = graph.NewListKey[string]("tags")
+
+// Initial tags will be in the list when nodes run
+compiled.Run(ctx, input,
+    graph.WithInitialValue(TagsKey, []string{"initial", "tags"}),
+)
+```
+
+### Using WithStateUpdates (untyped, for Resume)
+
+For resuming from checkpoints or dynamic state, use `WithStateUpdates`:
+
+```go
+// Resume with state updates (used with Resume, not Run)
+compiled.Resume(ctx, checkpoint, runID,
+    graph.WithStateUpdates(map[string]any{
+        "answer": userAnswer,
+        "approved": true,
+    }),
+)
+```
+
+### Common patterns
+
+**Pattern 1: Session context**
+```go
+// Pass session info to all nodes
+compiled.Run(ctx, messages,
+    graph.WithInitialValue(agent.SessionIDKey, sessionID),
+    graph.WithInitialValue(UserIDKey, userID),
+)
+```
+
+**Pattern 2: Configuration injection**
+```go
+// Inject runtime configuration
+compiled.Run(ctx, input,
+    graph.WithInitialValue(MaxTokensKey, 4096),
+    graph.WithInitialValue(TemperatureKey, 0.7),
+)
+```
+
+**Pattern 3: Pre-computed context**
+```go
+// Pass pre-fetched data to avoid re-fetching in nodes
+userData, _ := fetchUser(ctx, userID)
+compiled.Run(ctx, input,
+    graph.WithInitialValue(UserDataKey, userData),
+)
+```
+
+### Input vs Initial State
+
+The graph input and initial state serve different purposes:
+
+| Aspect | Graph Input | Initial State |
+|--------|-------------|---------------|
+| **Purpose** | Primary data to process | Context/configuration |
+| **Type** | Must match graph's `I` type | Any registered key type |
+| **Quantity** | Single value | Multiple key-value pairs |
+| **Example** | `messages []Message` | `sessionID`, `config` |
+
+```go
+// Input is the primary data (messages to process)
+// Initial state provides context (session info, config)
+compiled.Run(ctx, messages,  // <- Input
+    graph.WithInitialValue(SessionIDKey, "sess-123"),  // <- Initial state
+    graph.WithInitialValue(ConfigKey, config),         // <- Initial state
+)
+```
 
 ---
 
@@ -212,12 +446,12 @@ AgentMesh follows a **global-first** approach:
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // 1. Global keys (default) - simple, no prefix
-var GlobalConfig = graph.NewKey[string]("config", "")
-var GlobalCounter = graph.NewKey[int]("counter", 0)
+var GlobalConfig = graph.NewKey[string]("config")
+var GlobalCounter = graph.NewKey[int]("counter")
 
 // 2. Namespaced keys - use dot notation for logical grouping
-var Agent1Status = graph.NewKey[string]("agent1.status", "idle")
-var Agent2Status = graph.NewKey[string]("agent2.status", "idle")
+var Agent1Status = graph.NewKey[string]("agent1.status")
+var Agent2Status = graph.NewKey[string]("agent2.status")
 
 // Create graph with all keys
 g := graph.New[string, string](
@@ -245,7 +479,7 @@ ns := graph.NewNamespace("agent1")
 prefixedKey := ns.Prefix("status") // Returns "agent1.status"
 
 // Create a namespaced key directly
-var AgentStatus = graph.NewKey[string](ns.Prefix("status"), "idle")
+var AgentStatus = graph.NewKey[string](ns.Prefix("status"))
 }
 ```
 
@@ -553,7 +787,7 @@ import (
 )
 
 // Define keys
-var StatusKey = graph.NewKey[string]("status", "")
+var StatusKey = graph.NewKey[string]("status")
 
 // Create graph
 g := graph.New[string, string](StatusKey)
@@ -910,8 +1144,8 @@ import (
 )
 
 // Define keys
-var ContentKey = graph.NewKey[string]("content", "")
-var SentKey = graph.NewKey[bool]("sent", false)
+var ContentKey = graph.NewKey[string]("content")
+var SentKey = graph.NewKey[bool]("sent")
 
 // Create graph
 g := graph.New[string, bool](ContentKey, SentKey)

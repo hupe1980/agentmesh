@@ -750,8 +750,8 @@ Subgraphs enable **hierarchical composition** by embedding compiled graphs as no
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // Define keys
-var ValueKey = graph.NewKey[int]("value", 0)
-var ResultKey = graph.NewKey[int]("result", 0)
+var ValueKey = graph.NewKey[int]("value")
+var ResultKey = graph.NewKey[int]("result")
 
 // Create a subgraph that doubles the value
 sub := graph.New[int, int](ValueKey, ResultKey)
@@ -801,10 +801,10 @@ result, _ := graph.Last(compiled.Run(context.Background(), 0))
 Map parent state to subgraph state and back using `graph.Subgraph()` with InputMapper and OutputMapper functions:
 
 ```go
-var DataKey = graph.NewKey[string]("data", "")
-var InputKey = graph.NewKey[string]("input", "")
-var OutputKey = graph.NewKey[string]("output", "")
-var ProcessedDataKey = graph.NewKey[string]("processed_data", "")
+var DataKey = graph.NewKey[string]("data")
+var InputKey = graph.NewKey[string]("input")
+var OutputKey = graph.NewKey[string]("output")
+var ProcessedDataKey = graph.NewKey[string]("processed_data")
 
 parent := graph.New[string, string](DataKey, ProcessedDataKey)
 sub := graph.New[string, string](InputKey, OutputKey)

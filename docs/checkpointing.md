@@ -56,7 +56,7 @@ import (
 )
 
 // Define state keys
-var StatusKey = graph.NewKey[string]("status", "")
+var StatusKey = graph.NewKey[string]("status")
 
 // Create graph
 g := message.NewGraphBuilder(StatusKey)
@@ -136,7 +136,7 @@ Superstep N: Final state (all nodes complete)
 **Example Workflow**:
 
 ```go
-var StatusKey = graph.NewKey[string]("status", "")
+var StatusKey = graph.NewKey[string]("status")
 
 g := graph.New[string, string](StatusKey)
 

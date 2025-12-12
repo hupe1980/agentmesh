@@ -210,9 +210,9 @@ Traditional agent frameworks use **sequential DAG execution**, which limits expr
 ```go
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
-var DraftKey = graph.NewKey[string]("draft", "")
-var FeedbackKey = graph.NewKey[string]("feedback", "")
-var DoneKey = graph.NewKey[bool]("done", false)
+var DraftKey = graph.NewKey[string]("draft")
+var FeedbackKey = graph.NewKey[string]("feedback")
+var DoneKey = graph.NewKey[bool]("done")
 
 g := graph.New[string, string](DraftKey, FeedbackKey, DoneKey)
 
@@ -530,8 +530,8 @@ The graph package provides a fluent API for constructing agent workflows:
 import "github.com/hupe1980/agentmesh/pkg/graph"
 
 // Define typed state keys
-var StatusKey = graph.NewKey[string]("status", "")
-var CountKey = graph.NewKey[int]("count", 0)
+var StatusKey = graph.NewKey[string]("status")
+var CountKey = graph.NewKey[int]("count")
 
 // Create graph with keys
 g := graph.New[string, string](StatusKey, CountKey)
@@ -616,10 +616,10 @@ AgentMesh uses a **type-safe state system** with compile-time guarantees.
 Define typed state keys for compile-time type safety:
 
 ```go
-// Single value keys
-var StatusKey = graph.NewKey[string]("status", "")
-var CounterKey = graph.NewKey[int]("counter", 0)
-var ConfigKey = graph.NewKey[Config]("config", Config{})
+// Single value keys (ReplaceReducer - last write wins)
+var StatusKey = graph.NewKey[string]("status")
+var CounterKey = graph.NewKey[int]("counter")
+var ConfigKey = graph.NewKey[Config]("config")
 
 // List keys
 var TagsKey = graph.NewListKey[string]("tags")
