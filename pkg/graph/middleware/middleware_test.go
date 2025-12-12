@@ -1,4 +1,4 @@
-package graph_test
+package middleware_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +66,7 @@ func TestChain(t *testing.T) {
 
 func TestLoggingMiddleware(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	mw := graph.LoggingMiddleware[any](logger)
+	mw := graphmw.LoggingMiddleware[any](logger)
 
 	called := false
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -83,7 +84,7 @@ func TestLoggingMiddleware(t *testing.T) {
 
 func TestLoggingMiddlewareWithError(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	mw := graph.LoggingMiddleware[any](logger)
+	mw := graphmw.LoggingMiddleware[any](logger)
 
 	expectedErr := errors.New("test error")
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -101,7 +102,7 @@ func TestTimingMiddleware(t *testing.T) {
 	var recordedNode string
 	var recordedDuration time.Duration
 
-	mw := graph.TimingMiddleware[any](func(nodeName string, d time.Duration) {
+	mw := graphmw.TimingMiddleware[any](func(nodeName string, d time.Duration) {
 		recordedNode = nodeName
 		recordedDuration = d
 	})
@@ -121,7 +122,7 @@ func TestTimingMiddleware(t *testing.T) {
 }
 
 func TestTimingMiddlewareNilCallback(t *testing.T) {
-	mw := graph.TimingMiddleware[any](nil)
+	mw := graphmw.TimingMiddleware[any](nil)
 
 	called := false
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
@@ -141,7 +142,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	var recoveredNode string
 	var recoveredValue any
 
-	mw := graph.RecoveryMiddleware[any](func(nodeName string, recovered any) {
+	mw := graphmw.RecoveryMiddleware[any](func(nodeName string, recovered any) {
 		recoveredNode = nodeName
 		recoveredValue = recovered
 	})
@@ -163,7 +164,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 func TestRecoveryMiddlewareWithErrorPanic(t *testing.T) {
 	panicErr := errors.New("panic error")
 
-	mw := graph.RecoveryMiddleware[any](nil)
+	mw := graphmw.RecoveryMiddleware[any](nil)
 
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		panic(panicErr)
@@ -177,7 +178,7 @@ func TestRecoveryMiddlewareWithErrorPanic(t *testing.T) {
 }
 
 func TestRecoveryMiddlewareNoPanic(t *testing.T) {
-	mw := graph.RecoveryMiddleware[any](func(nodeName string, recovered any) {
+	mw := graphmw.RecoveryMiddleware[any](func(nodeName string, recovered any) {
 		t.Fatal("should not be called")
 	})
 
@@ -206,7 +207,7 @@ func TestConditionalMiddleware(t *testing.T) {
 		return scope.NodeName() == "apply"
 	}
 
-	conditionalMW := graph.ConditionalMiddleware(condition, mw)
+	conditionalMW := graphmw.ConditionalMiddleware(condition, mw)
 
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)
@@ -237,7 +238,7 @@ func TestNodeMiddleware(t *testing.T) {
 		}
 	}
 
-	nodeMW := graph.NodeMiddleware([]string{"nodeA", "nodeB"}, mw)
+	nodeMW := graphmw.NodeMiddleware([]string{"nodeA", "nodeB"}, mw)
 
 	inner := func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
 		return graph.To(graph.END)

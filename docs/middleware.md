@@ -86,25 +86,33 @@ Graph middleware wraps node execution, providing observability and lifecycle hoo
 import (
     "log/slog"
     "github.com/hupe1980/agentmesh/pkg/graph"
+    graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 )
 
 // Apply logging middleware
-b.WithMiddleware(graph.LoggingMiddleware(slog.Default()))
+b.WithMiddleware(graphmw.LoggingMiddleware(slog.Default()))
 
 // Track timing
-b.WithMiddleware(graph.TimingMiddleware(func(node string, d time.Duration) {
+b.WithMiddleware(graphmw.TimingMiddleware(func(node string, d time.Duration) {
     metrics.RecordLatency(node, d)
 }))
 
 // Recover from panics
-b.WithMiddleware(graph.RecoveryMiddleware(func(node string, r any) {
+b.WithMiddleware(graphmw.RecoveryMiddleware(func(node string, r any) {
     log.Printf("panic in %s: %v", node, r)
 }))
 
 // Apply middleware to specific nodes only
-b.WithMiddleware(graph.NodeMiddleware(
+b.WithMiddleware(graphmw.NodeMiddleware(
     []string{"slow_node", "external_api"},
-    graph.LoggingMiddleware(slog.Default()),
+    graphmw.LoggingMiddleware(slog.Default()),
+))
+
+// Chain multiple middleware
+b.WithMiddleware(graph.Chain(
+    graphmw.LoggingMiddleware(slog.Default()),
+    graphmw.TimingMiddleware(timingCallback),
+    graphmw.RecoveryMiddleware(panicHandler),
 ))
 ```
 

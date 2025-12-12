@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,7 +111,7 @@ func TestErrorRecovery_RecoveryMiddleware(t *testing.T) {
 	}, graph.END)
 
 	g.Start("panicky")
-	g.WithMiddleware(graph.RecoveryMiddleware[any](nil))
+	g.WithMiddleware(graphmw.RecoveryMiddleware[any](nil))
 
 	compiled, err := g.Build()
 	require.NoError(t, err)

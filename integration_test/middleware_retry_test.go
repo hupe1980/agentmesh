@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +77,7 @@ func TestMiddleware_TimingTracking(t *testing.T) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 	g.Start("slow")
-	g.WithMiddleware(graph.TimingMiddleware[any](func(nodeName string, d time.Duration) {
+	g.WithMiddleware(graphmw.TimingMiddleware[any](func(nodeName string, d time.Duration) {
 		recordedDurations = append(recordedDurations, d)
 	}))
 
@@ -105,7 +106,7 @@ func TestMiddleware_RecoveryFromPanic(t *testing.T) {
 		panic("intentional panic for testing")
 	}, graph.END)
 	g.Start("panicker")
-	g.WithMiddleware(graph.RecoveryMiddleware[any](func(nodeName string, recovered any) {
+	g.WithMiddleware(graphmw.RecoveryMiddleware[any](func(nodeName string, recovered any) {
 		recoveredPanic = recovered
 	}))
 
