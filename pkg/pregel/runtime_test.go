@@ -144,7 +144,8 @@ func TestRuntime_Run_SequentialGraph(t *testing.T) {
 		},
 	}
 
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
@@ -191,7 +192,8 @@ func TestRuntime_MessagePropagation(t *testing.T) {
 		},
 	}
 
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
@@ -228,7 +230,8 @@ func TestRuntime_SchedulerReceivesMessageCounts(t *testing.T) {
 	}
 
 	scheduler := &recordingScheduler{}
-	rt := MustNewRuntime[mockState, mockMessage](graph, WithScheduler[mockState, mockMessage](scheduler))
+	rt, err := NewRuntime[mockState, mockMessage](graph, WithScheduler[mockState, mockMessage](scheduler))
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	var superstepTwo SchedulerInfo
@@ -284,7 +287,8 @@ func TestRuntime_MultipleRoots_Concurrent(t *testing.T) {
 		},
 	}
 
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	assert.Equal(t, 3, callCount)
@@ -321,14 +325,15 @@ func TestRuntime_CancelDuringExecution(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+	require.NoError(t, err)
 
 	go func() {
 		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
-	err := runToCompletion(ctx, rt)
+	err = runToCompletion(ctx, rt)
 	assert.Error(t, err)
 	assert.LessOrEqual(t, callCount, 2)
 }
@@ -350,7 +355,8 @@ func (g *errorGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 func (g *errorGraph) State() mockState { return g.state }
 
 func TestRuntime_NodeErrorPropagation(t *testing.T) {
-	rt := MustNewRuntime[mockState, mockMessage](&errorGraph{})
+	rt, err := NewRuntime[mockState, mockMessage](&errorGraph{})
+	require.NoError(t, err)
 
 	var observed bool
 	for evt, err := range rt.Run(context.Background()) {
@@ -380,7 +386,8 @@ func (g *panicGraph) VertexByName(name string) Vertex[mockState, mockMessage] {
 func (g *panicGraph) State() mockState { return g.state }
 
 func TestRuntime_NodePanicRecovery(t *testing.T) {
-	rt := MustNewRuntime[mockState, mockMessage](&panicGraph{})
+	rt, err := NewRuntime[mockState, mockMessage](&panicGraph{})
+	require.NoError(t, err)
 
 	var observed bool
 	var lastErr error
@@ -421,7 +428,8 @@ func TestRuntime_InitialSuperstep(t *testing.T) {
 		},
 	}
 
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithInitialSuperstep[mockState, mockMessage](5))
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil, WithInitialSuperstep[mockState, mockMessage](5))
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	stats := rt.Stats()
@@ -492,7 +500,8 @@ func TestRuntime_AggregatorsVisibleNextSuperstep(t *testing.T) {
 	graph := &singleNodeGraph{name: "agg", node: node}
 
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	require.Len(t, observed, 2)
@@ -569,9 +578,10 @@ func TestRuntime_CombinerMergesMessages(t *testing.T) {
 	}
 
 	// Use small mailbox (2) so combining triggers at 75% capacity (2 messages)
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil,
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil,
 		WithCombiner[mockState, mockMessage](combiner),
 		WithMaxMailboxSize[mockState, mockMessage](2))
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	// With small mailbox and combiner, messages should be combined
@@ -632,7 +642,8 @@ func (g *deliverGraph) State() *deliverState { return g.state }
 
 func TestRuntime_DeliverSeedsExecution(t *testing.T) {
 	graph := newDeliverGraph()
-	rt := MustNewRuntime[*deliverState, mockMessage](graph, nil)
+	rt, err := NewRuntime[*deliverState, mockMessage](graph, nil)
+	require.NoError(t, err)
 	require.NoError(t, rt.Deliver(context.Background(), Message[mockMessage]{From: "external", To: "inbox", Data: mockMessage{Value: 1}}))
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
@@ -682,7 +693,8 @@ func TestRuntime_StatsReflectExecution(t *testing.T) {
 		},
 	}
 
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+	require.NoError(t, err)
 	require.NoError(t, runToCompletion(context.Background(), rt))
 
 	stats := rt.Stats()
@@ -702,8 +714,9 @@ func (aggregatorErrorNode) Run(_ context.Context, vertex VertexContext[mockState
 func TestRuntime_AggregatorUnknownName(t *testing.T) {
 	graph := &singleNodeGraph{name: "agg", node: aggregatorErrorNode{}}
 	aggregators := map[string]Aggregator{"sum": sumAggregator{}}
-	rt := MustNewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
-	err := runToCompletion(context.Background(), rt)
+	rt, err := NewRuntime[mockState, mockMessage](graph, nil, WithAggregators[mockState, mockMessage](aggregators))
+	require.NoError(t, err)
+	err = runToCompletion(context.Background(), rt)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown aggregator")
 }
@@ -718,7 +731,8 @@ func (noopGraph) VertexByName(string) Vertex[noopState, mockMessage] { return ni
 func (noopGraph) State() noopState                                   { return noopState{} }
 
 func TestRuntime_SetSuperstepClampsNegative(t *testing.T) {
-	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	require.NoError(t, err)
 	rt.SetSuperstep(-5)
 	assert.Equal(t, int64(0), rt.CurrentSuperstep())
 	rt.SetSuperstep(7)
@@ -776,7 +790,8 @@ func TestRuntime_ScheduleFrontierNodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			require.NoError(t, err)
 			got, err := rt.scheduleFrontierNodes(context.Background(), tt.frontier, nil, 1)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
@@ -794,7 +809,8 @@ func TestRuntime_ScheduleFrontierNodes_Determinism(t *testing.T) {
 		"node_4": {},
 	}
 
-	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	require.NoError(t, err)
 
 	// Run multiple times and verify consistency
 	first, err := rt.scheduleFrontierNodes(context.Background(), frontier, nil, 1)
@@ -831,7 +847,8 @@ func TestRuntime_SetupSuperstepObservability(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+			require.NoError(t, err)
 			ctx := context.Background()
 
 			// Setup observability
@@ -855,7 +872,8 @@ func TestRuntime_SetupSuperstepObservability(t *testing.T) {
 }
 
 func TestRuntime_SetupSuperstepObservability_ContextValues(t *testing.T) {
-	rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+	require.NoError(t, err)
 	ctx := context.Background()
 	frontierNodes := []string{"A", "B", "C"}
 
@@ -872,11 +890,12 @@ func TestRuntime_SetupSuperstepObservability_ContextValues(t *testing.T) {
 
 func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
 	t.Run("no callback configured", func(t *testing.T) {
-		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		require.NoError(t, err)
 		ctx := context.Background()
 		frontierNodes := []string{"A", "B"}
 
-		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		err = rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
 		assert.NoError(t, err, "should not error when callback is not configured")
 	})
 
@@ -892,16 +911,17 @@ func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
 			return nil
 		}
 
-		rt := MustNewRuntime[noopState, mockMessage](
+		rt, err := NewRuntime[noopState, mockMessage](
 			noopGraph{},
 			nil,
 			WithOnSuperstepStart[noopState, mockMessage](callback),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		frontierNodes := []string{"A", "B", "C"}
 
-		err := rt.executeSuperstepStartCallback(ctx, 42, frontierNodes)
+		err = rt.executeSuperstepStartCallback(ctx, 42, frontierNodes)
 		assert.NoError(t, err)
 		assert.True(t, callbackCalled, "callback should have been called")
 		assert.Equal(t, int64(42), receivedSuperstep)
@@ -915,16 +935,17 @@ func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
 			return expectedErr
 		}
 
-		rt := MustNewRuntime[noopState, mockMessage](
+		rt, err := NewRuntime[noopState, mockMessage](
 			noopGraph{},
 			nil,
 			WithOnSuperstepStart[noopState, mockMessage](callback),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		frontierNodes := []string{"A"}
 
-		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		err = rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "superstep start callback failed")
 		assert.Contains(t, err.Error(), "callback failed")
@@ -941,18 +962,19 @@ func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
 			}
 		}
 
-		rt := MustNewRuntime[noopState, mockMessage](
+		rt, err := NewRuntime[noopState, mockMessage](
 			noopGraph{},
 			nil,
 			WithOnSuperstepStart[noopState, mockMessage](callback),
 		)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
 		frontierNodes := []string{"A"}
 
-		err := rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
+		err = rt.executeSuperstepStartCallback(ctx, 1, frontierNodes)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "superstep start callback failed")
 	})
@@ -960,10 +982,11 @@ func TestRuntime_ExecuteSuperstepStartCallback(t *testing.T) {
 
 func TestRuntime_ExecuteSuperstepVertices(t *testing.T) {
 	t.Run("empty vertex list", func(t *testing.T) {
-		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		require.NoError(t, err)
 		ctx := context.Background()
 
-		err := rt.executeSuperstepVertices(ctx, []string{}, 1)
+		err = rt.executeSuperstepVertices(ctx, []string{}, 1)
 		assert.NoError(t, err)
 	})
 
@@ -987,10 +1010,11 @@ func TestRuntime_ExecuteSuperstepVertices(t *testing.T) {
 			},
 		}
 
-		rt := MustNewRuntime[mockState, mockMessage](graph, nil)
+		rt, err := NewRuntime[mockState, mockMessage](graph, nil)
+		require.NoError(t, err)
 
 		// Seed the message bus to trigger execution
-		err := rt.Deliver(context.Background(), Message[mockMessage]{
+		err = rt.Deliver(context.Background(), Message[mockMessage]{
 			From: "external",
 			To:   "slow",
 			Data: mockMessage{Value: 1},
@@ -1055,16 +1079,17 @@ func TestRuntime_ExecuteSuperstepVertices_WithMaxWorkers(t *testing.T) {
 				nodes:     nodes,
 			}
 
-			rt := MustNewRuntime[mockState, mockMessage](
+			rt, err := NewRuntime[mockState, mockMessage](
 				graph,
 				nil,
 				WithMaxWorkers[mockState, mockMessage](tt.maxWorkers),
 			)
+			require.NoError(t, err)
 
 			// Seed messages for all nodes
 			ctx := context.Background()
 			for _, name := range nodeNames {
-				err := rt.Deliver(ctx, Message[mockMessage]{
+				err = rt.Deliver(ctx, Message[mockMessage]{
 					From: "external",
 					To:   name,
 					Data: mockMessage{Value: 1},
@@ -1072,7 +1097,7 @@ func TestRuntime_ExecuteSuperstepVertices_WithMaxWorkers(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			err := rt.executeSuperstepVertices(ctx, nodeNames, 1)
+			err = rt.executeSuperstepVertices(ctx, nodeNames, 1)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.numNodes, callCount, "all nodes should be executed")
 		})
@@ -1117,16 +1142,17 @@ func TestRuntime_RunSuperstep_Integration(t *testing.T) {
 			return nil
 		}
 
-		rt := MustNewRuntime[mockState, mockMessage](
+		rt, err := NewRuntime[mockState, mockMessage](
 			graph,
 			nil,
 			WithOnSuperstepStart[mockState, mockMessage](callback),
 		)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		frontier := map[string]struct{}{"A": {}}
 
-		err := rt.runSuperstep(ctx, frontier, nil, 1)
+		err = rt.runSuperstep(ctx, frontier, nil, 1)
 		assert.NoError(t, err)
 		assert.True(t, callbackCalled, "callback should be invoked")
 		assert.Equal(t, 1, callCount, "vertex A should be executed")
@@ -1134,11 +1160,12 @@ func TestRuntime_RunSuperstep_Integration(t *testing.T) {
 	})
 
 	t.Run("empty frontier no-op", func(t *testing.T) {
-		rt := MustNewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		rt, err := NewRuntime[noopState, mockMessage](noopGraph{}, nil)
+		require.NoError(t, err)
 		ctx := context.Background()
 		frontier := map[string]struct{}{}
 
-		err := rt.runSuperstep(ctx, frontier, nil, 1)
+		err = rt.runSuperstep(ctx, frontier, nil, 1)
 		assert.NoError(t, err)
 	})
 }

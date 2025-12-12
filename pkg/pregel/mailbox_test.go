@@ -34,8 +34,11 @@ func TestMailboxSizeLimit(t *testing.T) {
 			state: &testState{},
 		}
 
-		runtime := MustNewRuntime[*testState, testMessage](graph, nil)
-		err := runToCompletion(context.Background(), runtime)
+		runtime, err := NewRuntime[*testState, testMessage](graph, nil)
+		if err != nil {
+			t.Fatalf("Failed to create runtime: %v", err)
+		}
+		err = runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -78,12 +81,15 @@ func TestMailboxSizeLimit(t *testing.T) {
 		}
 
 		// Set mailbox limit to 10 messages
-		runtime := MustNewRuntime[*testState, testMessage](graph, nil,
+		runtime, err := NewRuntime[*testState, testMessage](graph, nil,
 			WithMaxMailboxSize[*testState, testMessage](10),
 			WithMaxWorkers[*testState, testMessage](2), // Multiple workers for concurrency
 		)
+		if err != nil {
+			t.Fatalf("Failed to create runtime: %v", err)
+		}
 
-		err := runToCompletion(context.Background(), runtime)
+		err = runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -147,12 +153,15 @@ func TestMailboxSizeLimit(t *testing.T) {
 		}
 
 		// Use small mailbox (10) to trigger combining at 75% capacity (8 messages)
-		runtime := MustNewRuntime[*testState, testMessage](graph, nil,
+		runtime, err := NewRuntime[*testState, testMessage](graph, nil,
 			WithMaxMailboxSize[*testState, testMessage](10),
 			WithCombiner[*testState, testMessage](combiner),
 		)
+		if err != nil {
+			t.Fatalf("Failed to create runtime: %v", err)
+		}
 
-		err := runToCompletion(context.Background(), runtime)
+		err = runToCompletion(context.Background(), runtime)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}

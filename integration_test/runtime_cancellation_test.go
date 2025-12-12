@@ -126,10 +126,13 @@ func TestRuntimeReceiveCancellation(t *testing.T) {
 
 	graph := newSingleVertexGraph("root")
 	bus := newBlockingMessageBus()
-	rt := pregel.MustNewRuntime[cancelState, cancelMessage](graph, nil,
+	rt, err := pregel.NewRuntime[cancelState, cancelMessage](graph, nil,
 		pregel.WithMessageBus[cancelState, cancelMessage](bus),
 		pregel.WithMaxWorkers[cancelState, cancelMessage](1),
 	)
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -166,10 +169,13 @@ func TestRuntimeChaosLatencyBounded(t *testing.T) {
 	delay := 3 * time.Second
 	bus := newChaosMessageBus(delay)
 
-	rt := pregel.MustNewRuntime[cancelState, cancelMessage](graph, nil,
+	rt, err := pregel.NewRuntime[cancelState, cancelMessage](graph, nil,
 		pregel.WithMessageBus[cancelState, cancelMessage](bus),
 		pregel.WithMaxWorkers[cancelState, cancelMessage](1),
 	)
+	if err != nil {
+		t.Fatalf("Failed to create runtime: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

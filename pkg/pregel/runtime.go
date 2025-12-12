@@ -358,16 +358,6 @@ func NewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) 
 	return runtime, nil
 }
 
-// MustNewRuntime creates a new runtime for the given graph.
-// Panics if graph is nil or invalid. Use this in tests or when you're certain inputs are valid.
-func MustNewRuntime[S any, M any](graph Graph[S, M], optFns ...RuntimeOption[S, M]) *Runtime[S, M] {
-	runtime, err := NewRuntime(graph, optFns...)
-	if err != nil {
-		panic(err)
-	}
-	return runtime
-}
-
 // Deliver injects messages into the mailbox and schedules their targets for execution.
 // It is safe to call concurrently with Run.
 //
