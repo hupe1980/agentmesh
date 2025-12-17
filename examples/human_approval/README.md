@@ -27,11 +27,11 @@ var (
 ### 2. Create Graph with Approval Guard
 
 ```go
-g := graph.New[string, string](ContentKey, StatusKey, SentKey)
+g := graph.New(ContentKey, StatusKey, SentKey)
 
 // Create guard function
-guard := func(ctx context.Context, input graph.NodeInput[string]) (bool, string, error) {
-    content := graph.Get(input, ContentKey)
+guard := func(ctx context.Context, scope graph.ReadOnlyScope) (bool, string, error) {
+    content := graph.Get(scope, ContentKey)
     if containsSensitiveKeywords(content) {
         return true, "Contains sensitive data", nil
     }

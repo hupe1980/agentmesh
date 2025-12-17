@@ -44,7 +44,7 @@ type Metrics struct {
 }
 
 // GetNodes returns a sorted list of all node names in the compiled graph.
-func (g *Graph[I, O]) GetNodes() []string {
+func (g *Graph) GetNodes() []string {
 	names := make([]string, 0, len(g.nodes))
 	for name := range g.nodes {
 		names = append(names, name)
@@ -54,7 +54,7 @@ func (g *Graph[I, O]) GetNodes() []string {
 }
 
 // GetNodeInfo returns detailed information about a specific node.
-func (g *Graph[I, O]) GetNodeInfo(name string) (*NodeInfo, error) {
+func (g *Graph) GetNodeInfo(name string) (*NodeInfo, error) {
 	n, ok := g.nodes[name]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNodeNotFound, name)
@@ -115,7 +115,7 @@ func (g *Graph[I, O]) GetNodeInfo(name string) (*NodeInfo, error) {
 }
 
 // GetTopology returns a comprehensive view of the compiled graph structure.
-func (g *Graph[I, O]) GetTopology() *Topology {
+func (g *Graph) GetTopology() *Topology {
 	nodes := make([]NodeInfo, 0, len(g.nodes))
 	edges := make([]EdgeInfo, 0)
 	exitPoints := make([]string, 0)
@@ -157,7 +157,7 @@ func (g *Graph[I, O]) GetTopology() *Topology {
 }
 
 // GetMetrics returns static graph metrics.
-func (g *Graph[I, O]) GetMetrics() *Metrics {
+func (g *Graph) GetMetrics() *Metrics {
 	totalNodes := len(g.nodes)
 	totalEdges := len(g.entryPoints) // START -> entry edges
 
@@ -241,7 +241,7 @@ func (g *Graph[I, O]) GetMetrics() *Metrics {
 
 // MermaidFlowchart generates a Mermaid flowchart representation.
 // Direction can be "TD" (top-down), "LR" (left-right), "BT", "RL".
-func (g *Graph[I, O]) MermaidFlowchart(direction string) string {
+func (g *Graph) MermaidFlowchart(direction string) string {
 	if direction == "" {
 		direction = "TD"
 	}

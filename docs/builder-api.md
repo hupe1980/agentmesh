@@ -30,9 +30,9 @@ sidebar:
 ## Features {#features}
 
 - **Fluent API**: Chain method calls for readable graph construction
-- **Type-Safe**: Full Go generics with compile-time type checking
+- **Type-Safe Keys**: Compile-time type safety for state access with typed keys
 - **Command Pattern**: Combine state updates and routing in single expressions
-- **Typed Keys**: Compile-time type safety for state access
+- **Message-Based**: Input is `[]message.Message`, output is `message.Message`
 
 ## Quick Start {#quick-start}
 
@@ -50,11 +50,11 @@ var (
     CountKey  = graph.NewKey[int]("count")
 )
 
-// Create a graph with typed input/output and keys
-g := graph.New[string, string](StatusKey, CountKey)
+// Create a graph with state keys
+g := graph.New(StatusKey, CountKey)
 
 // Add nodes with fluent API
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     count := graph.Get(scope, CountKey)
     return graph.Set(StatusKey, "done").
         Set(CountKey, count+1).
@@ -92,7 +92,7 @@ import (
 g := message.NewGraphBuilder()
 
 // Add agent node
-g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     
     // Process messages with model...
@@ -120,9 +120,9 @@ for msg, err := range compiled.Run(context.Background(), input) {
 ```go
 var RouteKey = graph.NewKey[string]("route")
 
-g := graph.New[string, string](RouteKey)
+g := graph.New(RouteKey)
 
-g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("router", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     route := graph.Get(scope, RouteKey)
     if route == "left" {
         return graph.To("left"), nil
@@ -130,11 +130,11 @@ g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Co
     return graph.To("right"), nil
 }, "left", "right")
 
-g.Node("left", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("left", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(RouteKey, "went-left").To(graph.END), nil
 }, graph.END)
 
-g.Node("right", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("right", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(RouteKey, "went-right").To(graph.END), nil
 }, graph.END)
 
@@ -148,7 +148,7 @@ g.Start("router")
 Add nodes with the `Node()` method:
 
 ```go
-g.Node("name", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("name", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Node logic here
     return graph.To("next"), nil
 }, "next")
@@ -162,7 +162,7 @@ Add automatic retry behavior with `NodeWithRetry()`:
 
 ```go
 g.NodeWithRetry("api_call",
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         result, err := callExternalAPI()
         if err != nil {
             return graph.Fail(err) // Will be retried
@@ -190,7 +190,7 @@ var (
 agentNS := graph.NewNamespace("agent")
 
 g.Node("agent", graph.WithNamespace(
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // Can only access keys in "agent.*" namespace
         return graph.Set(AgentStatusKey, "active").To(graph.END), nil
     },
@@ -205,8 +205,8 @@ Embed compiled graphs as nodes:
 
 ```go
 // Create and compile subgraph
-sub := graph.New[string, string](ValueKey)
-sub.Node("double", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+sub := graph.New(ValueKey)
+sub.Node("double", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     val := graph.Get(scope, ValueKey)
     return graph.Set(ValueKey, val*2).To(graph.END), nil
 }, graph.END)
@@ -214,7 +214,7 @@ sub.Start("double")
 compiledSub, _ := sub.Build()
 
 // Embed in parent
-parent := graph.New[string, string](ValueKey)
+parent := graph.New(ValueKey)
 parent.Subgraph("doubler", compiledSub, graph.END)
 parent.Start("doubler")
 ```
@@ -344,7 +344,7 @@ for result := range compiled.Run(ctx, input,
 
 | Function | Description |
 |----------|-------------|
-| `graph.New[I, O](keys...)` | Create typed graph with state keys |
+| `graph.New(keys...)` | Create graph with state keys |
 | `message.NewGraphBuilder(keys...)` | Create message-based graph for agents |
 
 ### Graph Methods
@@ -391,7 +391,7 @@ See the [builder_api example](https://github.com/hupe1980/agentmesh/tree/main/ex
 The Builder API provides a clean interface for graph construction:
 
 ```
-graph.New[I, O](keys...)
+graph.New(keys...)
     │
     ├── g.Node("name", fn, targets...)
     ├── g.NodeWithRetry(...)
@@ -400,7 +400,7 @@ graph.New[I, O](keys...)
     │
     └── g.Build(opts...)
             │
-            └── *Compiled[I, O]
+            └── *Compiled
                     │
                     └── Run(ctx, input, opts...) → iter.Seq2[ReadOnlyScope, error]
 ```

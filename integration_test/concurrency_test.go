@@ -23,16 +23,16 @@ func TestConcurrency_ParallelNodeExecution(t *testing.T) {
 	var concurrentCount atomic.Int32
 	var maxConcurrent atomic.Int32
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// Start node triggers 3 parallel branches
-	g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("worker1", "worker2", "worker3")
 	}, "worker1", "worker2", "worker3")
 
 	// Create workers that track concurrent execution
-	makeWorker := func(name string) graph.NodeFunc[any] {
-		return func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	makeWorker := func(name string) graph.NodeFunc {
+		return func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 			current := concurrentCount.Add(1)
 			// Track max concurrent
 			for {
@@ -53,7 +53,7 @@ func TestConcurrency_ParallelNodeExecution(t *testing.T) {
 	g.Node("worker2", makeWorker("worker2"), "end")
 	g.Node("worker3", makeWorker("worker3"), "end")
 
-	g.Node("end", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("end", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 
@@ -79,22 +79,22 @@ func TestConcurrency_RaceConditionFree(t *testing.T) {
 
 	counterKey := graph.NewListKey[int]("counters")
 
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
 	// Start triggers many parallel workers
-	g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("w1", "w2", "w3", "w4", "w5")
 	}, "w1", "w2", "w3", "w4", "w5")
 
 	// Each worker appends its ID
 	for i, name := range []string{"w1", "w2", "w3", "w4", "w5"} {
 		id := i + 1
-		g.Node(name, func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+		g.Node(name, func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 			return graph.Set(counterKey, []int{id}).To("end")
 		}, "end")
 	}
 
-	g.Node("end", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("end", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		counters := graph.GetList(scope, counterKey)
 		// Verify all 5 workers contributed
 		if len(counters) != 5 {
@@ -123,14 +123,14 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 	var nodesStarted atomic.Int32
 	nodeStarted := make(chan struct{}, 2) // Signal when a slow node starts
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("slow1", "slow2")
 	}, "slow1", "slow2")
 
 	// Long-running nodes
-	g.Node("slow1", func(ctx context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("slow1", func(ctx context.Context, _ graph.Scope) (*graph.Command, error) {
 		nodesStarted.Add(1)
 		select {
 		case nodeStarted <- struct{}{}:
@@ -144,7 +144,7 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 		}
 	}, "end")
 
-	g.Node("slow2", func(ctx context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("slow2", func(ctx context.Context, _ graph.Scope) (*graph.Command, error) {
 		nodesStarted.Add(1)
 		select {
 		case nodeStarted <- struct{}{}:
@@ -158,7 +158,7 @@ func TestConcurrency_ContextCancellation(t *testing.T) {
 		}
 	}, "end")
 
-	g.Node("end", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("end", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 
@@ -202,26 +202,26 @@ func TestConcurrency_WaitGroupSemantics(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var completedBranches atomic.Int32
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("fast", "slow")
 	}, "fast", "slow")
 
-	g.Node("fast", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("fast", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		// Fast path completes immediately
 		completedBranches.Add(1)
 		return graph.To("merge")
 	}, "merge")
 
-	g.Node("slow", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("slow", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		// Slow path takes some time
 		time.Sleep(50 * time.Millisecond)
 		completedBranches.Add(1)
 		return graph.To("merge")
 	}, "merge")
 
-	g.Node("merge", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("merge", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Both branches should have completed before this runs
 		count := completedBranches.Load()
 		if count != 2 {
@@ -251,7 +251,7 @@ func TestConcurrency_HighFanout(t *testing.T) {
 	resultKey := graph.NewListKey[string]("results")
 	numWorkers := 20
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// Build high fan-out graph
 	workerNames := make([]string, numWorkers)
@@ -259,19 +259,19 @@ func TestConcurrency_HighFanout(t *testing.T) {
 		workerNames[i] = "worker" + string(rune('A'+i))
 	}
 
-	g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(workerNames...)
 	}, workerNames...)
 
 	// Create all workers
 	for _, name := range workerNames {
 		workerName := name
-		g.Node(workerName, func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+		g.Node(workerName, func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 			return graph.Set(resultKey, []string{workerName}).To("collect")
 		}, "collect")
 	}
 
-	g.Node("collect", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("collect", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		results := graph.GetList(scope, resultKey)
 		if len(results) != numWorkers {
 			t.Errorf("Expected %d results, got %d", numWorkers, len(results))
@@ -302,14 +302,14 @@ func TestConcurrency_MutexNotNeeded(t *testing.T) {
 		var wg sync.WaitGroup
 		var completed atomic.Int32
 
-		g := graph.New[any, any](resultKey)
+		g := graph.New(resultKey)
 
-		g.Node("start", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+		g.Node("start", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 			return graph.To("a", "b", "c", "d")
 		}, "a", "b", "c", "d")
 
 		for _, name := range []string{"a", "b", "c", "d"} {
-			g.Node(name, func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+			g.Node(name, func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
@@ -319,7 +319,7 @@ func TestConcurrency_MutexNotNeeded(t *testing.T) {
 			}, "end")
 		}
 
-		g.Node("end", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+		g.Node("end", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 			return graph.Set(resultKey, int(completed.Load())).End()
 		}, graph.END)
 

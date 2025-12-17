@@ -12,11 +12,11 @@ import (
 func TestGetNodes(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -31,14 +31,14 @@ func TestGetNodes(t *testing.T) {
 func TestGetNodeInfo(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("entry", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("entry", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("middle")
 	}, "middle")
-	g.Node("middle", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("middle", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("exit")
 	}, "exit")
-	g.Node("exit", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("exit", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("entry")
@@ -87,8 +87,8 @@ func TestGetNodeInfo(t *testing.T) {
 func TestGetNodeInfoWithInterrupt(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("step", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("step", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("step")
@@ -105,11 +105,11 @@ func TestGetNodeInfoWithInterrupt(t *testing.T) {
 func TestGetTopology(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -142,17 +142,17 @@ func TestGetTopology(t *testing.T) {
 func TestGetMetrics(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("b", "c")
 	}, "b", "c")
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("d")
 	}, "d")
-	g.Node("c", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("c", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("d")
 	}, "d")
-	g.Node("d", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("d", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -177,7 +177,7 @@ func TestGetMetrics(t *testing.T) {
 }
 
 func TestGetMetricsEmptyGraph(t *testing.T) {
-	g := graph.New[any, any]()
+	g := graph.New()
 	compiled, err := g.Build(graph.WithoutValidation())
 	require.NoError(t, err)
 
@@ -192,14 +192,14 @@ func TestGetMetricsEmptyGraph(t *testing.T) {
 func TestMermaidFlowchart(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("b", "c")
 	}, "b", "c")
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("c", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("c", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a")
@@ -230,11 +230,11 @@ func TestMermaidFlowchart(t *testing.T) {
 func TestTopologyWithMultipleEntryPoints(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("a", "b")

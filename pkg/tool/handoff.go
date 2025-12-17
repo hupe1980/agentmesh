@@ -71,7 +71,7 @@ func WithValidation(validate bool) HandoffOption {
 func HandoffToAgent(
 	agentName string,
 	agentDescription string,
-	agentGraph *graph.Graph[[]message.Message, message.Message],
+	agentGraph *graph.Graph,
 	options ...HandoffOption,
 ) (*FuncTool[HandoffArgs, string], error) {
 	if agentGraph == nil {
@@ -120,7 +120,7 @@ func HandoffToAgent(
 // executeHandoff performs the actual agent invocation with context control.
 func executeHandoff(
 	ctx context.Context,
-	agentGraph *graph.Graph[[]message.Message, message.Message],
+	agentGraph *graph.Graph,
 	args HandoffArgs,
 ) (string, error) {
 	// Build message list with just the task

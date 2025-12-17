@@ -32,17 +32,17 @@ var (
 
 func main() {
 	// Build a complex graph with conditional routing
-	g := graph.New[any, any](validKey, priorityKey, processedKey, completeKey)
+	g := graph.New(validKey, priorityKey, processedKey, completeKey)
 
 	// Add nodes using the new builder API
-	g.Node("input_validator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("input_validator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("✓ Validating input...")
 		return graph.Set(validKey, true).
 			With(graph.SetValue(priorityKey, "high")).
 			To("router")
 	}, "router")
 
-	g.Node("router", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("router", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("✓ Routing request...")
 		priority := graph.Get(scope, priorityKey)
 		if priority == "high" {
@@ -51,17 +51,17 @@ func main() {
 		return graph.To("normal_handler")
 	}, "high_priority_handler", "normal_handler")
 
-	g.Node("high_priority_handler", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("high_priority_handler", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("✓ Handling high priority request...")
 		return graph.Set(processedKey, true).To("aggregator")
 	}, "aggregator")
 
-	g.Node("normal_handler", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("normal_handler", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("✓ Handling normal request...")
 		return graph.Set(processedKey, true).To("aggregator")
 	}, "aggregator")
 
-	g.Node("aggregator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("aggregator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("✓ Aggregating results...")
 		return graph.Set(completeKey, true).End()
 	}, graph.END)

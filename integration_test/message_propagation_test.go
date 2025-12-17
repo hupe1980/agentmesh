@@ -16,15 +16,15 @@ func TestMessagePropagation_SingleNode(t *testing.T) {
 
 	ctx := context.Background()
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		require.Len(t, msgs, 1)
 		assert.Equal(t, "Hello", msgs[0].String())
 
 		var response message.Message = message.NewAIMessageFromText("World")
-		return graph.Set(MessagesKey, []message.Message{response}).End()
+		return graph.Reply(response).End()
 	}, graph.END)
 
 	g.Start("process")
@@ -52,29 +52,29 @@ func TestMessagePropagation_Chain(t *testing.T) {
 
 	ctx := context.Background()
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("node1", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+	g.Node("node1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("From node1")
-		return graph.Set(MessagesKey, []message.Message{msg}).To("node2")
+		return graph.Reply(msg).To("node2")
 	}, "node2")
 
-	g.Node("node2", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("node2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		// Should have original + node1's message
 		require.GreaterOrEqual(t, len(msgs), 2)
 
 		var msg message.Message = message.NewAIMessageFromText("From node2")
-		return graph.Set(MessagesKey, []message.Message{msg}).To("node3")
+		return graph.Reply(msg).To("node3")
 	}, "node3")
 
-	g.Node("node3", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("node3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		// Should have original + node1 + node2
 		require.GreaterOrEqual(t, len(msgs), 3)
 
 		var msg message.Message = message.NewAIMessageFromText("Final")
-		return graph.Set(MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("node1")
@@ -102,30 +102,30 @@ func TestMessagePropagation_ParallelNodes(t *testing.T) {
 
 	ctx := context.Background()
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("Start processed")
-		return graph.Set(MessagesKey, []message.Message{msg}).To("worker1", "worker2")
+		return graph.Reply(msg).To("worker1", "worker2")
 	}, "worker1", "worker2")
 
-	g.Node("worker1", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+	g.Node("worker1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("Worker1 done")
-		return graph.Set(MessagesKey, []message.Message{msg}).To("merge")
+		return graph.Reply(msg).To("merge")
 	}, "merge")
 
-	g.Node("worker2", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+	g.Node("worker2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		var msg message.Message = message.NewAIMessageFromText("Worker2 done")
-		return graph.Set(MessagesKey, []message.Message{msg}).To("merge")
+		return graph.Reply(msg).To("merge")
 	}, "merge")
 
-	g.Node("merge", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("merge", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		// Should have accumulated messages from parallel workers
 		t.Logf("Merge received %d messages", len(msgs))
 
 		var msg message.Message = message.NewAIMessageFromText("Merged")
-		return graph.Set(MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("start")
@@ -148,19 +148,17 @@ func TestMessagePropagation_PreserveOrder(t *testing.T) {
 
 	ctx := context.Background()
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("append", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		_ = graph.GetList(scope, MessagesKey) // Verify we can access input
+	g.Node("append", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		_ = scope.Messages() // Verify we can access input
 
 		// Append messages in specific order
 		var msg1 message.Message = message.NewAIMessageFromText("First")
 		var msg2 message.Message = message.NewAIMessageFromText("Second")
 		var msg3 message.Message = message.NewAIMessageFromText("Third")
 
-		return graph.Cmd().
-			With(graph.SetValue(MessagesKey, []message.Message{msg1, msg2, msg3})).
-			To(graph.END)
+		return graph.ReplyAll(msg1, msg2, msg3).End()
 	}, graph.END)
 
 	g.Start("append")
@@ -192,16 +190,16 @@ func TestMessagePropagation_EmptyInput(t *testing.T) {
 
 	ctx := context.Background()
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("handle", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("handle", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		if len(msgs) == 0 {
 			var msg message.Message = message.NewAIMessageFromText("No input provided")
-			return graph.Set(MessagesKey, []message.Message{msg}).End()
+			return graph.Reply(msg).End()
 		}
 		var msg message.Message = message.NewAIMessageFromText("Got input")
-		return graph.Set(MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("handle")
@@ -224,14 +222,14 @@ func TestMessagePropagation_LargeMessageList(t *testing.T) {
 	ctx := context.Background()
 	messageCount := 100
 
-	g := graph.New[[]message.Message, message.Message](MessagesKey)
+	g := graph.New()
 
-	g.Node("process", func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-		msgs := graph.GetList(scope, MessagesKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		assert.Equal(t, messageCount, len(msgs))
 
 		var msg message.Message = message.NewAIMessageFromText("Processed all messages")
-		return graph.Set(MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("process")

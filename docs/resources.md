@@ -53,7 +53,6 @@ The repository includes **18 comprehensive examples** demonstrating core feature
 - **`a2a_integration`** – Agent-to-Agent protocol for multi-agent coordination
 - **`middleware`** – Middleware system for graph/model/tool execution layers
 - **`circuit_breaker`** – Circuit breaker middleware for fault tolerance
-- **`guardrails`** – Content filtering, PII detection with `pkg/guardrail` security guardrails
 
 ### Embeddings & RAG
 - **`semantic_caching`** – Text embeddings for semantic search and RAG workflows

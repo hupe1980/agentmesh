@@ -137,7 +137,6 @@ The repository includes **18 comprehensive examples** demonstrating key features
 - **`examples/checkpointing`** – Automatic state persistence and recovery
 - **`examples/middleware`** – Middleware system demonstration
 - **`examples/circuit_breaker`** – Fault tolerance patterns
-- **`examples/guardrails`** – Content filtering and PII protection
 - **`examples/observability`** – OpenTelemetry metrics and distributed tracing
 - **`examples/subgraph`** – Compose complex workflows from reusable graphs
 - **`examples/message_retention`** – Conversation history management

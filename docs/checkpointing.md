@@ -61,7 +61,7 @@ var StatusKey = graph.NewKey[string]("status")
 // Create graph
 g := message.NewGraphBuilder(StatusKey)
 
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "done").To(graph.END), nil
 }, graph.END)
 
@@ -138,7 +138,7 @@ Superstep N: Final state (all nodes complete)
 ```go
 var StatusKey = graph.NewKey[string]("status")
 
-g := graph.New[string, string](StatusKey)
+g := graph.New(StatusKey)
 
 g.Node("start", startFunc, "process")
 g.Node("process", processFunc, "finish")

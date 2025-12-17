@@ -26,10 +26,10 @@ var (
 func main() {
 	// Create graph with all state keys in one line
 	// No need for: NewManagerBuilder, RegisterKey, Build, NewBuilder, WithManager
-	g := graph.New[any, any](AnalysisKey, ScoreKey, ValidKey, ResultKey)
+	g := graph.New(AnalysisKey, ScoreKey, ValidKey, ResultKey)
 
 	// Build a simple workflow using fluent API with type-safe keys
-	g.Node("analyze", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("analyze", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("Analyzing input...")
 		// Simple state updates with Set().With() chaining
 		return graph.Set(AnalysisKey, "Input looks good").
@@ -37,7 +37,7 @@ func main() {
 			To("validate")
 	}, "validate")
 
-	g.Node("validate", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("validate", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Type-safe read - no casting needed, compile-time checked
 		score := graph.Get(scope, ScoreKey)
 		fmt.Printf("Validating with score: %.2f\n", score)
@@ -45,7 +45,7 @@ func main() {
 		return graph.Set(ValidKey, valid).To("process")
 	}, "process")
 
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Type-safe read with default value - never panics
 		valid := graph.Get(scope, ValidKey)
 		if valid {

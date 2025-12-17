@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/hupe1980/agentmesh/internal/validate"
-	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
 // WorkerAgent represents a specialized agent that can be supervised.
 type WorkerAgent struct {
-	Name        string         // Unique identifier for the worker
-	Description string         // Description of the worker's expertise
-	Agent       *message.Graph // The agent to delegate work to
+	Name        string       // Unique identifier for the worker
+	Description string       // Description of the worker's expertise
+	Agent       *graph.Graph // The agent to delegate work to
 }
 
 // supervisorOptions holds internal configuration for a supervisor agent.
@@ -38,8 +38,8 @@ func (f supervisorOptionFunc) applySupervisor(opts *supervisorOptions) {
 }
 
 // WithWorker adds a worker agent to the supervisor.
-// The agent must be a *message.Graph (e.g., created via NewReAct).
-func WithWorker(name, description string, agent *message.Graph) SupervisorOption {
+// The agent must be a *graph.Graph (e.g., created via NewReAct).
+func WithWorker(name, description string, agent *graph.Graph) SupervisorOption {
 	return supervisorOptionFunc(func(c *supervisorOptions) {
 		c.workers = append(c.workers, WorkerAgent{
 			Name:        name,
@@ -84,8 +84,8 @@ func generateDefaultSupervisorInstructions(workers []WorkerAgent) string {
 // NewSupervisor creates a supervisor agent that delegates work to specialized worker agents.
 // The supervisor uses a model to decide which worker should handle each request.
 //
-// Returns a *message.Graph that enables type-safe composition with other agents.
-// Worker agents must also be *message.Graph.
+// Returns a *graph.Graph that enables type-safe composition with other agents.
+// Worker agents must also be *graph.Graph.
 //
 // Example:
 //
@@ -96,7 +96,7 @@ func generateDefaultSupervisorInstructions(workers []WorkerAgent) string {
 //	    agent.WithInstructions("Route to specialists"),
 //	    agent.WithWorkerRetries(2),
 //	)
-func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*message.Graph, error) {
+func NewSupervisor(mdl model.Model, opts ...SupervisorOption) (*graph.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}

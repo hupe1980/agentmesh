@@ -12,15 +12,15 @@ import (
 //
 //	// Only log expensive nodes
 //	graph.WithNodeMiddleware(graphmw.ConditionalMiddleware(
-//	    func(scope graph.Scope[message.Message]) bool {
+//	    func(scope graph.Scope) bool {
 //	        return scope.NodeName() == "expensive_node"
 //	    },
-//	    graphmw.LoggingMiddleware[message.Message](logger),
+//	    graphmw.LoggingMiddleware(logger),
 //	))
-func ConditionalMiddleware[O any](condition func(scope graph.Scope[O]) bool, mw graph.NodeMiddleware[O]) graph.NodeMiddleware[O] {
-	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
+func ConditionalMiddleware(condition func(scope graph.Scope) bool, mw graph.NodeMiddleware) graph.NodeMiddleware {
+	return func(next graph.NodeFunc) graph.NodeFunc {
 		wrapped := mw(next)
-		return func(ctx context.Context, scope graph.Scope[O]) (*graph.Command, error) {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			if condition(scope) {
 				return wrapped(ctx, scope)
 			}
@@ -35,16 +35,16 @@ func ConditionalMiddleware[O any](condition func(scope graph.Scope[O]) bool, mw 
 //
 //	graph.WithNodeMiddleware(graphmw.NodeNameMiddleware(
 //	    []string{"slow_node", "external_api"},
-//	    graphmw.TimingMiddleware[message.Message](recordTiming),
+//	    graphmw.TimingMiddleware(recordTiming),
 //	))
-func NodeNameMiddleware[O any](nodeNames []string, mw graph.NodeMiddleware[O]) graph.NodeMiddleware[O] {
+func NodeNameMiddleware(nodeNames []string, mw graph.NodeMiddleware) graph.NodeMiddleware {
 	nodeSet := make(map[string]bool, len(nodeNames))
 	for _, name := range nodeNames {
 		nodeSet[name] = true
 	}
 
 	return ConditionalMiddleware(
-		func(scope graph.Scope[O]) bool {
+		func(scope graph.Scope) bool {
 			return nodeSet[scope.NodeName()]
 		},
 		mw,

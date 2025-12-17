@@ -5,7 +5,6 @@ import (
 
 	"github.com/hupe1980/agentmesh/internal/validate"
 	"github.com/hupe1980/agentmesh/pkg/graph"
-	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
@@ -36,7 +35,7 @@ import (
 //	agent, err := agent.NewReAct(model,
 //	    agent.WithToolset(mcpToolset),
 //	    agent.WithMaxIterations(5))
-func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
+func NewReAct(mdl model.Model, opts ...ReActOption) (*graph.Graph, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
@@ -55,16 +54,16 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	// Combine static tools with any toolsets into a single toolset
 	combinedToolset := buildCombinedToolset(tools, config.toolsets)
 
-	// Create model executor
-	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("react-model"))
-	if len(config.modelMiddleware) > 0 {
-		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
-	}
-
 	// Build model node options
 	modelNodeOpts := []ModelNodeOption{
+		WithModelName("react-model"),
 		WithModelToolset(combinedToolset),
 		WithModelStreaming(config.streaming),
+	}
+
+	// Add middleware if configured
+	if len(config.modelMiddleware) > 0 {
+		modelNodeOpts = append(modelNodeOpts, WithModelNodeMiddleware(config.modelMiddleware...))
 	}
 
 	// Add output schema if configured (nil when using tool fallback)
@@ -80,7 +79,7 @@ func NewReAct(mdl model.Model, opts ...ReActOption) (*message.Graph, error) {
 	}
 
 	// Create model node function with dynamic tool discovery
-	modelFn, err := NewModelNodeFunc(modelExecutor, modelNodeOpts...)
+	modelFn, err := NewModelNodeFunc(mdl, modelNodeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("agent/react: create model node: %w", err)
 	}
@@ -166,9 +165,9 @@ func prepareStructuredOutputFallback(
 }
 
 // buildReActGraph constructs the ReAct agent graph with nodes and middleware.
-func buildReActGraph(modelFn, toolFn message.NodeFunc, config reActOptions) (*message.Graph, error) {
-	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
-	b := message.NewGraphBuilder()
+func buildReActGraph(modelFn, toolFn graph.NodeFunc, config reActOptions) (*graph.Graph, error) {
+	// Build graph - MessagesKey is automatically included by graph.New
+	b := graph.New()
 	b.Node("model", modelFn, "tool", graph.END)
 	b.Node("tool", toolFn, "model")
 	b.Start("model")

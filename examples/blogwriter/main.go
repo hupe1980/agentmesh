@@ -74,7 +74,7 @@ func main() {
 	displayResults(results)
 }
 
-func createBlogWriter() (*message.Graph, error) {
+func createBlogWriter() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	keywordAgent, err := createKeywordAgent()
@@ -144,14 +144,14 @@ Always provide clear instructions when delegating to each worker.`
 
 // progressMiddleware creates middleware that displays progress during blog generation.
 // It shows which node is being executed, which tools are called, and timing info.
-func progressMiddleware() graph.NodeMiddleware[message.Message] {
-	return func(next graph.NodeFunc[message.Message]) graph.NodeFunc[message.Message] {
-		return func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+func progressMiddleware() graph.NodeMiddleware {
+	return func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			nodeName := scope.NodeName()
 			start := time.Now()
 
 			// Get context about what's happening
-			messages := message.GetMessages(scope)
+			messages := graph.GetMessages(scope)
 
 			switch nodeName {
 			case "model":
@@ -199,7 +199,7 @@ func progressMiddleware() graph.NodeMiddleware[message.Message] {
 	}
 }
 
-func createKeywordAgent() (*message.Graph, error) {
+func createKeywordAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(
@@ -221,7 +221,7 @@ Output your analysis in a clear, structured format that the next agent can use.`
 	)
 }
 
-func createHeadlineAgent() (*message.Graph, error) {
+func createHeadlineAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(
@@ -250,7 +250,7 @@ Select the BEST headline and explain your choice.`),
 	)
 }
 
-func createWriterAgent() (*message.Graph, error) {
+func createWriterAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(
@@ -286,7 +286,7 @@ Output the complete article in Markdown format with:
 	)
 }
 
-func createEditorAgent() (*message.Graph, error) {
+func createEditorAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(

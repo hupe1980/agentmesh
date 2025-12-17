@@ -27,8 +27,6 @@ sidebar:
     url: "#conversational-agent"
   - title: Utility functions
     url: "#utility-functions"
-  - title: Guardrails
-    url: "#guardrails"
   - title: Custom graphs
     url: "#custom-graphs"
   - title: Conditional routing
@@ -756,98 +754,6 @@ reactAgent, err := agent.NewReAct(model,
 
 ---
 
-## Guardrails {#guardrails}
-
-Guardrails validate user input and agent output for content safety and policy compliance. Agent-level guardrails run at the workflow boundary:
-
-- **Input guardrails** - Check the **first user message** before the agent starts
-- **Output guardrails** - Check the **final response** before returning to user
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/agent"
-    "github.com/hupe1980/agentmesh/pkg/guardrail"
-)
-
-// Create guardrails
-contentFilter := guardrail.NewContentFilterGuardrail(
-    []string{"hack", "exploit", "bypass"},
-)
-lengthGuard := guardrail.NewLengthGuardrail(
-    guardrail.WithMaxLength(5000),
-)
-
-// Apply to agent
-myAgent, err := agent.NewReAct(model,
-    agent.WithTools(tools...),
-    agent.WithGraphInputGuardrails(contentFilter),   // Validates user query
-    agent.WithGraphOutputGuardrails(lengthGuard),    // Validates final response
-)
-```
-
-### Agent-Powered Guardrails
-
-For complex policy enforcement, use an LLM to evaluate content:
-
-```go
-// Create an LLM-powered guardrail
-policyGuard, _ := agent.NewModerationGuardrail(model,
-    agent.WithModerationGuardrailName("policy-checker"),
-    agent.WithModerationGuardrailInstructions("Check if content violates company policies..."),
-    agent.WithModerationGuardrailAction(guardrail.ActionReject),
-)
-
-myAgent, err := agent.NewReAct(model,
-    agent.WithGraphInputGuardrails(contentFilter, policyGuard),
-)
-```
-
-### Guardrail Actions
-
-| Action | Description | Error Type |
-|--------|-------------|------------|
-| `ActionAllow` | Safe to continue | None |
-| `ActionReject` | Soft rejection (retry allowed) | `*guardrail.Rejection` |
-| `ActionRaise` | Hard tripwire (security concern) | `*guardrail.TripwireError` |
-
-### Built-in Guardrails
-
-| Guardrail | Description |
-|-----------|-------------|
-| `ContentFilterGuardrail` | Blocks specified keywords |
-| `LengthGuardrail` | Validates content length (min/max) |
-| `RegexGuardrail` | Custom pattern matching |
-
-### External Service Integrations
-
-For production security use cases, use external moderation services:
-
-| Package | Service |
-|---------|--------|
-| `pkg/guardrail/openai` | OpenAI Moderation API |
-| `pkg/guardrail/amazoncomprehend` | AWS Comprehend (sentiment, PII) |
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/guardrail/openai"
-    oai "github.com/openai/openai-go"
-)
-
-// Use OpenAI moderation
-client := oai.NewClient()
-modGuard := openai.NewModerationGuardrail(client,
-    openai.WithCategories("hate", "violence"),
-)
-
-myAgent, err := agent.NewReAct(model,
-    agent.WithGraphInputGuardrails(modGuard),
-)
-```
-
-> **Note**: For guardrails at the model or tool level (every call, not just first/last), see [Guardrails Middleware](/middleware/#guardrails-middleware).
-
----
-
 ## Custom graphs {#custom-graphs}
 
 For complete control over workflow logic, build custom graphs using the graph API:
@@ -865,7 +771,7 @@ var CategoryKey = graph.NewKey[string]("category")
 g := message.NewGraphBuilder(CategoryKey)
 
 // Add nodes using fluent API
-g.Node("classify", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("classify", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     category := classifyIntent(messages)
     
@@ -875,14 +781,15 @@ g.Node("classify", func(ctx context.Context, scope graph.Scope[string]) (*graph.
     return graph.Set(CategoryKey, category).To("handle_sales"), nil
 }, "handle_support", "handle_sales")
 
-g.Node("handle_support", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("handle_support", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Support response...")
     return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
 }, graph.END)
 
-g.Node("handle_sales", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("handle_sales", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     response := message.NewAIMessageFromText("Sales response...")
     return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
+
 }, graph.END)
 
 g.Start("classify")
@@ -901,10 +808,10 @@ for result, err := range compiled.Run(ctx, messages) {
 
 ### Node functions
 
-Nodes receive a `Scope[O]` (which embeds `ReadOnlyScope`) and return a `Command`:
+Nodes receive a `Scope` (which embeds `ReadOnlyScope`) and return a `Command`:
 
 ```go
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Read state with typed keys
     previousValue := graph.Get(scope, MyKey)
     messages := message.GetMessages(scope)
@@ -925,7 +832,7 @@ g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.C
 Direct execution flow dynamically using commands:
 
 ```go
-g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("router", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     action := graph.Get(scope, ActionKey)
     
     switch action {
@@ -944,7 +851,7 @@ g.Node("router", func(ctx context.Context, scope graph.Scope[string]) (*graph.Co
 Nodes can route to multiple targets for parallel execution:
 
 ```go
-g.Node("fanout", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("fanout", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Route to all three analysts in parallel
     return graph.To("analyst_a", "analyst_b", "analyst_c"), nil
 }, "analyst_a", "analyst_b", "analyst_c")
@@ -958,7 +865,7 @@ Nodes can fan out to parallel execution by routing to multiple targets:
 
 ```go
 // Entry node fans out to three concurrent tasks
-g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.To("fetch_data_a", "fetch_data_b", "fetch_data_c"), nil
 }, "fetch_data_a", "fetch_data_b", "fetch_data_c")
 
@@ -992,7 +899,7 @@ parent := message.NewGraphBuilder()
 parent.Node("research", graph.Subgraph(
     compiledResearch,
     // InputMapper: transform parent messages to subgraph input
-    func(ctx context.Context, scope graph.Scope[string]) ([]message.Message, error) {
+    func(ctx context.Context, scope graph.Scope) ([]message.Message, error) {
         messages := message.GetMessages(scope)
         // Filter or transform messages for research subgraph
         return messages, nil
@@ -1003,7 +910,7 @@ parent.Node("research", graph.Subgraph(
     },
 ), "synthesize")
 
-parent.Node("synthesize", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+parent.Node("synthesize", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     // Synthesize research results...
     return graph.Set(message.MessagesKey, []message.Message{summary}).To(graph.END)

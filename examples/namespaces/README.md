@@ -38,7 +38,7 @@ ns2 := graph.NewNamespace("agent2")
 ```go
 // Node can only access "agent1.*" keys
 g.Node("agent1_process", graph.WithNamespace(
-    func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // Can read: agent1.data, agent1.status
         // Cannot read: agent2.data, agent2.status (returns zero value)
         data := graph.Get(scope, agent1Data)
@@ -51,7 +51,7 @@ g.Node("agent1_process", graph.WithNamespace(
 
 ### Benefits
 - **Zero overhead** - Just string prefix matching, no runtime cost
-- **Full type safety** - Compile-time type checking with generics
+- **Full type safety** - Compile-time type checking with typed state keys
 - **No collisions** - Keys with same name in different namespaces don't conflict
 - **Graceful degradation** - Reading blocked keys returns zero value, writing returns error
 

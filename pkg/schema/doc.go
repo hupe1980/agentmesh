@@ -60,8 +60,13 @@
 //
 // # Validation
 //
-// Validate values against schemas:
+// Validate JSON output against schemas using the Validator interface:
 //
-//	value := map[string]any{"name": "John", "age": 30}
-//	err := schema.Validate(outputSchema.Schema, value)
+//	validator := schema.NewValidator()
+//	result, err := validator.Validate(ctx, outputSchema.Schema, jsonString)
+//	if !result.Valid {
+//	    for _, e := range result.Errors {
+//	        fmt.Printf("Validation error at %s: %s\n", e.Path, e.Message)
+//	    }
+//	}
 package schema

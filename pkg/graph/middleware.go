@@ -8,16 +8,16 @@ package graph
 //	import graphmw "github.com/hupe1980/agentmesh/pkg/graph/middleware"
 //
 //	combined := graph.ChainNodeMiddleware(
-//	    graphmw.LoggingMiddleware[message.Message](logger),
-//	    graphmw.TimingMiddleware[message.Message](metricsCallback),
-//	    graphmw.RecoveryMiddleware[message.Message](panicHandler),
+//	    graphmw.LoggingMiddleware(logger),
+//	    graphmw.TimingMiddleware(metricsCallback),
+//	    graphmw.RecoveryMiddleware(panicHandler),
 //	)
 //	graph.WithNodeMiddleware(combined)
 //
 // This produces: logging(timing(recovery(node)))
 // Execution flows: logging → timing → recovery → node
-func ChainNodeMiddleware[O any](middleware ...NodeMiddleware[O]) NodeMiddleware[O] {
-	return func(next NodeFunc[O]) NodeFunc[O] {
+func ChainNodeMiddleware(middleware ...NodeMiddleware) NodeMiddleware {
+	return func(next NodeFunc) NodeFunc {
 		// Apply in reverse order so first middleware is outermost
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i](next)
@@ -40,8 +40,8 @@ func ChainNodeMiddleware[O any](middleware ...NodeMiddleware[O]) NodeMiddleware[
 //
 // This produces: inputValidation(outputValidation(logging(run)))
 // Execution flows: inputValidation → outputValidation → logging → run
-func ChainRunMiddleware[I, O any](middleware ...RunMiddleware[I, O]) RunMiddleware[I, O] {
-	return func(next RunFunc[I, O]) RunFunc[I, O] {
+func ChainRunMiddleware(middleware ...RunMiddleware) RunMiddleware {
+	return func(next RunFunc) RunFunc {
 		// Apply in reverse order so first middleware is outermost
 		for i := len(middleware) - 1; i >= 0; i-- {
 			next = middleware[i](next)

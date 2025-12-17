@@ -84,12 +84,12 @@ func WithFailOnStoreError(fail bool) ConversationalOption {
 //  2. Executes the wrapped agent (ReAct, RAG, etc.) as a subgraph
 //  3. Stores the conversation exchange in memory after completion
 //
-// The wrapped agent can be any *message.Graph (ReAct, RAG, Reflection, etc.).
+// The wrapped agent can be any *graph.Graph (ReAct, RAG, Reflection, etc.).
 // This enables composable, memory-aware conversational experiences.
 //
 // A session ID must be provided at runtime using [graph.WithInitialValue].
 //
-// Returns a *message.Graph for type-safe composition.
+// Returns a *graph.Graph for type-safe composition.
 //
 // Example:
 //
@@ -107,10 +107,10 @@ func WithFailOnStoreError(fail bool) ConversationalOption {
 //	    // handle msg
 //	}
 func NewConversational(
-	wrappedAgent *message.Graph,
+	wrappedAgent *graph.Graph,
 	mem memory.Memory,
 	opts ...ConversationalOption,
-) (*message.Graph, error) {
+) (*graph.Graph, error) {
 	if err := validate.All(
 		validate.NotNil(wrappedAgent, "wrapped agent"),
 		validate.NotNil(mem, "memory"),
@@ -129,11 +129,11 @@ func NewConversational(
 // buildConversationalGraph constructs the graph structure:
 // START -> memory_recall -> agent -> memory_store -> END
 func buildConversationalGraph(
-	wrappedAgent *message.Graph,
+	wrappedAgent *graph.Graph,
 	mem memory.Memory,
 	config conversationalOptions,
-) (*message.Graph, error) {
-	b := message.NewGraphBuilder(SessionIDKey, MemoryContextKey)
+) (*graph.Graph, error) {
+	b := graph.New(SessionIDKey, MemoryContextKey)
 
 	// Node 1: Recall relevant context from memory
 	b.Node("memory_recall", createMemoryRecallNode(mem, config), "agent")
@@ -151,11 +151,11 @@ func buildConversationalGraph(
 
 // createMemoryRecallNode creates a node that recalls relevant context from memory
 // using both short-term (recent) and long-term (semantic) retrieval.
-func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+func createMemoryRecallNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		logger := logging.FromContext(ctx)
 
-		msgs := GetMessages(scope)
+		msgs := scope.Messages()
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoMessages)
 		}
@@ -298,9 +298,9 @@ func deduplicateMessages(base, additional []message.Message) []message.Message {
 
 // createConversationalAgentNode creates a node that executes the wrapped agent
 // as a subgraph, prepending memory context to the messages.
-func createConversationalAgentNode(wrappedAgent *message.Graph) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
-		msgs := GetMessages(scope)
+func createConversationalAgentNode(wrappedAgent *graph.Graph) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msgs := scope.Messages()
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoMessages)
 		}
@@ -318,16 +318,16 @@ func createConversationalAgentNode(wrappedAgent *message.Graph) message.NodeFunc
 			return graph.Fail(fmt.Errorf("agent/conversational: agent failed: %w", err))
 		}
 
-		return graph.Set(MessagesKey, []message.Message{lastMsg}).To("memory_store")
+		return graph.Reply(lastMsg).To("memory_store")
 	}
 }
 
 // createMemoryStoreNode creates a node that stores the conversation in memory.
-func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+func createMemoryStoreNode(mem memory.Memory, config conversationalOptions) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		logger := logging.FromContext(ctx)
 
-		msgs := GetMessages(scope)
+		msgs := scope.Messages()
 		if len(msgs) < 2 {
 			// Need at least user message + AI response
 			logger.Debug("memory store skipped: not enough messages", "count", len(msgs))

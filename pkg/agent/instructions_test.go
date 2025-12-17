@@ -5,15 +5,15 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // createInstructionsTestScope creates a test scope for instructions tests.
-func createInstructionsTestScope(data map[string]any) message.Scope {
-	return testutil.NewTestScopeFromMap[message.Message](data)
+func createInstructionsTestScope(data map[string]any) *testutil.TestScope {
+	return testutil.NewTestScopeFromMap(data)
 }
 
 func TestNewInstructions(t *testing.T) {
@@ -42,7 +42,7 @@ func TestNewInstructionsFromProvider(t *testing.T) {
 	t.Run("creates dynamic instructions from provider", func(t *testing.T) {
 		t.Parallel()
 
-		provider := InstructionsProviderFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		provider := InstructionsProviderFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			return "dynamic instructions", nil
 		})
 
@@ -59,7 +59,7 @@ func TestNewInstructionsFromFunc(t *testing.T) {
 	t.Run("creates dynamic instructions from function", func(t *testing.T) {
 		t.Parallel()
 
-		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			return "function-based instructions", nil
 		})
 
@@ -81,7 +81,7 @@ func TestInstructions_IsStatic(t *testing.T) {
 	t.Run("returns false for provider-based instructions", func(t *testing.T) {
 		t.Parallel()
 
-		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			return "dynamic", nil
 		})
 		assert.False(t, instructions.IsStatic())
@@ -158,7 +158,7 @@ func TestInstructions_Resolve(t *testing.T) {
 	t.Run("resolves dynamic instructions from provider", func(t *testing.T) {
 		t.Parallel()
 
-		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			name, _ := scope.GetValue("userName")
 			return "Dynamic instructions for " + name.(string), nil
 		})
@@ -176,7 +176,7 @@ func TestInstructions_Resolve(t *testing.T) {
 		t.Parallel()
 
 		expectedErr := errors.New("provider error")
-		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		instructions := NewInstructionsFromFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			return "", expectedErr
 		})
 
@@ -229,7 +229,7 @@ func TestInstructionsProviderFunc(t *testing.T) {
 	t.Run("implements InstructionsProvider interface", func(t *testing.T) {
 		t.Parallel()
 
-		var provider InstructionsProvider = InstructionsProviderFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		var provider InstructionsProvider = InstructionsProviderFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			return "test", nil
 		})
 
@@ -247,7 +247,7 @@ func TestInstructionsProviderFunc(t *testing.T) {
 		type ctxKey string
 		key := ctxKey("testKey")
 
-		provider := InstructionsProviderFunc(func(ctx context.Context, scope message.Scope) (string, error) {
+		provider := InstructionsProviderFunc(func(ctx context.Context, scope graph.Scope) (string, error) {
 			ctxVal := ctx.Value(key).(string)
 			scopeVal, _ := scope.GetValue("scopeKey")
 			return ctxVal + "-" + scopeVal.(string), nil

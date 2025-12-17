@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // ApprovalResponse represents a human approval decision.
@@ -29,12 +30,12 @@ const (
 
 // NodeMiddleware wraps node execution.
 // This runs for every node during graph execution.
-// The type parameter O matches the graph's output type.
-type NodeMiddleware[O any] func(next NodeFunc[O]) NodeFunc[O]
+// Output type is fixed to Message for agent workflows.
+type NodeMiddleware func(next NodeFunc) NodeFunc
 
 // RunFunc is the function signature for graph execution.
-// It takes a context and input, and returns an iterator of outputs and errors.
-type RunFunc[I, O any] func(ctx context.Context, input I) iter.Seq2[O, error]
+// Input is []message.Message (conversation history), output is Message (response).
+type RunFunc func(ctx context.Context, input []message.Message) iter.Seq2[message.Message, error]
 
 // RunMiddleware wraps the entire graph execution (Run/Resume).
 // Unlike node middleware which runs for every node, run middleware
@@ -44,43 +45,37 @@ type RunFunc[I, O any] func(ctx context.Context, input I) iter.Seq2[O, error]
 //   - Output validation/guardrails (check final output once at end)
 //   - Logging/observability at the run level
 //   - Request/response transformation
-type RunMiddleware[I, O any] func(next RunFunc[I, O]) RunFunc[I, O]
+type RunMiddleware func(next RunFunc) RunFunc
 
 // Executor runs the graph.
-type Executor[I, O any] interface {
-	Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...runOption) iter.Seq2[O, error]
+type Executor interface {
+	Run(ctx context.Context, cfg *ExecutorConfig, input []message.Message, opts ...runOption) iter.Seq2[message.Message, error]
 }
 
 // ExecutorNode represents a node for the executor.
-// The type parameter O matches the graph's output type.
-type ExecutorNode[O any] struct {
+// Output type is fixed to Message.
+type ExecutorNode struct {
 	Name    string
-	Fn      NodeFunc[O]
+	Fn      NodeFunc
 	Targets []string
 }
 
 // ExecutionConfig holds node execution configuration.
 // This includes the graph structure, entry points, middleware, and output settings.
-// The type parameter O matches the graph's output type.
-type ExecutionConfig[O any] struct {
+// Types are fixed for Message-based agent workflows.
+type ExecutionConfig struct {
 	// Nodes contains all graph nodes indexed by name.
-	Nodes map[string]ExecutorNode[O]
+	Nodes map[string]ExecutorNode
 
 	// EntryPoints are the starting nodes for execution.
 	EntryPoints []string
 
 	// NodeMiddleware wraps node execution.
 	// This runs for every node during graph execution.
-	NodeMiddleware []NodeMiddleware[O]
+	NodeMiddleware []NodeMiddleware
 
 	// Store provides state storage.
 	Store Store
-
-	// OutputKey is the name of the key that produces outputs.
-	OutputKey string
-
-	// OutputIsSlice is true if output key is a slice key (yield items individually).
-	OutputIsSlice bool
 
 	// KeyRegistry holds type-erased reducers for state merging.
 	KeyRegistry KeyRegistry
@@ -108,9 +103,10 @@ type InterruptConfig struct {
 
 // ExecutorConfig provides the executor with graph configuration.
 // It composes focused configuration structs for better separation of concerns.
-type ExecutorConfig[I, O any] struct {
+// Types are fixed for Message-based agent workflows.
+type ExecutorConfig struct {
 	// Execution contains node and execution settings.
-	Execution ExecutionConfig[O]
+	Execution ExecutionConfig
 
 	// Checkpoint contains checkpointing settings.
 	Checkpoint CheckpointConfig
@@ -134,11 +130,11 @@ type ApprovalGuard func(ctx context.Context, scope ReadOnlyScope) (needsApproval
 // InputMapper maps parent graph state to subgraph input.
 // Used with Subgraph to transform parent state into the input type expected by the child graph.
 // Uses ReadOnlyScope (not Scope) since it's a read-only operation.
-type InputMapper[SI any] func(ctx context.Context, scope ReadOnlyScope) (SI, error)
+type InputMapper func(ctx context.Context, scope ReadOnlyScope) ([]message.Message, error)
 
 // OutputMapper maps subgraph output to parent graph state updates.
 // Used with Subgraph to transform child graph output into state updates for the parent.
-type OutputMapper[SO any] func(ctx context.Context, output SO) (Updates, error)
+type OutputMapper func(ctx context.Context, output message.Message) (Updates, error)
 
 // WithApprovalGuard sets a guard function for the interrupt.
 func WithApprovalGuard(guard ApprovalGuard) InterruptOption {

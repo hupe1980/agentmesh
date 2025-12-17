@@ -214,17 +214,17 @@ var DraftKey = graph.NewKey[string]("draft")
 var FeedbackKey = graph.NewKey[string]("feedback")
 var DoneKey = graph.NewKey[bool]("done")
 
-g := graph.New[string, string](DraftKey, FeedbackKey, DoneKey)
+g := graph.New(DraftKey, FeedbackKey, DoneKey)
 
 // Writer node generates drafts
-g.Node("writer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("writer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     feedback := graph.Get(scope, FeedbackKey)
     draft := generateDraft(feedback)
     return graph.Set(DraftKey, draft).To("evaluator"), nil
 }, "evaluator")
 
 // Evaluator checks quality and creates a cycle!
-g.Node("evaluator", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("evaluator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     draft := graph.Get(scope, DraftKey)
     if isGoodEnough(draft) {
         return graph.Set(DoneKey, true).To(graph.END), nil
@@ -373,7 +373,7 @@ The **ConditionalEvaluator** handles conditional edges that determine routing at
 **Example**:
 
 ```go
-g.Node("classifier", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("classifier", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     category := analyzeInput(messages)
     
@@ -534,10 +534,10 @@ var StatusKey = graph.NewKey[string]("status")
 var CountKey = graph.NewKey[int]("count")
 
 // Create graph with keys
-g := graph.New[string, string](StatusKey, CountKey)
+g := graph.New(StatusKey, CountKey)
 
 // Add nodes with fluent API
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     count := graph.Get(scope, CountKey)
     return graph.Set(StatusKey, "done").
         Set(CountKey, count+1).
@@ -558,7 +558,7 @@ For agent workflows with message handling:
 ```go
 g := message.NewGraphBuilder()
 
-g.Node("agent", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     response := processMessages(messages)
     return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
@@ -573,7 +573,7 @@ compiled, _ := g.Build()
 Routes are determined dynamically using commands:
 
 ```go
-g.Node("classifier", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("classifier", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     category := graph.Get(scope, CategoryKey)
     
     switch category {
@@ -595,7 +595,7 @@ Independent nodes automatically execute in parallel based on topology:
 // START fans out to three parallel workers
 g.Start("start")
 
-g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.To("analyst_a", "analyst_b", "analyst_c"), nil
 }, "analyst_a", "analyst_b", "analyst_c")
 
@@ -631,7 +631,7 @@ var MessagesKey = message.MessagesKey  // Built-in message list key
 Nodes receive immutable state views:
 
 ```go
-g.Node("reader", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("reader", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Type-safe reads (no type assertions)
     status := graph.Get(scope, StatusKey)      // string
     counter := graph.Get(scope, CounterKey)    // int
@@ -646,7 +646,7 @@ g.Node("reader", func(ctx context.Context, scope graph.Scope[string]) (*graph.Co
 Nodes return commands with state updates:
 
 ```go
-g.Node("updater", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("updater", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "complete").
         Set(CounterKey, 42).
         Append(TagsKey, "new-tag").

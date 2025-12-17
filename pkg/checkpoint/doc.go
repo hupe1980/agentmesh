@@ -32,12 +32,12 @@
 //	checkpointer := dynamodb.NewCheckpointer(dynamoClient, "checkpoints-table")
 //
 //	// Configure graph with checkpointer
-//	g := graph.New[string, string](keys...)
+//	g := graph.New(keys...)
 //	g.WithCheckpointer(checkpointer, "workflow-123")
 //	compiled, _ := g.Build()
 //
 //	// Run with checkpointing
-//	for _, err := range compiled.Run(ctx, input,
+//	for _, err := range compiled.Run(ctx, nil,
 //	    graph.WithCheckpointInterval(1),  // Save every superstep
 //	) {
 //	    if err != nil {

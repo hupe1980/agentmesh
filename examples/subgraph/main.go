@@ -3,7 +3,7 @@
 // This example shows how to:
 //   - Create reusable subgraphs with their own state
 //   - Compose subgraphs into parent graphs using graph.Subgraph()
-//   - Map state between parent and child graphs
+//   - Map messages between parent and child graphs
 package main
 
 import (
@@ -13,27 +13,25 @@ import (
 	"strings"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// Parent graph keys
+// Parent graph keys for tracking workflow state
 var (
-	inputKey  = graph.NewKey[string]("input")
-	resultKey = graph.NewKey[string]("result")
-	stepsKey  = graph.NewListKey[string]("steps")
-)
-
-// Subgraph keys (isolated state)
-var (
-	subInputKey  = graph.NewKey[string]("sub_input")
-	subOutputKey = graph.NewKey[string]("sub_output")
+	stepsKey = graph.NewListKey[string]("steps")
 )
 
 // createValidationSubgraph creates a reusable validation subgraph
-func createValidationSubgraph() *graph.Graph[string, string] {
-	g := graph.New[string, string](subInputKey, subOutputKey)
+func createValidationSubgraph() *graph.Graph {
+	g := graph.New(stepsKey)
 
-	g.Node("validate_format", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		input := graph.Get(scope, subInputKey)
+	g.Node("validate_format", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		// Get the last message (input to validate)
+		lastMsg := graph.LastMessage(scope)
+		input := ""
+		if lastMsg != nil {
+			input = lastMsg.String()
+		}
 		fmt.Printf("    [validate] Checking format of: %s\n", input)
 		if strings.TrimSpace(input) == "" {
 			return graph.Fail(fmt.Errorf("empty input"))
@@ -41,11 +39,16 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 		return graph.To("validate_content")
 	}, "validate_content")
 
-	g.Node("validate_content", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		input := graph.Get(scope, subInputKey)
+	g.Node("validate_content", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		lastMsg := graph.LastMessage(scope)
+		input := ""
+		if lastMsg != nil {
+			input = lastMsg.String()
+		}
 		fmt.Printf("    [validate] Checking content of: %s\n", input)
-		// Validation passed - set output
-		return graph.Set(subOutputKey, "validated:"+input).End()
+		// Validation passed - emit validated output
+		validatedMsg := message.NewAIMessageFromText("validated:" + input)
+		return graph.Reply(validatedMsg).End()
 	}, graph.END)
 
 	g.Start("validate_format")
@@ -59,21 +62,32 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 }
 
 // createTransformSubgraph creates a reusable transformation subgraph
-func createTransformSubgraph() *graph.Graph[string, string] {
-	g := graph.New[string, string](subInputKey, subOutputKey)
+func createTransformSubgraph() *graph.Graph {
+	g := graph.New(stepsKey)
 
-	g.Node("normalize", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		input := graph.Get(scope, subInputKey)
+	g.Node("normalize", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		lastMsg := graph.LastMessage(scope)
+		input := ""
+		if lastMsg != nil {
+			input = lastMsg.String()
+		}
 		normalized := strings.ToLower(strings.TrimSpace(input))
 		fmt.Printf("    [transform] Normalized: %s\n", normalized)
-		return graph.Set(subOutputKey, normalized).To("enrich")
+		// Store intermediate result and continue
+		normalizedMsg := message.NewAIMessageFromText(normalized)
+		return graph.Reply(normalizedMsg).To("enrich")
 	}, "enrich")
 
-	g.Node("enrich", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		output := graph.Get(scope, subOutputKey)
+	g.Node("enrich", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		lastMsg := graph.LastMessage(scope)
+		output := ""
+		if lastMsg != nil {
+			output = lastMsg.String()
+		}
 		enriched := fmt.Sprintf("enriched(%s)", output)
 		fmt.Printf("    [transform] Enriched: %s\n", enriched)
-		return graph.Set(subOutputKey, enriched).End()
+		enrichedMsg := message.NewAIMessageFromText(enriched)
+		return graph.Reply(enrichedMsg).End()
 	}, graph.END)
 
 	g.Start("normalize")
@@ -97,57 +111,87 @@ func main() {
 	transformSubgraph := createTransformSubgraph()
 
 	// Build the main graph that orchestrates subgraphs
-	g := graph.New[any, any](inputKey, resultKey, stepsKey)
+	g := graph.New(stepsKey)
 
 	// Entry point
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [start] Beginning workflow")
-		return graph.Set(inputKey, "  Raw Data  ").
+		// Emit initial input as a message
+		inputMsg := message.NewHumanMessageFromText("  Raw Data  ")
+		return graph.Reply(inputMsg).
 			With(graph.SetValue(stepsKey, []string{"Started main workflow"})).
 			To("run_validation")
 	}, "run_validation")
 
 	// Use graph.Subgraph() to embed the validation subgraph
-	g.Node("run_validation", graph.Subgraph[any, string, string](
+	g.Node("run_validation", graph.Subgraph(
 		validationSubgraph,
-		// Input mapper: parent state -> subgraph input
-		func(ctx context.Context, view graph.ReadOnlyScope) (string, error) {
-			input := graph.Get(view, inputKey)
+		// Input mapper: parent messages -> subgraph input messages
+		func(ctx context.Context, view graph.ReadOnlyScope) ([]message.Message, error) {
+			lastMsg := graph.LastMessage(view)
+			input := ""
+			if lastMsg != nil {
+				input = lastMsg.String()
+			}
 			fmt.Printf("  [parent] Mapping input to validation subgraph: %s\n", input)
-			return input, nil
+			// Pass the last message to the subgraph
+			if lastMsg != nil {
+				return []message.Message{lastMsg}, nil
+			}
+			return nil, nil
 		},
-		// Output mapper: subgraph output -> parent state updates
-		func(ctx context.Context, output string) (graph.Updates, error) {
-			fmt.Printf("  [parent] Got validation result: %s\n", output)
+		// Output mapper: subgraph output message -> parent state updates
+		func(ctx context.Context, output message.Message) (graph.Updates, error) {
+			result := ""
+			if output != nil {
+				result = output.String()
+			}
+			fmt.Printf("  [parent] Got validation result: %s\n", result)
 			return graph.Updates{
-				inputKey.Name(): output,
-				stepsKey.Name(): graph.SliceOf[string]([]string{"Validation completed"}),
+				// Store the validated result in messages
+				graph.MessagesKeyName: []message.Message{output},
+				stepsKey.Name():          []string{"Validation completed"},
 			}, nil
 		},
 	), "run_transform")
 
 	// Use graph.Subgraph() to embed the transformation subgraph
-	g.Node("run_transform", graph.Subgraph[any, string, string](
+	g.Node("run_transform", graph.Subgraph(
 		transformSubgraph,
-		// Input mapper
-		func(ctx context.Context, view graph.ReadOnlyScope) (string, error) {
-			input := graph.Get(view, inputKey)
+		// Input mapper: pass the last message to transform
+		func(ctx context.Context, view graph.ReadOnlyScope) ([]message.Message, error) {
+			lastMsg := graph.LastMessage(view)
+			input := ""
+			if lastMsg != nil {
+				input = lastMsg.String()
+			}
 			fmt.Printf("  [parent] Mapping input to transform subgraph: %s\n", input)
-			return input, nil
+			if lastMsg != nil {
+				return []message.Message{lastMsg}, nil
+			}
+			return nil, nil
 		},
-		// Output mapper
-		func(ctx context.Context, output string) (graph.Updates, error) {
-			fmt.Printf("  [parent] Got transform result: %s\n", output)
+		// Output mapper: get the transformed result
+		func(ctx context.Context, output message.Message) (graph.Updates, error) {
+			result := ""
+			if output != nil {
+				result = output.String()
+			}
+			fmt.Printf("  [parent] Got transform result: %s\n", result)
 			return graph.Updates{
-				resultKey.Name(): output,
-				stepsKey.Name():  graph.SliceOf[string]([]string{"Transform completed"}),
+				graph.MessagesKeyName: []message.Message{output},
+				stepsKey.Name():          []string{"Transform completed"},
 			}, nil
 		},
 	), "finalize")
 
 	// Finalize and show results
-	g.Node("finalize", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		result := graph.Get(scope, resultKey)
+	g.Node("finalize", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		lastMsg := graph.LastMessage(scope)
+		result := ""
+		if lastMsg != nil {
+			result = lastMsg.String()
+		}
 		steps := graph.GetList(scope, stepsKey)
 
 		fmt.Println("\n  Workflow Summary:")
@@ -176,6 +220,6 @@ func main() {
 	fmt.Println("  Subgraph features:")
 	fmt.Println("    • graph.Subgraph(sub, inputMapper, outputMapper)")
 	fmt.Println("    • Subgraphs have isolated state")
-	fmt.Println("    • Input/output mappers bridge parent ↔ child state")
+	fmt.Println("    • Input/output mappers bridge parent ↔ child messages")
 	fmt.Println("    • Subgraphs can be reused across multiple nodes")
 }

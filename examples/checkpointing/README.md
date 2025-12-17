@@ -79,12 +79,12 @@ checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 ### 2. Configure Graph with Checkpointer
 ```go
-g := graph.New[string, string](keys...)
+g := graph.New(keys...)
 g.WithCheckpointer(checkpointer, "workflow-123")
 compiled, _ := g.Build()
 
 // Run with checkpoint interval
-for _, err := range compiled.Run(ctx, input,
+for _, err := range compiled.Run(ctx, nil,
     graph.WithCheckpointInterval(1),  // Save every superstep
 ) {
     if err != nil {
@@ -126,14 +126,14 @@ Each checkpoint contains:
 type Checkpoint struct {
     RunID          string                 // Workflow identifier
     Superstep      int64                  // BSP superstep number
-    State          map[string]any         // Full graph state (includes message history via "__messages__" key)
+    State          map[string]any         // Full graph state (includes message history via "messages" key)
     CompletedNodes []string               // Nodes that completed execution (for monitoring)
     PausedNodes    []string               // Nodes paused for human-in-the-loop workflows
     Metadata       map[string]any         // Custom metadata
 }
 ```
 
-**Note**: Message history is stored in the state under the `__messages__` key, not as a separate field. This ensures a single source of truth for all state data.
+**Note**: Message history is stored in the state under the `"messages"` key, not as a separate field. This ensures a single source of truth for all state data.
 
 ## Storage Backends
 

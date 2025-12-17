@@ -20,25 +20,25 @@ func TestPregelExecutor(t *testing.T) {
 	var counter atomic.Int32
 
 	// Build a graph with parallel nodes using new API
-	g := graph.New[any, any](startedKey, task1Key, task2Key, completedKey)
+	g := graph.New(startedKey, task1Key, task2Key, completedKey)
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.Set(startedKey, true).To("task1", "task2")
 	}, "task1", "task2")
 
 	// Two nodes that can run in parallel
-	g.Node("task1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("task1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.Set(task1Key, "done").To("end")
 	}, "end")
 
-	g.Node("task2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("task2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.Set(task2Key, "done").To("end")
 	}, "end")
 
-	g.Node("end", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("end", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter.Add(1)
 		return graph.Set(completedKey, true).End()
 	}, graph.END)

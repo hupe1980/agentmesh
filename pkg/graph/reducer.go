@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
-	"reflect"
 )
 
 // Reducer specifies how values are combined for a state key.
@@ -187,11 +186,6 @@ type ReducerFunc struct {
 
 	// ReduceFn merges incoming into existing and returns the result.
 	ReduceFn func(existing, incoming any) any
-
-	// IterFn iterates over slice elements without reflection.
-	// Only set for slice-type keys (created with NewListKey).
-	// For non-slice keys, this is nil.
-	IterFn func(value any, yield func(any) bool)
 }
 
 // WrapReducer creates a type-erased ReducerFunc from a generic Reducer[T].
@@ -215,59 +209,12 @@ func WrapReducer[T any](r Reducer[T]) ReducerFunc {
 	}
 }
 
-// WrapSliceReducer creates a type-erased ReducerFunc for slice types with an iterator.
-// This is used for list keys to enable reflection-free iteration over elements.
-func WrapSliceReducer[E any](r Reducer[[]E]) ReducerFunc {
-	rf := WrapReducer(r)
-	rf.IterFn = func(value any, yield func(any) bool) {
-		// Fast path: direct type assertion
-		if slice, ok := value.([]E); ok {
-			for _, item := range slice {
-				if !yield(item) {
-					return
-				}
-			}
-			return
-		}
-		// Handle SliceOf[E] which has underlying type []E
-		if sv, ok := value.(SliceValue); ok {
-			sv.SliceIter(yield)
-			return
-		}
-		// Fallback: try reflection for compatible slice types
-		val := reflect.ValueOf(value)
-		if val.Kind() == reflect.Slice {
-			for i := 0; i < val.Len(); i++ {
-				if !yield(val.Index(i).Interface()) {
-					return
-				}
-			}
-		}
-	}
-	return rf
-}
-
-// coerceToType converts a value to type T, handling SliceOf[E] → []E conversion.
-// This is needed because SliceOf[E] is a distinct named type from []E,
-// but they have the same underlying representation.
+// coerceToType converts a value to type T.
 func coerceToType[T any](v any) T {
-	// Direct type match
+	// Direct type match (fast path)
 	if typed, ok := v.(T); ok {
 		return typed
 	}
 
-	// Handle SliceOf[E] to []E conversion using reflection
-	// SliceOf[E] has underlying type []E, so we can convert via reflect
-	var zero T
-	targetType := reflect.TypeOf(zero)
-
-	if targetType != nil && targetType.Kind() == reflect.Slice {
-		vVal := reflect.ValueOf(v)
-		if vVal.Kind() == reflect.Slice && vVal.Type().ConvertibleTo(targetType) {
-			return vVal.Convert(targetType).Interface().(T)
-		}
-	}
-
-	// Fallback: panic with a clear message (shouldn't happen in practice)
-	panic(fmt.Sprintf("cannot coerce %T to %T", v, zero))
+	panic(fmt.Sprintf("cannot coerce %T to %T", v, *new(T)))
 }

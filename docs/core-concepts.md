@@ -27,7 +27,7 @@ sidebar:
     url: "#error-handling"
 ---
 
-> **Type Safety with Generics (Go 1.24+):** AgentMesh provides full compile-time type safety through generic graph types. Use `graph.New[I, O](keys...)` for building graphs and `graph.Build()` to compile them. Use `message.NewGraphBuilder()` for conversational agents.
+> **Message-Based Graphs:** AgentMesh graphs use `[]message.Message` as input and `message.Message` as output. Use `graph.New(keys...)` for building graphs and `graph.Build()` to compile them. Use `message.NewGraphBuilder()` for conversational agents.
 
 ## Runnable interface {#runnable-interface}
 
@@ -39,7 +39,7 @@ AgentMesh separates graph **building** from graph **execution**:
 
 ```go
 // Builder is for construction - define nodes and edges
-b := graph.New[string, string](keys...)
+b := graph.New(keys...)
 b.Node("fetch", fetchFunc, "process")
 b.Start("fetch")
 
@@ -59,12 +59,12 @@ for output, err := range compiled.Run(ctx, input) {
 
 ```go
 // Graph.Run returns an iterator of outputs
-func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error]
+func (g *Graph) Run(ctx context.Context, input []message.Message, opts ...RunOption) iter.Seq2[message.Message, error]
 ```
 
-**Type parameters:**
-- `I` - Input type (e.g., `[]message.Message`, `string`, custom struct)
-- `O` - Output type (e.g., `message.Message`, custom result type)
+**Message types:**
+- Input: `[]message.Message` - Conversation history
+- Output: `message.Message` - Response messages
 
 ### Common type aliases
 
@@ -72,10 +72,10 @@ For conversational agents, AgentMesh provides:
 
 ```go
 // GraphBuilder is a builder for message-processing workflows
-type GraphBuilder = graph.Builder[[]message.Message, message.Message]
+type GraphBuilder = graph.Builder
 
 // Graph is an executable message-processing workflow
-type Graph = graph.Graph[[]message.Message, message.Message]
+type Graph = graph.Graph
 ```
 
 ### Usage example
@@ -181,7 +181,7 @@ var (
 )
 
 // Create graph with state keys
-g := graph.New[string, string](RawDataKey, ProcessedDataKey, StatusKey)
+g := graph.New(RawDataKey, ProcessedDataKey, StatusKey)
 
 // Add nodes with fluent API - targets are declared inline
 g.Node("fetch", fetchDataFunc, "process").
@@ -209,11 +209,11 @@ for output, err := range compiled.Run(ctx, "input data") {
 Nodes receive a Scope (providing state access and streaming) and return a Command with updates and next targets:
 
 ```go
-// NodeFunc signature (O is the graph's output type for streaming)
-type NodeFunc[O any] func(ctx context.Context, scope Scope[O]) (*Command, error)
+// NodeFunc signature
+type NodeFunc func(ctx context.Context, scope Scope) (*Command, error)
 
 // Example node function
-func processDataFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func processDataFunc(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Read from state using typed keys
     rawData := graph.Get(scope, RawDataKey)
     
@@ -239,7 +239,7 @@ Dynamically route to different nodes based on state:
 ```go
 var CategoryKey = graph.NewKey[string]("category")
 
-func classifierFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func classifierFunc(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     category := graph.Get(scope, CategoryKey)
     
     switch category {
@@ -315,7 +315,7 @@ var MetadataKey = graph.NewMapKey[string, any]("metadata")
 Nodes receive immutable state views with typed access:
 
 ```go
-func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func myNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Type-safe reads - returns the correct type
     counter := graph.Get(scope, CounterKey)      // int
     status := graph.Get(scope, StatusKey)        // string
@@ -330,7 +330,7 @@ func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, err
 Use the fluent Command builder for type-safe updates:
 
 ```go
-func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func myNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     counter := graph.Get(scope, CounterKey)
     
     // Fluent, type-safe updates
@@ -340,7 +340,7 @@ func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, err
 }
 
 // For list keys, Set with a slice - the reducer handles appending
-func addMessageNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func addMessageNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     newMsg := message.NewAIMessage(message.NewTextPart("Hello!"))
     
     return graph.Set(MessagesKey, []message.Message{newMsg}).
@@ -379,7 +379,7 @@ For conversational agents, use `message.NewGraphBuilder()` which automatically i
 g := message.NewGraphBuilder()
 
 // MessagesKey is available
-g.Node("chat", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("chat", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     messages := message.GetMessages(scope)
     // ... process messages
     return graph.Set(message.MessagesKey, []message.Message{response}).To(graph.END), nil
@@ -441,10 +441,10 @@ sequenceDiagram
 Nodes can fan out to multiple parallel tasks:
 
 ```go
-g := graph.New[string, string](ResultKey)
+g := graph.New(ResultKey)
 
 // Entry node fans out to three parallel tasks
-g.Node("start", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.To("fetch_a", "fetch_b", "fetch_c"), nil
 }, "fetch_a", "fetch_b", "fetch_c")
 
@@ -466,7 +466,7 @@ var (
     IterationKey = graph.NewCounterKey("iteration")  // Sum reducer for incrementing
 )
 
-func writerFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func writerFunc(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     iteration := graph.Get(scope, IterationKey)
     draft := generateDraft(iteration)
     
@@ -475,7 +475,7 @@ func writerFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command,
         To("evaluator"), nil
 }
 
-func evaluatorFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func evaluatorFunc(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     draft := graph.Get(scope, DraftKey)
     iteration := graph.Get(scope, IterationKey)
     
@@ -486,7 +486,7 @@ func evaluatorFunc(ctx context.Context, scope graph.Scope[string]) (*graph.Comma
     return graph.To("writer"), nil
 }
 
-g := graph.New[string, string](DraftKey, IterationKey)
+g := graph.New(DraftKey, IterationKey)
 g.Node("writer", writerFunc, "evaluator").
   Node("evaluator", evaluatorFunc, graph.END, "writer"). // declares both targets
   Start("writer")

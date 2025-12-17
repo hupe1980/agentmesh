@@ -126,6 +126,76 @@ func (b *ModelBuilder) WithStreaming(enabled bool) *ModelBuilder {
 	return b
 }
 
+// WithStreamingResponse adds a single streaming response broken into chunks.
+func (b *ModelBuilder) WithStreamingResponse(chunks ...string) *ModelBuilder {
+	b.streaming = false // Disable auto-chunking
+	return b.WithGenerator(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+		return func(yield func(*model.Response, error) bool) {
+			var accumulated string
+			// Yield all chunks as partial except the last
+			for i, chunk := range chunks {
+				accumulated += chunk
+				isLast := i == len(chunks)-1
+				resp := &model.Response{
+					Message: message.NewAIMessageFromText(accumulated),
+					Partial: !isLast,
+				}
+				if !yield(resp, nil) {
+					return
+				}
+			}
+		}
+	})
+}
+
+// WithStreamingResponses adds multiple streaming responses (for retry scenarios).
+// Each inner slice represents chunks for one complete response attempt.
+func (b *ModelBuilder) WithStreamingResponses(responseChunks ...[]string) *ModelBuilder {
+	b.streaming = false // Disable auto-chunking
+	attemptIdx := 0
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.WithGenerator(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+		return func(yield func(*model.Response, error) bool) {
+			b.mu.Lock()
+			currentIdx := attemptIdx
+			if currentIdx >= len(responseChunks) {
+				currentIdx = len(responseChunks) - 1 // Repeat last
+			}
+			attemptIdx++
+			b.mu.Unlock()
+
+			chunks := responseChunks[currentIdx]
+			var accumulated string
+
+			// Yield all chunks as partial except the last
+			for i, chunk := range chunks {
+				accumulated += chunk
+				isLast := i == len(chunks)-1
+				resp := &model.Response{
+					Message: message.NewAIMessageFromText(accumulated),
+					Partial: !isLast,
+				}
+				if !yield(resp, nil) {
+					return
+				}
+			}
+		}
+	})
+}
+
+// WithPartialResponse adds a single partial response (for testing partial handling).
+func (b *ModelBuilder) WithPartialResponse(text string) *ModelBuilder {
+	return b.WithGenerator(func(ctx context.Context, req *model.Request) iter.Seq2[*model.Response, error] {
+		return func(yield func(*model.Response, error) bool) {
+			yield(&model.Response{
+				Message: message.NewAIMessageFromText(text),
+				Partial: true,
+			}, nil)
+		}
+	})
+}
+
 // WithCapabilities sets the model capabilities.
 func (b *ModelBuilder) WithCapabilities(caps model.Capabilities) *ModelBuilder {
 	b.capabilities = caps

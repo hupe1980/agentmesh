@@ -1,5 +1,7 @@
 package graph
 
+import "github.com/hupe1980/agentmesh/pkg/message"
+
 // Command is what a node returns: state updates and next targets.
 //
 // DESIGN NOTE - High-Level Workflow Control:
@@ -102,8 +104,7 @@ type CommandBuilder struct {
 //	}
 //
 //	cmd.With(graph.SetValue(TurnKey, turn+1))
-//	cmd.With(graph.SetValue(MessagesKey, []Message{resp.Message})) // Reducer handles append
-//	return cmd.To("next")
+//	return graph.Reply(resp.Message).To("next")
 func Cmd() *CommandBuilder {
 	return &CommandBuilder{updates: make(Updates)}
 }
@@ -142,7 +143,7 @@ func SetValue[T any](key Key[T], value T) func(*CommandBuilder) *CommandBuilder 
 // Example:
 //
 //	graph.Set(statusKey, "done").To("next")           // ✅ Type-safe
-//	graph.Set(messagesKey, []Msg{msg}).To("next")     // ✅ Appends via reducer
+//	graph.Set(myListKey, []Item{item}).To("next")     // ✅ Appends via reducer
 func Set[T any](key Key[T], value T) *CommandBuilder {
 	return &CommandBuilder{
 		updates: Updates{key.Name(): value},
@@ -165,4 +166,36 @@ func (b *CommandBuilder) To(targets ...string) (*Command, error) {
 //	return graph.Set(key, val).End()
 func (b *CommandBuilder) End() (*Command, error) {
 	return b.To(END)
+}
+
+// Reply creates a CommandBuilder that appends a message to the conversation history.
+// This is a convenience function for the most common agent operation: adding a response.
+//
+// Example:
+//
+//	// Simple reply and end
+//	return graph.Reply(graph.NewAIMessageFromText("Hello!")).End()
+//
+//	// Reply and continue to next node
+//	return graph.Reply(aiMessage).To("tools")
+//
+//	// Reply with additional state updates
+//	return graph.Reply(aiMessage).With(graph.SetValue(turnKey, turn+1)).To("next")
+func Reply(msg message.Message) *CommandBuilder {
+	return &CommandBuilder{
+		updates: Updates{messagesKey.Name(): []message.Message{msg}},
+	}
+}
+
+// ReplyAll creates a CommandBuilder that appends multiple messages to the conversation history.
+// Useful when you need to add multiple messages at once (e.g., tool results).
+//
+// Example:
+//
+//	toolResults := []graph.Message{result1, result2}
+//	return graph.ReplyAll(toolResults...).To("agent")
+func ReplyAll(msgs ...message.Message) *CommandBuilder {
+	return &CommandBuilder{
+		updates: Updates{messagesKey.Name(): msgs},
+	}
 }

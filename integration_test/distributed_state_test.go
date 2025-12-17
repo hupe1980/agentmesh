@@ -56,17 +56,17 @@ func TestDistributedStateSync(t *testing.T) {
 
 	// Build a graph with nodes that modify state
 	// node1 -> node2 -> node3
-	g := graph.New[any, any](counterKey, dataKey)
+	g := graph.New(counterKey, dataKey)
 
 	// Node 1: Initialize state
-	g.Node("node1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("node1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(counterKey, 1.0).
 			With(graph.SetValue(dataKey, "A")).
 			To("node2")
 	}, "node2")
 
 	// Node 2: Read and modify state (should see node1's updates via Redis)
-	g.Node("node2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("node2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		data := graph.Get(scope, dataKey)
 
@@ -76,7 +76,7 @@ func TestDistributedStateSync(t *testing.T) {
 	}, "node3")
 
 	// Node 3: Final state update (should see node2's updates via Redis)
-	g.Node("node3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("node3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		data := graph.Get(scope, dataKey)
 
@@ -89,7 +89,7 @@ func TestDistributedStateSync(t *testing.T) {
 
 	// Use executor with Redis distributed backend
 	backend := graph.NewPregelBackend(bus)
-	executor := graph.NewPregelExecutor[any, any]().WithBackend(backend)
+	executor := graph.NewPregelExecutor().WithBackend(backend)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
@@ -146,21 +146,21 @@ func TestDistributedStateParallel(t *testing.T) {
 	finalKey := graph.NewKey[string]("final")
 
 	// Build graph with parallel execution
-	g := graph.New[any, any](result1Key, result2Key, finalKey)
+	g := graph.New(result1Key, result2Key, finalKey)
 
 	// Two parallel nodes
-	g.Node("worker1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("worker1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		return graph.Set(result1Key, "worker1_done").To("merger")
 	}, "merger")
 
-	g.Node("worker2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("worker2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		return graph.Set(result2Key, "worker2_done").To("merger")
 	}, "merger")
 
 	// Merger node collects results
-	g.Node("merger", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("merger", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		r1 := graph.Get(scope, result1Key)
 		r2 := graph.Get(scope, result2Key)
 		return graph.Set(finalKey, r1+"_"+r2).End()
@@ -171,7 +171,7 @@ func TestDistributedStateParallel(t *testing.T) {
 
 	// Use executor with Redis distributed backend
 	backend := graph.NewPregelBackend(bus)
-	executor := graph.NewPregelExecutor[any, any]().WithBackend(backend)
+	executor := graph.NewPregelExecutor().WithBackend(backend)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()

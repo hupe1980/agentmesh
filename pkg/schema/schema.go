@@ -10,12 +10,62 @@ import (
 	"github.com/hupe1980/agentmesh/internal/jsonschema"
 )
 
+// FailureAction defines what happens when validation fails after all retries.
+type FailureAction string
+
+const (
+	// FailOnError returns an error (default).
+	FailOnError FailureAction = "fail"
+
+	// WarnOnError logs a warning but returns the invalid output.
+	WarnOnError FailureAction = "warn"
+
+	// IgnoreOnError silently returns the invalid output.
+	IgnoreOnError FailureAction = "ignore"
+)
+
+// ValidationPolicy controls post-generation schema validation behavior.
+type ValidationPolicy struct {
+	// Enabled activates post-generation validation.
+	Enabled bool
+
+	// MaxRetries is the number of retry attempts with error feedback (0 = no retries, strict mode).
+	MaxRetries int
+
+	// OnFailure determines behavior when validation fails after all retries.
+	OnFailure FailureAction
+
+	// Validator is the custom validator to use. If nil, the DefaultValidator is used.
+	Validator Validator
+}
+
+// ValidationDisabled returns a policy that disables validation.
+func ValidationDisabled() ValidationPolicy {
+	return ValidationPolicy{Enabled: false}
+}
+
+// ValidationStrict returns a policy that fails immediately on validation error.
+func ValidationStrict() ValidationPolicy {
+	return ValidationPolicy{Enabled: true, MaxRetries: 0, OnFailure: FailOnError}
+}
+
+// ValidationWithRetry returns a policy that retries with error feedback.
+func ValidationWithRetry(maxRetries int) ValidationPolicy {
+	return ValidationPolicy{Enabled: true, MaxRetries: maxRetries, OnFailure: FailOnError}
+}
+
+// ValidationWarnOnly returns a policy that logs warnings but doesn't fail.
+func ValidationWarnOnly() ValidationPolicy {
+	return ValidationPolicy{Enabled: true, MaxRetries: 0, OnFailure: WarnOnError}
+}
+
 // OutputSchema represents a structured output schema with metadata.
 type OutputSchema struct {
-	Name        string         // Schema name/identifier
-	Strict      bool           // Enable strict mode (provider-specific)
-	Description string         // Schema description
-	Schema      map[string]any // The actual JSON schema
+	Name        string            // Schema name/identifier
+	Strict      bool              // Enable strict mode (provider-specific)
+	Description string            // Schema description
+	Schema      map[string]any    // The actual JSON schema
+	Validation  *ValidationPolicy // Post-generation validation settings
 }
 
 // OutputSchemaOptions configures OutputSchema creation.
@@ -23,6 +73,7 @@ type OutputSchemaOptions struct {
 	Strict                    bool
 	Description               string
 	AllowAdditionalProperties bool
+	Validation                *ValidationPolicy
 }
 
 // WithStrict sets whether to enable strict mode for the schema.
@@ -47,6 +98,14 @@ func WithDescription(description string) func(*OutputSchemaOptions) {
 func WithAllowAdditionalProperties(allow bool) func(*OutputSchemaOptions) {
 	return func(opts *OutputSchemaOptions) {
 		opts.AllowAdditionalProperties = allow
+	}
+}
+
+// WithValidationPolicy sets the post-generation validation policy.
+// When enabled, generated output is validated against the schema with optional retries.
+func WithValidationPolicy(policy ValidationPolicy) func(*OutputSchemaOptions) {
+	return func(opts *OutputSchemaOptions) {
+		opts.Validation = &policy
 	}
 }
 
@@ -127,24 +186,6 @@ func NewOutputSchema[T any](name string, schema T, optFns ...func(*OutputSchemaO
 		Strict:      opts.Strict,
 		Description: opts.Description,
 		Schema:      finalSchema,
+		Validation:  opts.Validation,
 	}, nil
-}
-
-// Validate validates a value against a JSON schema.
-// The value can be a map[string]any, struct, or JSON string.
-//
-// Example:
-//
-//	schema, _ := schema.NewOutputSchema("person", Person{})
-//
-//	value := map[string]any{
-//	    "name": "John Doe",
-//	    "age": 30,
-//	}
-//
-//	if err := schema.Validate(schema.Schema, value); err != nil {
-//	    fmt.Printf("Validation error: %v\n", err)
-//	}
-func Validate(schemaMap map[string]any, value any) error {
-	return jsonschema.Validate(schemaMap, value)
 }

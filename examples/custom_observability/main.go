@@ -86,19 +86,19 @@ func main() {
 	}), event.EventNodeComplete)
 
 	// Build graph
-	g := graph.New[any, any](taskKey)
+	g := graph.New(taskKey)
 
-	g.Node("fetch", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("fetch", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		return graph.Set(taskKey, "fetched_data").To("process")
 	}, "process")
 
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		time.Sleep(20 * time.Millisecond) // Simulate work
 		return graph.Set(taskKey, "processed_data").To("store")
 	}, "store")
 
-	g.Node("store", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("store", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		time.Sleep(5 * time.Millisecond) // Simulate work
 		return graph.To(graph.END)
 	}, graph.END)

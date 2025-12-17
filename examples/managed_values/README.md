@@ -65,7 +65,7 @@ Access managed values via scope - same pattern as regular state:
 // Define managed values at package level for type-safe access
 var configMV = graph.NewManagedValue("config", &Config{...})
 
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Access managed value via scope - same pattern as graph.Get(scope, key)
     config := graph.GetManaged(ctx, scope, configMV)
 

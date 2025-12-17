@@ -25,9 +25,9 @@ func main() {
 	runID := "approval-workflow-001"
 
 	// Build graph with approval checkpoint
-	g := graph.New[any, any](taskKey, statusKey)
+	g := graph.New(taskKey, statusKey)
 
-	g.Node("prepare", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("prepare", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [prepare] Preparing task for approval")
 		return graph.Set(taskKey, "delete-production-database").
 			With(graph.SetValue(statusKey, "awaiting_approval")).
@@ -35,13 +35,13 @@ func main() {
 	}, "approve")
 
 	// Node that requires approval before execution
-	g.Node("approve", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("approve", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		task := graph.Get(scope, taskKey)
 		fmt.Printf("  [approve] Processing approved task: %s\n", task)
 		return graph.Set(statusKey, "approved").To("execute")
 	}, "execute")
 
-	g.Node("execute", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("execute", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		task := graph.Get(scope, taskKey)
 		fmt.Printf("  [execute] Executing: %s\n", task)
 		return graph.Set(statusKey, "completed").End()

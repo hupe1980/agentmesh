@@ -90,7 +90,7 @@ func main() {
 	}
 
 	// Register agent
-	if err := server.Register("demo-agent", viz.NewMessageAdapter(reactAgent)); err != nil {
+	if err := server.Register("demo-agent", viz.NewGraphAdapter(reactAgent)); err != nil {
 		log.Fatal(err)
 	}
 

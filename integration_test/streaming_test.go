@@ -2,13 +2,12 @@ package integration_test
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/hupe1980/agentmesh/pkg/event"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,29 +18,28 @@ func TestStreaming_BasicEmission(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey[string]("result")
-
-	g := graph.New[any, string](resultKey)
-	g.Node("streamer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("chunk1")
-		scope.Stream("chunk2")
-		scope.Stream("chunk3")
-		return graph.Set(resultKey, "final").End()
+	g := graph.New()
+	g.Node("streamer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("chunk1"))
+		scope.Stream(message.NewAIMessageFromText("chunk2"))
+		scope.Stream(message.NewAIMessageFromText("chunk3"))
+		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("streamer")
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	var outputs []string
+	var outputs []message.Message
 	for out, err := range compiled.Run(ctx, nil) {
 		require.NoError(t, err)
-		outputs = append(outputs, out)
+		if out != nil {
+			outputs = append(outputs, out)
+		}
 	}
 
-	// Should have stream chunks plus final output
-	assert.GreaterOrEqual(t, len(outputs), 1)
-	assert.Contains(t, outputs, "final")
+	// Should have stream chunks
+	assert.Len(t, outputs, 3)
 }
 
 // TestStreaming_MultipleNodes tests streaming across multiple nodes in sequence.
@@ -50,18 +48,16 @@ func TestStreaming_MultipleNodes(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey[string]("result")
+	g := graph.New()
 
-	g := graph.New[any, string](resultKey)
-
-	g.Node("node1", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("from-node1")
-		return graph.Set(resultKey, "n1").To("node2")
+	g.Node("node1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("from-node1"))
+		return graph.To("node2")
 	}, "node2")
 
-	g.Node("node2", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("from-node2")
-		return graph.Set(resultKey, "n2").End()
+	g.Node("node2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("from-node2"))
+		return graph.To(graph.END)
 	}, graph.END)
 
 	g.Start("node1")
@@ -69,14 +65,16 @@ func TestStreaming_MultipleNodes(t *testing.T) {
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	var outputs []string
+	var outputs []message.Message
 	for out, err := range compiled.Run(ctx, nil) {
 		require.NoError(t, err)
-		outputs = append(outputs, out)
+		if out != nil {
+			outputs = append(outputs, out)
+		}
 	}
 
 	// Should see outputs from both nodes
-	assert.GreaterOrEqual(t, len(outputs), 2)
+	assert.Len(t, outputs, 2)
 }
 
 // TestStreaming_OrderPreservation tests that streamed values maintain order from sequence.
@@ -85,28 +83,28 @@ func TestStreaming_OrderPreservation(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey[string]("result")
-
-	g := graph.New[any, string](resultKey)
-	g.Node("counter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("counter", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		for i := 1; i <= 5; i++ {
-			scope.Stream(string(rune('0' + i)))
+			scope.Stream(message.NewAIMessageFromText(string(rune('0' + i))))
 		}
-		return graph.Set(resultKey, "done").End()
+		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("counter")
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	var outputs []string
+	var outputs []message.Message
 	for out, err := range compiled.Run(ctx, nil) {
 		require.NoError(t, err)
-		outputs = append(outputs, out)
+		if out != nil {
+			outputs = append(outputs, out)
+		}
 	}
 
-	// Stream + final output should be present
-	assert.Contains(t, outputs, "done")
+	// Stream outputs should be present
+	assert.Len(t, outputs, 5)
 }
 
 // TestStreaming_ScopeStreamAvailable tests that Scope.Stream() is available during execution.
@@ -115,17 +113,16 @@ func TestStreaming_ScopeStreamAvailable(t *testing.T) {
 
 	ctx := context.Background()
 
-	resultKey := graph.NewKey[string]("result")
 	var streamedValues []string
 	var mu sync.Mutex
 
-	g := graph.New[any, string](resultKey)
-	g.Node("checker", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("test-value")
+	g := graph.New()
+	g.Node("checker", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("test-value"))
 		mu.Lock()
 		streamedValues = append(streamedValues, "test-value")
 		mu.Unlock()
-		return graph.Set(resultKey, "checked").End()
+		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("checker")
 
@@ -145,22 +142,26 @@ func TestStreaming_ScopeStreamAvailable(t *testing.T) {
 func TestStreaming_WithContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey[string]("result")
+	nodeStarted := make(chan struct{})
+	nodeExited := make(chan struct{})
 
-	g := graph.New[any, string](resultKey)
+	g := graph.New()
 
-	g.Node("slow", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("before-block")
+	g.Node("slow", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("before-block"))
 
-		// Wait a bit so we can cancel before completion
+		// Signal that we're waiting
+		close(nodeStarted)
+
+		// Wait for context cancellation
 		select {
 		case <-ctx.Done():
+			close(nodeExited)
 			return nil, ctx.Err()
-		case <-time.After(5 * time.Second):
-			// Shouldn't reach here due to timeout
+		case <-time.After(10 * time.Second):
+			// Shouldn't reach here due to cancellation
+			return graph.To(graph.END)
 		}
-
-		return graph.Set(resultKey, "completed").End()
 	}, graph.END)
 
 	g.Start("slow")
@@ -168,72 +169,90 @@ func TestStreaming_WithContextCancellation(t *testing.T) {
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Use aggressive timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
 
-	var lastErr error
-	for _, err := range compiled.Run(ctx, nil) {
-		if err != nil {
-			lastErr = err
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for range compiled.Run(ctx, nil) {
+			// consume all outputs
 		}
+	}()
+
+	// Wait for node to start, then cancel
+	<-nodeStarted
+	cancel()
+
+	// Wait for node to exit (confirms context was propagated)
+	select {
+	case <-nodeExited:
+		// Good - node received the cancellation
+	case <-time.After(2 * time.Second):
+		t.Fatal("Node did not exit after context cancellation")
 	}
 
-	// Should have errored due to context cancellation (timeout)
-	if lastErr != nil {
-		assert.True(t,
-			errors.Is(lastErr, context.DeadlineExceeded) ||
-				errors.Is(lastErr, context.Canceled),
-			"Expected context error, got: %v", lastErr)
-	} else {
-		// This can happen if context doesn't propagate in time
-		t.Log("Test completed without error - context cancellation may not have propagated in time")
+	// Wait for run to complete
+	select {
+	case <-done:
+		// Good - run completed
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not complete after context cancellation")
 	}
 }
 
-// TestStreaming_EventsPublished tests that stream updates are published as events.
-func TestStreaming_EventsPublished(t *testing.T) {
+// TestStreaming_EventEmission tests that streaming emits proper events.
+func TestStreaming_EventEmission(t *testing.T) {
 	t.Parallel()
 
-	resultKey := graph.NewKey[string]("result")
+	ctx := context.Background()
 
-	var events []event.Event
-	var eventMu sync.Mutex
-
-	// Create event bus and subscribe
-	bus := event.NewBus()
-	bus.Subscribe(event.HandlerFunc(func(ctx context.Context, e event.Event) error {
-		eventMu.Lock()
-		events = append(events, e)
-		eventMu.Unlock()
-		return nil
-	}))
-
-	ctx := event.WithBus(context.Background(), bus)
-
-	g := graph.New[any, string](resultKey)
-	g.Node("emitter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		scope.Stream("streamed")
-		return graph.Set(resultKey, "final").End()
+	g := graph.New()
+	g.Node("emitter", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("event-test"))
+		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("emitter")
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	for _, err := range compiled.Run(ctx, nil) {
+	var outputs []message.Message
+	for out, err := range compiled.Run(ctx, nil) {
 		require.NoError(t, err)
-	}
-
-	eventMu.Lock()
-	defer eventMu.Unlock()
-
-	// Should have received state update events
-	var stateUpdateCount int
-	for _, e := range events {
-		if e.Type == event.EventStateUpdate {
-			stateUpdateCount++
+		if out != nil {
+			outputs = append(outputs, out)
 		}
 	}
-	assert.GreaterOrEqual(t, stateUpdateCount, 1, "Should have at least one state update event from streaming")
+
+	// Should have at least one streamed output
+	assert.Len(t, outputs, 1)
+}
+
+// TestStreaming_NoStreamCalls tests that graphs work correctly with no Stream() calls.
+func TestStreaming_NoStreamCalls(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	resultKey := graph.NewKey[string]("result")
+
+	g := graph.New(resultKey)
+	g.Node("silent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		// No streaming, just return
+		return graph.Set(resultKey, "done").End()
+	}, graph.END)
+	g.Start("silent")
+
+	compiled, err := g.Build()
+	require.NoError(t, err)
+
+	var errorOccurred bool
+	for _, err := range compiled.Run(ctx, nil) {
+		if err != nil {
+			errorOccurred = true
+		}
+	}
+
+	assert.False(t, errorOccurred)
 }

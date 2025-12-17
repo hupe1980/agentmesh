@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // TestLoadAutoRestoredCheckpoint_Success tests successful auto-restore from checkpointer.
@@ -35,7 +36,7 @@ func TestLoadAutoRestoredCheckpoint_Success(t *testing.T) {
 	}
 
 	result := &checkpointRestoreResult{}
-	yield := func(_ string, _ error) bool { return true }
+	yield := func(_ message.Message, _ error) bool { return true }
 
 	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 
@@ -77,7 +78,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorWithFailFast(t *testing.T) {
 	yieldCalled := false
 	var yieldedErr error
 
-	yield := func(_ string, err error) bool {
+	yield := func(_ message.Message, err error) bool {
 		yieldCalled = true
 		yieldedErr = err
 		return true
@@ -121,7 +122,7 @@ func TestLoadAutoRestoredCheckpoint_ErrorContinueWithoutRestore(t *testing.T) {
 	result := &checkpointRestoreResult{}
 	yieldCalled := false
 
-	yield := func(_ string, err error) bool {
+	yield := func(_ message.Message, err error) bool {
 		yieldCalled = true
 		return true
 	}
@@ -162,7 +163,7 @@ func TestLoadAutoRestoredCheckpoint_NoAutoRestore(t *testing.T) {
 	}
 
 	result := &checkpointRestoreResult{}
-	yield := func(_ string, _ error) bool { return true }
+	yield := func(_ message.Message, _ error) bool { return true }
 
 	ok := loadAutoRestoredCheckpoint(ctx, checkpointCfg, runCfg, result, yield)
 

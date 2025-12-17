@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 func TestRestoreCheckpointSharesStateMap(t *testing.T) {
@@ -19,7 +20,7 @@ func TestRestoreCheckpointSharesStateMap(t *testing.T) {
 	}
 
 	checkpointCfg := CheckpointConfig{}
-	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
+	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ message.Message, _ error) bool { return true })
 	if !ok {
 		t.Fatal("restore aborted unexpectedly")
 	}
@@ -43,7 +44,7 @@ func TestRestoreCheckpointCopyOnWriteOnMutation(t *testing.T) {
 	}
 
 	checkpointCfg := CheckpointConfig{}
-	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
+	res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ message.Message, _ error) bool { return true })
 	if !ok {
 		t.Fatal("restore aborted unexpectedly")
 	}

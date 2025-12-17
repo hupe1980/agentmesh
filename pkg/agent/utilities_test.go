@@ -3,64 +3,20 @@ package agent
 import (
 	"testing"
 
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetMessages(t *testing.T) {
-	t.Run("returns empty slice when no messages", func(t *testing.T) {
-		scope := testutil.NewTestScopeFromMap[message.Message](nil)
-		msgs := GetMessages(scope)
-		assert.Empty(t, msgs)
-	})
-
-	t.Run("returns messages from scope", func(t *testing.T) {
-		input := []message.Message{
-			message.NewHumanMessageFromText("Hello"),
-			message.NewAIMessageFromText("World"),
-		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name(): input,
-		})
-
-		msgs := GetMessages(scope)
-		require.Len(t, msgs, 2)
-		assert.Equal(t, "Hello", msgs[0].String())
-		assert.Equal(t, "World", msgs[1].String())
-	})
-}
-
-func TestLastMessage(t *testing.T) {
-	t.Run("returns nil when no messages", func(t *testing.T) {
-		scope := testutil.NewTestScopeFromMap[message.Message](nil)
-		last := LastMessage(scope)
-		assert.Nil(t, last)
-	})
-
-	t.Run("returns last message", func(t *testing.T) {
-		input := []message.Message{
-			message.NewHumanMessageFromText("First"),
-			message.NewAIMessageFromText("Last message"),
-		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name(): input,
-		})
-
-		last := LastMessage(scope)
-		require.NotNil(t, last)
-		assert.Equal(t, "Last message", last.String())
-	})
-}
-
 func TestIsConversationalContext(t *testing.T) {
 	t.Run("returns false for single human message", func(t *testing.T) {
 		input := []message.Message{
 			message.NewHumanMessageFromText("Single question"),
 		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name(): input,
+		scope := testutil.NewTestScopeFromMap(map[string]any{
+			graph.MessagesKeyName: input,
 		})
 
 		isConv := IsConversationalContext(scope)
@@ -73,8 +29,8 @@ func TestIsConversationalContext(t *testing.T) {
 			message.NewAIMessageFromText("Answer"),
 			message.NewHumanMessageFromText("Follow-up"),
 		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name(): input,
+		scope := testutil.NewTestScopeFromMap(map[string]any{
+			graph.MessagesKeyName: input,
 		})
 
 		isConv := IsConversationalContext(scope)
@@ -86,8 +42,8 @@ func TestIsConversationalContext(t *testing.T) {
 			message.NewHumanMessageFromText("First question"),
 			message.NewHumanMessageFromText("Second question"),
 		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name(): input,
+		scope := testutil.NewTestScopeFromMap(map[string]any{
+			graph.MessagesKeyName: input,
 		})
 
 		isConv := IsConversationalContext(scope)
@@ -102,8 +58,8 @@ func TestIsConversationalContext(t *testing.T) {
 			message.NewHumanMessageFromText("Previous question"),
 			message.NewAIMessageFromText("Previous answer"),
 		}
-		scope := testutil.NewTestScopeFromMap[message.Message](map[string]any{
-			MessagesKey.Name():       input,
+		scope := testutil.NewTestScopeFromMap(map[string]any{
+			graph.MessagesKeyName:   input,
 			MemoryContextKey.Name(): memoryContext,
 		})
 
@@ -112,7 +68,7 @@ func TestIsConversationalContext(t *testing.T) {
 	})
 
 	t.Run("returns false for empty messages", func(t *testing.T) {
-		scope := testutil.NewTestScopeFromMap[message.Message](nil)
+		scope := testutil.NewTestScopeFromMap(nil)
 
 		isConv := IsConversationalContext(scope)
 		assert.False(t, isConv)

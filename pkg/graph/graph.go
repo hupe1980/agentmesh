@@ -7,6 +7,7 @@ import (
 	"iter"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // END is the terminal node constant.
@@ -25,9 +26,9 @@ var (
 )
 
 // node represents an internal node in the graph.
-type node[O any] struct {
+type node struct {
 	name    string
-	fn      NodeFunc[O]
+	fn      NodeFunc
 	targets []string
 }
 
@@ -40,102 +41,91 @@ type interruptPoint struct {
 
 // Builder is a fluent workflow builder.
 // Create with New(), add nodes, then Build() to get an executable Graph.
-// I = input type, O = output type.
-type Builder[I, O any] struct {
-	keys          []StateKey
-	outputKey     string // Name of the key that produces outputs
-	outputIsSlice bool   // True if output key is a slice key
-	nodes         map[string]*node[O]
-	entryPoints   []string
-	interrupts    []interruptPoint
+// Input is []Message (conversation history), output is Message (response).
+type Builder struct {
+	keys        []StateKey
+	nodes       map[string]*node
+	entryPoints []string
+	interrupts  []interruptPoint
 
 	// Configuration (set via With* methods)
 	store          Store
 	checkpointer   checkpoint.Checkpointer
 	runID          string
-	nodeMiddleware []NodeMiddleware[O]   // Node-level middleware (wraps each node)
-	runMiddleware  []RunMiddleware[I, O] // Run-level middleware (wraps Run/Resume)
-	executor       Executor[I, O]
+	nodeMiddleware []NodeMiddleware // Node-level middleware (wraps each node)
+	runMiddleware  []RunMiddleware  // Run-level middleware (wraps Run/Resume)
+	executor       Executor
 }
 
 // Graph is an executable workflow with immutable structure.
 // Created by calling Build() on a Builder.
-type Graph[I, O any] struct {
-	keys          []StateKey
-	outputKey     string
-	outputIsSlice bool
-	nodes         map[string]*node[O]
-	entryPoints   []string
-	interrupts    []interruptPoint
+type Graph struct {
+	keys        []StateKey
+	nodes       map[string]*node
+	entryPoints []string
+	interrupts  []interruptPoint
 
 	store          Store
 	checkpointer   checkpoint.Checkpointer
 	runID          string
-	nodeMiddleware []NodeMiddleware[O]   // Node-level middleware (wraps each node)
-	runMiddleware  []RunMiddleware[I, O] // Run-level middleware (wraps Run/Resume)
-	executor       Executor[I, O]
+	nodeMiddleware []NodeMiddleware // Node-level middleware (wraps each node)
+	runMiddleware  []RunMiddleware  // Run-level middleware (wraps Run/Resume)
+	executor       Executor
 }
 
 // New creates a graph builder with the given state keys.
 // Keys are automatically registered.
-// The first key (if provided) is used as the output key.
-// For slice keys (created with NewListKey), new items are yielded as outputs.
-// For scalar keys, the value is yielded when set.
+// messagesKey is always included and used as the output key.
 // Duplicate keys will cause Build() to fail.
-func New[I, O any](keys ...StateKey) *Builder[I, O] {
-	var outputKey string
-	var outputIsSlice bool
-	if len(keys) > 0 {
-		outputKey = keys[0].Name()
-		outputIsSlice = keys[0].IsSlice()
-	}
+//
+// By default, messagesKey is included. Additional keys can be provided.
+func New(keys ...StateKey) *Builder {
+	// Ensure messagesKey is always included
+	allKeys := append([]StateKey{messagesKey}, keys...)
 
-	return &Builder[I, O]{
-		keys:          keys,
-		outputKey:     outputKey,
-		outputIsSlice: outputIsSlice,
-		nodes:         make(map[string]*node[O]),
+	return &Builder{
+		keys:  allKeys,
+		nodes: make(map[string]*node),
 	}
 }
 
 // Node adds a node to the graph.
 // Targets are the possible next nodes (use END for terminal).
-func (b *Builder[I, O]) Node(name string, fn NodeFunc[O], targets ...string) *Builder[I, O] {
-	b.nodes[name] = &node[O]{name: name, fn: fn, targets: targets}
+func (b *Builder) Node(name string, fn NodeFunc, targets ...string) *Builder {
+	b.nodes[name] = &node{name: name, fn: fn, targets: targets}
 	return b
 }
 
 // Subgraph creates a NodeFunc that executes a compiled subgraph.
 // Use with Node() to add a subgraph while maintaining the fluent builder pattern:
 //
-//	child, _ := graph.New[ChildIn, ChildOut](...).Build()
+//	child, _ := graph.New(...).Build()
 //
-//	parent.Node("validate", graph.Subgraph[ParentOut](child,
-//	    func(ctx context.Context, view graph.ReadOnlyScope) (ChildIn, error) {
-//	        return ChildIn{Data: graph.Get(view, dataKey)}, nil
+//	parent.Node("validate", graph.Subgraph(child,
+//	    func(ctx context.Context, view graph.ReadOnlyScope) ([]graph.Message, error) {
+//	        return graph.GetMessages(view), nil
 //	    },
-//	    func(ctx context.Context, out ChildOut) (graph.Updates, error) {
-//	        return graph.Set(resultKey, out.Result), nil
+//	    func(ctx context.Context, out graph.Message) (graph.Updates, error) {
+//	        return graph.Updates{graph.MessagesKeyName: []graph.Message{out}}, nil
 //	    },
 //	), "next")
 //
-// The type parameter O must match the parent graph's output type.
 // The InputMapper transforms parent state into subgraph input.
 // The OutputMapper transforms subgraph output into parent state updates.
-func Subgraph[O, SI, SO any](
-	sub *Graph[SI, SO],
-	inputMapper InputMapper[SI],
-	outputMapper OutputMapper[SO],
-) NodeFunc[O] {
-	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+func Subgraph(
+	sub *Graph,
+	inputMapper InputMapper,
+	outputMapper OutputMapper,
+) NodeFunc {
+	return func(ctx context.Context, scope Scope) (*Command, error) {
 		// Map parent state to subgraph input (use scope as view)
-		input, err := inputMapper(ctx, scopeAsView[O]{scope})
+		input, err := inputMapper(ctx, scopeAsView{scope})
 		if err != nil {
 			return Fail(err)
 		}
 
 		// Execute subgraph (collect final output)
-		var lastOutput SO
+		var lastOutput message.Message
 		for output, err := range sub.Run(ctx, input) {
 			if err != nil {
 				return Fail(err)
@@ -154,36 +144,44 @@ func Subgraph[O, SI, SO any](
 }
 
 // scopeAsView adapts a Scope to the View interface for read-only operations.
-type scopeAsView[O any] struct {
-	scope Scope[O]
+type scopeAsView struct {
+	scope Scope
 }
 
-func (s scopeAsView[O]) NodeName() string {
+func (s scopeAsView) NodeName() string {
 	return s.scope.NodeName()
 }
 
-func (s scopeAsView[O]) GetValue(name string) (any, bool) {
+func (s scopeAsView) GetValue(name string) (any, bool) {
 	return s.scope.GetValue(name)
 }
 
-func (s scopeAsView[O]) ManagedValues() *ManagedValueRegistry {
+func (s scopeAsView) Messages() []message.Message {
+	return s.scope.Messages()
+}
+
+func (s scopeAsView) LastMessage() message.Message {
+	return s.scope.LastMessage()
+}
+
+func (s scopeAsView) ManagedValues() *ManagedValueRegistry {
 	return s.scope.ManagedValues()
 }
 
-func (s scopeAsView[O]) ToMap() map[string]any {
+func (s scopeAsView) ToMap() map[string]any {
 	return s.scope.ToMap()
 }
 
 // Start sets the entry point node(s).
 // Multiple entry points run in parallel.
-func (b *Builder[I, O]) Start(names ...string) *Builder[I, O] {
+func (b *Builder) Start(names ...string) *Builder {
 	b.entryPoints = names
 	return b
 }
 
 // InterruptBefore adds an interrupt before the specified node.
 // When execution reaches this node, it will pause and yield an interrupt event.
-func (b *Builder[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption) *Builder[I, O] {
+func (b *Builder) InterruptBefore(nodeName string, opts ...InterruptOption) *Builder {
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -198,7 +196,7 @@ func (b *Builder[I, O]) InterruptBefore(nodeName string, opts ...InterruptOption
 
 // InterruptAfter adds an interrupt after the specified node.
 // When execution completes this node, it will pause and yield an interrupt event.
-func (b *Builder[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption) *Builder[I, O] {
+func (b *Builder) InterruptAfter(nodeName string, opts ...InterruptOption) *Builder {
 	cfg := &interruptConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -212,13 +210,13 @@ func (b *Builder[I, O]) InterruptAfter(nodeName string, opts ...InterruptOption)
 }
 
 // WithStore sets a custom state store.
-func (b *Builder[I, O]) WithStore(store Store) *Builder[I, O] {
+func (b *Builder) WithStore(store Store) *Builder {
 	b.store = store
 	return b
 }
 
 // WithCheckpointer sets the checkpointer and run ID.
-func (b *Builder[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID string) *Builder[I, O] {
+func (b *Builder) WithCheckpointer(cp checkpoint.Checkpointer, runID string) *Builder {
 	b.checkpointer = cp
 	b.runID = runID
 	return b
@@ -227,7 +225,7 @@ func (b *Builder[I, O]) WithCheckpointer(cp checkpoint.Checkpointer, runID strin
 // WithNodeMiddleware adds node-level middleware to the builder.
 // Node middleware wraps each node execution and runs for every node.
 // For middleware that should wrap the entire Run/Resume operation, use WithRunMiddleware.
-func (b *Builder[I, O]) WithNodeMiddleware(mw ...NodeMiddleware[O]) *Builder[I, O] {
+func (b *Builder) WithNodeMiddleware(mw ...NodeMiddleware) *Builder {
 	b.nodeMiddleware = append(b.nodeMiddleware, mw...)
 	return b
 }
@@ -244,13 +242,13 @@ func (b *Builder[I, O]) WithNodeMiddleware(mw ...NodeMiddleware[O]) *Builder[I, 
 //   - Request/response transformation
 //
 // Middleware is applied in order: first added = outermost wrapper.
-func (b *Builder[I, O]) WithRunMiddleware(mw ...RunMiddleware[I, O]) *Builder[I, O] {
+func (b *Builder) WithRunMiddleware(mw ...RunMiddleware) *Builder {
 	b.runMiddleware = append(b.runMiddleware, mw...)
 	return b
 }
 
 // WithExecutor sets a custom executor.
-func (b *Builder[I, O]) WithExecutor(exec Executor[I, O]) *Builder[I, O] {
+func (b *Builder) WithExecutor(exec Executor) *Builder {
 	b.executor = exec
 	return b
 }
@@ -290,7 +288,7 @@ func WithoutValidation() BuildOption {
 
 // Build compiles and validates the builder.
 // Returns an executable Graph or an error.
-func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
+func (b *Builder) Build(opts ...BuildOption) (*Graph, error) {
 	// Apply build options
 	cfg := &buildConfig{
 		validationOpts: DefaultValidationOptions(),
@@ -311,10 +309,8 @@ func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 		store = newMemoryStore()
 	}
 
-	return &Graph[I, O]{
+	return &Graph{
 		keys:           b.keys,
-		outputKey:      b.outputKey,
-		outputIsSlice:  b.outputIsSlice,
 		nodes:          b.nodes,
 		entryPoints:    b.entryPoints,
 		interrupts:     b.interrupts,
@@ -329,7 +325,7 @@ func (b *Builder[I, O]) Build(opts ...BuildOption) (*Graph[I, O], error) {
 
 // applyRunMiddleware wraps a core run function with the configured run middleware.
 // Middleware is applied in reverse order so first added = outermost wrapper.
-func (g *Graph[I, O]) applyRunMiddleware(coreRun RunFunc[I, O]) RunFunc[I, O] {
+func (g *Graph) applyRunMiddleware(coreRun RunFunc) RunFunc {
 	wrapped := coreRun
 	for i := len(g.runMiddleware) - 1; i >= 0; i-- {
 		wrapped = g.runMiddleware[i](wrapped)
@@ -339,15 +335,15 @@ func (g *Graph[I, O]) applyRunMiddleware(coreRun RunFunc[I, O]) RunFunc[I, O] {
 
 // executeWithOptions runs the executor with the given input and options.
 // This is the shared execution logic for both Run and Resume.
-func (g *Graph[I, O]) executeWithOptions(ctx context.Context, input I, runOpts []runOption) iter.Seq2[O, error] {
-	return func(yield func(O, error) bool) {
+func (g *Graph) executeWithOptions(ctx context.Context, input []message.Message, runOpts []runOption) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
 		// Build executor config
 		cfg := g.buildExecutorConfig()
 
 		// Use configured executor or default Pregel executor
 		exec := g.executor
 		if exec == nil {
-			exec = NewPregelExecutor[I, O]()
+			exec = NewPregelExecutor()
 		}
 
 		// Delegate to executor
@@ -361,9 +357,9 @@ func (g *Graph[I, O]) executeWithOptions(ctx context.Context, input I, runOpts [
 
 // Run executes the compiled graph with input.
 // For resuming from a checkpoint without providing new input, use [Resume] instead.
-func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.Seq2[O, error] {
+func (g *Graph) Run(ctx context.Context, input []message.Message, opts ...RunOption) iter.Seq2[message.Message, error] {
 	// Build the core run function
-	coreRun := func(ctx context.Context, input I) iter.Seq2[O, error] {
+	coreRun := func(ctx context.Context, input []message.Message) iter.Seq2[message.Message, error] {
 		// Convert RunOptions to internal runOptions
 		runOpts := make([]runOption, len(opts))
 		for i, opt := range opts {
@@ -381,7 +377,6 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 // restored without being overwritten by a zero-value input.
 //
 // Parameters:
-//   - cp: The checkpoint to resume from (required)
 //   - runID: The run ID for checkpointing (required)
 //   - opts: Optional resume options for human-in-the-loop workflows
 //
@@ -405,9 +400,9 @@ func (g *Graph[I, O]) Run(ctx context.Context, input I, opts ...RunOption) iter.
 //	) {
 //	    // process output
 //	}
-func (g *Graph[I, O]) Resume(ctx context.Context, runID string, opts ...ResumeOption) iter.Seq2[O, error] {
+func (g *Graph) Resume(ctx context.Context, runID string, opts ...ResumeOption) iter.Seq2[message.Message, error] {
 	// Build the core run function (Resume uses zero input)
-	coreRun := func(ctx context.Context, _ I) iter.Seq2[O, error] {
+	coreRun := func(ctx context.Context, _ []message.Message) iter.Seq2[message.Message, error] {
 		// Build runOptions: skipInputMerge + runID + autoRestore (default) + user options
 		runOpts := make([]runOption, 0, len(opts)+3)
 		runOpts = append(runOpts,
@@ -420,21 +415,19 @@ func (g *Graph[I, O]) Resume(ctx context.Context, runID string, opts ...ResumeOp
 			runOpts = append(runOpts, func(cfg *runConfig) { opt.applyResume(cfg) })
 		}
 
-		var zero I
-		return g.executeWithOptions(ctx, zero, runOpts)
+		return g.executeWithOptions(ctx, nil, runOpts)
 	}
 
-	// Resume always uses zero input
-	var zero I
-	return g.applyRunMiddleware(coreRun)(ctx, zero)
+	// Resume always uses nil input
+	return g.applyRunMiddleware(coreRun)(ctx, nil)
 }
 
 // buildExecutorConfig creates the executor configuration from the compiled graph.
-func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
+func (g *Graph) buildExecutorConfig() *ExecutorConfig {
 	// Build nodes map - types are already correct
-	nodes := make(map[string]ExecutorNode[O], len(g.nodes))
+	nodes := make(map[string]ExecutorNode, len(g.nodes))
 	for name, n := range g.nodes {
-		nodes[name] = ExecutorNode[O]{
+		nodes[name] = ExecutorNode{
 			Name:    n.name,
 			Fn:      n.fn,
 			Targets: n.targets,
@@ -464,14 +457,12 @@ func (g *Graph[I, O]) buildExecutorConfig() *ExecutorConfig[I, O] {
 		ReduceFn: func(_, updated any) any { return updated },
 	})
 
-	return &ExecutorConfig[I, O]{
-		Execution: ExecutionConfig[O]{
+	return &ExecutorConfig{
+		Execution: ExecutionConfig{
 			Nodes:          nodes,
 			EntryPoints:    g.entryPoints,
 			NodeMiddleware: g.nodeMiddleware,
 			Store:          g.store,
-			OutputKey:      g.outputKey,
-			OutputIsSlice:  g.outputIsSlice,
 			KeyRegistry:    registry,
 		},
 		Checkpoint: CheckpointConfig{

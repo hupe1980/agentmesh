@@ -17,13 +17,12 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/testutil"
 	"github.com/hupe1980/agentmesh/pkg/viz"
-)
-
-// TestVizServerRESTEndpoints tests all REST API endpoints end-to-end
+) // TestVizServerRESTEndpoints tests all REST API endpoints end-to-end
 func TestVizServerRESTEndpoints(t *testing.T) {
 	t.Parallel()
 
@@ -48,7 +47,7 @@ func TestVizServerRESTEndpoints(t *testing.T) {
 
 	// Create a simple test graph
 	testGraph := createVizTestGraph(t)
-	if err := server.Register("test-graph", viz.NewMessageAdapter(testGraph)); err != nil {
+	if err := server.Register("test-graph", viz.NewGraphAdapter(testGraph)); err != nil {
 		t.Fatalf("Failed to register graph: %v", err)
 	}
 
@@ -620,7 +619,7 @@ func TestVizServerInvalidEndpoints(t *testing.T) {
 }
 
 // Helper function to create a test graph with mock model that tracks costs
-func createVizTestGraph(t *testing.T) *message.Graph {
+func createVizTestGraph(t *testing.T) *graph.Graph {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 
@@ -696,7 +695,7 @@ func createVizTestGraph(t *testing.T) *message.Graph {
 	)
 	require.NoError(t, err, "Failed to create ReAct agent")
 
-	// reactAgent is already the correct type (*message.Graph)
+	// reactAgent is already the correct type (*graph.Graph)
 	return reactAgent
 }
 
@@ -789,7 +788,7 @@ func TestVizServerWebSocket(t *testing.T) {
 
 	// Register test graph
 	testGraph := createVizTestGraph(t)
-	if err := server.Register("websocket-test-graph", viz.NewMessageAdapter(testGraph)); err != nil {
+	if err := server.Register("websocket-test-graph", viz.NewGraphAdapter(testGraph)); err != nil {
 		t.Fatalf("Failed to register graph: %v", err)
 	}
 
@@ -1048,7 +1047,7 @@ func TestEventCollection(t *testing.T) {
 
 	// Create and register test graph
 	testGraph := createVizTestGraph(t)
-	err = server.Register("test-graph", viz.NewMessageAdapter(testGraph))
+	err = server.Register("test-graph", viz.NewGraphAdapter(testGraph))
 	require.NoError(t, err, "Failed to register graph")
 
 	// Start server in background
@@ -1157,7 +1156,7 @@ func TestEventCollection(t *testing.T) {
 
 // createSlowVizTestGraph creates a test graph with delays to ensure WebSocket
 // subscriptions can be established before events are emitted.
-func createSlowVizTestGraph(t *testing.T) *message.Graph {
+func createSlowVizTestGraph(t *testing.T) *graph.Graph {
 	// Track invocation count to return tool call first, then final response
 	invocationCount := 0
 
@@ -1238,7 +1237,7 @@ func TestWebSocketEventContent(t *testing.T) {
 
 	// Register test graph with delays to ensure WebSocket subscription works
 	testGraph := createSlowVizTestGraph(t)
-	err = server.Register("test-graph", viz.NewMessageAdapter(testGraph))
+	err = server.Register("test-graph", viz.NewGraphAdapter(testGraph))
 	require.NoError(t, err, "Failed to register graph")
 
 	// Start server
@@ -1386,7 +1385,7 @@ func TestRunStatusTransitions(t *testing.T) {
 
 	// Register test graph
 	testGraph := createVizTestGraph(t)
-	err = server.Register("test-graph", viz.NewMessageAdapter(testGraph))
+	err = server.Register("test-graph", viz.NewGraphAdapter(testGraph))
 	require.NoError(t, err, "Failed to register graph")
 
 	// Start server

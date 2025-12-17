@@ -59,7 +59,7 @@ var (
 checkpointer := checkpoint.NewInMemoryCheckpointer()
 runID := "pause-run-001"
 
-g := graph.New[any, any](questionKey, answerKey)
+g := graph.New(questionKey, answerKey)
 
 // Configure checkpointer
 g.WithCheckpointer(checkpointer, runID)

@@ -2,11 +2,13 @@ package jsonschema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
-	gjs "github.com/google/jsonschema-go/jsonschema"
 	inv "github.com/invopop/jsonschema"
+	stjs "github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // FromStruct reflects a JSON Schema from a struct definition.
@@ -78,7 +80,20 @@ func MapFromStruct(structType any) (map[string]any, error) {
 	return m, nil
 }
 
-// Validate checks value against a JSON Schema.
+// ValidationError represents a single validation error with path and message.
+type ValidationError struct {
+	Path    string // JSON path to the error (e.g., "/properties/age")
+	Message string // Human-readable error message
+}
+
+// ValidationResult contains all validation errors.
+type ValidationResult struct {
+	Valid      bool              // True if validation passed
+	Errors     []ValidationError // All validation errors found
+	ParsedData any               // The parsed JSON data (if valid JSON)
+}
+
+// Validate checks value against a JSON Schema and returns all validation errors.
 // Supported schema types:
 //   - map[string]any (e.g., from MapFromStruct)
 //   - *inv.Schema (e.g., from FromStruct)
@@ -87,48 +102,75 @@ func MapFromStruct(structType any) (map[string]any, error) {
 // Value can be:
 //   - Go types (map[string]any, struct, etc.)
 //   - JSON string ([]byte or string)
-func Validate(schema any, value any) error {
-	var raw []byte
-
-	// Normalize schema into JSON
+//
+//nolint:gocyclo // Complex schema validation logic; refactoring would reduce readability
+func Validate(schema any, value any) *ValidationResult {
+	// Normalize schema to map[string]any
+	var schemaMap map[string]any
 	switch s := schema.(type) {
 	case map[string]any:
-		b, err := json.Marshal(s)
-		if err != nil {
-			return fmt.Errorf("invalid schema map: %w", err)
-		}
-		raw = b
+		schemaMap = s
 	case *inv.Schema:
 		b, err := json.Marshal(s)
 		if err != nil {
-			return fmt.Errorf("marshal inv schema: %w", err)
+			return &ValidationResult{
+				Valid:  false,
+				Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("marshal schema: %v", err)}},
+			}
 		}
-		raw = b
+		if err := json.Unmarshal(b, &schemaMap); err != nil {
+			return &ValidationResult{
+				Valid:  false,
+				Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("unmarshal schema: %v", err)}},
+			}
+		}
 	case []byte:
-		raw = s
+		if err := json.Unmarshal(s, &schemaMap); err != nil {
+			return &ValidationResult{
+				Valid:  false,
+				Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("invalid schema json: %v", err)}},
+			}
+		}
 	case string:
-		raw = []byte(s)
+		if err := json.Unmarshal([]byte(s), &schemaMap); err != nil {
+			return &ValidationResult{
+				Valid:  false,
+				Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("invalid schema json: %v", err)}},
+			}
+		}
 	default:
-		return fmt.Errorf("unsupported schema type %T", schema)
+		return &ValidationResult{
+			Valid:  false,
+			Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("unsupported schema type %T", schema)}},
+		}
 	}
 
-	// Decode schema
-	var gs gjs.Schema
-	if err := json.Unmarshal(raw, &gs); err != nil {
-		return fmt.Errorf("invalid schema json: %w", err)
+	// Compile schema using santhosh-tekuri
+	c := stjs.NewCompiler()
+	if err := c.AddResource("schema.json", schemaMap); err != nil {
+		return &ValidationResult{
+			Valid:  false,
+			Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("add schema resource: %v", err)}},
+		}
 	}
 
-	resolved, err := gs.Resolve(nil)
+	compiled, err := c.Compile("schema.json")
 	if err != nil {
-		return fmt.Errorf("schema resolve error: %w", err)
+		return &ValidationResult{
+			Valid:  false,
+			Errors: []ValidationError{{Path: "", Message: fmt.Sprintf("compile schema: %v", err)}},
+		}
 	}
 
-	// --- Normalize value ---
+	// Normalize value
 	var val any
 	switch v := value.(type) {
 	case string:
 		if v == "" {
-			return fmt.Errorf("invalid value: empty string")
+			return &ValidationResult{
+				Valid:  false,
+				Errors: []ValidationError{{Path: "", Message: "empty string"}},
+			}
 		}
 		if err := json.Unmarshal([]byte(v), &val); err != nil {
 			// if not valid JSON, treat raw string as-is
@@ -142,12 +184,52 @@ func Validate(schema any, value any) error {
 		val = v
 	}
 
-	// Validate normalized value
-	if err := resolved.Validate(val); err != nil {
-		return fmt.Errorf("invalid value: %w", err)
+	// Validate
+	if err := compiled.Validate(val); err != nil {
+		var ve *stjs.ValidationError
+		if errors.As(err, &ve) {
+			errs := collectValidationErrors(ve)
+			return &ValidationResult{
+				Valid:      false,
+				Errors:     errs,
+				ParsedData: val,
+			}
+		}
+		return &ValidationResult{
+			Valid:      false,
+			Errors:     []ValidationError{{Path: "", Message: err.Error()}},
+			ParsedData: val,
+		}
 	}
 
-	return nil
+	return &ValidationResult{Valid: true, ParsedData: val}
+}
+
+// collectValidationErrors recursively collects all validation errors from the error tree.
+func collectValidationErrors(ve *stjs.ValidationError) []ValidationError {
+	var errors []ValidationError
+	collectErrorsRecursive(ve, &errors)
+	return errors
+}
+
+func collectErrorsRecursive(ve *stjs.ValidationError, errors *[]ValidationError) {
+	// Leaf errors have no causes - these are the actual validation failures
+	if len(ve.Causes) == 0 {
+		// Convert InstanceLocation ([]string) to JSON pointer path
+		path := "/" + strings.Join(ve.InstanceLocation, "/")
+		if path == "/" {
+			path = ""
+		}
+		*errors = append(*errors, ValidationError{
+			Path:    path,
+			Message: ve.Error(),
+		})
+		return
+	}
+	// Recurse into causes
+	for _, cause := range ve.Causes {
+		collectErrorsRecursive(cause, errors)
+	}
 }
 
 // ToOpenAISchema generates a JSON Schema map compatible with OpenAI function calling.

@@ -13,7 +13,7 @@
 //	defer checkpointer.Close()
 //
 //	// Use with a graph
-//	g := graph.New[Input, Output](keys...)
+//	g := graph.New(keys...)
 //	compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
 //
 // # Supported Databases
@@ -69,7 +69,7 @@
 //   - paused_nodes: Array of paused node names for human-in-the-loop (JSON)
 //   - metadata: Additional checkpoint metadata (JSON)
 //
-// Note: Message history is stored within the state column using the __messages__ key,
+// Note: Message history is stored within the state column using the "messages" key,
 // not as a separate column. This ensures consistent state management.
 //
 // A unique constraint ensures only one checkpoint per (run_id, superstep) combination.

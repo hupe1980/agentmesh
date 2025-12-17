@@ -196,7 +196,7 @@ func (MinAggregator) Aggregate(current, value any) any {
 }
 
 // Contribute via graph.Set
-g.Node("optimizer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("optimizer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(MinCostKey, estimatedCost).
         Set(MaxPriorityKey, taskPriority).
         To(graph.END), nil
@@ -215,9 +215,9 @@ var AvgLatencyKey = graph.NewAggregateKey[aggregators.AvgState](
     &aggregators.AvgAggregator{},
 )
 
-g := graph.New[string, string](AvgLatencyKey)
+g := graph.New(AvgLatencyKey)
 
-g.Node("monitor", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("monitor", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(AvgLatencyKey, responseTime).To(graph.END), nil
 }, graph.END)
 
@@ -239,9 +239,9 @@ var VarianceKey = graph.NewAggregateKey[aggregators.VarianceState](
     &aggregators.VarianceAggregator{},
 )
 
-g := graph.New[string, string](VarianceKey)
+g := graph.New(VarianceKey)
 
-g.Node("stats", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("stats", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(VarianceKey, responseTime).To(graph.END), nil
 }, graph.END)
 
@@ -263,9 +263,9 @@ var ActiveNodesKey = graph.NewAggregateKey[int](
     &aggregators.CountAggregator{},
 )
 
-g := graph.New[string, string](ActiveNodesKey)
+g := graph.New(ActiveNodesKey)
 
-g.Node("worker", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("worker", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Any non-nil value increments
     return graph.Set(ActiveNodesKey, 1).To(graph.END), nil
 }, graph.END)
@@ -288,9 +288,9 @@ var HasErrorsKey = graph.NewAggregateKey[bool](
     &aggregators.AnyTrueAggregator{},
 )
 
-g := graph.New[string, string](AllConvergedKey, HasErrorsKey)
+g := graph.New(AllConvergedKey, HasErrorsKey)
 
-g.Node("validator", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("validator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(AllConvergedKey, isConverged).
         Set(HasErrorsKey, hasError).
         To(graph.END), nil
@@ -309,7 +309,7 @@ g.Node("validator", func(ctx context.Context, scope graph.Scope[string]) (*graph
 Nodes contribute to aggregators via `graph.Set()` and read accumulated values via `graph.Get()`:
 
 ```go
-g.Node("processor", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("processor", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Read current aggregated values
     totalProcessed := graph.Get(scope, TotalProcessedKey)
     avgLatency := graph.Get(scope, AvgLatencyKey)
@@ -378,9 +378,9 @@ var MedianKey = graph.NewAggregateKey[medianState](
     &MedianAggregator{},
 )
 
-g := graph.New[string, string](MedianKey)
+g := graph.New(MedianKey)
 
-g.Node("collector", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("collector", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(MedianKey, latency).To(graph.END), nil
 }, graph.END)
 
@@ -447,9 +447,9 @@ var GlobalErrorKey = graph.NewAggregateKey[float64](
     &aggregators.SumAggregator{},
 )
 
-g := graph.New[string, string](GlobalErrorKey)
+g := graph.New(GlobalErrorKey)
 
-g.Node("optimizer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("optimizer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Calculate local error
     localError := computeLocalError()
     
@@ -485,10 +485,10 @@ var TotalLatencyKey = graph.NewAggregateKey[float64](
     &aggregators.SumAggregator{},
 )
 
-g := graph.New[string, string](SuccessCountKey, FailureCountKey, TotalLatencyKey)
+g := graph.New(SuccessCountKey, FailureCountKey, TotalLatencyKey)
 
 // Parallel worker nodes
-g.Node("worker1", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("worker1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     start := time.Now()
     result, err := doWork()
     latency := float64(time.Since(start).Milliseconds())
@@ -504,7 +504,7 @@ g.Node("worker1", func(ctx context.Context, scope graph.Scope[string]) (*graph.C
 }, "reporter")
 
 // Final reporting node
-g.Node("reporter", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("reporter", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     successCount := graph.Get(scope, SuccessCountKey)
     failureCount := graph.Get(scope, FailureCountKey)
     totalLatency := graph.Get(scope, TotalLatencyKey)
@@ -754,9 +754,9 @@ var ValueKey = graph.NewKey[int]("value")
 var ResultKey = graph.NewKey[int]("result")
 
 // Create a subgraph that doubles the value
-sub := graph.New[int, int](ValueKey, ResultKey)
+sub := graph.New(ValueKey, ResultKey)
 
-sub.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+sub.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     value := graph.Get(scope, ValueKey)
     doubled := value * 2
     return graph.Set(ResultKey, doubled).To(graph.END), nil
@@ -768,9 +768,9 @@ sub.Start("process")
 compiledSub, _ := sub.Build()
 
 // Create parent graph
-parent := graph.New[int, int](ValueKey, ResultKey)
+parent := graph.New(ValueKey, ResultKey)
 
-parent.Node("prepare", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+parent.Node("prepare", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(ValueKey, 21).To("doubler")
 }, "doubler")
 
@@ -778,7 +778,7 @@ parent.Node("prepare", func(ctx context.Context, scope graph.Scope[string]) (*gr
 parent.Node("doubler", graph.Subgraph(
     compiledSub,
     // InputMapper: pass the value from parent to subgraph
-    func(ctx context.Context, scope graph.Scope[string]) (int, error) {
+    func(ctx context.Context, scope graph.Scope) (int, error) {
         return graph.Get(scope, ValueKey), nil
     },
     // OutputMapper: map subgraph result back to parent
@@ -806,8 +806,8 @@ var InputKey = graph.NewKey[string]("input")
 var OutputKey = graph.NewKey[string]("output")
 var ProcessedDataKey = graph.NewKey[string]("processed_data")
 
-parent := graph.New[string, string](DataKey, ProcessedDataKey)
-sub := graph.New[string, string](InputKey, OutputKey)
+parent := graph.New(DataKey, ProcessedDataKey)
+sub := graph.New(InputKey, OutputKey)
 
 // Build and compile the subgraph
 compiledSub, _ := sub.Build()
@@ -816,7 +816,7 @@ compiledSub, _ := sub.Build()
 parent.Node("processor", graph.Subgraph(
     compiledSub,
     // InputMapper: parent state -> subgraph input
-    func(ctx context.Context, scope graph.Scope[string]) (string, error) {
+    func(ctx context.Context, scope graph.Scope) (string, error) {
         data := graph.Get(scope, DataKey)
         return data, nil
     },
@@ -843,11 +843,11 @@ enrichmentSub, _ := createEnrichmentGraph().Build()
 analysisSub, _ := createAnalysisGraph().Build()
 
 // Compose into pipeline
-pipeline := graph.New[string, string](DataKey, ResultKey)
+pipeline := graph.New(DataKey, ResultKey)
 
 pipeline.Node("validate", graph.Subgraph(
     validationSub,
-    func(ctx context.Context, scope graph.Scope[string]) (string, error) {
+    func(ctx context.Context, scope graph.Scope) (string, error) {
         return graph.Get(scope, DataKey), nil
     },
     func(ctx context.Context, output string) (graph.Updates, error) {
@@ -857,7 +857,7 @@ pipeline.Node("validate", graph.Subgraph(
 
 pipeline.Node("enrich", graph.Subgraph(
     enrichmentSub,
-    func(ctx context.Context, scope graph.Scope[string]) (string, error) {
+    func(ctx context.Context, scope graph.Scope) (string, error) {
         return graph.Get(scope, DataKey), nil
     },
     func(ctx context.Context, output string) (graph.Updates, error) {
@@ -867,7 +867,7 @@ pipeline.Node("enrich", graph.Subgraph(
 
 pipeline.Node("analyze", graph.Subgraph(
     analysisSub,
-    func(ctx context.Context, scope graph.Scope[string]) (string, error) {
+    func(ctx context.Context, scope graph.Scope) (string, error) {
         return graph.Get(scope, DataKey), nil
     },
     func(ctx context.Context, output string) (graph.Updates, error) {
@@ -885,7 +885,7 @@ compiled, _ := pipeline.Build()
 authSub, _ := createAuthGraph().Build()
 
 // Define standard mappers for auth flow
-authInput := func(ctx context.Context, scope graph.Scope[string]) (AuthData, error) {
+authInput := func(ctx context.Context, scope graph.Scope) (AuthData, error) {
     return AuthData{Token: graph.Get(scope, TokenKey)}, nil
 }
 authOutput := func(ctx context.Context, output AuthResult) (graph.Updates, error) {

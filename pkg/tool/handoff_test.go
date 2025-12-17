@@ -12,12 +12,12 @@ import (
 )
 
 // createMockWorkerGraph creates a simple graph that returns a fixed response
-func createMockWorkerGraph(t *testing.T, response string) *message.Graph {
-	g := message.NewGraphBuilder()
+func createMockWorkerGraph(t *testing.T, response string) *graph.Graph {
+	g := graph.New()
 
-	g.Node("worker", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+	g.Node("worker", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		msg := message.Message(message.NewAIMessageFromText(response))
-		return graph.Set(message.MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("worker")
@@ -100,15 +100,15 @@ func TestHandoffToAgent_Retry(t *testing.T) {
 
 	// Create a graph that fails on first call, succeeds on second
 	failOnce := true
-	g := message.NewGraphBuilder()
+	g := graph.New()
 
-	g.Node("worker", func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+	g.Node("worker", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		if failOnce {
 			failOnce = false
 			return graph.Fail(errors.New("temporary error"))
 		}
 		msg := message.Message(message.NewAIMessageFromText("Success after retry"))
-		return graph.Set(message.MessagesKey, []message.Message{msg}).End()
+		return graph.Reply(msg).End()
 	}, graph.END)
 
 	g.Start("worker")

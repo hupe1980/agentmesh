@@ -80,12 +80,15 @@ func TestGobCodec_GraphStateIntegration(t *testing.T) {
 
 	stateKey := graph.NewKey[GobSerializableState]("state")
 
-	g := graph.New[GobSerializableState, GobSerializableState](stateKey)
+	var finalState GobSerializableState
 
-	g.Node("increment", func(ctx context.Context, scope graph.Scope[GobSerializableState]) (*graph.Command, error) {
+	g := graph.New(stateKey)
+
+	g.Node("increment", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		state := graph.Get(scope, stateKey)
 		state.Counter++
 		state.Items = append(state.Items, "step")
+		finalState = state
 		return graph.Set(stateKey, state).End()
 	}, graph.END)
 
@@ -100,15 +103,12 @@ func TestGobCodec_GraphStateIntegration(t *testing.T) {
 		Items:   []string{"initial"},
 	}
 
-	var outputs []GobSerializableState
-	for out, err := range compiled.Run(ctx, input) {
+	for _, err := range compiled.Run(ctx, nil, graph.WithInitialValue(stateKey, input)) {
 		require.NoError(t, err)
-		outputs = append(outputs, out)
 	}
 
-	require.Len(t, outputs, 1)
-	assert.Equal(t, 11, outputs[0].Counter)
-	assert.Contains(t, outputs[0].Items, "step")
+	assert.Equal(t, 11, finalState.Counter)
+	assert.Contains(t, finalState.Items, "step")
 }
 
 // TestGobCodec_MapSerialization tests gob serialization of maps.

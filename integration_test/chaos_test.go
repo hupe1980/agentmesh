@@ -29,7 +29,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 	var failCount atomic.Int32
 
 	// Build a chain of 10 nodes where each increments a counter
-	g := graph.New[any, any](countKey)
+	g := graph.New(countKey)
 
 	for i := 0; i < 10; i++ {
 		nodeNum := i
@@ -39,7 +39,7 @@ func TestChaos_RandomNodeFailures(t *testing.T) {
 			nextNode = graph.END
 		}
 
-		g.Node(nodeName, func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g.Node(nodeName, func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			// Random failure injection
 			if rand.Float64() < failureRate {
 				failCount.Add(1)
@@ -95,7 +95,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	result4Key := graph.NewKey[int]("result_4")
 	totalKey := graph.NewKey[int]("total")
 
-	g := graph.New[any, any](result0Key, result1Key, result2Key, result3Key, result4Key, totalKey)
+	g := graph.New(result0Key, result1Key, result2Key, result3Key, result4Key, totalKey)
 
 	// Create parallel nodes that may fail
 	for i := 0; i < 5; i++ {
@@ -116,7 +116,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 			resultKey = result4Key
 		}
 
-		g.Node(nodeName, func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g.Node(nodeName, func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			// Simulate work with random failure
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
@@ -129,7 +129,7 @@ func TestChaos_ConcurrentExecutionFailures(t *testing.T) {
 	}
 
 	// Aggregator node collects results
-	g.Node("aggregator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("aggregator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		total := graph.Get(scope, result0Key) +
 			graph.Get(scope, result1Key) +
 			graph.Get(scope, result2Key) +
@@ -169,9 +169,9 @@ func TestChaos_TimeoutDuringExecution(t *testing.T) {
 
 	completedKey := graph.NewKey[bool]("completed")
 
-	g := graph.New[any, any](completedKey)
+	g := graph.New(completedKey)
 
-	g.Node("slow_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("slow_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Simulate slow operation that will timeout
 		select {
 		case <-time.After(5 * time.Second):
@@ -220,14 +220,14 @@ func TestChaos_PanicRecovery(t *testing.T) {
 
 	recoveredKey := graph.NewKey[bool]("recovered")
 
-	g := graph.New[any, any](recoveredKey)
+	g := graph.New(recoveredKey)
 
-	g.Node("panicking_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("panicking_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// This should be caught and converted to an error
 		panic("chaos: intentional panic for testing")
 	}, "recovery_node")
 
-	g.Node("recovery_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("recovery_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// This should not execute if previous panicked
 		return graph.Set(recoveredKey, true).End()
 	}, graph.END)
@@ -262,10 +262,10 @@ func TestChaos_MemoryPressure(t *testing.T) {
 
 	largeDataKey := graph.NewKey[[]byte]("large_data")
 
-	g := graph.New[any, any](largeDataKey)
+	g := graph.New(largeDataKey)
 
 	// Node that allocates large amounts of memory
-	g.Node("memory_hog", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("memory_hog", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Allocate 100MB
 		data := make([]byte, 100*1024*1024)
 		for i := range data {
@@ -276,7 +276,7 @@ func TestChaos_MemoryPressure(t *testing.T) {
 		return graph.Set(largeDataKey, data).To("consumer")
 	}, "consumer")
 
-	g.Node("consumer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("consumer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		data := graph.Get(scope, largeDataKey)
 		require.NotNil(t, data)
 
@@ -314,10 +314,10 @@ func TestChaos_NetworkPartition(t *testing.T) {
 	p1DataKey := graph.NewKey[string]("p1_data")
 	resultKey := graph.NewKey[string]("result")
 
-	buildGraph := func() *graph.Graph[any, any] {
-		g := graph.New[any, any](p1DataKey, resultKey)
+	buildGraph := func() *graph.Graph {
+		g := graph.New(p1DataKey, resultKey)
 
-		g.Node("partition_1_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g.Node("partition_1_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			if !partition1Active.Load() {
 				return nil, fmt.Errorf("network partition: partition 1 unreachable")
 			}
@@ -325,7 +325,7 @@ func TestChaos_NetworkPartition(t *testing.T) {
 			return graph.Set(p1DataKey, "partition1").To("partition_2_node")
 		}, "partition_2_node")
 
-		g.Node("partition_2_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g.Node("partition_2_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			if !partition2Active.Load() {
 				return nil, fmt.Errorf("network partition: partition 2 unreachable")
 			}

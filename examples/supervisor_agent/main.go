@@ -77,7 +77,7 @@ func main() {
 }
 
 // createSupervisor creates a supervisor agent with specialized workers
-func createSupervisor() (*message.Graph, error) {
+func createSupervisor() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	// Create specialized worker agents
@@ -114,7 +114,7 @@ Always provide the full task context when delegating.`),
 }
 
 // createMathAgent creates a specialized agent for mathematical problem solving
-func createMathAgent() (*message.Graph, error) {
+func createMathAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(
@@ -129,7 +129,7 @@ func createMathAgent() (*message.Graph, error) {
 }
 
 // createHistoryAgent creates a specialized agent for historical questions
-func createHistoryAgent() (*message.Graph, error) {
+func createHistoryAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(
@@ -144,7 +144,7 @@ func createHistoryAgent() (*message.Graph, error) {
 }
 
 // createCodeAgent creates a specialized agent for programming tasks
-func createCodeAgent() (*message.Graph, error) {
+func createCodeAgent() (*graph.Graph, error) {
 	model := openai.NewModel()
 
 	return agent.NewReAct(

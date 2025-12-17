@@ -12,12 +12,12 @@ import (
 //
 // Example:
 //
-//	graph.WithNodeMiddleware(graphmw.RecoveryMiddleware[message.Message](func(node string, recovered any) {
+//	graph.WithNodeMiddleware(graphmw.RecoveryMiddleware(func(node string, recovered any) {
 //	    logger.Error("panic recovered", "node", node, "panic", recovered)
 //	}))
-func RecoveryMiddleware[O any](onPanic func(nodeName string, recovered any)) graph.NodeMiddleware[O] {
-	return func(next graph.NodeFunc[O]) graph.NodeFunc[O] {
-		return func(ctx context.Context, scope graph.Scope[O]) (cmd *graph.Command, err error) {
+func RecoveryMiddleware(onPanic func(nodeName string, recovered any)) graph.NodeMiddleware {
+	return func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (cmd *graph.Command, err error) {
 			nodeName := scope.NodeName()
 			defer func() {
 				if r := recover(); r != nil {

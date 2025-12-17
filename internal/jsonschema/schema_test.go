@@ -69,16 +69,18 @@ func TestValidate_WithMapSchema(t *testing.T) {
 	}
 
 	// success
-	err := Validate(schema, map[string]any{"x": 5})
-	assert.NoError(t, err)
+	result := Validate(schema, map[string]any{"x": 5})
+	assert.True(t, result.Valid)
 
 	// missing required
-	err = Validate(schema, map[string]any{})
-	assert.Error(t, err)
+	result = Validate(schema, map[string]any{})
+	assert.False(t, result.Valid)
+	assert.NotEmpty(t, result.Errors)
 
 	// wrong type
-	err = Validate(schema, map[string]any{"x": "nope"})
-	assert.Error(t, err)
+	result = Validate(schema, map[string]any{"x": "nope"})
+	assert.False(t, result.Valid)
+	assert.NotEmpty(t, result.Errors)
 }
 
 func TestValidate_WithInvSchema(t *testing.T) {
@@ -88,13 +90,14 @@ func TestValidate_WithInvSchema(t *testing.T) {
 
 	// valid value
 	v := map[string]any{"name": "alice"}
-	err = Validate(s, v)
-	assert.NoError(t, err)
+	result := Validate(s, v)
+	assert.True(t, result.Valid)
 
 	// wrong type for name
 	v2 := map[string]any{"name": 123}
-	err = Validate(s, v2)
-	assert.Error(t, err)
+	result = Validate(s, v2)
+	assert.False(t, result.Valid)
+	assert.NotEmpty(t, result.Errors)
 }
 
 // Additional coverage
@@ -195,14 +198,14 @@ func TestValidate_WithJSONStringAndBytes(t *testing.T) {
 	// JSON string
 	b, _ := json.Marshal(schemaMap)
 	sStr := string(b)
-	err := Validate(sStr, map[string]any{"v": 1.23})
-	assert.NoError(t, err)
-	err = Validate(sStr, map[string]any{"v": "x"})
-	assert.Error(t, err)
+	result := Validate(sStr, map[string]any{"v": 1.23})
+	assert.True(t, result.Valid)
+	result = Validate(sStr, map[string]any{"v": "x"})
+	assert.False(t, result.Valid)
 
 	// JSON bytes
-	err = Validate(b, map[string]any{"v": 9})
-	assert.NoError(t, err)
+	result = Validate(b, map[string]any{"v": 9})
+	assert.True(t, result.Valid)
 }
 
 func TestValidate_StructSchemaWrongType(t *testing.T) {
@@ -210,6 +213,6 @@ func TestValidate_StructSchemaWrongType(t *testing.T) {
 	require.NoError(t, err)
 	// Age present but wrong type
 	v := map[string]any{"name": "bob", "age": "not-int"}
-	err = Validate(s, v)
-	assert.Error(t, err, fmt.Sprintf("expected validation error for value: %#v", v))
+	result := Validate(s, v)
+	assert.False(t, result.Valid, fmt.Sprintf("expected validation error for value: %#v", v))
 }

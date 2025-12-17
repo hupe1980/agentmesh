@@ -24,20 +24,20 @@ func TestNamespaceBasicIsolation(t *testing.T) {
 
 	var finalResult string
 
-	g := graph.New[any, any](agent1Counter, agent2Counter, resultKey)
+	g := graph.New(agent1Counter, agent2Counter, resultKey)
 
 	// Agent1 updates its namespaced counter
-	g.Node("agent1", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent1", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(agent1Counter, 10).To("agent2")
 	}, "agent2")
 
 	// Agent2 updates its namespaced counter
-	g.Node("agent2", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent2", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(agent2Counter, 20).To("combine")
 	}, "combine")
 
 	// Combine reads both namespaces
-	g.Node("combine", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("combine", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		a1 := graph.Get(scope, agent1Counter)
 		a2 := graph.Get(scope, agent2Counter)
 		finalResult = fmt.Sprintf("agent1=%d, agent2=%d", a1, a2)
@@ -65,13 +65,13 @@ func TestNamespaceViolation(t *testing.T) {
 	agent1Key := graph.NewKey[string]("agent1.data")
 	agent2Key := graph.NewKey[string]("agent2.data")
 
-	g := graph.New[any, any](agent1Key, agent2Key)
+	g := graph.New(agent1Key, agent2Key)
 
 	// Create namespace for agent1
 	ns := graph.NewNamespace("agent1")
 
 	// Agent1 tries to update agent2's namespace (should fail)
-	g.Node("bad_agent", graph.WithNamespace(func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("bad_agent", graph.WithNamespace(func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		// This should cause a namespace violation
 		return graph.Set(agent2Key, "hacked!").To(graph.END)
 	}, ns, false), graph.END)
@@ -105,12 +105,12 @@ func TestNamespaceWithGlobalAccess(t *testing.T) {
 
 	var finalData string
 
-	g := graph.New[any, any](globalConfig, agent1Data)
+	g := graph.New(globalConfig, agent1Data)
 
 	ns := graph.NewNamespace("agent1")
 
 	// Agent1 can read global and update its namespace
-	g.Node("agent1", graph.WithNamespace(func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent1", graph.WithNamespace(func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Should be able to read global key
 		cfg := graph.Get(scope, globalConfig)
 		// Can update its own namespace
@@ -145,10 +145,10 @@ func TestNamespaceCannotReadOtherNamespace(t *testing.T) {
 
 	var finalResult string
 
-	g := graph.New[any, any](agent1Key, agent2Key, resultKey)
+	g := graph.New(agent1Key, agent2Key, resultKey)
 
 	// First node sets initial values
-	g.Node("setup", func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("setup", func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(agent1Key, "agent1-secret").
 			With(graph.SetValue(agent2Key, "agent2-secret")).
 			To("reader")
@@ -158,7 +158,7 @@ func TestNamespaceCannotReadOtherNamespace(t *testing.T) {
 	ns := graph.NewNamespace("agent1")
 
 	// Agent1 tries to read agent2's data (should fail silently - returns zero value)
-	g.Node("reader", graph.WithNamespace(func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("reader", graph.WithNamespace(func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Can read own namespace
 		own := graph.Get(scope, agent1Key)
 		// Cannot read other namespace (returns empty string = zero value)
@@ -203,12 +203,12 @@ func TestNamespaceGlobalUpdateAllowed(t *testing.T) {
 
 	var globalVal, localVal string
 
-	g := graph.New[any, any](globalKey, agent1Key)
+	g := graph.New(globalKey, agent1Key)
 
 	ns := graph.NewNamespace("agent1")
 
 	// Agent1 updates both global and its own namespace
-	g.Node("agent1", graph.WithNamespace(func(_ context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent1", graph.WithNamespace(func(_ context.Context, scope graph.Scope) (*graph.Command, error) {
 		globalVal = "updated-global"
 		localVal = "local-data"
 		return graph.Set(globalKey, globalVal).

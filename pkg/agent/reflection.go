@@ -42,10 +42,10 @@ var (
 //	reflectionAgent, _ := agent.NewReflection(ragAgent, reflectionModel,
 //	    agent.WithMaxReflections(2))
 func NewReflection(
-	wrappedAgent *message.Graph,
+	wrappedAgent *graph.Graph,
 	reflectionModel model.Model,
 	opts ...ReflectionOption,
-) (*message.Graph, error) {
+) (*graph.Graph, error) {
 	if err := validate.NotNil(wrappedAgent, "wrappedAgent"); err != nil {
 		return nil, err
 	}
@@ -75,8 +75,8 @@ func NewReflection(
 }
 
 // buildReflectionGraph constructs the reflection agent graph.
-func buildReflectionGraph(agentNode, reflectionNode message.NodeFunc, config reflectionOptions) (*message.Graph, error) {
-	b := message.NewGraphBuilder()
+func buildReflectionGraph(agentNode, reflectionNode graph.NodeFunc, config reflectionOptions) (*graph.Graph, error) {
+	b := graph.New()
 
 	// Graph structure:
 	// START → agent → [reflection | END]
@@ -99,7 +99,7 @@ type reflectionOptions struct {
 	maxReflections      int
 	reflectionPrompt    string
 	reflectionThreshold float64
-	graphMiddleware     []message.NodeMiddleware
+	graphMiddleware     []graph.NodeMiddleware
 	modelMiddleware     []model.Middleware
 }
 
@@ -158,7 +158,7 @@ func WithReflectionPromptTemplate(prompt string) ReflectionOption {
 }
 
 // WithReflectionGraphMiddleware adds node middleware to the reflection graph.
-func WithReflectionGraphMiddleware(middleware ...message.NodeMiddleware) ReflectionOption {
+func WithReflectionGraphMiddleware(middleware ...graph.NodeMiddleware) ReflectionOption {
 	return reflectionOptionFunc(func(c *reflectionOptions) {
 		c.graphMiddleware = append(c.graphMiddleware, middleware...)
 	})
@@ -172,10 +172,10 @@ func WithReflectionModelMiddleware(middleware ...model.Middleware) ReflectionOpt
 }
 
 // createAgentWrapperNode wraps an agent graph as a node function.
-func createAgentWrapperNode(wrappedAgent *message.Graph) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+func createAgentWrapperNode(wrappedAgent *graph.Graph) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Get current messages from state
-		messages := GetMessages(scope)
+		messages := scope.Messages()
 		reflectionCount := graph.Get(scope, ReflectionCountKey)
 
 		// Run the wrapped agent with current messages
@@ -188,18 +188,18 @@ func createAgentWrapperNode(wrappedAgent *message.Graph) message.NodeFunc {
 		// Check if we should continue reflecting
 		if reflectionCount > 0 {
 			// This is a refinement iteration, route back to reflection
-			return graph.Set(MessagesKey, []message.Message{lastMsg}).To("reflection")
+			return graph.Reply(lastMsg).To("reflection")
 		}
 
 		// First iteration, route to reflection
-		return graph.Set(MessagesKey, []message.Message{lastMsg}).To("reflection")
+		return graph.Reply(lastMsg).To("reflection")
 	}
 }
 
 // createReflectionNodeForWrapper creates reflection node for the wrapper pattern.
-func createReflectionNodeForWrapper(executor model.Executor, config reflectionOptions) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
-		messages := GetMessages(scope)
+func createReflectionNodeForWrapper(executor model.Executor, config reflectionOptions) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		messages := scope.Messages()
 		reflectionCount := graph.Get(scope, ReflectionCountKey)
 
 		// Check if we've exceeded max reflections
@@ -247,7 +247,7 @@ func createReflectionNodeForWrapper(executor model.Executor, config reflectionOp
 		var reflectionMsg message.Message = message.NewSystemMessageFromText(reflectionMsgText)
 
 		// Increment reflection count and add reflection message
-		return graph.Set(MessagesKey, []message.Message{reflectionMsg}).
+		return graph.Reply(reflectionMsg).
 			With(graph.SetValue(ReflectionCountKey, reflectionCount+1)).
 			With(graph.SetValue(DraftKey, draft)).
 			To("agent")

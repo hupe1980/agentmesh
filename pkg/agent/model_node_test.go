@@ -23,13 +23,12 @@ func TestNewModelNodeFunc(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor)
+		nodeFn, err := NewModelNodeFunc(mdl)
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
 
-	t.Run("returns error for nil executor", func(t *testing.T) {
+	t.Run("returns error for nil model", func(t *testing.T) {
 		_, err := NewModelNodeFunc(nil)
 		require.Error(t, err)
 	})
@@ -41,8 +40,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithModelInstructions("You are helpful"))
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelInstructions("You are helpful"))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
@@ -62,8 +60,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithModelOutputSchema(outputSchema))
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelOutputSchema(outputSchema))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
@@ -78,8 +75,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithModelTools(tool1, tool2))
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelTools(tool1, tool2))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
@@ -91,8 +87,7 @@ func TestNewModelNodeFunc(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor, WithToolTarget("custom_tool_node"))
+		nodeFn, err := NewModelNodeFunc(mdl, WithToolTarget("custom_tool_node"))
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
@@ -106,13 +101,12 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor)
+		nodeFn, err := NewModelNodeFunc(mdl)
 		require.NoError(t, err)
 
 		// Create a view with messages
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -138,12 +132,11 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 			}),
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor)
+		nodeFn, err := NewModelNodeFunc(mdl)
 		require.NoError(t, err)
 
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Use a tool"),
 			},
 		})
@@ -158,8 +151,8 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 }
 
 // createTestScope creates a Scope for testing using BSPState
-func createTestScope(data map[string]any) graph.Scope[message.Message] {
-	return testutil.NewTestScopeFromMap[message.Message](data)
+func createTestScope(data map[string]any) *testutil.TestScope {
+	return testutil.NewTestScopeFromMap(data)
 }
 
 // mockToolWithInstruction implements tool.Tool and tool.InstructionProvider
@@ -219,15 +212,14 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 			instruction: "Always use this tool for special tasks.",
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor,
+		nodeFn, err := NewModelNodeFunc(mdl,
 			WithModelInstructions("You are a helpful assistant."),
 			WithModelTools(toolWithInstruction),
 		)
 		require.NoError(t, err)
 
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -260,14 +252,13 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 			instruction: "Tool instruction only.",
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor,
+		nodeFn, err := NewModelNodeFunc(mdl,
 			WithModelTools(toolWithInstruction),
 		)
 		require.NoError(t, err)
 
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -297,15 +288,14 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 		// MockTool doesn't implement InstructionProvider
 		regularTool := &testutil.MockTool{NameValue: "regular_tool"}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor,
+		nodeFn, err := NewModelNodeFunc(mdl,
 			WithModelInstructions("Base system prompt."),
 			WithModelTools(regularTool),
 		)
 		require.NoError(t, err)
 
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -341,15 +331,14 @@ func TestModelNodeFunc_ToolInstructionMerging(t *testing.T) {
 			instruction: "Instruction for tool 2.",
 		}
 
-		executor := model.NewExecutor(mdl)
-		nodeFn, err := NewModelNodeFunc(executor,
+		nodeFn, err := NewModelNodeFunc(mdl,
 			WithModelInstructions("Base prompt."),
 			WithModelTools(tool1, tool2),
 		)
 		require.NoError(t, err)
 
 		scope := createTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})

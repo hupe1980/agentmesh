@@ -126,7 +126,6 @@ Model middleware wraps LLM calls, enabling caching, retries, and usage tracking.
 - **RetryMiddleware** - Retries failed calls with exponential backoff
 - **RateLimitMiddleware** - Prevents quota exhaustion
 - **TokenCounterMiddleware** - Tracks token usage
-- **GuardrailMiddleware** - Validates inputs and outputs with security guardrails
 
 **Usage:**
 
@@ -163,7 +162,6 @@ Tool middleware wraps tool executions, providing timeouts, circuit breakers, and
 - **TimeoutMiddleware** - Enforces execution timeouts
 - **CircuitBreakerMiddleware** - Implements circuit breaker pattern
 - **AuditMiddleware** - Logs all tool executions
-- **GuardrailMiddleware** - Validates tool arguments and results with security guardrails
 
 **Usage:**
 
@@ -265,13 +263,13 @@ You can create custom middleware to extend execution behavior.
 
 ### Custom Graph Middleware
 
-Graph middleware is a function of type `func(next NodeFunc[O]) NodeFunc[O]`:
+Graph middleware is a function of type `func(next NodeFunc) NodeFunc`:
 
 ```go
 // Custom middleware function
-func MyCustomMiddleware(logger *slog.Logger) graph.NodeMiddleware[string] {
-    return func(next graph.NodeFunc[string]) graph.NodeFunc[string] {
-        return func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func MyCustomMiddleware(logger *slog.Logger) graph.NodeMiddleware {
+    return func(next graph.NodeFunc) graph.NodeFunc {
+        return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
             nodeName := scope.NodeName()
             
             // Pre-execution logic
@@ -304,9 +302,9 @@ For multi-agent systems like supervisors, you can create middleware that shows w
 
 ```go
 // progressMiddleware shows which tools/agents are being called
-func progressMiddleware() graph.NodeMiddleware[message.Message] {
-    return func(next graph.NodeFunc[message.Message]) graph.NodeFunc[message.Message] {
-        return func(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
+func progressMiddleware() graph.NodeMiddleware {
+    return func(next graph.NodeFunc) graph.NodeFunc {
+        return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
             nodeName := scope.NodeName()
             start := time.Now()
             messages := message.GetMessages(scope)
@@ -458,95 +456,4 @@ See the following examples for complete implementations:
 - **Basic Usage**: `examples/middleware/` - Demonstrates all middleware types
 - **Observability**: `examples/observability/` - Event bus and monitoring
 - **Visualization**: `examples/viz_ui_demo/` - Real-time visualization integration
-- **Guardrails**: `examples/guardrails/` - Content filtering, PII detection, and security guardrails
 - **Progress Middleware**: `examples/blogwriter/` - Shows progress during multi-agent workflows
-
-## Guardrails Middleware
-
-AgentMesh provides guardrail middleware for content validation at different layers.
-
-> **For agent-level guardrails** (first input, final output), see [Guardrails in Agents](/agents/#guardrails).
-
-This section covers guardrails at the **model** and **tool** level, which validate **every call** rather than just the workflow boundary.
-
-### Model Guardrails
-
-For validating **every model call**, use model middleware:
-
-```go
-import (
-    "github.com/hupe1980/agentmesh/pkg/guardrail"
-    modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
-)
-
-// Create guardrails
-contentFilter := guardrail.NewContentFilterGuardrail(
-    []string{"hack", "exploit", "bypass"},
-)
-lengthGuard := guardrail.NewLengthGuardrail(
-    guardrail.WithMaxLength(10000),
-)
-
-// Apply via middleware - validates every model request/response
-guardrailMw := modelmw.NewGuardrailMiddleware(
-    modelmw.WithInputGuardrails(contentFilter),
-    modelmw.WithOutputGuardrails(lengthGuard),
-)
-
-agent.NewReAct(model,
-    agent.WithModelMiddleware(guardrailMw),
-)
-```
-
-### Tool Guardrails
-
-For validating tool inputs and outputs:
-
-```go
-import toolmw "github.com/hupe1980/agentmesh/pkg/tool/middleware"
-
-guardrailMw := toolmw.NewGuardrailMiddleware(
-    toolmw.WithInputGuardrails(contentFilter),
-    toolmw.WithOutputGuardrails(lengthGuard),
-)
-
-agent.NewReAct(model,
-    agent.WithToolMiddleware(guardrailMw),
-)
-```
-
-### Guardrail Layers Summary
-
-| Layer | Option/Middleware | Scope |
-|-------|-------------------|-------|
-| **Agent (Graph)** | `agent.WithGraphInputGuardrails()` | First user input only |
-| **Agent (Graph)** | `agent.WithGraphOutputGuardrails()` | Final response only |
-| **Agent (Model)** | `agent.WithModelInputGuardrails()` | Every model call |
-| **Agent (Model)** | `agent.WithModelOutputGuardrails()` | Every model response |
-| **Agent (Tool)** | `agent.WithToolInputGuardrails()` | Every tool call |
-| **Agent (Tool)** | `agent.WithToolOutputGuardrails()` | Every tool result |
-| **Model Middleware** | `modelmw.NewGuardrailMiddleware()` | Every model call |
-| **Tool Middleware** | `toolmw.NewGuardrailMiddleware()` | Every tool execution |
-
-### Guardrail Actions
-
-| Action | Description | Error Type |
-|--------|-------------|------------|
-| `ActionAllow` | Safe to continue | None |
-| `ActionReject` | Soft rejection (retry allowed) | `*guardrail.Rejection` |
-| `ActionRaise` | Hard tripwire (security concern) | `*guardrail.TripwireError` |
-
-### Built-in Guardrails
-
-- **ContentFilterGuardrail** - Blocks specified keywords
-- **LengthGuardrail** - Validates content length
-- **RegexGuardrail** - Custom pattern matching
-
-> **Note**: For security-sensitive detection (PII, SQL injection, etc.), use external services.
-
-### External Service Integrations
-
-For production use cases:
-
-- `pkg/guardrail/openai` - OpenAI Moderation API
-- `pkg/guardrail/amazoncomprehend` - AWS Comprehend

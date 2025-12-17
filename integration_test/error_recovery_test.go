@@ -25,7 +25,7 @@ func TestErrorRecovery_RetrySucceeds(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// Node that fails first 2 times, then succeeds
 	retryPolicy := &graph.RetryPolicy{
@@ -35,7 +35,7 @@ func TestErrorRecovery_RetrySucceeds(t *testing.T) {
 		Multiplier:  2.0,
 	}
 
-	g.Node("flaky", graph.WithRetry(func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("flaky", graph.WithRetry(func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		attempt := int(attempts.Add(1))
 		if attempt < 3 {
 			return nil, errTransient
@@ -64,7 +64,7 @@ func TestErrorRecovery_RetryExhausted(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	retryPolicy := &graph.RetryPolicy{
 		MaxAttempts: 3,
@@ -74,7 +74,7 @@ func TestErrorRecovery_RetryExhausted(t *testing.T) {
 	}
 
 	// Node that always fails
-	g.Node("failing", graph.WithRetry(func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("failing", graph.WithRetry(func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		attempts.Add(1)
 		return nil, errTransient
 	}, retryPolicy), graph.END)
@@ -103,15 +103,15 @@ func TestErrorRecovery_RecoveryMiddleware(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// Node that panics
-	g.Node("panicky", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("panicky", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		panic("intentional panic for testing")
 	}, graph.END)
 
 	g.Start("panicky")
-	g.WithNodeMiddleware(graphmw.RecoveryMiddleware[any](nil))
+	g.WithNodeMiddleware(graphmw.RecoveryMiddleware(nil))
 
 	compiled, err := g.Build()
 	require.NoError(t, err)
@@ -137,13 +137,13 @@ func TestErrorRecovery_ErrorPropagation(t *testing.T) {
 
 	customErr := errors.New("custom application error")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("a", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("a", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return graph.To("b")
 	}, "b")
 
-	g.Node("b", func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("b", func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		return nil, customErr
 	}, graph.END)
 
@@ -173,7 +173,7 @@ func TestErrorRecovery_ChainedRetry(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var attempts atomic.Int32
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	retryPolicy := &graph.RetryPolicy{
 		MaxAttempts: 3,
@@ -183,7 +183,7 @@ func TestErrorRecovery_ChainedRetry(t *testing.T) {
 	}
 
 	// Node wrapped with retry
-	g.Node("wrapped", graph.WithRetry(func(_ context.Context, _ graph.Scope[any]) (*graph.Command, error) {
+	g.Node("wrapped", graph.WithRetry(func(_ context.Context, _ graph.Scope) (*graph.Command, error) {
 		attempt := int(attempts.Add(1))
 		if attempt < 2 {
 			return nil, errTransient

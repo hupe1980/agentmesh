@@ -105,5 +105,5 @@ cb.Reset()
 
 ## Related Resources
 - [Middleware Documentation](/middleware/) - Middleware system guide
-- [examples/guardrails](../guardrails) - Security middleware
+- [examples/middleware](../middleware) - Middleware patterns
 - [examples/custom_observability](../custom_observability) - Event handling and observability

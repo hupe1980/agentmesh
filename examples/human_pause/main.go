@@ -32,20 +32,20 @@ func main() {
 	runID := "pause-run-001"
 
 	// Build graph that pauses for human input
-	g := graph.New[any, any](questionKey, answerKey)
+	g := graph.New(questionKey, answerKey)
 
-	g.Node("ask", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("ask", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [ask] Preparing question for human...")
 		return graph.Set(questionKey, "What is the capital of France?").To("wait_for_answer")
 	}, "wait_for_answer")
 
-	g.Node("wait_for_answer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("wait_for_answer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		answer := graph.Get(scope, answerKey)
 		fmt.Printf("  [wait_for_answer] Answer received: %s\n", answer)
 		return graph.Cmd().To("process_answer")
 	}, "process_answer")
 
-	g.Node("process_answer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("process_answer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		answer := graph.Get(scope, answerKey)
 		fmt.Printf("  [process_answer] Processing answer: %s\n", answer)
 		if answer == "Paris" {

@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 
@@ -177,9 +178,16 @@ func (t *SetModelResponseTool) Parameters() map[string]any {
 // Call validates the provided arguments against the schema and returns them.
 // The arguments are expected to be a JSON string matching the output schema.
 func (t *SetModelResponseTool) Call(ctx context.Context, args string) (any, error) {
-	// Validate args against schema
-	if err := jsonschema.Validate(t.outputSchema, args); err != nil {
-		return nil, fmt.Errorf("tool/set_model_response: invalid model response: %w", err)
+	// Parse JSON first
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		return nil, fmt.Errorf("tool/set_model_response: invalid JSON: %w", err)
+	}
+
+	// Validate parsed data against schema (avoids double parsing)
+	result := jsonschema.Validate(t.outputSchema, parsed)
+	if !result.Valid {
+		return nil, fmt.Errorf("tool/set_model_response: invalid model response: %v", result.Errors)
 	}
 
 	return args, nil

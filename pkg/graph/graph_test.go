@@ -15,8 +15,8 @@ import (
 func TestGraphBuilder(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		return graph.Set(counterKey, counter+1).End()
 	}, graph.END)
@@ -39,17 +39,17 @@ func TestGraphLinearFlow(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	executed := make([]string, 0)
 
-	g := graph.New[any, any](counterKey)
-	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("step1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		executed = append(executed, "step1")
 		return graph.Set(counterKey, 1).To("step2")
 	}, "step2")
-	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		executed = append(executed, "step2")
 		counter := graph.Get(scope, counterKey)
 		return graph.Set(counterKey, counter+10).To("step3")
 	}, "step3")
-	g.Node("step3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		executed = append(executed, "step3")
 		counter := graph.Get(scope, counterKey)
 		if counter != 11 {
@@ -81,19 +81,19 @@ func TestGraphConditionalRouting(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var finalResult string
 
-	g := graph.New[string, any](routeKey, resultKey)
-	g.Node("router", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(routeKey, resultKey)
+	g.Node("router", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		route := graph.Get(scope, routeKey)
 		if route == "left" {
 			return graph.To("left")
 		}
 		return graph.To("right")
 	}, "left", "right")
-	g.Node("left", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("left", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		finalResult = "went_left"
 		return graph.Set(resultKey, "went_left").End()
 	}, graph.END)
-	g.Node("right", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("right", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		finalResult = "went_right"
 		return graph.Set(resultKey, "went_right").End()
 	}, graph.END)
@@ -104,15 +104,16 @@ func TestGraphConditionalRouting(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// The input "left" is set into the routeKey (first key passed to New)
-	// So the router should route to "left"
-	for _, err := range compiled.Run(context.Background(), "left") {
+	// Set routeKey to "left" using WithInitialValue
+	for _, err := range compiled.Run(context.Background(), nil,
+		graph.WithInitialValue(routeKey, "left"),
+	) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
 	}
 
-	// Input "left" is set into routeKey, so it goes left
+	// routeKey is set to "left", so it goes left
 	if finalResult != "went_left" {
 		t.Errorf("expected went_left, got %v", finalResult)
 	}
@@ -123,8 +124,8 @@ func TestGraphLoop(t *testing.T) {
 	maxIterations := 5
 	iterations := 0
 
-	g := graph.New[any, any](counterKey)
-	g.Node("increment", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("increment", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		counter++
 		iterations++
@@ -154,8 +155,8 @@ func TestGraphLoop(t *testing.T) {
 func TestGraphErrorHandling(t *testing.T) {
 	expectedErr := errors.New("node error")
 
-	g := graph.New[any, any]()
-	g.Node("failing", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("failing", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Fail(expectedErr)
 	}, graph.END)
 	g.Start("failing")
@@ -179,14 +180,14 @@ func TestGraphErrorHandling(t *testing.T) {
 }
 
 func TestGraphMessageList(t *testing.T) {
-	messagesKey := graph.NewListKey[string]("messages")
+	messagesKey := graph.NewListKey[string]("test_messages")
 	var capturedMessages []string
 
-	g := graph.New[any, any](messagesKey)
-	g.Node("add_messages", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(messagesKey)
+	g.Node("add_messages", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(messagesKey, []string{"hello", "world"}).To("check")
 	}, "check")
-	g.Node("check", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("check", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -213,8 +214,8 @@ func TestGraphMessageList(t *testing.T) {
 // ====================
 
 func TestGraphNoEntryPoint(t *testing.T) {
-	g := graph.New[any, any]()
-	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("a", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	// No Start() call
@@ -229,13 +230,13 @@ func TestGraphDuplicateNodeOverwrites(t *testing.T) {
 	resultKey := graph.NewKey[string]("result")
 	var capturedResult string
 
-	g := graph.New[any, any](resultKey)
-	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(resultKey)
+	g.Node("a", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedResult = "first"
 		return graph.Set(resultKey, "first").End()
 	}, graph.END)
 	// Second definition overwrites first
-	g.Node("a", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("a", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedResult = "second"
 		return graph.Set(resultKey, "second").End()
 	}, graph.END)
@@ -262,8 +263,8 @@ func TestWithInitialValue(t *testing.T) {
 	sessionKey := graph.NewKey[string]("session_id")
 	var capturedSession string
 
-	g := graph.New[any, any](sessionKey)
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(sessionKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedSession = graph.Get(scope, sessionKey)
 		return graph.To(graph.END)
 	}, graph.END)

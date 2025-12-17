@@ -31,20 +31,20 @@ func main() {
 	runID := "signed-run-1"
 
 	// Build graph
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
-	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [step1] Processing")
 		return graph.Set(counterKey, 1).To("step2")
 	}, "step2")
 
-	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		fmt.Printf("  [step2] Counter: %d\n", counter)
 		return graph.Set(counterKey, counter+1).To("step3")
 	}, "step3")
 
-	g.Node("step3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		fmt.Printf("  [step3] Final counter: %d\n", counter)
 		return graph.To(graph.END)

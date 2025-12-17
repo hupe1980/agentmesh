@@ -114,14 +114,14 @@ func TestSetChain(t *testing.T) {
 // ====================
 
 func TestSetListKey(t *testing.T) {
-	key := graph.NewListKey[string]("messages")
+	key := graph.NewListKey[string]("test_messages")
 	cmd, err := graph.Set(key, []string{"hello", "world"}).To("next")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	items, ok := cmd.Updates["messages"].([]string)
+	items, ok := cmd.Updates["test_messages"].([]string)
 	if !ok {
-		t.Fatalf("expected []string type, got %T", cmd.Updates["messages"])
+		t.Fatalf("expected []string type, got %T", cmd.Updates["test_messages"])
 	}
 	if len(items) != 2 || items[0] != "hello" || items[1] != "world" {
 		t.Errorf("expected [hello, world], got %v", items)
@@ -182,7 +182,7 @@ func TestCmdEnd(t *testing.T) {
 }
 
 func TestCmdSetListValue(t *testing.T) {
-	messagesKey := graph.NewListKey[string]("messages")
+	messagesKey := graph.NewListKey[string]("test_messages")
 
 	cmd, err := graph.Cmd().
 		With(graph.SetValue(messagesKey, []string{"hello", "world"})).
@@ -191,9 +191,9 @@ func TestCmdSetListValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	msgs, ok := cmd.Updates["messages"].([]string)
+	msgs, ok := cmd.Updates["test_messages"].([]string)
 	if !ok {
-		t.Fatalf("expected []string, got %T", cmd.Updates["messages"])
+		t.Fatalf("expected []string, got %T", cmd.Updates["test_messages"])
 	}
 	if len(msgs) != 2 || msgs[0] != "hello" || msgs[1] != "world" {
 		t.Errorf("expected [hello, world], got %v", msgs)

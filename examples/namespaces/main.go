@@ -35,14 +35,14 @@ func main() {
 	fmt.Println()
 
 	// Build graph with all keys
-	g := graph.New[any, any](agent1Data, agent1Status, agent2Data, agent2Status, sharedResult)
+	g := graph.New(agent1Data, agent1Status, agent2Data, agent2Status, sharedResult)
 
 	// Create namespaces for each agent
 	ns1 := graph.NewNamespace("agent1")
 	ns2 := graph.NewNamespace("agent2")
 
 	// Initialize shared state (no namespace restriction)
-	g.Node("init", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("init", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [init] Setting up initial state")
 		return graph.Set(agent1Data, "agent1-initial").
 			With(graph.SetValue(agent2Data, "agent2-initial")).
@@ -50,7 +50,7 @@ func main() {
 	}, "agent1_process", "agent2_process")
 
 	// Agent 1 node - can only access agent1.* keys (and optionally globals)
-	g.Node("agent1_process", graph.WithNamespace(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent1_process", graph.WithNamespace(func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Can read own namespace
 		data := graph.Get(scope, agent1Data)
 		fmt.Printf("  [agent1] Read own data: %s\n", data)
@@ -64,7 +64,7 @@ func main() {
 	}, ns1, false), "merge") // includeGlobal=false
 
 	// Agent 2 node - can only access agent2.* keys (and optionally globals)
-	g.Node("agent2_process", graph.WithNamespace(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent2_process", graph.WithNamespace(func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Can read own namespace
 		data := graph.Get(scope, agent2Data)
 		fmt.Printf("  [agent2] Read own data: %s\n", data)
@@ -78,7 +78,7 @@ func main() {
 	}, ns2, false), "merge") // includeGlobal=false
 
 	// Merge node - can access global result (uses namespace with includeGlobal=true)
-	g.Node("merge", graph.WithNamespace(func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("merge", graph.WithNamespace(func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Can access global key when includeGlobal=true
 		fmt.Println("  [merge] Combining results from both agents")
 

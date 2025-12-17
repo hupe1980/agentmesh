@@ -54,6 +54,7 @@ func run() error {
 	documents := []string{
 		"AgentMesh is a Go framework for building AI agents using a graph-based execution model.",
 		"The framework uses Pregel's Bulk Synchronous Parallel (BSP) model for deterministic execution.",
+		"The BSP model was chosen because it provides deterministic execution order, making agent behavior predictable and debuggable. It also enables efficient parallel processing while maintaining clear synchronization points.",
 		"Checkpointing in AgentMesh enables time-travel debugging and state persistence.",
 		"Tools in AgentMesh allow agents to interact with external systems like APIs and databases.",
 		"The message system supports multi-modal content including text, images, and tool calls.",
@@ -65,6 +66,7 @@ func run() error {
 	metadata := []vectorstore.Metadata{
 		{"topic": "overview"},
 		{"topic": "execution"},
+		{"topic": "execution-rationale"},
 		{"topic": "debugging"},
 		{"topic": "tools"},
 		{"topic": "messages"},
@@ -81,7 +83,7 @@ func run() error {
 
 	// Step 3: Create retriever
 	retriever := retrieval.NewVectorStoreRetriever(store, embedder,
-		retrieval.WithK(3),        // Retrieve top 3 most relevant documents
+		retrieval.WithK(5),        // Retrieve top 5 most relevant documents
 		retrieval.WithMinScore(0), // Include all matches
 	)
 

@@ -107,10 +107,6 @@ Explore hands-on examples to see AgentMesh in action:
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
     <span>Supervisor Agent</span>
   </a>
-  <a href="https://github.com/hupe1980/agentmesh/tree/main/examples/guardrails" target="_blank" rel="noopener" class="example-card">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-    <span>Guardrails</span>
-  </a>
   <a href="https://github.com/hupe1980/agentmesh/tree/main/examples/human_approval" target="_blank" rel="noopener" class="example-card">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
     <span>Human Approval</span>

@@ -20,10 +20,10 @@ This example demonstrates how to generate [Mermaid](https://mermaid.js.org/) flo
 ```go
 var StatusKey = graph.NewKey("status", "")
 
-g := graph.New[any, string](StatusKey)
+g := graph.New(StatusKey)
 
-g.Node("process", func(ctx context.Context, input graph.NodeInput[any]) (graph.Command, error) {
-    return graph.Set(StatusKey, "done").ToEnd(), nil
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+    return graph.Set(StatusKey, "done").End()
 }, graph.END)
 
 g.Start("process")

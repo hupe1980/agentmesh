@@ -22,7 +22,7 @@ func main() {
 	var attempts atomic.Int32
 
 	// Create a flaky node that fails twice then succeeds
-	flakyNode := func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	flakyNode := func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		attempt := attempts.Add(1)
 		fmt.Printf("  [flaky] Attempt %d\n", attempt)
 
@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// Build graph with retry policy
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
 	// Create retry policy with exponential backoff
 	policy := graph.NewRetryPolicyBuilder().

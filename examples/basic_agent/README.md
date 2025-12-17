@@ -93,7 +93,7 @@ result, _ := graph.Last(reactAgent.Run(ctx, []message.Message{
 - Try modifying the tool to make real API calls
 - Add more tools (calculator, database lookup, etc.)
 - Experiment with different prompts
-- See **examples/guardrails** for adding safety constraints
+- See **examples/observability** for monitoring and tracing
 - See **examples/circuit_breaker** for production resilience patterns
 
 ## See Also

@@ -25,4 +25,4 @@ var _ interface {
 	GetNodes() []string
 	GetTopology() *graph.Topology
 	MermaidFlowchart(string) string
-} = (*graph.Graph[any, any])(nil)
+} = (*graph.Graph)(nil)

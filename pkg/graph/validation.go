@@ -74,7 +74,7 @@ func StrictValidationOptions() ValidationOptions {
 
 // Validate performs validation on the graph and returns any errors found.
 // This is useful for more detailed error reporting than Build() provides.
-func (b *Builder[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
+func (b *Builder) Validate(opts ...ValidationOptions) []ValidationError {
 	opt := DefaultValidationOptions()
 	if len(opts) > 0 {
 		opt = opts[0]
@@ -108,7 +108,7 @@ func (b *Builder[I, O]) Validate(opts ...ValidationOptions) []ValidationError {
 }
 
 // validateKeys checks for duplicate key names.
-func (b *Builder[I, O]) validateKeys() []ValidationError {
+func (b *Builder) validateKeys() []ValidationError {
 	var errors []ValidationError
 
 	seen := make(map[string]bool)
@@ -132,7 +132,7 @@ func (b *Builder[I, O]) validateKeys() []ValidationError {
 }
 
 // validateNodes checks that all nodes have been defined.
-func (b *Builder[I, O]) validateNodes() []ValidationError {
+func (b *Builder) validateNodes() []ValidationError {
 	var errors []ValidationError
 
 	if len(b.nodes) == 0 {
@@ -146,7 +146,7 @@ func (b *Builder[I, O]) validateNodes() []ValidationError {
 }
 
 // validateEdges checks that all edge targets are valid.
-func (b *Builder[I, O]) validateEdges() []ValidationError {
+func (b *Builder) validateEdges() []ValidationError {
 	var errors []ValidationError
 
 	for _, n := range b.nodes {
@@ -168,7 +168,7 @@ func (b *Builder[I, O]) validateEdges() []ValidationError {
 }
 
 // validateEntryPoints checks that entry points are valid.
-func (b *Builder[I, O]) validateEntryPoints() []ValidationError {
+func (b *Builder) validateEntryPoints() []ValidationError {
 	var errors []ValidationError
 
 	if len(b.entryPoints) == 0 {
@@ -193,7 +193,7 @@ func (b *Builder[I, O]) validateEntryPoints() []ValidationError {
 }
 
 // detectCycles detects cycles in the graph using DFS.
-func (b *Builder[I, O]) detectCycles() []ValidationError {
+func (b *Builder) detectCycles() []ValidationError {
 	var errors []ValidationError
 
 	// Track visited and recursion stack
@@ -244,7 +244,7 @@ func (b *Builder[I, O]) detectCycles() []ValidationError {
 }
 
 // detectDisconnected finds nodes that are not reachable from entry points.
-func (b *Builder[I, O]) detectDisconnected() []ValidationError {
+func (b *Builder) detectDisconnected() []ValidationError {
 	var errors []ValidationError
 
 	// BFS from entry points to find all reachable nodes

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 const (
@@ -35,17 +37,17 @@ const (
 )
 
 // NodeFunc is the typed signature for node logic.
-// The type parameter O must match the graph's output type.
+// Output type is fixed to Message for agent workflows.
 // Read state via Scope, optionally stream partial outputs, return a Command.
 //
 // Example:
 //
-//	func myNode(ctx context.Context, scope graph.Scope[message.Message]) (*graph.Command, error) {
-//	    messages := graph.ScopeGetList(scope, MessagesKey)
+//	func myNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+//	    messages := scope.Messages()
 //	    scope.Stream(partialMessage)  // Stream partial output
-//	    return graph.Set(MessagesKey, []Message{finalMessage}).End()
+//	    return graph.Reply(finalMessage).End()
 //	}
-type NodeFunc[O any] func(ctx context.Context, scope Scope[O]) (*Command, error)
+type NodeFunc func(ctx context.Context, scope Scope) (*Command, error)
 
 // ErrNamespaceViolation is returned when a node attempts to access or update keys outside its namespace.
 var ErrNamespaceViolation = fmt.Errorf("graph: namespace violation")
@@ -173,12 +175,12 @@ func (b *RetryPolicyBuilder) Build() *RetryPolicy {
 // Example:
 //
 //	g.Node("fetch", graph.WithRetry(fetchNode, graph.DefaultRetryPolicy()), "process")
-func WithRetry[O any](fn NodeFunc[O], policy *RetryPolicy) NodeFunc[O] {
+func WithRetry(fn NodeFunc, policy *RetryPolicy) NodeFunc {
 	if policy == nil {
 		return fn
 	}
 
-	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+	return func(ctx context.Context, scope Scope) (*Command, error) {
 		var lastErr error
 		delay := policy.Delay
 
@@ -236,24 +238,24 @@ func (ns Namespace) Prefix(key string) string {
 }
 
 // namespacedScope wraps a Scope to filter keys by namespace.
-type namespacedScope[O any] struct {
-	inner         Scope[O]
+type namespacedScope struct {
+	inner         Scope
 	namespace     Namespace
 	includeGlobal bool
 }
 
-func (s *namespacedScope[O]) GetValue(name string) (any, bool) {
+func (s *namespacedScope) GetValue(name string) (any, bool) {
 	if !s.isAllowed(name) {
 		return nil, false
 	}
 	return s.inner.GetValue(name)
 }
 
-func (s *namespacedScope[O]) ManagedValues() *ManagedValueRegistry {
+func (s *namespacedScope) ManagedValues() *ManagedValueRegistry {
 	return s.inner.ManagedValues()
 }
 
-func (s *namespacedScope[O]) ToMap() map[string]any {
+func (s *namespacedScope) ToMap() map[string]any {
 	innerMap := s.inner.ToMap()
 	result := make(map[string]any)
 	for k, val := range innerMap {
@@ -264,15 +266,23 @@ func (s *namespacedScope[O]) ToMap() map[string]any {
 	return result
 }
 
-func (s *namespacedScope[O]) Stream(value O) {
+func (s *namespacedScope) Stream(value message.Message) {
 	s.inner.Stream(value)
 }
 
-func (s *namespacedScope[O]) NodeName() string {
+func (s *namespacedScope) NodeName() string {
 	return s.inner.NodeName()
 }
 
-func (s *namespacedScope[O]) isAllowed(key string) bool {
+func (s *namespacedScope) Messages() []message.Message {
+	return s.inner.Messages()
+}
+
+func (s *namespacedScope) LastMessage() message.Message {
+	return s.inner.LastMessage()
+}
+
+func (s *namespacedScope) isAllowed(key string) bool {
 	prefix := s.namespace.name + "."
 	if len(key) > len(prefix) && key[:len(prefix)] == prefix {
 		return true
@@ -296,10 +306,10 @@ func (s *namespacedScope[O]) isAllowed(key string) bool {
 //
 //	agentNS := graph.NewNamespace("agent1")
 //	g.Node("agent1", graph.WithNamespace(agentNode, agentNS, false), "next")
-func WithNamespace[O any](fn NodeFunc[O], ns Namespace, includeGlobal bool) NodeFunc[O] {
-	return func(ctx context.Context, scope Scope[O]) (*Command, error) {
+func WithNamespace(fn NodeFunc, ns Namespace, includeGlobal bool) NodeFunc {
+	return func(ctx context.Context, scope Scope) (*Command, error) {
 		// Wrap scope to filter by namespace
-		filteredScope := &namespacedScope[O]{
+		filteredScope := &namespacedScope{
 			inner:         scope,
 			namespace:     ns,
 			includeGlobal: includeGlobal,
@@ -335,12 +345,12 @@ func WithNamespace[O any](fn NodeFunc[O], ns Namespace, includeGlobal bool) Node
 //
 //	g.Node("fetch", graph.Compose(
 //	    fetchNode,
-//	    graph.WithRetry[O](nil, graph.DefaultRetryPolicy()),  // outer: retry
-//	    graph.WithNamespace[O](nil, ns, false),               // inner: namespace
+//	    func(fn graph.NodeFunc) graph.NodeFunc { return graph.WithRetry(fn, policy) },
+//	    func(fn graph.NodeFunc) graph.NodeFunc { return graph.WithNamespace(fn, ns, false) },
 //	), "next")
 //
 // This is equivalent to: WithRetry(WithNamespace(fetchNode, ns, false), policy)
-func Compose[O any](fn NodeFunc[O], wrappers ...func(NodeFunc[O]) NodeFunc[O]) NodeFunc[O] {
+func Compose(fn NodeFunc, wrappers ...func(NodeFunc) NodeFunc) NodeFunc {
 	wrapped := fn
 	// Apply in reverse order so first wrapper is outermost
 	for i := len(wrappers) - 1; i >= 0; i-- {

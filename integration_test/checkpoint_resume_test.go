@@ -282,11 +282,15 @@ func TestCheckpointResume_GraphWithCheckpointer(t *testing.T) {
 	ctx := context.Background()
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	g := graph.New[string, string](ResultKey)
+	var finalResult string
 
-	g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+	g := graph.New(ResultKey)
+
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		input := graph.Get(scope, ResultKey)
-		return graph.Set(ResultKey, input+"_processed").End()
+		finalResult = input + "_processed"
+		scope.Stream(message.NewAIMessageFromText(finalResult))
+		return graph.Set(ResultKey, finalResult).End()
 	}, graph.END)
 
 	g.Start("process")
@@ -297,15 +301,12 @@ func TestCheckpointResume_GraphWithCheckpointer(t *testing.T) {
 	compiled, err := g.Build()
 	require.NoError(t, err)
 
-	// Run
-	var outputs []string
-	for out, err := range compiled.Run(ctx, "test") {
+	// Run with initial value
+	for _, err := range compiled.Run(ctx, nil, graph.WithInitialValue(ResultKey, "test")) {
 		require.NoError(t, err)
-		outputs = append(outputs, out)
 	}
 
-	require.Len(t, outputs, 1)
-	assert.Equal(t, "test_processed", outputs[0])
+	assert.Equal(t, "test_processed", finalResult)
 
 	// Verify checkpoint was saved
 	cp, err := checkpointer.Load(ctx, "checkpointed-run")

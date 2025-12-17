@@ -181,7 +181,7 @@ All metrics include relevant labels (`node.name`, `superstep`, etc.):
 All providers are automatically attached to context and available in node functions:
 
 ```go
-func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     log := logging.FromContext(ctx)
     tp := trace.FromContext(ctx)
     mp := metrics.FromContext(ctx)
@@ -201,7 +201,7 @@ Access providers in your node RunFuncs for custom instrumentation:
 ### Logging
 
 ```go
-func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     log := logging.FromContext(ctx)
     
     log.Info("Starting processing", "node", "data_processor")
@@ -215,7 +215,7 @@ func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 ### Custom Spans
 
 ```go
-func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     tp := trace.FromContext(ctx)
     tracer := tp.Tracer("my-service")
     
@@ -235,7 +235,7 @@ func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
 ### Custom Metrics
 
 ```go
-func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     mp := metrics.FromContext(ctx)
     
     // Record counter

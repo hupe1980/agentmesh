@@ -16,9 +16,6 @@ type StateKey interface {
 	// Name returns the unique name of this key.
 	Name() string
 
-	// IsSlice returns true if this key uses append semantics (list-like behavior).
-	IsSlice() bool
-
 	// ReducerFunc returns the type-erased reducer for this key.
 	ReducerFunc() ReducerFunc
 
@@ -30,9 +27,7 @@ type StateKey interface {
 // The reducer determines how values are merged during state updates.
 type Key[T any] struct {
 	name      string
-	reducer   Reducer[T]
-	isSlice   bool        // true for keys created with NewListKey
-	reducerFn ReducerFunc // cached type-erased reducer (set at construction)
+	reducerFn ReducerFunc // type-erased reducer (set at construction)
 }
 
 // stateKey implements StateKey.
@@ -44,43 +39,35 @@ type KeyOption[T any] func(*Key[T])
 // WithReducer sets a custom reducer for the key.
 func WithReducer[T any](r Reducer[T]) KeyOption[T] {
 	return func(k *Key[T]) {
-		k.reducer = r
+		k.reducerFn = WrapReducer(r)
 	}
 }
 
 // NewKey creates a state key with Replace (overwrite) semantics by default.
 func NewKey[T any](name string, opts ...KeyOption[T]) Key[T] {
 	k := Key[T]{
-		name:    name,
-		reducer: ReplaceReducer[T]{},
+		name:      name,
+		reducerFn: WrapReducer(ReplaceReducer[T]{}),
 	}
 
 	for _, opt := range opts {
 		opt(&k)
 	}
-
-	// Cache the type-erased reducer
-	k.reducerFn = WrapReducer(k.reducer)
 
 	return k
 }
 
 // NewListKey creates a list state key with Append semantics by default.
 // The key stores []T and appends incoming slices.
-// Uses WrapSliceReducer to enable reflection-free iteration.
 func NewListKey[T any](name string, opts ...KeyOption[[]T]) Key[[]T] {
 	k := Key[[]T]{
-		name:    name,
-		reducer: AppendReducer[T]{},
-		isSlice: true,
+		name:      name,
+		reducerFn: WrapReducer(AppendReducer[T]{}),
 	}
 
 	for _, opt := range opts {
 		opt(&k)
 	}
-
-	// Cache the type-erased reducer with slice iterator
-	k.reducerFn = WrapSliceReducer(k.reducer)
 
 	return k
 }
@@ -88,16 +75,13 @@ func NewListKey[T any](name string, opts ...KeyOption[[]T]) Key[[]T] {
 // NewCounterKey creates a counter key with Sum semantics.
 func NewCounterKey(name string, opts ...KeyOption[int]) Key[int] {
 	k := Key[int]{
-		name:    name,
-		reducer: SumReducer[int]{},
+		name:      name,
+		reducerFn: WrapReducer(SumReducer[int]{}),
 	}
 
 	for _, opt := range opts {
 		opt(&k)
 	}
-
-	// Cache the type-erased reducer
-	k.reducerFn = WrapReducer(k.reducer)
 
 	return k
 }
@@ -105,16 +89,13 @@ func NewCounterKey(name string, opts ...KeyOption[int]) Key[int] {
 // NewMapKey creates a map key with MergeMap semantics.
 func NewMapKey[K comparable, V any](name string, opts ...KeyOption[map[K]V]) Key[map[K]V] {
 	k := Key[map[K]V]{
-		name:    name,
-		reducer: MergeMapReducer[K, V]{},
+		name:      name,
+		reducerFn: WrapReducer(MergeMapReducer[K, V]{}),
 	}
 
 	for _, opt := range opts {
 		opt(&k)
 	}
-
-	// Cache the type-erased reducer
-	k.reducerFn = WrapReducer(k.reducer)
 
 	return k
 }
@@ -124,30 +105,14 @@ func (k Key[T]) Name() string {
 	return k.name
 }
 
-// IsSlice returns true if this key uses append semantics.
-func (k Key[T]) IsSlice() bool {
-	return k.isSlice
-}
-
-// Reducer returns the key's reducer.
-func (k Key[T]) Reducer() Reducer[T] {
-	return k.reducer
-}
-
 // ReducerFunc returns the type-erased reducer for runtime use.
-// Returns the cached ReducerFunc that was created at key construction time.
 func (k Key[T]) ReducerFunc() ReducerFunc {
-	// Return cached reducer if available (preferred - avoids recreation)
-	if k.reducerFn.ZeroFn != nil {
-		return k.reducerFn
-	}
-	// Fallback for keys created without caching (e.g., via struct literal)
-	return WrapReducer(k.reducer)
+	return k.reducerFn
 }
 
-// Zero returns the zero value from the reducer.
+// Zero returns the zero value for this key's type.
 func (k Key[T]) Zero() T {
-	return k.reducer.Zero()
+	return k.reducerFn.ZeroFn().(T)
 }
 
 // Get returns the typed value for a key from the scope.
@@ -159,70 +124,16 @@ func Get[T any](scope ReadOnlyScope, key Key[T]) T {
 		}
 	}
 
-	return key.reducer.Zero()
+	return key.reducerFn.ZeroFn().(T)
 }
 
 // GetList returns the typed slice for a list key from the scope.
-// Handles both []T and SliceOf[T] storage formats.
 // If no value exists, returns nil.
 func GetList[T any](scope ReadOnlyScope, key Key[[]T]) []T {
 	if v, ok := scope.GetValue(key.name); ok {
-		// Handle SliceOf[T] (used by Append/AppendValue for zero-reflection)
-		if sliceOf, ok := v.(SliceOf[T]); ok {
-			return sliceOf
-		}
-		// Handle plain []T
 		if typed, ok := v.([]T); ok {
 			return typed
 		}
-	}
-
-	return nil
-}
-
-// SliceValue is an interface for values that can be iterated as slices.
-// Implement this interface to provide slice semantics without reflection,
-// improving performance and type safety.
-//
-// Example:
-//
-//	type Messages []message.Message
-//
-//	func (m Messages) SliceIter(yield func(any) bool) {
-//	    for _, msg := range m {
-//	        if !yield(msg) { return }
-//	    }
-//	}
-type SliceValue interface {
-	// SliceIter iterates over the slice, calling yield for each element.
-	SliceIter(yield func(any) bool)
-	// Merge appends another SliceValue and returns the result.
-	// Returns nil if types are incompatible.
-	Merge(other SliceValue) SliceValue
-}
-
-// SliceOf is a generic helper that wraps any slice type to implement SliceValue.
-// This provides a convenient way to iterate strongly-typed slices without reflection.
-//
-// Example:
-//
-//	messages := []message.Message{msg1, msg2}
-//	SliceOf(messages).SliceIter(func(item any) bool { ... })
-type SliceOf[T any] []T
-
-// SliceIter iterates over the slice, calling yield for each element.
-func (s SliceOf[T]) SliceIter(yield func(any) bool) {
-	for _, v := range s {
-		if !yield(v) {
-			return
-		}
-	}
-}
-
-// Merge appends another SliceValue of the same type and returns the result.
-func (s SliceOf[T]) Merge(other SliceValue) SliceValue {
-	if o, ok := other.(SliceOf[T]); ok {
-		return append(s, o...)
 	}
 
 	return nil
@@ -448,17 +359,7 @@ func (s *BSPState) mergeWrite(key string, value any) {
 // mergeSlices merges two values if they are slices with compatible element types.
 // Uses type switches for common types to avoid reflection.
 // Falls back to reflection for unknown slice types.
-// Handles SliceOf[T] and []T interoperability.
 func mergeSlices(existing, value any) any {
-	// Fast path: both implement SliceValue (covers all SliceOf[T] types)
-	if ev, ok := existing.(SliceValue); ok {
-		if vv, ok := value.(SliceValue); ok {
-			if merged := ev.Merge(vv); merged != nil {
-				return merged
-			}
-		}
-	}
-
 	// Try common slice types first (fast path, no reflection)
 	switch v := value.(type) {
 	case []string:

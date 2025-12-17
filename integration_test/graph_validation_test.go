@@ -15,9 +15,9 @@ func TestGraphValidation_ValidGraph(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 
@@ -34,9 +34,9 @@ func TestGraphValidation_NoEntryPoint(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("orphan", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("orphan", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 
@@ -53,14 +53,14 @@ func TestGraphValidation_UnreachableNode(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "done").End()
 	}, graph.END)
 
 	// This node is never reached
-	g.Node("unreachable", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("unreachable", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "never").End()
 	}, graph.END)
 
@@ -79,10 +79,10 @@ func TestGraphValidation_InvalidTarget(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// Node points to non-existent target
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To("nonexistent")
 	}, "nonexistent")
 
@@ -103,17 +103,17 @@ func TestGraphValidation_MultipleEntryPoints(t *testing.T) {
 	result1Key := graph.NewKey[string]("result1")
 	result2Key := graph.NewKey[string]("result2")
 
-	g := graph.New[any, any](result1Key, result2Key)
+	g := graph.New(result1Key, result2Key)
 
-	g.Node("entry1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("entry1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(result1Key, "from_entry1").To("merge")
 	}, "merge")
 
-	g.Node("entry2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("entry2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(result2Key, "from_entry2").To("merge")
 	}, "merge")
 
-	g.Node("merge", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("merge", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 
@@ -135,10 +135,10 @@ func TestGraphValidation_SelfLoop(t *testing.T) {
 	ctx := context.Background()
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
 	// Node that loops back to itself
-	g.Node("loop", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("loop", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		if counter >= 3 {
 			return graph.Set(counterKey, counter).End()
@@ -162,7 +162,7 @@ func TestGraphValidation_EmptyGraph(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
 	// No nodes added, no entry point set
 
@@ -176,14 +176,14 @@ func TestGraphValidation_DuplicateNodeNames(t *testing.T) {
 
 	resultKey := graph.NewKey[string]("result")
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 
 	// Adding same node name again should overwrite or error
-	g.Node("node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "duplicate").End()
 	}, graph.END)
 

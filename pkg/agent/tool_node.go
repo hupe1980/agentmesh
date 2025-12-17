@@ -76,7 +76,7 @@ func WithModelTarget(target string) ToolNodeOption {
 // Example with dynamic toolset:
 //
 //	toolFn, err := agent.NewToolNodeFunc(agent.WithToolNodeToolset(mcpToolset))
-func NewToolNodeFunc(opts ...ToolNodeOption) (message.NodeFunc, error) {
+func NewToolNodeFunc(opts ...ToolNodeOption) (graph.NodeFunc, error) {
 	cfg := &ToolNodeConfig{
 		ModelTarget: "model",
 	}
@@ -90,7 +90,7 @@ func NewToolNodeFunc(opts ...ToolNodeOption) (message.NodeFunc, error) {
 		return nil, fmt.Errorf("agent: either Executor or Toolset must be provided")
 	}
 
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Extract tool calls from the last AI message
 		toolCalls := extractToolCalls(scope)
 		if toolCalls == nil {
@@ -115,13 +115,13 @@ func NewToolNodeFunc(opts ...ToolNodeOption) (message.NodeFunc, error) {
 		// Convert results to ToolMessages
 		toolMessages := resultsToMessages(results)
 
-		return graph.Set(MessagesKey, toolMessages).To(cfg.ModelTarget)
+		return graph.ReplyAll(toolMessages...).To(cfg.ModelTarget)
 	}, nil
 }
 
 // extractToolCalls retrieves tool calls from the last message if it's an AI message.
-func extractToolCalls(scope message.Scope) []message.ToolCall {
-	lastMsg := LastMessage(scope)
+func extractToolCalls(scope graph.Scope) []message.ToolCall {
+	lastMsg := scope.LastMessage()
 	if lastMsg == nil {
 		return nil
 	}
@@ -136,7 +136,7 @@ func extractToolCalls(scope message.Scope) []message.ToolCall {
 
 // resolveToolExecutor returns an executor based on configuration.
 // If a Toolset is configured, tools are dynamically discovered; otherwise, the static Executor is used.
-func resolveToolExecutor(ctx context.Context, scope message.Scope, cfg *ToolNodeConfig) (tool.Executor, error) {
+func resolveToolExecutor(ctx context.Context, scope graph.Scope, cfg *ToolNodeConfig) (tool.Executor, error) {
 	var executor tool.Executor
 
 	if cfg.Toolset != nil {
@@ -159,7 +159,7 @@ func resolveToolExecutor(ctx context.Context, scope message.Scope, cfg *ToolNode
 }
 
 // createExecutorFromToolset dynamically discovers tools and creates an executor.
-func createExecutorFromToolset(ctx context.Context, scope message.Scope, ts tool.Toolset) (tool.Executor, error) {
+func createExecutorFromToolset(ctx context.Context, scope graph.Scope, ts tool.Toolset) (tool.Executor, error) {
 	tools, err := ts.ListTools(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tools: %w", err)

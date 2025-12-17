@@ -48,16 +48,16 @@ var LimitedKey = graph.NewListKey[message.Message]("messages",
 
 ### 2. Create Graph with Key
 ```go
-g := graph.New[[]message.Message, message.Message](LimitedKey)
+g := graph.New(LimitedKey)
 
-g.Node("agent", func(ctx context.Context, input graph.NodeInput[[]message.Message]) (graph.Command, error) {
-    messages := graph.GetList(input, LimitedKey)
+g.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+    messages := graph.GetList(scope, LimitedKey)
     
     // Process messages...
     response := message.NewAIMessageFromText("Hello!")
     
-    // Set with slice - the reducer handles appending
-    return graph.Set(LimitedKey, []message.Message{response}).ToEnd(), nil
+    // Append to messages list
+    return graph.Reply(response).End()
 }, graph.END)
 
 g.Start("agent")

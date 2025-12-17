@@ -6,8 +6,8 @@ Shows how to build isolated subgraphs with type-safe input/output mapping.
 
 ## Key Concepts
 - **graph.Subgraph()**: Embed a compiled subgraph as a node in a parent graph
-- **Input Mapper**: Transform parent state into subgraph input
-- **Output Mapper**: Transform subgraph output into parent state updates
+- **Input Mapper**: Transform parent messages into subgraph input messages
+- **Output Mapper**: Transform subgraph output message into parent state updates
 - **State Isolation**: Each subgraph has its own state, cannot access parent state
 - **Reusability**: Build once, use in multiple parent graphs
 
@@ -41,48 +41,50 @@ go run examples/subgraph/main.go
   Subgraph features:
     • graph.Subgraph(sub, inputMapper, outputMapper)
     • Subgraphs have isolated state
-    • Input/output mappers bridge parent ↔ child state
+    • Input/output mappers bridge parent ↔ child messages
     • Subgraphs can be reused across multiple nodes
 ```
 
 ## Code Walkthrough
 
-### 1. Define Parent and Subgraph Keys
+### 1. Define State Keys
 ```go
-// Parent graph keys
+// Parent graph keys for tracking workflow state
 var (
-    inputKey  = graph.NewKey("input", "")
-    resultKey = graph.NewKey("result", "")
-    stepsKey  = graph.NewListKey[string]("steps")
-)
-
-// Subgraph keys (isolated state)
-var (
-    subInputKey  = graph.NewKey("sub_input", "")
-    subOutputKey = graph.NewKey("sub_output", "")
+    stepsKey = graph.NewListKey[string]("steps")
 )
 ```
 
 ### 2. Create a Reusable Subgraph
 ```go
-func createValidationSubgraph() *graph.Graph[string, string] {
-    g := graph.New[string, string](subInputKey, subOutputKey)
+func createValidationSubgraph() *graph.Graph {
+    g := graph.New(stepsKey)
 
-    g.Node("validate_format", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-        input := graph.Get(scope, subInputKey)
+    g.Node("validate_format", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+        lastMsg := graph.LastMessage(scope)
+        input := ""
+        if lastMsg != nil {
+            input = lastMsg.String()
+        }
         if strings.TrimSpace(input) == "" {
             return graph.Fail(fmt.Errorf("empty input"))
         }
         return graph.To("validate_content")
     }, "validate_content")
 
-    g.Node("validate_content", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-        input := graph.Get(scope, subInputKey)
-        return graph.Set(subOutputKey, "validated:"+input).End()
+    g.Node("validate_content", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+        lastMsg := graph.LastMessage(scope)
+        input := ""
+        if lastMsg != nil {
+            input = lastMsg.String()
+        }
+        validatedMsg := message.NewAIMessageFromText("validated:" + input)
+        return graph.Reply(validatedMsg).End()
     }, graph.END)
 
     g.Start("validate_format")
-    return g
+    compiled, _ := g.Build()
+    return compiled
 }
 ```
 
@@ -91,16 +93,19 @@ func createValidationSubgraph() *graph.Graph[string, string] {
 // Use graph.Subgraph() to embed the validation subgraph
 g.Node("run_validation", graph.Subgraph(
     validationSubgraph,
-    // Input mapper: parent state -> subgraph input
-    func(ctx context.Context, scope graph.ReadOnlyScope) (string, error) {
-        input := graph.Get(scope, inputKey)
-        return input, nil
+    // Input mapper: parent messages -> subgraph input messages
+    func(ctx context.Context, view graph.ReadOnlyScope) ([]message.Message, error) {
+        lastMsg := graph.LastMessage(view)
+        if lastMsg != nil {
+            return []message.Message{lastMsg}, nil
+        }
+        return nil, nil
     },
-    // Output mapper: subgraph output -> parent state updates
-    func(ctx context.Context, output string) (graph.Updates, error) {
+    // Output mapper: subgraph output message -> parent state updates
+    func(ctx context.Context, output message.Message) (graph.Updates, error) {
         return graph.Updates{
-            inputKey.Name():  output,
-            stepsKey.Name():  graph.SliceOf[string]([]string{"Validation completed"}),
+            graph.MessagesKeyName: []message.Message{output},
+            stepsKey.Name():       []string{"Validation completed"},
         }, nil
     },
 ), "next_node")
@@ -120,10 +125,10 @@ g.Node("finalize", finalizeFn, graph.END)
 
 ### graph.Subgraph()
 ```go
-func Subgraph[I, O any](
-    sub *Graph[I, O],                                         // The subgraph to embed
-    inputMapper func(ctx, scope) (I, error),                  // Maps parent state to subgraph input
-    outputMapper func(ctx, output O) (Updates, error),        // Maps subgraph output to parent updates
+func Subgraph(
+    sub *Graph,                                                        // The subgraph to embed
+    inputMapper func(ctx, view ReadOnlyScope) ([]message.Message, error),  // Maps parent messages to subgraph input
+    outputMapper func(ctx, output message.Message) (Updates, error),       // Maps subgraph output to parent updates
 ) NodeFunc
 ```
 
@@ -134,8 +139,8 @@ type Updates map[string]any
 
 // Example usage in output mapper:
 return graph.Updates{
-    "result": output,
-    "steps":  graph.SliceOf[string]([]string{"Step completed"}),
+    graph.MessagesKeyName: []message.Message{output},
+    stepsKey.Name():       []string{"Step completed"},
 }, nil
 ```
 
@@ -183,9 +188,9 @@ Parent Graph:
 - Clear data contracts between components
 
 ### Type Safety
-- Input and output types are statically checked
-- Compile-time errors for type mismatches
-- No runtime type assertions needed
+- Message input and output types are checked at compile time
+- Input/output mappers use `[]message.Message` and `message.Message`
+- Clear contracts between components
 
 ## Common Patterns
 

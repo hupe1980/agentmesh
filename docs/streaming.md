@@ -38,7 +38,7 @@ sidebar:
 
 ## Overview {#overview}
 
-Streaming in AgentMesh is built into the `Scope[O]` interface that every node receives. The `Scope` provides a `Stream(value O)` method that allows nodes to emit values during execution, which are delivered to subscribers in real-time.
+Streaming in AgentMesh is built into the `Scope` interface that every node receives. The `Scope` provides a `Stream(value message.Message)` method that allows nodes to emit values during execution, which are delivered to subscribers in real-time.
 
 **Key insight:** Streamed values bypass the BSP state management entirely. They flow directly from nodes to the iterator without going through the Pregel barrier synchronization. This enables real-time delivery while state updates follow the standard superstep-based commit cycle.
 
@@ -82,11 +82,11 @@ flowchart TB
 
 ```go
 // The Scope interface provides streaming capability
-type Scope[O any] interface {
+type Scope interface {
     ReadOnlyScope  // Embeds read-only state access
     
     // Stream emits a value directly to subscribers (bypasses BSP)
-    Stream(value O)
+    Stream(value message.Message)
 }
 
 // ReadOnlyScope provides state access and node context
@@ -125,8 +125,8 @@ type Output struct {
 var ContentKey = graph.NewKey[string]("content")
 
 func main() {
-    // Create a graph with Input=any, Output=Output
-    g := graph.New[any, Output](ContentKey)
+    // Create a graph
+    g := graph.New(ContentKey)
     
     // Add node
     g.Node("generate", generateNode, graph.END)
@@ -151,7 +151,7 @@ func main() {
     fmt.Println("\nDone!")
 }
 
-func generateNode(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
+func generateNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     content := ""
     tokens := []string{"Hello", " ", "World", "!"}
     
@@ -190,7 +190,7 @@ func main() {
     executor := model.NewExecutor(openaiModel)
     
     // Create graph
-    g := graph.New[[]message.Message, message.Message](agent.MessagesKey)
+    g := graph.New(agent.MessagesKey)
     
     // Model node with streaming
     modelFn, _ := agent.NewModelNodeFunc(executor,
@@ -293,7 +293,7 @@ For custom agent implementations, use `scope.Stream()` to emit values:
 ```go
 var MessagesKey = graph.NewListKey[message.Message]("messages")
 
-func agentNode(ctx context.Context, scope graph.Scope[StreamChunk]) (*graph.Command, error) {
+func agentNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Get current state
     messages, _ := graph.ScopeGetList[message.Message](scope, MessagesKey.Name())
     
@@ -315,15 +315,15 @@ Subgraphs can stream values that propagate to the parent graph's iterator:
 
 ```go
 // Child graph streams its output
-childGraph := graph.New[any, Output](ContentKey)
-childGraph.Node("process", func(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
+childGraph := graph.New(ContentKey)
+childGraph.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     scope.Stream(Output{Token: "from child"})
     return graph.To(graph.END)
 }, graph.END)
 childGraph.Start("process")
 
 // Parent graph includes child as subgraph
-parentGraph := graph.New[any, Output](ContentKey)
+parentGraph := graph.New(ContentKey)
 parentGraph.Node("start", startNode, "child")
 parentGraph.Subgraph("child", childGraph.MustBuild(), mapState, "finish")
 parentGraph.Node("finish", finishNode, graph.END)
@@ -357,7 +357,7 @@ type TokenOutput struct {
 var IndexKey = graph.NewKey[int]("index")
 
 // The type parameter ensures type safety
-func node(ctx context.Context, scope graph.Scope[TokenOutput]) (*graph.Command, error) {
+func node(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     scope.Stream(TokenOutput{Token: "hello", Index: 0, Timestamp: time.Now()})
     return graph.To(graph.END)
 }
@@ -376,7 +376,7 @@ type Progress struct {
 
 var ProcessedKey = graph.NewKey[int]("processed")
 
-func processNode(ctx context.Context, scope graph.Scope[Progress]) (*graph.Command, error) {
+func processNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     items := getItems()
     total := len(items)
     
@@ -404,7 +404,7 @@ type Result struct {
     Error string
 }
 
-func node(ctx context.Context, scope graph.Scope[Result]) (*graph.Command, error) {
+func node(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     for _, item := range items {
         result, err := process(item)
         if err != nil {
@@ -443,7 +443,7 @@ func TestStreamingNode(t *testing.T) {
 Streaming respects context cancellation:
 
 ```go
-func streamingNode(ctx context.Context, scope graph.Scope[Output]) (*graph.Command, error) {
+func streamingNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     for i := 0; i < 1000; i++ {
         select {
         case <-ctx.Done():

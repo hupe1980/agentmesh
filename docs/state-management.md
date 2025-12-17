@@ -56,10 +56,10 @@ var (
 )
 
 // Create graph with keys
-g := graph.New[string, string](CounterKey, StatusKey)
+g := graph.New(CounterKey, StatusKey)
 
 // Node function using commands
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // Read current state
     counter := graph.Get(scope, CounterKey)
     
@@ -103,14 +103,14 @@ return graph.Fail(err)
 
 **Pattern 1: Single target with updates**
 ```go
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(ResultKey, "processed").To("next"), nil
 }, "next")
 ```
 
 **Pattern 2: Multiple targets (parallel execution)**
 ```go
-g.Node("split", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("split", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "splitting").
         To("worker1", "worker2", "worker3"), nil
 }, "worker1", "worker2", "worker3")
@@ -118,7 +118,7 @@ g.Node("split", func(ctx context.Context, scope graph.Scope[string]) (*graph.Com
 
 **Pattern 3: Conditional routing**
 ```go
-g.Node("decide", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("decide", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     score := graph.Get(scope, ScoreKey)
     
     cmd := graph.Set(ScoreKey, score+10)
@@ -132,14 +132,14 @@ g.Node("decide", func(ctx context.Context, scope graph.Scope[string]) (*graph.Co
 
 **Pattern 4: End node**
 ```go
-g.Node("final", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("final", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "complete").To(graph.END), nil
 }, graph.END)
 ```
 
 **Pattern 5: Read-only node**
 ```go
-g.Node("log", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("log", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     data := graph.Get(scope, DataKey)
     fmt.Printf("Data: %v\n", data)
     return graph.To("next"), nil
@@ -166,7 +166,7 @@ var (
 )
 
 // Use in node function
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     // ✅ Type-safe reads
     counter := graph.Get(scope, CounterKey)   // int
     status := graph.Get(scope, StatusKey)     // string
@@ -312,7 +312,7 @@ var (
 )
 
 // Create and build graph
-g := graph.New[string, string](SessionIDKey, UserNameKey, MaxRetriesKey)
+g := graph.New(SessionIDKey, UserNameKey, MaxRetriesKey)
 // ... add nodes ...
 compiled, _ := g.Build()
 
@@ -454,17 +454,17 @@ var Agent1Status = graph.NewKey[string]("agent1.status")
 var Agent2Status = graph.NewKey[string]("agent2.status")
 
 // Create graph with all keys
-g := graph.New[string, string](
+g := graph.New(
     GlobalConfig, GlobalCounter,
     Agent1Status, Agent2Status,
 )
 
 // Each agent updates its own namespaced key
-g.Node("agent1", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("agent1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(Agent1Status, "processing").To("next"), nil
 }, "next")
 
-g.Node("agent2", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("agent2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(Agent2Status, "waiting").To("next"), nil
 }, "next")
 ```
@@ -520,22 +520,22 @@ var (
 )
 
 // Create graph with all keys
-g := graph.New[string, string](
+g := graph.New(
     ResearcherStatus,
     WriterStatus,
     EditorStatus,
 )
 
 // Each agent updates its own state independently
-g.Node("researcher", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("researcher", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(ResearcherStatus, "researching").To("writer"), nil
 }, "writer")
 
-g.Node("writer", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("writer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(WriterStatus, "writing").To("editor"), nil
 }, "editor")
 
-g.Node("editor", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("editor", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(EditorStatus, "editing").To(graph.END), nil
 }, graph.END)
 
@@ -605,11 +605,11 @@ validationNS := graph.NewNamespace("validation")
 enrichmentNS := graph.NewNamespace("enrichment")
 
 // Create graph with all keys
-g := graph.New[string, string](validKey, enrichedKey)
+g := graph.New(validKey, enrichedKey)
 
 // Wrap node functions with WithNamespace for isolation
 g.Node("validation", graph.WithNamespace(
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // This node only sees "validation.*" keys
         return graph.Set(validKey, true).To("enrichment"), nil
     }, 
@@ -618,7 +618,7 @@ g.Node("validation", graph.WithNamespace(
 ), "enrichment")
 
 g.Node("enrichment", graph.WithNamespace(
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // This node only sees "enrichment.*" keys
         enrichedData := map[string]any{"status": "enriched"}
         return graph.Set(enrichedKey, enrichedData).To(graph.END), nil
@@ -644,14 +644,14 @@ retryPolicy := graph.RetryPolicy{
 }
 
 g.Node("processor", graph.Compose(
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // Processing logic
         return graph.Set(resultKey, "processed").To(graph.END), nil
     },
-    func(fn graph.NodeFunc[string]) graph.NodeFunc[string] {
+    func(fn graph.NodeFunc) graph.NodeFunc {
         return graph.WithRetry(fn, retryPolicy)
     },
-    func(fn graph.NodeFunc[string]) graph.NodeFunc[string] {
+    func(fn graph.NodeFunc) graph.NodeFunc {
         return graph.WithNamespace(fn, processorNS, false)
     },
 ), graph.END)
@@ -700,7 +700,7 @@ var (
 ns1 := graph.NewNamespace("agent1")
 
 g.Node("validator", graph.WithNamespace(
-    func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+    func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
         // ❌ This will cause a validation error:
         return graph.Set(agent1StatusKey, "ok").      // ✅ Allowed (own namespace)
             With(graph.SetValue(agent2StatusKey, "failed")).  // ❌ ERROR: wrong namespace
@@ -790,9 +790,9 @@ import (
 var StatusKey = graph.NewKey[string]("status")
 
 // Create graph
-g := graph.New[string, string](StatusKey)
+g := graph.New(StatusKey)
 
-g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "done").To(graph.END), nil
 }, graph.END)
 
@@ -1068,7 +1068,7 @@ Pause execution for human approval or input.
 ### Interrupt execution
 
 ```go
-g.Node("request_approval", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("request_approval", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     return graph.Set(StatusKey, "awaiting_approval").
         Set(DataKey, sensitiveData).
         Interrupt(), nil  // Pause here
@@ -1148,10 +1148,10 @@ var ContentKey = graph.NewKey[string]("content")
 var SentKey = graph.NewKey[bool]("sent")
 
 // Create graph
-g := graph.New[string, bool](ContentKey, SentKey)
+g := graph.New(ContentKey, SentKey)
 
 // Define approval guard function
-approvalGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+approvalGuard := func(ctx context.Context, scope graph.Scope) (bool, string, error) {
     content := graph.Get(scope, ContentKey)
     if containsSensitiveData(content) {
         return true, "Contains sensitive information", nil
@@ -1160,7 +1160,7 @@ approvalGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, str
 }
 
 // Add node with approval guard
-g.Node("send_email", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+g.Node("send_email", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     content := graph.Get(scope, ContentKey)
     sendEmail(content)
     return graph.Set(SentKey, true).To(graph.END), nil
@@ -1266,7 +1266,7 @@ Guards control when approval is needed:
 
 ```go
 // Example: Sensitive keyword detection
-sensitiveGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+sensitiveGuard := func(ctx context.Context, scope graph.Scope) (bool, string, error) {
     content := graph.Get(scope, ContentKey)
     keywords := []string{"confidential", "secret", "classified"}
     
@@ -1279,7 +1279,7 @@ sensitiveGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, st
 }
 
 // Example: Amount threshold
-amountGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+amountGuard := func(ctx context.Context, scope graph.Scope) (bool, string, error) {
     amount := graph.Get(scope, AmountKey)
     if amount > 10000 {
         return true, fmt.Sprintf("Amount exceeds $10k: $%.2f", amount), nil
@@ -1288,7 +1288,7 @@ amountGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, strin
 }
 
 // Example: Always require approval
-alwaysGuard := func(ctx context.Context, scope graph.Scope[string]) (bool, string, error) {
+alwaysGuard := func(ctx context.Context, scope graph.Scope) (bool, string, error) {
     return true, "Manual approval required", nil
 }
 ```
@@ -1453,7 +1453,7 @@ var configMV = graph.NewManagedValue("config", &Config{
 })
 
 // Access in node - use scope which embeds ReadOnlyScope
-func myNode(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+func myNode(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
     config := graph.GetManaged(ctx, scope, configMV)
     // Use config.APIKey, config.Timeout, etc.
     return graph.Set(resultKey, result).End()

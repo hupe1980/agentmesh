@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 // Define a key for storing results
@@ -72,10 +73,10 @@ func main() {
 	}, graph.WithCacheTTL(5*time.Second))
 
 	// Create a simple graph
-	g := graph.New[string, string](resultKey)
+	g := graph.New(resultKey)
 
 	// Process node - uses managed values via Scope (same pattern as regular state)
-	g.Node("process", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Access managed values via scope - same pattern as graph.Get(scope, key)
 		config := graph.GetManaged(ctx, scope, runtimeConfigMV)
 		execCount := graph.GetManaged(ctx, scope, executionCountMV)
@@ -115,7 +116,7 @@ func main() {
 	for i := 1; i <= 3; i++ {
 		fmt.Printf("--- Run %d ---\n", i)
 
-		for output, err := range compiled.Run(ctx, "test input",
+		for output, err := range compiled.Run(ctx, []message.Message{},
 			graph.WithManagedValues(runtimeConfigMV, executionCountMV, cachedTimeMV)) {
 			if err != nil {
 				fmt.Println("Error:", err)

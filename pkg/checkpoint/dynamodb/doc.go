@@ -16,7 +16,7 @@
 //	checkpointer := dyncp.NewCheckpointer(client)
 //
 //	// Use with a graph
-//	g := graph.New[Input, Output](keys...)
+//	g := graph.New(keys...)
 //	compiled, _ := g.Build(graph.WithCheckpointer(checkpointer))
 //
 // # Table Creation

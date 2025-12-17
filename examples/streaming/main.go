@@ -25,7 +25,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/agent"
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
-	"github.com/hupe1980/agentmesh/pkg/model"
 	"github.com/hupe1980/agentmesh/pkg/model/openai"
 	"github.com/logrusorgru/aurora/v3"
 )
@@ -38,13 +37,12 @@ func main() {
 
 	// Create OpenAI model
 	openaiModel := openai.NewModel()
-	executor := model.NewExecutor(openaiModel)
 
 	// Create a simple agent graph
-	g := graph.New[[]message.Message, message.Message](agent.MessagesKey)
+	g := graph.New()
 
 	// Single model node with streaming enabled
-	modelFn, err := agent.NewModelNodeFunc(executor,
+	modelFn, err := agent.NewModelNodeFunc(openaiModel,
 		agent.WithModelInstructions("You are a helpful assistant. Provide detailed, thoughtful responses."),
 		agent.WithModelStreaming(true), // Enable streaming for real-time output
 	)

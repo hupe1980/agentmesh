@@ -33,10 +33,10 @@ func main() {
 func example1_ValidGraph() {
 	fmt.Println("--- Example 1: Valid Graph ---")
 
-	g := graph.New[any, any]()
+	g := graph.New()
 
 	// Create a simple linear graph
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("Processing...")
 		return graph.Cmd().End()
 	}, graph.END)
@@ -65,10 +65,10 @@ func example1_ValidGraph() {
 func example2_InvalidGraph() {
 	fmt.Println("--- Example 2: Invalid Graph (Caught at Build Time) ---")
 
-	g := graph.New[any, any]()
+	g := graph.New()
 
 	// Create an invalid graph - edge to non-existent node
-	g.Node("start_node", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start_node", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().To("non_existent_node")
 	}, "non_existent_node") // Node doesn't exist
 
@@ -87,14 +87,14 @@ func example2_InvalidGraph() {
 func example3_StrictValidation() {
 	fmt.Println("--- Example 3: Strict Validation ---")
 
-	g := graph.New[any, any]()
+	g := graph.New()
 
 	// Create a graph with an unreachable node
-	g.Node("reachable", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("reachable", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, graph.END)
 
-	g.Node("unreachable", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("unreachable", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, graph.END) // This node has no incoming edges
 
@@ -109,11 +109,11 @@ func example3_StrictValidation() {
 	}
 
 	// Create new graph for strict validation test
-	g2 := graph.New[any, any]()
-	g2.Node("reachable", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g2 := graph.New()
+	g2.Node("reachable", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, graph.END)
-	g2.Node("unreachable", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g2.Node("unreachable", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, graph.END)
 	g2.Start("reachable")
@@ -132,13 +132,13 @@ func example4_CustomValidation() {
 	fmt.Println("--- Example 4: Custom Validation Options ---")
 
 	// Create a graph with a cycle (for iterative algorithms)
-	g := graph.New[any, any]()
+	g := graph.New()
 
-	g.Node("agent", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().To("evaluator")
 	}, "evaluator")
 
-	g.Node("evaluator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("evaluator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Check quality and potentially loop back or end
 		return graph.Cmd().End()
 	}, "agent", graph.END)
@@ -154,11 +154,11 @@ func example4_CustomValidation() {
 	}
 
 	// Create new graph for strict validation test
-	g2 := graph.New[any, any]()
-	g2.Node("agent", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g2 := graph.New()
+	g2.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().To("evaluator")
 	}, "evaluator")
-	g2.Node("evaluator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g2.Node("evaluator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, "agent", graph.END)
 	g2.Start("agent")
@@ -172,11 +172,11 @@ func example4_CustomValidation() {
 	}
 
 	// Custom validation: Allow cycles but reject unreachable nodes
-	g3 := graph.New[any, any]()
-	g3.Node("agent", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g3 := graph.New()
+	g3.Node("agent", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().To("evaluator")
 	}, "evaluator")
-	g3.Node("evaluator", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g3.Node("evaluator", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Cmd().End()
 	}, "agent", graph.END)
 	g3.Start("agent")

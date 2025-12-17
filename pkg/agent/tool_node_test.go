@@ -57,7 +57,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		require.NoError(t, err)
 
 		scope := createToolNodeTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{},
+			graph.MessagesKeyName: []message.Message{},
 		})
 
 		cmd, err := fn(context.Background(), scope)
@@ -74,7 +74,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		require.NoError(t, err)
 
 		scope := createToolNodeTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -93,7 +93,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		require.NoError(t, err)
 
 		scope := createToolNodeTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewAIMessageFromText("No tools needed"),
 			},
 		})
@@ -112,7 +112,7 @@ func TestToolNodeFunc_Execution(t *testing.T) {
 		require.NoError(t, err)
 
 		scope := createToolNodeTestScope(map[string]any{
-			MessagesKey.Name(): []message.Message{
+			graph.MessagesKeyName: []message.Message{
 				message.NewHumanMessageFromText("Hello"),
 			},
 		})
@@ -203,6 +203,6 @@ func (cs customStringer) String() string {
 }
 
 // createToolNodeTestScope creates a Scope for testing using BSPState
-func createToolNodeTestScope(data map[string]any) graph.Scope[message.Message] {
-	return testutil.NewTestScopeFromMap[message.Message](data)
+func createToolNodeTestScope(data map[string]any) graph.Scope {
+	return testutil.NewTestScopeFromMap(data)
 }

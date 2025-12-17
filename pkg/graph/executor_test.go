@@ -11,6 +11,7 @@ import (
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/graph"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/stretchr/testify/require"
 )
 
@@ -102,8 +103,8 @@ func (r *recordingCheckpointer) firstUncommitted() *checkpoint.Checkpoint {
 func TestPregelExecutorBasic(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 
-	g := graph.New[any, any](counterKey)
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		return graph.Set(counterKey, counter+1).To(graph.END)
 	}, graph.END)
@@ -126,15 +127,15 @@ func TestPregelExecutorWithCustomExecutor(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	var execCount atomic.Int32
 
-	g := graph.New[any, any](counterKey)
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		execCount.Add(1)
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("process")
 
 	// Use custom executor with max workers
-	executor := graph.NewPregelExecutor[any, any]().WithMaxWorkers(2)
+	executor := graph.NewPregelExecutor().WithMaxWorkers(2)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
@@ -157,8 +158,8 @@ func TestPregelExecutorWithMaxSteps(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	var iterations atomic.Int32
 
-	g := graph.New[any, any](counterKey)
-	g.Node("loop", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("loop", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		iterations.Add(1)
 		// Infinite loop - will be stopped by max steps
 		return graph.To("loop")
@@ -166,7 +167,7 @@ func TestPregelExecutorWithMaxSteps(t *testing.T) {
 	g.Start("loop")
 
 	// Use executor with limited execution steps
-	executor := graph.NewPregelExecutor[any, any]().WithMaxSteps(5)
+	executor := graph.NewPregelExecutor().WithMaxSteps(5)
 	g.WithExecutor(executor)
 
 	compiled, err := g.Build()
@@ -195,15 +196,15 @@ func TestBSPStateIsolation(t *testing.T) {
 	readValues := make([]int, 0)
 	var mu sync.Mutex
 
-	g := graph.New[any, any](valueKey)
+	g := graph.New(valueKey)
 
 	// Entry point sets initial value and fans out
-	g.Node("init", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("init", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(valueKey, 10).To("reader1", "reader2")
 	}, "reader1", "reader2")
 
 	// Both readers should see the same value (from previous superstep)
-	g.Node("reader1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("reader1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		val := graph.Get(scope, valueKey)
 		mu.Lock()
 		readValues = append(readValues, val)
@@ -211,7 +212,7 @@ func TestBSPStateIsolation(t *testing.T) {
 		return graph.Set(valueKey, val+1).To(graph.END)
 	}, graph.END)
 
-	g.Node("reader2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("reader2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		val := graph.Get(scope, valueKey)
 		mu.Lock()
 		readValues = append(readValues, val)
@@ -246,14 +247,14 @@ func TestBSPWriteBuffering(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	var step1Val, step2Val int
 
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
-	g.Node("writer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("writer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		step1Val = graph.Get(scope, counterKey)
 		return graph.Set(counterKey, 42).To("reader")
 	}, "reader")
 
-	g.Node("reader", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("reader", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Should see the committed value from previous superstep (42)
 		step2Val = graph.Get(scope, counterKey)
 		return graph.To(graph.END)
@@ -288,8 +289,8 @@ func TestCheckpointingSaveAndRestore(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	g := graph.New[any, any](counterKey)
-	g.Node("increment", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("increment", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		return graph.Set(counterKey, counter+1).To(graph.END)
 	}, graph.END)
@@ -341,8 +342,8 @@ func TestCheckpointingAutoRestore(t *testing.T) {
 
 	var restoredValue int
 
-	g := graph.New[any, any](counterKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		restoredValue = graph.Get(scope, counterKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -370,16 +371,16 @@ func TestCheckpointingWithInterval(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	g := graph.New[any, any](counterKey)
+	g := graph.New(counterKey)
 
 	// Create a multi-step graph
-	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(counterKey, 1).To("step2")
 	}, "step2")
-	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(counterKey, 2).To("step3")
 	}, "step3")
-	g.Node("step3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(counterKey, 3).To(graph.END)
 	}, graph.END)
 	g.Start("step1")
@@ -430,8 +431,8 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 
 		var restoredValue int
 
-		g := graph.New[any, any](counterKey)
-		g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g := graph.New(counterKey)
+		g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			restoredValue = graph.Get(scope, counterKey)
 			return graph.To(graph.END)
 		}, graph.END)
@@ -458,8 +459,8 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 		counterKey := graph.NewKey[int]("counter")
 		recorder := newRecordingCheckpointer()
 
-		g := graph.New[any, any](counterKey)
-		g.Node("writer", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+		g := graph.New(counterKey)
+		g.Node("writer", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			counter := graph.Get(scope, counterKey)
 			return graph.Set(counterKey, counter+1).To(graph.END)
 		}, graph.END)
@@ -504,7 +505,7 @@ func TestCheckpointingWithPendingWrites(t *testing.T) {
 
 func TestResumeMergesInput(t *testing.T) {
 	// Verify that a resume merges new input into the checkpointed state
-	messagesKey := graph.NewListKey[string]("messages")
+	messagesKey := graph.NewListKey[string]("test_messages")
 	countKey := graph.NewKey[int]("count")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 	runID := "state-merge"
@@ -512,9 +513,9 @@ func TestResumeMergesInput(t *testing.T) {
 	var capturedMessages []string
 	var capturedCount int
 
-	g := graph.New[[]string, any](messagesKey, countKey)
+	g := graph.New(messagesKey, countKey)
 
-	g.Node("A", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("A", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		cnt := graph.Get(scope, countKey)
 		return graph.Cmd().
 			With(graph.SetValue(messagesKey, []string{"A executed"})).
@@ -522,7 +523,7 @@ func TestResumeMergesInput(t *testing.T) {
 			To("B")
 	}, "B")
 
-	g.Node("B", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("B", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		cnt := graph.Get(scope, countKey)
 		return graph.Cmd().
 			With(graph.SetValue(messagesKey, []string{"B executed"})).
@@ -530,7 +531,7 @@ func TestResumeMergesInput(t *testing.T) {
 			To("collect")
 	}, "collect")
 
-	g.Node("collect", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("collect", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
 		capturedCount = graph.Get(scope, countKey)
 		return graph.To(graph.END)
@@ -543,7 +544,9 @@ func TestResumeMergesInput(t *testing.T) {
 	require.NoError(t, err)
 
 	// First run: seeds state and checkpoints
-	for _, err := range compiled.Run(context.Background(), []string{"hi"}) {
+	for _, err := range compiled.Run(context.Background(), nil,
+		graph.WithInitialValue(messagesKey, []string{"hi"}),
+	) {
 		require.NoError(t, err)
 	}
 	require.Equal(t, []string{"hi", "A executed", "B executed"}, capturedMessages)
@@ -569,8 +572,8 @@ func TestResumeMergesInput(t *testing.T) {
 func TestInterruptBefore(t *testing.T) {
 	statusKey := graph.NewKey[string]("status")
 
-	g := graph.New[any, any](statusKey)
-	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(statusKey)
+	g.Node("sensitive", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(statusKey, "executed").To(graph.END)
 	}, graph.END)
 	g.InterruptBefore("sensitive")
@@ -610,8 +613,8 @@ func TestInterruptAfter(t *testing.T) {
 	statusKey := graph.NewKey[string]("status")
 	var nodeExecuted bool
 
-	g := graph.New[any, any](statusKey)
-	g.Node("action", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(statusKey)
+	g.Node("action", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		nodeExecuted = true
 		return graph.Set(statusKey, "completed").To(graph.END)
 	}, graph.END)
@@ -656,8 +659,12 @@ func TestInterruptWithApproval(t *testing.T) {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 	runID := "approval-test"
 
-	g := graph.New[any, any](statusKey)
-	g.Node("sensitive", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	nodeExecutedFlag := false
+
+	g := graph.New(statusKey)
+	g.Node("sensitive", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		nodeExecutedFlag = true
+		scope.Stream(message.NewAIMessageFromText("done"))
 		return graph.Set(statusKey, "executed").To(graph.END)
 	}, graph.END)
 	g.InterruptBefore("sensitive")
@@ -688,16 +695,13 @@ func TestInterruptWithApproval(t *testing.T) {
 		Decision:  graph.ApprovalApproved,
 		Timestamp: time.Now(),
 	}
-	var nodeExecuted bool
-	for output, err := range compiled.Resume(context.Background(), runID, graph.WithApproval("sensitive", approval)) {
+	for _, err := range compiled.Resume(context.Background(), runID, graph.WithApproval("sensitive", approval)) {
 		if err != nil {
 			t.Fatalf("Resume failed: %v", err)
 		}
-		_ = output
-		nodeExecuted = true
 	}
 
-	if !nodeExecuted {
+	if !nodeExecutedFlag {
 		t.Error("Expected node to execute when approval provided via Resume")
 	}
 }
@@ -709,8 +713,8 @@ func TestInterruptWithApproval(t *testing.T) {
 func TestNodeError(t *testing.T) {
 	expectedErr := errors.New("node execution failed")
 
-	g := graph.New[any, any]()
-	g.Node("failing", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("failing", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Fail(expectedErr)
 	}, graph.END)
 	g.Start("failing")
@@ -740,8 +744,8 @@ func TestContextCancellation(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	var executionCount atomic.Int32
 
-	g := graph.New[any, any](counterKey)
-	g.Node("slow", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("slow", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		executionCount.Add(1)
 		// Check context before doing work
 		select {
@@ -781,8 +785,8 @@ func TestMiddlewareExecution(t *testing.T) {
 	var middlewareOrder []string
 	var mu sync.Mutex
 
-	middleware1 := func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
-		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	middleware1 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			mu.Lock()
 			middlewareOrder = append(middlewareOrder, "m1-before")
 			mu.Unlock()
@@ -794,8 +798,8 @@ func TestMiddlewareExecution(t *testing.T) {
 		}
 	}
 
-	middleware2 := func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
-		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	middleware2 := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			mu.Lock()
 			middlewareOrder = append(middlewareOrder, "m2-before")
 			mu.Unlock()
@@ -807,8 +811,8 @@ func TestMiddlewareExecution(t *testing.T) {
 		}
 	}
 
-	g := graph.New[any, any]()
-	g.Node("process", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("process", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		mu.Lock()
 		middlewareOrder = append(middlewareOrder, "node")
 		mu.Unlock()
@@ -850,12 +854,12 @@ func TestWithMaxConcurrency(t *testing.T) {
 	var maxConcurrent atomic.Int32
 	var currentConcurrent atomic.Int32
 
-	g := graph.New[any, any](valueKey)
-	g.Node("init", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(valueKey)
+	g.Node("init", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To("worker1", "worker2", "worker3", "worker4")
 	}, "worker1", "worker2", "worker3", "worker4")
 
-	workerFn := func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	workerFn := func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		current := currentConcurrent.Add(1)
 		// Track max concurrent
 		for {
@@ -896,8 +900,8 @@ func TestWithMaxIterations(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	var iterations atomic.Int32
 
-	g := graph.New[any, any](counterKey)
-	g.Node("loop", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("loop", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		iterations.Add(1)
 		return graph.To("loop") // Infinite loop
 	}, "loop", graph.END)
@@ -923,11 +927,12 @@ func TestWithMaxIterations(t *testing.T) {
 // ====================
 
 func TestStreamingOutput(t *testing.T) {
-	messageKey := graph.NewListKey[string]("messages")
-
-	g := graph.New[any, string](messageKey)
-	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Set(messageKey, []string{"hello", "world"}).To(graph.END)
+	g := graph.New()
+	g.Node("emit", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		// Emit multiple messages using ReplyAll
+		msg1 := message.NewAIMessageFromText("hello")
+		msg2 := message.NewAIMessageFromText("world")
+		return graph.ReplyAll(msg1, msg2).To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -941,10 +946,10 @@ func TestStreamingOutput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
-		outputs = append(outputs, output)
+		outputs = append(outputs, output.String())
 	}
 
-	// Should yield each item in the list
+	// Should yield each message
 	if len(outputs) != 2 {
 		t.Fatalf("Expected 2 outputs, got %d: %v", len(outputs), outputs)
 	}
@@ -954,11 +959,10 @@ func TestStreamingOutput(t *testing.T) {
 }
 
 func TestStreamingWithSingleOutput(t *testing.T) {
-	resultKey := graph.NewKey[string]("result")
-
-	g := graph.New[any, string](resultKey)
-	g.Node("compute", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Set(resultKey, "done").To(graph.END)
+	g := graph.New()
+	g.Node("compute", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msg := message.NewAIMessageFromText("done")
+		return graph.Reply(msg).To(graph.END)
 	}, graph.END)
 	g.Start("compute")
 
@@ -972,7 +976,7 @@ func TestStreamingWithSingleOutput(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
-		outputs = append(outputs, output)
+		outputs = append(outputs, output.String())
 	}
 
 	if len(outputs) != 1 {
@@ -991,14 +995,14 @@ func TestListKeyAppend(t *testing.T) {
 	tagsKey := graph.NewListKey[string]("tags")
 	var capturedTags []string
 
-	g := graph.New[any, any](tagsKey)
-	g.Node("add1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(tagsKey)
+	g.Node("add1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(tagsKey, []string{"tag1", "tag2"}).To("add2")
 	}, "add2")
-	g.Node("add2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("add2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(tagsKey, []string{"tag3"}).To("read")
 	}, "read")
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedTags = graph.GetList(scope, tagsKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1030,13 +1034,12 @@ func TestListKeyAppend(t *testing.T) {
 // Input/Output Key Tests
 // ====================
 
-func TestInputKey(t *testing.T) {
-	inputKey := graph.NewKey[string]("input")
-	var capturedInput string
+func TestInputMessages(t *testing.T) {
+	var capturedMessages []message.Message
 
-	g := graph.New[string, any](inputKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
-		capturedInput = graph.Get(scope, inputKey)
+	g := graph.New()
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		capturedMessages = graph.GetMessages(scope)
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("read")
@@ -1046,14 +1049,18 @@ func TestInputKey(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	for _, err := range compiled.Run(context.Background(), "test-input") {
+	inputMsg := message.NewHumanMessageFromText("test-input")
+	for _, err := range compiled.Run(context.Background(), []message.Message{inputMsg}) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
 	}
 
-	if capturedInput != "test-input" {
-		t.Errorf("Expected 'test-input', got '%s'", capturedInput)
+	if len(capturedMessages) != 1 {
+		t.Errorf("Expected 1 message, got %d", len(capturedMessages))
+	}
+	if capturedMessages[0].String() != "test-input" {
+		t.Errorf("Expected 'test-input', got '%s'", capturedMessages[0].String())
 	}
 }
 
@@ -1064,15 +1071,15 @@ func TestInputKey(t *testing.T) {
 func TestNodeNameInScope(t *testing.T) {
 	var capturedNodeName string
 
-	middleware := func(next graph.NodeFunc[any]) graph.NodeFunc[any] {
-		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	middleware := func(next graph.NodeFunc) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			capturedNodeName = scope.NodeName()
 			return next(ctx, scope)
 		}
 	}
 
-	g := graph.New[any, any]()
-	g.Node("mynode", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New()
+	g.Node("mynode", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("mynode")
@@ -1103,14 +1110,14 @@ func TestParallelNodeExecution(t *testing.T) {
 	var executionOrder []string
 	var mu sync.Mutex
 
-	g := graph.New[any, any](resultKey)
+	g := graph.New(resultKey)
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To("parallel1", "parallel2", "parallel3")
 	}, "parallel1", "parallel2", "parallel3")
 
-	createWorker := func(name string, delay time.Duration) graph.NodeFunc[any] {
-		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	createWorker := func(name string, delay time.Duration) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			time.Sleep(delay)
 			mu.Lock()
 			executionOrder = append(executionOrder, name)
@@ -1154,11 +1161,12 @@ func TestParallelNodeExecution(t *testing.T) {
 // ====================
 
 func TestGraphCollect(t *testing.T) {
-	messageKey := graph.NewListKey[string]("messages")
-
-	g := graph.New[any, string](messageKey)
-	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Set(messageKey, []string{"a", "b", "c"}).To(graph.END)
+	g := graph.New()
+	g.Node("emit", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		scope.Stream(message.NewAIMessageFromText("a"))
+		scope.Stream(message.NewAIMessageFromText("b"))
+		scope.Stream(message.NewAIMessageFromText("c"))
+		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -1178,11 +1186,12 @@ func TestGraphCollect(t *testing.T) {
 }
 
 func TestGraphLast(t *testing.T) {
-	messageKey := graph.NewListKey[string]("messages")
-
-	g := graph.New[any, string](messageKey)
-	g.Node("emit", func(ctx context.Context, scope graph.Scope[string]) (*graph.Command, error) {
-		return graph.Set(messageKey, []string{"first", "middle", "last"}).To(graph.END)
+	g := graph.New()
+	g.Node("emit", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
+		msg1 := message.NewAIMessageFromText("first")
+		msg2 := message.NewAIMessageFromText("middle")
+		msg3 := message.NewAIMessageFromText("last")
+		return graph.ReplyAll(msg1, msg2, msg3).To(graph.END)
 	}, graph.END)
 	g.Start("emit")
 
@@ -1196,8 +1205,8 @@ func TestGraphLast(t *testing.T) {
 		t.Fatalf("Last failed: %v", err)
 	}
 
-	if result != "last" {
-		t.Errorf("Expected 'last', got '%s'", result)
+	if result.String() != "last" {
+		t.Errorf("Expected 'last', got '%s'", result.String())
 	}
 }
 
@@ -1209,11 +1218,11 @@ func TestTwoPhaseCommitProtocol(t *testing.T) {
 	counterKey := graph.NewKey[int]("counter")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
-	g := graph.New[any, any](counterKey)
-	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(counterKey)
+	g.Node("step1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(counterKey, 10).To("step2")
 	}, "step2")
-	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		counter := graph.Get(scope, counterKey)
 		return graph.Set(counterKey, counter+5).To(graph.END)
 	}, graph.END)
@@ -1252,8 +1261,8 @@ func TestResumeRequiresManagedValues(t *testing.T) {
 
 	apiKey := graph.NewManagedValue("api_key", "sk_live", graph.WithManagedValueRequired())
 
-	g := graph.New[any, any](resultKey)
-	g.Node("emit", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(resultKey)
+	g.Node("emit", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "ok").To(graph.END)
 	}, graph.END)
 	g.Start("emit")
@@ -1312,8 +1321,8 @@ func TestResumeManagedValueRehydrate(t *testing.T) {
 		}),
 	)
 
-	g := graph.New[any, any](resultKey)
-	g.Node("emit", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(resultKey)
+	g.Node("emit", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(resultKey, "ok").To(graph.END)
 	}, graph.END)
 	g.Start("emit")
@@ -1354,11 +1363,11 @@ func TestResumeManagedValueRehydrate(t *testing.T) {
 
 func TestSliceInputNotOverwrittenByNil(t *testing.T) {
 	// Test that slice inputs work correctly and don't get treated as nil
-	messagesKey := graph.NewListKey[string]("messages")
+	messagesKey := graph.NewListKey[string]("test_messages")
 	var capturedMessages []string
 
-	g := graph.New[[]string, any](messagesKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(messagesKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1369,9 +1378,10 @@ func TestSliceInputNotOverwrittenByNil(t *testing.T) {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	// Pass a non-empty slice as input
-	input := []string{"hello", "world"}
-	for _, err := range compiled.Run(context.Background(), input) {
+	// Pass initial values via WithInitialValue
+	for _, err := range compiled.Run(context.Background(), nil,
+		graph.WithInitialValue(messagesKey, []string{"hello", "world"}),
+	) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
@@ -1384,7 +1394,7 @@ func TestSliceInputNotOverwrittenByNil(t *testing.T) {
 
 func TestEmptySliceInputTreatedAsZero(t *testing.T) {
 	// Empty slices should be treated as zero value
-	messagesKey := graph.NewListKey[string]("messages")
+	messagesKey := graph.NewListKey[string]("test_messages")
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Pre-save a checkpoint with messages
@@ -1392,7 +1402,7 @@ func TestEmptySliceInputTreatedAsZero(t *testing.T) {
 		RunID:     "slice-test",
 		Superstep: 1,
 		State: map[string]any{
-			"messages": []string{"restored1", "restored2"},
+			"test_messages": []string{"restored1", "restored2"},
 		},
 		Committed: true,
 		Timestamp: time.Now(),
@@ -1403,8 +1413,8 @@ func TestEmptySliceInputTreatedAsZero(t *testing.T) {
 
 	var capturedMessages []string
 
-	g := graph.New[[]string, any](messagesKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(messagesKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1438,13 +1448,13 @@ func TestBSPSliceMergingAcrossSupersteps(t *testing.T) {
 	tagsKey := graph.NewListKey[string]("tags")
 	var finalTags []string
 
-	g := graph.New[any, any](tagsKey)
+	g := graph.New(tagsKey)
 
-	g.Node("add1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("add1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(tagsKey, []string{"a", "b"}).To("add2")
 	}, "add2")
 
-	g.Node("add2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("add2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Should see tags from previous superstep
 		existing := graph.GetList(scope, tagsKey)
 		if len(existing) != 2 {
@@ -1453,7 +1463,7 @@ func TestBSPSliceMergingAcrossSupersteps(t *testing.T) {
 		return graph.Set(tagsKey, []string{"c", "d"}).To("read")
 	}, "read")
 
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		finalTags = graph.GetList(scope, tagsKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1489,14 +1499,14 @@ func TestBSPParallelSliceAppends(t *testing.T) {
 	var finalResults []string
 	var mu sync.Mutex
 
-	g := graph.New[any, any](resultsKey)
+	g := graph.New(resultsKey)
 
-	g.Node("start", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("start", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To("worker1", "worker2", "worker3")
 	}, "worker1", "worker2", "worker3")
 
-	createWorker := func(name string) graph.NodeFunc[any] {
-		return func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	createWorker := func(name string) graph.NodeFunc {
+		return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 			return graph.Set(resultsKey, []string{name}).To("collect")
 		}
 	}
@@ -1505,7 +1515,7 @@ func TestBSPParallelSliceAppends(t *testing.T) {
 	g.Node("worker2", createWorker("w2"), "collect")
 	g.Node("worker3", createWorker("w3"), "collect")
 
-	g.Node("collect", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("collect", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		mu.Lock()
 		finalResults = graph.GetList(scope, resultsKey)
 		mu.Unlock()
@@ -1556,17 +1566,17 @@ func TestTypedSliceAppend(t *testing.T) {
 		Role    string
 		Content string
 	}
-	messagesKey := graph.NewListKey[Message]("messages")
+	messagesKey := graph.NewListKey[Message]("test_typed_messages")
 	var capturedMessages []Message
 
-	g := graph.New[any, any](messagesKey)
-	g.Node("add", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(messagesKey)
+	g.Node("add", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(messagesKey, []Message{
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "hi there"},
 		}).To("read")
 	}, "read")
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedMessages = graph.GetList(scope, messagesKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1598,11 +1608,11 @@ func TestIntSliceAppend(t *testing.T) {
 	numbersKey := graph.NewListKey[int]("numbers")
 	var capturedNumbers []int
 
-	g := graph.New[any, any](numbersKey)
-	g.Node("add", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(numbersKey)
+	g.Node("add", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(numbersKey, []int{1, 2, 3}).To("read")
 	}, "read")
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedNumbers = graph.GetList(scope, numbersKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1637,8 +1647,8 @@ func TestMapInputHandling(t *testing.T) {
 	dataKey := graph.NewKey[map[string]int]("data")
 	var capturedData map[string]int
 
-	g := graph.New[map[string]int, any](dataKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedData = graph.Get(scope, dataKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1650,7 +1660,9 @@ func TestMapInputHandling(t *testing.T) {
 	}
 
 	input := map[string]int{"a": 1, "b": 2}
-	for _, err := range compiled.Run(context.Background(), input) {
+	for _, err := range compiled.Run(context.Background(), nil,
+		graph.WithInitialValue(dataKey, input),
+	) {
 		if err != nil {
 			t.Fatalf("Run failed: %v", err)
 		}
@@ -1686,8 +1698,8 @@ func TestResumePreservesCheckpointState(t *testing.T) {
 
 	var capturedData map[string]int
 
-	g := graph.New[map[string]int, any](dataKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedData = graph.Get(scope, dataKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1735,8 +1747,8 @@ func TestRunWithNilInputOverwritesState(t *testing.T) {
 
 	var capturedData map[string]int
 
-	g := graph.New[map[string]int, any](dataKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		capturedData = graph.Get(scope, dataKey)
 		return graph.To(graph.END)
 	}, graph.END)
@@ -1783,8 +1795,8 @@ func TestCheckpointStateInjectionPrevented(t *testing.T) {
 		t.Fatalf("Failed to pre-save checkpoint: %v", err)
 	}
 
-	g := graph.New[string, any](dataKey)
-	g.Node("read", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g := graph.New(dataKey)
+	g.Node("read", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.To(graph.END)
 	}, graph.END)
 	g.Start("read")

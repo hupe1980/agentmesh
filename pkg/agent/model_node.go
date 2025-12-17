@@ -8,16 +8,18 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/model"
+	modelmw "github.com/hupe1980/agentmesh/pkg/model/middleware"
 	"github.com/hupe1980/agentmesh/pkg/schema"
 	"github.com/hupe1980/agentmesh/pkg/tool"
 )
 
 // ModelNodeConfig holds configuration for creating a model node function.
 type ModelNodeConfig struct {
-	Executor     model.Executor
-	Instructions *Instructions // Dynamic instructions (supports templates and providers)
-	Tools        []tool.Tool   // Static tools for this node
-	Toolset      tool.Toolset  // Dynamic toolset for runtime tool discovery
+	Name         string             // Executor name for identification
+	Middleware   []model.Middleware // Model middleware chain
+	Instructions *Instructions      // Dynamic instructions (supports templates and providers)
+	Tools        []tool.Tool        // Static tools for this node
+	Toolset      tool.Toolset       // Dynamic toolset for runtime tool discovery
 	OutputSchema *schema.OutputSchema
 	ToolTarget   string // Target node when tool calls are present (default: "tool")
 	Stream       bool   // Enable streaming mode for real-time output
@@ -25,6 +27,20 @@ type ModelNodeConfig struct {
 
 // ModelNodeOption configures a ModelNodeConfig.
 type ModelNodeOption func(*ModelNodeConfig)
+
+// WithModelName sets the executor name for identification in logs and tracing.
+func WithModelName(name string) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.Name = name
+	}
+}
+
+// WithModelNodeMiddleware adds middleware to the model executor chain.
+func WithModelNodeMiddleware(middleware ...model.Middleware) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.Middleware = append(c.Middleware, middleware...)
+	}
+}
 
 // WithModelInstructions sets instructions from a template string for this model node.
 // Uses Go text/template syntax - placeholders like {{.userName}} are substituted from state.
@@ -37,7 +53,7 @@ func WithModelInstructions(templateStr string) ModelNodeOption {
 
 // WithModelInstructionsFunc sets instructions from a dynamic function for this model node.
 // Use when instructions need complex logic or access to graph state beyond template substitution.
-func WithModelInstructionsFunc(f func(context.Context, message.Scope) (string, error)) ModelNodeOption {
+func WithModelInstructionsFunc(f func(context.Context, graph.Scope) (string, error)) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
 		inst := NewInstructionsFromFunc(f)
 		c.Instructions = &inst
@@ -90,12 +106,13 @@ func WithModelStreaming(enabled bool) ModelNodeOption {
 // NewModelNodeFunc creates a graph.NodeFunc that executes a model.
 //
 // The function:
+//   - Creates a model executor with the provided model and middleware
 //   - Extracts messages from state
 //   - Discovers tools from the configured Toolset (or uses static Tools)
 //   - Resolves instructions (supports templates with state placeholders)
 //   - Collects and appends tool instructions from InstructionProvider tools
 //   - Builds a Request with messages + configuration
-//   - Delegates execution to the provided Executor
+//   - Delegates execution to the executor
 //   - Routes based on tool calls in the response
 //
 // Routing logic:
@@ -104,23 +121,25 @@ func WithModelStreaming(enabled bool) ModelNodeOption {
 //
 // Example with static tools:
 //
-//	executor := model.NewExecutor(myModel, model.WithExecutorName("gpt-4"))
-//	modelFn, err := agent.NewModelNodeFunc(executor,
+//	modelFn, err := agent.NewModelNodeFunc(myModel,
+//	    agent.WithModelName("gpt-4"),
 //	    agent.WithModelInstructions("You are a helpful assistant"),
 //	    agent.WithModelTools(searchTool, calculatorTool))
 //
-// Example with dynamic instructions:
+// Example with middleware:
 //
-//	modelFn, err := agent.NewModelNodeFunc(executor,
-//	    agent.WithModelInstructions("You are helping {{.userName}}"),
+//	modelFn, err := agent.NewModelNodeFunc(myModel,
+//	    agent.WithModelNodeMiddleware(loggingMiddleware, retryMiddleware),
 //	    agent.WithModelToolset(mcpToolset))
-func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message.NodeFunc, error) {
-	if err := validate.NotNil(executor, "executor"); err != nil {
+//
+//nolint:gocyclo // Model node configuration logic; complexity is inherent to feature set
+func NewModelNodeFunc(mdl model.Model, opts ...ModelNodeOption) (graph.NodeFunc, error) {
+	if err := validate.NotNil(mdl, "model"); err != nil {
 		return nil, err
 	}
 
 	cfg := &ModelNodeConfig{
-		Executor:   executor,
+		Name:       "model",
 		ToolTarget: "tool",
 	}
 
@@ -128,7 +147,21 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message
 		opt(cfg)
 	}
 
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+	// Create executor with name
+	executor := model.NewExecutor(mdl, model.WithExecutorName(cfg.Name))
+
+	// Apply user-provided middleware first
+	if len(cfg.Middleware) > 0 {
+		executor = model.Chain(executor, cfg.Middleware...)
+	}
+
+	// Auto-add schema validation middleware if policy is enabled
+	// Runs last (closest to model) so it validates final output
+	if cfg.OutputSchema != nil && cfg.OutputSchema.Validation != nil && cfg.OutputSchema.Validation.Enabled {
+		executor = model.Chain(executor, modelmw.NewSchemaValidationMiddleware())
+	}
+
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Resolve tools: use Toolset if provided, otherwise fall back to static Tools
 		var tools []tool.Tool
 		if cfg.Toolset != nil {
@@ -162,7 +195,7 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message
 		}
 
 		// Get messages from state using type-safe key
-		messages := GetMessages(scope)
+		messages := scope.Messages()
 
 		// Build request with messages + node configuration
 		req := &model.Request{
@@ -177,7 +210,7 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message
 		// Partial chunks are streamed immediately via scope.Stream()
 		// Only the final complete message is added to state
 		var finalResp *model.Response
-		for resp, err := range cfg.Executor.Generate(ctx, req) {
+		for resp, err := range executor.Generate(ctx, req) {
 			if err != nil {
 				return graph.Fail(err)
 			}
@@ -205,9 +238,9 @@ func NewModelNodeFunc(executor model.Executor, opts ...ModelNodeOption) (message
 
 		// Route based on tool calls
 		if message.HasToolCalls(finalResp.Message) {
-			return graph.Set(MessagesKey, []message.Message{finalResp.Message}).To(cfg.ToolTarget)
+			return graph.Reply(finalResp.Message).To(cfg.ToolTarget)
 		}
 
-		return graph.Set(MessagesKey, []message.Message{finalResp.Message}).To(graph.END)
+		return graph.Reply(finalResp.Message).End()
 	}, nil
 }

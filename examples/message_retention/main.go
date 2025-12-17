@@ -17,28 +17,28 @@ func main() {
 	fmt.Println("=== Message Retention Example ===")
 
 	// Build graph that accumulates messages
-	g := graph.New[any, any](messagesKey)
+	g := graph.New(messagesKey)
 
-	g.Node("user_input", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("user_input", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [user_input] Adding user message")
 		return graph.Set(messagesKey, []string{"User: Hello, how are you?"}).To("assistant")
 	}, "assistant")
 
-	g.Node("assistant", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("assistant", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		messages := graph.GetList(scope, messagesKey)
 		fmt.Printf("  [assistant] Current history: %d messages\n", len(messages))
 		return graph.Set(messagesKey, []string{"Assistant: I'm doing well, thanks!"}).To("followup")
 	}, "followup")
 
-	g.Node("followup", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("followup", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(messagesKey, []string{"User: What can you help with?"}).To("response")
 	}, "response")
 
-	g.Node("response", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("response", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		return graph.Set(messagesKey, []string{"Assistant: I can help with many things!"}).To("show_history")
 	}, "show_history")
 
-	g.Node("show_history", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("show_history", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		messages := graph.GetList(scope, messagesKey)
 		fmt.Println("\n  Full conversation history:")
 		for i, msg := range messages {

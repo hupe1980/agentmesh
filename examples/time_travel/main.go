@@ -23,9 +23,9 @@ func main() {
 	checkpointer := checkpoint.NewInMemoryCheckpointer()
 
 	// Build multi-step workflow
-	g := graph.New[any, any](stepKey, valueKey, statusKey)
+	g := graph.New(stepKey, valueKey, statusKey)
 
-	g.Node("step1", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step1", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		fmt.Println("  [step1] Initial processing")
 		return graph.Set(stepKey, 1).
 			With(graph.SetValue(valueKey, 100)).
@@ -33,7 +33,7 @@ func main() {
 			To("step2")
 	}, "step2")
 
-	g.Node("step2", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step2", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		v := graph.Get(scope, valueKey)
 		fmt.Printf("  [step2] Processing value=%d\n", v)
 		return graph.Set(stepKey, 2).
@@ -42,7 +42,7 @@ func main() {
 			To("step3")
 	}, "step3")
 
-	g.Node("step3", func(ctx context.Context, scope graph.Scope[any]) (*graph.Command, error) {
+	g.Node("step3", func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		v := graph.Get(scope, valueKey)
 		fmt.Printf("  [step3] Final value=%d\n", v)
 		return graph.Set(stepKey, 3).

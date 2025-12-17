@@ -11,6 +11,7 @@ import (
 	"github.com/hupe1980/agentmesh/internal/chanutil"
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
 	"github.com/hupe1980/agentmesh/pkg/event"
+	"github.com/hupe1980/agentmesh/pkg/message"
 	"github.com/hupe1980/agentmesh/pkg/pregel"
 )
 
@@ -93,11 +94,11 @@ func (r *checkpointRestoreResult) reduceValue(key string, value any, reducer Red
 // Returns restored state data, pending writes, and any error that should abort execution.
 // Note: State updates (WithStateUpdates) are applied later in initializeBSPState
 // so they can use reducers for proper merging.
-func restoreCheckpoint[O any](
+func restoreCheckpoint(
 	ctx context.Context,
 	checkpointCfg CheckpointConfig,
 	runCfg *runConfig,
-	yield func(O, error) bool,
+	yield func(message.Message, error) bool,
 ) (*checkpointRestoreResult, bool) {
 	result := &checkpointRestoreResult{}
 
@@ -117,17 +118,17 @@ func restoreCheckpoint[O any](
 
 // loadAutoRestoredCheckpoint tries to restore from checkpoint if autoRestore is enabled.
 // Returns false if checkpoint loading failed and failOnCheckpointErr is true (abort execution).
-func loadAutoRestoredCheckpoint[O any](
+func loadAutoRestoredCheckpoint(
 	ctx context.Context,
 	checkpointCfg CheckpointConfig,
 	runCfg *runConfig,
 	result *checkpointRestoreResult,
-	yield func(O, error) bool,
+	yield func(message.Message, error) bool,
 ) bool {
 	chkpt, err := tryAutoRestore(ctx, checkpointCfg, runCfg)
 	if err != nil {
 		if runCfg.failOnCheckpointErr {
-			var zero O
+			var zero message.Message
 			yield(zero, fmt.Errorf("failed to load checkpoint: %w", err))
 			return false
 		}
@@ -208,28 +209,21 @@ func listManagedValueNames(desc []checkpoint.ManagedValueDescriptor, requiredOnl
 	return names
 }
 
-// applyInputToRestore writes the provided run input into the restored state
-// using the key's registered reducer for proper merge semantics.
-// Only keys with registered reducers are applied - unregistered keys are ignored.
-func applyInputToRestore[I, O any](
-	cfg *ExecutorConfig[I, O],
-	input I,
+// applyInputToRestore applies input messages to the restored state.
+func applyInputToRestore(
+	cfg *ExecutorConfig,
+	input []message.Message,
 	restoreResult *checkpointRestoreResult,
 ) {
-	key := cfg.Execution.OutputKey
-	if key == "" {
-		return
-	}
-
+	keyName := MessagesKeyName
 	// Only apply if the key has a registered reducer
-	// The reducer handles zero values if needed (e.g., SkipZeroReducer)
-	if reducer, ok := cfg.Execution.KeyRegistry[key]; ok {
-		restoreResult.reduceValue(key, input, reducer)
+	if reducer, ok := cfg.Execution.KeyRegistry[keyName]; ok {
+		restoreResult.reduceValue(keyName, input, reducer)
 	}
 }
 
 // PregelExecutor executes graphs using the Pregel BSP runtime.
-type PregelExecutor[I, O any] struct {
+type PregelExecutor struct {
 	maxWorkers int
 	maxSteps   int
 	backend    DistributedBackend
@@ -237,15 +231,15 @@ type PregelExecutor[I, O any] struct {
 
 // NewPregelExecutor creates a new Pregel executor with default settings.
 // Uses DefaultMaxWorkers (4) and DefaultMaxSteps (100).
-func NewPregelExecutor[I, O any]() *PregelExecutor[I, O] {
-	return &PregelExecutor[I, O]{
+func NewPregelExecutor() *PregelExecutor {
+	return &PregelExecutor{
 		maxWorkers: DefaultMaxWorkers,
 		maxSteps:   DefaultMaxSteps,
 	}
 }
 
 // WithMaxWorkers sets the maximum number of parallel workers.
-func (e *PregelExecutor[I, O]) WithMaxWorkers(n int) *PregelExecutor[I, O] {
+func (e *PregelExecutor) WithMaxWorkers(n int) *PregelExecutor {
 	if n > 0 {
 		e.maxWorkers = n
 	}
@@ -253,7 +247,7 @@ func (e *PregelExecutor[I, O]) WithMaxWorkers(n int) *PregelExecutor[I, O] {
 }
 
 // WithMaxSteps sets the maximum number of execution steps (iterations).
-func (e *PregelExecutor[I, O]) WithMaxSteps(maxSteps int) *PregelExecutor[I, O] {
+func (e *PregelExecutor) WithMaxSteps(maxSteps int) *PregelExecutor {
 	if maxSteps > 0 {
 		e.maxSteps = maxSteps
 	}
@@ -265,14 +259,14 @@ func (e *PregelExecutor[I, O]) WithMaxSteps(maxSteps int) *PregelExecutor[I, O] 
 // the graph to run across multiple machines without exposing Pregel concepts.
 //
 // Use NewPregelBackend() to adapt existing Pregel MessageBus implementations.
-func (e *PregelExecutor[I, O]) WithBackend(backend DistributedBackend) *PregelExecutor[I, O] {
+func (e *PregelExecutor) WithBackend(backend DistributedBackend) *PregelExecutor {
 	e.backend = backend
 	return e
 }
 
 // resultItem is a container for yielded outputs.
-type resultItem[O any] struct {
-	output O
+type resultItem struct {
+	output message.Message
 	err    error
 }
 
@@ -319,7 +313,7 @@ const (
 
 // startResultConsumer starts a goroutine that consumes results from the channel
 // and yields them sequentially. Returns a done channel that closes when the consumer exits.
-func startResultConsumer[O any](ctx context.Context, cancel context.CancelFunc, resultChan <-chan resultItem[O], yield func(O, error) bool) <-chan struct{} {
+func startResultConsumer(ctx context.Context, cancel context.CancelFunc, resultChan <-chan resultItem, yield func(message.Message, error) bool) <-chan struct{} {
 	yieldDone := make(chan struct{})
 	go func() {
 		defer close(yieldDone)
@@ -344,11 +338,11 @@ func startResultConsumer[O any](ctx context.Context, cancel context.CancelFunc, 
 }
 
 // buildRuntimeOptions constructs the Pregel runtime options with event callbacks.
-func buildRuntimeOptions[I, O any](
-	e *PregelExecutor[I, O],
+func buildRuntimeOptions(
+	e *PregelExecutor,
 	runCfg *runConfig,
-	adapter *pregelGraphAdapter[I, O],
-) []pregel.RuntimeOption[*ExecutorConfig[I, O], Updates] {
+	adapter *pregelGraphAdapter,
+) []pregel.RuntimeOption[*ExecutorConfig, Updates] {
 	maxWorkers := e.maxWorkers
 	if runCfg.maxConcurrency > 0 {
 		maxWorkers = runCfg.maxConcurrency
@@ -359,10 +353,10 @@ func buildRuntimeOptions[I, O any](
 		maxSteps = runCfg.maxIterations
 	}
 
-	opts := []pregel.RuntimeOption[*ExecutorConfig[I, O], Updates]{
-		pregel.WithMaxWorkers[*ExecutorConfig[I, O], Updates](maxWorkers),
-		pregel.WithMaxIterations[*ExecutorConfig[I, O], Updates](maxSteps),
-		pregel.WithOnSuperstepStart[*ExecutorConfig[I, O], Updates](
+	opts := []pregel.RuntimeOption[*ExecutorConfig, Updates]{
+		pregel.WithMaxWorkers[*ExecutorConfig, Updates](maxWorkers),
+		pregel.WithMaxIterations[*ExecutorConfig, Updates](maxSteps),
+		pregel.WithOnSuperstepStart[*ExecutorConfig, Updates](
 			func(ctx context.Context, superstep int64, frontier pregel.FrontierInfo) error {
 				// Track current superstep for interrupt checkpoints
 				adapter.superstep = int(superstep)
@@ -378,7 +372,7 @@ func buildRuntimeOptions[I, O any](
 				return nil
 			},
 		),
-		pregel.WithOnSuperstepComplete[*ExecutorConfig[I, O], Updates](
+		pregel.WithOnSuperstepComplete[*ExecutorConfig, Updates](
 			func(ctx context.Context, superstep int64) error {
 				if err := adapter.twoPhaseCommit(ctx, superstep); err != nil {
 					return err
@@ -397,7 +391,7 @@ func buildRuntimeOptions[I, O any](
 	// Convert graph-layer backend to Pregel MessageBus internally
 	if e.backend != nil {
 		bus := &backendToMessageBusAdapter{backend: e.backend}
-		opts = append(opts, pregel.WithMessageBus[*ExecutorConfig[I, O]](bus))
+		opts = append(opts, pregel.WithMessageBus[*ExecutorConfig](bus))
 	}
 
 	return opts
@@ -424,7 +418,7 @@ func publishCompletionEvent(ctx context.Context, runID string, runtimeErr error)
 // initializeBSPState creates and configures the BSP state manager from restore result.
 // Handles managed values rehydration, state validation, pending writes recovery,
 // and state updates from WithStateUpdates (applied via reducers for proper merging).
-func initializeBSPState[O any](
+func initializeBSPState(
 	ctx context.Context,
 	restoreResult *checkpointRestoreResult,
 	runCfg *runConfig,
@@ -640,31 +634,31 @@ func rehydrateManagedValues(ctx context.Context, managedValues []checkpoint.Mana
 }
 
 // executionContext holds runtime context for graph execution.
-type executionContext[I, O any] struct {
+type executionContext struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
-	cfg        *ExecutorConfig[I, O]
+	cfg        *ExecutorConfig
 	runCfg     *runConfig
-	resultChan chan resultItem[O]
+	resultChan chan resultItem
 	yieldDone  <-chan struct{}
 }
 
 // createPregelAdapter creates the graph adapter for the Pregel runtime.
-func createPregelAdapter[I, O any](
-	execCtx *executionContext[I, O],
+func createPregelAdapter(
+	execCtx *executionContext,
 	bspState *BSPState,
-) *pregelGraphAdapter[I, O] {
+) *pregelGraphAdapter {
 	// Thread-safe yield function that sends to channel instead of calling yield directly
-	safeYield := func(output O, err error) bool {
+	safeYield := func(output message.Message, err error) bool {
 		select {
-		case execCtx.resultChan <- resultItem[O]{output: output, err: err}:
+		case execCtx.resultChan <- resultItem{output: output, err: err}:
 			return true
 		case <-execCtx.ctx.Done():
 			return false
 		}
 	}
 
-	return &pregelGraphAdapter[I, O]{
+	return &pregelGraphAdapter{
 		cfg:                execCtx.cfg,
 		runCfg:             execCtx.runCfg,
 		bspState:           bspState,
@@ -676,10 +670,10 @@ func createPregelAdapter[I, O any](
 }
 
 // runPregelRuntime creates and executes the Pregel runtime.
-func runPregelRuntime[I, O any](
-	execCtx *executionContext[I, O],
-	e *PregelExecutor[I, O],
-	adapter *pregelGraphAdapter[I, O],
+func runPregelRuntime(
+	execCtx *executionContext,
+	e *PregelExecutor,
+	adapter *pregelGraphAdapter,
 ) error {
 	// Build runtime options with event publishing callbacks
 	runtimeOpts := buildRuntimeOptions(e, execCtx.runCfg, adapter)
@@ -708,7 +702,7 @@ func runPregelRuntime[I, O any](
 		if err != nil {
 			runtimeErr = err
 			select {
-			case execCtx.resultChan <- resultItem[O]{output: *new(O), err: err}:
+			case execCtx.resultChan <- resultItem{err: err}:
 			case <-execCtx.ctx.Done():
 			}
 		}
@@ -718,8 +712,8 @@ func runPregelRuntime[I, O any](
 }
 
 // Run executes the graph using the Pregel BSP runtime.
-func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O], input I, opts ...runOption) iter.Seq2[O, error] {
-	return func(yield func(O, error) bool) {
+func (e *PregelExecutor) Run(ctx context.Context, cfg *ExecutorConfig, input []message.Message, opts ...runOption) iter.Seq2[message.Message, error] {
+	return func(yield func(message.Message, error) bool) {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
@@ -749,9 +743,9 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 		}
 
 		// Initialize BSP state with managed values, pending writes, and key registry
-		bspState, err := initializeBSPState[O](ctx, restoreResult, runCfg, cfg.Execution.KeyRegistry)
+		bspState, err := initializeBSPState(ctx, restoreResult, runCfg, cfg.Execution.KeyRegistry)
 		if err != nil {
-			var zero O
+			var zero message.Message
 			yield(zero, err)
 			return
 		}
@@ -759,16 +753,16 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 		// Apply approvals to state and save new checkpoint
 		// This happens BEFORE running, so the interrupt check sees the approvals in state
 		if err := applyApprovalsAndCheckpoint(ctx, bspState, runCfg, cfg.Checkpoint); err != nil {
-			var zero O
+			var zero message.Message
 			yield(zero, err)
 			return
 		}
 
-		resultChan := make(chan resultItem[O], DefaultResultChanSize)
+		resultChan := make(chan resultItem, DefaultResultChanSize)
 		yieldDone := startResultConsumer(ctx, cancel, resultChan, yield)
 
 		// Build execution context
-		execCtx := &executionContext[I, O]{
+		execCtx := &executionContext{
 			ctx:        ctx,
 			cancel:     cancel,
 			cfg:        cfg,
@@ -791,12 +785,12 @@ func (e *PregelExecutor[I, O]) Run(ctx context.Context, cfg *ExecutorConfig[I, O
 }
 
 // pregelGraphAdapter adapts ExecutorConfig to the pregel.Graph interface.
-type pregelGraphAdapter[I, O any] struct {
-	cfg            *ExecutorConfig[I, O]
+type pregelGraphAdapter struct {
+	cfg            *ExecutorConfig
 	runCfg         *runConfig
-	bspState       *BSPState           // BSP-compliant state with read snapshots and write buffering
-	safeYield      func(O, error) bool // Thread-safe yield via channel
-	nodeMiddleware []NodeMiddleware[O]
+	bspState       *BSPState                         // BSP-compliant state with read snapshots and write buffering
+	safeYield      func(message.Message, error) bool // Thread-safe yield via channel
+	nodeMiddleware []NodeMiddleware
 
 	superstep          int
 	checkpointInterval int
@@ -804,7 +798,7 @@ type pregelGraphAdapter[I, O any] struct {
 
 // RootVertices returns the starting vertices for execution.
 // When resuming from an interrupt, returns the paused nodes instead of entry points.
-func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
+func (a *pregelGraphAdapter) RootVertices() []string {
 	if len(a.runCfg.pausedNodes) > 0 {
 		return a.runCfg.pausedNodes
 	}
@@ -812,7 +806,7 @@ func (a *pregelGraphAdapter[I, O]) RootVertices() []string {
 }
 
 // Outgoing returns the target nodes for a given node.
-func (a *pregelGraphAdapter[I, O]) Outgoing(vertex string) []string {
+func (a *pregelGraphAdapter) Outgoing(vertex string) []string {
 	if node, ok := a.cfg.Execution.Nodes[vertex]; ok {
 		return node.Targets
 	}
@@ -820,80 +814,50 @@ func (a *pregelGraphAdapter[I, O]) Outgoing(vertex string) []string {
 }
 
 // VertexByName returns a vertex adapter for the given node.
-func (a *pregelGraphAdapter[I, O]) VertexByName(name string) pregel.Vertex[*ExecutorConfig[I, O], Updates] {
-	return &pregelVertexAdapter[I, O]{
+func (a *pregelGraphAdapter) VertexByName(name string) pregel.Vertex[*ExecutorConfig, Updates] {
+	return &pregelVertexAdapter{
 		name:    name,
 		adapter: a,
 	}
 }
 
 // State returns the executor configuration.
-func (a *pregelGraphAdapter[I, O]) State() *ExecutorConfig[I, O] {
+func (a *pregelGraphAdapter) State() *ExecutorConfig {
 	return a.cfg
 }
 
-func (a *pregelGraphAdapter[I, O]) managedValueDescriptors() []checkpoint.ManagedValueDescriptor {
+func (a *pregelGraphAdapter) managedValueDescriptors() []checkpoint.ManagedValueDescriptor {
 	if a.runCfg.managedValues == nil {
 		return nil
 	}
 	return a.runCfg.managedValues.descriptors()
 }
 
-// yieldListItems yields each item in a slice as an output.
-// If the value is not a slice (e.g., streaming single items from a ListKey),
-// it yields the single value directly.
-// Uses IterFn from KeyRegistry when available to avoid reflection.
+// yieldMessages yields each message from a slice of messages.
 // Lock-free: uses buffered channel for thread-safe parallel node execution.
-func (a *pregelGraphAdapter[I, O]) yieldListItems(items any) {
-	// Use IterFn from KeyRegistry (generated at build time with full type info)
-	// This handles: direct type assertion, SliceValue interface, and reflection fallback
-	if a.cfg.Execution.OutputKey != "" {
-		if rf, ok := a.cfg.Execution.KeyRegistry[a.cfg.Execution.OutputKey]; ok && rf.IterFn != nil {
-			rf.IterFn(items, func(item any) bool {
-				if o, ok := item.(O); ok {
-					return a.safeYield(o, nil)
-				}
-				return true
-			})
+func (a *pregelGraphAdapter) yieldMessages(messages []message.Message) {
+	for _, msg := range messages {
+		if !a.safeYield(msg, nil) {
 			return
 		}
 	}
-
-	// Fallback for keys without IterFn: yield as single value
-	a.yieldValue(items)
 }
 
-// yieldValue yields a single value as output.
-// Lock-free: uses buffered channel for thread-safe parallel node execution.
-func (a *pregelGraphAdapter[I, O]) yieldValue(val any) {
-	if o, ok := val.(O); ok {
-		a.safeYield(o, nil)
-	}
-}
-
-// yieldUpdates yields output values from updates if the output key is present.
-// Uses the OutputIsSlice flag determined at graph build time to avoid runtime reflection.
-func (a *pregelGraphAdapter[I, O]) yieldUpdates(updates Updates) {
-	if a.cfg.Execution.OutputKey == "" {
-		return
-	}
-
-	val, ok := updates[a.cfg.Execution.OutputKey]
+// yieldUpdates yields messages from updates if the messages key is present.
+func (a *pregelGraphAdapter) yieldUpdates(updates Updates) {
+	val, ok := updates[MessagesKeyName]
 	if !ok {
 		return
 	}
 
-	// Use build-time flag instead of runtime isSlice() check
-	if a.cfg.Execution.OutputIsSlice {
-		a.yieldListItems(val)
-	} else {
-		a.yieldValue(val)
+	if msgs, ok := val.([]message.Message); ok {
+		a.yieldMessages(msgs)
 	}
 }
 
 // checkInterrupt checks if an interrupt is needed and returns an error if so.
 // When an interrupt occurs, a checkpoint is saved with the paused node information.
-func (a *pregelGraphAdapter[I, O]) checkInterrupt(
+func (a *pregelGraphAdapter) checkInterrupt(
 	ctx context.Context,
 	nodeName string,
 	icfg *interruptConfig,
@@ -923,7 +887,7 @@ func (a *pregelGraphAdapter[I, O]) checkInterrupt(
 
 // saveInterruptCheckpoint saves a checkpoint when an interrupt occurs.
 // This captures the current state and marks which node is paused.
-func (a *pregelGraphAdapter[I, O]) saveInterruptCheckpoint(ctx context.Context, pausedNode string) {
+func (a *pregelGraphAdapter) saveInterruptCheckpoint(ctx context.Context, pausedNode string) {
 	checkpointerEnabled := a.cfg.Checkpoint.Checkpointer != nil
 	runID := a.runCfg.runID
 	if runID == "" {
@@ -951,7 +915,7 @@ func (a *pregelGraphAdapter[I, O]) saveInterruptCheckpoint(ctx context.Context, 
 }
 
 // getApprovalsFromState retrieves the approvals map from BSP state.
-func (a *pregelGraphAdapter[I, O]) getApprovalsFromState() map[string]*ApprovalResponse {
+func (a *pregelGraphAdapter) getApprovalsFromState() map[string]*ApprovalResponse {
 	view := a.bspState.ReadView()
 	if approvals, ok := view.GetValue(ApprovalsKey); ok {
 		if approvalsMap, ok := approvals.(map[string]*ApprovalResponse); ok {
@@ -962,20 +926,20 @@ func (a *pregelGraphAdapter[I, O]) getApprovalsFromState() map[string]*ApprovalR
 }
 
 // pregelVertexAdapter adapts a node to the pregel.Vertex interface.
-type pregelVertexAdapter[I, O any] struct {
+type pregelVertexAdapter struct {
 	name    string
-	adapter *pregelGraphAdapter[I, O]
+	adapter *pregelGraphAdapter
 }
 
 // Name returns the vertex name.
-func (v *pregelVertexAdapter[I, O]) Name() string {
+func (v *pregelVertexAdapter) Name() string {
 	return v.name
 }
 
 // Run executes the vertex computation.
-func (v *pregelVertexAdapter[I, O]) Run(
+func (v *pregelVertexAdapter) Run(
 	ctx context.Context,
-	vctx pregel.VertexContext[*ExecutorConfig[I, O], Updates],
+	vctx pregel.VertexContext[*ExecutorConfig, Updates],
 	incoming []pregel.Message[Updates],
 ) error {
 	node, ok := v.adapter.cfg.Execution.Nodes[v.name]
@@ -1034,7 +998,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 
 	// Create scope with typed streaming capability
 	// Stream function yields partial values directly to output (e.g., LLM chunks, tool progress)
-	streamFn := func(value O) {
+	streamFn := func(value message.Message) {
 		// Publish node stream event for observability
 		event.Publish(ctx, event.Event{
 			Type:      event.EventNodeStream,
@@ -1099,7 +1063,7 @@ func (v *pregelVertexAdapter[I, O]) Run(
 // This ensures crash recovery can either:
 //   - Re-apply pending writes if crash occurred before barrier (Committed=false)
 //   - Skip writes if crash occurred after barrier (Committed=true)
-func (a *pregelGraphAdapter[I, O]) twoPhaseCommit(ctx context.Context, superstep int64) error {
+func (a *pregelGraphAdapter) twoPhaseCommit(ctx context.Context, superstep int64) error {
 	// Check if checkpointing is configured
 	checkpointerEnabled := a.cfg.Checkpoint.Checkpointer != nil
 	runID := a.runCfg.runID

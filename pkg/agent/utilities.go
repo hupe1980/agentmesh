@@ -5,43 +5,6 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
-// MessagesKey is the standard key for storing conversation messages in agent state.
-// This is an alias to message.MessagesKey for convenient use in the agent package.
-var MessagesKey = message.MessagesKey
-
-// GetMessages retrieves the message history from a Scope.
-// Returns an empty slice if no messages exist.
-//
-// This is a convenience wrapper around graph.GetList for use in agent code.
-//
-// Example:
-//
-//	messages := agent.GetMessages(scope)
-//	for _, msg := range messages {
-//	    fmt.Println(msg.Content())
-//	}
-func GetMessages(scope message.Scope) []message.Message {
-	return graph.GetList(scope, MessagesKey)
-}
-
-// LastMessage returns the last message from the history, or nil if empty.
-//
-// This is a convenience wrapper for use in agent code.
-//
-// Example:
-//
-//	lastMsg := agent.LastMessage(scope)
-//	if lastMsg != nil {
-//	    fmt.Println("Last:", lastMsg.Content())
-//	}
-func LastMessage(scope message.Scope) message.Message {
-	msgs := GetMessages(scope)
-	if len(msgs) == 0 {
-		return nil
-	}
-	return msgs[len(msgs)-1]
-}
-
 // IsConversationalContext checks if the current execution has conversation history.
 // Returns true if query rephrasing or context-aware processing would be beneficial.
 //
@@ -57,8 +20,8 @@ func LastMessage(scope message.Scope) message.Message {
 //	} else {
 //	    // Handle as standalone query
 //	}
-func IsConversationalContext(scope message.Scope) bool {
-	msgs := GetMessages(scope)
+func IsConversationalContext(scope graph.Scope) bool {
+	msgs := scope.Messages()
 
 	// Count human and AI messages to detect conversation
 	humanCount := 0

@@ -21,6 +21,80 @@ var DocumentsKey = graph.NewKey[[]string]("documents")
 // This is set by the rephrase node when query rephrasing is enabled.
 var RephrasedQueryKey = graph.NewKey[string]("rephrased_query")
 
+// GroundingMode defines how strictly the model should ground responses.
+type GroundingMode int
+
+const (
+	// GroundingStrict requires all claims to be directly from documents.
+	// Model will refuse to answer if information isn't in the context.
+	// This is the default mode.
+	GroundingStrict GroundingMode = iota
+
+	// GroundingGuided prefers document information but allows inferences.
+	// Model clearly distinguishes sourced facts from inferences.
+	GroundingGuided
+
+	// GroundingCitation requires inline citations for all claims.
+	// Enables source attribution but allows some inference.
+	GroundingCitation
+
+	// GroundingNone disables grounding prompts entirely.
+	// The model can use any knowledge to answer questions.
+	GroundingNone
+)
+
+// CitationStyle defines how citations are formatted in responses.
+type CitationStyle int
+
+const (
+	// CitationBracket uses bracket notation: [1], [2]
+	CitationBracket CitationStyle = iota
+
+	// CitationSuperscript uses superscript notation: ¹, ²
+	CitationSuperscript
+
+	// CitationParenthetical uses parenthetical notation: (1), (2)
+	CitationParenthetical
+)
+
+// citationFormats maps citation styles to their format strings.
+var citationFormats = map[CitationStyle]struct {
+	format  string // Format for citations, e.g., "[%d]"
+	example string // Example showing the style in use
+}{
+	CitationBracket:       {format: "[%d]", example: "The capital of France is Paris [1]. It has a population of over 2 million [2]."},
+	CitationSuperscript:   {format: "⁽%d⁾", example: "The capital of France is Paris⁽¹⁾. It has a population of over 2 million⁽²⁾."},
+	CitationParenthetical: {format: "(%d)", example: "The capital of France is Paris (1). It has a population of over 2 million (2)."},
+}
+
+// groundingPromptTemplates contains the default prompt templates for each grounding mode.
+var groundingPromptTemplates = map[GroundingMode]*prompt.Template{
+	GroundingStrict: prompt.New(`STRICT GROUNDING RULES:
+1. ONLY use information explicitly stated in the documents above
+2. If the answer is not in the documents, say: "Based on the provided documents, I cannot answer this question."
+3. Do NOT use any prior knowledge or make assumptions
+4. Do NOT infer or extrapolate beyond what is directly stated
+5. If partially answerable, answer what you can and state what's missing`),
+
+	GroundingGuided: prompt.New(`GROUNDING GUIDELINES:
+1. Prefer information directly from the documents above
+2. Clearly distinguish between:
+   - Facts from documents: "According to the documents..."
+   - Reasonable inferences: "Based on this, it seems..."
+   - General knowledge: "Generally speaking..."
+3. When documents are insufficient, acknowledge limitations
+4. Always prioritize accuracy over completeness`),
+
+	GroundingCitation: prompt.New(`CITATION RULES:
+1. Include a citation {{.CitationFormat}} after each factual claim from the documents above
+2. Citations reference the document number in order of appearance
+3. If making an inference, prefix with "Based on {{.CitationFormat}}..."
+4. At the end, optionally list sources if helpful
+5. If information isn't in documents, say so without citation
+
+Example: "{{.CitationExample}}"`),
+}
+
 // extractUserQuery finds the last human message text from messages.
 func extractUserQuery(messages []message.Message) (string, error) {
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -54,11 +128,14 @@ Standalone question:`)
 
 // createRephraseNode creates a node that rephrases queries in conversational contexts.
 // It automatically detects if conversation history exists and skips rephrasing for standalone queries.
-func createRephraseNode(executor model.Executor, rephrasePrompt *prompt.Template) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+func createRephraseNode(mdl model.Model, rephrasePrompt *prompt.Template) graph.NodeFunc {
+	// Create a simple executor for rephrasing (no middleware needed)
+	executor := model.NewExecutor(mdl, model.WithExecutorName("rag-rephrase"))
+
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		logger := logging.FromContext(ctx)
 
-		msgs := GetMessages(scope)
+		msgs := scope.Messages()
 		if len(msgs) == 0 {
 			return graph.Fail(ErrNoQueryMessages)
 		}
@@ -118,14 +195,14 @@ func createRephraseNode(executor model.Executor, rephrasePrompt *prompt.Template
 }
 
 // createRetrieveNode creates the retrieval node for fetching relevant documents.
-func createRetrieveNode(retriever retrieval.Retriever) message.NodeFunc {
-	return func(ctx context.Context, scope message.Scope) (*graph.Command, error) {
+func createRetrieveNode(retriever retrieval.Retriever) graph.NodeFunc {
+	return func(ctx context.Context, scope graph.Scope) (*graph.Command, error) {
 		// Check for rephrased query first (set by rephrase node)
 		query := graph.Get(scope, RephrasedQueryKey)
 
 		// Fall back to extracting from messages if no rephrased query
 		if query == "" {
-			msgs := GetMessages(scope)
+			msgs := scope.Messages()
 			if len(msgs) == 0 {
 				return graph.Fail(ErrNoQueryMessages)
 			}
@@ -142,39 +219,80 @@ func createRetrieveNode(retriever retrieval.Retriever) message.NodeFunc {
 			return graph.Fail(fmt.Errorf("agent/rag: retrieval failed: %w", err))
 		}
 
-		return graph.Set(DocumentsKey, extractDocumentContent(docs)).To("generate")
+		docStrings := extractDocumentContent(docs)
+
+		return graph.Set(DocumentsKey, docStrings).To("generate")
 	}
 }
 
 // createRAGInstructionsFunc creates a dynamic instructions function that combines
-// user instructions with document context retrieved from state.
-func createRAGInstructionsFunc(config ragOptions) func(context.Context, message.Scope) (string, error) {
-	return func(ctx context.Context, scope message.Scope) (string, error) {
-		var instructions string
+// user instructions, document context, and grounding prompts.
+// Order: 1) User instructions, 2) Documents, 3) Grounding rules (last for emphasis)
+func createRAGInstructionsFunc(config ragOptions) func(context.Context, graph.Scope) (string, error) {
+	// Pre-render citation format for the grounding prompt
+	citationInfo := citationFormats[config.citationStyle]
 
-		// First resolve base instructions if configured
+	return func(ctx context.Context, scope graph.Scope) (string, error) {
+		var sb strings.Builder
+
+		// 1. Add user instructions first (persona/task definition)
 		if config.instructions != nil {
-			var err error
-			instructions, err = config.instructions.Resolve(ctx, scope)
+			instructions, err := config.instructions.Resolve(ctx, scope)
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve instructions: %w", err)
 			}
+			sb.WriteString(instructions)
+			sb.WriteString("\n\n")
 		}
 
-		// Add document context if documents exist
+		// 2. Add document context (the source material)
 		docs := graph.Get(scope, DocumentsKey)
 		if len(docs) > 0 {
-			contextText := config.contextPrompt.MustRender(map[string]any{
-				"Documents": docs,
-			})
-			if instructions != "" {
-				instructions = instructions + "\n\n" + contextText
+			// Use numbered format for citation mode, simple format otherwise
+			if config.groundingMode == GroundingCitation {
+				sb.WriteString("CONTEXT DOCUMENTS:\n")
+				for i, doc := range docs {
+					fmt.Fprintf(&sb, "\n[Document %d]\n%s\n", i+1, doc)
+				}
 			} else {
-				instructions = contextText
+				contextText := config.contextPrompt.MustRender(map[string]any{
+					"Documents": docs,
+				})
+				sb.WriteString(contextText)
 			}
+			sb.WriteString("\n")
 		}
 
-		return instructions, nil
+		// 3. Add grounding prompt last (rules enforcement - recency bias)
+		//nolint:nestif // Conditional grounding logic requires nested structure
+		if config.groundingMode != GroundingNone {
+			var groundingText string
+			var err error
+
+			templateData := map[string]any{
+				"CitationFormat":  fmt.Sprintf(citationInfo.format, 'n'),
+				"CitationExample": citationInfo.example,
+			}
+
+			if config.groundingPrompt != "" {
+				// Render custom grounding prompt as template
+				customTmpl := prompt.New(config.groundingPrompt)
+				groundingText, err = customTmpl.Render(templateData)
+				if err != nil {
+					return "", fmt.Errorf("failed to render custom grounding prompt: %w", err)
+				}
+			} else {
+				// Render default grounding prompt template
+				tmpl := groundingPromptTemplates[config.groundingMode]
+				groundingText, err = tmpl.Render(templateData)
+				if err != nil {
+					return "", fmt.Errorf("failed to render grounding prompt: %w", err)
+				}
+			}
+			sb.WriteString(groundingText)
+		}
+
+		return sb.String(), nil
 	}
 }
 
@@ -193,7 +311,7 @@ func createRAGInstructionsFunc(config ragOptions) func(context.Context, message.
 //	    o.NumDocuments = 5
 //	})
 //	agent, err := agent.NewRAG(model, retriever)
-func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*message.Graph, error) {
+func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (*graph.Graph, error) {
 	if err := validate.All(
 		validate.NotNil(mdl, "model"),
 		validate.NotNil(retriever, "retriever"),
@@ -206,16 +324,16 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 		opt.applyRAG(&config)
 	}
 
-	// Create model executor with middleware
-	modelExecutor := model.NewExecutor(mdl, model.WithExecutorName("rag-model"))
-	if len(config.modelMiddleware) > 0 {
-		modelExecutor = model.Chain(modelExecutor, config.modelMiddleware...)
-	}
-
 	// Build model node options
 	modelNodeOpts := []ModelNodeOption{
+		WithModelName("rag-model"),
 		WithModelInstructionsFunc(createRAGInstructionsFunc(config)),
 		WithModelStreaming(config.streaming),
+	}
+
+	// Add middleware if configured
+	if len(config.modelMiddleware) > 0 {
+		modelNodeOpts = append(modelNodeOpts, WithModelNodeMiddleware(config.modelMiddleware...))
 	}
 
 	// Add output schema if configured
@@ -224,13 +342,13 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 	}
 
 	// Create model node function using the shared ModelNodeFunc
-	modelFn, err := NewModelNodeFunc(modelExecutor, modelNodeOpts...)
+	modelFn, err := NewModelNodeFunc(mdl, modelNodeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("agent/rag: create model node: %w", err)
 	}
 
-	// Build graph - MessagesKey is automatically included by message.NewGraphBuilder
-	b := message.NewGraphBuilder(DocumentsKey, RephrasedQueryKey)
+	// Build graph - MessagesKey is automatically included by graph.New
+	b := graph.New(DocumentsKey, RephrasedQueryKey)
 
 	// Include rephrase node by default - it auto-skips when no conversation history exists
 	// Graph structure with rephrasing: START → rephrase → retrieve → generate → END
@@ -240,7 +358,7 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 		b.Node("generate", modelFn, graph.END)
 		b.Start("retrieve")
 	} else {
-		b.Node("rephrase", createRephraseNode(modelExecutor, config.rephrasePrompt), "retrieve")
+		b.Node("rephrase", createRephraseNode(mdl, config.rephrasePrompt), "retrieve")
 		b.Node("retrieve", createRetrieveNode(retriever), "generate")
 		b.Node("generate", modelFn, graph.END)
 		b.Start("rephrase")
@@ -262,9 +380,12 @@ func NewRAG(mdl model.Model, retriever retrieval.Retriever, opts ...RAGOption) (
 // ragOptions holds configuration for RAG agents.
 type ragOptions struct {
 	commonOptions
-	contextPrompt  *prompt.Template // Prompt for formatting retrieved documents
-	rephrasePrompt *prompt.Template // Prompt for rephrasing queries in conversations
-	skipRephrasing bool             // Disable automatic query rephrasing
+	contextPrompt   *prompt.Template // Prompt for formatting retrieved documents
+	rephrasePrompt  *prompt.Template // Prompt for rephrasing queries in conversations
+	skipRephrasing  bool             // Disable automatic query rephrasing
+	groundingMode   GroundingMode    // Grounding mode (default: GroundingStrict)
+	groundingPrompt string           // Custom grounding prompt (overrides default)
+	citationStyle   CitationStyle    // Citation format for GroundingCitation mode
 }
 
 func defaultRAGOptions() ragOptions {
@@ -284,8 +405,11 @@ func defaultRAGOptions() ragOptions {
 			modelMiddleware: nil,
 			toolMiddleware:  nil,
 		},
-		contextPrompt:  contextTmpl,
-		rephrasePrompt: defaultRephrasePrompt,
+		contextPrompt:   contextTmpl,
+		rephrasePrompt:  defaultRephrasePrompt,
+		groundingMode:   GroundingStrict, // Grounding enabled by default
+		groundingPrompt: "",
+		citationStyle:   CitationBracket, // Default citation style
 	}
 }
 
@@ -337,5 +461,83 @@ func WithRephrasePrompt(tmpl *prompt.Template) RAGOption {
 		if tmpl != nil {
 			c.rephrasePrompt = tmpl
 		}
+	})
+}
+
+// WithGroundingMode sets the grounding mode for RAG responses.
+// By default, GroundingStrict is used which requires all claims to be from documents.
+//
+// Available modes:
+//   - GroundingStrict: Only answer from provided documents (default)
+//   - GroundingGuided: Prefer documents but allow general knowledge
+//   - GroundingCitation: Require inline citations for all claims
+//   - GroundingNone: Disable grounding prompts entirely
+//
+// Example:
+//
+//	ragAgent, _ := agent.NewRAG(model, retriever,
+//	    agent.WithGroundingMode(agent.GroundingGuided),
+//	)
+func WithGroundingMode(mode GroundingMode) RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		c.groundingMode = mode
+	})
+}
+
+// WithoutGrounding disables grounding prompts entirely.
+// This is a shorthand for WithGroundingMode(GroundingNone).
+//
+// Use this when you want the model to use any knowledge to answer,
+// not just the retrieved documents.
+//
+// Example:
+//
+//	ragAgent, _ := agent.NewRAG(model, retriever,
+//	    agent.WithoutGrounding(),
+//	)
+func WithoutGrounding() RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		c.groundingMode = GroundingNone
+	})
+}
+
+// WithGroundingPrompt sets a custom grounding prompt.
+// This overrides the default prompt for the selected grounding mode.
+//
+// The prompt is rendered as a template with the following variables:
+//   - {{.CitationFormat}}: The citation format string (e.g., "[n]", "(n)")
+//   - {{.CitationExample}}: An example sentence with citations
+//
+// Note: When using a custom prompt, you have full control over grounding behavior.
+// The groundingMode still affects document formatting (numbered for citation mode).
+//
+// Example:
+//
+//	ragAgent, _ := agent.NewRAG(model, retriever,
+//	    agent.WithGroundingPrompt("Use citations {{.CitationFormat}} for all claims..."),
+//	)
+func WithGroundingPrompt(prompt string) RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		c.groundingPrompt = prompt
+	})
+}
+
+// WithCitationStyle sets the citation format for GroundingCitation mode.
+// This affects how citations appear in the model's responses.
+//
+// Available styles:
+//   - CitationBracket: [1], [2] (default)
+//   - CitationSuperscript: ⁽¹⁾, ⁽²⁾
+//   - CitationParenthetical: (1), (2)
+//
+// Example:
+//
+//	ragAgent, _ := agent.NewRAG(model, retriever,
+//	    agent.WithGroundingMode(agent.GroundingCitation),
+//	    agent.WithCitationStyle(agent.CitationSuperscript),
+//	)
+func WithCitationStyle(style CitationStyle) RAGOption {
+	return ragOptionFunc(func(c *ragOptions) {
+		c.citationStyle = style
 	})
 }

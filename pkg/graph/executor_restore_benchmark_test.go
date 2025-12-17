@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hupe1980/agentmesh/pkg/checkpoint"
+	"github.com/hupe1980/agentmesh/pkg/message"
 )
 
 func BenchmarkRestoreCheckpoint10KKeys(b *testing.B) {
@@ -16,7 +17,7 @@ func BenchmarkRestoreCheckpoint10KKeys(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ any, _ error) bool { return true })
+		res, ok := restoreCheckpoint(ctx, checkpointCfg, runCfg, func(_ message.Message, _ error) bool { return true })
 		if !ok {
 			b.Fatal("restore aborted unexpectedly")
 		}

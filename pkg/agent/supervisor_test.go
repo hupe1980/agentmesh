@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/hupe1980/agentmesh/pkg/message"
+	"github.com/hupe1980/agentmesh/pkg/graph"
 	"github.com/hupe1980/agentmesh/pkg/testutil"
 )
 
@@ -122,7 +122,7 @@ func TestGenerateDefaultSupervisorInstructions(t *testing.T) {
 }
 
 // createMockWorker creates a simple mock worker agent for testing
-func createMockWorker(expertise string) (*message.Graph, error) {
+func createMockWorker(expertise string) (*graph.Graph, error) {
 	mockModel := testutil.NewModelBuilder().
 		WithResponse("worker response: " + expertise).
 		Build()
