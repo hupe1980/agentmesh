@@ -14,6 +14,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	// defaultCollectionInitTimeout is the timeout for collection initialization operations.
+	// This includes creating collections and ensuring they exist during store setup.
+	// 10 seconds provides sufficient time for typical collection creation operations
+	// while failing fast enough to detect connectivity issues.
+	defaultCollectionInitTimeout = 10 * time.Second
+)
+
 // Ensure Store implements the interfaces.
 var (
 	_ vectorstore.VectorStore  = (*Store)(nil)
@@ -119,7 +127,7 @@ func New(conn *grpc.ClientConn, pointsClient PointsClient, collectionsClient Col
 
 	// Auto-create collection if configured
 	if opts.AutoCreateCollection && opts.Dimensions > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), defaultCollectionInitTimeout)
 		defer cancel()
 
 		if err := store.ensureCollection(ctx, opts.CollectionName, opts.Dimensions, opts.Metric); err != nil {

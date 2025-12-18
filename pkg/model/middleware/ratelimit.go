@@ -10,6 +10,13 @@ import (
 	"github.com/hupe1980/agentmesh/pkg/model"
 )
 
+const (
+	// defaultTokenAcquirePollingInterval is the interval at which the rate limiter
+	// checks for available tokens. A small interval (10ms) provides good responsiveness
+	// while minimizing CPU overhead from busy-waiting.
+	defaultTokenAcquirePollingInterval = 10 * time.Millisecond
+)
+
 // RateLimitMiddleware limits the rate of model calls using a token bucket algorithm.
 type RateLimitMiddleware struct {
 	tokens     int
@@ -82,7 +89,7 @@ func (m *RateLimitMiddleware) Wrap(next model.Executor) model.Executor {
 
 // acquire waits for a token to become available.
 func (m *RateLimitMiddleware) acquire(ctx context.Context) error {
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(defaultTokenAcquirePollingInterval)
 	defer ticker.Stop()
 
 	for {

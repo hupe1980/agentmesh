@@ -14,6 +14,15 @@ import (
 const (
 	// stabilityStatusStable represents a stable test result
 	stabilityStatusStable = "stable"
+
+	// defaultTestPollingInterval is how often the test runner checks for completion.
+	// 100ms provides good responsiveness for test execution monitoring while keeping
+	// overhead low.
+	defaultTestPollingInterval = 100 * time.Millisecond
+
+	// defaultTestTimeout is the maximum time to wait for a test execution to complete.
+	// 30 seconds is generous for typical graph executions while preventing indefinite hangs.
+	defaultTestTimeout = 30 * time.Second
 )
 
 // TestRunner executes test suites and tracks results.
@@ -273,10 +282,10 @@ func (tr *TestRunner) runTest(ctx context.Context, suite *TestSuite, test TestCa
 
 // waitForCompletion waits for graph execution to complete and returns output.
 func (tr *TestRunner) waitForCompletion(ctx context.Context, runID string) (map[string]any, error) {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(defaultTestPollingInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(30 * time.Second) // Default timeout
+	timeout := time.After(defaultTestTimeout)
 
 	for {
 		select {
