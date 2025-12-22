@@ -91,6 +91,18 @@ func TestNewModelNodeFunc(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
+
+	t.Run("with custom next target", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("response"), nil
+			}),
+		}
+
+		nodeFn, err := NewModelNodeFunc(mdl, WithNextTarget("next_node"))
+		require.NoError(t, err)
+		require.NotNil(t, nodeFn)
+	})
 }
 
 func TestModelNodeFunc_Execution(t *testing.T) {

@@ -22,6 +22,7 @@ type ModelNodeConfig struct {
 	Toolset      tool.Toolset       // Dynamic toolset for runtime tool discovery
 	OutputSchema *schema.OutputSchema
 	ToolTarget   string // Target node when tool calls are present (default: "tool")
+	NextTarget   string // Target node when no tool calls (default: graph.END)
 	Stream       bool   // Enable streaming mode for real-time output
 }
 
@@ -94,6 +95,14 @@ func WithToolTarget(target string) ModelNodeOption {
 	}
 }
 
+// WithNextTarget sets the target node when there are no tool calls.
+// Default is graph.END.
+func WithNextTarget(target string) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.NextTarget = target
+	}
+}
+
 // WithModelStreaming enables streaming mode for real-time output.
 // When enabled, partial responses are streamed via the graph's stream writer,
 // allowing real-time display of AI responses as they're generated.
@@ -117,7 +126,7 @@ func WithModelStreaming(enabled bool) ModelNodeOption {
 //
 // Routing logic:
 //   - If the AI message contains tool calls -> routes to tool target (default: "tool")
-//   - Otherwise -> routes to END
+//   - Otherwise -> routes to next target (default: graph.END)
 //
 // Example with static tools:
 //
@@ -132,6 +141,12 @@ func WithModelStreaming(enabled bool) ModelNodeOption {
 //	    agent.WithModelNodeMiddleware(loggingMiddleware, retryMiddleware),
 //	    agent.WithModelToolset(mcpToolset))
 //
+// Example with custom routing:
+//
+//	modelFn, err := agent.NewModelNodeFunc(myModel,
+//	    agent.WithNextTarget("validator"),  // Route to validator instead of END
+//	    agent.WithToolTarget("tool_executor"))  // Custom tool node
+//
 //nolint:gocyclo // Model node configuration logic; complexity is inherent to feature set
 func NewModelNodeFunc(mdl model.Model, opts ...ModelNodeOption) (graph.NodeFunc, error) {
 	if err := validate.NotNil(mdl, "model"); err != nil {
@@ -141,6 +156,7 @@ func NewModelNodeFunc(mdl model.Model, opts ...ModelNodeOption) (graph.NodeFunc,
 	cfg := &ModelNodeConfig{
 		Name:       "model",
 		ToolTarget: "tool",
+		NextTarget: graph.END,
 	}
 
 	for _, opt := range opts {
@@ -241,6 +257,7 @@ func NewModelNodeFunc(mdl model.Model, opts ...ModelNodeOption) (graph.NodeFunc,
 			return graph.Reply(finalResp.Message).To(cfg.ToolTarget)
 		}
 
-		return graph.Reply(finalResp.Message).End()
+		// Route to configured next target (default: END)
+		return graph.Reply(finalResp.Message).To(cfg.NextTarget)
 	}, nil
 }

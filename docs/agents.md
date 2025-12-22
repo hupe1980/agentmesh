@@ -158,7 +158,8 @@ flowchart LR
 
 1. **Model node**: Uses `model.Executor` to generate response or tool calls
    - Delegates execution to executor (handles observability, streaming)
-   - Routes to "tool" if tool calls present, otherwise routes to END
+   - Routes to "tool" (configurable via `WithToolTarget`) if tool calls present
+   - Otherwise routes to END (configurable via `WithNextTarget`)
 
 2. **Tool node**: Uses `tool.Executor` to execute requested tools
    - Parallel execution via `ParallelExecutor` by default
