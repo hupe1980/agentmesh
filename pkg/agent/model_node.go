@@ -15,15 +15,16 @@ import (
 
 // ModelNodeConfig holds configuration for creating a model node function.
 type ModelNodeConfig struct {
-	Name         string             // Executor name for identification
-	Middleware   []model.Middleware // Model middleware chain
-	Instructions *Instructions      // Dynamic instructions (supports templates and providers)
-	Tools        []tool.Tool        // Static tools for this node
-	Toolset      tool.Toolset       // Dynamic toolset for runtime tool discovery
-	OutputSchema *schema.OutputSchema
-	ToolTarget   string // Target node when tool calls are present (default: "tool")
-	NextTarget   string // Target node when no tool calls (default: graph.END)
-	Stream       bool   // Enable streaming mode for real-time output
+	Name         string                      // Executor name for identification
+	Middleware   []model.Middleware          // Model middleware chain
+	Instructions *Instructions               // Dynamic instructions (supports templates and providers)
+	Tools        []tool.Tool                 // Static tools for this node
+	Toolset      tool.Toolset                // Dynamic toolset for runtime tool discovery
+	OutputSchema *schema.OutputSchema        // Optional schema for structured output generation
+	ToolTarget   string                      // Target node when tool calls are present (default: "tool")
+	NextTarget   string                      // Target node when no tool calls (default: graph.END)
+	Stream       bool                        // Enable streaming mode for real-time output
+	ResponseKey  *graph.Key[message.Message] // Optional state key to store the final response message
 }
 
 // ModelNodeOption configures a ModelNodeConfig.
@@ -109,6 +110,21 @@ func WithNextTarget(target string) ModelNodeOption {
 func WithModelStreaming(enabled bool) ModelNodeOption {
 	return func(c *ModelNodeConfig) {
 		c.Stream = enabled
+	}
+}
+
+// WithModelResponseKey sets a state key to store the final response message.
+// The final message will be stored in state using graph.SetValue(key, message).
+// This allows other nodes to access the model's response via graph.Get(scope, key).
+//
+// Example:
+//
+//	var ResponseKey = graph.NewKey[message.Message]("model_response")
+//	modelFn, _ := agent.NewModelNodeFunc(model,
+//	    agent.WithModelResponseKey(ResponseKey))
+func WithModelResponseKey(key graph.Key[message.Message]) ModelNodeOption {
+	return func(c *ModelNodeConfig) {
+		c.ResponseKey = &key
 	}
 }
 
@@ -258,6 +274,11 @@ func NewModelNodeFunc(mdl model.Model, opts ...ModelNodeOption) (graph.NodeFunc,
 		}
 
 		// Route to configured next target (default: END)
-		return graph.Reply(finalResp.Message).To(cfg.NextTarget)
+		// Store final message to state key (only for non-tool-call responses)
+		cmd := graph.Reply(finalResp.Message)
+		if cfg.ResponseKey != nil {
+			cmd = cmd.With(graph.SetValue(*cfg.ResponseKey, finalResp.Message))
+		}
+		return cmd.To(cfg.NextTarget)
 	}, nil
 }

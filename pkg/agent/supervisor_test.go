@@ -30,19 +30,6 @@ func TestNewSupervisor_Basic(t *testing.T) {
 	if supervisor == nil {
 		t.Fatal("Expected supervisor to be created")
 	}
-
-	// NOTE: System prompt is now sent per-request (not stored in state)
-	// This is more token-efficient than the LangChain pattern.
-	// The supervisor will have a default system prompt but it won't appear
-	// in the initial state - it's sent with each model invocation.
-
-	// Verify supervisor was created successfully
-	if supervisor == nil {
-		t.Fatal("Expected supervisor to be created")
-	}
-
-	// The system prompt is used internally but not stored in state
-	// This is verified by the successful creation of the supervisor
 }
 
 func TestNewSupervisor_NoWorkers(t *testing.T) {
@@ -93,11 +80,6 @@ func TestNewSupervisor(t *testing.T) {
 		t.Fatalf("Failed to create supervisor with options: %v", err)
 	}
 
-	if supervisor == nil {
-		t.Fatal("Expected supervisor to be created")
-	}
-
-	// Verify supervisor was created successfully with custom prompt
 	if supervisor == nil {
 		t.Fatal("Expected supervisor to be created with custom prompt")
 	}

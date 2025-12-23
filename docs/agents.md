@@ -160,6 +160,7 @@ flowchart LR
    - Delegates execution to executor (handles observability, streaming)
    - Routes to "tool" (configurable via `WithToolTarget`) if tool calls present
    - Otherwise routes to END (configurable via `WithNextTarget`)
+   - Optionally stores final response to state (via `WithModelResponseKey`)
 
 2. **Tool node**: Uses `tool.Executor` to execute requested tools
    - Parallel execution via `ParallelExecutor` by default
@@ -171,6 +172,56 @@ flowchart LR
    - Reusable: same executors work in graphs, chains, or direct calls
    - Extensible: custom executors (retry, caching) without modifying nodes
    - Efficient: Arguments stay as JSON strings (no extra conversions)
+
+### Storing model responses in state
+
+When building graphs with multiple model nodes, you may want to access a specific node's response in downstream nodes. Use `WithModelResponseKey` to store the final response:
+
+```go
+// Define typed state keys
+var (
+    SummaryKey = graph.NewKey[message.Message]("summary")
+    AnalysisKey = graph.NewKey[message.Message]("analysis")
+)
+
+// Create model nodes that store their responses
+summaryFn, _ := agent.NewModelNodeFunc(model,
+    agent.WithModelInstructions("Summarize the following text"),
+    agent.WithModelResponseKey(SummaryKey),  // Store response in state
+    agent.WithNextTarget("analyzer"),
+)
+
+analyzerFn, _ := agent.NewModelNodeFunc(model,
+    agent.WithModelInstructions("Analyze sentiment"),
+    agent.WithModelResponseKey(AnalysisKey),
+    agent.WithNextTarget(graph.END),
+)
+
+// Build graph
+g := graph.New(SummaryKey, AnalysisKey)
+g.Node("summarize", summaryFn)
+g.Node("analyzer", analyzerFn)
+g.Start("summarize")
+
+compiled, _ := g.Build()
+
+// Execute and access stored responses
+for result, err := range compiled.Run(ctx, input) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Access stored responses from state
+    summary := graph.Get(result.Scope, SummaryKey)
+    analysis := graph.Get(result.Scope, AnalysisKey)
+}
+```
+
+**Key points:**
+- Only stores responses **without tool calls** (final answers only)
+- Use typed keys for compile-time safety: `graph.NewKey[message.Message]("key_name")`
+- Access via `graph.Get(scope, key)` in downstream nodes
+- Useful for multi-stage processing, logging, and conditional routing
 
 ---
 

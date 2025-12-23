@@ -103,6 +103,20 @@ func TestNewModelNodeFunc(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, nodeFn)
 	})
+
+	t.Run("with response key", func(t *testing.T) {
+		responseKey := graph.NewKey[message.Message]("model_response")
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("test response"), nil
+			}),
+		}
+
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelResponseKey(responseKey))
+		require.NoError(t, err)
+		require.NotNil(t, nodeFn)
+	})
 }
 
 func TestModelNodeFunc_Execution(t *testing.T) {
@@ -159,6 +173,103 @@ func TestModelNodeFunc_Execution(t *testing.T) {
 
 		// Should route to tool node
 		assert.Contains(t, cmd.Next, "tool")
+	})
+
+	t.Run("stores response in state key when configured", func(t *testing.T) {
+		responseKey := graph.NewKey[message.Message]("model_response")
+
+		expectedMsg := message.NewAIMessageFromText("AI response")
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return expectedMsg, nil
+			}),
+		}
+
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelResponseKey(responseKey))
+		require.NoError(t, err)
+
+		scope := createTestScope(map[string]any{
+			graph.MessagesKeyName: []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		cmd, err := nodeFn(context.Background(), scope)
+		require.NoError(t, err)
+		require.NotNil(t, cmd)
+
+		// Verify the response key was set in the command
+		require.NotNil(t, cmd.Updates)
+		require.Len(t, cmd.Updates, 2) // messages + model_response
+		storedMsg, ok := cmd.Updates[responseKey.Name()]
+		require.True(t, ok)
+		assert.Equal(t, expectedMsg, storedMsg)
+		// Verify messages are also added
+		_, hasMessages := cmd.Updates[graph.MessagesKeyName]
+		assert.True(t, hasMessages)
+	})
+
+	t.Run("does not store response when key not configured", func(t *testing.T) {
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return message.NewAIMessageFromText("AI response"), nil
+			}),
+		}
+
+		nodeFn, err := NewModelNodeFunc(mdl)
+		require.NoError(t, err)
+
+		scope := createTestScope(map[string]any{
+			graph.MessagesKeyName: []message.Message{
+				message.NewHumanMessageFromText("Hello"),
+			},
+		})
+
+		cmd, err := nodeFn(context.Background(), scope)
+		require.NoError(t, err)
+		require.NotNil(t, cmd)
+
+		// Should only have messages in updates (no custom response key)
+		require.NotNil(t, cmd.Updates)
+		assert.Len(t, cmd.Updates, 1)
+		_, hasMessages := cmd.Updates[graph.MessagesKeyName]
+		assert.True(t, hasMessages)
+	})
+
+	t.Run("does not store response when tool calls present", func(t *testing.T) {
+		responseKey := graph.NewKey[message.Message]("model_response")
+
+		aiMsg := message.NewAIMessageFromText("")
+		aiMsg.ToolCalls = []message.ToolCall{
+			{ID: "call1", Name: "test_tool", Arguments: "{}"},
+		}
+
+		mdl := &testutil.MockModel{
+			GenerateFunc: testutil.WrapSimpleGenerate(func(ctx context.Context, messages []message.Message) (message.Message, error) {
+				return aiMsg, nil
+			}),
+		}
+
+		nodeFn, err := NewModelNodeFunc(mdl, WithModelResponseKey(responseKey))
+		require.NoError(t, err)
+
+		scope := createTestScope(map[string]any{
+			graph.MessagesKeyName: []message.Message{
+				message.NewHumanMessageFromText("Use a tool"),
+			},
+		})
+
+		cmd, err := nodeFn(context.Background(), scope)
+		require.NoError(t, err)
+		require.NotNil(t, cmd)
+
+		// Should route to tool node and NOT store response (tool calls present)
+		assert.Contains(t, cmd.Next, "tool")
+		// Should only have messages in updates (no custom response key)
+		require.NotNil(t, cmd.Updates)
+		assert.Len(t, cmd.Updates, 1)
+		_, hasMessages := cmd.Updates[graph.MessagesKeyName]
+		assert.True(t, hasMessages)
 	})
 }
 
